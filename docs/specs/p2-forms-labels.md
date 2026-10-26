@@ -153,6 +153,18 @@
   timestamps in PDF metadata = generation time recorded separately,
   not embedded variably). Required so `facts_hash`-style audit stays
   meaningful.
+- P2-R6 — Print roadmap (decided prompt 009): v1 ships as specced
+  above (server-rendered PDF via printpdf is the submission
+  artifact). The ultimate goal is **HTML-print-first**: form data is
+  collected in a validated web UI and printed from a nicely styled
+  HTML/CSS page at the correct page size (`@page` rules, print
+  stylesheet per [site-theme](../site-theme.md)), without touching
+  PDFs at all; a PDF file becomes an **on-request option**, never a
+  mandatory step. Keep the template `pdf` rects and the renderer
+  behind a trait so the HTML print view and the PDF render share
+  one field layout source; add `GET /form-submissions/:id/print`
+  (HTML) alongside `…/pdf` when the roadmap lands. PDF-on-request
+  keeps the R4 header block and sha256 audit semantics.
 
 ## 5. Replica-PDF acceptability flag
 
@@ -359,6 +371,7 @@ see [README.md](README.md).)
   reference).
 - No MCP exposure of P2 objects; no auto-publish of submissions to
   handbook pages.
+- No HTML-print-primary flow in P2 v1 (roadmap per P2-R6, not scope).
 
 ## 12. Open questions
 

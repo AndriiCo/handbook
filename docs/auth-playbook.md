@@ -3,10 +3,12 @@
 - Status: decided direction (prompt 008 Q4); verify each portal's
   exact clicks in its current UI before executing.
 - Customer login: **passkey first, Sign in with Apple, Sign in with
-  Google, email click-to-login (magic link) only as fallback** for
-  customers who cannot use the first three. Staff/admin login:
-  method still open (recommendation: passkey or password+TOTP **plus**
-  mTLS cert) — decide before admin scaffold.
+  Google, Login with Meta, email click-to-login (magic link) only as
+  fallback** for customers who cannot use the first four (Meta added
+  prompt 009). Customers may link any number of methods in their
+  profile, per the linking rules in §6. Staff/admin login: method
+  still open (recommendation: passkey or password+TOTP **plus** mTLS
+  cert) — decide before admin scaffold.
 - Companion security rules: [SECURITY.md](SECURITY.md) §2
   (Auth/session) and §1 (verdicts 1–8) stay binding.
 
@@ -89,7 +91,42 @@ first):
 | `…/account-enabled` | clear the disabled flag (link stays disabled until user re-auths), audit |
 | `…/verification` | handshake only, no user action |
 
-## 4. Email click-to-login (fallback only)
+## 4. Login with Meta (portal checklist)
+
+"Login with Meta" for third-party websites is **Facebook Login**
+(per https://developers.facebook.com/docs/facebook-login/web/,
+inspected 2026-10-26).
+
+1. Meta App Dashboard → create App ID (website) → **Add a Product
+   → Facebook Login → Settings → Client OAuth Settings** → enter
+   redirect URIs, including
+   `https://andrii.ai/apostille/api/v1/auth/meta/callback`.
+2. Set **Login with JavaScript SDK** to yes; add `andrii.ai` to
+   **Allowed Domains for JavaScript SDK** (tokens only return to
+   authorized domains; HTTPS only).
+3. Permissions: `public_profile` + `email` need no app review and
+   are auto-granted — request nothing more.
+4. Register the **Deauthorize Callback URL** and the **Data
+   Deletion Request Callback URL** (both HTTPS, both in
+   Facebook Login > Settings — exact field locations per
+   current dashboard, verify in portal):
+   `https://andrii.ai/apostille/api/v1/auth/meta/deauthorize`
+   and `…/meta/delete-request`.
+5. Server: exchange the code server-side, keep the App Secret in
+   secrets storage only, and validate tokens/calls per the
+   current Graph API docs at implementation (debug_token /
+   appsecret_proof pattern — verify exact current form; never
+   trust a client-supplied user id).
+
+Event → action table (verify Meta's `signed_request` signature
+with the App Secret first; reject anything else 403 + audit):
+
+| Meta signal | Meaning | Our action |
+|---|---|---|
+| Deauthorize callback | user removed the app / revoked access | disable the Meta identity link, kill its sessions, notify via remaining channel, audit |
+| Data deletion request | user asked Meta to delete their data with us | delete Meta-sourced data, respond with `{url, confirmation_code}` status tracker, audit |
+
+## 5. Email click-to-login (fallback only)
 
 - Offered only when passkey/Apple/Google all fail for the customer.
   Token: 256-bit CSPRNG, single-use, 15-minute expiry, bound to the
@@ -104,19 +141,23 @@ first):
 - Fallback logins get a `auth_fallback=true` audit mark and
   tighter idle timeout until the customer registers a passkey.
 
-## 5. Account-linking rules (the anti-takeover core)
+## 6. Account-linking rules (the anti-takeover core)
 
 Multiple methods must never let an attacker claim someone else's
 account. Rules (enforced server-side, tested with fixtures):
 
 1. Identities table: one account ↔ many verified identities
-   (passkey credential, Apple `sub`, Google `sub`, email address).
+   (passkey credential, Apple `sub`, Google `sub`, Meta app-scoped
+   user id, email address). The profile page lists linked methods
+   and offers link/unlink for each.
 2. Link on **verified-email equality only**: Apple/Google emails
    arrive verified; magic-link email becomes verified by
    construction. Unverified, empty, or changed emails never link.
 3. Apple **private-relay** addresses are distinct identities — they
    link to an account only through the explicit link flow (rule 4),
-   never by string match (relay ≠ real address).
+   never by string match (relay ≠ real address). Meta-supplied
+   email is likewise **never trusted for auto-linking** — Meta
+   identities join an account only via the explicit link flow.
 4. No silent auto-merge: adding a method to an existing account
    requires an **explicit link flow** — active session on the old
    method + successful auth on the new method + step-up
@@ -128,12 +169,12 @@ account. Rules (enforced server-side, tested with fixtures):
    as a merge.
 6. Unlinking requires a remaining verified method + re-auth; the
    last method cannot be removed. Revoked/deleted provider
-   identities (signals in §2–§3) auto-disable that link; if it was
+   identities (signals in §2–§4) auto-disable that link; if it was
    the last link, the account locks pending manual recovery.
 7. Every link/unlink/signal action writes an `audit` row with
    actor + method + provider `sub`/relay hash (never raw PII).
 
-## 6. Telnyx (purpose TBD — confirm before configuring)
+## 7. Telnyx (purpose TBD — confirm before configuring)
 
 The author listed Telnyx among platforms but its role in this
 project is not yet fixed. Best guess: voice/SMS numbers for the
@@ -142,7 +183,7 @@ configure anything until the purpose decision lands; when it does,
 this section gains the number-provisioning, recording-consent, and
 credential-rotation checklist.
 
-## 7. Verification checklist (staging, before prod)
+## 8. Verification checklist (staging, before prod)
 
 - [ ] Passkey register → logout → autofill login (macOS Safari,
   Chrome, iOS) green; revoked-credential path routes to
@@ -156,6 +197,12 @@ credential-rotation checklist.
   (each row in §2 table); forged JWT rejected 403 + audited.
 - [ ] Magic link: single-use, 15-min expiry, no enumeration
   (identical timing/response for unknown addresses).
+- [ ] Meta login green; Meta email never auto-links (fixture:
+  same-address Apple account stays separate until explicit link
+  flow); deauthorize + data-deletion callbacks tested with
+  Meta-signed samples (link disabled, data deleted, tracker URL +
+  confirmation code returned); forged `signed_request` rejected
+  403 + audited.
 - [ ] Link/unlink matrix tested: every pair of methods, last-method
   removal refused, pre-account-takeover fixture red→green.
 - [ ] Secrets (`MODEL_API_KEY`, Apple private key, Google client

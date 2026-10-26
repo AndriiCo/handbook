@@ -186,7 +186,10 @@ checked" stays unambiguous.
   300-byte theme-init snippet (counts inside entry budget).
 - Charts, seals, and status dots must use the token pairs above — never
   hard-coded grays. Print stylesheet forces light tokens, expands
-  citations, hides nav/menus.
+  citations, hides nav/menus. It also carries the P2 print roadmap
+  (see [p2-forms-labels](specs/p2-forms-labels.md) P2-R6): form
+  printouts ultimately render from styled HTML/CSS at the correct
+  page size, with PDF as an on-request option only.
 
 ---
 

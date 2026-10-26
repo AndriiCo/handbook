@@ -111,8 +111,9 @@
 + idle timeouts (customer idle 24h ok; admin idle ≤30 min); rotate
 session id and CSRF token on login and on role change; single-flight
 refresh semantics; constant-time token compare; lockout/backoff on login
-(see rate limits). Customer methods (decided prompt 008): passkey,
-Apple, Google, magic-link fallback — full portal checklist, linking
+(see rate limits). Customer methods (decided prompts 008–009):
+passkey, Apple, Google, Meta, magic-link fallback — full portal
+checklist, linking
 rules, and revocation-signal handling in
 [auth-playbook.md](auth-playbook.md). Linking invariants: identities
 table (one account ↔ many verified identities); link on
@@ -321,8 +322,8 @@ pre-API must-fix list.
 3. **Photo retention undecided** — only voice (365d) decided; retention
    for customer photos/videos/scans?
 4. ~~Admin host typo~~ — decided prompt 008: `admin.andrii.ai`.
-5. ~~Customer login methods~~ — decided prompt 008 (passkey/Apple/
-   Google + magic-link fallback; see
+5. ~~Customer login methods~~ — decided prompts 008–009
+   (passkey/Apple/Google/Meta + magic-link fallback; see
    [auth-playbook.md](auth-playbook.md)). Staff method still open:
    passkey or password+TOTP (+ mTLS)?
 6. **Customer PII boundary** — which uploads are PII-vault (ID

@@ -91,27 +91,35 @@ the consolidated author-decision list is at the bottom of this file.
    anything publishes. Consequence: Meta Model API is an approved
    processor for customer media (transcription, redaction);
    data-handling terms must be read before real media flows.
+6. Login with Meta added (prompt 009): passkey/Apple/Google/
+   **Meta** + magic-link fallback; customers link any number of
+   methods in their profile; Meta deauthorize + data-deletion
+   signals handled — see
+   [../auth-playbook.md](../auth-playbook.md) §4.
+7. Print roadmap (prompt 009): v1 keeps server-rendered PDF
+   (printpdf); ultimate goal is HTML-print-first (validated web
+   UI + styled HTML/CSS at correct page size, no PDFs touched),
+   with PDF as an on-request option — see P2-R6 in
+   [p2-forms-labels.md](p2-forms-labels.md).
 
 **Still needed during the 10 days:**
 
-**Needed during the 10 days:**
-
-6. Conflict policy: block vs banner per topic (before day 9).
-7. MCP tool list + auth (public vs keyed) + rate limits.
-8. HCCH feed URIs + poll cadence; 500-URL seed list + politeness
-   budget.
-9. SAM 3.1 + Glimmer self-host packaging, weights licensing,
-   single-server latency budget.
-10. P2 label purchase: carrier-API buy vs staff-manual (spec
+8. Conflict policy: block vs banner per topic (before day 9).
+9. MCP tool list + auth (public vs keyed) + rate limits.
+10. HCCH feed URIs + poll cadence; 500-URL seed list + politeness
+    budget.
+11. SAM 3.1 + Glimmer self-host packaging, weights licensing,
+    single-server latency budget.
+12. P2 label purchase: carrier-API buy vs staff-manual (spec
     recommends staff-manual); whose accounts, who pays.
-11. P2 PII store: separate `p2.sqlite` (recommended) vs same-file
+13. P2 PII store: separate `p2.sqlite` (recommended) vs same-file
     tables; PII retention proposal (submitted 2y, drafts 90d,
     drawn PNGs 1y).
-12. P2 replica-PDF acceptability research owner; wet-ink-only vs
+14. P2 replica-PDF acceptability research owner; wet-ink-only vs
     drawn-optional for demo (spec recommends wet-ink-only).
-13. Tier b/c/d pricing, WA fee/SLA/pickup radius, $1.99-offer
+15. Tier b/c/d pricing, WA fee/SLA/pickup radius, $1.99-offer
     boundaries, "FedEx tomorrow" geography + remedy.
-14. ES scope for MVP + legal-review owner (blocks launch of
+16. ES scope for MVP + legal-review owner (blocks launch of
     legal-adjacent pages).
-15. Locale URL shape (`?l=` only vs future `/es/` prefixes);
+17. Locale URL shape (`?l=` only vs future `/es/` prefixes);
     translation provenance rule.

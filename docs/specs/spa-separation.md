@@ -106,10 +106,12 @@
   additionally requires verified-cert header + role staff/admin
   (defense in depth: cert alone gives nothing without login; login
   alone without cert rejected on admin listener).
-- Login (decided 2026-10-26, prompt 008; full checklist in
+- Login (decided 2026-10-26, prompts 008–009; full checklist in
   [../auth-playbook.md](../auth-playbook.md)):
   - Customer: passkey first, Sign in with Apple, Sign in with
-    Google, email click-to-login (magic link) as fallback only.
+    Google, Login with Meta, email click-to-login (magic link) as
+    fallback only. Customers link any number of methods in their
+    profile.
     Account linking follows the playbook's verified-email-only +
     explicit-link-flow rules (no silent auto-merge, no
     relay-string matching); Apple/Google revocation signals
@@ -175,9 +177,9 @@ this stream.)
 
 ## Open questions (from this stream)
 
-- Decided in prompt 008: admin host (`admin.andrii.ai`), customer
-  login (passkey/Apple/Google + magic-link fallback — see
-  [auth-playbook](../auth-playbook.md)), Meta API spec (see
+- Decided in prompts 008–009: admin host (`admin.andrii.ai`),
+  customer login (passkey/Apple/Google/Meta + magic-link fallback —
+  see [auth-playbook](../auth-playbook.md)), Meta API spec (see
   [meta-api](../meta-api.md)).
 - Content repo exact location + customer-data retention (only voice
   365d decided)?
