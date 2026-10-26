@@ -231,7 +231,9 @@ finding F3). Quarantine-until-validated: community uploads stay
 means the server's git remote + deploy path is the supply chain —
 protect with signed commits (or at minimum push restrictions), deploy
 from a tag, record `code_git_commit` in every `build`/`audit` row
-(already designed). No CDN JS (already decided: vendor
+(already designed). Deploy access uses the operator's local SSH key
+(key stays on the author's machine, never in repo; server host via
+env, e.g. `APOSTILLE_HOST`); no deploy credentials in the tree. No CDN JS (already decided: vendor
 htmx-equivalents; SvelteKit bundle is self-built). `robots.txt` gate
 for crawls (design §3) doubles as legal hygiene. WARC ingest of
 third-party sites is SSRF-shaped: the fetcher must block

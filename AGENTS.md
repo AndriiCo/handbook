@@ -90,3 +90,32 @@ Living document:
 - Keep this file updated when project needs change it (new conventions,
   tooling, or log requirements). An update to this file is itself a
   significant change: commit it separately with a clear message.
+
+## 6. Agent Cohort Rules (proposed prompt 010 — effective after author approval)
+
+Speed rules for parallel-agent execution. Until approved, treat as
+proposal only.
+
+- **Parallel-first decomposition.** Split independent streams
+  across subagents (research, coding, security review, test runs,
+  specs); size fan-out to genuinely independent subtasks, never
+  one child per file.
+- **Single-writer checkout.** Children are read-only
+  researchers: they return drafts as text, the parent writes
+  files. No parallel writers on the shared tree, no exceptions
+  without isolation.
+- **Truncation-proof handoffs.** Cap child outputs (~4500 words);
+  recover full texts from child session logs when delivery
+  truncates; never treat a partial delivery as the complete
+  result without checking the log.
+- **Decisions stick.** Record author decisions in
+  `docs/specs/README.md` the same turn; never re-ask a decided
+  item. Open questions carry a number, an owner, and the stream
+  they block.
+- **Lanes and gates.** CODE merges behind `cargo xtask ci`; SEC
+  blocks merges on trust/PII/auth findings; TEST owns red/green
+  and the demo drills. Day 4/6/8/10 are demo gates per
+  `docs/specs/app-features.md`.
+- **Spec-before-surface.** New user-visible surfaces and schema
+  changes get a reviewed spec section first; fixtures are
+  synthetic only and canonical values never leak into facts.

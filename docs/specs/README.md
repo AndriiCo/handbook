@@ -27,6 +27,18 @@ the consolidated author-decision list is at the bottom of this file.
 - [egypt-consular.md](egypt-consular.md) — verified Egypt-in-USA
   chain research with citations, USPS-only mail constraint,
   validation backlog V-1…V-19, next-country backlog.
+- [carrier-apis.md](carrier-apis.md) — USPS + FedEx label-API
+  research (endpoints, auth, sandbox/certification, P2 payload
+  mapping, API-buy vs staff-manual pricing).
+- [payments-billing.md](payments-billing.md) — Stripe (Checkout
+  first) + Apple Pay via Stripe, invoice mirror model, Billing
+  tab requirements, PCI SAQ A, refunds/disputes, P2 seam.
+- [secure-config.md](secure-config.md) — TPM2-sealed encrypted
+  config (systemd-creds + XChaCha20-Poly1305 envelope, typed
+  keys, write-only secrets, rotation, DR, Mac fallback).
+- Legal drafts (lawyer review required, do not publish):
+  [tos-draft.md](../legal/tos-draft.md),
+  [privacy-draft.md](../legal/privacy-draft.md).
 - Visual design: [../site-theme.md](../site-theme.md) (color
   scheme, dark/light, mobile-first, i18n, robots/sitemap/
   well-known, wow effects). Named `site-theme.md`, not
@@ -123,3 +135,18 @@ the consolidated author-decision list is at the bottom of this file.
     legal-adjacent pages).
 17. Locale URL shape (`?l=` only vs future `/es/` prefixes);
     translation provenance rule.
+18. Carrier accounts + certification path (USPS Ship/EPA/Labels
+    approval, FedEx developer project + label cert) — see
+    [carrier-apis.md](carrier-apis.md) Q1–Q8.
+19. Stripe + Apple Pay merchant setup (account/keys, hosted-first
+    checkout, invoice numbering, refund approvers) — see
+    [payments-billing.md](payments-billing.md) OQ-P1…P8.
+20. TOS/Privacy lawyer review + photo-grant language sign-off;
+    fill author-numbered blanks (tiers, SLAs, contacts) — see
+    [tos-draft.md](../legal/tos-draft.md),
+    [privacy-draft.md](../legal/privacy-draft.md).
+21. TPM2 presence + systemd version on the provisioned box;
+    KEK-escrow custodians; META_API_KEY migration; secret-set
+    step-up — see [secure-config.md](secure-config.md) Q1–Q8.
+22. Hosting details for first deploy (server IP, SSH user; key
+    stays on the author's machine, host via env, never in repo).

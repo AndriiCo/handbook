@@ -26,6 +26,36 @@ page total ≤ 80 KB, customer total ≤ 120 KB (definitions in §2).
 
 ---
 
+## 0. Design Principles
+
+1. **Proof before decoration.** Every promise shows its evidence —
+   address, fee, form revision, verified date, citation — within one
+   glance. If a treatment hides provenance to look cleaner, the
+   treatment loses.
+2. **Phones are not a funnel.** Every task in J1–J9 completes
+   one-handed on 360px (J9); mobile never degrades into a prompt to
+   "continue on desktop" or into a paid tier.
+3. **Honest upsell only.** Tier moves follow the journey triggers
+   (printerlessness, hop confusion, flight math), never fear, grief,
+   language need, or transition confusion (J5/J7/J8). Free tier (a)
+   is fully usable.
+4. **Never guess on legal-adjacent facts.** Uncertain, untranslated,
+   or stale content says so in place with a date and a path forward
+   — no silent machine translation, no confident rendering of a
+   superseded form or address.
+5. **Calm in crisis.** J7 customers get back-planners, walk-in
+   intel, and the $1.99 estate path first; urgency is shown as dates
+   and cutoffs, never countdown timers, stock pressure, or
+   grief-targeted upsell.
+6. **Language dignity.** ES-first (J8) is the same handbook, not a
+   summary: EN field names preserved alongside ES guidance, forms
+   stay in authority language, anti-scam notice always present.
+7. **Every failure guides forward.** Errors, empty results, offline,
+   and stale pages name what happened, what is still safe, and the
+   single next action — with drafts and input preserved.
+
+---
+
 ## 1. SvelteKit layout and component guidance
 
 ### 1.1 Route groups and shells
@@ -399,7 +429,118 @@ scroll fade-up blankets, no hover-scale lifts, no bento grids, no aurora.
 
 ---
 
-## 10. Open questions
+## 11. Content tone and legal-adjacent copy
+
+- **Voice:** clerk-precise, warm, plain-language (grade 8). Short
+  sentences, named dates (`verified 2026-10-20`), no superlatives,
+  no "guaranteed acceptance."
+- **Legal-adjacent rule:** handbook gives general information, never
+  advice. POA/corporate pointers (J4), Viet Nam explainer (J5),
+  Egypt chain (J6) carry the attorney-approved disclaimer in EN +
+  ES: "General information, not legal advice." Verbatim text gated
+  on legal review (see journeys §ES scope).
+- **No silent MT:** untranslated facts show source-language text +
+  `Notice` info "Translation pending — showing original (EN).
+  Reviewed translation due [date]." Human- vs. machine-reviewed ES
+  strings flagged with reviewer + date; machine-only legal-adjacent
+  strings never ship on J4/J5/J6 paths.
+- **Forms:** authority language wins; ES guides explain
+  field-by-field with EN field names inline (`Nombre / First name:
+  "Given names"`). Never rename a field the customer must sign.
+- **Staleness:** >180-day authorities keep the §7.2 banner with
+  fixed copy shape: "Last verified [date] — reverify in progress.
+  Confirm at [citation] before mailing." No invented "current as of
+  today."
+
+## 12. Honest upsell and price/date display
+
+- **Trigger-mapped only:** upsell components reference the journey
+  trigger that fired it (e.g. "No printer? (J9)" → tier (c);
+  "flight in <14 days (J7)" → tier (d)). No interstitial, no
+  pre-checked tier, no fear copy ("Don't risk rejection!").
+- **Grief rule (J7):** estate/inheritance surfaces the $1.99 path
+  first with cap/end boundary (`through June 2027 or $50k cap`);
+  speed upsell allowed only on back-planner math that misses the
+  flight.
+- **No price/date without provenance:** fees show cited passthrough
+  + service fee separately; SLAs ("FedEx tomorrow," pickup
+  windows) show scope + remedy or do not render. Placeholder
+  questions in journeys §Pricing gate every price/date component.
+- **Comparison shape:** tier deltas as ledger rows (`adds: return
+  label, tracked`), never feature-check grids with the free column
+  grayed out.
+
+## 13. States: empty, loading, error, offline, stale
+
+- **Empty:** `Notice` info + heading + one action. Search no-hit:
+  "No authority matches '[q]'" + recent authorities + "Browse all
+  106" link. New order with no documents: checklist starter, not a
+  blank rail.
+- **Loading:** skeleton ledger rows (same row height, `surface`
+  pulse via opacity only), never spinners on full pages; search
+  sheet responds <100ms with cached top-106 index, then refines.
+- **Error:** `Notice` error with filled icon + heading + body +
+  retry (per §1.3, never bare left-border). Inline field errors use
+  `aria-describedby`, preserved input, one error per field, stated
+  fix ("Use the Tumwater PO Box — Olympia closed June 2025
+  [citation]").
+- **Offline/stale:** WS pill states `Live / Reconnecting /
+  Offline` (§5.8); offline drafts persist to IndexedDB with "Saved
+  on this device — will sync" `Notice` warning. Stale-fact rows
+  keep old value struck-through beside the new draft until
+  accepted, never a silent swap.
+
+## 14. Form, validation, and photo pre-check UX
+
+- **Flow:** one question per screen <720px, addressable step URLs,
+  persistent summary (rail ≥720px, bottom sheet below). Back button
+  never loses input; drafts restore with polite `aria-live`
+  announcement.
+- **Validation:** validate on blur + submit, never on keystroke;
+  success is quiet (chip/check), failure is inline + cited.
+  `autocomplete` tokens on address/email; fees/dates in `IBM Plex
+  Mono` with `Intl` formatting per §6.
+- **Photo pre-check (J9):** ternary result only — Pass / Fail /
+  Retake — each with reason + annotated thumbnail + one-tap retake.
+  Fail names the defect ("glare over seal") and whether a retake or
+  a rescan is needed; no numeric "quality scores."
+- **Printerless paths:** every "print label" step offers QR/
+  post-office scan or FedEx hold-for-pickup alongside PDF (J9);
+  shareable checklist link alongside printable PDF.
+
+## 15. Motion budget (companion to §8)
+
+- **Allowances:** micro-feedback ≤120ms, card/popover fade 80ms
+  opacity-only, one stamp-settle per new ledger item (120ms
+  translate + seal ping). One animated element per event; no
+  chains, loops (except WS current-leg opacity pulse), parallax,
+  or scroll-triggered blankets.
+- **Easing:** `ease-out` for entrances, linear for opacity pulses.
+  No scale lifts on hover (§3.3 accent darkens instead).
+- **Gates:** all §8 effects disabled under
+  `prefers-reduced-motion: reduce` via the §9 media query +
+  `matchMedia` WS gate; `Live / Reconnecting` pill changes are
+  text-first, animation-second. CI lints for banned properties in
+  animations (`transform: scale` on cards, `filter: blur` outside
+  bottom-sheet scrim).
+
+## 16. Trust, verification, and anti-scam display
+
+- **Verified chip:** solid fill + 4px radius + mono date (`Verified
+  2026-10-20`), `success` tokens only; tiers shown as text (`Tier 1
+  · in-person`), never color alone. Every `FactRow` keeps statement
+  + citation link + capture date; citation hover/tap cards show
+  domain, capture date, tier (§8.6).
+- **Correction loop:** every authority page carries "Report a
+  change"; J5 adds "Was your apostille refused in Viet Nam? Tell
+  us" — reports feed the fact/task pipeline, never a dead inbox.
+- **Anti-scam (J8):** ES journeys show a persistent `Notice`
+  warning: what Andrii Co. will never ask for (full SSN by chat,
+  gift-card payment, consulate cash drop) + the real phone
+  `+1(425)800-8688`. Spoof-domain reports link to
+  `/apostille/security` (§7.3).
+
+## 17. Open questions
 
 1. Locale-URL shape: ship `?l=` only, or reserve `/es|fr/` prefixes now
    for future SEO (cost: axum nesting + canonical migration)?
