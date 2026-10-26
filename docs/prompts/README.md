@@ -51,3 +51,5 @@ to change history — append a correction section instead.
   Five blocking decisions recorded (Meta API, login, host, photos).
 - [2026-10-26-009-meta-print.md](2026-10-26-009-meta-print.md) —
   Meta login added; HTML-print-first roadmap recorded.
+- [2026-10-26-010-cohort2.md](2026-10-26-010-cohort2.md) —
+  Carriers, payments, legal, config cohort + AGENTS §6 proposal.
