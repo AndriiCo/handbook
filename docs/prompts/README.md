@@ -45,3 +45,5 @@ to change history — append a correction section instead.
   Web stack considerations + UI options (SvelteKit picked, see addendum).
 - [2026-10-26-006-ws-first.md](2026-10-26-006-ws-first.md) —
   Realtime transport switched from SSE-first to WS-first.
+- [2026-10-26-007-spec-cohort.md](2026-10-26-007-spec-cohort.md) —
+  Cohort spec package: 9 review docs + execution plan.
