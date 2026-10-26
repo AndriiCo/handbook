@@ -6,6 +6,7 @@
 
 pub mod db;
 pub mod store;
+pub mod topics;
 
 /// Crate version, for smoke tests and future tooling.
 pub fn version() -> &'static str {

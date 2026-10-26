@@ -8,28 +8,77 @@ use rusqlite::Connection;
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 /// Voice-audio retention in days (decided 2026-10-26).
 pub const VOICE_RETENTION_DAYS: i64 = 365;
 
 /// Open (creating if missing) the store's metadata database.
+///
+/// Sets `journal_mode=WAL` (one writer, many readers),
+/// `busy_timeout=5000` (wait out lock contention instead of failing),
+/// `synchronous=NORMAL` (WAL-safe durability), and `foreign_keys=ON`.
+///
+/// # SAFE DELETE rule
+///
+/// Every connection from this function enforces foreign keys, so a
+/// `DELETE` that would orphan a child row fails instead of silently
+/// dangling. Consequences for all writers:
+/// - New tables MUST declare real `REFERENCES` clauses for references.
+/// - Deletes MUST remove (or null, where nullable) child rows first.
+/// - Never work around a violation with `PRAGMA foreign_keys=OFF`.
 pub fn open(store: &Store) -> rusqlite::Result<Connection> {
-    Connection::open(store.db_path())
+    let conn = Connection::open(store.db_path())?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "busy_timeout", 5000)?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    Ok(conn)
 }
 
 /// Apply pending migrations. Idempotent.
+///
+/// The whole upgrade runs inside one transaction, so a crash or error
+/// can never leave a half-applied migration behind.
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
-    let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version < 1 {
-        conn.execute_batch(include_str!("../migrations/001_init.sql"))?;
-        conn.pragma_update(None, "user_version", 1)?;
-    }
+    in_transaction(conn, || {
+        let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version < 1 {
+            conn.execute_batch(include_str!("../migrations/001_init.sql"))?;
+            conn.pragma_update(None, "user_version", 1)?;
+        }
+        if version < 2 {
+            conn.execute_batch(include_str!("../migrations/002_hardening.sql"))?;
+            conn.pragma_update(None, "user_version", 2)?;
+        }
+        Ok(())
+    })?;
     debug_assert_eq!(
         conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))?,
         SCHEMA_VERSION
     );
     Ok(())
+}
+
+/// Run `f` inside one `BEGIN IMMEDIATE`/`COMMIT` transaction, rolling
+/// back when `f` fails. Takes a shared `&Connection` (rusqlite uses
+/// interior mutability), so callers with a shared handle still get
+/// atomic multi-statement updates.
+fn in_transaction<T>(
+    conn: &Connection,
+    f: impl FnOnce() -> rusqlite::Result<T>,
+) -> rusqlite::Result<T> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    match f() {
+        Ok(value) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(value)
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
 }
 
 /// Insert an authority (office / jurisdiction). Returns the new row id.
@@ -54,15 +103,17 @@ pub fn add_authority(
 /// For each expired `call_session.audio_capture_id`: removes the blob file
 /// and its capture row, nulls the session link, and writes an `audit` row.
 /// Transcripts, annotations, and consent records are never touched.
-/// Returns the number of audio captures deleted. `now` is unix seconds
-/// (a parameter so tests don't depend on the clock).
+/// All database deletes run in one transaction. A stored path that does
+/// not resolve inside the store root is skipped entirely (neither file
+/// nor row is touched). Returns the number of audio captures deleted.
+/// `now` is unix seconds (a parameter so tests don't depend on the clock).
 pub fn retention_sweep(
     conn: &Connection,
     store: &Store,
     now: i64,
     actor: &str,
 ) -> rusqlite::Result<usize> {
-    let cutoff = now - VOICE_RETENTION_DAYS * 86_400;
+    let cutoff = now.saturating_sub(VOICE_RETENTION_DAYS * 86_400);
     let expired: Vec<(i64, String)> = conn
         .prepare(
             "SELECT c.id, c.path FROM capture c
@@ -71,28 +122,56 @@ pub fn retention_sweep(
         )?
         .query_map([cutoff], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
+    // Canonicalize once: symlinked parents (e.g. macOS `/var` ->
+    // `/private/var`) must compare against the resolved root.
+    let canonical_root = store
+        .root()
+        .canonicalize()
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
-    for (id, path) in &expired {
-        let full = store.root().join(path);
-        // The row is the record; a missing file is already swept enough.
-        if full.exists() {
-            std::fs::remove_file(&full)
-                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    in_transaction(conn, || {
+        let mut deleted = 0;
+        for (id, path) in &expired {
+            let full = store.root().join(path);
+            // Traversal guard: the stored path is untrusted input. When
+            // it does not resolve inside the store root, skip BOTH the
+            // file and the row (fail closed; counted as skipped, not
+            // deleted), so a malicious row can never delete outside.
+            if !parent_inside_root(&canonical_root, &full) {
+                continue;
+            }
+            // The row is the record; a missing file is already swept enough.
+            if full.exists() {
+                std::fs::remove_file(&full)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            }
+            conn.execute("DELETE FROM capture WHERE id = ?1", [id])?;
+            conn.execute(
+                "UPDATE call_session SET audio_capture_id = NULL
+                 WHERE audio_capture_id = ?1",
+                [id],
+            )?;
+            conn.execute(
+                "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+                 VALUES (?1, ?2, 'retention_delete', 'capture', ?3,
+                         'voice audio older than 365 days')",
+                rusqlite::params![now, actor, id],
+            )?;
+            deleted += 1;
         }
-        conn.execute("DELETE FROM capture WHERE id = ?1", [id])?;
-        conn.execute(
-            "UPDATE call_session SET audio_capture_id = NULL
-             WHERE audio_capture_id = ?1",
-            [id],
-        )?;
-        conn.execute(
-            "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
-             VALUES (?1, ?2, 'retention_delete', 'capture', ?3,
-                     'voice audio older than 365 days')",
-            rusqlite::params![now, actor, id],
-        )?;
-    }
-    Ok(expired.len())
+        Ok(deleted)
+    })
+}
+
+/// True when `candidate`'s parent directory resolves (via the
+/// filesystem) to a location inside `canonical_root`. Fail-closed: any
+/// canonicalization failure reports "not inside".
+fn parent_inside_root(canonical_root: &std::path::Path, candidate: &std::path::Path) -> bool {
+    candidate
+        .parent()
+        .unwrap_or(candidate)
+        .canonicalize()
+        .is_ok_and(|parent| parent.starts_with(canonical_root))
 }
 
 #[cfg(test)]
@@ -195,6 +274,7 @@ mod tests {
                     kind,
                     store
                         .blob_path(sha)
+                        .unwrap()
                         .strip_prefix(store.root())
                         .unwrap()
                         .to_str()
@@ -242,7 +322,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audio_rows, 0);
-        assert!(!store.blob_path(&audio_old).exists());
+        assert!(!store.blob_path(&audio_old).unwrap().exists());
         let link: Option<i64> = conn
             .query_row(
                 "SELECT audio_capture_id FROM call_session
@@ -262,7 +342,7 @@ mod tests {
                 .unwrap();
             assert_eq!(rows, 1);
         }
-        assert!(store.blob_path(&audio_new).exists());
+        assert!(store.blob_path(&audio_new).unwrap().exists());
 
         // One audit row explains the deletion.
         let audits: i64 = conn
@@ -274,5 +354,178 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audits, 1);
+    }
+
+    fn audit_trigger_count(conn: &Connection) -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'trigger' AND tbl_name = 'audit'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn open_sets_pragmas() {
+        let (_dir, _store, conn) = migrated();
+        let journal: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(journal.to_lowercase(), "wal");
+        let busy: i32 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(busy, 5000);
+        let synchronous: i32 = conn
+            .query_row("PRAGMA synchronous", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(synchronous, 1); // NORMAL
+        let foreign_keys: i32 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1); // ON
+    }
+
+    #[test]
+    fn migrate_fresh_db_applies_all_migrations() {
+        let (_dir, _store, conn) = migrated();
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        assert_eq!(audit_trigger_count(&conn), 2);
+    }
+
+    #[test]
+    fn migrate_upgrades_001_db_to_002() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        store.init().unwrap();
+        let conn = open(&store).unwrap();
+        // Build a 001-only database, as an older install would have.
+        conn.execute_batch(include_str!("../migrations/001_init.sql"))
+            .unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        assert_eq!(audit_trigger_count(&conn), 0);
+
+        migrate(&conn).unwrap();
+
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        assert_eq!(audit_trigger_count(&conn), 2);
+        // Idempotent on the upgraded database too.
+        migrate(&conn).unwrap();
+        assert_eq!(audit_trigger_count(&conn), 2);
+    }
+
+    #[test]
+    fn audit_is_append_only() {
+        let (_dir, _store, conn) = migrated();
+        conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id)
+             VALUES (1, 'test', 'accept', 'fact', 7)",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE audit SET actor = 'evil' WHERE id = 1", [])
+            .unwrap_err();
+        conn.execute("DELETE FROM audit WHERE id = 1", [])
+            .unwrap_err();
+        // INSERT still works and the row is intact.
+        conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id)
+             VALUES (2, 'test', 'reject', 'fact', 8)",
+            [],
+        )
+        .unwrap();
+        let (rows, actor): (i64, String) = conn
+            .query_row(
+                "SELECT COUNT(*), MAX(CASE WHEN id = 1 THEN actor END) FROM audit",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((rows, actor.as_str()), (2, "test"));
+    }
+
+    #[test]
+    fn retention_sweep_skips_paths_outside_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().join("store"));
+        store.init().unwrap();
+        let conn = open(&store).unwrap();
+        migrate(&conn).unwrap();
+
+        // A sentinel file OUTSIDE the store root that a malicious
+        // capture row tries to aim the sweep at.
+        let sentinel = dir.path().join("sentinel.txt");
+        std::fs::write(&sentinel, b"do not touch").unwrap();
+
+        let authority = add_authority(&conn, "state", "USA", "WA", "WA", "usa-wa").unwrap();
+        conn.execute(
+            "INSERT INTO channel(authority_id, visibility, kind, value, purpose)
+             VALUES (?1, 'private', 'phone', '+1', 'our_validation')",
+            [authority],
+        )
+        .unwrap();
+        let channel = conn.last_insert_rowid();
+
+        let now = 1_800_000_000;
+        let old = now - 366 * 86_400;
+        // One legitimate expired blob plus one malicious row.
+        let legit = store.write_blob(b"legit audio").unwrap();
+        let legit_rel = store
+            .blob_path(&legit)
+            .unwrap()
+            .strip_prefix(store.root())
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        for path in [legit_rel.as_str(), "../sentinel.txt"] {
+            conn.execute(
+                "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                     bytes_raw, bytes_stored, sha256, trust)
+                 VALUES (?1, ?2, 'audio', ?3, 0, 0, 'x', 'staff_verified')",
+                rusqlite::params![authority, old, path],
+            )
+            .unwrap();
+            let capture = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO call_session(authority_id, channel_id, consent,
+                                          audio_capture_id)
+                 VALUES (?1, ?2, 'granted', ?3)",
+                rusqlite::params![authority, channel, capture],
+            )
+            .unwrap();
+        }
+
+        let deleted = retention_sweep(&conn, &store, now, "test").unwrap();
+        assert_eq!(deleted, 1);
+
+        // Nothing outside the root was touched: sentinel intact ...
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"do not touch");
+        // ... and the malicious row survives (file AND row skipped).
+        let evil_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM capture WHERE path = '../sentinel.txt'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(evil_rows, 1);
+        let evil_audits: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'retention_delete'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(evil_audits, 1);
+        // The legitimate capture is fully swept.
+        assert!(!store.blob_path(&legit).unwrap().exists());
     }
 }
