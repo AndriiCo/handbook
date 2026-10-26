@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
+		<!-- Blocking theme init: sets data-theme before first paint, no flash. -->
+		<script>
+			try {
+				var th = localStorage.getItem('theme') || 'auto';
+				if (th === 'light' || th === 'dark') document.documentElement.setAttribute('data-theme', th);
+			} catch (e) {}
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

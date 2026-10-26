@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /apostille/
+Disallow: /apostille/order/
+Disallow: /apostille/documents/
+Disallow: /apostille/api/
+Disallow: /apostille/*?l=*
+Allow: /apostille/sitemap*.xml
+
+Sitemap: https://andrii.ai/apostille/sitemap.xml

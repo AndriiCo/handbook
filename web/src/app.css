@@ -1,0 +1,130 @@
+/* Design tokens per docs/site-theme.md §3. System font stacks for now;
+   webfonts (Source Serif 4 / Public Sans / IBM Plex Mono) come later. */
+
+:root {
+	--bg: #ffffff;
+	--surface: #eff3f6;
+	--surface-2: #e2eaf0;
+	--border: #cbd8e2;
+	--text: #0f1f2b;
+	--text-muted: #334e63;
+	--accent: #0b4a75;
+	--accent-ink: #ffffff;
+	--accent-hover: #083a5c;
+	--success: #176b3a;
+	--success-bg: #e3f2e8;
+	--warning: #8a4b00;
+	--warning-bg: #fdf0d7;
+	--error: #a6192e;
+	--error-bg: #fbe7ea;
+	--focus: #0b4a75;
+
+	--font-display: Georgia, 'Times New Roman', serif; /* stand-in for Source Serif 4 */
+	--font-body: system-ui, -apple-system, 'Segoe UI', sans-serif; /* stand-in for Public Sans */
+	--font-mono: ui-monospace, SFMono-Regular, Menlo, monospace; /* stand-in for IBM Plex Mono */
+
+	--radius-xs: 4px;
+	--radius-sm: 8px;
+	--radius-md: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #0b141b;
+		--surface: #13222d;
+		--surface-2: #1b2f3e;
+		--border: #2e4658;
+		--text: #edf3f7;
+		--text-muted: #b9cbd8;
+		--accent: #7cc0ea;
+		--accent-fill: #164e74;
+		--accent-ink: #ffffff;
+		--success: #5fd08a;
+		--success-bg: #123324;
+		--warning: #f2b84b;
+		--warning-bg: #3a2a10;
+		--error: #f07d8e;
+		--error-bg: #3d1420;
+		--focus: #7cc0ea;
+	}
+}
+
+/* Stored override wins over the OS default. */
+:root[data-theme='light'] {
+	--bg: #ffffff;
+	--surface: #eff3f6;
+	--surface-2: #e2eaf0;
+	--border: #cbd8e2;
+	--text: #0f1f2b;
+	--text-muted: #334e63;
+	--accent: #0b4a75;
+	--accent-ink: #ffffff;
+	--accent-hover: #083a5c;
+	--success: #176b3a;
+	--success-bg: #e3f2e8;
+	--warning: #8a4b00;
+	--warning-bg: #fdf0d7;
+	--error: #a6192e;
+	--error-bg: #fbe7ea;
+	--focus: #0b4a75;
+}
+
+:root[data-theme='dark'] {
+	--bg: #0b141b;
+	--surface: #13222d;
+	--surface-2: #1b2f3e;
+	--border: #2e4658;
+	--text: #edf3f7;
+	--text-muted: #b9cbd8;
+	--accent: #7cc0ea;
+	--accent-fill: #164e74;
+	--accent-ink: #ffffff;
+	--success: #5fd08a;
+	--success-bg: #123324;
+	--warning: #f2b84b;
+	--warning-bg: #3a2a10;
+	--error: #f07d8e;
+	--error-bg: #3d1420;
+	--focus: #7cc0ea;
+}
+
+/* Mobile-first base (360px default; breakpoints 720 / 1080 / 1440). */
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font-body);
+	font-size: 16px;
+	line-height: 1.55;
+}
+
+a {
+	color: var(--accent);
+}
+
+h1,
+h2 {
+	font-family: var(--font-display);
+	letter-spacing: -0.01em;
+	line-height: 1.2;
+}
+
+:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation: none !important;
+		transition: none !important;
+	}
+}
