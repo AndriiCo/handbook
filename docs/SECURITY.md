@@ -152,9 +152,12 @@ errors).
 repo/logs/errors; `offensive-cicd-secrets` patterns to block: no
 `/debug/env` endpoints, no error pages echoing env, structured logs
 with a PII/secret allowlist rather than free-form Debug dumps.
-Single-server note: secrets live in a root-only env file (0600) read
-by the service unit, not in shell history. Rotate Meta API key on any
-suspected log leak.
+Single-server note: bootstrap secrets live in a root-only env file
+(0600) read by the service unit, not in shell history. App secrets
+(notably `META_API_KEY`) migrate into TPM-sealed `config(secret)`
+rows per [secure-config.md](specs/secure-config.md) — decided
+prompt 011 (TPM-sealed now, not env-only interim). Rotate the Meta
+API key on any suspected log leak.
 
 **Headers (via tower-http + Caddy).** `Strict-Transport-Security`
 (preload once stable), `Content-Security-Policy` (SvelteKit SPA:

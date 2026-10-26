@@ -205,6 +205,6 @@ credential-rotation checklist.
   403 + audited.
 - [ ] Link/unlink matrix tested: every pair of methods, last-method
   removal refused, pre-account-takeover fixture red→green.
-- [ ] Secrets (`MODEL_API_KEY`, Apple private key, Google client
+- [ ] Secrets (`META_API_KEY`, Apple private key, Google client
   secret if any, session secret, CA key) present only in the
   root-only env file; `xtask ci` greps clean for secret patterns.

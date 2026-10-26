@@ -49,8 +49,8 @@ independent captures or staff approval).
    created_by='analysis-agent/<model>/<config-hash>', created_at`,
    plus citation payload: exact source span(s) + sidecar byte offsets
    (see §5).
-2. `task` rows with `dedup_key = sha256(authority_id + normalized
-   topic)` per §4. Kinds: `validate_fact` (new/changed claim),
+2. `task` rows with `dedup_key = sha256(authority_slug + normalized
+   topic)` per §4 (slug, aligned prompt 011). Kinds: `validate_fact` (new/changed claim),
    `correction` (contradiction, §7-shaped), `email_check`/`visit`
    only when the evidence explicitly demands out-of-band checking.
    Duplicate creation returns the existing live task (partial unique

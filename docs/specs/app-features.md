@@ -257,9 +257,9 @@ command also emits `sitemap.xml` + per-country shards (see
 (2) every build writes a `build` row (timestamp, `code_git_commit` +
 `content_git_commit`, monotonic `build_no`, `facts_hash` over accepted
 inputs); every content-affecting change writes an `audit` row; (3)
-conflicts (F6) block or visibly banner the affected page — never
-publish two contradictory `accepted` statements silently (decide
-block-vs-banner per topic before day 9); (4) publish is atomic per
+conflicts (F6) visibly banner the affected page — never
+publish two contradictory `accepted` statements silently (decided
+prompt 011: banner, not block); (4) publish is atomic per
 build (no half-updated site); rollback = new build from earlier
 accepted set + audit reason; (5) sub-path serving `/apostille` works
 locally and in prod; static caching rules per web-stack §2 (hashed
@@ -328,52 +328,21 @@ approver rejects #1 with reason → audit row; page rebuild shows only
 Canonical fixture values are `40220`/`40234` everywhere — never invent
 other PO Box values in fixtures or tests.
 
-## 10-day parallel workstream plan (agent cohort)
+## Workstream plan (agent cohort)
 
-Lanes: SPEC (writes/updates these specs + checklists), CODE
-(implements), SEC (security/privacy review, required gate), TEST (runs
-xtask ci + fixtures + demo drills, owns red/green). Streams:
-
-- S1 Evidence store + ingest (CODE): days 1–3 schema+migrations,
-  WARC/mbox/blob/text+FTS, fetch-url/import-mbox/import-file, robots,
-  TLS/mail-auth evidence. SEC reviews trust/promotion + retention day
-  3. TEST seeds Washington fixtures day 2.
-- S2 Watch + records + approval (CODE): days 1–4 F1/F2/F3 pollers, F4
-  proposal pipeline + approval UI (axum+SvelteKit+WS
-  `authority:{slug}`), F5 extractors, F6 conflicts+review-conflicts.
-  SPEC freezes record/topic taxonomy day 2. Integration point daily:
-  day-4 bar = changed URL → proposed record → approval → conflict
-  banner demo.
-- S3 Call console P1 (CODE): days 2–5 batch/script/transcribe via Meta
-  Models API, `call:{id}` WS console + follow-ups, transcript_note
-  annotate, 365-day retention-sweep. Depends on S1 tables. SEC reviews
-  consent+retention day 5.
-- S4 Egypt chain + forms (CODE+SPEC): days 4–6 step research as data,
-  chain view, pre-fill + field maps; TEST synthetic chain drill day 6.
-  Depends on S2 approval. Shipping-label stub decision by day 5
-  (author).
-- S5 Community + media (CODE): days 5–8 F8 uploads/moderation, F9 SAM
-  derivatives, F10 Glimmer pre-check. SEC gates PII flow + self-hosting
-  day 7. Depends on S2 approval UI.
-- S6 Publish + MCP + onboarding (CODE): days 7–10 build-handbook +
-  audit/build discipline, static serving/caching, MCP read-only tools,
-  F13 checklist + out-of-scope drill. Depends on S2/S4/S5. SEC reviews
-  MCP surface day 9.
-- S7 Demo + hardening (TEST+SEC): days 8–10 Viet Nam synthetic demo
-  script, HCCH regression, load/cadence check for 500 URLs, Ubuntu
-  26.04 fresh-shell parity (rustup+clone only), `xtask ci` green
-  everywhere.
-
-Daily integration: 1 short sync per day — S1/S2 merge to main behind
-ci gate; S3–S6 rebase; TEST posts red/green; SEC blocks merges on
-trust/PII/MCP findings until fixed. Day 4/6/8/10 are demo gates:
-watch→approve; chain pre-fill; masked report + pre-check; full
-publish+MCP+new-country drill.
+Superseded prompt 011: the 10-day plan was replaced by the
+5–7-day swarm plan in [roadmap.md](roadmap.md) (deep-research
+replan: ranked slice, cuts, streams S1–S7+H with file ownership,
+day gates 2/4/6, day-7 buffer). F1–F13 above remain the feature
+specs; the roadmap decides what ships in which week. (The
+original 10-day text is preserved in git history.)
 
 ## Open questions (from this draft)
 
-- Meta Models API spec: transcription/streaming/auth + SeamlessStreaming
-  P3 availability.
+- ~~Meta Models API spec~~ — decided prompt 008 (see
+  [../meta-api.md](../meta-api.md)); Seamless absent from the API,
+  P3 stays conditional. Residual: exact JSON shapes, data-handling
+  terms.
 - Content repo location + form-template home; photo/mail retention
   beyond voice 365-day.
 - HCCH feed exact URIs + poll cadence; 500-URL seed list + politeness

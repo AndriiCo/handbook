@@ -211,8 +211,10 @@ inconsistency at receiving offices.
 
 **Across tiers:**
 * (a) Free: destination banner with effective date + citation + "last
-  verified" timestamp; printable one-page explainer (EN/VI summary
-  pointer) the customer can show a skeptical receiving clerk.
+  verified" timestamp; printable one-page explainer (EN/ES summary
+  pointer; Vietnamese translation is a recorded exception to the
+  EN/ES/FR scope, pending decision) the customer can show a
+  skeptical receiving clerk.
 * (b) Labels: same as underlying document journey; the value-add is
   confidence, not logistics.
 * (c) Envelopes to door: + printed explainer sheet included in the
@@ -233,19 +235,23 @@ Nam? Tell us") feeding handbook corrections.
 
 **Trigger:** US document (e.g., commercial invoice, POA, degree)
 needed in Egypt, a non-Hague country: full chain — notarization →
-county/state certification → US State Department authentication →
-Egyptian consular legalization.
+county/state certification → US State Department authentication
+(conditional — mandatory for commercial/court/marriage instruments
+per [egypt-consular.md](egypt-consular.md) V-6) → Egyptian consular
+legalization.
 
 **Steps (first chain: Egypt in USA):** 1) Notarize. 2) County clerk
 certification if required by state. 3) State SOS certification (not
 apostille — same office, different certificate). 4) DOS
-authentication. 5) Egyptian consulate/embassy legalization
-(jurisdiction by state of residence; fees/payment method vary). Each
+authentication where required (see V-6). 5) Egyptian
+consulate/embassy legalization (jurisdiction by **issuing state**,
+not residence; fees/payment method vary). Each
 step's output is the next step's input; one error restarts the chain.
 
 **Anxieties:** Chain order, consulate jurisdiction ("which Egyptian
-consulate takes WA residents?"), payment method (money order vs.
-card), total elapsed time (weeks), document aging between steps.
+consulate takes a WA-issued document?"), payment method (money
+order vs. card), total elapsed time (weeks), document aging
+between steps.
 
 **Across tiers:**
 * (a) Free: chain visualizer with per-step forms, fees, addresses,

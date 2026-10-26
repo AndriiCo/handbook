@@ -15,9 +15,11 @@
 
 ## 1.1 Goals
 
-- Anonymous page load downloads extremely small JS (target: <40 KB
-  brotli total for first view: Svelte runtime + router + public page).
-  Customer and especially admin code must never be in that bundle.
+- Anonymous page load downloads extremely small JS: entry ≤ 40 KB
+  Brotli (Svelte runtime + router + public layout), public route
+  chunk ≤ 30 KB, anonymous page total ≤ 80 KB, customer total ≤
+  120 KB (definitions in site-theme.md §2). Customer and
+  especially admin code must never be in the anonymous bundle.
 - Admin UI not discoverable from public host: no admin routes, chunks,
   or links in public build; ideally separate origin.
 - axum enforces all authz; frontend hiding is UX only, never a security
@@ -98,9 +100,10 @@
   (`__Host-hb_pub`, `__Host-hb_adm`; HttpOnly, Secure, SameSite=Lax,
   Path=/). Server stores session row in SQLite (new tiny table
   `session(id, user_id, role, created_at, expires_at, ip_hash,
-  ua_hash)` — never in git). Lookup per request via middleware;
-  15-min idle timeout, 12-h absolute for customer, 8-h absolute +
-  re-auth for admin destructive actions.
+  ua_hash)` — never in git). Lookup per request via middleware.
+  Timeouts (reconciled prompt 011, SECURITY.md wins): customer
+  idle 24h + absolute 12h; admin idle ≤30 min + absolute 8h +
+  re-auth for destructive actions.
 - Roles: `anonymous | customer | staff | admin`. Every API route
   declares min role via extractor `Auth(User{role})`; admin listener
   additionally requires verified-cert header + role staff/admin
@@ -126,8 +129,10 @@
   cookie-readable second cookie).
 - WS auth: upgrade request carries same session cookie; axum validates
   session BEFORE upgrade, binds topics to identity
-  (`authority:{slug}` public-read ok; `call:{id}` staff-only;
-  `order:{id}` owner-or-staff). No token-in-query (avoids log leaks).
+  (`authority:{slug}` public-read, accepted facts only for
+  anonymous; `call:{id}` staff-only; `submission:{id}` and
+  `shipment:{id}` owner-or-staff). No token-in-query (avoids log
+  leaks).
   Presence events (web-stack.md §3) include user id; anonymous
   presence is random ephemeral id, never linkable.
   - Parent note: topic nouns were reconciled after this draft — the

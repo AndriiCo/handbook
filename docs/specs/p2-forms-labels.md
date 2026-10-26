@@ -256,7 +256,8 @@ family on `authority`. All timestamps INTEGER unix seconds; `audit`
 covers every mutation.
 
 ```sql
--- P2-D1: §3 template registry (authoritative copy in content repo; table is the indexed cache)
+-- P2-D1: §3 template registry (authoritative copy in content repo; table is the indexed cache).
+-- Non-PII: lives in handbook.sqlite regardless of the OQ-1 PII decision.
 form_template(id, authority_id, code, title, version, authority_revision,
   status,                       -- draft|active|needs_review|superseded|retired
   schema_json, layout_json,     -- layout may fold into schema pdf rects; split kept for clarity
@@ -286,7 +287,7 @@ shipment(id, submission_id, authority_id, status,  -- draft|labels_pending|ready
 shipping_label(id, shipment_id, direction,  -- outbound|return
   carrier,                                  -- fedex|usps
   service, tracking_no, label_capture_id, payload_json,
-  status,                                   -- pending|issued|voided
+  status,                                   -- pending|issued|voided|reissued
   created_at, issued_at);
 CREATE INDEX idx_label_tracking ON shipping_label(tracking_no);
 
@@ -308,8 +309,9 @@ CREATE INDEX idx_label_tracking ON shipping_label(tracking_no);
 
 ## 9. Axum endpoint + WS event sketch
 
-Base: `/apostille/api/v1` (JSON; auth = existing Andrii Co.
-session/passkey story by reference — P2 adds no new auth; see OQ).
+Base: `/apostille/api/v1` (JSON; auth = the handbook login stack
+per [auth-playbook](../auth-playbook.md), built by the web/auth
+stream — P2 adds no auth code of its own).
 Static/label-PDF downloads via `tower-http` range/ETag semantics.
 
 ```text
@@ -320,7 +322,7 @@ PATCH /form-submissions/:id                   → draft autosave (last-write-win
 GET  /form-submissions/:id/pdf                → filled PDF (printpdf render, cached by pdf_sha256)
 POST /shipments                               → {submission_id, from, to, parcel, carrier, service} → payload preview
 POST /shipments/:id/request-labels            → staff queue entry (model B) → {status: labels_pending}
-POST /staff/shipments/:id/labels              → staff attaches {tracking_no, label_pdf} (model B)
+POST /staff/shipments/:id/labels              → staff attaches {tracking_no, label_pdf} (model B; admin listener only)
 GET  /shipments/:id                           → status + tracking + label download URLs
 ```
 
@@ -393,9 +395,11 @@ see [README.md](README.md).)
 - OQ-5 (drawn signatures): is `drawn_optional` needed for the demo at
   all, or is wet-ink-only acceptable for P2 (recommended:
   wet-ink-only)?
-- OQ-6 (customer auth): confirm P2 reuses Andrii Co. booking auth
-  (passkey/Apple) with zero new auth code; if not, P2 gains an auth
-  workstream.
+- OQ-6 (customer auth): resolved prompt 011 — P2 consumes the
+  handbook login stack ([auth-playbook](../auth-playbook.md):
+  passkey/Apple/Google/Meta + magic-link fallback) built by the
+  web/auth stream; the booking-auth-reuse idea is dropped (it
+  contradicted the playbook).
 - OQ-7 (PII retention): retention for submissions/labels/drawn
   signatures (voice got 365 days in design.md; customer PII
   undecided) — propose submitted 2 years, drafts 90 days, drawn PNGs

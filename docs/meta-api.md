@@ -8,7 +8,7 @@
 ## Connection
 
 - Base URL `https://api.meta.ai/v1`, auth `Authorization: Bearer
-  $MODEL_API_KEY` (env `MODEL_API_KEY`, never in repo/logs).
+  $META_API_KEY` (env `META_API_KEY`, never in repo/logs).
 - Pricing pay-as-you-go; details at
   https://dev.meta.ai/docs/pricing-rate-limits (transcription:
   $0.18/hr).

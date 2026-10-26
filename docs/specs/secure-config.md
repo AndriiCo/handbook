@@ -118,22 +118,28 @@ CREATE TABLE config_kek(
 ) STRICT;
 ```
 
-Notes: `STRICT` tables (new-code default, cf. finding F5 in
-`SECURITY.md`); `bool` plaintext is one byte `0/1` validated after
+Notes: tables live in `handbook.sqlite` (one DB, one backup;
+rows are ciphertext); `STRICT` tables (new-code default, cf.
+finding F5 in `SECURITY.md`); `bool` plaintext is one byte `0/1`
+validated after
 decrypt; `text` is UTF-8, length-capped (4 KiB); `secret` max 8
 KiB. Every insert/update writes an `audit` row (`entity='config'`,
 `before_ref`/`after_ref` = key+version only, **never values**).
 
 ### 1.5 Admin page + API semantics (SECRET write-only, enforced in code structure)
 
-- `GET /api/admin/config` returns all keys with: `bool` →
+Base `/apostille/api/v1`, admin listener + admin origin only
+(`admin.andrii.ai`): all routes below require the admin session,
+mTLS cert, and staff/admin role.
+
+- `GET /apostille/api/v1/admin/config` returns all keys with: `bool` →
   decrypted `true/false`; `text` → decrypted string; `secret` →
   `{ "set": true|false }` **only**. The admin handler has **no
   code path** that decrypts a `secret` for output — decryption for
   display is a function that takes only `&BoolOrTextRow` types, so
   returning a secret is a compile error, not a policy.
   (Type-level enforcement, reviewable in one file.)
-- `PUT /api/admin/config/{key}` sets a value (any type). For
+- `PUT /apostille/api/v1/admin/config/{key}` sets a value (any type). For
   `secret`: set-new-only — overwrites ciphertext, never echoes;
   response is `{ "set": true }`. No `DELETE` for secrets (disable
   via a paired `bool` key instead, e.g.

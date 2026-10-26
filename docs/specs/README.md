@@ -7,9 +7,11 @@ the consolidated author-decision list is at the bottom of this file.
 ## Index
 
 - [app-features.md](app-features.md) — all application features
-  (F1–F13) with acceptance criteria + 10-day parallel workstream
-  plan (agent cohort: SPEC/CODE/SEC/TEST lanes, streams S1–S7,
-  demo gates day 4/6/8/10). Owns the single Viet Nam demo script.
+  (F1–F13) with acceptance criteria. Owns the single Viet Nam
+  demo script. (Its 10-day plan was superseded by the roadmap.)
+- [roadmap.md](roadmap.md) — the 5–7-day swarm plan (ranked
+  slice, cuts, streams S1–S7+H, day gates 2/4/6, external
+  register, gaps ledger). The execution plan of record.
 - [spa-separation.md](spa-separation.md) — anonymous / customer /
   admin SPA split (route groups, two-build deploy), admin host +
   mTLS + login, axum auth design, threat notes.
@@ -62,8 +64,10 @@ the consolidated author-decision list is at the bottom of this file.
    [site-theme.md](../site-theme.md) §1 is the public subset only.
    Exact SvelteKit config keys get verified at scaffolding.
 5. WS topics: `authority:{slug}`, `call:{id}`, `submission:{id}`,
-   `shipment:{id}` (P2 endpoint nouns win; `order`/`filing` retired).
-   Auth follows spa-separation §1.4. Freeze at scaffolding.
+   `shipment:{id}`, `billing:{customer_ref}` (P2 endpoint nouns
+   win; `order`/`filing` retired). Auth follows spa-separation
+   §1.4; anonymous gets accepted facts only. F10 notify topic
+   named at scaffolding. Freeze at scaffolding.
 6. P2 = forms + labels only; door-kits and full-service are P3/ops
    in [user-journeys.md](user-journeys.md).
 7. JS budgets: anonymous entry ≤ 40 KB Brotli (both drafts agree);
@@ -113,40 +117,46 @@ the consolidated author-decision list is at the bottom of this file.
    UI + styled HTML/CSS at correct page size, no PDFs touched),
    with PDF as an on-request option — see P2-R6 in
    [p2-forms-labels.md](p2-forms-labels.md).
+8. Conflict policy (prompt 011): **banner** — conflicting facts
+   publish with a visible banner citing both sources (F6/F11).
+9. Secrets path (prompt 011): **TPM-sealed now** — build
+   [secure-config.md](secure-config.md) in-slice (env-only is
+   the fallback only if the box lacks TPM2).
+10. Label economics (prompt 011): **carrier API buy** with
+    staff-manual as automatic fallback until USPS Labels
+    approval + FedEx certification land; **no prices or dates
+    in UI** until the numbered table is supplied.
 
-**Still needed during the 10 days:**
+**Still needed during the 5–7 days:**
 
-8. Conflict policy: block vs banner per topic (before day 9).
-9. MCP tool list + auth (public vs keyed) + rate limits.
-10. HCCH feed URIs + poll cadence; 500-URL seed list + politeness
-    budget.
-11. SAM 3.1 + Glimmer self-host packaging, weights licensing,
-    single-server latency budget.
-12. P2 label purchase: carrier-API buy vs staff-manual (spec
-    recommends staff-manual); whose accounts, who pays.
-13. P2 PII store: separate `p2.sqlite` (recommended) vs same-file
-    tables; PII retention proposal (submitted 2y, drafts 90d,
-    drawn PNGs 1y).
-14. P2 replica-PDF acceptability research owner; wet-ink-only vs
+11. MCP tool list + auth (public vs keyed) + rate limits.
+12. HCCH feed URIs + poll cadence; 10-URL seed list + politeness
+    budget (500-URL crawl is Week 3+).
+13. SAM 3.1 + Glimmer self-host packaging, weights licensing,
+    single-server latency budget (Weeks 4–5 work; fixtures
+    stand in).
+14. P2 PII store: separate `p2.sqlite` (proposed default) vs
+    same-file tables; PII retention proposal (submitted 2y,
+    drafts 90d, drawn PNGs 1y).
+15. P2 replica-PDF acceptability research owner; wet-ink-only vs
     drawn-optional for demo (spec recommends wet-ink-only).
-15. Tier b/c/d pricing, WA fee/SLA/pickup radius, $1.99-offer
-    boundaries, "FedEx tomorrow" geography + remedy.
-16. ES scope for MVP + legal-review owner (blocks launch of
-    legal-adjacent pages).
-17. Locale URL shape (`?l=` only vs future `/es/` prefixes);
+16. Tier b/c/d pricing, WA fee/SLA/pickup radius, $1.99-offer
+    boundaries (no prices render until supplied).
+17. ES scope for MVP + legal-review owner (Week 3+ work).
+18. Locale URL shape (`?l=` only vs future `/es/` prefixes);
     translation provenance rule.
-18. Carrier accounts + certification path (USPS Ship/EPA/Labels
-    approval, FedEx developer project + label cert) — see
-    [carrier-apis.md](carrier-apis.md) Q1–Q8.
-19. Stripe + Apple Pay merchant setup (account/keys, hosted-first
-    checkout, invoice numbering, refund approvers) — see
+19. Carrier accounts + certification path (USPS Ship/EPA/Labels
+    approval, FedEx developer project + label cert) — start
+    Day 1; see [carrier-apis.md](carrier-apis.md) Q1–Q8.
+20. Stripe + Apple Pay merchant setup (deferred past the slice;
+    invoice mirror later) — see
     [payments-billing.md](payments-billing.md) OQ-P1…P8.
-20. TOS/Privacy lawyer review + photo-grant language sign-off;
-    fill author-numbered blanks (tiers, SLAs, contacts) — see
+21. TOS/Privacy lawyer review + photo-grant language sign-off
+    (parallel track, non-blocking for code) — see
     [tos-draft.md](../legal/tos-draft.md),
     [privacy-draft.md](../legal/privacy-draft.md).
-21. TPM2 presence + systemd version on the provisioned box;
-    KEK-escrow custodians; META_API_KEY migration; secret-set
-    step-up — see [secure-config.md](secure-config.md) Q1–Q8.
-22. Hosting details for first deploy (server IP, SSH user; key
+22. TPM2 presence + systemd version on the provisioned box;
+    KEK-escrow custodians; secret-set step-up — see
+    [secure-config.md](secure-config.md) Q1–Q8.
+23. Hosting details for first deploy (server IP, SSH user; key
     stays on the author's machine, host via env, never in repo).

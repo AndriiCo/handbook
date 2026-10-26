@@ -92,7 +92,7 @@ CREATE TABLE task(
   status TEXT NOT NULL,           -- open | batched | in_progress
                                   -- | blocked | done | rejected
   priority INTEGER NOT NULL DEFAULT 0,
-  dedup_key TEXT NOT NULL,        -- sha256(authority_id + normalized topic)
+  dedup_key TEXT NOT NULL,        -- sha256(authority_slug + normalized topic)
   batch_id INTEGER,               -- batch.id, NULL until batched
   created_by TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,

@@ -12,9 +12,11 @@ videos, emails, site comments, and phone-call transcripts — plus everything
 needed to validate each item (authenticity evidence, provenance, trust tier).
 This is step 1; handbook generation and the MCP server consume it later.
 
-**Non-goals.** No multi-server scaling (one server), no public API, no
-auto-publishing of community input, no ML training. Everything in Rust,
-including maintenance tooling (`xtask`, no shell scripts).
+**Non-goals.** No multi-server scaling (one server), no
+auto-publishing of community input, no ML training. ("No public API"
+applied to the Step-1 collection slice only — the read-only MCP API
+arrives with F12.) Everything in Rust, including maintenance tooling
+(`xtask`, no shell scripts).
 
 **Repository scope (decided 2026-10-26).** This repo holds code, the SQLite
 schema, and migrations — no customer data, no handbook content pages, no
@@ -199,7 +201,9 @@ nothing is lost when the audio expires.
 
 ## 4. Tasks, dedup, batching (don't overwhelm help desks)
 
-- **Dedup:** `task.dedup_key = sha256(authority_id + normalized topic)`.
+- **Dedup:** `task.dedup_key = sha256(authority_slug + normalized
+  topic)` (slug, not integer id — stable across databases; aligned
+  prompt 011).
   The partial unique index (§1) makes "request the same info twice"
   impossible while the first request is still live; creating a duplicate
   returns the existing task instead.
@@ -224,7 +228,7 @@ nothing is lost when the audio expires.
    tasks back to `open`, batch marked `blocked` with reason. No recording,
    no transcript, no exceptions.
 3. If granted → record, transcribe via the Meta Models API (decided
-   2026-10-26; HTTP client details TBD with the API spec), store the
+   2026-10-26; client details in `docs/meta-api.md`), store the
    audio as `capture(kind='audio')` and the transcript as
    `capture(kind='transcript')`, both linked from the session.
 4. Transcript lines become `proposed` facts citing the capture; normal

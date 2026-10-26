@@ -70,9 +70,13 @@ documented fallback for networks that block WS upgrades; re-add only if
 needed.
 
 - **Event bus:** `tokio::sync::broadcast` per topic
-  (`authority:{slug}`, `call:{id}`), fanning out JSON envelopes
+  (`authority:{slug}`, `call:{id}`, `submission:{id}`,
+  `shipment:{id}`, `billing:{customer_ref}` — frozen set, F10
+  notify topic named at scaffolding), fanning out JSON envelopes
   (`{type, …}`) to WebSocket subscribers (`axum::extract::WebSocketUpgrade`,
-  one send/recv task pair per connection).
+  one send/recv task pair per connection). Anonymous subscribers
+  receive accepted facts only; proposed records stay on
+  staff-authorized topics.
 - **Concurrent edits:** last-write-wins + mandatory `audit` row + live
   "updated by X" events; presence ("X is viewing/editing") falls out of
   tracked WS connections, no heartbeat endpoint needed.
@@ -87,7 +91,7 @@ needed.
   `capture(kind='transcript')` and feed `proposed` facts exactly as
   `docs/design.md` §5 describes.
 
-## 4. UI stack options (pick one)
+## 4. UI stack options (C chosen — SvelteKit SPA + axum API)
 
 | | A. htmx + Askama + WS | B. Leptos full-stack | C. SvelteKit SPA + axum API |
 |---|---|---|---|
@@ -113,9 +117,9 @@ The Meta model for this job is **SeamlessStreaming** (built on
 streaming speech-to-text and speech-to-speech translation for ~100 input
 languages (≈36 speech outputs, Spanish included) at roughly two seconds of
 latency — i.e. translation while the speaker is still talking, both
-directions on a Mexico call. Two caveats: availability through the Meta
-Models API needs confirmation against the API spec, and this stays P3 —
-nothing in P1 depends on it.
+directions on a Mexico call. Decided prompt 008: Seamless is
+**absent** from the Model API (see `docs/meta-api.md`), so P3 stays
+conditional — nothing in P1 depends on it.
 
 Integration shape (reserved, not built): call audio fans out to the
 translation stream alongside transcription; translated turns persist as a
@@ -142,6 +146,7 @@ batch-translate completed turns after the call.
    + axum API**. Consequence: the UI gets a Node build step (the one
    sanctioned exception to the Rust-only rule); axum serves the built
    static assets plus the JSON/WS API from the same binary.
-2. Meta Models API spec: transcription (streaming? auth?) and
-   SeamlessStreaming availability (P3).
+2. ~~Meta Models API spec~~ — decided prompt 008 (see
+   `docs/meta-api.md`); residual open: exact JSON shapes at
+   implementation, data-handling terms read before real media.
 3. `axum-server` vs plain tokio graceful shutdown (minor, at scaffolding).

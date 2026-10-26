@@ -73,7 +73,8 @@ src/routes/(public)/authority/[slug]/+page.svelte
 src/routes/(customer)/+layout.svelte    # requires session; adds order rail, WS status
 src/routes/(customer)/order/[id]/+page.svelte
 src/routes/(customer)/documents/+page.svelte
-# admin is a separate SvelteKit project/host:
+# admin is a separate BUILD + HOST from the same source (see
+# spa-separation.md §1.2 two-build split — never on public origin):
 admin/routes/(admin)/+layout.svelte     # call console, review queues, audit
 ```
 

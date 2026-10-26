@@ -48,7 +48,8 @@ code.
 
 Synthetic-document demo: a customer can request an apostille for Viet Nam
 online in a very convenient way, and envelopes with the completed form are
-delivered to their house via FedEx tomorrow.
+delivered to their house via FedEx tomorrow (synthetic documents and
+demo postage/stubs only — no real mail, fees, or carrier charges).
 
 ## Repository
 
