@@ -277,7 +277,8 @@ commands over the `handbook` lib. Pinned for Phase 1: `rusqlite` (bundled,
 FTS5), `sha2`. Later candidates (unpinned): `warc`, `mail-auth`, `brotli`.
 Transcription goes through the Meta Models API (HTTP client TBD with the
 API spec). Telephony stays human-operated (a phone + recorder); no dialer
-to build.
+to build. Web serving, realtime, and UI decisions live in
+`docs/web-stack.md`.
 
 ## 9. Disk and memory efficiency
 
