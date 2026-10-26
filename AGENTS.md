@@ -91,10 +91,9 @@ Living document:
   tooling, or log requirements). An update to this file is itself a
   significant change: commit it separately with a clear message.
 
-## 6. Agent Cohort Rules (proposed prompt 010 — effective after author approval)
+## 6. Agent Cohort Rules (approved prompt 012 — swarm execution authorized)
 
-Speed rules for parallel-agent execution. Until approved, treat as
-proposal only.
+Speed rules for parallel-agent execution.
 
 - **Parallel-first decomposition.** Split independent streams
   across subagents (research, coding, security review, test runs,
