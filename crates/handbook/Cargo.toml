@@ -6,3 +6,10 @@ edition = "2024"
 [lib]
 name = "handbook"
 path = "src/lib.rs"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"

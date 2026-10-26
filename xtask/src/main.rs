@@ -5,29 +5,67 @@
 
 use std::process::Command;
 
+use handbook::store::Store;
+
 fn main() {
-    let task = std::env::args().nth(1);
-    let status = match task.as_deref() {
-        None | Some("--help" | "-h" | "help") => return print_help(),
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        None | Some("--help" | "-h" | "help") => print_help(),
         Some("ci") => run_ci(),
+        Some("init") => run_init(&args[1..]),
+        Some("add-authority") => run_add_authority(&args[1..]),
+        Some("retention-sweep") => run_retention_sweep(&args[1..]),
         Some(unknown) => {
             eprintln!("unknown task: {unknown}\n");
             print_help();
             std::process::exit(2);
         }
-    };
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
     }
 }
 
 fn print_help() {
     println!(
-        "Usage: cargo xtask <task>\n\nTasks:\n  ci    fmt --check, clippy, and tests (what CI runs)"
+        "Usage: cargo xtask <task> [flags]
+
+Tasks:
+  ci     fmt --check, clippy, and tests (what CI runs)
+  init   create a store and apply migrations [--store <path>]
+  add-authority   add an office/jurisdiction (see flags below)
+  retention-sweep delete voice audio older than 365 days [--store <path>]
+
+add-authority flags:
+  --store <path>  store root (default: store)
+  --kind <kind>   country | state | province | office (required)
+  --country <c>   e.g. USA (required)
+  --region <r>    e.g. Washington (default: empty)
+  --name <n>      display name (required)
+  --slug <s>      unique slug, e.g. usa-wa-sos (required)"
     );
 }
 
-fn run_ci() -> std::process::ExitStatus {
+/// Value of `--name <value>` in task args, if present.
+fn flag(args: &[String], name: &str) -> Option<String> {
+    args.windows(2).find_map(|pair| {
+        if pair[0] == format!("--{name}") {
+            Some(pair[1].clone())
+        } else {
+            None
+        }
+    })
+}
+
+fn required(args: &[String], name: &str) -> String {
+    flag(args, name).unwrap_or_else(|| {
+        eprintln!("missing required flag: --{name}");
+        std::process::exit(2);
+    })
+}
+
+fn open_store(args: &[String]) -> Store {
+    Store::new(flag(args, "store").unwrap_or_else(|| "store".to_string()))
+}
+
+fn run_ci() {
     for args in [
         ["fmt", "--all", "--check"].as_slice(),
         [
@@ -46,8 +84,69 @@ fn run_ci() -> std::process::ExitStatus {
             .status()
             .expect("failed to run cargo");
         if !status.success() {
-            return status;
+            std::process::exit(status.code().unwrap_or(1));
         }
     }
-    Command::new("true").status().expect("failed to run true")
+}
+
+fn run_init(args: &[String]) {
+    let store = open_store(args);
+    if let Err(e) = store.init() {
+        eprintln!("init store dirs: {e}");
+        std::process::exit(1);
+    }
+    let conn = handbook::db::open(&store).unwrap_or_else(|e| {
+        eprintln!("open database: {e}");
+        std::process::exit(1);
+    });
+    if let Err(e) = handbook::db::migrate(&conn) {
+        eprintln!("migrate: {e}");
+        std::process::exit(1);
+    }
+    println!("store ready: {}", store.root().display());
+}
+
+fn run_add_authority(args: &[String]) {
+    let store = open_store(args);
+    let conn = handbook::db::open(&store).unwrap_or_else(|e| {
+        eprintln!("open database (run `cargo xtask init` first): {e}");
+        std::process::exit(1);
+    });
+    let region = flag(args, "region").unwrap_or_default();
+    match handbook::db::add_authority(
+        &conn,
+        &required(args, "kind"),
+        &required(args, "country"),
+        &region,
+        &required(args, "name"),
+        &required(args, "slug"),
+    ) {
+        Ok(id) => println!("authority id: {id}"),
+        Err(e) => {
+            eprintln!("add-authority: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_retention_sweep(args: &[String]) {
+    let store = open_store(args);
+    let conn = handbook::db::open(&store).unwrap_or_else(|e| {
+        eprintln!("open database: {e}");
+        std::process::exit(1);
+    });
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock is before 1970")
+        .as_secs()
+        .try_into()
+        .expect("unix time exceeds i64");
+    let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
+    match handbook::db::retention_sweep(&conn, &store, now, &actor) {
+        Ok(deleted) => println!("expired audio captures deleted: {deleted}"),
+        Err(e) => {
+            eprintln!("retention-sweep: {e}");
+            std::process::exit(1);
+        }
+    }
 }

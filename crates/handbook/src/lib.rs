@@ -1,7 +1,11 @@
-//! Apostille Handbook library.
+//! Apostille Handbook library: evidence-store metadata and file paths.
 //!
-//! Design arrives in a later prompt; this crate currently only reserves
-//! the library root so the workspace builds.
+//! See `docs/design.md`. This crate owns the SQLite schema (`migrations/`),
+//! content-addressed blob I/O, and foundation queries. Collection and
+//! maintenance entry points live in `xtask`.
+
+pub mod db;
+pub mod store;
 
 /// Crate version, for smoke tests and future tooling.
 pub fn version() -> &'static str {
