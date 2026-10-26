@@ -35,3 +35,5 @@ to change history — append a correction section instead.
 
 - [2026-10-26-001-initial-scaffolding.md](2026-10-26-001-initial-scaffolding.md) —
   README, LICENSE, AGENTS.md, Rust workspace with xtask, prompt log setup.
+- [2026-10-26-002-discord-intro.md](2026-10-26-002-discord-intro.md) —
+  Discord intro message for Andrii Co. and the Apostille Handbook.
