@@ -75,7 +75,10 @@ cargo xtask ci
 ## Design
 
 See [docs/design.md](docs/design.md) — the proposed evidence-store design
-(Step 1: collection infrastructure).
+(Step 1: collection infrastructure). Feature specs, visual design, and
+security baseline live in [docs/specs/](docs/specs/),
+[docs/site-theme.md](docs/site-theme.md), and
+[docs/SECURITY.md](docs/SECURITY.md) (all drafts for review).
 
 ## Prompt log
 
