@@ -16,6 +16,15 @@ This is step 1; handbook generation and the MCP server consume it later.
 auto-publishing of community input, no ML training. Everything in Rust,
 including maintenance tooling (`xtask`, no shell scripts).
 
+**Repository scope (decided 2026-10-26).** This repo holds code, the SQLite
+schema, and migrations — no customer data, no handbook content pages, no
+collected materials. Those live in a separate content repo (location TBD);
+audit and build rows therefore record both commit hashes (§6). The schema
+is global from day one: pilot authority is Washington state (USA), MVP
+covers USA/Canada/Mexico, the goal is every country on Earth. New
+jurisdictions are new rows, not new code (`authority.country` is free
+text — Mars fits whenever FedEx delivers).
+
 ```text
 official sites ─┐
 third-party sites│  robots.txt gate
@@ -30,7 +39,7 @@ call transcripts ─────────────────────
 
 ## 1. Metadata database (SQLite, one file)
 
-One SQLite file (`store/handbook.sqlite`). Small, explicit schema — eleven
+One SQLite file (`store/handbook.sqlite`). Small, explicit schema — thirteen
 tables, no migrations framework until it hurts (schema version in
 `pragma user_version`, migrations as numbered SQL files applied by `xtask`).
 
@@ -60,8 +69,10 @@ channel(id, authority_id, visibility,  -- public | private
         purpose);                      -- customer_steering | our_validation
 
 -- One collected artifact. Metadata here, bytes in the file store (§2).
+-- All timestamps are INTEGER unix seconds.
 capture(id, authority_id, source_id, captured_at, kind,
-            -- warc | file | scan | photo | video | email | transcript | comment
+            -- warc | file | scan | photo | video | audio | email
+            -- | transcript | comment
         path,               -- location in the file store
         bytes_raw, bytes_stored, sha256,
         authenticity,       -- JSON: TLS or DMARC/DKIM evidence (§3)
@@ -98,15 +109,27 @@ batch(id, authority_id, channel_id, status,  -- draft | scheduled | sent | done
 call_session(id, batch_id, authority_id, channel_id,
              consent, consent_at,        -- unknown | granted | refused
              script,                     -- questions the app prepared
-             transcript_capture_id,      -- capture(kind='transcript')
+             audio_capture_id,           -- capture(kind='audio'), 365-day retention
+             transcript_capture_id,      -- capture(kind='transcript'), kept forever
              outcome, conducted_by, conducted_at);
 
--- Handbook/algorithm build manifest (§6).
-build(id, at, git_commit, build_no, facts_hash, notes);
+-- Human annotations on a transcript: ignore ranges and corrections.
+-- The ASR original stays immutable; the corrected view is derived.
+transcript_note(id, capture_id, start_byte, end_byte,
+                kind,                   -- ignore | correction
+                text,                   -- replacement text (correction) or reason (ignore)
+                author, created_at);
+CREATE INDEX idx_note_capture ON transcript_note(capture_id);
+
+-- Handbook/algorithm build manifest (§6). Two repos, two hashes.
+build(id, at, code_git_commit, content_git_commit,  -- content hash NULL until
+                                                -- the content repo exists
+      build_no UNIQUE, facts_hash, notes);
 
 -- Append-only audit of everything that changed content or code output (§6).
 audit(id, at, actor, action, entity, entity_id,
-      git_commit, build_id, before_ref, after_ref, reason);
+      code_git_commit, content_git_commit, build_id,
+      before_ref, after_ref, reason);
 ```
 
 ## 2. File store (local disk)
@@ -137,6 +160,16 @@ store/
 - **Text sidecars:** every capture with readable content gets extracted
   plain text (`text/<id>.txt`), which is what `capture_fts` indexes — so
   conflict hunting searches one uniform corpus, not ten formats.
+
+**Retention (decided 2026-10-26).** Voice audio: 365 days from capture,
+then deleted by `xtask retention-sweep` (removes the blob and its capture
+row, nulls `call_session.audio_capture_id`, writes an `audit` row per
+deletion). Transcripts: unlimited — the transcript capture, its
+`transcript_note` annotations, and the consent record outlive the audio.
+Humans fix transcription errors and mark ignore-ranges via
+`transcript_note` rows (an `xtask transcript-annotate` helper arrives with
+Phase 3 tooling); corrections layer over the immutable ASR original, so
+nothing is lost when the audio expires.
 
 ## 3. Authenticity and trust (anti-bad-actor model)
 
@@ -190,22 +223,25 @@ store/
    `consent` stays `unknown` until then. If refused → session closed,
    tasks back to `open`, batch marked `blocked` with reason. No recording,
    no transcript, no exceptions.
-3. If granted → record, transcribe with self-hosted `whisper-rs`
-   (single server, no audio leaves the building), store audio + transcript
-   as blobs and a `capture(kind='transcript')` linked from the session.
+3. If granted → record, transcribe via the Meta Models API (decided
+   2026-10-26; HTTP client details TBD with the API spec), store the
+   audio as `capture(kind='audio')` and the transcript as
+   `capture(kind='transcript')`, both linked from the session.
 4. Transcript lines become `proposed` facts citing the capture; normal
    validation (§4) promotes them. The consent record (`consent_at` +
-   transcript offset of the "yes") travels with the capture forever.
+   transcript offset of the "yes") travels with the capture forever,
+   surviving the 365-day audio retention (§2).
 
 ## 6. Audit history and builds
 
 - Every content-affecting change (fact status change, trust promotion,
   handbook page edit) and every algorithm-affecting event (new handbook
   build, model/config change) appends an `audit` row: who, what, when,
-  `git_commit` of the repo, `build_id`, before/after refs, and a reason.
-  Audit rows are append-only (no update/delete path in code).
-- Each handbook regeneration creates a `build` row: timestamp, repo git
-  commit, monotonic `build_no`, and `facts_hash` (hash over the accepted
+  `code_git_commit` (this repo) + `content_git_commit` (content repo,
+  NULL until that repo exists), `build_id`, before/after refs, and a
+  reason. Audit rows are append-only (no update/delete path in code).
+- Each handbook regeneration creates a `build` row: timestamp, both git
+  commits, monotonic `build_no`, and `facts_hash` (hash over the accepted
   fact IDs + versions that went in) — so any published page traces back to
   the exact inputs and code that produced it.
 
@@ -237,9 +273,11 @@ xtask/             fetch-url, import-mbox, import-file, review-conflicts,
 ```
 
 No new crates until one proves necessary; collection starts as `xtask`
-commands over the `handbook` lib. Candidate libraries (unpinned):
-`rusqlite` (+ bundled FTS5), `warc`, `mail-auth`, `whisper-rs`, `brotli`.
-Telephony stays human-operated (a phone + recorder); no dialer to build.
+commands over the `handbook` lib. Pinned for Phase 1: `rusqlite` (bundled,
+FTS5), `sha2`. Later candidates (unpinned): `warc`, `mail-auth`, `brotli`.
+Transcription goes through the Meta Models API (HTTP client TBD with the
+API spec). Telephony stays human-operated (a phone + recorder); no dialer
+to build.
 
 ## 9. Disk and memory efficiency
 
@@ -272,18 +310,27 @@ Nothing here needs more than one modest server.
 | Official-vs-fake domain info | `domain`, §3 |
 | Bad-actor resistance | trust tiers + promotion rules, §3 |
 | Rust-only, one server, simple | §0, §8, §9 |
+| Code/data repo split, schema-only repo | §0, §6 (two commit hashes) |
+| Meta Models API transcription | §5, §8 |
+| 365-day voice retention, unlimited transcripts | §2 (`retention-sweep`) |
+| Human transcript annotation (ignore/fix) | `transcript_note`, §2 |
+| Washington pilot, global schema | §0, `authority` |
 
 ## 11. Assumptions and open questions
 
-Assumptions: handbook content and code live in one git repo (so one commit
-hash covers both); English/Spanish/French only for now; telephony is a
-human with a phone, not an auto-dialer; whisper-scale ASR fits the server.
+Assumptions: English/Spanish/French only for now; telephony is a human
+with a phone, not an auto-dialer.
 
-Open questions for the author:
+Decided 2026-10-26 (prompt 004):
 
-1. Should the handbook pages themselves live in this repo (single commit
-   hash for audit) or a separate content repo?
-2. Self-hosted whisper vs a transcription API for call audio?
-3. Any retention limits (call audio, customer photos) for privacy?
-4. Which authority should be the pilot for the first batch → call →
-   transcript → fact loop?
+1. Content pages and materials live in a **separate content repo**; this
+   repo holds code + schema + migrations only, never customer data.
+2. Transcription uses the **Meta Models API**.
+3. **365-day retention for voice audio**, unlimited for transcripts;
+   transcripts are human-annotatable (ignore ranges, corrections) before
+   the audio expires.
+4. Pilot authority: **Washington state**; schema global from day one
+   (MVP USA/Canada/Mexico).
+
+Still open: content repo location; Meta Models API endpoint/auth details;
+retention for customer photos (only voice was decided).
