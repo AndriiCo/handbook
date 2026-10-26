@@ -47,3 +47,5 @@ to change history — append a correction section instead.
   Realtime transport switched from SSE-first to WS-first.
 - [2026-10-26-007-spec-cohort.md](2026-10-26-007-spec-cohort.md) —
   Cohort spec package: 9 review docs + execution plan.
+- [2026-10-26-008-decisions.md](2026-10-26-008-decisions.md) —
+  Five blocking decisions recorded (Meta API, login, host, photos).
