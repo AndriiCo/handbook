@@ -49,3 +49,5 @@ to change history — append a correction section instead.
   Cohort spec package: 9 review docs + execution plan.
 - [2026-10-26-008-decisions.md](2026-10-26-008-decisions.md) —
   Five blocking decisions recorded (Meta API, login, host, photos).
+- [2026-10-26-009-meta-print.md](2026-10-26-009-meta-print.md) —
+  Meta login added; HTML-print-first roadmap recorded.
