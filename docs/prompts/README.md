@@ -37,3 +37,5 @@ to change history — append a correction section instead.
   README, LICENSE, AGENTS.md, Rust workspace with xtask, prompt log setup.
 - [2026-10-26-002-discord-intro.md](2026-10-26-002-discord-intro.md) —
   Discord intro message for Andrii Co. and the Apostille Handbook.
+- [2026-10-26-003-system-design.md](2026-10-26-003-system-design.md) —
+  System design proposal (evidence store, step 1).

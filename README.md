@@ -72,6 +72,11 @@ cargo test
 cargo xtask ci
 ```
 
+## Design
+
+See [docs/design.md](docs/design.md) — the proposed evidence-store design
+(Step 1: collection infrastructure).
+
 ## Prompt log
 
 Every prompt and response is retained with timestamps in
