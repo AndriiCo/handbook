@@ -114,10 +114,12 @@ needs multi-worker parallelism or per-capture priority scheduling.
 
 ## 4. Model-API client interface (trait-isolated)
 
-Meta API spec is an open blocker — assume REST + key auth
-(`META_API_KEY` env, cf. web-stack §1), JSON bodies, optional
-streaming. All access hides behind one trait in `crates/handbook/`
-(e.g. `src/model.rs`); the agent and transcription (§5/§8) share it.
+Meta API spec decided (prompt 008 — see
+[../meta-api.md](../meta-api.md)): REST + key auth (`META_API_KEY`
+env, cf. web-stack §1), JSON bodies, streaming transcription via a
+realtime WS endpoint. All access hides behind one trait in
+`crates/handbook/` (e.g. `src/model.rs`); the agent and
+transcription (§5/§8) share it.
 
 ```rust
 pub trait ModelClient {
@@ -275,9 +277,10 @@ zero fact/task rows.
 
 ## 10. Open questions
 
-1. Meta Models API spec (BLOCKER): endpoint, auth, request/response
-   shapes, streaming support, model names for drafting vs
-   transcription vs SeamlessStreaming (P3)?
+1. ~~Meta Models API spec~~ — decided prompt 008 (see
+   [../meta-api.md](../meta-api.md)). Remaining: pin exact JSON
+   shapes at implementation; SeamlessStreaming absent from the
+   API → P3 stays conditional.
 2. Content-repo form-template home: where do blank/authority form
    templates live (content repo path? LFS?) and how does the agent
    cite a form field vs a page span?

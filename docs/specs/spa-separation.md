@@ -70,10 +70,9 @@
 
 ## 1.3 Hosts and TLS (flag: admin.andrii.ui typo?)
 
-- ASSUMPTION: author wrote `admin.andrii.ui`; almost certainly meant
-  `admin.andrii.ai`. Spec assumes `https://admin.andrii.ai`. NEEDS
-  AUTHOR CONFIRMATION. Do not register/depend on `.ui` until
-  confirmed.
+- Decided 2026-10-26 (prompt 008): the admin host is
+  `https://admin.andrii.ai` (`.ui` was a typo). TLS certs, Origin
+  allowlist, and the mTLS client-CA all pin to this hostname.
 - Public: `https://andrii.ai/apostille` → Caddy → axum
   127.0.0.1:PORT (plain HTTP, web-stack.md §1).
 - Admin: `https://admin.andrii.ai/` (no sub-path; separate origin ⇒
@@ -107,13 +106,19 @@
   additionally requires verified-cert header + role staff/admin
   (defense in depth: cert alone gives nothing without login; login
   alone without cert rejected on admin listener).
-- Login:
-  - Customer: reuse author's proven passkey/Apple from notary app if
-    cheap; else email-OTP (code via inbox already watched in days 1-4
-    plan) — no passwords to store. Unresolved: author picks one (see
-    questions).
-  - Staff/admin: password + TOTP (or passkey) PLUS mTLS cert. Cert
-    identifies device; login identifies person; audit logs both.
+- Login (decided 2026-10-26, prompt 008; full checklist in
+  [../auth-playbook.md](../auth-playbook.md)):
+  - Customer: passkey first, Sign in with Apple, Sign in with
+    Google, email click-to-login (magic link) as fallback only.
+    Account linking follows the playbook's verified-email-only +
+    explicit-link-flow rules (no silent auto-merge, no
+    relay-string matching); Apple/Google revocation signals
+    (consent-revoked/account-delete, RISC sessions-revoked et al.)
+    auto-disable the affected identity link + sessions, all
+    audited.
+  - Staff/admin: method still open (recommend passkey or
+    password+TOTP) PLUS mTLS cert. Cert identifies device; login
+    identifies person; audit logs both.
 - CSRF: cookie + `Origin`/`Host` check + double-submit token for
   mutations (SvelteKit fetch wrapper adds `X-CSRF` from
   cookie-readable second cookie).
@@ -170,14 +175,12 @@ this stream.)
 
 ## Open questions (from this stream)
 
-- Confirm admin host: author wrote admin.andrii.ui — presumed typo for
-  admin.andrii.ai?
-- Customer login method for handbook: reuse passkey/Apple from notary
-  app or new simple passwordless?
-- Meta Models API spec: endpoint/auth, streaming transcription,
-  SeamlessStreaming availability?
-- Content repo location + customer-data retention (only voice 365d
-  decided)?
+- Decided in prompt 008: admin host (`admin.andrii.ai`), customer
+  login (passkey/Apple/Google + magic-link fallback — see
+  [auth-playbook](../auth-playbook.md)), Meta API spec (see
+  [meta-api](../meta-api.md)).
+- Content repo exact location + customer-data retention (only voice
+  365d decided)?
 - mTLS CA: who issues admin client certs, revocation story, how many
   admins?
 - Egypt chain + Viet Nam demo: what PII enters captures and where is

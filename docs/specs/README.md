@@ -66,20 +66,33 @@ the consolidated author-decision list is at the bottom of this file.
    from the superseded WA form (pending validation V-5), not a
    fixture.
 
-## Consolidated author decisions (blocking first)
+## Consolidated author decisions
 
-**Blockers (implementation cannot start without these):**
+**Decided 2026-10-26 (prompt 008):**
 
-1. Meta Models API spec: endpoint/auth, transcription
-   (streaming?), drafting models, SeamlessStreaming availability.
-2. Content-repo location (form-template home, country packs,
-   audit-hash linkage).
-3. Admin host: `admin.andrii.ai` (assumed) vs `admin.andrii.ui`
-   (as written) — TLS, Origin allowlist, and mTLS CA depend on it.
-4. Customer login: passkey/Apple (reuse) vs email-OTP vs
-   none-for-demo; staff password+TOTP scope.
-5. Photo/video/filing retention (only voice 365d decided) — blocks
-   F8/P2 shipping.
+1. Meta Models API spec: taken from
+   https://dev.meta.ai/docs/overview.md — digested in
+   [../meta-api.md](../meta-api.md) (Spark/Wonder drafting, Voice
+   Transcribe realtime WS + file endpoints, SAM 3.1 on API,
+   Glimmer self-host; Seamless NOT on API → P3 stays conditional).
+2. Content repo: direction approved (separate repo; interim
+   gitignored `store/forms/` fallback). Exact location still TBD —
+   non-blocking (fallback unblocks F11/templates).
+3. Admin host: **`admin.andrii.ai`** confirmed (`.ui` was a typo).
+   No alternative proposed — separate origin is the right call.
+4. Customer login: **passkey + Apple + Google, email
+   click-to-login (magic link) as fallback only**. Linking rules
+   + Apple/Google revocation signals + full portal checklist in
+   [../auth-playbook.md](../auth-playbook.md). Staff method still
+   open (recommend passkey or password+TOTP + mTLS).
+5. Instruction photos become **property of Andrii Co.** via an
+   upload-time grant; **both customer and admin** can redact
+   faces/plates with Meta models (SAM 3.1 via Model API) before
+   anything publishes. Consequence: Meta Model API is an approved
+   processor for customer media (transcription, redaction);
+   data-handling terms must be read before real media flows.
+
+**Still needed during the 10 days:**
 
 **Needed during the 10 days:**
 

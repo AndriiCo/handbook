@@ -189,7 +189,10 @@ Goal: visitor reports (photos, route/parking tips, rejection stories)
 improve visit instructions after moderation.
 Acceptance: (1) submission path (SvelteKit form + axum upload) creates
 `capture(kind=photo|video|comment)` with `trust=community`,
-quarantined by default, EXIF preserved in original; (2) report fields:
+quarantined by default, EXIF preserved in original; upload requires
+accepting the rights grant (instruction photos become Andrii Co.
+property — decided prompt 008; grant version + timestamp recorded on
+the capture, refusal blocks upload); (2) report fields:
 authority/office, visited-at, route/parking text, rejection reason if
 any; each report links to its captures; (3) moderation = F4 approval:
 promote only via staff approval or two-independent-capture
@@ -209,16 +212,21 @@ Goal: no visitor photo/video is shown publicly with identifiable faces
 or plates.
 Acceptance: (1) every public render of a community photo/video uses a
 redacted derivative; originals never served to anonymous clients; (2)
-masking runs via self-hosted SAM 3.1 (or pinned equivalent) as an
-xtask step producing cached derivatives with EXIF stripped; (3) QA:
-synthetic fixtures with faces/plates assert redaction applied;
-unmaskable media stays private with a task, never published raw; (4)
-pipeline is reproducible: derivative records input sha + model version
-in notes/audit.
-Data/API: blob store + derivative cache; model weights local (disk
-budget documented); no third-party upload of customer media.
-Dependencies: F8 upload path; server disk/GPU-or-CPU budget for SAM;
-license check for self-hosted weights.
+redaction runs through **SAM 3.1 on the Model API** with text prompts
+("face", "license plate"), usable by **both the uploading customer
+(pre-publish self-service) and admin moderation**, producing cached
+derivatives with EXIF stripped (decided prompt 008); recall verified
+on fixtures, self-hosted detector as fallback; (3) QA: synthetic
+fixtures with faces/plates assert redaction applied; unmaskable media
+stays private with a task, never published raw; (4) pipeline is
+reproducible: derivative records input sha + model version in
+notes/audit.
+Data/API: blob store + derivative cache; Meta Model API is an
+approved processor for redaction media (read its data-handling terms
+before real media flows); no other third-party upload of customer
+media.
+Dependencies: F8 upload path (with rights grant); API latency/cost
+budget for SAM calls.
 
 ## F10 — Self-hosted Muse Glimmer document-photo pre-check
 

@@ -275,8 +275,9 @@ xtask/             fetch-url, import-mbox, import-file, review-conflicts,
 No new crates until one proves necessary; collection starts as `xtask`
 commands over the `handbook` lib. Pinned for Phase 1: `rusqlite` (bundled,
 FTS5), `sha2`. Later candidates (unpinned): `warc`, `mail-auth`, `brotli`.
-Transcription goes through the Meta Models API (HTTP client TBD with the
-API spec). Telephony stays human-operated (a phone + recorder); no dialer
+Transcription goes through the Meta Models API — see
+`docs/meta-api.md` for the digested spec (Voice Transcribe realtime
+WS + file endpoints, Spark/Wonder drafting, SAM 3.1 on API). Telephony stays human-operated (a phone + recorder); no dialer
 to build. Web serving, realtime, and UI decisions live in
 `docs/web-stack.md`.
 

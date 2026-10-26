@@ -111,9 +111,16 @@
 + idle timeouts (customer idle 24h ok; admin idle ≤30 min); rotate
 session id and CSRF token on login and on role change; single-flight
 refresh semantics; constant-time token compare; lockout/backoff on login
-(see rate limits). Passkey/Apple sign-in (used on the sibling notary
-product per prompt 001) stays on the roadmap — passwordless removes the
-credential-stuffing class entirely.
+(see rate limits). Customer methods (decided prompt 008): passkey,
+Apple, Google, magic-link fallback — full portal checklist, linking
+rules, and revocation-signal handling in
+[auth-playbook.md](auth-playbook.md). Linking invariants: identities
+table (one account ↔ many verified identities); link on
+verified-email equality only; Apple private-relay never matches by
+string; no silent auto-merge (explicit link flow with step-up);
+first-login creates a fresh account (kills pre-account takeover);
+last method cannot be unlinked; every link/unlink/signal writes an
+audit row.
 
 **Input validation.** Every axum extractor validates: reject unknown
 JSON fields (`serde(deny_unknown_fields)` on mutating DTOs — kills mass
@@ -182,9 +189,16 @@ version + checksum at install.
 mutations (mirrors `audit`), but never log: session tokens, CSRF
 tokens, cookies, Authorization headers, document photos content, full
 emails, transcripts verbatim (log capture ids + hashes + offsets
-instead). Faces/plates masking (SAM 3.1) and EXIF-stripping for
-derivatives are already decided (design §2) — treat unmasked originals
-as PII-vault data: staff-role-only reads, every read audited.
+instead). Instruction photos become Andrii Co. property via an
+upload-time grant (decided prompt 008); both customer and admin can
+redact faces/plates with Meta models (SAM 3.1 via Model API) before
+anything publishes — unredacted originals stay PII-vault
+(staff-role-only reads, every read audited) until a redacted
+derivative exists. Meta Model API is therefore an approved processor
+for customer media (transcription, redaction) — read its
+data-handling terms before real media flows; no other third party
+ever receives customer media. EXIF-stripping for derivatives stands
+(design §2).
 Transcript `ignore` ranges may themselves contain PII — same handling.
 
 **Rate limits.** Login + WS-upgrade + upload + comment/submit endpoints
@@ -306,12 +320,11 @@ pre-API must-fix list.
    at build?
 3. **Photo retention undecided** — only voice (365d) decided; retention
    for customer photos/videos/scans?
-4. **Admin host typo: `admin.andrii.ui` vs `.ai`** — confirm the real
-   admin hostname (TLS certs, Origin allowlist, mTLS CA all depend on
-   it).
-5. **Login methods** — password + TOTP? passkey/Apple like the notary
-   product? staff SSO? Determines credential-stuffing exposure and
-   session design.
+4. ~~Admin host typo~~ — decided prompt 008: `admin.andrii.ai`.
+5. ~~Customer login methods~~ — decided prompt 008 (passkey/Apple/
+   Google + magic-link fallback; see
+   [auth-playbook.md](auth-playbook.md)). Staff method still open:
+   passkey or password+TOTP (+ mTLS)?
 6. **Customer PII boundary** — which uploads are PII-vault (ID
    documents?) vs public-derivable (route photos); who may read
    originals?
