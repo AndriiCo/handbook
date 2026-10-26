@@ -39,3 +39,5 @@ to change history — append a correction section instead.
   Discord intro message for Andrii Co. and the Apostille Handbook.
 - [2026-10-26-003-system-design.md](2026-10-26-003-system-design.md) —
   System design proposal (evidence store, step 1).
+- [2026-10-26-004-decisions-phase1.md](2026-10-26-004-decisions-phase1.md) —
+  Design decisions (Q1–Q4) + Phase 1 implementation.
