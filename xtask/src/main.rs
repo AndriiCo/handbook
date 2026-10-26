@@ -31,7 +31,7 @@ Tasks:
   ci     fmt --check, clippy, and tests (what CI runs)
   init   create a store and apply migrations [--store <path>]
   add-authority   add an office/jurisdiction (see flags below)
-  retention-sweep delete voice audio older than 365 days [--store <path>]
+  retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
 
 add-authority flags:
   --store <path>  store root (default: store)
@@ -65,6 +65,15 @@ fn open_store(args: &[String]) -> Store {
     Store::new(flag(args, "store").unwrap_or_else(|| "store".to_string()))
 }
 
+/// Database handle for an already-opened store (F6: one open path — tasks
+/// must not reimplement the open-and-handle-error sequence themselves).
+fn open_db(store: &Store) -> rusqlite::Connection {
+    handbook::db::open(store).unwrap_or_else(|e| {
+        eprintln!("open database (run `cargo xtask init` first): {e}");
+        std::process::exit(1);
+    })
+}
+
 fn run_ci() {
     for args in [
         ["fmt", "--all", "--check"].as_slice(),
@@ -95,10 +104,7 @@ fn run_init(args: &[String]) {
         eprintln!("init store dirs: {e}");
         std::process::exit(1);
     }
-    let conn = handbook::db::open(&store).unwrap_or_else(|e| {
-        eprintln!("open database: {e}");
-        std::process::exit(1);
-    });
+    let conn = open_db(&store);
     if let Err(e) = handbook::db::migrate(&conn) {
         eprintln!("migrate: {e}");
         std::process::exit(1);
@@ -108,10 +114,7 @@ fn run_init(args: &[String]) {
 
 fn run_add_authority(args: &[String]) {
     let store = open_store(args);
-    let conn = handbook::db::open(&store).unwrap_or_else(|e| {
-        eprintln!("open database (run `cargo xtask init` first): {e}");
-        std::process::exit(1);
-    });
+    let conn = open_db(&store);
     let region = flag(args, "region").unwrap_or_default();
     match handbook::db::add_authority(
         &conn,
@@ -131,10 +134,7 @@ fn run_add_authority(args: &[String]) {
 
 fn run_retention_sweep(args: &[String]) {
     let store = open_store(args);
-    let conn = handbook::db::open(&store).unwrap_or_else(|e| {
-        eprintln!("open database: {e}");
-        std::process::exit(1);
-    });
+    let conn = open_db(&store);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock is before 1970")
