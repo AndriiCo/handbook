@@ -1,6 +1,7 @@
 # Web Stack: Local Testing, Serving, Realtime, UI Options
 
-- Status: accepted (UI stack picked in prompt 005: SvelteKit SPA + axum API)
+- Status: accepted (UI stack picked in prompt 005: SvelteKit SPA + axum API;
+  WS-first realtime decided in prompt 006)
 - Date: 2026-10-26
 
 Priorities for this track: **P1 (mandatory)** — transcripts become inputs
@@ -60,39 +61,44 @@ No separate asset server, no CDN needed at this scale.
 
 ## 3. Live updates (stack-agnostic core)
 
-Start with **Server-Sent Events**, add WebSockets only if latency demands
-it. Rationale: every live flow here is server→client broadcast (validation
-events, transcript lines, follow-up questions, presence); SSE is one HTTP
-endpoint, replays over the existing server, and `htmx`/any client consumes
-it trivially. A WebSocket endpoint stays reserved for the call console if
-sub-second bidirectional traffic proves necessary.
+**WebSocket-first** (decided prompt 006, replacing SSE-first).
+Rationale: the call console is genuinely bidirectional — transcript and
+questions flow down while operator input, presence, and (P3) translation
+control flow up — so one persistent connection per client handles both,
+and axum serves WebSockets natively next to the API routes. SSE stays a
+documented fallback for networks that block WS upgrades; re-add only if
+needed.
 
 - **Event bus:** `tokio::sync::broadcast` per topic
   (`authority:{slug}`, `call:{id}`), fanning out JSON envelopes
-  (`{type, …}`) to SSE subscribers (`axum::response::Sse` + keep-alive).
+  (`{type, …}`) to WebSocket subscribers (`axum::extract::WebSocketUpgrade`,
+  one send/recv task pair per connection).
 - **Concurrent edits:** last-write-wins + mandatory `audit` row + live
-  "updated by X" events and "X is viewing/editing" presence banners.
+  "updated by X" events; presence ("X is viewing/editing") falls out of
+  tracked WS connections, no heartbeat endpoint needed.
   No CRDT (`yrs` revisit only if true collaborative text editing is ever
   needed — overkill today).
 - **Call console (P1):** transcription chunks (streamed from the Meta
   Models API when it supports streaming, else polled + appended) go to
   the `call:{id}` topic; server-generated follow-up questions ride the
-  same channel, so the human sees both mid-call and can ask more before
-  hanging up. Transcripts persist as `capture(kind='transcript')` and
-  feed `proposed` facts exactly as `docs/design.md` §5 describes.
+  same socket, so the human sees both mid-call and can ask more before
+  hanging up; operator messages (flag a turn, request re-transcription)
+  ride back up the same connection. Transcripts persist as
+  `capture(kind='transcript')` and feed `proposed` facts exactly as
+  `docs/design.md` §5 describes.
 
 ## 4. UI stack options (pick one)
 
-| | A. htmx + Askama + SSE (recommended) | B. Leptos full-stack | C. SvelteKit SPA + axum API |
+| | A. htmx + Askama + WS | B. Leptos full-stack | C. SvelteKit SPA + axum API |
 |---|---|---|---|
 | Language | Rust templates, ~zero JS | All Rust (SSR + WASM) | TypeScript UI, Rust API |
-| Live updates | SSE-native, trivial | Signals + server fns | SSE/WS client, easy |
+| Live updates | WS via htmx ws extension | Signals + server fns | WS client, easy |
 | Build | `cargo build`, single binary | `cargo-leptos` (WASM step) | Node build + Rust binary |
 | Ship speed | Fastest | Medium (young ecosystem) | Medium (two toolchains) |
 | Fit | Simplest thing that works | Modern all-Rust reactive | Best JS DX + ecosystem |
 
 - **A fits** the simplicity rule and §3 best: server-rendered pages,
-  htmx swaps on SSE events, everything in one binary.
+  htmx swaps on WS events, everything in one binary.
 - **B fits** if all-Rust reactivity (fine-grained signals, shared types
   end to end) is worth the WASM build step and slower compiles.
 - **C fits** if mainstream JS DX and hiring pool beat the Rust-only rule
@@ -122,7 +128,7 @@ batch-translate completed turns after the call.
 
 1. `cargo xtask ci` green on the Mac.
 2. `cargo xtask dev` serves `localhost:$PORT/apostille` (sub-path!).
-3. `xtask dev-seed` populates a tmp store; SSE live updates visible with
+3. `xtask dev-seed` populates a tmp store; WS live updates visible with
    two browser windows (concurrent-edit banners, presence).
 4. Static assets return 304s on revalidation and `content-encoding: br`
    when the client offers it (`curl -v` spot-checks, scripted as an
@@ -135,7 +141,7 @@ batch-translate completed turns after the call.
 1. UI stack: A, B, or C (§4) — **decided in prompt 005: C, SvelteKit SPA
    + axum API**. Consequence: the UI gets a Node build step (the one
    sanctioned exception to the Rust-only rule); axum serves the built
-   static assets plus the JSON/SSE API from the same binary.
+   static assets plus the JSON/WS API from the same binary.
 2. Meta Models API spec: transcription (streaming? auth?) and
    SeamlessStreaming availability (P3).
 3. `axum-server` vs plain tokio graceful shutdown (minor, at scaffolding).

@@ -42,4 +42,6 @@ to change history — append a correction section instead.
 - [2026-10-26-004-decisions-phase1.md](2026-10-26-004-decisions-phase1.md) —
   Design decisions (Q1–Q4) + Phase 1 implementation.
 - [2026-10-26-005-web-stack.md](2026-10-26-005-web-stack.md) —
-  Web stack considerations + UI options (awaiting pick).
+  Web stack considerations + UI options (SvelteKit picked, see addendum).
+- [2026-10-26-006-ws-first.md](2026-10-26-006-ws-first.md) —
+  Realtime transport switched from SSE-first to WS-first.
