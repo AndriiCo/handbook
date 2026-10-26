@@ -53,3 +53,5 @@ to change history — append a correction section instead.
   Meta login added; HTML-print-first roadmap recorded.
 - [2026-10-26-010-cohort2.md](2026-10-26-010-cohort2.md) —
   Carriers, payments, legal, config cohort + AGENTS §6 proposal.
+- [2026-10-26-011-replan.md](2026-10-26-011-replan.md) —
+  Deep-research 5–7-day replan + consistency fixes.
