@@ -4,7 +4,9 @@
 //! content-addressed blob I/O, and foundation queries. Collection and
 //! maintenance entry points live in `xtask`.
 
+pub mod analyze;
 pub mod db;
+pub mod model;
 pub mod store;
 pub mod topics;
 
