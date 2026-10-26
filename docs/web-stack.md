@@ -1,6 +1,6 @@
 # Web Stack: Local Testing, Serving, Realtime, UI Options
 
-- Status: proposed (UI stack awaiting author pick, prompt 005)
+- Status: accepted (UI stack picked in prompt 005: SvelteKit SPA + axum API)
 - Date: 2026-10-26
 
 Priorities for this track: **P1 (mandatory)** — transcripts become inputs
@@ -132,7 +132,10 @@ batch-translate completed turns after the call.
 
 ## 7. Open decisions
 
-1. UI stack: A, B, or C (§4) — **asked in prompt 005, awaiting pick**.
+1. UI stack: A, B, or C (§4) — **decided in prompt 005: C, SvelteKit SPA
+   + axum API**. Consequence: the UI gets a Node build step (the one
+   sanctioned exception to the Rust-only rule); axum serves the built
+   static assets plus the JSON/SSE API from the same binary.
 2. Meta Models API spec: transcription (streaming? auth?) and
    SeamlessStreaming availability (P3).
 3. `axum-server` vs plain tokio graceful shutdown (minor, at scaffolding).
