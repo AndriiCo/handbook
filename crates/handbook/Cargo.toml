@@ -1,0 +1,8 @@
+[package]
+name = "handbook"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "handbook"
+path = "src/lib.rs"
