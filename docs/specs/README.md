@@ -197,3 +197,20 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     [secure-config.md](secure-config.md) Q1–Q8.
 23. Hosting details for first deploy (server IP, SSH user; key
     stays on the author's machine, host via env, never in repo).
+
+**Decided 2026-10-27 (admin + voice + forms-framework goal):**
+
+24. Admin host re-confirmed **`admin.andrii.ai`** (`.co` was a
+    typo). Admin UI manages URL download/analysis workers.
+25. Voice provider: **Telnyx** (Call Control + recording +
+    transcription). Browser-initiated calls from the admin UI
+    with questions-to-ask + live transcript.
+26. Form-resemblance pilot: **US DOS DS-4194** (parent's pick,
+    delegated by author). Common framework (validation,
+    address pickers/validators, phone formatters, country
+    dropdown/autocomplete) + per-form projects compiled into
+    releases now, dynamic sandboxed hosting later.
+27. Config: **zero env vars** except unavoidable bootstrap
+    (store path); everything in DB per secure-config.md.
+    Secrets sealed via a **software-TPM abstraction**,
+    hardware-TPM-ready.
