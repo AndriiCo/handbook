@@ -1,0 +1,36 @@
+# release.toml — per-release manifest spec (with example values).
+#
+# WHAT THIS FILE IS: the format spec for the manifest that
+# `cargo xtask deploy` writes to
+# `/srv/apostille/releases/<version>/release.toml` on every ship.
+# This repo-root copy is documentation, not live data: the values
+# below are examples. Tooling never reads this file; it reads the
+# per-release copies (and `rollback` refuses targets without one).
+#
+# FIELD CONTRACT (all fields required, flat top-level keys):
+# - version:          release dir name = git short sha, 7..=64 lowercase hex.
+# - sha:              full 40-char git sha the release was built from.
+# - schema_version:   handbook.sqlite schema (db::SCHEMA_VERSION at build).
+# - p2_schema_version: p2.sqlite schema (db::P2_SCHEMA_VERSION at build).
+# - migration_notes:  free text: which migrations this release crosses,
+#                     data notes for the rollback author. Empty when none.
+# - rollback_safe:    false forces `--force` + `--backup-note` for ANY
+#                     rollback away from this release, even across soft-only
+#                     schemas. Set false (via --rollback-unsafe) when a
+#                     release needs more than its schema delta suggests
+#                     (data backfills, new STRICT tables old code misreads).
+#
+# GUARD RULE (xtask/src/release.rs HARD_MIGRATIONS): rollback across a
+# hard migration — table rebuild, rename, drop, column type change,
+# or STRICT added to an existing table — needs the author's explicit
+# `--force --backup-note '<db backup id>'`. Live hard list: 005 only
+# (006/007/p2_001 are purely additive). Append new hard migrations
+# to HARD_MIGRATIONS when they land; this spec's field list only
+# grows when the manifest struct gains a field.
+
+version = "c1960da"
+sha = "c1960da9f3e2b1a4c5d6e7f80910111213141516"
+schema_version = 7
+p2_schema_version = 1
+migration_notes = "crosses 007 (form_template + authority replica columns, additive)"
+rollback_safe = true

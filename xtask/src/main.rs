@@ -14,6 +14,7 @@ mod config;
 mod mcp_serve;
 mod packs;
 mod pii_sweep;
+mod release;
 mod review_conflicts;
 mod secrets;
 
@@ -45,6 +46,8 @@ fn main() {
         Some("admin-cert-verify") => admin_cert::run_verify(&args[1..]),
         Some("admin-cert-revoke") => admin_cert::run_revoke(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
+        Some("deploy") => release::run_deploy(&args[1..]),
+        Some("rollback") => release::run_rollback(&args[1..]),
         Some("install-hooks") => run_install_hooks(),
         Some("audit") => run_audit(),
         Some(unknown) => {
@@ -80,6 +83,31 @@ Tasks:
   secrets-scan scan tracked files for secrets [--staged for the index]
   install-hooks point git at .githooks/ (pre-commit secret scan)
   audit       cargo-audit over Cargo.lock (needs network; not in ci)
+  deploy      ship a release (see flags below; runbook: docs/ops/runbook-release.md)
+  rollback    roll back to a kept release (see flags below)
+
+deploy flags:
+  --version <sha>  release dir name, 7..=64 lowercase hex (required)
+  --src <dir>   staged dir holding web + spa/ (required)
+  --root <path> releases root (default: /srv/apostille)
+  --sha <sha>   full sha for the manifest (default: git rev-parse HEAD)
+  --packs <dir> packs dir for the packs-validate gate (default: packs)
+  --skip-packs  skip the packs-validate gate
+  --expect-build <n>  build_no for the accept gate (required unless --skip-accept)
+  --skip-accept skip the accept gate
+  --store <path>  store for the accept gate (default: store)
+  --migration-notes <text>  manifest migration notes (default: empty)
+  --rollback-unsafe  mark the release rollback-unsafe in the manifest
+  --smoke-url <url>  health URL to smoke (default: https://andrii.ai/apostille/healthz)
+  --no-restart  skip systemctl restart (tests only, never prod)
+  --actor <a>   audit actor (default: xtask)
+
+rollback flags:
+  --to <sha>    kept release to restore (required)
+  --root <path> releases root (default: /srv/apostille)
+  --force --backup-note <text>  override the hard-migration guard
+  --smoke-url <url>  health URL to verify (default: prod healthz)
+  --no-restart  skip systemctl restart (tests only, never prod)
 
 analyze flags:
   --store <path>  store root (default: store)
