@@ -64,10 +64,12 @@ ssh andrii.ai "curl -fsS http://127.0.0.1:3000/apostille/healthz"
 Verified 2026-10-26: healthz JSON, shell 200, demo
 login → me all green on the box. The process survives SSH
 logout but NOT reboot (Linger=no, no unit file). Stop with
-`pkill -f "apostille/current/we[b]"` — the brackets keep pkill
-from matching its own ssh wrapper (learned the hard way,
-prompt 015). Localhost-only by construction — nothing public
-until the unit + certs land.
+`pkill -f "^\./current/web$"` — the anchored pattern matches
+only the staging `./current/web` cmdline (the old
+`apostille/current/we[b]` pattern never matched it and left a
+stale binary serving, found 2026-10-27; the `^` also excludes
+prod `/srv/apostille/current/web`). Localhost-only by
+construction — nothing public until the unit + certs land.
 
 ## Ship, final: system paths (needs root — author or H-stream)
 
@@ -170,7 +172,7 @@ sudo /usr/local/sbin/apostille-ship c1960da   # smokes itself
 systemctl enable apostille
 
 # ---- Step 4, on the server as hal: retire the interim service. ----
-pkill -f "apostille/current/we[b]"
+pkill -f "^\./current/web$"
 
 # ---- Step 5, on the Mac: public verification. ----
 curl -fsS https://andrii.ai/apostille/healthz

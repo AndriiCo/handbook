@@ -45,6 +45,11 @@ existing admin listener + staging.
   transcript UI (333 Rust + 29 web green; telnyx.* keys
   registered, 29 total; secrets-scan false positive fixed
   via Option::clone spelling).
+- `2948c91` Merge mtls-seam: client-cert verifier +
+  fingerprint inserter (347 green; 30 keys; H6 done).
+  Found live: staging pkill pattern never matched
+  `./current/web` — old binary served new SPA (proves the
+  need for the anchored `^\./current/web$` pattern).
 - (further execution commits to be listed here as merges land)
 
 ## Follow-ups
