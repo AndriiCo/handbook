@@ -38,6 +38,9 @@ the consolidated author-decision list is at the bottom of this file.
 - [secure-config.md](secure-config.md) — TPM2-sealed encrypted
   config (systemd-creds + XChaCha20-Poly1305 envelope, typed
   keys, write-only secrets, rotation, DR, Mac fallback).
+- [tpm-seal.md](tpm-seal.md) — software-TPM sealing abstraction
+  (`Sealer` trait, software provider default, hardware stub seam,
+  key hierarchy, Mac-vs-Linux matrix).
 - Legal drafts (lawyer review required, do not publish):
   [tos-draft.md](../legal/tos-draft.md),
   [privacy-draft.md](../legal/privacy-draft.md).

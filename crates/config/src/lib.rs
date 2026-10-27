@@ -17,6 +17,10 @@ use chacha20poly1305::{
 };
 use rusqlite::{Connection, OptionalExtension};
 
+pub mod seal;
+
+pub use seal::{HardwareTpmSealer, SealError, Sealer, SoftwareSealer};
+
 /// XChaCha20-Poly1305 nonce length in bytes.
 pub const NONCE_LEN: usize = 24;
 /// Max `text` plaintext length (4 KiB).
@@ -41,6 +45,17 @@ impl Kek {
         let mut bytes = [0u8; 32];
         rand::rng().fill_bytes(&mut bytes);
         Kek::from_bytes(bytes)
+    }
+
+    /// Seal this KEK's bytes through any [`Sealer`] (software TPM today,
+    /// hardware TPM later). The bytes never leave except inside the
+    /// returned opaque blob.
+    ///
+    /// # Errors
+    ///
+    /// Forwards [`SealError`] from the provider.
+    pub fn seal_with(&self, sealer: &dyn Sealer) -> std::result::Result<Vec<u8>, SealError> {
+        sealer.seal(&self.0)
     }
 
     /// Best-effort `mlock`: keeps the key out of swap when the
@@ -539,8 +554,10 @@ pub fn parse_dev_kek(text: &str) -> std::result::Result<[u8; 32], &'static str> 
 
 /// Load the KEK: systemd credentials first, then the dev fallbacks.
 ///
-/// Dev sources print a loud banner and are REFUSED outside debug
-/// builds — a dev-marked KEK can never start a release binary.
+/// This is the hardware-path collection point (systemd unseals via
+/// TPM2 before exec); sealed-blob flows use [`Sealer`] providers
+/// instead. Dev sources print a loud banner and are REFUSED outside
+/// debug builds — a dev-marked KEK can never start a release binary.
 pub fn load_kek() -> Result<(Kek, KekSource)> {
     if let Ok(dir) = std::env::var("CREDENTIALS_DIRECTORY") {
         let path = std::path::Path::new(&dir).join("handbook-kek");
