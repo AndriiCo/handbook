@@ -193,3 +193,35 @@ budgets (Day 7 note).
 - Hosting + TPM answers (no default possible — owed).
 - Carrier accounts started Day 1 (author action).
 - Pricing table (deferred — no prices render until supplied).
+
+## 8. Assumptions audit (Draft — grill, night of 2026-10-26 PDT)
+
+Pinned this session (event page + repo probes):
+- Deadline: Wed Nov 4, 9PM ET = 6PM PT. ~8.75 days left.
+- Startup track: "technical execution and whether it holds up
+  in production." No finer criteria published.
+- Day 1 (Oct 26) DONE; Day 2 = Oct 27; Day 7 buffer = Nov 1;
+  Nov 2–4 spare. Schedule fits IF scope holds AND author
+  inputs land on time.
+- mTLS for admin pulled from Week 4 into now (author
+  decision; plan revision pending). Grill challenges its
+  scheduling, not the decision.
+- No TPM on enodia → env-fallback active (probed).
+
+Assumptions under challenge (author: correct if wrong):
+- A1: `META_API_KEY` + terms read land Day 2 (Oct 27).
+- A2: 10-URL seed + 1 HCCH URI land Day 2.
+- A3: carrier accounts started Day 1 (status unknown).
+- A4: staging box ETA unknown; day-10 prod-direct cutoff
+  still stands.
+- A5: author hours/day for approvals + root windows unstated.
+- A6: submission shape (repo + demo + writeup?) not on the
+  event page — format assumed, not verified.
+
+Interview state:
+- Asked: Q1 demo contract (scope lock vs SAM pull-in).
+- Queued: live Meta call pick, admin-vs-loop ordering,
+  staging/acceptance, restated success criteria wording.
+- Settled: (none yet — decisions land in specs/README.md).
+- Doc debt: prompt-log entries pending for the memory /
+  admin-plan / mTLS turns (numbering at interview end).
