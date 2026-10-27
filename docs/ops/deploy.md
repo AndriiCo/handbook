@@ -62,8 +62,10 @@ ssh andrii.ai "curl -fsS http://127.0.0.1:3000/apostille/healthz"
 Verified 2026-10-26: healthz JSON, shell 200, demo
 login → me all green on the box. The process survives SSH
 logout but NOT reboot (Linger=no, no unit file). Stop with
-`pkill -f apostille/current/web`. Localhost-only by
-construction — nothing public until the unit + certs land.
+`pkill -f "apostille/current/we[b]"` — the brackets keep pkill
+from matching its own ssh wrapper (learned the hard way,
+prompt 015). Localhost-only by construction — nothing public
+until the unit + certs land.
 
 ## Ship, final: system paths (needs root — author or H-stream)
 
