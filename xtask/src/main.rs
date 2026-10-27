@@ -7,6 +7,8 @@ use std::process::Command;
 
 use handbook::store::Store;
 
+mod secrets;
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -18,6 +20,8 @@ fn main() {
         Some("web-budget") => run_web_budget(),
         Some("serve") => run_serve(),
         Some("analyze") => run_analyze(&args[1..]),
+        Some("secrets-scan") => run_secrets_scan(&args[1..]),
+        Some("install-hooks") => run_install_hooks(),
         Some(unknown) => {
             eprintln!("unknown task: {unknown}\n");
             print_help();
@@ -38,6 +42,8 @@ Tasks:
   web-budget  check web/build JS+CSS against the Day-1 150KB gate
   serve       run the dev API server (cargo run -p web)
   analyze     draft proposed facts for an authority (stub only for now)
+  secrets-scan scan tracked files for secrets [--staged for the index]
+  install-hooks point git at .githooks/ (pre-commit secret scan)
 
 analyze flags:
   --store <path>  store root (default: store)
@@ -88,6 +94,8 @@ fn open_db(store: &Store) -> rusqlite::Connection {
 }
 
 fn run_ci() {
+    // Secrets first: fail fast before compiling anything else.
+    run_secrets_scan(&[]);
     for args in [
         ["fmt", "--all", "--check"].as_slice(),
         [
@@ -286,4 +294,109 @@ fn run_analyze(args: &[String]) {
             std::process::exit(1);
         }
     }
+}
+
+/// NUL-separated paths from a git listing command.
+fn git_paths(args: &[&str]) -> Vec<String> {
+    let output = Command::new("git").args(args).output().unwrap_or_else(|e| {
+        eprintln!("secrets-scan: git failed: {e}");
+        std::process::exit(1);
+    });
+    if !output.status.success() {
+        eprintln!("secrets-scan: git failed (not a repo?)");
+        std::process::exit(1);
+    }
+    output
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|p| !p.is_empty())
+        .map(|p| String::from_utf8_lossy(p).into_owned())
+        .collect()
+}
+
+/// Scan tracked files, or `--staged` the index content (pre-commit).
+/// Prints `path:line: rule` hits; exits 1 on any hit (fail closed).
+fn run_secrets_scan(args: &[String]) {
+    let staged = args.iter().any(|a| a == "--staged");
+    let paths = if staged {
+        git_paths(&[
+            "diff",
+            "--cached",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--diff-filter=ACMR",
+        ])
+    } else {
+        git_paths(&["ls-files", "-z"])
+    };
+    let mut hits = 0;
+    for path in &paths {
+        if path.contains("target/")
+            || path.contains("node_modules/")
+            || path.contains(".svelte-kit/")
+        {
+            continue;
+        }
+        let bytes = if staged {
+            let spec = format!(":{path}");
+            match Command::new("git").args(["show", &spec]).output() {
+                Ok(o) if o.status.success() => o.stdout,
+                _ => {
+                    eprintln!("secrets-scan: cannot read staged {path}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            match std::fs::read(path) {
+                Ok(b) => b,
+                Err(_) => continue, // deleted after listing; ignore
+            }
+        };
+        for hit in secrets::scan_bytes(path, &bytes) {
+            println!("{}:{}: {}", hit.file, hit.line, hit.rule);
+            hits += 1;
+        }
+    }
+    if hits > 0 {
+        eprintln!("secrets-scan: {hits} finding(s) — refusing");
+        std::process::exit(1);
+    }
+    eprintln!(
+        "secrets-scan: clean ({} file(s){})",
+        paths.len(),
+        if staged { ", staged" } else { "" }
+    );
+}
+
+/// Point this clone's git at the tracked `.githooks/` dir.
+fn run_install_hooks() {
+    let status = Command::new("git")
+        .args(["config", "core.hooksPath", ".githooks"])
+        .status()
+        .unwrap_or_else(|e| {
+            eprintln!("install-hooks: git failed: {e}");
+            std::process::exit(1);
+        });
+    if !status.success() {
+        eprintln!("install-hooks: git config failed");
+        std::process::exit(1);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let hook = std::path::Path::new(".githooks/pre-commit");
+        let mut perms = std::fs::metadata(hook)
+            .unwrap_or_else(|e| {
+                eprintln!("install-hooks: read {}: {e}", hook.display());
+                std::process::exit(1);
+            })
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(hook, perms).unwrap_or_else(|e| {
+            eprintln!("install-hooks: chmod {}: {e}", hook.display());
+            std::process::exit(1);
+        });
+    }
+    println!("hooks installed: core.hooksPath=.githooks");
 }

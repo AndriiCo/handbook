@@ -1,0 +1,5 @@
+#!/bin/sh
+# Trampoline only (git mandates an executable hook file): all logic
+# lives in Rust (`cargo xtask secrets-scan --staged`). Installed via
+# `cargo xtask install-hooks`, which sets core.hooksPath=.githooks.
+exec cargo xtask secrets-scan --staged
