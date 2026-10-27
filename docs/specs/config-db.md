@@ -24,7 +24,7 @@ config migrations) run; `config::load_kek` loads the KEK and the
 process **refuses to start** when no KEK is available (new —
 runtime config is unreadable without it, and silently serving on
 dev defaults would bind localhost in prod); one
-`RuntimeConfig::load` reads all 24 keys; listeners serve from the
+`RuntimeConfig::load` reads all 29 keys; listeners serve from the
 loaded values. No runtime env fallback exists by design.
 
 Restart semantics: config is read once at boot. Every admin PUT
@@ -33,7 +33,7 @@ follow-up, see OQ-C4).
 
 ## 2. Full env-var inventory and disposition
 
-### 2.1 Migrated to DB keys (24 keys)
+### 2.1 Migrated to DB keys (29 keys)
 
 | Env var | DB key | Type | Default (= old env default) |
 |---|---|---|---|
@@ -61,6 +61,11 @@ follow-up, see OQ-C4).
 | `ACME_EAB_HMAC` | `acme.eab_hmac` | **secret** (base64) | required when enabled |
 | `USPS_BASE_URL` | `usps.base_url` | text (URL) | `https://apis-tem.usps.com` |
 | `USPS_CERTIFIED=1` | `usps.certified` | bool | false |
+| *(voice stream)* | `telnyx.base_url` | text (URL) | `https://api.telnyx.com` |
+| *(voice stream)* | `telnyx.from_number` | text (E.164, empty = unset) | empty |
+| *(voice stream)* | `telnyx.connection_id` | text (empty = unset) | empty |
+| *(voice stream)* | `telnyx.webhook_public_key` | text (empty = unset) | empty |
+| *(voice stream)* | `telnyx.api_key` | **secret** | unset (= voice 503) |
 
 Shapes are exactly secure-config.md §1.5 (`bool`/`text`/
 `secret`); ports ride as text and parse to u16 at load. Missing
@@ -92,8 +97,9 @@ all rows are TPM-sealed ciphertext either way.
   `web-stack.md`): aspirational names; code uses
   `STORE_DIR`/`BIND`/fixed `/apostille`. Doc cleanup is a
   follow-up (OQ-C5).
-- Telnyx/carrier/Stripe keys: sibling streams define their
-  `telnyx.*` / `carrier.*` namespaces when readers land.
+- Carrier/Stripe keys: sibling streams define their
+  `carrier.*` / `stripe.*` namespaces when readers land
+  (`telnyx.*` already registered — see §2.1).
 - `web/` frontend env: build-time Vite surface, separate from
   process runtime config; out of scope.
 

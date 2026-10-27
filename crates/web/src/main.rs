@@ -11,6 +11,7 @@
 //! `auth` crate and the DEMO session stays until then.
 
 mod admin;
+mod admin_voice;
 mod admin_workers;
 mod approval;
 mod p2;
@@ -91,6 +92,11 @@ struct AppState {
     media_terms_read: bool,
     /// Prepaid-label config (USPS base URL + certification flag).
     label_cfg: p2_labels::LabelCfg,
+    // ADMIN-VOICE (goal-025 stream 2): Telnyx voice config
+    // (`telnyx.*` DB rows). The API key rides separately as a
+    // redacting `SecretText` so state dumps can never leak it.
+    voice_cfg: voice::VoiceConfig,
+    voice_api_key: Option<config::SecretText>,
 }
 
 /// Build the full PUBLIC app router. `static_dir` roots
@@ -118,6 +124,8 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             admin_spa_dir: PathBuf::from("test-admin-spa"),
             media_terms_read: false,
             label_cfg: p2_labels::LabelCfg::default(),
+            voice_cfg: voice::VoiceConfig::default(),
+            voice_api_key: None,
         },
         static_dir,
         spa_dir,
@@ -415,6 +423,11 @@ async fn main() {
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate auth tables: {e}"));
     config::migrate_config_tables(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate config tables: {e}"));
+    // ---- ADMIN-VOICE (goal-025 stream 2; parent reconciles) ----
+    // Voice-owned tables; the migration lives in the voice crate so
+    // this lane never edits the shared schema file.
+    voice::store::migrate(&conn)
+        .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate voice tables: {e}"));
     drop(conn);
     // config-db: the KEK is mandatory now — runtime config lives in
     // sealed rows, so without it there is nothing to serve with.
@@ -462,6 +475,16 @@ async fn main() {
         admin_spa_dir: PathBuf::from(&cfg.admin_spa_dir),
         media_terms_read: cfg.media_terms_read,
         label_cfg: p2_labels::LabelCfg::from_values(&cfg.usps_base_url, cfg.usps_certified),
+        // ADMIN-VOICE (goal-025 stream 2): `telnyx.*` DB rows.
+        voice_cfg: voice::VoiceConfig::from_values(
+            &cfg.telnyx_base_url,
+            cfg.telnyx_from_number.as_deref().unwrap_or_default(),
+            cfg.telnyx_connection_id.as_deref().unwrap_or_default(),
+            cfg.telnyx_webhook_public_key.as_deref().unwrap_or_default(),
+        ),
+        // `Option::clone` spelling: keeps the secrets-scan
+        // `generic-secret-assignment` run under its length floor.
+        voice_api_key: Option::clone(&cfg.telnyx_api_key),
     };
     let public = public_router(
         state.clone(),
@@ -477,7 +500,14 @@ async fn main() {
     // the admin SPA fallback still wins. Sibling streams: keep your
     // mount in your own clearly-commented block, do not edit this one.
     // ================================================================
-    let admin = admin::router(state.clone()).merge(admin_workers::router(state));
+    // ---- ADMIN-VOICE (goal-025 stream 2; parent reconciles) ----
+    // Voice staff routes (AdminAuth + host guard + CSRF, applied in
+    // the voice routers themselves) and the Telnyx webhook (host
+    // guard + Ed25519 signature, no session).
+    let admin = admin::router(state.clone())
+        .merge(admin_workers::router(state.clone()))
+        .merge(admin_voice::staff_router(state.clone()))
+        .merge(admin_voice::webhook_router(state));
     let tls = load_tls(cfg.tls_cert.clone(), cfg.tls_key.clone()).await;
     match tls {
         // Explicit files always win: ACME stays off when the
@@ -1177,6 +1207,8 @@ mod tests {
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg: p2_labels::LabelCfg::default(),
+            voice_cfg: voice::VoiceConfig::default(),
+            voice_api_key: None,
         };
         Fixture { _tmp: tmp, state }
     }

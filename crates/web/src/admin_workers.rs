@@ -976,6 +976,8 @@ mod tests {
                 admin_spa_dir: dir.path().to_path_buf(),
                 media_terms_read: false,
                 label_cfg: crate::p2_labels::LabelCfg::default(),
+                voice_cfg: voice::VoiceConfig::default(),
+                voice_api_key: None,
             };
             Self { _dir: dir, state }
         }

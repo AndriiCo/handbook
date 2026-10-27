@@ -26,7 +26,9 @@ const ADMIN_ROUTES = [
 	'/(admin)/admin/config',
 	'/(admin)/admin/triage',
 	'/(admin)/admin/console',
-	'/(admin)/workers'
+	'/(admin)/workers',
+	'/(admin)/calls',
+	'/(admin)/calls/[id]'
 ];
 
 function* files(dir) {

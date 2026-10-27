@@ -15,6 +15,7 @@
 	<a href={resolve('/(admin)/admin')}>Dashboard</a>
 	<a href={resolve('/(admin)/admin/triage')}>Triage</a>
 	<a href={resolve('/(admin)/admin/console')}>Call console</a>
+	<a href={resolve('/(admin)/calls')}>Voice calls</a>
 	<a href={resolve('/(admin)/admin/config')}>Config</a>
 	<a href={resolve('/(admin)/workers')}>Workers</a>
 </nav>

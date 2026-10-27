@@ -1,0 +1,19 @@
+[package]
+name = "voice"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+ed25519-dalek = "2"
+# Same TLS shape as the media crate: blocking ureq over rustls, no
+# `ring` (the workspace TLS provider is aws-lc-rs; enabling `ring`
+# too leaves rustls unable to pick a process default).
+ureq = { version = "3", default-features = false, features = [
+    "gzip",
+    "json",
+    "rustls-no-provider",
+    "rustls-webpki-roots",
+] }

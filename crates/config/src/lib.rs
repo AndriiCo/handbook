@@ -803,6 +803,11 @@ pub mod keys {
     pub const ACME_EAB_HMAC: &str = "acme.eab_hmac";
     pub const USPS_BASE_URL: &str = "usps.base_url";
     pub const USPS_CERTIFIED: &str = "usps.certified";
+    pub const TELNYX_BASE_URL: &str = "telnyx.base_url";
+    pub const TELNYX_FROM_NUMBER: &str = "telnyx.from_number";
+    pub const TELNYX_CONNECTION_ID: &str = "telnyx.connection_id";
+    pub const TELNYX_WEBHOOK_PUBLIC_KEY: &str = "telnyx.webhook_public_key";
+    pub const TELNYX_API_KEY: &str = "telnyx.api_key";
 
     /// Every registered key with its type (admin UI + roundtrip tests).
     pub const ALL: &[(&str, super::ConfigType)] = &[
@@ -830,6 +835,11 @@ pub mod keys {
         (ACME_EAB_HMAC, super::ConfigType::Secret),
         (USPS_BASE_URL, super::ConfigType::Text),
         (USPS_CERTIFIED, super::ConfigType::Bool),
+        (TELNYX_BASE_URL, super::ConfigType::Text),
+        (TELNYX_FROM_NUMBER, super::ConfigType::Text),
+        (TELNYX_CONNECTION_ID, super::ConfigType::Text),
+        (TELNYX_WEBHOOK_PUBLIC_KEY, super::ConfigType::Text),
+        (TELNYX_API_KEY, super::ConfigType::Secret),
     ];
 }
 
@@ -923,6 +933,11 @@ pub struct RuntimeConfig {
     pub acme_eab_hmac_b64: Option<SecretText>,
     pub usps_base_url: String,
     pub usps_certified: bool,
+    pub telnyx_base_url: String,
+    pub telnyx_from_number: Option<String>,
+    pub telnyx_connection_id: Option<String>,
+    pub telnyx_webhook_public_key: Option<String>,
+    pub telnyx_api_key: Option<SecretText>,
 }
 
 impl Default for RuntimeConfig {
@@ -955,6 +970,13 @@ impl Default for RuntimeConfig {
             // test (this crate cannot depend on labels for one string).
             usps_base_url: "https://apis-tem.usps.com".to_string(),
             usps_certified: false,
+            // Must equal `voice::TELNYX_BASE_URL`; asserted by a web
+            // test (this crate cannot depend on voice for one string).
+            telnyx_base_url: "https://api.telnyx.com".to_string(),
+            telnyx_from_number: None,
+            telnyx_connection_id: None,
+            telnyx_webhook_public_key: None,
+            telnyx_api_key: None,
         }
     }
 }
@@ -1027,6 +1049,36 @@ fn overlay_optional_text(
         }
         Err(ConfigError::BadValue(why)) => {
             warnings.push(format!("{key}: {why}; treating as unset"));
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Lenient secret overlay: missing or empty → `None` (silent);
+/// non-UTF-8 or wrong type → warn + `None`. Crypto/DB propagate.
+fn overlay_secret(
+    conn: &Connection,
+    kek: &Kek,
+    key: &str,
+    warnings: &mut Vec<String>,
+    slot: &mut Option<SecretText>,
+) -> Result<()> {
+    match get_secret_for_job(conn, kek, key) {
+        Ok(None) => Ok(()),
+        Ok(Some(bytes)) => match String::from_utf8(bytes) {
+            Ok(s) if s.trim().is_empty() => Ok(()),
+            Ok(s) => {
+                *slot = Some(SecretText(s));
+                Ok(())
+            }
+            Err(_) => {
+                warnings.push(format!("{key}: not UTF-8; treating as missing"));
+                Ok(())
+            }
+        },
+        Err(ConfigError::BadValue(why)) => {
+            warnings.push(format!("{key}: {why}; treating as missing"));
             Ok(())
         }
         Err(e) => Err(e),
@@ -1130,6 +1182,34 @@ impl RuntimeConfig {
             keys::USPS_BASE_URL,
             &mut warnings,
             &mut cfg.usps_base_url,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::TELNYX_BASE_URL,
+            &mut warnings,
+            &mut cfg.telnyx_base_url,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::TELNYX_FROM_NUMBER,
+            &mut warnings,
+            &mut cfg.telnyx_from_number,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::TELNYX_CONNECTION_ID,
+            &mut warnings,
+            &mut cfg.telnyx_connection_id,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::TELNYX_WEBHOOK_PUBLIC_KEY,
+            &mut warnings,
+            &mut cfg.telnyx_webhook_public_key,
         )?;
         overlay_optional_text(
             conn,
@@ -1246,25 +1326,22 @@ impl RuntimeConfig {
             }
             Err(e) => return Err(e),
         }
-        // EAB HMAC: the only secret in the runtime set. Non-UTF-8 or
-        // wrong-typed rows warn + count as missing (ACME then refuses
-        // via its builder error, exactly like a missing env value).
-        match get_secret_for_job(conn, kek, keys::ACME_EAB_HMAC) {
-            Ok(None) => {}
-            Ok(Some(bytes)) => match String::from_utf8(bytes) {
-                Ok(s) if s.trim().is_empty() => {}
-                Ok(s) => cfg.acme_eab_hmac_b64 = Some(SecretText(s)),
-                Err(_) => warnings.push(format!(
-                    "{}: not UTF-8 base64; treating as missing",
-                    keys::ACME_EAB_HMAC
-                )),
-            },
-            Err(ConfigError::BadValue(why)) => warnings.push(format!(
-                "{}: {why}; treating as missing",
-                keys::ACME_EAB_HMAC
-            )),
-            Err(e) => return Err(e),
-        }
+        // Secrets in the runtime set: non-UTF-8 or wrong-typed rows
+        // warn + count as missing (consumers fail closed on `None`).
+        overlay_secret(
+            conn,
+            kek,
+            keys::ACME_EAB_HMAC,
+            &mut warnings,
+            &mut cfg.acme_eab_hmac_b64,
+        )?;
+        overlay_secret(
+            conn,
+            kek,
+            keys::TELNYX_API_KEY,
+            &mut warnings,
+            &mut cfg.telnyx_api_key,
+        )?;
         // H6 fix baked into the migration: a persistent dev-bypass
         // flag must never boot a release binary (spec §3).
         if cfg.admin_mtls_off && !cfg!(debug_assertions) {
@@ -1312,12 +1389,12 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_24_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 24);
+    fn registry_holds_29_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 29);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
-        // Exactly one secret (the EAB HMAC); four bools; rest text.
+        // Two secrets (EAB HMAC, Telnyx API key); four bools; rest text.
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1326,7 +1403,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (4, 19, 1));
+        assert_eq!(counts, (4, 23, 2));
     }
 
     #[test]
@@ -1359,6 +1436,11 @@ mod runtime_tests {
         assert_eq!(cfg.acme_eab_hmac_b64, None);
         assert_eq!(cfg.usps_base_url, "https://apis-tem.usps.com");
         assert!(!cfg.usps_certified);
+        assert_eq!(cfg.telnyx_base_url, "https://api.telnyx.com");
+        assert_eq!(cfg.telnyx_from_number, None);
+        assert_eq!(cfg.telnyx_connection_id, None);
+        assert_eq!(cfg.telnyx_webhook_public_key, None);
+        assert_eq!(cfg.telnyx_api_key, None);
     }
 
     #[test]
@@ -1399,6 +1481,19 @@ mod runtime_tests {
             (keys::ACME_EAB_HMAC, ConfigType::Secret, "aGk="),
             (keys::USPS_BASE_URL, ConfigType::Text, "https://stub.test"),
             (keys::USPS_CERTIFIED, ConfigType::Bool, "1"),
+            (
+                keys::TELNYX_BASE_URL,
+                ConfigType::Text,
+                "https://telnyx-stub.test",
+            ),
+            (keys::TELNYX_FROM_NUMBER, ConfigType::Text, "+15550001111"),
+            (keys::TELNYX_CONNECTION_ID, ConfigType::Text, "conn-x"),
+            (
+                keys::TELNYX_WEBHOOK_PUBLIC_KEY,
+                ConfigType::Text,
+                "pubkey-x",
+            ),
+            (keys::TELNYX_API_KEY, ConfigType::Secret, "key-x"),
         ] {
             put(&conn, &kek, key, key_type, plaintext.as_bytes());
         }
@@ -1438,6 +1533,14 @@ mod runtime_tests {
         );
         assert_eq!(cfg.usps_base_url, "https://stub.test");
         assert!(cfg.usps_certified);
+        assert_eq!(cfg.telnyx_base_url, "https://telnyx-stub.test");
+        assert_eq!(cfg.telnyx_from_number.as_deref(), Some("+15550001111"));
+        assert_eq!(cfg.telnyx_connection_id.as_deref(), Some("conn-x"));
+        assert_eq!(cfg.telnyx_webhook_public_key.as_deref(), Some("pubkey-x"));
+        assert_eq!(
+            cfg.telnyx_api_key.as_ref().map(SecretText::as_str),
+            Some("key-x")
+        );
     }
 
     #[test]

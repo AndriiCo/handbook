@@ -1570,6 +1570,8 @@ mod tests {
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg,
+            voice_cfg: voice::VoiceConfig::default(), // ADMIN-VOICE
+            voice_api_key: None,
         };
         Fixture { _tmp: tmp, state }
     }
