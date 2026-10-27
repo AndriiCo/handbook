@@ -48,9 +48,9 @@ export function normalizeRow(row) {
  * @returns {{ value: unknown }}
  */
 export function putBody(row) {
-	if (row.type === 'bool') return { value: row.value === true };
-	if (row.type === 'text') return { value: row.value };
-	return { value: row.draft };
+	if (row.type === 'bool') return { type: 'bool', value: row.value === true };
+	if (row.type === 'text') return { type: 'text', value: row.value };
+	return { type: 'secret', value: row.draft };
 }
 
 /**

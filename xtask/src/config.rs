@@ -226,9 +226,17 @@ pub fn run_set(args: &[String]) {
     } else {
         crate::required(args, "value")
     };
-    if kind == "bool" && !["true", "false", "1", "0"].contains(&value.as_str()) {
-        fail("bool values are true | false | 1 | 0");
-    }
+    // Canonical bool bytes are `1`/`0` (shared with the web admin
+    // API, which rejects anything else on read): normalize at write.
+    let value = if kind == "bool" {
+        match value.as_str() {
+            "true" | "1" => "1".to_string(),
+            "false" | "0" => "0".to_string(),
+            _ => fail("bool values are true | false | 1 | 0"),
+        }
+    } else {
+        value
+    };
     let kek = read_kek(args).unwrap_or_else(|e| fail(&e));
     let version = active_version(&conn)
         .unwrap_or_else(|e| fail(&e))
@@ -460,6 +468,42 @@ mod tests {
         assert_eq!(unseal(&blob, "site.name", version, &kek).unwrap(), b"demo");
         assert_eq!(active_version(&conn).unwrap(), Some(1));
         let _ = store;
+    }
+
+    #[test]
+    fn bool_values_normalize_to_canonical_bytes() {
+        let (_dir, store, conn, kek_path) = setup();
+        enroll_v1(&conn);
+        let root = store.root().to_string_lossy().into_owned();
+        for (input, canonical) in [("true", b"1"), ("false", b"0"), ("1", b"1"), ("0", b"0")] {
+            let key = format!("flag.{input}");
+            run_set(&[
+                "config-set".to_string(),
+                "--store".to_string(),
+                root.clone(),
+                "--key".to_string(),
+                key.clone(),
+                "--type".to_string(),
+                "bool".to_string(),
+                "--value".to_string(),
+                input.to_string(),
+                "--kek-file".to_string(),
+                kek_path.clone(),
+            ]);
+            let (blob, version): (Vec<u8>, i64) = conn
+                .query_row(
+                    "SELECT value_enc, enc_version FROM config WHERE key = ?1",
+                    [&key],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            let kek = read_kek_file(&kek_path).unwrap();
+            assert_eq!(
+                unseal(&blob, &key, version, &kek).unwrap(),
+                canonical,
+                "input {input:?}"
+            );
+        }
     }
 
     #[test]

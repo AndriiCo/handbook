@@ -1,13 +1,19 @@
-//! Apostille web API (S3 lane, roadmap Day 1–2 slice).
+//! Apostille web API (S3 lane, roadmap items 2+6; G4 admin track).
 //!
-//! All routes live under `/apostille`: health/version, static files, a
-//! WS echo probe, and DEMO login/session (`/api/v1/demo/login`,
-//! `/api/v1/me`). No real auth: passkey/OAuth come later per
-//! `docs/specs/roadmap.md`.
+//! Public listener: everything under `/apostille` (health/version,
+//! static, WS bus, accepted-facts reads, DEMO login/session) plus
+//! the P2 mount stub. Admin listener (own port/origin): approval
+//! API, encrypted-config API, bus publish — all behind the admin
+//! host guard, staff sessions, mTLS-cert seam, and CSRF/Origin.
 //!
-//! NOTE: real WS topics (`authority:{slug}`, `call:{id}`,
-//! `submission:{id}`, `shipment:{id}`, `billing:{id}`) come later
-//! (Day 2+).
+//! Real login (passkey/Apple/Google/Meta + magic-link fallback) is
+//! still ahead per `docs/auth-playbook.md`; the policy lives in the
+//! `auth` crate and the DEMO session stays until then.
+
+mod admin;
+mod approval;
+mod p2;
+mod ws_bus;
 
 use axum::{
     Router,
@@ -65,23 +71,60 @@ async fn request_id_and_log(
 #[derive(Clone)]
 struct AppState {
     spa_index: PathBuf,
+    static_dir: PathBuf,
     store_root: PathBuf,
+    bus: ws_bus::Bus,
+    kek: Option<std::sync::Arc<config::Kek>>,
+    /// `ADMIN_MTLS=off` dev seam: skips the client-cert requirement
+    /// and allows loopback origins. Prod runs strict (false).
+    admin_mtls_off: bool,
 }
 
-/// Build the full app router. `static_dir` roots `/apostille/static`;
-/// `spa_dir` (the SvelteKit `build/` output) serves the app shell at
-/// `/apostille/` and every other `/apostille/*` path via SPA fallback;
-/// `store_root` locates the SQLite metadata DB for session handlers;
-/// `acme_dir` serves `/.well-known/acme-challenge/` token files for
-/// certbot http-01 (missing dir → 404s, harmless in dev).
+/// Build the full PUBLIC app router. `static_dir` roots
+/// `/apostille/static`; `spa_dir` (the SvelteKit `build/` output)
+/// serves the app shell at `/apostille/` and every other
+/// `/apostille/*` path via SPA fallback; `store_root` locates the
+/// SQLite metadata DB for session handlers; `acme_dir` serves
+/// `/.well-known/acme-challenge/` token files for certbot http-01
+/// (missing dir → 404s, harmless in dev).
+///
+/// Default state (fresh bus, no KEK, dev TLS seam): enough for the
+/// public surface; `main` builds richer state via
+/// [`public_router`]. Test-only: production always wires explicit
+/// state.
+#[cfg(test)]
 fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> Router {
-    let spa_index = std::path::Path::new(spa_dir).join("index.html");
+    public_router(
+        AppState {
+            spa_index: std::path::Path::new(spa_dir).join("index.html"),
+            static_dir: PathBuf::from(static_dir),
+            store_root,
+            bus: ws_bus::Bus::new(),
+            kek: None,
+            admin_mtls_off: true,
+        },
+        static_dir,
+        spa_dir,
+        acme_dir,
+    )
+}
+
+/// Public router with explicit state (admin routes are NEVER here —
+/// they live on the admin listener via [`admin::router`]).
+fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &str) -> Router {
+    let spa_index = state.spa_index.clone();
     let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/version", get(version))
         .route("/ws/echo", get(ws_echo_upgrade))
+        .route("/ws/bus", get(ws_bus::ws_bus_upgrade))
         .route("/api/v1/demo/login", post(demo_login))
         .route("/api/v1/me", get(me))
+        .route(
+            "/api/v1/authorities/{slug}/facts",
+            get(approval::public_facts),
+        )
+        .nest("/api/v1/p2", p2::router())
         // Unknown API paths must 404 as JSON, not fall through to
         // the SPA shell (static routes above still win over this
         // wildcard, so real endpoints are unaffected).
@@ -101,13 +144,11 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
     Router::new()
         .route("/apostille", get(serve_spa_index))
         .route("/apostille/", get(serve_spa_index))
+        .route("/robots.txt", get(serve_robots))
         .nest("/apostille", api)
         .nest_service("/.well-known/acme-challenge", ServeDir::new(acme_dir))
         .layer(axum::middleware::from_fn(request_id_and_log))
-        .with_state(AppState {
-            spa_index,
-            store_root,
-        })
+        .with_state(state)
 }
 
 /// Serve the SPA shell for `/apostille/` exactly (the nested `/` never
@@ -117,6 +158,21 @@ async fn serve_spa_index(State(state): State<AppState>) -> impl IntoResponse {
     match tokio::fs::read(&state.spa_index).await {
         Ok(bytes) => (
             [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// Domain-root robots.txt (crawlers never look under `/apostille`).
+async fn serve_robots(State(state): State<AppState>) -> impl IntoResponse {
+    match tokio::fs::read(state.static_dir.join("robots.txt")).await {
+        Ok(bytes) => (
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            )],
             bytes,
         )
             .into_response(),
@@ -352,17 +408,47 @@ async fn main() {
         db::open(&store).unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: open metadata DB: {e}"));
     db::migrate(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate metadata DB: {e}"));
+    auth::migrate_auth_tables(&conn)
+        .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate auth tables: {e}"));
+    config::migrate_config_tables(&conn)
+        .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate config tables: {e}"));
     drop(conn);
+    let admin_mtls_off = std::env::var("ADMIN_MTLS").ok().is_some_and(|v| v == "off");
+    if admin_mtls_off {
+        eprintln!(
+            "WARNING: ADMIN_MTLS=off — admin listener skips client-cert auth (local dev only)"
+        );
+    }
+    let kek = match config::load_kek() {
+        Ok((kek, source)) => {
+            kek.lock_memory();
+            eprintln!("config KEK loaded via {source:?}");
+            Some(std::sync::Arc::new(kek))
+        }
+        Err(e) => {
+            eprintln!("config unavailable ({e}); admin config API will answer 503");
+            None
+        }
+    };
     let acme_dir = std::env::var("ACME_CHALLENGE_DIR").unwrap_or_else(|_| "acme".to_string());
-    let router = app(&static_dir, &spa_dir, PathBuf::from(store_dir), &acme_dir);
+    let state = AppState {
+        spa_index: std::path::Path::new(&spa_dir).join("index.html"),
+        static_dir: PathBuf::from(&static_dir),
+        store_root: PathBuf::from(store_dir),
+        bus: ws_bus::Bus::new(),
+        kek,
+        admin_mtls_off,
+    };
+    let public = public_router(state.clone(), &static_dir, &spa_dir, &acme_dir);
+    let admin = admin::router(state);
     let tls = load_tls(
         std::env::var("TLS_CERT").ok(),
         std::env::var("TLS_KEY").ok(),
     )
     .await;
     match tls {
-        Ok(Some(tls)) => serve_tls(router, tls).await,
-        Ok(None) => serve_http(router).await,
+        Ok(Some(tls)) => serve_tls(public, admin, tls).await,
+        Ok(None) => serve_http(public, admin).await,
         Err(message) => {
             eprintln!("refusing to start: {message}");
             std::process::exit(1);
@@ -370,67 +456,76 @@ async fn main() {
     }
 }
 
-/// Plain-HTTP dev mode: `PORT` (default 3000) on every bind IP.
-async fn serve_http(router: Router) {
+/// Plain-HTTP dev mode: public on `PORT` (default 3000) and admin
+/// on `ADMIN_PORT` (default 3001), on every bind IP.
+async fn serve_http(public: Router, admin: Router) {
     let port = port_env("PORT", 3000);
+    let admin_port = port_env("ADMIN_PORT", 3001);
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
     for ip in bind_ips() {
-        let addr = SocketAddr::new(ip, port);
-        let handle = axum_server::Handle::new();
-        handles.push(handle.clone());
-        eprintln!("listening on http://{addr}/apostille");
-        servers.spawn({
-            let router = router.clone();
-            async move {
-                axum_server::bind(addr)
-                    .handle(handle)
-                    .serve(router.into_make_service())
-                    .await
-            }
-        });
+        for (router, port, name) in [(&public, port, "public"), (&admin, admin_port, "admin")] {
+            let addr = SocketAddr::new(ip, port);
+            let handle = axum_server::Handle::new();
+            handles.push(handle.clone());
+            eprintln!("listening on http://{addr}/apostille ({name})");
+            servers.spawn({
+                let router = router.clone();
+                async move {
+                    axum_server::bind(addr)
+                        .handle(handle)
+                        .serve(router.into_make_service())
+                        .await
+                }
+            });
+        }
     }
     supervise(servers, handles).await;
 }
 
-/// Prod mode: HTTPS on `HTTPS_PORT` (443) plus an HTTP→HTTPS
-/// redirector on `HTTP_PORT` (80), on every bind IP.
-async fn serve_tls(router: Router, tls: axum_server::tls_rustls::RustlsConfig) {
+/// Prod mode: HTTPS public on `HTTPS_PORT` (443) + HTTPS admin on
+/// `ADMIN_HTTPS_PORT` (444) plus an HTTP→HTTPS redirector on
+/// `HTTP_PORT` (80), on every bind IP.
+async fn serve_tls(public: Router, admin: Router, tls: axum_server::tls_rustls::RustlsConfig) {
     let https_port = port_env("HTTPS_PORT", 443);
+    let admin_https_port = port_env("ADMIN_HTTPS_PORT", 444);
     let http_port = port_env("HTTP_PORT", 80);
     let public_host = std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "andrii.ai".to_string());
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
     for ip in bind_ips() {
-        for (port, plain) in [(https_port, false), (http_port, true)] {
+        for (router, port, name) in [
+            (&public, https_port, "public"),
+            (&admin, admin_https_port, "admin"),
+        ] {
             let addr = SocketAddr::new(ip, port);
             let handle = axum_server::Handle::new();
             handles.push(handle.clone());
-            if plain {
-                eprintln!("listening on http://{addr} (redirect only)");
-                servers.spawn({
-                    let redirect = redirect_router(public_host.clone());
-                    async move {
-                        axum_server::bind(addr)
-                            .handle(handle)
-                            .serve(redirect.into_make_service())
-                            .await
-                    }
-                });
-            } else {
-                eprintln!("listening on https://{addr}/apostille");
-                servers.spawn({
-                    let router = router.clone();
-                    let tls = tls.clone();
-                    async move {
-                        axum_server::bind_rustls(addr, tls)
-                            .handle(handle)
-                            .serve(router.into_make_service())
-                            .await
-                    }
-                });
-            }
+            eprintln!("listening on https://{addr}/apostille ({name})");
+            servers.spawn({
+                let router = router.clone();
+                let tls = tls.clone();
+                async move {
+                    axum_server::bind_rustls(addr, tls)
+                        .handle(handle)
+                        .serve(router.into_make_service())
+                        .await
+                }
+            });
         }
+        let addr = SocketAddr::new(ip, http_port);
+        let handle = axum_server::Handle::new();
+        handles.push(handle.clone());
+        eprintln!("listening on http://{addr} (redirect only)");
+        servers.spawn({
+            let redirect = redirect_router(public_host.clone());
+            async move {
+                axum_server::bind(addr)
+                    .handle(handle)
+                    .serve(redirect.into_make_service())
+                    .await
+            }
+        });
     }
     supervise(servers, handles).await;
 }
@@ -931,6 +1026,776 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Migrated temp store + wired state for admin/approval tests.
+    struct Fixture {
+        _tmp: tempfile::TempDir,
+        state: AppState,
+    }
+
+    fn fixture() -> Fixture {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::new(tmp.path());
+        store.init().unwrap();
+        let conn = db::open(&store).unwrap();
+        db::migrate(&conn).unwrap();
+        auth::migrate_auth_tables(&conn).unwrap();
+        config::migrate_config_tables(&conn).unwrap();
+        drop(conn);
+        let state = AppState {
+            spa_index: PathBuf::from("test-spa/index.html"),
+            static_dir: PathBuf::from("static"),
+            store_root: tmp.path().to_path_buf(),
+            bus: ws_bus::Bus::new(),
+            kek: Some(std::sync::Arc::new(config::Kek::generate())),
+            admin_mtls_off: true,
+        };
+        Fixture { _tmp: tmp, state }
+    }
+
+    fn make_session(store_root: &std::path::Path, id: &str, role: auth::Role) {
+        let store = Store::new(store_root);
+        let conn = db::open(&store).unwrap();
+        auth::create_session(
+            &conn,
+            id,
+            &auth::NewSession {
+                user_id: id,
+                role,
+                customer_ref: Some("cust-1"),
+                now: unix_now(),
+                ip: "127.0.0.1",
+                user_agent: "test",
+            },
+        )
+        .unwrap();
+    }
+
+    /// Two proposed facts, same authority + topic, different
+    /// statements (a conflict pair). Returns `(slug, fact_a, fact_b)`.
+    fn seed_conflicting_facts(store_root: &std::path::Path) -> (String, i64, i64) {
+        let store = Store::new(store_root);
+        let conn = db::open(&store).unwrap();
+        let authority = db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa-sos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                  bytes_raw, bytes_stored, sha256, trust)
+             VALUES (?1, 1, 'file', 'p', 0, 0, 's', 'staff_verified')",
+            [authority],
+        )
+        .unwrap();
+        let cap = conn.last_insert_rowid();
+        let mut ids = Vec::new();
+        for statement in ["open 9 to 5", "open 8 to 6"] {
+            conn.execute(
+                "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                                   status, created_by, created_at)
+                 VALUES (?1, ?2, 'hours', ?3, 'proposed', 't', 1)",
+                rusqlite::params![authority, cap, statement],
+            )
+            .unwrap();
+            ids.push(conn.last_insert_rowid());
+        }
+        ("usa-wa-sos".to_string(), ids[0], ids[1])
+    }
+
+    /// Admin request builder: host guard + session + CSRF pieces.
+    fn admin_request(
+        method: &str,
+        uri: &str,
+        host: Option<&str>,
+        session: Option<&str>,
+        csrf: Option<&str>,
+        origin: Option<&str>,
+        body: Option<serde_json::Value>,
+    ) -> Request<Body> {
+        let mut builder = Request::builder().uri(uri).method(method);
+        if let Some(host) = host {
+            builder = builder.header("host", host);
+        }
+        let mut cookies = Vec::new();
+        if let Some(session) = session {
+            cookies.push(format!("{}={session}", auth::ADM_COOKIE));
+        }
+        if let Some(csrf) = csrf {
+            cookies.push(format!("{}={csrf}", auth::CSRF_COOKIE));
+            builder = builder.header(auth::CSRF_HEADER, csrf);
+        }
+        if !cookies.is_empty() {
+            builder = builder.header("cookie", cookies.join("; "));
+        }
+        if let Some(origin) = origin {
+            builder = builder.header("origin", origin);
+        }
+        let body = body.map_or_else(Body::empty, |v| Body::from(v.to_string()));
+        if method == "POST" || method == "PUT" {
+            builder = builder.header("content-type", "application/json");
+        }
+        builder.body(body).unwrap()
+    }
+
+    async fn json_body(res: axum::response::Response) -> serde_json::Value {
+        let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    fn admin_router_for(state: &AppState) -> Router {
+        admin::router(state.clone())
+    }
+
+    fn public_router_for(state: &AppState) -> Router {
+        public_router(state.clone(), "static", "test-spa", "test-acme")
+    }
+
+    #[tokio::test]
+    async fn approval_flow_accept_then_reject_with_audit() {
+        let fx = fixture();
+        let (slug, fact_a, fact_b) = seed_conflicting_facts(&fx.state.store_root);
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+
+        // List: both proposed, conflicting with each other.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/facts",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let listed = json_body(res).await;
+        assert_eq!(listed["count"], 2);
+        assert_eq!(listed["facts"][0]["conflict"], true);
+        assert_eq!(listed["facts"][0]["conflicts"][0]["id"], fact_b);
+
+        // Accept A: banner policy — conflicts do not block.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                &format!("/apostille/api/v1/admin/facts/{fact_a}/accept"),
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("http://localhost:3001"),
+                Some(serde_json::json!({"reason": "verified by phone"})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let accepted = json_body(res).await;
+        assert_eq!(accepted["status"], "accepted");
+        assert_eq!(accepted["conflict"], true);
+
+        // Second accept is a 409 (no longer proposed).
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                &format!("/apostille/api/v1/admin/facts/{fact_a}/accept"),
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("http://localhost:3001"),
+                Some(serde_json::json!({})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+
+        // Reject demands a reason, then lands.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                &format!("/apostille/api/v1/admin/facts/{fact_b}/reject"),
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("http://localhost:3001"),
+                Some(serde_json::json!({})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                &format!("/apostille/api/v1/admin/facts/{fact_b}/reject"),
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("http://localhost:3001"),
+                Some(serde_json::json!({"reason": "superseded by A"})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(json_body(res).await["status"], "rejected");
+
+        // Audit captured both decisions with the actor.
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        let actions: Vec<(String, String, i64)> = conn
+            .prepare("SELECT action, actor, entity_id FROM audit WHERE entity = 'fact' ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(
+            actions,
+            vec![
+                ("fact_accept".to_string(), "staff-1".to_string(), fact_a),
+                ("fact_reject".to_string(), "staff-1".to_string(), fact_b),
+            ]
+        );
+
+        // Public read: accepted only (B vanished), anonymous OK.
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/apostille/api/v1/authorities/{slug}/facts"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let public = json_body(res).await;
+        assert_eq!(public["facts"].as_array().unwrap().len(), 1);
+        assert_eq!(public["facts"][0]["id"], fact_a);
+        // B is rejected, so no live conflict remains on the public banner.
+        assert_eq!(public["facts"][0]["conflict"], false);
+    }
+
+    #[tokio::test]
+    async fn admin_auth_matrix() {
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        make_session(&fx.state.store_root, "cust-1", auth::Role::Customer);
+
+        // No session → 401.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/me",
+                Some("admin.andrii.ai"),
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+        // Customer session → 403.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/me",
+                Some("admin.andrii.ai"),
+                Some("cust-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+        // Wrong / missing host → 403 even for staff.
+        for host in [Some("andrii.ai"), Some("evil.test"), None] {
+            let res = admin_router_for(&fx.state)
+                .oneshot(admin_request(
+                    "GET",
+                    "/apostille/api/v1/admin/me",
+                    host,
+                    Some("staff-1"),
+                    None,
+                    None,
+                    None,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::FORBIDDEN, "host: {host:?}");
+        }
+
+        // Staff + admin host → 200 with the role.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/me",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(json_body(res).await["role"], "staff");
+
+        // Revoked dev cert → 403 + audit.
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        auth::issue_admin_cert(&conn, "fp-revoked", "alice", 100, 200, "").unwrap();
+        auth::revoke_admin_cert(&conn, "fp-revoked", 200).unwrap();
+        drop(conn);
+        let req = admin_request(
+            "GET",
+            "/apostille/api/v1/admin/me",
+            Some("admin.andrii.ai"),
+            Some("staff-1"),
+            None,
+            None,
+            None,
+        );
+        let (mut parts, body) = req.into_parts();
+        parts.headers.insert(
+            "x-admin-cert-sha256",
+            HeaderValue::from_static("fp-revoked"),
+        );
+        let res = admin_router_for(&fx.state)
+            .oneshot(Request::from_parts(parts, body))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+        // Strict mode without a cert → 403 (fail closed).
+        let mut strict = fx.state.clone();
+        strict.admin_mtls_off = false;
+        let res = admin::router(strict)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/me",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn strict_mode_cert_seam_accepts_verified_extension() {
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        auth::issue_admin_cert(&conn, "fp-live", "alice", 100, 200, "").unwrap();
+        drop(conn);
+        let mut strict = fx.state.clone();
+        strict.admin_mtls_off = false;
+
+        // Test TLS terminator: inserts the verified-cert extension.
+        async fn inject(mut req: Request<Body>, next: axum::middleware::Next) -> impl IntoResponse {
+            req.extensions_mut()
+                .insert(admin::VerifiedClientCert("fp-live".to_string()));
+            next.run(req).await
+        }
+        let app = Router::new()
+            .fallback_service(admin::router(strict))
+            .layer(axum::middleware::from_fn(inject));
+        let res = app
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/me",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(json_body(res).await["cert_fingerprint"], "fp-live");
+    }
+
+    #[tokio::test]
+    async fn csrf_matrix() {
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let uri = "/apostille/api/v1/admin/bus/publish";
+        let body = Some(serde_json::json!({"topic": "call:1", "kind": "note", "body": {}}));
+
+        // Mutation without Origin → 403.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                None,
+                body.clone(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+        // Evil Origin → 403.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://evil.test"),
+                body.clone(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+        // Origin without the double-submit pair → 403.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                Some("https://admin.andrii.ai"),
+                body.clone(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+        // Valid CSRF but no session → 401 (CSRF passed, auth failed).
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                uri,
+                Some("admin.andrii.ai"),
+                None,
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                body.clone(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+        // Full set → through to the handler.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                body,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        // Authority channels carry fact_accepted only.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                Some(serde_json::json!({"topic": "authority:x", "kind": "draft", "body": {}})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn admin_config_roundtrip_keeps_secrets_write_only() {
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        config::record_kek(&conn, 1, "test-cred", 100).unwrap();
+        drop(conn);
+
+        // PUT secret: set-new-only, never echoed.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "PUT",
+                "/apostille/api/v1/admin/config/mailer.key",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                Some(serde_json::json!({"type": "secret", "value": "s3cr3t-bytes"})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let set = json_body(res).await;
+        assert_eq!(set["set"], true);
+        assert!(set.get("value").is_none());
+
+        // PUT bool + text.
+        for (key, key_type, value) in [
+            ("mailer.enabled", "bool", serde_json::json!(true)),
+            (
+                "mailer.host",
+                "text",
+                serde_json::json!("mail.example.test"),
+            ),
+        ] {
+            let res = admin_router_for(&fx.state)
+                .oneshot(admin_request(
+                    "PUT",
+                    &format!("/apostille/api/v1/admin/config/{key}"),
+                    Some("admin.andrii.ai"),
+                    Some("staff-1"),
+                    Some("csrf-token"),
+                    Some("https://admin.andrii.ai"),
+                    Some(serde_json::json!({"type": key_type, "value": value})),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "key: {key}");
+        }
+
+        // GET: bool/text decrypt, secret is presence-only.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/config",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let listed = json_body(res).await;
+        let raw = listed.to_string();
+        assert!(!raw.contains("s3cr3t-bytes"), "secret bytes leaked: {raw}");
+        let by_key = |key: &str| {
+            listed["keys"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|k| k["key"] == key)
+                .cloned()
+                .unwrap()
+        };
+        assert_eq!(by_key("mailer.key")["set"], true);
+        assert!(by_key("mailer.key").get("value").is_none());
+        assert_eq!(by_key("mailer.enabled")["value"], true);
+        assert_eq!(by_key("mailer.host")["value"], "mail.example.test");
+
+        // Unknown type → 422.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "PUT",
+                "/apostille/api/v1/admin/config/x",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                Some(serde_json::json!({"type": "yaml", "value": "x"})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // No KEK in state → 503 (the API degrades, the server stands).
+        let mut no_kek = fx.state.clone();
+        no_kek.kek = None;
+        let res = admin::router(no_kek)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/config",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn p2_stub_robots_and_no_admin_on_public() {
+        let fx = fixture();
+        // P2 mount answers 501 with its owner until S6 lands.
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/p2/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(json_body(res).await["owner"], "S6");
+
+        // Domain-root robots.txt.
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/robots.txt")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        assert!(body.starts_with(b"User-agent:"));
+
+        // Admin paths are JSON 404 on the public listener, never mounted.
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/admin/me")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"], "not found");
+    }
+
+    #[tokio::test]
+    async fn ws_authz_live() {
+        use futures_util::StreamExt as _;
+
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        make_session(&fx.state.store_root, "cust-1", auth::Role::Customer);
+
+        // Real server on an ephemeral port (never a fixed one).
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(
+            axum_server::from_tcp(listener).serve(public_router_for(&fx.state).into_make_service()),
+        );
+
+        async fn next_text(
+            ws: &mut tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+        ) -> String {
+            tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+                .await
+                .expect("ws message within 5s")
+                .expect("stream open")
+                .expect("message ok")
+                .into_text()
+                .expect("text frame")
+                .to_string()
+        }
+
+        async fn ws_connect(
+            addr: &std::net::SocketAddr,
+            topic: &str,
+            cookie: Option<String>,
+        ) -> Result<
+            (
+                tokio_tungstenite::WebSocketStream<
+                    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                >,
+                tokio_tungstenite::tungstenite::handshake::client::Response,
+            ),
+            tokio_tungstenite::tungstenite::Error,
+        > {
+            let uri: axum::http::Uri = format!("ws://{addr}/apostille/ws/bus?topic={topic}")
+                .parse()
+                .unwrap();
+            let mut builder = tokio_tungstenite::tungstenite::ClientRequestBuilder::new(uri);
+            if let Some(cookie) = cookie {
+                builder = builder.with_header("cookie", cookie);
+            }
+            tokio_tungstenite::connect_async(builder).await
+        }
+
+        // Anonymous authority subscribe: hello + live fan-out.
+        let (mut anon, _) = ws_connect(&addr, "authority:usa-wa-sos", None)
+            .await
+            .unwrap();
+        let hello: serde_json::Value = serde_json::from_str(&next_text(&mut anon).await).unwrap();
+        assert_eq!(hello["type"], "subscribed");
+        assert_eq!(hello["topic"], "authority:usa-wa-sos");
+        fx.state.bus.publish(
+            "authority:usa-wa-sos",
+            r#"{"type":"fact_accepted","fact_id":1}"#.to_string(),
+        );
+        let event = next_text(&mut anon).await;
+        assert!(event.contains("fact_accepted"), "got: {event}");
+        anon.close(None).await.unwrap();
+
+        // Anonymous call subscribe: 403, no upgrade.
+        let denied = ws_connect(&addr, "call:1", None).await;
+        match denied {
+            Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
+                assert_eq!(res.status(), 403);
+            }
+            other => panic!("expected HTTP 403, got {other:?}"),
+        }
+
+        // Customer submission subscribe: 403 (fail-closed ownership seam).
+        let denied = ws_connect(
+            &addr,
+            "submission:7",
+            Some(format!("{}=cust-1", auth::PUB_COOKIE)),
+        )
+        .await;
+        match denied {
+            Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
+                assert_eq!(res.status(), 403);
+            }
+            other => panic!("expected HTTP 403, got {other:?}"),
+        }
+
+        // Staff call subscribe: hello.
+        let (mut staff, _) = ws_connect(
+            &addr,
+            "call:1",
+            Some(format!("{}=staff-1", auth::ADM_COOKIE)),
+        )
+        .await
+        .unwrap();
+        let hello: serde_json::Value = serde_json::from_str(&next_text(&mut staff).await).unwrap();
+        assert_eq!(hello["topic"], "call:1");
+        staff.close(None).await.unwrap();
+
+        server.abort();
     }
 
     #[tokio::test]

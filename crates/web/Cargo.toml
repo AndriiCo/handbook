@@ -8,14 +8,17 @@ name = "web"
 path = "src/main.rs"
 
 [dependencies]
+auth = { path = "../auth" }
+config = { path = "../config" }
 handbook-store = { path = "../handbook-store" }
 rand = "0.9"
+rusqlite = { version = "0.32", features = ["bundled"] }
 axum = { version = "0.8", features = ["ws"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower-http = { version = "0.6", features = ["fs", "compression-gzip", "compression-br"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "fs", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "fs", "io-util", "sync", "time"] }
 tower = { version = "0.5", features = ["util"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -25,3 +28,5 @@ tempfile = "3"
 rcgen = "0.13"
 rustls = "0.23"
 tokio-rustls = "0.26"
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", features = ["sink"] }

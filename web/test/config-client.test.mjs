@@ -16,9 +16,9 @@ test('normalizeRow types rows and keeps secrets value-free', () => {
 });
 
 test('putBody shapes each type', () => {
-	assert.deepEqual(putBody({ type: 'bool', value: true }), { value: true });
-	assert.deepEqual(putBody({ type: 'text', value: 'v' }), { value: 'v' });
-	assert.deepEqual(putBody({ type: 'secret', draft: 'new' }), { value: 'new' });
+	assert.deepEqual(putBody({ type: 'bool', value: true }), { type: 'bool', value: true });
+	assert.deepEqual(putBody({ type: 'text', value: 'v' }), { type: 'text', value: 'v' });
+	assert.deepEqual(putBody({ type: 'secret', draft: 'new' }), { type: 'secret', value: 'new' });
 });
 
 test('fetch + save round-trips against a stub admin API', async () => {
@@ -58,8 +58,8 @@ test('fetch + save round-trips against a stub admin API', async () => {
 		await saveConfigKey(base, { key: 'mailer.enabled', type: 'bool', value: true });
 		await saveConfigKey(base, { key: 'meta.key', type: 'secret', draft: 's3cr3t' });
 		assert.deepEqual(seen, [
-			['mailer.enabled', { value: true }],
-			['meta.key', { value: 's3cr3t' }]
+			['mailer.enabled', { type: 'bool', value: true }],
+			['meta.key', { type: 'secret', value: 's3cr3t' }]
 		]);
 	} finally {
 		server.close();
