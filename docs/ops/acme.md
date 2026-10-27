@@ -1,7 +1,7 @@
 # In-binary ACME (Google Public CA, ARI renewal)
 
 Our Rust binary issues and renews its own TLS certificate — no
-certbot on the box, no restarts. One certificate covers `andrii.ai`
+external ACME client on the box, no restarts. One certificate covers `andrii.ai`
 + `admin.andrii.ai`, issued via Google Public CA with External
 Account Binding (EAB), validated over http-01, renewed on the CA's
 ARI window (RFC 9773) with a lifetime fallback, and hot-swapped
@@ -80,31 +80,27 @@ gcloud config unset api_endpoint_overrides/publicca
 ## Certificate sources today (2026-10-27)
 
 Prod currently terminates explicit files
-(`/var/lib/apostille/tls/{cert.pem,key.pem}`, certbot-issued,
-**`andrii.ai`-only** — no admin SAN), NOT in-binary ACME:
+(`/var/lib/apostille/tls/{cert.pem,key.pem}`, issued once by
+hand, **`andrii.ai`-only** — no admin SAN), NOT in-binary ACME:
 `acme.enabled` defaults false and explicit `tls.*` rows always
 win, so no issuance is ever attempted there. That is also why
 `admin.andrii.ai` never got SSL automatically — the one manual
-certbot issuance covered only `-d andrii.ai`, and nothing has
-reissued since.
+issuance covered only `andrii.ai`, and nothing has reissued
+since. (The external ACME client once used for that issuance
+has been removed from the server and the repo.)
 
-Two ways to fix the admin SAN (pick one):
+Fix the admin SAN the automatic way: mint EAB (§ above), set
+`acme.enabled=true` + `acme.eab_kid` + `acme.eab_hmac` (+
+optional `acme.email`), then hand off by emptying the explicit
+rows (`tls.cert_file`/`tls.key_file` set to empty ≡ unset —
+explicit files win while set), and restart. The binary issues
+for `acme.domains` (`andrii.ai,admin.andrii.ai`) and renews via
+ARI forever.
 
-- **A. certbot reissue (quick, keeps current flow).** As root,
-  re-run issuance with both names (keep `--http-01-address
-  199.184.91.41` — sibling services own :80 on OTHER IPs of
-  this box; a wildcard bind would fail or steal their port),
-  then restart. Same stop/start hooks as the first issuance.
-- **B. in-binary ACME (automatic from then on).** Mint EAB (§
-  above), set `acme.enabled=true` + `acme.eab_kid` +
-  `acme.eab_hmac` (+ optional `acme.email`), then hand off by
-  emptying the explicit rows (`tls.cert_file`/`tls.key_file`
-  set to empty ≡ unset — explicit files win while set), and
-  restart. The binary issues for `acme.domains`
-  (`andrii.ai,admin.andrii.ai`) and renews via ARI forever.
-
-Either way the port-80 lesson holds: our redirector binds the
-explicit `net.bind`/`net.bind6` IPs only, never 0.0.0.0.
+Port-80 lesson (kept from the manual era): sibling services own
+:80 on OTHER IPs of this box, so our redirector binds the
+explicit `net.bind`/`net.bind6` IPs only, never 0.0.0.0 — a
+wildcard bind would fail or steal their port.
 
 ## How it works
 

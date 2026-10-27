@@ -100,8 +100,8 @@ Server-side prerequisites (one-time, needs root):
 `/etc/systemd/system/` (runs `/srv/apostille/current/web` as
 `andrii-ai:andrii-ai` with only `CAP_NET_BIND_SERVICE`,
 binds TCP 80/443 (plus UDP 443 for QUIC when `quic.enabled`)
-on the .41 addresses directly — no Caddy, no proxy); TLS
-files + certbot hooks per `acme.md`;
+on the .41 addresses directly — no Caddy, no proxy); TLS via
+in-binary ACME per `acme.md` (no external client);
 `hal` sudoers entry per `runbook-release.md` §0 (pinned
 `systemctl restart`/`status` — the old
 `/usr/local/sbin/apostille-ship` sudoers line is superseded;
@@ -136,15 +136,15 @@ Services cert valid to 2027-01-25. Interim hal service retired.
 This ran once (prod is live). Keep for disaster rebuilds; do
 not re-run against the live box. Prereqs at the time:
 `andrii-ai` user exists; EAB `keyId`/`hmac` minted
-(`acme.md` gcloud); the three drafts reviewed
-(`apostille.service`, `apostille-ship.sh`,
-`apostille-cert-deploy.sh`).
+(`acme.md` gcloud); the drafts reviewed
+(`apostille.service`, `apostille-ship.sh`). Step 2 below is
+rewritten for the in-binary flow (the original external-client
+commands are gone with that client).
 
 ```sh
 # ---- Step 0, on the Mac: stage the reviewed files. ----
 cd /Users/andrii/Code/handbook
-scp docs/ops/apostille.service docs/ops/apostille-ship.sh \
-  docs/ops/apostille-cert-deploy.sh andrii.ai:/tmp/
+scp docs/ops/apostille.service docs/ops/apostille-ship.sh andrii.ai:/tmp/
 
 # ---- Step 1, on the server as root: install units/scripts. ----
 id andrii-ai   # must exist
@@ -152,35 +152,24 @@ install -o root -g root -m 644 \
   /tmp/apostille.service /etc/systemd/system/apostille.service
 install -o root -g root -m 755 \
   /tmp/apostille-ship.sh /usr/local/sbin/apostille-ship
-install -o root -g root -m 755 \
-  /tmp/apostille-cert-deploy.sh /usr/local/sbin/apostille-cert-deploy
-chattr +i /usr/local/sbin/apostille-ship \
-  /usr/local/sbin/apostille-cert-deploy
+chattr +i /usr/local/sbin/apostille-ship
 echo 'hal ALL=(root) NOPASSWD: /usr/local/sbin/apostille-ship *' \
   > /etc/sudoers.d/apostille-ship
 chmod 440 /etc/sudoers.d/apostille-ship
 visudo -c   # must print OK — stop here if not
 install -d -o root -g andrii-ai -m 755 \
   /srv/apostille /srv/apostille/releases
-apt update && apt install -y certbot
 systemctl daemon-reload
 
-# ---- Step 2, on the server as root: register + first cert. ----
-# Paste the EAB values (shell vars, not committed anywhere):
-EAB_KID='paste-keyId'; EAB_HMAC='paste-b64MacKey'
-certbot register --server https://dv.acme-v02.api.pki.goog/directory \
-  --eab-kid "$EAB_KID" --eab-hmac-key "$EAB_HMAC" \
-  --email <author-email> --no-eff-email
-# First issuance: nothing listens on :80 yet, so standalone just works.
-certbot certonly --server https://dv.acme-v02.api.pki.goog/directory \
-  -d andrii.ai \
-  --standalone --preferred-challenges http \
-  --http-01-address 199.184.91.41 \
-  --pre-hook "systemctl stop apostille" \
-  --post-hook "systemctl start apostille" \
-  --deploy-hook "/usr/local/sbin/apostille-cert-deploy"
-unset EAB_KID EAB_HMAC
-ls -l /var/lib/apostille/tls/   # cert.pem + key.pem (600) must exist
+# ---- Step 2, on the server as root: first cert via in-binary ACME. ----
+# (Historical note: the 2026-10-27 install used a one-shot external
+# ACME client for `-d andrii.ai`; that client is gone — rebuilds use
+# the binary itself. Mint EAB per acme.md, then:)
+#   1. enroll KEK + seed acme.enabled=true, acme.eab_kid,
+#      acme.eab_hmac (secret), acme.email (see acme.md);
+#   2. start the service: first boot issues for acme.domains
+#      (andrii.ai,admin.andrii.ai) over http-01 on the explicit
+#      bind IPs, then serves. No stop/start hooks, no downtime.
 
 # ---- Step 3, on the server as hal: first ship + enable. ----
 sudo /usr/local/sbin/apostille-ship c1960da   # smokes itself

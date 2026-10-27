@@ -32,7 +32,7 @@ one Ubuntu **26.04 LTS** ("Resolute Raccoon") server, app served under
 - **TLS terminates in the app.** Since prompt 015: in-app `rustls`
   via `axum-server` (HTTPS on 443 + HTTP→HTTPS 308 on 80, no
   proxy anywhere). Certificates come from Google Public CA via
-  certbot http-01 (see `docs/ops/certificates.md`). The old
+  in-binary ACME http-01 (see `docs/ops/acme.md`). The old
   Caddy-reverse-proxy plan is retired.
 - **Synthetic dev data only.** The repo holds schema, never data
   (`docs/design.md` §0), so `xtask dev-seed` will generate fake

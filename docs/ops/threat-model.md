@@ -30,7 +30,7 @@
 - Malicious customer upload (F8 path): hostile filenames, polyglots,
   oversized media; arrives Day 3+ (no upload endpoint exists yet).
 - Compromised dependency: malicious crate / npm package / poisoned
-  zig or certbot binary; build-time code execution.
+  zig binary; build-time code execution.
 - Malicious insider / operator: root on the box, or push access to the repo.
 - Thief with disk image: offline copy of SQLite + `store/` + creds.
 
@@ -137,7 +137,7 @@ is trusted); customers attacking each other's browsers outside our pages.
 PLANNED (owning doc): rate limits + lockout (`SECURITY.md` Baseline);
 Origin/CSRF + security headers + `__Host-` cookies (same); token hashing
 (demo-login comment); real auth playbook (`auth-playbook.md`);
-TPM-sealed config (`secure-config.md`); certbot issuance + unit install
+TPM-sealed config (`secure-config.md`); ACME issuance + unit install
 (`acme.md`, `apostille.service` — both drafted, need root);
 offsite audit ship + backup drills (`prod.md`, `SECURITY.md` Q8);
 upload allowlist/magic-bytes/EXIF/redaction pipeline (F8/F9,

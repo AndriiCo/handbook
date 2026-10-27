@@ -13,7 +13,7 @@ build, not papered over per-host.
 - Cross build via `cargo zigbuild --release -p web --target
   x86_64-unknown-linux-gnu`; verified 2026-10-26: ELF x86-64, max
   GLIBC 2.30, box ships newer — runs fine.
-- No Docker, no system services beyond certbot + systemd.
+- No Docker; systemd is the only system service beside the app.
 
 ## Parity checklist (`ci` green on BOTH hosts)
 
@@ -38,8 +38,8 @@ not by relaxing lints.
 
 ## Known deltas (accepted, not parity bugs)
 
-- Certbot issuance/renewal is OS-level tooling on the box only
-  (Google Public CA, ACME standalone) — dev never issues certs.
+- TLS issuance/renewal is in-binary ACME (Google Public CA)
+  on the box — dev never issues certs.
 - Systemd unit + `andrii-ai` user + `/var/lib/apostille` exist on
   the box only; dev runs `STORE_DIR=… cargo run -p web` (ports and
   all other settings come from sealed DB rows, `config-db.md`).

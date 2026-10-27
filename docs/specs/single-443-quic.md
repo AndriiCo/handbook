@@ -181,8 +181,7 @@ Registry grows 30 → 31 keys (5 bool / 24 text / 2 secret).
    SANs via `acme.domains`).
 3. **Prod SAN reissue (dependency).** BEFORE the prod flip,
    the prod cert MUST carry the `admin.andrii.ai` SAN
-   (certbot reissue with `-d admin.andrii.ai`, or the
-   in-binary ACME path). Without it, browsers on the admin
+   (in-binary ACME path). Without it, browsers on the admin
    host get a name-mismatch error (loud boot warning fires
    as the backstop signal).
 4. **Prod flip.** Deploy; same log assertions; run the

@@ -116,7 +116,7 @@ struct AppState {
 /// serves the app shell at `/apostille/` and every other
 /// `/apostille/*` path via SPA fallback; `store_root` locates the
 /// SQLite metadata DB for session handlers; `acme_dir` serves
-/// `/.well-known/acme-challenge/` token files for certbot http-01
+/// `/.well-known/acme-challenge/` token files for ACME http-01
 /// (missing dir → 404s, harmless in dev).
 ///
 /// Default state (fresh bus, no KEK, dev TLS seam): enough for the

@@ -31,9 +31,9 @@ on purpose; every item below is checkable by one command.
   check (author's existing monitor or a second box later):
   `GET /apostille/healthz` → 200 + `{"status":"ok"}`.
   Alert on 3 consecutive failures.
-- Cert expiry: certbot renews automatically; a weekly check
-  asserts `notAfter - now > 21 days` for andrii.ai (one
-  openssl line in the runbook).
+- Cert expiry: in-binary ACME renews automatically (ARI);
+  a weekly check asserts `notAfter - now > 21 days` for
+  andrii.ai (one openssl line in the runbook).
 - Disk: alert at 80% (SQLite + store + logs share one disk).
   Biggest knob: `store/blob` growth and journald vacuum.
 - Error budget: `journalctl -u apostille -p err --since
