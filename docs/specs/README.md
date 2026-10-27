@@ -47,6 +47,8 @@ the consolidated author-decision list is at the bottom of this file.
   resemblance-form framework (validation, address, phone,
   country) + per-form projects under `forms/` + the US DOS
   DS-4194 pilot (goal-025 stream 3).
+- [config-db.md](config-db.md) — zero-env runtime config
+  (24 DB keys, boot order, bootstrap remainder; staff-only).
 - Legal drafts (lawyer review required, do not publish):
   [tos-draft.md](../legal/tos-draft.md),
   [privacy-draft.md](../legal/privacy-draft.md).

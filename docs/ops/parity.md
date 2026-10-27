@@ -41,8 +41,11 @@ not by relaxing lints.
 - Certbot issuance/renewal is OS-level tooling on the box only
   (Google Public CA, ACME standalone) — dev never issues certs.
 - Systemd unit + `andrii-ai` user + `/var/lib/apostille` exist on
-  the box only; dev runs `PORT=3000 STORE_DIR=… cargo run -p web`.
-- TPM absent on `enodia` → env-only config fallback is ACTIVE there
-  (secure-config decision); no Mac behavior change.
+  the box only; dev runs `STORE_DIR=… cargo run -p web` (ports and
+  all other settings come from sealed DB rows, `config-db.md`).
+- TPM absent on `enodia` → no release-usable KEK source exists
+  there yet (tpm-seal stream owns it); until it lands, the new
+  binary refuses to start on that box by design (config-db.md
+  §3). No Mac behavior change (dev KEK).
 - Research traffic (URL watching, fetches) originates ONLY from the
   prod IPs — dev machines must never fetch watched URLs directly.

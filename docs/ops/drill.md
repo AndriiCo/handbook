@@ -42,7 +42,9 @@ it exists, otherwise a scratch path on prod — never over live data):
 
 ```sh
 # Restore the LATEST nightly backup into a scratch dir, then:
-STORE_DIR=$SCRATCH/data ./current/web &  # port 0 in tests; scratch port here
+# (scratch ports go in DB rows, not env: config-set net.port /
+# net.admin_port to the scratch ports before booting.)
+STORE_DIR=$SCRATCH/data ./current/web &
 curl -fsS http://127.0.0.1:<scratch-port>/apostille/healthz
 cargo xtask packs-validate   # pack/tooling sanity on the restored box
 ```

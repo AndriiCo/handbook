@@ -2,7 +2,7 @@
 //!
 //! The web binary issues its own TLS certificate at boot and renews
 //! it without restarting: http-01 challenges are answered from the
-//! `ACME_CHALLENGE_DIR` files the public router already serves,
+//! `paths.acme_challenge_dir` files the public router already serves,
 //! the pair is persisted under `<store>/acme/`, and each renewal is
 //! hot-swapped into the live rustls config. Renewal timing follows
 //! the CA's ARI window ([RFC 9773](https://www.rfc-editor.org/rfc/rfc9773.html))
@@ -20,7 +20,9 @@ mod schedule;
 pub use cert::{
     ACCOUNT_FILE, CERT_FILE, KEY_FILE, LeafInfo, PersistedCert, leaf_info, load_pair, save_pair,
 };
-pub use config::{AcmeConfig, DEFAULT_DOMAINS, GOOGLE_PROD_DIRECTORY, GOOGLE_STAGING_DIRECTORY};
+pub use config::{
+    AcmeConfig, DEFAULT_DOMAINS, GOOGLE_PROD_DIRECTORY, GOOGLE_STAGING_DIRECTORY, StoredAcme,
+};
 pub use manager::{ensure_certificate, renewal_loop};
 pub use schedule::{
     FALLBACK_POLL_INTERVAL, FALLBACK_RENEW_BEFORE, MAX_ARI_SLEEP, ari_sleep, fallback_due,

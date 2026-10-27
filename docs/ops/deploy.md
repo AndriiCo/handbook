@@ -52,9 +52,11 @@ scp -r web/build andrii.ai:apostille/releases/$VERSION/spa
 # explicitly after launch (`exit` below), the setsid child stays.
 ssh andrii.ai "ln -sfn ~/apostille/releases/$VERSION ~/apostille/current \
   && cd ~/apostille \
-  && PORT=3000 STORE_DIR=\$HOME/apostille/data \
-     SPA_DIR=\$HOME/apostille/current/spa \
+  && STORE_DIR=\$HOME/apostille/data \
      setsid ./current/web </dev/null >>apostille.log 2>&1; exit"
+# Runtime settings (ports, SPA dir, …) live in sealed DB rows now
+# (`docs/specs/config-db.md`); only STORE_DIR stays env. Non-default
+# values must be `config-set` into the store before first boot.
 # Smoke (runs ON the box; the binary binds 127.0.0.1 only):
 ssh andrii.ai "curl -fsS http://127.0.0.1:3000/apostille/healthz"
 ```

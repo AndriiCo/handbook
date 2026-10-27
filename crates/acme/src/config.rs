@@ -17,7 +17,7 @@ pub const GOOGLE_STAGING_DIRECTORY: &str = "https://dv.acme-v02.test-api.pki.goo
 pub const DEFAULT_DOMAINS: [&str; 2] = ["andrii.ai", "admin.andrii.ai"];
 
 /// ACME client configuration. Build with [`AcmeConfig::builder`]
-/// (validation happens in `build`) or [`AcmeConfig::from_env`].
+/// (validation happens in `build`) or [`AcmeConfig::from_stored`].
 /// The EAB HMAC is redacted in `Debug`.
 #[derive(Clone)]
 pub struct AcmeConfig {
@@ -42,6 +42,23 @@ impl std::fmt::Debug for AcmeConfig {
             .field("cert_dir", &self.cert_dir)
             .finish()
     }
+}
+
+/// DB-backed values for [`AcmeConfig::from_stored`]: one field
+/// per `acme.*` config key (`docs/specs/config-db.md` §2.1).
+/// Empty strings behave like missing values (defaults apply).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredAcme {
+    /// `prod`, `staging`, or a full `https://` directory URL.
+    pub directory: String,
+    /// Comma-separated domains (empty = both prod names).
+    pub domains_csv: String,
+    /// Optional contact mailbox (no `mailto:` prefix).
+    pub email: Option<String>,
+    /// Google EAB key ID (required, with the HMAC).
+    pub eab_kid: Option<String>,
+    /// Google EAB HMAC, base64 (required, with the KID).
+    pub eab_hmac_b64: Option<String>,
 }
 
 /// Builder for [`AcmeConfig`]; `build` validates every field.
@@ -70,37 +87,48 @@ impl AcmeConfig {
         }
     }
 
-    /// Read config from the environment. `ACME_DIRECTORY` is `prod`
-    /// (default), `staging`, or a full directory URL; `ACME_DOMAINS`
-    /// is comma-separated (default: both prod names); `ACME_EMAIL`
-    /// is an optional contact; `ACME_EAB_KID` / `ACME_EAB_HMAC` are
-    /// the required Google EAB pair. Certs persist under
+    /// Read config from DB-backed values (goal-025 stream 4,
+    /// zero-env; replaces the old env mapping 1:1). `directory` is
+    /// `prod` (default), `staging`, or a full directory URL;
+    /// `domains_csv` is comma-separated (default: both prod names);
+    /// `email` is an optional contact; `eab_kid` / `eab_hmac_b64`
+    /// are the required Google EAB pair. Certs persist under
     /// `<store_dir>/acme/`.
     ///
     /// # Errors
     ///
     /// Missing EAB values or anything [`AcmeConfigBuilder::build`]
     /// rejects.
-    pub fn from_env(store_dir: &Path, challenge_dir: PathBuf) -> Result<Self> {
-        fn env(name: &str) -> Option<String> {
-            std::env::var(name).ok().filter(|v| !v.trim().is_empty())
-        }
-        let directory_url = match env("ACME_DIRECTORY").as_deref() {
-            None | Some("prod") => GOOGLE_PROD_DIRECTORY.to_string(),
-            Some("staging") => GOOGLE_STAGING_DIRECTORY.to_string(),
-            Some(url) => url.to_string(),
+    pub fn from_stored(
+        store_dir: &Path,
+        challenge_dir: PathBuf,
+        stored: StoredAcme,
+    ) -> Result<Self> {
+        let directory_url = match stored.directory.trim() {
+            "" | "prod" => GOOGLE_PROD_DIRECTORY.to_string(),
+            "staging" => GOOGLE_STAGING_DIRECTORY.to_string(),
+            url => url.to_string(),
         };
-        let domains: Vec<String> = env("ACME_DOMAINS")
-            .map(|csv| csv.split(',').map(|d| d.trim().to_string()).collect())
-            .unwrap_or_else(|| DEFAULT_DOMAINS.iter().map(ToString::to_string).collect());
+        let domains: Vec<String> = if stored.domains_csv.trim().is_empty() {
+            DEFAULT_DOMAINS.iter().map(ToString::to_string).collect()
+        } else {
+            stored
+                .domains_csv
+                .split(',')
+                .map(|d| d.trim().to_string())
+                .collect()
+        };
         let mut builder = AcmeConfig::builder(challenge_dir, store_dir.join("acme"))
             .directory(directory_url)
             .domains(domains);
-        if let Some(email) = env("ACME_EMAIL") {
+        if let Some(email) = stored.email.filter(|e| !e.trim().is_empty()) {
             builder = builder.email(email);
         }
-        if let (Some(kid), Some(hmac)) = (env("ACME_EAB_KID"), env("ACME_EAB_HMAC")) {
-            builder = builder.eab(kid, hmac);
+        match (stored.eab_kid, stored.eab_hmac_b64) {
+            (Some(kid), Some(hmac)) if !kid.trim().is_empty() && !hmac.trim().is_empty() => {
+                builder = builder.eab(kid, hmac);
+            }
+            _ => {}
         }
         builder.build()
     }
@@ -355,5 +383,92 @@ mod tests {
         assert!(shown.contains("kid-1"), "{shown}");
         assert!(!shown.contains("aGk"), "{shown}");
         assert!(shown.contains("redacted"), "{shown}");
+    }
+
+    fn stored() -> StoredAcme {
+        StoredAcme {
+            directory: "prod".to_string(),
+            domains_csv: String::new(),
+            email: None,
+            eab_kid: Some("kid-1".to_string()),
+            eab_hmac_b64: Some("aGk".to_string()),
+        }
+    }
+
+    #[test]
+    fn from_stored_maps_selectors_and_defaults() {
+        let config =
+            AcmeConfig::from_stored(Path::new("store"), PathBuf::from("acme-dir"), stored())
+                .unwrap();
+        assert_eq!(config.directory_url(), GOOGLE_PROD_DIRECTORY);
+        assert_eq!(
+            config.domains(),
+            &["andrii.ai".to_string(), "admin.andrii.ai".to_string()]
+        );
+        assert_eq!(config.email(), None);
+        assert_eq!(config.cert_dir(), Path::new("store/acme"));
+        assert_eq!(config.challenge_dir(), Path::new("acme-dir"));
+
+        let staging = AcmeConfig::from_stored(
+            Path::new("store"),
+            PathBuf::from("acme-dir"),
+            StoredAcme {
+                directory: "staging".to_string(),
+                domains_csv: "a.test, b.test".to_string(),
+                email: Some("ops@example.test".to_string()),
+                eab_kid: Some("kid-1".to_string()),
+                eab_hmac_b64: Some("aGk".to_string()),
+            },
+        )
+        .unwrap();
+        assert!(staging.staging());
+        assert_eq!(
+            staging.domains(),
+            &["a.test".to_string(), "b.test".to_string()]
+        );
+        assert_eq!(staging.email(), Some("ops@example.test"));
+
+        // Empty selector/CSV behave like missing values.
+        let empty = AcmeConfig::from_stored(
+            Path::new("store"),
+            PathBuf::from("acme-dir"),
+            StoredAcme {
+                directory: String::new(),
+                domains_csv: "  ".to_string(),
+                email: Some("  ".to_string()),
+                eab_kid: Some("kid-1".to_string()),
+                eab_hmac_b64: Some("aGk".to_string()),
+            },
+        )
+        .unwrap();
+        assert_eq!(empty.directory_url(), GOOGLE_PROD_DIRECTORY);
+        assert_eq!(empty.domains().len(), 2);
+        assert_eq!(empty.email(), None);
+    }
+
+    #[test]
+    fn from_stored_requires_the_full_eab_pair() {
+        for (kid, hmac) in [
+            (None, None),
+            (Some("kid-1".to_string()), None),
+            (None, Some("aGk".to_string())),
+            (Some("  ".to_string()), Some("aGk".to_string())),
+        ] {
+            assert!(
+                AcmeConfig::from_stored(
+                    Path::new("store"),
+                    PathBuf::from("acme-dir"),
+                    StoredAcme {
+                        directory: "prod".to_string(),
+                        domains_csv: String::new(),
+                        email: None,
+                        eab_kid: kid,
+                        eab_hmac_b64: hmac,
+                    },
+                )
+                .is_err(),
+                "half or missing EAB must fail"
+            );
+        }
     }
 }

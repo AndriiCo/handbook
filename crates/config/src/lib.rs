@@ -766,3 +766,785 @@ mod tests {
         assert_eq!(ConfigType::parse("yaml"), None);
     }
 }
+
+// ---------------------------------------------------------------------------
+// DB-backed runtime config (goal-025 stream 4, zero-env).
+//
+// `docs/specs/config-db.md` owns the registry: every non-bootstrap
+// runtime setting lives in a sealed `config` row and is read once at
+// boot into [`RuntimeConfig`]. Missing row ≡ compiled default, so a
+// fresh store boots exactly like the old env-default boot. Nothing
+// above this line changed for the migration (crypto untouched).
+// ---------------------------------------------------------------------------
+
+/// DB key names for every runtime setting (spec §2.1).
+pub mod keys {
+    pub const PATHS_STATIC_DIR: &str = "paths.static_dir";
+    pub const PATHS_SPA_DIR: &str = "paths.spa_dir";
+    pub const PATHS_ADMIN_SPA_DIR: &str = "paths.admin_spa_dir";
+    pub const PATHS_ACME_CHALLENGE_DIR: &str = "paths.acme_challenge_dir";
+    pub const NET_BIND: &str = "net.bind";
+    pub const NET_BIND6: &str = "net.bind6";
+    pub const NET_PORT: &str = "net.port";
+    pub const NET_ADMIN_PORT: &str = "net.admin_port";
+    pub const NET_HTTPS_PORT: &str = "net.https_port";
+    pub const NET_ADMIN_HTTPS_PORT: &str = "net.admin_https_port";
+    pub const NET_HTTP_PORT: &str = "net.http_port";
+    pub const NET_PUBLIC_HOST: &str = "net.public_host";
+    pub const TLS_CERT_FILE: &str = "tls.cert_file";
+    pub const TLS_KEY_FILE: &str = "tls.key_file";
+    pub const ADMIN_MTLS_OFF: &str = "admin.mtls_off";
+    pub const MEDIA_TERMS_READ: &str = "media.terms_read";
+    pub const ACME_ENABLED: &str = "acme.enabled";
+    pub const ACME_DIRECTORY: &str = "acme.directory";
+    pub const ACME_DOMAINS: &str = "acme.domains";
+    pub const ACME_EMAIL: &str = "acme.email";
+    pub const ACME_EAB_KID: &str = "acme.eab_kid";
+    pub const ACME_EAB_HMAC: &str = "acme.eab_hmac";
+    pub const USPS_BASE_URL: &str = "usps.base_url";
+    pub const USPS_CERTIFIED: &str = "usps.certified";
+
+    /// Every registered key with its type (admin UI + roundtrip tests).
+    pub const ALL: &[(&str, super::ConfigType)] = &[
+        (PATHS_STATIC_DIR, super::ConfigType::Text),
+        (PATHS_SPA_DIR, super::ConfigType::Text),
+        (PATHS_ADMIN_SPA_DIR, super::ConfigType::Text),
+        (PATHS_ACME_CHALLENGE_DIR, super::ConfigType::Text),
+        (NET_BIND, super::ConfigType::Text),
+        (NET_BIND6, super::ConfigType::Text),
+        (NET_PORT, super::ConfigType::Text),
+        (NET_ADMIN_PORT, super::ConfigType::Text),
+        (NET_HTTPS_PORT, super::ConfigType::Text),
+        (NET_ADMIN_HTTPS_PORT, super::ConfigType::Text),
+        (NET_HTTP_PORT, super::ConfigType::Text),
+        (NET_PUBLIC_HOST, super::ConfigType::Text),
+        (TLS_CERT_FILE, super::ConfigType::Text),
+        (TLS_KEY_FILE, super::ConfigType::Text),
+        (ADMIN_MTLS_OFF, super::ConfigType::Bool),
+        (MEDIA_TERMS_READ, super::ConfigType::Bool),
+        (ACME_ENABLED, super::ConfigType::Bool),
+        (ACME_DIRECTORY, super::ConfigType::Text),
+        (ACME_DOMAINS, super::ConfigType::Text),
+        (ACME_EMAIL, super::ConfigType::Text),
+        (ACME_EAB_KID, super::ConfigType::Text),
+        (ACME_EAB_HMAC, super::ConfigType::Secret),
+        (USPS_BASE_URL, super::ConfigType::Text),
+        (USPS_CERTIFIED, super::ConfigType::Bool),
+    ];
+}
+
+/// Raw row fetch shared by the runtime `*_for_job` readers.
+fn get_row(conn: &Connection, key: &str) -> Result<Option<(String, Vec<u8>, i64)>> {
+    Ok(conn
+        .query_row(
+            "SELECT type, value_enc, enc_version FROM config WHERE key = ?1",
+            [key],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?)
+}
+
+/// Read a `bool` row for server-side code (boot-time config load).
+/// Missing key is `None`; a present-but-wrong type or non-bool
+/// bytes are [`ConfigError::BadValue`] (the loader warns + defaults).
+pub fn get_bool_for_job(conn: &Connection, kek: &Kek, key: &str) -> Result<Option<bool>> {
+    let Some((type_text, value_enc, enc_version)) = get_row(conn, key)? else {
+        return Ok(None);
+    };
+    if type_text != "bool" {
+        return Err(ConfigError::BadValue("job read asked for a non-bool key"));
+    }
+    match decrypt_value(kek, key, enc_version, &value_enc)?.as_slice() {
+        b"0" => Ok(Some(false)),
+        b"1" => Ok(Some(true)),
+        _ => Err(ConfigError::BadValue("bool row holds non-bool bytes")),
+    }
+}
+
+/// Read a `text` row for server-side code (boot-time config load).
+/// Missing key is `None`; a present-but-wrong type or non-UTF-8
+/// bytes are [`ConfigError::BadValue`] (the loader warns + defaults).
+pub fn get_text_for_job(conn: &Connection, kek: &Kek, key: &str) -> Result<Option<String>> {
+    let Some((type_text, value_enc, enc_version)) = get_row(conn, key)? else {
+        return Ok(None);
+    };
+    if type_text != "text" {
+        return Err(ConfigError::BadValue("job read asked for a non-text key"));
+    }
+    String::from_utf8(decrypt_value(kek, key, enc_version, &value_enc)?)
+        .map(Some)
+        .map_err(|_| ConfigError::BadValue("text row is not UTF-8"))
+}
+
+/// Secret text that never renders in `Debug` (key material).
+#[derive(Clone, PartialEq, Eq)]
+pub struct SecretText(String);
+
+impl SecretText {
+    /// Borrow the secret bytes as text (caller must not log them).
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for SecretText {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SecretText(<redacted>)")
+    }
+}
+
+/// Every runtime setting, read once at boot from sealed DB rows.
+///
+/// `Default` is exactly the old env-default boot (spec §2.1), so a
+/// fresh store behaves like the old binary with no env set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeConfig {
+    pub static_dir: String,
+    pub spa_dir: String,
+    pub admin_spa_dir: String,
+    pub acme_challenge_dir: String,
+    pub bind: std::net::IpAddr,
+    pub bind6: Option<std::net::IpAddr>,
+    pub port: u16,
+    pub admin_port: u16,
+    pub https_port: u16,
+    pub admin_https_port: u16,
+    pub http_port: u16,
+    pub public_host: String,
+    pub tls_cert: Option<String>,
+    pub tls_key: Option<String>,
+    pub admin_mtls_off: bool,
+    pub media_terms_read: bool,
+    pub acme_enabled: bool,
+    pub acme_directory: String,
+    pub acme_domains_csv: String,
+    pub acme_email: Option<String>,
+    pub acme_eab_kid: Option<String>,
+    pub acme_eab_hmac_b64: Option<SecretText>,
+    pub usps_base_url: String,
+    pub usps_certified: bool,
+}
+
+impl Default for RuntimeConfig {
+    /// Old env-default boot, key for key (spec §2.1).
+    fn default() -> Self {
+        Self {
+            static_dir: "crates/web/static".to_string(),
+            spa_dir: "web/build".to_string(),
+            admin_spa_dir: "web/build-admin".to_string(),
+            acme_challenge_dir: "acme".to_string(),
+            bind: std::net::IpAddr::from([127, 0, 0, 1]),
+            bind6: None,
+            port: 3000,
+            admin_port: 3001,
+            https_port: 443,
+            admin_https_port: 444,
+            http_port: 80,
+            public_host: "andrii.ai".to_string(),
+            tls_cert: None,
+            tls_key: None,
+            admin_mtls_off: false,
+            media_terms_read: false,
+            acme_enabled: false,
+            acme_directory: "prod".to_string(),
+            acme_domains_csv: "andrii.ai,admin.andrii.ai".to_string(),
+            acme_email: None,
+            acme_eab_kid: None,
+            acme_eab_hmac_b64: None,
+            // Must equal `labels::USPS_BASE_TEST`; asserted by a web
+            // test (this crate cannot depend on labels for one string).
+            usps_base_url: "https://apis-tem.usps.com".to_string(),
+            usps_certified: false,
+        }
+    }
+}
+
+/// Lenient bool overlay: missing → keep default; wrong type/shape →
+/// warn + keep default. Crypto/DB errors propagate (refuse the boot).
+fn overlay_bool(
+    conn: &Connection,
+    kek: &Kek,
+    key: &str,
+    warnings: &mut Vec<String>,
+    slot: &mut bool,
+) -> Result<()> {
+    match get_bool_for_job(conn, kek, key) {
+        Ok(None) => Ok(()),
+        Ok(Some(v)) => {
+            *slot = v;
+            Ok(())
+        }
+        Err(ConfigError::BadValue(why)) => {
+            warnings.push(format!("{key}: {why}; using default"));
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Lenient required-text overlay: missing or empty → default (empty
+/// warns); wrong type → warn + default. Crypto/DB propagate.
+fn overlay_required_text(
+    conn: &Connection,
+    kek: &Kek,
+    key: &str,
+    warnings: &mut Vec<String>,
+    slot: &mut String,
+) -> Result<()> {
+    match get_text_for_job(conn, kek, key) {
+        Ok(None) => Ok(()),
+        Ok(Some(v)) if v.trim().is_empty() => {
+            warnings.push(format!("{key}: empty value; using default"));
+            Ok(())
+        }
+        Ok(Some(v)) => {
+            *slot = v;
+            Ok(())
+        }
+        Err(ConfigError::BadValue(why)) => {
+            warnings.push(format!("{key}: {why}; using default"));
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Lenient optional-text overlay: missing or empty → unset (silent);
+/// wrong type → warn + unset. Crypto/DB errors propagate.
+fn overlay_optional_text(
+    conn: &Connection,
+    kek: &Kek,
+    key: &str,
+    warnings: &mut Vec<String>,
+    slot: &mut Option<String>,
+) -> Result<()> {
+    match get_text_for_job(conn, kek, key) {
+        Ok(None) => Ok(()),
+        Ok(Some(v)) if v.trim().is_empty() => Ok(()),
+        Ok(Some(v)) => {
+            *slot = Some(v);
+            Ok(())
+        }
+        Err(ConfigError::BadValue(why)) => {
+            warnings.push(format!("{key}: {why}; treating as unset"));
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Lenient port overlay: missing or unparsable → default (unparsable
+/// warns, mirroring the old `port_env` garbage→default leniency).
+fn overlay_port(
+    conn: &Connection,
+    kek: &Kek,
+    key: &str,
+    warnings: &mut Vec<String>,
+    slot: &mut u16,
+) -> Result<()> {
+    match get_text_for_job(conn, kek, key) {
+        Ok(None) => Ok(()),
+        Ok(Some(v)) => match v.trim().parse::<u16>() {
+            Ok(p) => {
+                *slot = p;
+                Ok(())
+            }
+            Err(_) => {
+                warnings.push(format!("{key}: {v:?} is not a u16 port; using default"));
+                Ok(())
+            }
+        },
+        Err(ConfigError::BadValue(why)) => {
+            warnings.push(format!("{key}: {why}; using default"));
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+impl RuntimeConfig {
+    /// Read-once boot load: overlay present rows onto [`Self::default`].
+    /// Returns the config plus one warning per defaulted row (main
+    /// prints them; behavior already matches the old lenient reads).
+    ///
+    /// # Errors
+    ///
+    /// `Crypto` (wrong KEK or tampered row) and `Db` refuse the boot:
+    /// crypto failures must never silently default. `admin.mtls_off`
+    /// set in a release build refuses too (dev-only seam).
+    pub fn load(conn: &Connection, kek: &Kek) -> Result<(Self, Vec<String>)> {
+        let mut warnings = Vec::new();
+        let mut cfg = Self::default();
+        overlay_required_text(
+            conn,
+            kek,
+            keys::PATHS_STATIC_DIR,
+            &mut warnings,
+            &mut cfg.static_dir,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::PATHS_SPA_DIR,
+            &mut warnings,
+            &mut cfg.spa_dir,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::PATHS_ADMIN_SPA_DIR,
+            &mut warnings,
+            &mut cfg.admin_spa_dir,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::PATHS_ACME_CHALLENGE_DIR,
+            &mut warnings,
+            &mut cfg.acme_challenge_dir,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::NET_PUBLIC_HOST,
+            &mut warnings,
+            &mut cfg.public_host,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::ACME_DIRECTORY,
+            &mut warnings,
+            &mut cfg.acme_directory,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::ACME_DOMAINS,
+            &mut warnings,
+            &mut cfg.acme_domains_csv,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::USPS_BASE_URL,
+            &mut warnings,
+            &mut cfg.usps_base_url,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::TLS_CERT_FILE,
+            &mut warnings,
+            &mut cfg.tls_cert,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::TLS_KEY_FILE,
+            &mut warnings,
+            &mut cfg.tls_key,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::ACME_EMAIL,
+            &mut warnings,
+            &mut cfg.acme_email,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::ACME_EAB_KID,
+            &mut warnings,
+            &mut cfg.acme_eab_kid,
+        )?;
+        overlay_bool(
+            conn,
+            kek,
+            keys::ADMIN_MTLS_OFF,
+            &mut warnings,
+            &mut cfg.admin_mtls_off,
+        )?;
+        overlay_bool(
+            conn,
+            kek,
+            keys::MEDIA_TERMS_READ,
+            &mut warnings,
+            &mut cfg.media_terms_read,
+        )?;
+        overlay_bool(
+            conn,
+            kek,
+            keys::ACME_ENABLED,
+            &mut warnings,
+            &mut cfg.acme_enabled,
+        )?;
+        overlay_bool(
+            conn,
+            kek,
+            keys::USPS_CERTIFIED,
+            &mut warnings,
+            &mut cfg.usps_certified,
+        )?;
+        overlay_port(conn, kek, keys::NET_PORT, &mut warnings, &mut cfg.port)?;
+        overlay_port(
+            conn,
+            kek,
+            keys::NET_ADMIN_PORT,
+            &mut warnings,
+            &mut cfg.admin_port,
+        )?;
+        overlay_port(
+            conn,
+            kek,
+            keys::NET_HTTPS_PORT,
+            &mut warnings,
+            &mut cfg.https_port,
+        )?;
+        overlay_port(
+            conn,
+            kek,
+            keys::NET_ADMIN_HTTPS_PORT,
+            &mut warnings,
+            &mut cfg.admin_https_port,
+        )?;
+        overlay_port(
+            conn,
+            kek,
+            keys::NET_HTTP_PORT,
+            &mut warnings,
+            &mut cfg.http_port,
+        )?;
+        // `net.bind`: missing/empty/garbage → 127.0.0.1 (old `BIND` leniency).
+        match get_text_for_job(conn, kek, keys::NET_BIND) {
+            Ok(None) => {}
+            Ok(Some(v)) => match v.trim().parse::<std::net::IpAddr>() {
+                Ok(ip) => cfg.bind = ip,
+                Err(_) => warnings.push(format!(
+                    "{}: {v:?} is not an IP; using 127.0.0.1",
+                    keys::NET_BIND
+                )),
+            },
+            Err(ConfigError::BadValue(why)) => {
+                warnings.push(format!("{}: {why}; using 127.0.0.1", keys::NET_BIND))
+            }
+            Err(e) => return Err(e),
+        }
+        // `net.bind6`: missing/empty/garbage → unset (old `BIND6` leniency).
+        match get_text_for_job(conn, kek, keys::NET_BIND6) {
+            Ok(None) => {}
+            Ok(Some(v)) if v.trim().is_empty() => {}
+            Ok(Some(v)) => match v.trim().parse::<std::net::IpAddr>() {
+                Ok(ip) => cfg.bind6 = Some(ip),
+                Err(_) => {
+                    warnings.push(format!("{}: {v:?} is not an IP; ignoring", keys::NET_BIND6))
+                }
+            },
+            Err(ConfigError::BadValue(why)) => {
+                warnings.push(format!("{}: {why}; ignoring", keys::NET_BIND6));
+            }
+            Err(e) => return Err(e),
+        }
+        // EAB HMAC: the only secret in the runtime set. Non-UTF-8 or
+        // wrong-typed rows warn + count as missing (ACME then refuses
+        // via its builder error, exactly like a missing env value).
+        match get_secret_for_job(conn, kek, keys::ACME_EAB_HMAC) {
+            Ok(None) => {}
+            Ok(Some(bytes)) => match String::from_utf8(bytes) {
+                Ok(s) if s.trim().is_empty() => {}
+                Ok(s) => cfg.acme_eab_hmac_b64 = Some(SecretText(s)),
+                Err(_) => warnings.push(format!(
+                    "{}: not UTF-8 base64; treating as missing",
+                    keys::ACME_EAB_HMAC
+                )),
+            },
+            Err(ConfigError::BadValue(why)) => warnings.push(format!(
+                "{}: {why}; treating as missing",
+                keys::ACME_EAB_HMAC
+            )),
+            Err(e) => return Err(e),
+        }
+        // H6 fix baked into the migration: a persistent dev-bypass
+        // flag must never boot a release binary (spec §3).
+        if cfg.admin_mtls_off && !cfg!(debug_assertions) {
+            return Err(ConfigError::BadValue(
+                "admin.mtls_off is dev-only; refusing release boot",
+            ));
+        }
+        Ok((cfg, warnings))
+    }
+
+    /// IPs to bind: v4 plus optional v6 (replaces `BIND`/`BIND6`).
+    pub fn bind_ips(&self) -> Vec<std::net::IpAddr> {
+        let mut ips = vec![self.bind];
+        if let Some(v6) = self.bind6 {
+            ips.push(v6);
+        }
+        ips
+    }
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::{keys::ALL as ALL_KEYS, *};
+
+    fn memory() -> Connection {
+        let conn = Connection::open_in_memory().expect("open memory db");
+        migrate_config_tables(&conn).expect("migrate config tables");
+        conn
+    }
+
+    fn put(conn: &Connection, kek: &Kek, key: &str, key_type: ConfigType, plaintext: &[u8]) {
+        set_value(
+            conn,
+            kek,
+            &SetValue {
+                version: 1,
+                key,
+                key_type,
+                plaintext,
+                now: 1,
+                actor: "t",
+            },
+        )
+        .expect("set test row");
+    }
+
+    #[test]
+    fn registry_holds_24_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 24);
+        for (key, _) in ALL_KEYS {
+            assert!(valid_key_name(key), "key {key:?} must be a valid name");
+        }
+        // Exactly one secret (the EAB HMAC); four bools; rest text.
+        let mut counts = (0, 0, 0);
+        for (_, key_type) in ALL_KEYS {
+            match key_type {
+                ConfigType::Bool => counts.0 += 1,
+                ConfigType::Text => counts.1 += 1,
+                ConfigType::Secret => counts.2 += 1,
+            }
+        }
+        assert_eq!(counts, (4, 19, 1));
+    }
+
+    #[test]
+    fn defaults_match_legacy_env_defaults() {
+        // Independent oracle: literals copied from the old env reads,
+        // not from the implementation. Any drift breaks this test.
+        let cfg = RuntimeConfig::default();
+        assert_eq!(cfg.static_dir, "crates/web/static");
+        assert_eq!(cfg.spa_dir, "web/build");
+        assert_eq!(cfg.admin_spa_dir, "web/build-admin");
+        assert_eq!(cfg.acme_challenge_dir, "acme");
+        assert_eq!(cfg.bind, std::net::IpAddr::from([127, 0, 0, 1]));
+        assert_eq!(cfg.bind6, None);
+        assert_eq!(cfg.bind_ips(), vec![std::net::IpAddr::from([127, 0, 0, 1])]);
+        assert_eq!(cfg.port, 3000);
+        assert_eq!(cfg.admin_port, 3001);
+        assert_eq!(cfg.https_port, 443);
+        assert_eq!(cfg.admin_https_port, 444);
+        assert_eq!(cfg.http_port, 80);
+        assert_eq!(cfg.public_host, "andrii.ai");
+        assert_eq!(cfg.tls_cert, None);
+        assert_eq!(cfg.tls_key, None);
+        assert!(!cfg.admin_mtls_off);
+        assert!(!cfg.media_terms_read);
+        assert!(!cfg.acme_enabled);
+        assert_eq!(cfg.acme_directory, "prod");
+        assert_eq!(cfg.acme_domains_csv, "andrii.ai,admin.andrii.ai");
+        assert_eq!(cfg.acme_email, None);
+        assert_eq!(cfg.acme_eab_kid, None);
+        assert_eq!(cfg.acme_eab_hmac_b64, None);
+        assert_eq!(cfg.usps_base_url, "https://apis-tem.usps.com");
+        assert!(!cfg.usps_certified);
+    }
+
+    #[test]
+    fn missing_rows_yield_defaults_silently() {
+        let conn = memory();
+        let kek = Kek::generate();
+        let (cfg, warnings) = RuntimeConfig::load(&conn, &kek).expect("load empty db");
+        assert_eq!(cfg, RuntimeConfig::default());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn every_key_overlays_with_valid_values() {
+        let conn = memory();
+        let kek = Kek::generate();
+        for (key, key_type, plaintext) in [
+            (keys::PATHS_STATIC_DIR, ConfigType::Text, "static-x"),
+            (keys::PATHS_SPA_DIR, ConfigType::Text, "spa-x"),
+            (keys::PATHS_ADMIN_SPA_DIR, ConfigType::Text, "admin-spa-x"),
+            (keys::PATHS_ACME_CHALLENGE_DIR, ConfigType::Text, "acme-x"),
+            (keys::NET_BIND, ConfigType::Text, "127.0.0.2"),
+            (keys::NET_BIND6, ConfigType::Text, "::1"),
+            (keys::NET_PORT, ConfigType::Text, "0"),
+            (keys::NET_ADMIN_PORT, ConfigType::Text, "0"),
+            (keys::NET_HTTPS_PORT, ConfigType::Text, "8443"),
+            (keys::NET_ADMIN_HTTPS_PORT, ConfigType::Text, "8444"),
+            (keys::NET_HTTP_PORT, ConfigType::Text, "8080"),
+            (keys::NET_PUBLIC_HOST, ConfigType::Text, "example.test"),
+            (keys::TLS_CERT_FILE, ConfigType::Text, "/x/cert.pem"),
+            (keys::TLS_KEY_FILE, ConfigType::Text, "/x/key.pem"),
+            (keys::ADMIN_MTLS_OFF, ConfigType::Bool, "1"),
+            (keys::MEDIA_TERMS_READ, ConfigType::Bool, "1"),
+            (keys::ACME_ENABLED, ConfigType::Bool, "1"),
+            (keys::ACME_DIRECTORY, ConfigType::Text, "staging"),
+            (keys::ACME_DOMAINS, ConfigType::Text, "a.test,b.test"),
+            (keys::ACME_EMAIL, ConfigType::Text, "ops@example.test"),
+            (keys::ACME_EAB_KID, ConfigType::Text, "kid-1"),
+            (keys::ACME_EAB_HMAC, ConfigType::Secret, "aGk="),
+            (keys::USPS_BASE_URL, ConfigType::Text, "https://stub.test"),
+            (keys::USPS_CERTIFIED, ConfigType::Bool, "1"),
+        ] {
+            put(&conn, &kek, key, key_type, plaintext.as_bytes());
+        }
+        let (cfg, warnings) = RuntimeConfig::load(&conn, &kek).expect("load full db");
+        assert!(warnings.is_empty(), "warnings: {warnings:?}");
+        assert_eq!(cfg.static_dir, "static-x");
+        assert_eq!(cfg.spa_dir, "spa-x");
+        assert_eq!(cfg.admin_spa_dir, "admin-spa-x");
+        assert_eq!(cfg.acme_challenge_dir, "acme-x");
+        assert_eq!(
+            cfg.bind,
+            "127.0.0.2".parse::<std::net::IpAddr>().expect("parse")
+        );
+        assert_eq!(
+            cfg.bind6,
+            Some("::1".parse::<std::net::IpAddr>().expect("parse"))
+        );
+        assert_eq!(cfg.bind_ips().len(), 2);
+        assert_eq!(cfg.port, 0);
+        assert_eq!(cfg.admin_port, 0);
+        assert_eq!(cfg.https_port, 8443);
+        assert_eq!(cfg.admin_https_port, 8444);
+        assert_eq!(cfg.http_port, 8080);
+        assert_eq!(cfg.public_host, "example.test");
+        assert_eq!(cfg.tls_cert.as_deref(), Some("/x/cert.pem"));
+        assert_eq!(cfg.tls_key.as_deref(), Some("/x/key.pem"));
+        assert!(cfg.admin_mtls_off); // debug build allows the dev seam
+        assert!(cfg.media_terms_read);
+        assert!(cfg.acme_enabled);
+        assert_eq!(cfg.acme_directory, "staging");
+        assert_eq!(cfg.acme_domains_csv, "a.test,b.test");
+        assert_eq!(cfg.acme_email.as_deref(), Some("ops@example.test"));
+        assert_eq!(cfg.acme_eab_kid.as_deref(), Some("kid-1"));
+        assert_eq!(
+            cfg.acme_eab_hmac_b64.as_ref().map(SecretText::as_str),
+            Some("aGk=")
+        );
+        assert_eq!(cfg.usps_base_url, "https://stub.test");
+        assert!(cfg.usps_certified);
+    }
+
+    #[test]
+    fn every_registered_key_roundtrips_through_admin_paths() {
+        // The admin PUT path is `set_value`; the GET path is
+        // `get_display` (+ `get_secret_for_job` for job reads). All
+        // moved keys must survive both with their registered type.
+        let conn = memory();
+        let kek = Kek::generate();
+        for (key, key_type) in ALL_KEYS {
+            let plaintext: &[u8] = match key_type {
+                ConfigType::Bool => b"1",
+                ConfigType::Text => b"sample",
+                ConfigType::Secret => b"sample-secret",
+            };
+            set_value(
+                &conn,
+                &kek,
+                &SetValue {
+                    version: 1,
+                    key,
+                    key_type: *key_type,
+                    plaintext,
+                    now: 1,
+                    actor: "t",
+                },
+            )
+            .expect("admin PUT path");
+        }
+        for (key, key_type) in ALL_KEYS {
+            match key_type {
+                ConfigType::Bool => assert_eq!(
+                    get_display(&conn, &kek, key).expect("get"),
+                    Some(DisplayValue::Bool(true)),
+                    "key {key}"
+                ),
+                ConfigType::Text => assert_eq!(
+                    get_display(&conn, &kek, key).expect("get"),
+                    Some(DisplayValue::Text("sample".to_string())),
+                    "key {key}"
+                ),
+                ConfigType::Secret => {
+                    assert_eq!(
+                        get_display(&conn, &kek, key).expect("get"),
+                        Some(DisplayValue::Secret { set: true }),
+                        "key {key}"
+                    );
+                    assert_eq!(
+                        get_secret_for_job(&conn, &kek, key).expect("job read"),
+                        Some(b"sample-secret".to_vec()),
+                        "key {key}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn garbage_warns_and_defaults() {
+        let conn = memory();
+        let kek = Kek::generate();
+        put(&conn, &kek, keys::NET_PORT, ConfigType::Text, b"not-a-port");
+        put(&conn, &kek, keys::NET_BIND, ConfigType::Text, b"nope");
+        put(&conn, &kek, keys::NET_BIND6, ConfigType::Text, b"also-nope");
+        put(&conn, &kek, keys::NET_PUBLIC_HOST, ConfigType::Text, b"");
+        put(&conn, &kek, keys::MEDIA_TERMS_READ, ConfigType::Text, b"1"); // wrong type
+        put(&conn, &kek, keys::TLS_CERT_FILE, ConfigType::Text, b""); // empty ≡ unset, silent
+        let (cfg, warnings) = RuntimeConfig::load(&conn, &kek).expect("load garbage db");
+        assert_eq!(cfg.port, 3000);
+        assert_eq!(cfg.bind, std::net::IpAddr::from([127, 0, 0, 1]));
+        assert_eq!(cfg.bind6, None);
+        assert_eq!(cfg.public_host, "andrii.ai");
+        assert!(!cfg.media_terms_read);
+        assert_eq!(cfg.tls_cert, None);
+        assert_eq!(warnings.len(), 5, "warnings: {warnings:?}");
+        for key in [
+            keys::NET_PORT,
+            keys::NET_BIND,
+            keys::NET_BIND6,
+            keys::NET_PUBLIC_HOST,
+            keys::MEDIA_TERMS_READ,
+        ] {
+            assert!(
+                warnings.iter().any(|w| w.contains(key)),
+                "warnings: {warnings:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn wrong_kek_refuses_the_boot() {
+        let conn = memory();
+        let kek = Kek::generate();
+        let wrong = Kek::generate();
+        put(&conn, &kek, keys::NET_PORT, ConfigType::Text, b"3000");
+        let err = RuntimeConfig::load(&conn, &wrong).expect_err("wrong KEK must refuse");
+        assert!(matches!(err, ConfigError::Crypto), "got: {err}");
+    }
+
+    #[test]
+    fn debug_redacts_the_hmac() {
+        let cfg = RuntimeConfig {
+            acme_eab_hmac_b64: Some(SecretText("aGk=".to_string())),
+            ..RuntimeConfig::default()
+        };
+        let shown = format!("{cfg:?}");
+        assert!(!shown.contains("aGk"), "{shown}");
+        assert!(shown.contains("redacted"), "{shown}");
+    }
+}

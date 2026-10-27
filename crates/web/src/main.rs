@@ -77,15 +77,17 @@ struct AppState {
     store_root: PathBuf,
     bus: ws_bus::Bus,
     kek: Option<std::sync::Arc<config::Kek>>,
-    /// `ADMIN_MTLS=off` dev seam: skips the client-cert requirement
-    /// and allows loopback origins. Prod runs strict (false).
+    /// `admin.mtls_off` dev seam (DB config): skips the
+    /// client-cert requirement and allows loopback origins. Prod
+    /// runs strict (false); true refuses release boot.
     admin_mtls_off: bool,
-    /// Admin SPA build dir (`ADMIN_SPA_DIR`, default `web/build-admin`),
-    /// served from the admin listener root with SPA fallback.
+    /// Admin SPA build dir (`paths.admin_spa_dir` DB key, default
+    /// `web/build-admin`), served from the admin listener root with
+    /// SPA fallback.
     admin_spa_dir: PathBuf,
-    /// Media terms gate (`MEDIA_TERMS_READ=1` once SEC confirms the
-    /// Meta data-handling read). Until then only synthetic fixtures
-    /// upload; real media fails closed.
+    /// Media terms gate (`media.terms_read` DB key, true once SEC
+    /// confirms the Meta data-handling read). Until then only
+    /// synthetic fixtures upload; real media fails closed.
     media_terms_read: bool,
     /// Prepaid-label config (USPS base URL + certification flag).
     label_cfg: p2_labels::LabelCfg,
@@ -335,34 +337,10 @@ async fn ws_echo(mut socket: WebSocket) {
     }
 }
 
-/// Env port with a default; garbage parses to the default (fail-safe:
-/// never bind a surprising port because of a typo).
-fn port_env(name: &str, default: u16) -> u16 {
-    std::env::var(name)
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(default)
-}
-
-/// IPs to bind: `BIND` (default 127.0.0.1) plus optional `BIND6`.
-/// Prod sets the public .41 addresses explicitly — never 0.0.0.0
-/// (other services own :80/:443 on sibling IPs of the same box).
-fn bind_ips() -> Vec<std::net::IpAddr> {
-    let v4 = std::env::var("BIND")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(std::net::IpAddr::from([127, 0, 0, 1]));
-    let mut ips = vec![v4];
-    if let Some(v6) = std::env::var("BIND6").ok().and_then(|s| s.parse().ok()) {
-        ips.push(v6);
-    }
-    ips
-}
-
-/// Load rustls config from `TLS_CERT`/`TLS_KEY` PEM paths.
-/// Neither set → plain HTTP dev mode; exactly one set, or an
-/// unreadable file → Err, and main refuses to start (TLS
-/// misconfiguration must never silently downgrade to HTTP).
+/// Load rustls config from `tls.cert_file`/`tls.key_file` PEM paths
+/// (DB config). Neither set → plain HTTP dev mode; exactly one
+/// set, or an unreadable file → Err, and main refuses to start
+/// (TLS misconfiguration must never silently downgrade to HTTP).
 async fn load_tls(
     cert: Option<String>,
     key: Option<String>,
@@ -373,14 +351,14 @@ async fn load_tls(
             axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
                 .await
                 .map(Some)
-                .map_err(|e| format!("read TLS_CERT={cert} TLS_KEY=<redacted>: {e}"))
+                .map_err(|e| format!("read tls.cert_file={cert} tls.key_file=<redacted>: {e}"))
         }
-        _ => Err("set both TLS_CERT and TLS_KEY, or neither".to_string()),
+        _ => Err("set both tls.cert_file and tls.key_file, or neither".to_string()),
     }
 }
 
-/// 308 every HTTP request to `https://{PUBLIC_HOST}{path}`.
-/// The host comes from config, never from the Host header (a
+/// 308 every HTTP request to `https://{host}{path}`.
+/// The host comes from DB config, never from the Host header (a
 /// header-derived target would be an open redirect).
 ///
 /// One path is exempt: `/.well-known/acme-challenge/` serves token
@@ -417,9 +395,9 @@ async fn main() {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
-    let static_dir =
-        std::env::var("STATIC_DIR").unwrap_or_else(|_| "crates/web/static".to_string());
-    let spa_dir = std::env::var("SPA_DIR").unwrap_or_else(|_| "web/build".to_string());
+    // config-db (goal-025 stream 4): STORE_DIR is the one bootstrap
+    // var left — it locates the DB, so it cannot live in the DB.
+    // Every other runtime setting comes from sealed DB rows below.
     let store_dir = std::env::var("STORE_DIR").unwrap_or_else(|_| "store".to_string());
     let store = Store::new(&store_dir);
     if let Err(e) = store.init() {
@@ -438,41 +416,59 @@ async fn main() {
     config::migrate_config_tables(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate config tables: {e}"));
     drop(conn);
-    let admin_mtls_off = std::env::var("ADMIN_MTLS").ok().is_some_and(|v| v == "off");
-    if admin_mtls_off {
-        eprintln!(
-            "WARNING: ADMIN_MTLS=off — admin listener skips client-cert auth (local dev only)"
-        );
-    }
+    // config-db: the KEK is mandatory now — runtime config lives in
+    // sealed rows, so without it there is nothing to serve with.
+    // Refusing beats a silent localhost-defaults boot in prod.
     let kek = match config::load_kek() {
         Ok((kek, source)) => {
             kek.lock_memory();
             eprintln!("config KEK loaded via {source:?}");
-            Some(std::sync::Arc::new(kek))
+            std::sync::Arc::new(kek)
         }
         Err(e) => {
-            eprintln!("config unavailable ({e}); admin config API will answer 503");
-            None
+            eprintln!("refusing to start: config KEK unavailable ({e})");
+            std::process::exit(1);
         }
     };
-    let acme_dir = std::env::var("ACME_CHALLENGE_DIR").unwrap_or_else(|_| "acme".to_string());
-    let admin_spa_dir =
-        std::env::var("ADMIN_SPA_DIR").unwrap_or_else(|_| "web/build-admin".to_string());
-    let media_terms_read = std::env::var("MEDIA_TERMS_READ")
-        .ok()
-        .is_some_and(|v| v == "1");
+    // config-db: read-once runtime load: open store → read config → serve.
+    let cfg = {
+        let conn = db::open(&store)
+            .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: reopen metadata DB: {e}"));
+        match config::RuntimeConfig::load(&conn, &kek) {
+            Ok((cfg, warnings)) => {
+                for warning in warnings {
+                    eprintln!("WARNING: config {warning}");
+                }
+                cfg
+            }
+            Err(e) => {
+                eprintln!("refusing to start: runtime config unreadable ({e})");
+                std::process::exit(1);
+            }
+        }
+    };
+    if cfg.admin_mtls_off {
+        eprintln!(
+            "WARNING: admin.mtls_off — admin listener skips client-cert auth (local dev only)"
+        );
+    }
     let state = AppState {
-        spa_index: std::path::Path::new(&spa_dir).join("index.html"),
-        static_dir: PathBuf::from(&static_dir),
+        spa_index: std::path::Path::new(&cfg.spa_dir).join("index.html"),
+        static_dir: PathBuf::from(&cfg.static_dir),
         store_root: PathBuf::from(store_dir.as_str()),
         bus: ws_bus::Bus::new(),
-        kek,
-        admin_mtls_off,
-        admin_spa_dir: PathBuf::from(admin_spa_dir),
-        media_terms_read,
-        label_cfg: p2_labels::LabelCfg::from_env(),
+        kek: Some(kek),
+        admin_mtls_off: cfg.admin_mtls_off,
+        admin_spa_dir: PathBuf::from(&cfg.admin_spa_dir),
+        media_terms_read: cfg.media_terms_read,
+        label_cfg: p2_labels::LabelCfg::from_values(&cfg.usps_base_url, cfg.usps_certified),
     };
-    let public = public_router(state.clone(), &static_dir, &spa_dir, &acme_dir);
+    let public = public_router(
+        state.clone(),
+        &cfg.static_dir,
+        &cfg.spa_dir,
+        &cfg.acme_challenge_dir,
+    );
     // ===== ADMIN-WORKERS (goal-025 stream 1; parent reconciles) =====
     // Staff workers/captures API merged onto the ADMIN listener only.
     // Same guards as admin::router (staff AdminAuth per handler, host
@@ -482,17 +478,13 @@ async fn main() {
     // mount in your own clearly-commented block, do not edit this one.
     // ================================================================
     let admin = admin::router(state.clone()).merge(admin_workers::router(state));
-    let tls = load_tls(
-        std::env::var("TLS_CERT").ok(),
-        std::env::var("TLS_KEY").ok(),
-    )
-    .await;
+    let tls = load_tls(cfg.tls_cert.clone(), cfg.tls_key.clone()).await;
     match tls {
         // Explicit files always win: ACME stays off when the
         // operator pinned a certificate.
-        Ok(Some(tls)) => serve_tls(public, admin, tls).await,
-        Ok(None) if acme_enabled() => serve_acme(public, admin, &store_dir, &acme_dir).await,
-        Ok(None) => serve_http(public, admin).await,
+        Ok(Some(tls)) => serve_tls(public, admin, tls, &cfg).await,
+        Ok(None) if cfg.acme_enabled => serve_acme(public, admin, &cfg, &store_dir).await,
+        Ok(None) => serve_http(public, admin, &cfg).await,
         Err(message) => {
             eprintln!("refusing to start: {message}");
             std::process::exit(1);
@@ -500,22 +492,30 @@ async fn main() {
     }
 }
 
-/// In-binary ACME is opt-in: `ACME_ENABLED=1` plus the `ACME_*`
-/// variables (`docs/ops/acme.md`). Anything else is plain HTTP dev
-/// mode (or explicit TLS files above).
-fn acme_enabled() -> bool {
-    std::env::var("ACME_ENABLED").ok().is_some_and(|v| v == "1")
-}
-
 /// ACME mode: load the persisted pair or issue it (Google Public CA,
-/// http-01 via `acme_dir`), serve TLS with it, and renew in the
+/// http-01 via the challenge dir), serve TLS with it, and renew in the
 /// background with hot reloads — no restarts, ever.
-async fn serve_acme(public: Router, admin: Router, store_dir: &str, acme_dir: &str) {
-    let config = acme::AcmeConfig::from_env(std::path::Path::new(store_dir), acme_dir.into())
-        .unwrap_or_else(|e| {
-            eprintln!("refusing to start: {e}");
-            std::process::exit(1);
-        });
+async fn serve_acme(public: Router, admin: Router, cfg: &config::RuntimeConfig, store_dir: &str) {
+    // config-db: ACME values come from the `acme.*` DB keys.
+    let stored = acme::StoredAcme {
+        directory: cfg.acme_directory.clone(),
+        domains_csv: cfg.acme_domains_csv.clone(),
+        email: cfg.acme_email.clone(),
+        eab_kid: cfg.acme_eab_kid.clone(),
+        eab_hmac_b64: cfg
+            .acme_eab_hmac_b64
+            .as_ref()
+            .map(|secret| secret.as_str().to_string()),
+    };
+    let config = acme::AcmeConfig::from_stored(
+        std::path::Path::new(store_dir),
+        cfg.acme_challenge_dir.clone().into(),
+        stored,
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("refusing to start: {e}");
+        std::process::exit(1);
+    });
     if config.staging() {
         eprintln!("WARNING: ACME staging directory — issued certs are UNTRUSTED (test only)");
     }
@@ -541,18 +541,19 @@ async fn serve_acme(public: Router, admin: Router, store_dir: &str, acme_dir: &s
         })
         .await
     });
-    serve_tls(public, admin, tls).await
+    serve_tls(public, admin, tls, cfg).await
 }
 
-/// Plain-HTTP dev mode: public on `PORT` (default 3000) and admin
-/// on `ADMIN_PORT` (default 3001), on every bind IP.
-async fn serve_http(public: Router, admin: Router) {
-    let port = port_env("PORT", 3000);
-    let admin_port = port_env("ADMIN_PORT", 3001);
+/// Plain-HTTP dev mode: public on `net.port` (default 3000) and
+/// admin on `net.admin_port` (default 3001), on every bind IP.
+async fn serve_http(public: Router, admin: Router, cfg: &config::RuntimeConfig) {
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
-    for ip in bind_ips() {
-        for (router, port, name) in [(&public, port, "public"), (&admin, admin_port, "admin")] {
+    for ip in cfg.bind_ips() {
+        for (router, port, name) in [
+            (&public, cfg.port, "public"),
+            (&admin, cfg.admin_port, "admin"),
+        ] {
             let addr = SocketAddr::new(ip, port);
             let handle = axum_server::Handle::new();
             handles.push(handle.clone());
@@ -571,21 +572,21 @@ async fn serve_http(public: Router, admin: Router) {
     supervise(servers, handles).await;
 }
 
-/// Prod mode: HTTPS public on `HTTPS_PORT` (443) + HTTPS admin on
-/// `ADMIN_HTTPS_PORT` (444) plus an HTTP→HTTPS redirector on
-/// `HTTP_PORT` (80), on every bind IP.
-async fn serve_tls(public: Router, admin: Router, tls: axum_server::tls_rustls::RustlsConfig) {
-    let https_port = port_env("HTTPS_PORT", 443);
-    let admin_https_port = port_env("ADMIN_HTTPS_PORT", 444);
-    let http_port = port_env("HTTP_PORT", 80);
-    let public_host = std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "andrii.ai".to_string());
-    let acme_dir = std::env::var("ACME_CHALLENGE_DIR").unwrap_or_else(|_| "acme".to_string());
+/// Prod mode: HTTPS public on `net.https_port` (443) + HTTPS admin
+/// on `net.admin_https_port` (444) plus an HTTP→HTTPS redirector on
+/// `net.http_port` (80), on every bind IP.
+async fn serve_tls(
+    public: Router,
+    admin: Router,
+    tls: axum_server::tls_rustls::RustlsConfig,
+    cfg: &config::RuntimeConfig,
+) {
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
-    for ip in bind_ips() {
+    for ip in cfg.bind_ips() {
         for (router, port, name) in [
-            (&public, https_port, "public"),
-            (&admin, admin_https_port, "admin"),
+            (&public, cfg.https_port, "public"),
+            (&admin, cfg.admin_https_port, "admin"),
         ] {
             let addr = SocketAddr::new(ip, port);
             let handle = axum_server::Handle::new();
@@ -602,12 +603,12 @@ async fn serve_tls(public: Router, admin: Router, tls: axum_server::tls_rustls::
                 }
             });
         }
-        let addr = SocketAddr::new(ip, http_port);
+        let addr = SocketAddr::new(ip, cfg.http_port);
         let handle = axum_server::Handle::new();
         handles.push(handle.clone());
         eprintln!("listening on http://{addr} (redirect + ACME challenges)");
         servers.spawn({
-            let redirect = redirect_router(public_host.clone(), &acme_dir);
+            let redirect = redirect_router(cfg.public_host.clone(), &cfg.acme_challenge_dir);
             async move {
                 axum_server::bind(addr)
                     .handle(handle)
@@ -676,6 +677,9 @@ async fn supervise(
     }
 }
 
+/// Test-only env reads below (`STATIC_DIR`/`SPA_DIR`/`ACME_CHALLENGE_DIR`)
+/// are harness fixture overrides, never production paths
+/// (config-db spec §2.2 keeps them as bootstrap).
 #[cfg(test)]
 mod tests {
     use super::*;

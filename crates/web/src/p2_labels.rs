@@ -33,8 +33,9 @@ use labels::{
 use serde::{Deserialize, Serialize};
 
 /// Prepaid-buy configuration: USPS base URL + certification flag.
-/// Built from env in `main` (`USPS_BASE_URL`, `USPS_CERTIFIED=1`);
-/// tests construct it directly (no env races).
+/// Built from DB-backed runtime config in `main` (`usps.base_url`,
+/// `usps.certified` — goal-025 stream 4, zero-env); tests construct
+/// it directly (no env races, no DB reads).
 #[derive(Clone)]
 pub struct LabelCfg {
     pub usps_base_url: String,
@@ -42,13 +43,11 @@ pub struct LabelCfg {
 }
 
 impl LabelCfg {
-    pub fn from_env() -> Self {
+    /// Build from loaded runtime values (no env, no DB reads).
+    pub fn from_values(usps_base_url: &str, usps_certified: bool) -> Self {
         Self {
-            usps_base_url: std::env::var("USPS_BASE_URL")
-                .unwrap_or_else(|_| labels::USPS_BASE_TEST.to_string()),
-            usps_certified: std::env::var("USPS_CERTIFIED")
-                .ok()
-                .is_some_and(|v| v == "1"),
+            usps_base_url: usps_base_url.to_string(),
+            usps_certified,
         }
     }
 }
@@ -1527,6 +1526,22 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
+
+    #[test]
+    fn label_defaults_match_db_runtime_defaults() {
+        // The config crate hardcodes the USPS test base as the
+        // `usps.base_url` default; it must stay identical to the
+        // labels crate constant (same value, two crates).
+        assert_eq!(
+            config::RuntimeConfig::default().usps_base_url,
+            labels::USPS_BASE_TEST
+        );
+        assert_eq!(LabelCfg::default().usps_base_url, labels::USPS_BASE_TEST);
+        assert!(!LabelCfg::default().usps_certified);
+        let cfg = LabelCfg::from_values("https://stub.test", true);
+        assert_eq!(cfg.usps_base_url, "https://stub.test");
+        assert!(cfg.usps_certified);
+    }
 
     struct Fixture {
         _tmp: tempfile::TempDir,

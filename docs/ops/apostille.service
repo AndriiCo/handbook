@@ -20,16 +20,14 @@ Type=simple
 User=andrii-ai
 Group=andrii-ai
 ExecStart=/srv/apostille/current/web
-# Explicit IPs: never 0.0.0.0 — sibling services own :80/:443 on
-# other addresses of this box.
-Environment=BIND=199.184.91.41
-Environment=BIND6=2602:f337:ed:4841:4c07:3930:3030:9000
+# Zero-env (config-db.md): STORE_DIR is the only setting left here —
+# it locates the DB. Binds, ports, hosts, TLS paths, ACME, and all
+# other settings live in sealed DB rows (set via `xtask config-set`
+# before first boot; migration map in config-db.md §5). Never add
+# runtime settings back as Environment= lines.
+# Explicit IPs (now DB keys net.bind/net.bind6): never 0.0.0.0 —
+# sibling services own :80/:443 on other addresses of this box.
 Environment=STORE_DIR=/var/lib/apostille
-Environment=SPA_DIR=/srv/apostille/current/spa
-Environment=PUBLIC_HOST=andrii.ai
-Environment=TLS_CERT=/var/lib/apostille/tls/cert.pem
-Environment=TLS_KEY=/var/lib/apostille/tls/key.pem
-Environment=ACME_CHALLENGE_DIR=/var/lib/apostille/acme
 # State dir auto-created and chowned to andrii-ai on first start.
 StateDirectory=apostille
 StateDirectoryMode=0750

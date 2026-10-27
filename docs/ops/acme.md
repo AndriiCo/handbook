@@ -10,22 +10,25 @@ into the live server.
 Constraint (unchanged): the ONLY certificates we may use come from
 Google PKI. See `certificates.md` for the EAB minting runbook.
 
-## Environment
+## Configuration (DB keys, not env — see `docs/specs/config-db.md`)
 
-| Variable | Meaning | Default |
-|---|---|---|
-| `ACME_ENABLED` | `1` turns ACME mode on | off |
-| `ACME_DIRECTORY` | `prod`, `staging`, or a full `https://` directory URL | `prod` |
-| `ACME_DOMAINS` | Comma-separated names on the cert | `andrii.ai,admin.andrii.ai` |
-| `ACME_EMAIL` | Optional contact mailbox (`user@host`, no `mailto:`) | none |
-| `ACME_EAB_KID` | Google EAB key ID (**required**) | — |
-| `ACME_EAB_HMAC` | Google EAB HMAC, base64 std or URL-safe (**required**) | — |
-| `ACME_CHALLENGE_DIR` | http-01 token files (already served) | `acme` |
-| `STORE_DIR` | Certs persist under `<store>/acme/` | `store` |
+| DB key | Type | Meaning | Default |
+|---|---|---|---|
+| `acme.enabled` | bool | true turns ACME mode on | false |
+| `acme.directory` | text | `prod`, `staging`, or a full `https://` directory URL | `prod` |
+| `acme.domains` | text | Comma-separated names on the cert | `andrii.ai,admin.andrii.ai` |
+| `acme.email` | text | Optional contact mailbox (`user@host`, no `mailto:`) | none |
+| `acme.eab_kid` | text | Google EAB key ID (**required**) | — |
+| `acme.eab_hmac` | **secret** | Google EAB HMAC, base64 std or URL-safe (**required**, write-only) | — |
+| `paths.acme_challenge_dir` | text | http-01 token files (already served) | `acme` |
 
-Explicit `TLS_CERT`/`TLS_KEY` files always win: when both are set,
-ACME stays off even with `ACME_ENABLED=1`. Anything else missing or
-contradictory refuses to start rather than downgrade to HTTP.
+`STORE_DIR` stays env (bootstrap): certs persist under
+`<store>/acme/`. Explicit `tls.cert_file`/`tls.key_file` always
+win: when both are set, ACME stays off even with
+`acme.enabled=true`. Anything else missing or contradictory
+refuses to start rather than downgrade to HTTP. All values are
+read once at boot (restart to apply); set them with `cargo xtask
+config-set` (EAB HMAC via `--value-from-stdin`, never argv).
 
 Google endpoints: prod
 `https://dv.acme-v02.api.pki.goog/directory`, staging
@@ -42,7 +45,7 @@ by design.
 - Issuance (`crates/acme`): restore the ACME account from
   `<store>/acme/account.json`, or register it with the EAB pair on
   first run; one order for all domains; one http-01 challenge per
-  name answered from `ACME_CHALLENGE_DIR`; CSR + fresh key via
+  name answered from `paths.acme_challenge_dir`; CSR + fresh key via
   rcgen; chain persisted atomically (temp + rename, key 0600).
 - Challenges reach us two ways: port 80 serves
   `/.well-known/acme-challenge/` directly (required for first
@@ -81,11 +84,21 @@ CA. Before trusting a release, run once against staging from a
 host that answers the domain's port 80:
 
 ```sh
-ACME_ENABLED=1 ACME_DIRECTORY=staging \
-  ACME_EAB_KID='<staging-kid>' ACME_EAB_HMAC='<staging-hmac>' \
-  ACME_EMAIL='ops@example.com' \
-  STORE_DIR=/tmp/acme-stage/store ACME_CHALLENGE_DIR=/tmp/acme-stage/acme \
-  PORT=3000 ADMIN_PORT=3001 BIND=127.0.0.1 \
+STORE=/tmp/acme-stage/store KEK=/tmp/acme-stage/kek
+cargo xtask config-enroll --store "$STORE" --kek-file "$KEK"
+set() { cargo xtask config-set --store "$STORE" --kek-file "$KEK" \
+  --key "$1" --type "$2" --value "$3"; }
+set acme.enabled bool true
+set acme.directory text staging
+set acme.eab_kid text '<staging-kid>'
+set acme.email text 'ops@example.com'
+set paths.acme_challenge_dir text /tmp/acme-stage/acme
+echo -n '<staging-hmac>' | cargo xtask config-set --store "$STORE" \
+  --kek-file "$KEK" --key acme.eab_hmac --type secret --value-from-stdin
+# Debug boot reads the same KEK bytes via the dev source (dev: + hex);
+# release boots read the systemd credential (see config-db.md §2.2).
+STORE_DIR="$STORE" \
+  HANDBOOK_DEV_KEK="dev:$(od -An -tx1 "$KEK" | tr -d ' \n')" \
   cargo run -p web
 ```
 
@@ -111,8 +124,8 @@ staging chain, and `<store>/acme/` holding all three files. Then
 
 ## Follow-ups (not this change)
 
-- EAB pair from TPM-sealed config (`acme.eab_kid` /
-  `acme.eab_hmac` secrets) instead of env, once the admin config
-  API lands; env stays as the bootstrap fallback.
+- Done (config-db stream): EAB pair from TPM-sealed config
+  (`acme.eab_kid` text + `acme.eab_hmac` write-only secret) — no
+  env fallback remains.
 - Metrics: expiry timestamp + last-renewal result exported for
   alerting (currently log lines only).
