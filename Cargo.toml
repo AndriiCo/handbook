@@ -2,10 +2,13 @@
 resolver = "2"
 members = [
     "crates/contracts",
+    "crates/forms",
     "crates/handbook-store",
     "crates/handbook-agent",
     "crates/ingest",
+    "crates/labels",
     "crates/mcp",
+    "crates/media",
     "crates/publish",
     "crates/web",
     "xtask",
