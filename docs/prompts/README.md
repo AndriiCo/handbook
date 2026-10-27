@@ -55,3 +55,21 @@ to change history — append a correction section instead.
   Carriers, payments, legal, config cohort + AGENTS §6 proposal.
 - [2026-10-26-011-replan.md](2026-10-26-011-replan.md) —
   Deep-research 5–7-day replan + consistency fixes.
+- [2026-10-26-012-swarm-night-run.md](2026-10-26-012-swarm-night-run.md) —
+  Day-1 slice swarm: hardening, agent stub, scaffold, 55 tests.
+- [2026-10-27-013-deploy-secrets.md](2026-10-27-013-deploy-secrets.md) —
+  Deploy prep + secrets hygiene (scan + pre-commit hook).
+- [2026-10-27-014-first-deploy.md](2026-10-27-014-first-deploy.md) —
+  First cross-compiled deploy to enodia.
+- [2026-10-27-015-lockdown-tls.md](2026-10-27-015-lockdown-tls.md) —
+  Non-root service, in-app rustls TLS, binary hardening.
+- [2026-10-27-016-root-install.md](2026-10-27-016-root-install.md) —
+  Root install block + cert hook drafts.
+- [2026-10-27-017-go-live.md](2026-10-27-017-go-live.md) —
+  Public launch verified + memory setup.
+- [2026-10-27-018-admin-plan.md](2026-10-27-018-admin-plan.md) —
+  Admin/collectors/detail-page plan (plan-first, no go yet).
+- [2026-10-27-019-mtls.md](2026-10-27-019-mtls.md) —
+  mTLS mechanism research (reply preempted by grill).
+- [2026-10-27-020-grill.md](2026-10-27-020-grill.md) —
+  Assumptions audit grill, scope lock (Final).

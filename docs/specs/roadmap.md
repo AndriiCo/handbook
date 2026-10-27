@@ -194,7 +194,7 @@ budgets (Day 7 note).
 - Carrier accounts started Day 1 (author action).
 - Pricing table (deferred — no prices render until supplied).
 
-## 8. Assumptions audit (Draft — grill, night of 2026-10-26 PDT)
+## 8. Assumptions audit (Final — accepted 2026-10-26 PDT)
 
 Pinned this session (event page + repo probes):
 - Deadline: Wed Nov 4, 9PM ET = 6PM PT. ~8.75 days left.
@@ -218,10 +218,9 @@ Assumptions under challenge (author: correct if wrong):
 - A6: submission shape (repo + demo + writeup?) not on the
   event page — format assumed, not verified.
 
-Interview state:
-- Asked: final contract + explicit acceptance.
-- Queued: (none — acceptance flips Draft to Final).
-- Proposed success restatement (pending acceptance):
+Accepted: "accept" (chat, 2026-10-27 06:22 UTC /
+2026-10-26 23:22 PDT). Draft → Final; interview closed.
+- Success restatement (accepted):
   synthetic Viet Nam request → cited apostille routing
   (effective 2026-09-11) → completed form PDF + prepaid
   label payloads (synthetic, no charges) → F2 regression
@@ -246,5 +245,6 @@ Interview state:
   Day 5 (Oct 31) → staging-gated deploys + `xtask
   accept`; else auto-relax to prod-direct + smokes +
   atomic rollback through submission; see G5 (Draft).
-- Doc debt: prompt-log entries pending for the memory /
-  admin-plan / mTLS turns (numbering at interview end).
+- Doc debt cleared 2026-10-27: entries 018 (admin plan),
+  019 (mTLS research), 020 (this grill) written; index
+  backfilled 012–020. (017 already covered memory.)

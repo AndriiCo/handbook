@@ -127,8 +127,8 @@ the consolidated author-decision list is at the bottom of this file.
     approval + FedEx certification land; **no prices or dates
     in UI** until the numbered table is supplied.
 
-**Decided in assumptions-audit grill (Draft — pending
-acceptance):**
+**Decided in assumptions-audit grill (Final — accepted
+2026-10-26 PDT):**
 
 G1. SAM-via-API redaction (F9) is must-have in-slice,
     alongside the decided carrier-buy code — not instead
