@@ -35,6 +35,11 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tower_http::services::{ServeDir, ServeFile};
 
+/// Full version on the wire: `CARGO_PKG_VERSION+BUILD_SHA`
+/// (semver build metadata; `BUILD_SHA` comes from `build.rs`).
+/// Every deploy rebuilds, so `/healthz` always names the release.
+const FULL_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "+", env!("BUILD_SHA"));
+
 /// Request access log, one span per request: `id method uri` in,
 /// `status latency_ms` out. Logged fields are fixed and PII-free by
 /// construction (our URLs never carry tokens or customer data).
@@ -206,13 +211,13 @@ async fn serve_robots(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn healthz() -> impl IntoResponse {
-    Json(json!({"status": "ok", "version": env!("CARGO_PKG_VERSION")}))
+    Json(json!({"status": "ok", "version": FULL_VERSION}))
 }
 
 async fn version() -> impl IntoResponse {
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
-        "build": "dev",
+        "build": env!("BUILD_SHA"),
     }))
 }
 
@@ -873,7 +878,30 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["status"], "ok");
+        let version = v["version"].as_str().expect("version string");
+        assert!(
+            version.starts_with(env!("CARGO_PKG_VERSION")),
+            "version carries the crate version: {version}"
+        );
+        assert_eq!(version, FULL_VERSION);
+    }
+
+    #[tokio::test]
+    async fn version_reports_build_sha() {
+        let res = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/version")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(v["build"], env!("BUILD_SHA"));
     }
 
     #[tokio::test]
