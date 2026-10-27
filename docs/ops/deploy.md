@@ -106,6 +106,13 @@ repo policy. Migrations run forward-only at boot: a rollback
 across a migration needs the author's explicit call (SQLite
 has no down-migrations by design).
 
+## Status: LIVE since 2026-10-27 (~05:20 UTC)
+
+Root install completed by the author; public smoke green:
+healthz, shell, JSON 404, demo login → me (proves the
+`andrii-ai` user writes `/var/lib/apostille`), Google Trust
+Services cert valid to 2027-01-25. Interim hal service retired.
+
 ## Root install (one-time) — copy-paste for the author
 
 Prereqs: `andrii-ai` user exists; EAB `keyId`/`hmac` minted
