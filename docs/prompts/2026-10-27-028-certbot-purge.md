@@ -19,14 +19,15 @@ rewrote `deploy.md` root-install step 2 for the in-binary flow;
 `secure-config.md` / `single-443-quic.md` / `web-stack.md` + one
 code comment updated. 365 tests green.
 
-Server-side removal + `acme.enabled` need root (hal lacks apt
-+ DB-write + flip rights) — exact operator commands issued in
-chat. Blockers: EAB mint (author gcloud), root flip to the
-single-443 release, certbot purge.
+Flip unblocked mid-task (author granted the root-dir write):
+prod flipped to `f2848a8` single-443 by hal (restart via pinned
+sudoers) — public 200 + stamp, 444 closed, admin Host routing
+401/SPA 200. Remaining: server certbot purge (root apt) +
+`acme.enabled` (needs author EAB mint + root DB writes).
 
 ## Commits
 
-- (single commit below)
+- Purge commit + this log update (see git log).
 
 ## Follow-ups
 
