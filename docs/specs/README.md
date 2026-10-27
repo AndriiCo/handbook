@@ -231,3 +231,17 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     (store path); everything in DB per secure-config.md.
     Secrets sealed via a **software-TPM abstraction**,
     hardware-TPM-ready.
+
+**Decided 2026-10-27 (single-443 + QUIC + build stamp):**
+
+28. Admin moves off the separate 444 port onto **single-443
+    Host-routed** serving (`admin.andrii.ai` → admin router),
+    per the original SNI/Host design; one cert pair must carry
+    both SANs. `net.admin_https_port` deprecated.
+29. **Native QUIC/HTTP-3** via quinn + h3 on UDP 443 (same IPs),
+    same routes over an h3→axum bridge, Alt-Svc advertised,
+    `quic.enabled` DB key (staging first). No `ring` (workspace
+    TLS rule) — aws-lc-rs provider throughout.
+30. `/healthz` reports `0.1.0+<short-sha>` semver build metadata
+    (and `/version` exposes `build` sha) so every deploy is
+    identifiable on the wire.
