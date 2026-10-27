@@ -29,10 +29,11 @@ one Ubuntu **26.04 LTS** ("Resolute Raccoon") server, app served under
 - **Sub-path serving from day one.** Axum `Router::nest("/apostille", …)`
   locally too, with relative asset URLs — so local testing exercises the
   exact production URL shape.
-- **TLS terminates outside the app.** Caddy as a reverse proxy on Ubuntu
-  (auto-HTTPS, one static binary, ~5 lines of config); the app stays plain
-  HTTP both locally and in prod. (Alternative: in-app `rustls` via
-  `axum-server` — kept as fallback, not the plan.)
+- **TLS terminates in the app.** Since prompt 015: in-app `rustls`
+  via `axum-server` (HTTPS on 443 + HTTP→HTTPS 308 on 80, no
+  proxy anywhere). Certificates come from Google Public CA via
+  certbot http-01 (see `docs/ops/certificates.md`). The old
+  Caddy-reverse-proxy plan is retired.
 - **Synthetic dev data only.** The repo holds schema, never data
   (`docs/design.md` §0), so `xtask dev-seed` will generate fake
   authorities/captures/tasks into a tmp store at runtime. Nothing seeded

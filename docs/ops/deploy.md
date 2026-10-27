@@ -63,7 +63,7 @@ Verified 2026-10-26: healthz JSON, shell 200, demo
 login → me all green on the box. The process survives SSH
 logout but NOT reboot (Linger=no, no unit file). Stop with
 `pkill -f apostille/current/web`. Localhost-only by
-construction — nothing public until Caddy lands.
+construction — nothing public until the unit + certs land.
 
 ## Ship, final: system paths (needs root — author or H-stream)
 
@@ -78,14 +78,17 @@ ssh andrii.ai "ln -sfn /srv/apostille/releases/$VERSION \
 curl -fsS https://andrii.ai/apostille/healthz
 ```
 
-Server-side prerequisites (one-time, needs root): systemd
-unit `apostille` (runs `/srv/apostille/current/web` as an
-unprivileged user, `STORE_DIR=/var/lib/apostille`,
-`SPA_DIR=/srv/apostille/current/spa`, `PORT=3000`,
-`Restart=on-failure`); Caddy reverse-proxy
-`andrii.ai/apostille/*` → `127.0.0.1:3000` with Google Public
-CA ACME (see `certificates.md`); `/var/lib/apostille` owned
-by the service user; log dir per `prod.md`.
+Server-side prerequisites (one-time, needs root):
+`docs/ops/apostille.service` installed to
+`/etc/systemd/system/` (runs `/srv/apostille/current/web` as
+`andrii-ai:andrii-ai` with only `CAP_NET_BIND_SERVICE`,
+binds 80/443 on the .41 addresses directly — no Caddy, no
+proxy); TLS files + certbot hooks per `certificates.md`;
+`hal` sudoers entry for the reviewed ship script:
+`hal ALL=(root) NOPASSWD: /usr/local/sbin/apostille-ship *`
+(script at `docs/ops/apostille-ship.sh`; install root-owned
+755, `chattr +i` recommended). Journald collects stdout
+logs per `prod.md`.
 
 ## Rollback
 

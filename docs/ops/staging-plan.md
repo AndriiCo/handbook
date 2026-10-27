@@ -17,7 +17,7 @@
    credentials before prod keys are touched.
 4. **Load + failure drills.** Single-box limits (SQLite WAL
    under WS fan-out), disk-full behavior, OOM behavior,
-   Caddy reloads, cert renewal dry-runs.
+   unit restarts, cert renewal dry-runs.
 5. **NOT for:** dev experiments (use the Mac), content
    authoring (use fixtures), or anything holding real
    customer PII (staging is synthetic-only by policy).
@@ -25,7 +25,7 @@
 ## Shape (when the box lands)
 
 - Same OS/image as prod (Ubuntu 26.04+, x86_64), same systemd
-  unit, same Caddyfile except hostnames + ACME staging CA
+  unit except hostnames/ports + ACME staging CA
   (`https://dv.acme-v02.test-api.pki.goog/directory`, own EAB
   secret — browsers will NOT trust it; curl needs `--cacert
   test_roots.pem` from `https://pki.goog/test_roots.pem`).
@@ -51,7 +51,7 @@ being shipped. Stamps live in the repo (audit trail, no PII).
 
 ## Cutover checklist (day 10)
 
-- [ ] Staging box online, same unit/Caddy shape as prod.
+- [ ] Staging box online, same unit shape as prod.
 - [ ] `xtask accept` green twice in a row on staging.
 - [ ] One full drill: staging deploy → accept → stamp →
       prod deploy → smoke → rollback drill.

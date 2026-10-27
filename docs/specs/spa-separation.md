@@ -75,21 +75,18 @@
 - Decided 2026-10-26 (prompt 008): the admin host is
   `https://admin.andrii.ai` (`.ui` was a typo). TLS certs, Origin
   allowlist, and the mTLS client-CA all pin to this hostname.
-- Public: `https://andrii.ai/apostille` → Caddy → axum
-  127.0.0.1:PORT (plain HTTP, web-stack.md §1).
+- Public: `https://andrii.ai/apostille` → axum directly (in-app
+  rustls via axum-server since prompt 015 — no Caddy anywhere).
 - Admin: `https://admin.andrii.ai/` (no sub-path; separate origin ⇒
   separate cookies, no public JS can touch admin session). Same
-  physical server, Caddy SNI-routes to second axum listener (e.g.
-  127.0.0.1:PORT_ADMIN) or same listener with `Host` guard. Prefer two
-  listeners so firewall/Caddy policy differs.
-- mTLS on admin host only: Caddy `tls { client_auth { mode
-  require_and_verify; trusted_ca_cert_file ... } }`. Caddy forwards
-  `X-Client-Cert-DN` + `X-Client-Cert-SHA256` on localhost only; axum
-  rejects those headers from any non-loopback peer and rejects
-  requests without them on admin listener. Fallback if Caddy
-  client-auth proves painful: in-app rustls via axum-server on admin
-  listener only (web-stack.md §1 already names it as fallback); public
-  stays plain-HTTP-behind-Caddy.
+  physical server, second axum listener (e.g. dedicated port) or
+  same listener with `Host` guard. Prefer two listeners so
+  firewall policy differs.
+- mTLS on admin host only: in-app rustls client-cert verification
+  on the admin listener (planned; the old Caddy
+  `tls { client_auth ... }` design was retired with Caddy in
+  prompt 015). The app reads the verified client identity from
+  the TLS session itself — no forwardable headers involved.
 - Local dev: `cargo xtask dev` serves both on localhost with different
   ports (public :3000/apostille, admin :3001/) and `ADMIN_MTLS=off` +
   printed warning; CI asserts prod config has it on.

@@ -2,8 +2,9 @@
 
 - Constraint: the ONLY certificates we may use come from Google
   PKI. No Let's Encrypt, no ZeroSSL, no self-signed in prod.
-- Mechanism: Caddy on the server speaks ACME to Google Public CA
-  with External Account Binding (EAB). One EAB secret per ACME
+- Mechanism: certbot on the server speaks ACME to Google Public
+  CA with External Account Binding (EAB); our Rust binary
+  terminates TLS with the issued files. One EAB secret per ACME
   account; each secret dies 7 days after creation if unused, and
   dies on first use (single registration).
 - Endpoints (Google docs, verified 2026-10-26):
@@ -46,9 +47,36 @@ chmod 600 "$HOME/.config/andrii/eab-staging.txt"
 gcloud config unset api_endpoint_overrides/publicca
 ```
 
-Caddy side (server): the site block sets `acme_ca` to the
-production directory URL above plus the EAB `key_id`/`hmac_key`
-from step 2. Caddy handles issuance + renewal; nothing else on
+Server side (no Caddy — prompt 015): our Rust binary terminates
+TLS itself (axum-server + rustls, cert/key from
+`/var/lib/apostille/tls/`). Issuance + renewal is certbot
+(OS-level tooling, Google CA only) with http-01 through the
+app's `/.well-known/acme-challenge/` route (zero downtime, no
+DNS API, no stop/start):
+
+```sh
+# One-time registration (as root; EAB values from step 2):
+certbot register --server https://dv.acme-v02.api.pki.goog/directory \
+  --eab-kid "$EAB_KID" --eab-hmac-key "$EAB_HMAC" \
+  --email <author-email> --no-eff-email
+
+# Issue + install (renewals reuse the hooks automatically):
+certbot certonly --server https://dv.acme-v02.api.pki.goog/directory \
+  -d andrii.ai \
+  --manual --preferred-challenges http \
+  --manual-auth-hook "/usr/local/sbin/acme-auth-hook" \
+  --manual-cleanup-hook "/usr/local/sbin/acme-cleanup-hook" \
+  --deploy-hook "/usr/local/sbin/acme-deploy-hook"
+```
+
+Hooks (root-owned scripts, author to place): auth-hook writes
+`$CERTBOT_TOKEN` to `/var/lib/apostille/acme/$CERTBOT_TOKEN`
+(mode 644, root:andrii-ai); cleanup-hook removes it;
+deploy-hook installs `fullchain.pem`/`privkey.pem` to
+`/var/lib/apostille/tls/{cert.pem,key.pem}` (key 600,
+`andrii-ai:andrii-ai`) and runs
+`systemctl restart apostille` (the binary loads certs at
+boot; SIGHUP hot-reload is a follow-up). Nothing else on
 the box touches private keys.
 
 ## Rotation / revocation
@@ -58,5 +86,5 @@ the box touches private keys.
 - If `eab-prod.txt` leaks: it cannot revoke issued certs, but
   request a new secret for any future account and delete the
   file. Leaked CERT private keys live only on the server disk;
-  rotate by deleting Caddy's storage for the domain and
-  re-issuing (downtime: one ACME round-trip).
+  rotate by deleting `/var/lib/apostille/tls/*` and re-issuing
+  plus one service restart (downtime ~seconds).

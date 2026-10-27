@@ -1,6 +1,7 @@
 # Production ops: monitoring, logging, backup (plan)
 
-Single Ubuntu box, systemd + Caddy + one `web` process. Boring
+Single Ubuntu box, systemd + one `web` process (Rust terminates
+TLS itself; no proxy). Boring
 on purpose; every item below is checkable by one command.
 
 ## Logging
@@ -10,9 +11,11 @@ on purpose; every item below is checkable by one command.
   ms=<...>`), collected by journald
   (`journalctl -u apostille`). Request ids are random hex,
   not customer data.
-- Caddy access log: `/var/log/caddy/apostille.log` (JSON),
-  kept 14 days by logrotate. No query strings with tokens
-  are ever logged: the app never puts secrets in URLs.
+- Access log: the app's own `request` spans on stdout
+  (collected by journald): `id method uri` in, `status
+  latency_ms` out, same ID echoed in `x-request-id`. No query
+  strings with tokens are ever logged: the app never puts
+  secrets in URLs.
 - **PII rule (hard):** no secrets, tokens, document contents,
   emails, or addresses in ANY log. Audit rows record THAT
   something happened (actor, action, entity id), never the
@@ -28,7 +31,7 @@ on purpose; every item below is checkable by one command.
   check (author's existing monitor or a second box later):
   `GET /apostille/healthz` → 200 + `{"status":"ok"}`.
   Alert on 3 consecutive failures.
-- Cert expiry: Caddy renews automatically; a weekly check
+- Cert expiry: certbot renews automatically; a weekly check
   asserts `notAfter - now > 21 days` for andrii.ai (one
   openssl line in the runbook).
 - Disk: alert at 80% (SQLite + store + logs share one disk).

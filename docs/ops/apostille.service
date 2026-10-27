@@ -1,0 +1,77 @@
+# apostille.service — DRAFT FOR AUTHOR REVIEW (prompt 015).
+#
+# Install (as root, once): copy to /etc/systemd/system/apostille.service,
+# `systemctl daemon-reload && systemctl enable --now apostille`.
+# Ships via /usr/local/sbin/apostille-ship (reviewed separately).
+#
+# Privilege summary: runs as andrii-ai:andrii-ai, keeps ONLY
+# CAP_NET_BIND_SERVICE (to bind 80/443), cannot gain more
+# (NoNewPrivileges), sees almost no filesystem (ProtectSystem=strict
+# + ReadWritePaths), no home, no tmp sharing, no new namespaces,
+# native syscalls only. Nothing here was live-tested (no root in
+# this session) — soak on staging before trusting.
+[Unit]
+Description=Apostille Handbook API (andrii.ai/apostille)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=andrii-ai
+Group=andrii-ai
+ExecStart=/srv/apostille/current/web
+# Explicit IPs: never 0.0.0.0 — sibling services own :80/:443 on
+# other addresses of this box.
+Environment=BIND=199.184.91.41
+Environment=BIND6=2602:f337:ed:4841:4c07:3930:3030:9000
+Environment=STORE_DIR=/var/lib/apostille
+Environment=SPA_DIR=/srv/apostille/current/spa
+Environment=PUBLIC_HOST=andrii.ai
+Environment=TLS_CERT=/var/lib/apostille/tls/cert.pem
+Environment=TLS_KEY=/var/lib/apostille/tls/key.pem
+Environment=ACME_CHALLENGE_DIR=/var/lib/apostille/acme
+# State dir auto-created and chowned to andrii-ai on first start.
+StateDirectory=apostille
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/apostille
+UMask=0027
+Restart=on-failure
+RestartSec=5s
+# Panic=abort binary: any Rust panic kills the process; systemd
+# restarts it into a clean state (fail-closed, no unwound half-state).
+
+# --- Capabilities: bind low ports, nothing else. ---
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+# --- Filesystem: read-only world, one writable dir. ---
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ProcSubset=pid
+ReadWritePaths=/var/lib/apostille
+
+# --- Network/namespaces/misc: smallest working set. ---
+# AF_UNIX (logging/NSS) + v4/v6 only: the app currently makes NO
+# outbound connections (Meta/carrier/Stripe clients land later and
+# must re-open this deliberately).
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+# --- STAGE-GATED (do NOT enable before a staging soak). ---
+# Too easy to brick an untested service; each needs a proven-good
+# staging run with the exact production traffic shape first:
+# SystemCallFilter=@system-service  (unlisted syscall = SIGSYS kill)
+# MemoryDenyWriteExecute=true       (no JIT in our stack, but verify)
+
+[Install]
+WantedBy=multi-user.target

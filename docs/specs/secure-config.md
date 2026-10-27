@@ -51,7 +51,7 @@ either Mac or Ubuntu — the only server-side requirement is systemd
 with TPM2 support (verify at provisioning; Ubuntu ships systemd
 with TPM2 enabled) plus a TPM2 device. This respects `web-stack.md`
 §1 (pure-Rust deps, `rustup + git clone` build) with one sanctioned
-runtime exception of the same kind as Caddy.
+runtime exception (OS-level tooling: systemd, certbot).
 
 ### 1.2 Precise statement of the two boundaries
 

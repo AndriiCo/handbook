@@ -82,6 +82,10 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
         .route("/ws/echo", get(ws_echo_upgrade))
         .route("/api/v1/demo/login", post(demo_login))
         .route("/api/v1/me", get(me))
+        // Unknown API paths must 404 as JSON, not fall through to
+        // the SPA shell (static routes above still win over this
+        // wildcard, so real endpoints are unaffected).
+        .route("/api/{*path}", get(api_not_found))
         .nest_service(
             "/static",
             ServeDir::new(static_dir)
@@ -221,6 +225,10 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> impl IntoRespo
 #[serde(deny_unknown_fields)] // m3: mass-assignment hygiene on mutating DTOs
 struct LoginBody {
     customer_ref: String,
+}
+
+async fn api_not_found() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, Json(json!({"error": "not found"})))
 }
 
 fn unix_now() -> i64 {
@@ -562,6 +570,23 @@ mod tests {
                 "uri: {uri}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn unknown_api_path_is_json_404() {
+        let res = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/nope")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"], "not found");
     }
 
     #[tokio::test]
