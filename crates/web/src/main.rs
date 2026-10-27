@@ -25,6 +25,39 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tower_http::services::{ServeDir, ServeFile};
 
+/// Request access log, one span per request: `id method uri` in,
+/// `status latency_ms` out. Logged fields are fixed and PII-free by
+/// construction (our URLs never carry tokens or customer data).
+/// The same opaque ID goes back in `x-request-id` for correlation.
+async fn request_id_and_log(
+    req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> impl IntoResponse {
+    let id = format!(
+        "{:016x}{:016x}",
+        rand::random::<u64>(),
+        rand::random::<u64>()
+    );
+    let span = tracing::info_span!(
+        "request",
+        id = %id,
+        method = %req.method(),
+        uri = %req.uri(),
+    );
+    let _guard = span.enter();
+    let started = std::time::Instant::now();
+    let mut res = next.run(req).await;
+    if let Ok(value) = HeaderValue::from_str(&id) {
+        res.headers_mut().insert("x-request-id", value);
+    }
+    tracing::info!(
+        status = %res.status(),
+        latency_ms = started.elapsed().as_millis(),
+        "response"
+    );
+    res
+}
+
 /// Shared router state: SPA shell path plus the store root. Handlers
 /// open a NEW SQLite connection per request (`rusqlite::Connection`
 /// is `!Sync`, so one shared connection cannot cross await points;
@@ -38,8 +71,10 @@ struct AppState {
 /// Build the full app router. `static_dir` roots `/apostille/static`;
 /// `spa_dir` (the SvelteKit `build/` output) serves the app shell at
 /// `/apostille/` and every other `/apostille/*` path via SPA fallback;
-/// `store_root` locates the SQLite metadata DB for session handlers.
-fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf) -> Router {
+/// `store_root` locates the SQLite metadata DB for session handlers;
+/// `acme_dir` serves `/.well-known/acme-challenge/` token files for
+/// certbot http-01 (missing dir → 404s, harmless in dev).
+fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> Router {
     let spa_index = std::path::Path::new(spa_dir).join("index.html");
     let api = Router::new()
         .route("/healthz", get(healthz))
@@ -56,10 +91,15 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf) -> Router {
         .fallback_service(ServeDir::new(spa_dir).fallback(ServeFile::new(spa_index.clone())));
     // axum 0.8 `nest` does not route the bare `/apostille/` (trailing
     // slash) into the nest, so the shell gets explicit outer routes.
+    // The ACME challenge path lives at the domain root (not under
+    // /apostille): the port-80 308 redirects http-01 there, and ACME
+    // follows redirects to this HTTPS route.
     Router::new()
         .route("/apostille", get(serve_spa_index))
         .route("/apostille/", get(serve_spa_index))
         .nest("/apostille", api)
+        .nest_service("/.well-known/acme-challenge", ServeDir::new(acme_dir))
+        .layer(axum::middleware::from_fn(request_id_and_log))
         .with_state(AppState {
             spa_index,
             store_root,
@@ -284,6 +324,14 @@ async fn redirect_to_https(State(host): State<String>, uri: axum::http::Uri) -> 
 
 #[tokio::main]
 async fn main() {
+    // Structured access logs to stdout (journald collects). `info`
+    // default; `debug` only on staging via RUST_LOG, never prod.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
     let static_dir =
         std::env::var("STATIC_DIR").unwrap_or_else(|_| "crates/web/static".to_string());
     let spa_dir = std::env::var("SPA_DIR").unwrap_or_else(|_| "web/build".to_string());
@@ -297,7 +345,8 @@ async fn main() {
     db::migrate(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate metadata DB: {e}"));
     drop(conn);
-    let router = app(&static_dir, &spa_dir, PathBuf::from(store_dir));
+    let acme_dir = std::env::var("ACME_CHALLENGE_DIR").unwrap_or_else(|_| "acme".to_string());
+    let router = app(&static_dir, &spa_dir, PathBuf::from(store_dir), &acme_dir);
     let tls = load_tls(
         std::env::var("TLS_CERT").ok(),
         std::env::var("TLS_KEY").ok(),
@@ -447,19 +496,21 @@ mod tests {
         // defaults would miss; point at local fixture dirs.
         let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
         let spa = std::env::var("SPA_DIR").unwrap_or_else(|_| "test-spa".to_string());
+        let acme = std::env::var("ACME_CHALLENGE_DIR").unwrap_or_else(|_| "test-acme".to_string());
         // Static/health tests never touch the DB; the path stays unused.
-        app(&dir, &spa, PathBuf::from("test-store-unused"))
+        app(&dir, &spa, PathBuf::from("test-store-unused"), &acme)
     }
 
     /// App wired to a migrated temp store (handlers read state, not env).
     fn session_app(store_root: &std::path::Path) -> Router {
         let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
         let spa = std::env::var("SPA_DIR").unwrap_or_else(|_| "test-spa".to_string());
+        let acme = std::env::var("ACME_CHALLENGE_DIR").unwrap_or_else(|_| "test-acme".to_string());
         let store = Store::new(store_root);
         store.init().unwrap();
         let conn = db::open(&store).unwrap();
         db::migrate(&conn).unwrap();
-        app(&dir, &spa, store_root.to_path_buf())
+        app(&dir, &spa, store_root.to_path_buf(), &acme)
     }
 
     fn login_request(customer_ref: &str) -> Request<Body> {
@@ -810,6 +861,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn responses_carry_opaque_request_id() {
+        let res = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/healthz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let id = res
+            .headers()
+            .get("x-request-id")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(id.len(), 32);
+        assert!(id.bytes().all(|b| b.is_ascii_hexdigit()), "got: {id}");
+    }
+
+    #[tokio::test]
+    async fn acme_challenge_serves_token_file() {
+        let res = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/.well-known/acme-challenge/FixtureToken123")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        assert_eq!(body.as_ref(), b"acme-fixture-token-body\n");
+        let missing = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/.well-known/acme-challenge/NoSuchToken")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn login_with_broken_store_is_500() {
         let tmp = tempfile::tempdir().unwrap();
         // A regular FILE as store root: db::open cannot create
@@ -818,7 +917,8 @@ mod tests {
         std::fs::write(&blocker, b"not a dir").unwrap();
         let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
         let spa = std::env::var("SPA_DIR").unwrap_or_else(|_| "test-spa".to_string());
-        let res = app(&dir, &spa, blocker)
+        let acme = std::env::var("ACME_CHALLENGE_DIR").unwrap_or_else(|_| "test-acme".to_string());
+        let res = app(&dir, &spa, blocker, &acme)
             .oneshot(login_request("demo-1"))
             .await
             .unwrap();
