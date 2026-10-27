@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { backoffMs, isValidTopic, parseEnvelope } from '../src/lib/ws-client.js';
+import { backoffMs, isValidTopic, parseEnvelope, topicUrl } from '../src/lib/ws-client.js';
 
 test('isValidTopic accepts the five frozen topics, rejects the rest', () => {
 	assert.equal(isValidTopic('authority:wa-tumwater'), true);
@@ -35,4 +35,11 @@ test('parseEnvelope keeps valid frames, drops malformed ones', () => {
 	assert.equal(parseEnvelope(JSON.stringify({ topic: 'order:1', type: 'x' })), null);
 	assert.equal(parseEnvelope(JSON.stringify({ topic: 'call:1' })), null);
 	assert.equal(parseEnvelope(JSON.stringify(['call:1'])), null);
+});
+
+test('topicUrl sets the upgrade-time topic query', () => {
+	assert.equal(
+		topicUrl('wss://example.test/apostille/ws/bus', 'authority:wa-sos'),
+		'wss://example.test/apostille/ws/bus?topic=authority%3Awa-sos'
+	);
 });

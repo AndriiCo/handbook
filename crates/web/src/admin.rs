@@ -9,7 +9,7 @@
 
 use axum::{
     Router,
-    extract::{FromRequestParts, Path, State},
+    extract::{DefaultBodyLimit, FromRequestParts, Multipart, Path, State},
     http::{Method, StatusCode, header, request::Parts},
     middleware::Next,
     response::{IntoResponse, Json},
@@ -17,6 +17,7 @@ use axum::{
 };
 use handbook_store::{db, store::Store};
 use serde_json::json;
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{AppState, approval, store_unavailable, unix_now};
 
@@ -215,7 +216,11 @@ pub async fn csrf_guard(
 }
 
 /// The admin-only router (own listener; never mounted on public).
+/// Serves the admin SPA shell (`ADMIN_SPA_DIR`) at every non-API path
+/// with SPA fallback; unknown API paths stay JSON 404s (never the
+/// shell), so API clients cannot mistake HTML for data.
 pub fn router(state: AppState) -> Router {
+    let spa_index = state.admin_spa_dir.join("index.html");
     Router::new()
         .route("/apostille/api/v1/admin/me", get(admin_me))
         .route("/apostille/api/v1/admin/facts", get(approval::list_facts))
@@ -230,7 +235,17 @@ pub fn router(state: AppState) -> Router {
         .route("/apostille/api/v1/admin/config", get(get_config))
         .route("/apostille/api/v1/admin/config/{key}", put(set_config))
         .route("/apostille/api/v1/admin/bus/publish", post(publish))
-        .fallback(admin_not_found)
+        .route(
+            "/apostille/api/v1/admin/media/upload",
+            post(upload_media).layer(DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/apostille/api/v1/admin/{*path}",
+            get(admin_not_found)
+                .post(admin_not_found)
+                .put(admin_not_found),
+        )
+        .fallback_service(ServeDir::new(&state.admin_spa_dir).fallback(ServeFile::new(spa_index)))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf_guard,
@@ -440,4 +455,147 @@ async fn publish(
         .to_string(),
     );
     (StatusCode::OK, Json(json!({"published": true}))).into_response()
+}
+
+/// Staff media upload (F8 intake): multipart `file` (+ `authority`
+/// slug, `grant_version`, `grant_accepted_at`, optional
+/// `synthetic=true`). Validates through the media crate, persists a
+/// quarantined `community` capture, audits. Real uploads fail closed
+/// until `MEDIA_TERMS_READ=1`; synthetic fixtures always flow.
+async fn upload_media(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let bad = |msg: String| {
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": msg})),
+        )
+            .into_response()
+    };
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut filename: Option<String> = None;
+    let mut content_type: Option<String> = None;
+    let mut authority: Option<String> = None;
+    let mut grant_version: Option<String> = None;
+    let mut grant_accepted_at: Option<i64> = None;
+    let mut synthetic = false;
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "file" => {
+                filename = field.file_name().map(str::to_string);
+                content_type = field.content_type().map(|mime| mime.to_string());
+                match field.bytes().await {
+                    Ok(bytes) => file_bytes = Some(bytes.to_vec()),
+                    Err(_) => return bad("unreadable file part".to_string()),
+                }
+            }
+            "authority" => authority = field.text().await.ok(),
+            "grant_version" => grant_version = field.text().await.ok(),
+            "grant_accepted_at" => {
+                grant_accepted_at = field.text().await.ok().and_then(|t| t.parse().ok());
+            }
+            "synthetic" => {
+                synthetic = field.text().await.is_ok_and(|t| t == "true");
+            }
+            _ => {}
+        }
+    }
+    let (Some(bytes), Some(filename), Some(content_type), Some(authority)) =
+        (file_bytes, filename, content_type, authority)
+    else {
+        return bad("multipart needs file + authority parts".to_string());
+    };
+    let store = Store::new(&state.store_root);
+    let conn = match db::open(&store) {
+        Ok(conn) => conn,
+        Err(_) => return store_unavailable(),
+    };
+    let authority_id: i64 = match conn.query_row(
+        "SELECT id FROM authority WHERE slug = ?1",
+        [&authority],
+        |row| row.get(0),
+    ) {
+        Ok(id) => id,
+        Err(_) => return bad(format!("unknown authority slug: {authority}")),
+    };
+    let policy = if state.media_terms_read {
+        media::policy::MediaPolicy::terms_read()
+    } else {
+        media::policy::MediaPolicy::synthetic_only()
+    };
+    let source = if synthetic {
+        media::policy::MediaSource::SyntheticFixture
+    } else {
+        media::policy::MediaSource::RealUpload
+    };
+    let grant = grant_version.map(|version| media::upload::RightsGrant {
+        version,
+        accepted_at_unix: grant_accepted_at.unwrap_or(0),
+    });
+    let intake = match media::upload::intake_upload(
+        &policy,
+        source,
+        &filename,
+        &content_type,
+        &bytes,
+        grant.as_ref(),
+        unix_now(),
+    ) {
+        Ok(intake) => intake,
+        Err(e) => return bad(e.to_string()),
+    };
+    let now = unix_now();
+    let relative = match store
+        .write_blob(&bytes)
+        .map_err(|_| ())
+        .and_then(|_| store.blob_path(&intake.sha256_hex).map_err(|_| ()))
+        .ok()
+        .and_then(|path| {
+            path.strip_prefix(store.root())
+                .ok()
+                .and_then(|p| p.to_str().map(str::to_string))
+        }) {
+        Some(relative) => relative,
+        None => return store_unavailable(),
+    };
+    let kind = match intake.media_kind {
+        media::upload::MediaKind::Photo => "photo",
+        media::upload::MediaKind::Video => "video",
+        media::upload::MediaKind::Comment => "comment",
+        _ => "file",
+    };
+    let capture_id: i64 = match conn.execute(
+        "INSERT INTO capture(authority_id, source_id, captured_at, kind,
+                              path, bytes_raw, bytes_stored, sha256,
+                              authenticity, trust, notes)
+         VALUES (?1, NULL, ?2, ?3, ?4, ?5, ?5, ?6, '', 'community', 'quarantine:intake')",
+        rusqlite::params![
+            authority_id,
+            now,
+            kind,
+            relative,
+            bytes.len() as i64,
+            intake.sha256_hex,
+        ],
+    ) {
+        Ok(_) => conn.last_insert_rowid(),
+        Err(_) => return store_unavailable(),
+    };
+    let _ = conn.execute(
+        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+         VALUES (?1, ?2, 'media_upload', 'capture', ?3, ?4)",
+        rusqlite::params![now, auth.user.user_id, capture_id, intake.filename],
+    );
+    (
+        StatusCode::OK,
+        Json(json!({
+            "capture_id": capture_id,
+            "sha256": intake.sha256_hex,
+            "quarantined": true,
+        })),
+    )
+        .into_response()
 }

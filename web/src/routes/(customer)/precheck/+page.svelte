@@ -10,7 +10,7 @@
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
 	const wsUrl = () =>
-		`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${apiRoot}/ws`;
+		`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${apiRoot}/ws/bus`;
 
 	type Live = 'connecting' | 'live' | 'reconnecting' | 'offline';
 	let live = $state<Live>('connecting');

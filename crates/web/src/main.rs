@@ -78,6 +78,13 @@ struct AppState {
     /// `ADMIN_MTLS=off` dev seam: skips the client-cert requirement
     /// and allows loopback origins. Prod runs strict (false).
     admin_mtls_off: bool,
+    /// Admin SPA build dir (`ADMIN_SPA_DIR`, default `web/build-admin`),
+    /// served from the admin listener root with SPA fallback.
+    admin_spa_dir: PathBuf,
+    /// Media terms gate (`MEDIA_TERMS_READ=1` once SEC confirms the
+    /// Meta data-handling read). Until then only synthetic fixtures
+    /// upload; real media fails closed.
+    media_terms_read: bool,
 }
 
 /// Build the full PUBLIC app router. `static_dir` roots
@@ -102,6 +109,8 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             bus: ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
+            admin_spa_dir: PathBuf::from("test-admin-spa"),
+            media_terms_read: false,
         },
         static_dir,
         spa_dir,
@@ -431,6 +440,11 @@ async fn main() {
         }
     };
     let acme_dir = std::env::var("ACME_CHALLENGE_DIR").unwrap_or_else(|_| "acme".to_string());
+    let admin_spa_dir =
+        std::env::var("ADMIN_SPA_DIR").unwrap_or_else(|_| "web/build-admin".to_string());
+    let media_terms_read = std::env::var("MEDIA_TERMS_READ")
+        .ok()
+        .is_some_and(|v| v == "1");
     let state = AppState {
         spa_index: std::path::Path::new(&spa_dir).join("index.html"),
         static_dir: PathBuf::from(&static_dir),
@@ -438,6 +452,8 @@ async fn main() {
         bus: ws_bus::Bus::new(),
         kek,
         admin_mtls_off,
+        admin_spa_dir: PathBuf::from(admin_spa_dir),
+        media_terms_read,
     };
     let public = public_router(state.clone(), &static_dir, &spa_dir, &acme_dir);
     let admin = admin::router(state);
@@ -1050,6 +1066,8 @@ mod tests {
             bus: ws_bus::Bus::new(),
             kek: Some(std::sync::Arc::new(config::Kek::generate())),
             admin_mtls_off: true,
+            admin_spa_dir: tmp.path().join("admin-spa"),
+            media_terms_read: false,
         };
         Fixture { _tmp: tmp, state }
     }
@@ -1643,6 +1661,152 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn admin_spa_shell_and_json_api_404() {
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let spa = &fx.state.admin_spa_dir;
+        std::fs::create_dir_all(spa).unwrap();
+        std::fs::write(spa.join("index.html"), "<html>admin shell</html>").unwrap();
+
+        // Non-API path serves the shell (no session needed for bytes).
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/admin/config",
+                Some("admin.andrii.ai"),
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("admin shell"));
+
+        // Unknown API path stays a JSON 404, never the shell.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/nope",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(json_body(res).await["error"], "not found");
+
+        // Real API routes are still guarded, not shadowed by static.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/config",
+                Some("admin.andrii.ai"),
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn admin_media_upload_roundtrip() {
+        let fx = fixture();
+        let (slug, _, _) = seed_conflicting_facts(&fx.state.store_root);
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+
+        fn multipart(slug: &str, grant: bool) -> (String, Vec<u8>) {
+            let boundary = "TESTBOUNDARY";
+            let mut body = Vec::new();
+            let mut part = |name: &str, extra: &str, value: &[u8]| {
+                body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+                body.extend_from_slice(
+                    format!("Content-Disposition: form-data; name=\"{name}\"{extra}\r\n")
+                        .as_bytes(),
+                );
+                body.extend_from_slice(b"\r\n");
+                body.extend_from_slice(value);
+                body.extend_from_slice(b"\r\n");
+            };
+            part("authority", "", slug.as_bytes());
+            if grant {
+                part("grant_version", "", b"andrii-co-media-grant-v1");
+                part("grant_accepted_at", "", b"1700000000");
+            }
+            part("synthetic", "", b"true");
+            body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+            body.extend_from_slice(
+                b"Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n",
+            );
+            body.extend_from_slice(b"Content-Type: image/jpeg\r\n\r\n");
+            body.extend_from_slice(b"fake-jpeg-bytes");
+            body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+            (format!("multipart/form-data; boundary={boundary}"), body)
+        }
+
+        // With grant: quarantined capture + audit.
+        let (content_type, body) = multipart(&slug, true);
+        let req = Request::builder()
+            .uri("/apostille/api/v1/admin/media/upload")
+            .method("POST")
+            .header("host", "admin.andrii.ai")
+            .header(
+                "cookie",
+                format!("{}=staff-1; {}=t", auth::ADM_COOKIE, auth::CSRF_COOKIE),
+            )
+            .header(auth::CSRF_HEADER, "t")
+            .header("origin", "https://admin.andrii.ai")
+            .header("content-type", content_type)
+            .body(Body::from(body))
+            .unwrap();
+        let res = admin_router_for(&fx.state).oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let uploaded = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+        let uploaded: serde_json::Value = serde_json::from_slice(&uploaded).unwrap();
+        assert_eq!(uploaded["quarantined"], true);
+        let capture_id = uploaded["capture_id"].as_i64().unwrap();
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        let (kind, trust, notes): (String, String, String) = conn
+            .query_row(
+                "SELECT kind, trust, notes FROM capture WHERE id = ?1",
+                [capture_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (kind.as_str(), trust.as_str(), notes.as_str()),
+            ("photo", "community", "quarantine:intake")
+        );
+
+        // Without grant: 422, nothing stored.
+        let (content_type, body) = multipart(&slug, false);
+        let req = Request::builder()
+            .uri("/apostille/api/v1/admin/media/upload")
+            .method("POST")
+            .header("host", "admin.andrii.ai")
+            .header(
+                "cookie",
+                format!("{}=staff-1; {}=t", auth::ADM_COOKIE, auth::CSRF_COOKIE),
+            )
+            .header(auth::CSRF_HEADER, "t")
+            .header("origin", "https://admin.andrii.ai")
+            .header("content-type", content_type)
+            .body(Body::from(body))
+            .unwrap();
+        let res = admin_router_for(&fx.state).oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     #[tokio::test]

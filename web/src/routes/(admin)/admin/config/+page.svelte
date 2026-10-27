@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { resolve } from '$app/paths';
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
 	import { fetchConfig, saveConfigKey } from '../../../../lib/admin/config-client.js';
 
 	// Typed config keys per secure-config.md §1.5. SECRET rows are
 	// write-only: the page shows Set/Unset and a new-value box only —
 	// values are never fetched, rendered, or kept after save.
-	// Kit 3 types expose no `base`, so the API root derives from the
-	// home route id (base + '/'). Same value in both builds' sync.
-	const api = () => `${resolve('/(public)').replace(/\/$/, '')}/api/v1`;
+	// The admin API keeps the /apostille prefix on the admin origin
+	// (spec §1.5), so the root is literal — the base-deriving trick
+	// other pages use would resolve to '' on the admin host.
+	const api = () => `/apostille/api/v1`;
 
 	interface Row {
 		key: string;

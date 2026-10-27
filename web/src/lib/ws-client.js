@@ -2,7 +2,9 @@
 // No dependencies. Lazy-imported only from (customer)/(admin) pages —
 // never from the (public) entry chunk (see docs/specs/spa-separation.md §1.2).
 //
-// Envelope (server → client): { topic, type, ref, seq, payload }.
+// Protocol: one socket per topic, `?topic=` set at upgrade (the server
+// authorizes the topic during the handshake and ignores client frames).
+// Envelope (server → client): { topic, type, ... }.
 // Topics: authority:{slug} | call:{id} | submission:{id} | shipment:{id} | billing:{id}.
 
 /** @typedef {'live' | 'reconnecting' | 'offline'} WsStatus */
@@ -61,22 +63,35 @@ export function parseEnvelope(raw) {
 }
 
 /**
- * Open a topic socket. Status callback gets 'live' | 'reconnecting' | 'offline'.
- * Returns { close, status } — no Svelte dependency so admin/customer pages share it.
+ * Subscription URL for one topic. Pure (tested).
+ * @param {string} url
+ * @param {string} topic
+ * @returns {string}
+ */
+export function topicUrl(url, topic) {
+	const u = new URL(url);
+	u.searchParams.set('topic', topic);
+	return u.toString();
+}
+
+/**
+ * Open one socket per topic. Status is aggregate: 'live' when any
+ * socket is open, 'reconnecting' while retrying, 'offline' when
+ * closed or when no valid topic was given. No Svelte dependency so
+ * admin/customer pages share it.
  * @param {string} url
  * @param {WsOptions} [options]
  * @returns {{ close: () => void, status: () => WsStatus }}
  */
 export function createWsClient(url, { topics = [], onMessage, onStatus } = {}) {
-	/** @type {WebSocket | null} */
-	let socket = null;
-	let attempt = 0;
+	const wanted = [...new Set(topics.filter(isValidTopic))];
 	let closed = false;
-	/** @type {ReturnType<typeof setTimeout> | null} */
-	let timer = null;
 	/** @type {WsStatus} */
 	let current = 'offline';
-	const wanted = topics.filter(isValidTopic);
+	/** @type {Set<string>} */
+	const live = new Set();
+	/** @type {Map<string, { socket: WebSocket | null, timer: ReturnType<typeof setTimeout> | null, attempt: number }>} */
+	const conns = new Map();
 
 	/** @param {WsStatus} next */
 	function setStatus(next) {
@@ -85,56 +100,79 @@ export function createWsClient(url, { topics = [], onMessage, onStatus } = {}) {
 		onStatus?.(next);
 	}
 
-	function connect() {
-		if (closed) return;
-		setStatus(attempt === 0 ? 'offline' : 'reconnecting');
+	function aggregate() {
+		if (closed || conns.size === 0) setStatus('offline');
+		else if (live.size > 0) setStatus('live');
+		else setStatus('reconnecting');
+	}
+
+	/** @param {string} topic */
+	function connect(topic) {
+		const conn = conns.get(topic);
+		if (!conn || closed) return;
 		/** @type {WebSocket} */
 		let ws;
 		try {
-			ws = new WebSocket(url);
+			ws = new WebSocket(topicUrl(url, topic));
 		} catch {
-			schedule();
+			schedule(topic);
 			return;
 		}
-		socket = ws;
+		conn.socket = ws;
 		ws.onopen = () => {
-			attempt = 0;
-			setStatus('live');
-			for (const topic of wanted) ws.send(JSON.stringify({ type: 'subscribe', topic }));
+			conn.attempt = 0;
+			live.add(topic);
+			aggregate();
 		};
 		ws.onmessage = (event) => {
 			const msg = parseEnvelope(typeof event.data === 'string' ? event.data : '');
 			if (msg) onMessage?.(msg);
 		};
 		ws.onclose = () => {
-			socket = null;
-			if (!closed) schedule();
+			conn.socket = null;
+			live.delete(topic);
+			aggregate();
+			if (!closed) schedule(topic);
 		};
 		ws.onerror = () => {
 			// onclose follows; backoff is handled there.
 		};
 	}
 
-	function schedule() {
-		if (closed) return;
-		setStatus('reconnecting');
-		const wait = backoffMs(attempt);
-		attempt += 1;
-		timer = setTimeout(connect, wait);
+	/** @param {string} topic */
+	function schedule(topic) {
+		const conn = conns.get(topic);
+		if (!conn || closed) return;
+		aggregate();
+		const wait = backoffMs(conn.attempt);
+		conn.attempt += 1;
+		conn.timer = setTimeout(() => connect(topic), wait);
 	}
 
-	connect();
+	for (const topic of wanted) {
+		conns.set(topic, { socket: null, timer: null, attempt: 0 });
+		connect(topic);
+	}
+	if (wanted.length === 0) {
+		// No subscription possible: report offline so pages don't hang
+		// on "connecting".
+		queueMicrotask(() => {
+			if (!closed) onStatus?.('offline');
+		});
+	}
 
 	return {
 		close() {
 			closed = true;
-			if (timer) clearTimeout(timer);
-			try {
-				socket?.close();
-			} catch {
-				// Already gone.
+			for (const conn of conns.values()) {
+				if (conn.timer) clearTimeout(conn.timer);
+				try {
+					conn.socket?.close();
+				} catch {
+					// Already gone.
+				}
+				conn.socket = null;
 			}
-			socket = null;
 			setStatus('offline');
 		},
 		status() {

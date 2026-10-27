@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { fetchConfig, normalizeRow, putBody, saveConfigKey } from '../src/lib/admin/config-client.js';
+import {
+	csrfHeaders,
+	fetchConfig,
+	newCsrfToken,
+	normalizeRow,
+	putBody,
+	readCookie,
+	saveConfigKey
+} from '../src/lib/admin/config-client.js';
 
 test('normalizeRow types rows and keeps secrets value-free', () => {
 	assert.deepEqual(normalizeRow({ key: 'a.b', type: 'bool', value: true })?.value, true);
@@ -77,4 +85,19 @@ test('fetchConfig maps missing endpoints to honest errors', async () => {
 	} finally {
 		server.close();
 	}
+});
+
+test('CSRF helpers mint, persist, and echo the double-submit token', () => {
+	const token = newCsrfToken();
+	assert.match(token, /^[0-9a-f]{32}$/);
+	assert.notEqual(newCsrfToken(), token);
+	assert.equal(readCookie('a=1; hb_csrf=abc123; b=2', 'hb_csrf'), 'abc123');
+	assert.equal(readCookie('a=1', 'hb_csrf'), null);
+
+	const jar = { cookie: '' };
+	const first = csrfHeaders(jar);
+	assert.match(first['x-csrf'], /^[0-9a-f]{32}$/);
+	assert.match(jar.cookie, /^hb_csrf=[0-9a-f]{32}; Path=\/; SameSite=Lax$/);
+	const second = csrfHeaders(jar);
+	assert.equal(second['x-csrf'], first['x-csrf']);
 });

@@ -45,12 +45,55 @@ export function normalizeRow(row) {
 /**
  * Build the PUT body for a row. Pure (tested).
  * @param {ConfigRow} row
- * @returns {{ value: unknown }}
+ * @returns {{ type: string, value: unknown }}
  */
 export function putBody(row) {
 	if (row.type === 'bool') return { type: 'bool', value: row.value === true };
 	if (row.type === 'text') return { type: 'text', value: row.value };
 	return { type: 'secret', value: row.draft };
+}
+
+/**
+ * Mint a double-submit CSRF token (16 random bytes, hex). Pure (tested).
+ * @returns {string}
+ */
+export function newCsrfToken() {
+	const bytes = new Uint8Array(16);
+	globalThis.crypto.getRandomValues(bytes);
+	return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Read a cookie value from a `document.cookie` string. Pure (tested).
+ * @param {string} jar
+ * @param {string} name
+ * @returns {string | null}
+ */
+export function readCookie(jar, name) {
+	for (const pair of jar.split(';')) {
+		const [k, ...rest] = pair.trim().split('=');
+		if (k === name) return rest.join('=');
+	}
+	return null;
+}
+
+/**
+ * Headers for admin mutations: self-minted double-submit token echoed
+ * in `x-csrf`. The server compares the header against the `hb_csrf`
+ * cookie — an attacker cannot read the victim's random value to forge
+ * the header, so page-minted is sound. `jar` defaults to the live
+ * `document.cookie` and exists only so tests can stub the cookie jar.
+ * @param {{ cookie: string }} [jar]
+ * @returns {Record<string, string>}
+ */
+export function csrfHeaders(jar = undefined) {
+	const store = jar ?? globalThis.document;
+	const found = store && typeof store.cookie === 'string' ? readCookie(store.cookie, 'hb_csrf') : null;
+	const token = found || newCsrfToken();
+	if (!found && store && typeof store.cookie === 'string') {
+		store.cookie = `hb_csrf=${token}; Path=/; SameSite=Lax`;
+	}
+	return { 'x-csrf': token };
 }
 
 /**
@@ -87,7 +130,7 @@ export async function fetchConfig(apiBase, fetchFn = fetch) {
 export async function saveConfigKey(apiBase, row, fetchFn = fetch) {
 	const res = await fetchFn(`${apiBase}/admin/config/${encodeURIComponent(row.key)}`, {
 		method: 'PUT',
-		headers: { 'content-type': 'application/json' },
+		headers: { 'content-type': 'application/json', ...csrfHeaders() },
 		credentials: 'same-origin',
 		body: JSON.stringify(putBody(row))
 	});
