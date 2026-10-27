@@ -127,6 +127,15 @@ the consolidated author-decision list is at the bottom of this file.
     approval + FedEx certification land; **no prices or dates
     in UI** until the numbered table is supplied.
 
+**Decided in assumptions-audit grill (Draft — pending
+acceptance):**
+
+G1. SAM-via-API redaction (F9) is must-have in-slice,
+    alongside the decided carrier-buy code — not instead
+    of it. Glimmer self-host stays cut (Weeks 4–5).
+    Prerequisites: `META_API_KEY` Day 2, F8 upload path +
+    rights grant, demo photo source (Q3), SEC review.
+
 **Still needed during the 5–7 days:**
 
 11. MCP tool list + auth (public vs keyed) + rate limits.

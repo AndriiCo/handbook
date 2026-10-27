@@ -219,9 +219,11 @@ Assumptions under challenge (author: correct if wrong):
   event page — format assumed, not verified.
 
 Interview state:
-- Asked: Q1 demo contract (scope lock vs SAM pull-in).
-- Queued: live Meta call pick, admin-vs-loop ordering,
+- Asked: Q2 SAM funding + tripwire.
+- Queued: transcription path, admin-vs-loop ordering,
   staging/acceptance, restated success criteria wording.
-- Settled: (none yet — decisions land in specs/README.md).
+- Settled: D1 (Q1 = B) — SAM-via-API redaction is
+  must-have in-slice, alongside the decided carrier-buy
+  code; see specs/README.md G1 (Draft).
 - Doc debt: prompt-log entries pending for the memory /
   admin-plan / mTLS turns (numbering at interview end).
