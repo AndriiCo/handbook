@@ -15,6 +15,8 @@ fn main() {
         Some("init") => run_init(&args[1..]),
         Some("add-authority") => run_add_authority(&args[1..]),
         Some("retention-sweep") => run_retention_sweep(&args[1..]),
+        Some("web-budget") => run_web_budget(),
+        Some("serve") => run_serve(),
         Some(unknown) => {
             eprintln!("unknown task: {unknown}\n");
             print_help();
@@ -32,6 +34,8 @@ Tasks:
   init   create a store and apply migrations [--store <path>]
   add-authority   add an office/jurisdiction (see flags below)
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
+  web-budget  check web/build JS+CSS against the Day-1 150KB gate
+  serve       run the dev API server (cargo run -p web)
 
 add-authority flags:
   --store <path>  store root (default: store)
@@ -161,5 +165,66 @@ fn run_retention_sweep(args: &[String]) {
             eprintln!("retention-sweep: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+/// Day-1 JS budget gate: raw JS+CSS bytes in `web/build` must stay
+/// under 150KB (cold cache, excluding images/fonts).
+fn run_web_budget() {
+    const BUDGET: u64 = 150 * 1024;
+    let mut sized: Vec<(u64, String)> = Vec::new();
+    let mut stack = vec![std::path::PathBuf::from("web/build")];
+    if !stack[0].is_dir() {
+        eprintln!("web-budget: web/build missing (run `npm run build` in web/ first)");
+        std::process::exit(1);
+    }
+    while let Some(dir) = stack.pop() {
+        let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| {
+            eprintln!("web-budget: read {}: {e}", dir.display());
+            std::process::exit(1);
+        });
+        for entry in entries {
+            let entry = entry.unwrap_or_else(|e| {
+                eprintln!("web-budget: entry: {e}");
+                std::process::exit(1);
+            });
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("js" | "css")
+            ) {
+                let bytes = entry
+                    .metadata()
+                    .unwrap_or_else(|e| {
+                        eprintln!("web-budget: stat {}: {e}", path.display());
+                        std::process::exit(1);
+                    })
+                    .len();
+                sized.push((bytes, path.display().to_string()));
+            }
+        }
+    }
+    sized.sort();
+    sized.reverse();
+    let total: u64 = sized.iter().map(|(b, _)| b).sum();
+    for (bytes, path) in sized.iter().take(8) {
+        println!("{bytes:>8}  {path}");
+    }
+    println!("total JS+CSS: {total} bytes (budget: {BUDGET})");
+    if total > BUDGET {
+        eprintln!("web-budget: OVER BUDGET by {} bytes", total - BUDGET);
+        std::process::exit(1);
+    }
+}
+
+fn run_serve() {
+    let status = Command::new("cargo")
+        .args(["run", "-p", "web"])
+        .status()
+        .expect("failed to run cargo");
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
     }
 }
