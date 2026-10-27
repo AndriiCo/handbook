@@ -219,9 +219,9 @@ Assumptions under challenge (author: correct if wrong):
   event page — format assumed, not verified.
 
 Interview state:
-- Asked: Q4 admin-vs-loop ordering.
-- Queued: staging/acceptance; restated success criteria
-  wording (folded into final contract).
+- Asked: Q5 staging trigger.
+- Queued: final contract + explicit acceptance (success
+  criteria wording folded in).
 - Settled: D1 (Q1 = B) — SAM-via-API redaction is
   must-have in-slice, alongside the decided carrier-buy
   code; see specs/README.md G1 (Draft).
@@ -233,5 +233,9 @@ Interview state:
   drafting + SAM on an author photo + Voice Transcribe
   file endpoint; terms read Day 2; annotation UI in
   Day-3 ingest; see G3 (Draft).
+- Settled: D4 (Q4 = C) — full-parallel execution: loop
+  track + admin track simultaneously on separate swarm
+  tracks, single-writer sequencing on shared files,
+  parent-owned merges; see G4 (Draft).
 - Doc debt: prompt-log entries pending for the memory /
   admin-plan / mTLS turns (numbering at interview end).

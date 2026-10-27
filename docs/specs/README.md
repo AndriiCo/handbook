@@ -146,6 +146,14 @@ G3. Three live Meta calls in-slice: Spark drafting,
     Terms read Day 2 (before any real media flows);
     transcript annotation/fix UI included in the Day-3
     ingest work.
+G4. Full-parallel execution: the loop track (watch →
+    draft → approve → publish) and the admin track
+    (config → mTLS+auth → admin UI) build simultaneously
+    on separate swarm tracks, with single-writer
+    sequencing on shared files (migrations, `db.rs`)
+    and parent-owned merges behind `ci`. Author tracks
+    (DNS, key+terms, seed, client certs, root window)
+    run alongside.
 
 **Still needed during the 5–7 days:**
 
