@@ -1,16 +1,19 @@
 # Deploy: direct-to-prod (allowed until end of day 10 only)
 
-- Server: `andrii-ai` over SSH (key on author's Mac, never in
-  repo). Serves ONLY `199.184.91.41` +
-  `2602:f337:ed:4841:4c07:3930:3030:9000` — no other host may
-  serve andrii.ai content, and handbook web-research traffic
-  (URL watching, fetches) originates ONLY from these IPs, never
-  from dev machines.
-- OS: Ubuntu 26.04+, x86_64. One box, no scaling (per design).
-- Status 2026-10-26: NO `andrii-ai` entry exists in
-  `~/.ssh/config` and neither server IP appears there — deploy
-  is BLOCKED until the author adds the Host entry (HostName,
-  user, port, IdentityFile) or corrects the alias.
+- Server: `ssh andrii.ai` (alias on the author's Mac ONLY;
+  key on the Mac, never in repo). Serves ONLY `199.184.91.41`
+  + `2602:f337:ed:4841:4c07:3930:3030:9000` — no other host
+  may serve andrii.ai content, and handbook web-research
+  traffic (URL watching, fetches) originates ONLY from these
+  IPs, never from dev machines.
+- Probed 2026-10-26 (prompt 014): host `enodia`, Ubuntu
+  26.04.1 x86_64, 12 CPU / 31GB / 732G free, systemd 259,
+  glibc 2.43, user `hal`, NO sudo, NO TPM (`/dev/tpm*`
+  absent → the TPM-sealed decision's env-only fallback is
+  ACTIVE on this box), NO Caddy, Linger=no (user units die
+  on logout), port 3000 free, :80/:443 already bound on
+  OTHER IPs (.42 etc. — someone else's, do not touch),
+  nothing on .41:80/:443 yet.
 
 ## Build (cross, on the Mac — no installs)
 
@@ -37,22 +40,47 @@ in, max GLIBC 2.30 (Ubuntu 26.04 ships newer — runs fine).
 On-target smoke (healthz after first deploy) still pending
 SSH access.
 
-## Ship (once SSH exists)
+## Ship, interim: user-space (no root — used prompt 014)
 
 ```sh
 VERSION=$(git rev-parse --short HEAD)
-ssh andrii-ai "mkdir -p /srv/apostille/releases/$VERSION"
+ssh andrii.ai "mkdir -p ~/apostille/releases/$VERSION ~/apostille/data"
 scp target/x86_64-unknown-linux-gnu/release/web \
-  andrii-ai:/srv/apostille/releases/$VERSION/web
-scp -r web/build andrii-ai:/srv/apostille/releases/$VERSION/spa
-ssh andrii-ai "ln -sfn /srv/apostille/releases/$VERSION \
+  andrii.ai:apostille/releases/$VERSION/web
+scp -r web/build andrii.ai:apostille/releases/$VERSION/spa
+# NOTE: keep the starter ssh from hanging: exit the session
+# explicitly after launch (`exit` below), the setsid child stays.
+ssh andrii.ai "ln -sfn ~/apostille/releases/$VERSION ~/apostille/current \
+  && cd ~/apostille \
+  && PORT=3000 STORE_DIR=\$HOME/apostille/data \
+     SPA_DIR=\$HOME/apostille/current/spa \
+     setsid ./current/web </dev/null >>apostille.log 2>&1; exit"
+# Smoke (runs ON the box; the binary binds 127.0.0.1 only):
+ssh andrii.ai "curl -fsS http://127.0.0.1:3000/apostille/healthz"
+```
+
+Verified 2026-10-26: healthz JSON, shell 200, demo
+login → me all green on the box. The process survives SSH
+logout but NOT reboot (Linger=no, no unit file). Stop with
+`pkill -f apostille/current/web`. Localhost-only by
+construction — nothing public until Caddy lands.
+
+## Ship, final: system paths (needs root — author or H-stream)
+
+```sh
+VERSION=$(git rev-parse --short HEAD)
+ssh andrii.ai "mkdir -p /srv/apostille/releases/$VERSION"
+scp target/x86_64-unknown-linux-gnu/release/web \
+  andrii.ai:/srv/apostille/releases/$VERSION/web
+scp -r web/build andrii.ai:/srv/apostille/releases/$VERSION/spa
+ssh andrii.ai "ln -sfn /srv/apostille/releases/$VERSION \
   /srv/apostille/current && sudo systemctl restart apostille"
 curl -fsS https://andrii.ai/apostille/healthz
 ```
 
-Server-side prerequisites (one-time, author or H-stream):
-systemd unit `apostille` (runs `/srv/apostille/current/web`
-as an unprivileged user, `STORE_DIR=/var/lib/apostille`,
+Server-side prerequisites (one-time, needs root): systemd
+unit `apostille` (runs `/srv/apostille/current/web` as an
+unprivileged user, `STORE_DIR=/var/lib/apostille`,
 `SPA_DIR=/srv/apostille/current/spa`, `PORT=3000`,
 `Restart=on-failure`); Caddy reverse-proxy
 `andrii.ai/apostille/*` → `127.0.0.1:3000` with Google Public
@@ -63,7 +91,7 @@ by the service user; log dir per `prod.md`.
 
 ```sh
 PREV=<previous good short-sha>
-ssh andrii-ai "ln -sfn /srv/apostille/releases/$PREV \
+ssh andrii.ai "ln -sfn /srv/apostille/releases/$PREV \
   /srv/apostille/current && sudo systemctl restart apostille"
 ```
 
