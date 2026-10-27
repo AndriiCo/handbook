@@ -1,11 +1,13 @@
-//! Apostille web API (S3 lane, roadmap Day 1 slice).
+//! Apostille web API (S3 lane, roadmap Day 1–2 slice).
 //!
-//! All routes live under `/apostille`. Day 1 ships health/version,
-//! static files, and a WS echo probe only.
+//! All routes live under `/apostille`: health/version, static files, a
+//! WS echo probe, and DEMO login/session (`/api/v1/demo/login`,
+//! `/api/v1/me`). No real auth: passkey/OAuth come later per
+//! `docs/specs/roadmap.md`.
 //!
-//! NOTE: auth, demo session, and real WS topics (`authority:{slug}`,
-//! `call:{id}`, `submission:{id}`, `shipment:{id}`, `billing:{id}`)
-//! come later per `docs/specs/roadmap.md` (Day 2+).
+//! NOTE: real WS topics (`authority:{slug}`, `call:{id}`,
+//! `submission:{id}`, `shipment:{id}`, `billing:{id}`) come later
+//! (Day 2+).
 
 use axum::{
     Router,
@@ -13,23 +15,38 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Json},
-    routing::get,
+    routing::{get, post},
 };
+use handbook::{db, store::Store};
 use serde_json::json;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tower_http::services::{ServeDir, ServeFile};
+
+/// Shared router state: SPA shell path plus the store root. Handlers
+/// open a NEW SQLite connection per request (`rusqlite::Connection`
+/// is `!Sync`, so one shared connection cannot cross await points;
+/// a pool comes later).
+#[derive(Clone)]
+struct AppState {
+    spa_index: PathBuf,
+    store_root: PathBuf,
+}
 
 /// Build the full app router. `static_dir` roots `/apostille/static`;
 /// `spa_dir` (the SvelteKit `build/` output) serves the app shell at
-/// `/apostille/` and every other `/apostille/*` path via SPA fallback.
-fn app(static_dir: &str, spa_dir: &str) -> Router {
+/// `/apostille/` and every other `/apostille/*` path via SPA fallback;
+/// `store_root` locates the SQLite metadata DB for session handlers.
+fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf) -> Router {
     let spa_index = std::path::Path::new(spa_dir).join("index.html");
     let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/version", get(version))
         .route("/ws/echo", get(ws_echo_upgrade))
+        .route("/api/v1/demo/login", post(demo_login))
+        .route("/api/v1/me", get(me))
         .nest_service(
             "/static",
             ServeDir::new(static_dir)
@@ -43,14 +60,17 @@ fn app(static_dir: &str, spa_dir: &str) -> Router {
         .route("/apostille", get(serve_spa_index))
         .route("/apostille/", get(serve_spa_index))
         .nest("/apostille", api)
-        .with_state(spa_index)
+        .with_state(AppState {
+            spa_index,
+            store_root,
+        })
 }
 
 /// Serve the SPA shell for `/apostille/` exactly (the nested `/` never
 /// reaches `ServeDir`'s directory-index handling, so it needs its own
 /// route; deep links fall through to the `ServeDir` fallback above).
-async fn serve_spa_index(State(index): State<std::path::PathBuf>) -> impl IntoResponse {
-    match tokio::fs::read(&index).await {
+async fn serve_spa_index(State(state): State<AppState>) -> impl IntoResponse {
+    match tokio::fs::read(&state.spa_index).await {
         Ok(bytes) => (
             [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
             bytes,
@@ -73,6 +93,105 @@ async fn version() -> impl IntoResponse {
 
 async fn ws_echo_upgrade(ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(ws_echo)
+}
+
+/// DEMO login: no password is checked (clearly-marked demo only).
+/// Creates a `demo_session` row with 24h expiry and sets a
+/// `demo_session` cookie. The full token is stored server-side; prod
+/// upgrades to hashes before any real auth.
+async fn demo_login(
+    State(state): State<AppState>,
+    Json(body): Json<LoginBody>,
+) -> impl IntoResponse {
+    if body.customer_ref.is_empty() || body.customer_ref.len() > 64 {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "invalid customer_ref"})),
+        )
+            .into_response();
+    }
+    let bytes = rand::random::<[u8; 32]>();
+    let mut token = String::with_capacity(64);
+    for b in bytes {
+        token.push_str(&format!("{b:02x}"));
+    }
+    let now = unix_now();
+    let conn = match db::open(&Store::new(&state.store_root)) {
+        Ok(conn) => conn,
+        Err(_) => return store_unavailable(),
+    };
+    if db::create_demo_session(&conn, &token, &body.customer_ref, now, now + 86_400).is_err() {
+        return store_unavailable();
+    }
+    // Built manually (no cookie crate): token is hex, so always valid.
+    let cookie = format!("demo_session={token}; HttpOnly; SameSite=Lax; Path=/apostille");
+    let Ok(set_cookie) = HeaderValue::from_str(&cookie) else {
+        return store_unavailable();
+    };
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, set_cookie)],
+        Json(json!({"customer_ref": body.customer_ref})),
+    )
+        .into_response()
+}
+
+/// DEMO session check: missing/unknown/expired token → 401.
+async fn me(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let unauthorized = || {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "unauthorized"})),
+        )
+            .into_response()
+    };
+    let token = headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|cookies| {
+            cookies
+                .split(';')
+                .map(str::trim)
+                .find_map(|pair| pair.strip_prefix("demo_session="))
+        });
+    let Some(token) = token.filter(|t| !t.is_empty()) else {
+        return unauthorized();
+    };
+    let conn = match db::open(&Store::new(&state.store_root)) {
+        Ok(conn) => conn,
+        Err(_) => return store_unavailable(),
+    };
+    let Ok(Some((customer_ref, expires_at))) = db::get_demo_session(&conn, token) else {
+        return unauthorized();
+    };
+    if unix_now() >= expires_at {
+        return unauthorized();
+    }
+    (
+        StatusCode::OK,
+        Json(json!({"customer_ref": customer_ref, "expires_at": expires_at})),
+    )
+        .into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct LoginBody {
+    customer_ref: String,
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn store_unavailable() -> axum::response::Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({"error": "store unavailable"})),
+    )
+        .into_response()
 }
 
 async fn ws_echo(mut socket: WebSocket) {
@@ -103,15 +222,28 @@ async fn main() {
     let static_dir =
         std::env::var("STATIC_DIR").unwrap_or_else(|_| "crates/web/static".to_string());
     let spa_dir = std::env::var("SPA_DIR").unwrap_or_else(|_| "web/build".to_string());
+    let store_dir = std::env::var("STORE_DIR").unwrap_or_else(|_| "store".to_string());
+    let store = Store::new(&store_dir);
+    if let Err(e) = store.init() {
+        panic!("STORE_DIR={store_dir}: init store: {e}");
+    }
+    let conn =
+        db::open(&store).unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: open metadata DB: {e}"));
+    db::migrate(&conn)
+        .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate metadata DB: {e}"));
+    drop(conn);
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("bind 127.0.0.1:PORT");
     eprintln!("listening on http://{addr}/apostille");
-    axum::serve(listener, app(&static_dir, &spa_dir))
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("serve");
+    axum::serve(
+        listener,
+        app(&static_dir, &spa_dir, PathBuf::from(store_dir)),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .expect("serve");
 }
 
 async fn shutdown_signal() {
@@ -133,7 +265,30 @@ mod tests {
         // defaults would miss; point at local fixture dirs.
         let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
         let spa = std::env::var("SPA_DIR").unwrap_or_else(|_| "test-spa".to_string());
-        app(&dir, &spa)
+        // Static/health tests never touch the DB; the path stays unused.
+        app(&dir, &spa, PathBuf::from("test-store-unused"))
+    }
+
+    /// App wired to a migrated temp store (handlers read state, not env).
+    fn session_app(store_root: &std::path::Path) -> Router {
+        let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
+        let spa = std::env::var("SPA_DIR").unwrap_or_else(|_| "test-spa".to_string());
+        let store = Store::new(store_root);
+        store.init().unwrap();
+        let conn = db::open(&store).unwrap();
+        db::migrate(&conn).unwrap();
+        app(&dir, &spa, store_root.to_path_buf())
+    }
+
+    fn login_request(customer_ref: &str) -> Request<Body> {
+        Request::builder()
+            .uri("/apostille/api/v1/demo/login")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({"customer_ref": customer_ref}).to_string(),
+            ))
+            .unwrap()
     }
 
     #[tokio::test]
@@ -190,5 +345,100 @@ mod tests {
         assert_eq!(res.status(), StatusCode::OK);
         let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
         assert!(body.starts_with(b"User-agent:"));
+    }
+
+    #[tokio::test]
+    async fn demo_login_then_me_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let login = session_app(tmp.path())
+            .oneshot(login_request("demo-1"))
+            .await
+            .unwrap();
+        assert_eq!(login.status(), StatusCode::OK);
+        let set_cookie = login
+            .headers()
+            .get(axum::http::header::SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(set_cookie.starts_with("demo_session="));
+        assert!(set_cookie.contains("HttpOnly"));
+        assert!(set_cookie.contains("SameSite=Lax"));
+        assert!(set_cookie.contains("Path=/apostille"));
+        let body = axum::body::to_bytes(login.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["customer_ref"], "demo-1");
+
+        let cookie = set_cookie.split(';').next().unwrap().to_string();
+        let res = session_app(tmp.path())
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/me")
+                    .header("cookie", cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["customer_ref"], "demo-1");
+        assert!(v["expires_at"].as_i64().unwrap() > unix_now());
+    }
+
+    #[tokio::test]
+    async fn me_without_cookie_is_unauthorized() {
+        let tmp = tempfile::tempdir().unwrap();
+        let res = session_app(tmp.path())
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/me")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"], "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn me_with_bogus_cookie_is_unauthorized() {
+        let tmp = tempfile::tempdir().unwrap();
+        let res = session_app(tmp.path())
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/me")
+                    .header("cookie", "demo_session=bogus")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"], "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn demo_login_rejects_bad_ref() {
+        let tmp = tempfile::tempdir().unwrap();
+        for customer_ref in [String::new(), "x".repeat(65)] {
+            let res = session_app(tmp.path())
+                .oneshot(login_request(&customer_ref))
+                .await
+                .unwrap();
+            assert_eq!(
+                res.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "ref len {}",
+                customer_ref.len()
+            );
+        }
     }
 }

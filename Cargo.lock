@@ -1058,8 +1058,11 @@ name = "web"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "handbook",
+ "rand",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tower",
  "tower-http",

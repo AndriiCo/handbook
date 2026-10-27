@@ -51,6 +51,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             conn.execute_batch(include_str!("../migrations/002_hardening.sql"))?;
             conn.pragma_update(None, "user_version", 2)?;
         }
+        if version < 3 {
+            conn.execute_batch(include_str!("../migrations/003_sessions.sql"))?;
+            conn.pragma_update(None, "user_version", 3)?;
+        }
         if version < 4 {
             conn.execute_batch(include_str!("../migrations/004_watermarks.sql"))?;
             conn.pragma_update(None, "user_version", 4)?;
@@ -272,6 +276,40 @@ pub fn insert_analysis_audit(
         rusqlite::params![at, actor, authority_id, reason],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+/// Insert a DEMO session row (migration 003). Demo-only: no password is
+/// checked anywhere; real auth (passkey/OAuth) replaces this table.
+pub fn create_demo_session(
+    conn: &Connection,
+    token: &str,
+    customer_ref: &str,
+    created_at: i64,
+    expires_at: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO demo_session(token, customer_ref, created_at, expires_at)
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![token, customer_ref, created_at, expires_at],
+    )?;
+    Ok(())
+}
+
+/// Look up a DEMO session by token. Returns `(customer_ref, expires_at)`;
+/// callers must reject expired rows (`now >= expires_at`).
+pub fn get_demo_session(conn: &Connection, token: &str) -> rusqlite::Result<Option<(String, i64)>> {
+    // Fully-qualified trait call: avoids touching the import block.
+    rusqlite::OptionalExtension::optional(conn.query_row(
+        "SELECT customer_ref, expires_at FROM demo_session WHERE token = ?1",
+        [token],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ))
+}
+
+/// Delete DEMO sessions with `expires_at <= now`. Returns rows deleted.
+pub fn delete_expired_demo_sessions(conn: &Connection, now: i64) -> rusqlite::Result<usize> {
+    let deleted = conn.execute("DELETE FROM demo_session WHERE expires_at <= ?1", [now])?;
+    Ok(deleted)
 }
 
 #[cfg(test)]
@@ -690,5 +728,58 @@ mod tests {
             get_watermark(&conn, "usa-ca").unwrap(),
             Some((300, "aa-prompt-v1".to_string()))
         );
+    }
+
+    #[test]
+    fn demo_session_roundtrip() {
+        let (_dir, _store, conn) = migrated();
+        create_demo_session(&conn, "tok-1", "demo-1", 1000, 2000).unwrap();
+        assert_eq!(
+            get_demo_session(&conn, "tok-1").unwrap(),
+            Some(("demo-1".to_string(), 2000))
+        );
+        assert_eq!(get_demo_session(&conn, "bogus").unwrap(), None);
+    }
+
+    #[test]
+    fn demo_session_expiry_sweep() {
+        let (_dir, _store, conn) = migrated();
+        create_demo_session(&conn, "old", "demo-1", 0, 999).unwrap();
+        create_demo_session(&conn, "edge", "demo-1", 0, 1000).unwrap();
+        create_demo_session(&conn, "live", "demo-2", 0, 1001).unwrap();
+        assert_eq!(delete_expired_demo_sessions(&conn, 1000).unwrap(), 2);
+        assert_eq!(get_demo_session(&conn, "old").unwrap(), None);
+        assert_eq!(get_demo_session(&conn, "edge").unwrap(), None);
+        assert_eq!(
+            get_demo_session(&conn, "live").unwrap(),
+            Some(("demo-2".to_string(), 1001))
+        );
+    }
+
+    #[test]
+    fn migrate_upgrades_002_db_to_current() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        store.init().unwrap();
+        let conn = open(&store).unwrap();
+        conn.execute_batch(include_str!("../migrations/001_init.sql"))
+            .unwrap();
+        conn.execute_batch(include_str!("../migrations/002_hardening.sql"))
+            .unwrap();
+        conn.pragma_update(None, "user_version", 2).unwrap();
+
+        migrate(&conn).unwrap();
+
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        create_demo_session(&conn, "t", "demo-1", 0, 1).unwrap();
+        assert_eq!(
+            get_demo_session(&conn, "t").unwrap(),
+            Some(("demo-1".to_string(), 1))
+        );
+        upsert_watermark(&conn, "usa-wa", 5, "aa-prompt-v1").unwrap();
+        assert!(get_watermark(&conn, "usa-wa").unwrap().is_some());
     }
 }
