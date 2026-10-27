@@ -140,6 +140,12 @@ G2. SAM is schedule-funded (Days 4–5 parallel track,
     Day 4 gate slips more than a day, the Egypt
     chain-view UI defers to the spare (chain data and
     API stay) and SAM keeps its slot.
+G3. Three live Meta calls in-slice: Spark drafting,
+    SAM redaction on an author-provided photo, Voice
+    Transcribe file endpoint for transcript ingest.
+    Terms read Day 2 (before any real media flows);
+    transcript annotation/fix UI included in the Day-3
+    ingest work.
 
 **Still needed during the 5–7 days:**
 
