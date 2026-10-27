@@ -38,6 +38,9 @@ existing admin listener + staging.
   UI (290 Rust + 14 web green, smoke OK).
 - `1767f9c` Merge form-framework: shared components +
   DS-4194 pilot (296 Rust + 23 web green; budget 220KB).
+- `af44e2c` Merge config-db: zero-env runtime config
+  (307 Rust green; staging note: release now refuses
+  mtls_off + KEK-missing boot).
 - (further execution commits to be listed here as merges land)
 
 ## Follow-ups
