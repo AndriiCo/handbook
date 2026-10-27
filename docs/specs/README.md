@@ -43,6 +43,10 @@ the consolidated author-decision list is at the bottom of this file.
   key hierarchy, Mac-vs-Linux matrix).
 - [admin-workers.md](admin-workers.md) — admin workers/captures
   API + UI (status, retry, fetch, sweep; staff-only).
+- [form-framework.md](form-framework.md) — shared
+  resemblance-form framework (validation, address, phone,
+  country) + per-form projects under `forms/` + the US DOS
+  DS-4194 pilot (goal-025 stream 3).
 - Legal drafts (lawyer review required, do not publish):
   [tos-draft.md](../legal/tos-draft.md),
   [privacy-draft.md](../legal/privacy-draft.md).

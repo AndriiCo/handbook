@@ -1,0 +1,212 @@
+{
+  "authority": "us-dos",
+  "code": "ds-4194",
+  "title": "Request for Authentications Service",
+  "version": 1,
+  "authority_revision": "OMB 1405-0254 per third-party copies; verify against eforms.state.gov",
+  "status": "draft",
+  "fields": [
+    {
+      "key": "requester_name",
+      "label": "Full name",
+      "help": "Section 1: requester contact. Exact paper label TBD.",
+      "type": "text",
+      "required": true,
+      "max_len": 80,
+      "pdf": {
+        "page": 1,
+        "x_mm": 20.0,
+        "y_mm": 40.0,
+        "w_mm": 170.0,
+        "h_mm": 8.0,
+        "font_size_pt": 11.0,
+        "multiline": false
+      }
+    },
+    {
+      "key": "requester_address",
+      "label": "Formal mailing address",
+      "help": "Section 1: paper splits street into Line 1 / Line 2.",
+      "type": "address_block",
+      "required": true,
+      "pdf": {
+        "page": 1,
+        "x_mm": 20.0,
+        "y_mm": 52.0,
+        "w_mm": 170.0,
+        "h_mm": 32.0,
+        "font_size_pt": 11.0,
+        "multiline": true
+      }
+    },
+    {
+      "key": "requester_phone",
+      "label": "Daytime phone",
+      "type": "tel",
+      "required": true,
+      "pdf": {
+        "page": 1,
+        "x_mm": 20.0,
+        "y_mm": 88.0,
+        "w_mm": 80.0,
+        "h_mm": 8.0,
+        "font_size_pt": 11.0,
+        "multiline": false
+      }
+    },
+    {
+      "key": "requester_email",
+      "label": "Email",
+      "type": "email",
+      "required": false,
+      "pdf": {
+        "page": 1,
+        "x_mm": 105.0,
+        "y_mm": 88.0,
+        "w_mm": 85.0,
+        "h_mm": 8.0,
+        "font_size_pt": 11.0,
+        "multiline": false
+      }
+    },
+    {
+      "key": "on_behalf",
+      "label": "Are you submitting/retrieving this request on behalf of another individual?",
+      "help": "Section 2: courier/representative.",
+      "type": "radio",
+      "required": true,
+      "options": [
+        "yes",
+        "no"
+      ],
+      "pdf": {
+        "page": 1,
+        "x_mm": 20.0,
+        "y_mm": 100.0,
+        "w_mm": 170.0,
+        "h_mm": 8.0,
+        "font_size_pt": 11.0,
+        "multiline": false
+      }
+    },
+    {
+      "key": "rep_name",
+      "label": "Representative name",
+      "help": "Section 2: complete when submitting on behalf of another individual. Conditional-required logic TBD.",
+      "type": "text",
+      "required": false,
+      "max_len": 80,
+      "pdf": {
+        "page": 1,
+        "x_mm": 20.0,
+        "y_mm": 112.0,
+        "w_mm": 85.0,
+        "h_mm": 8.0,
+        "font_size_pt": 11.0,
+        "multiline": false
+      }
+    },
+    {
+      "key": "rep_phone",
+      "label": "Representative phone",
+      "type": "tel",
+      "required": false,
+      "pdf": {
+        "page": 1,
+        "x_mm": 110.0,
+        "y_mm": 112.0,
+        "w_mm": 80.0,
+        "h_mm": 8.0,
+        "font_size_pt": 11.0,
+        "multiline": false
+      }
+    },
+    {
+      "key": "same_as_above",
+      "label": "Same address as above",
+      "help": "Section 3: return mailing address.",
+      "type": "checkbox",
+      "required": false,
+      "pdf": {
+        "page": 1,
+        "x_mm": 20.0,
+        "y_mm": 124.0,
+        "w_mm": 170.0,
+        "h_mm": 8.0,
+        "font_size_pt": 11.0,
+        "multiline": false
+      }
+    },
+    {
+      "key": "return_address",
+      "label": "Return mailing address",
+      "help": "Section 3: required when the return address differs. Conditional logic TBD.",
+      "type": "address_block",
+      "required": false,
+      "pdf": {
+        "page": 1,
+        "x_mm": 20.0,
+        "y_mm": 136.0,
+        "w_mm": 170.0,
+        "h_mm": 32.0,
+        "font_size_pt": 11.0,
+        "multiline": true
+      }
+    },
+    {
+      "key": "countries_of_use",
+      "label": "Country (or countries) of use",
+      "help": "Section 4: document information.",
+      "type": "textarea",
+      "required": true,
+      "max_len": 500,
+      "pdf": {
+        "page": 1,
+        "x_mm": 20.0,
+        "y_mm": 172.0,
+        "w_mm": 170.0,
+        "h_mm": 16.0,
+        "font_size_pt": 11.0,
+        "multiline": true
+      }
+    },
+    {
+      "key": "number_of_documents",
+      "label": "Number of documents",
+      "type": "number",
+      "required": true,
+      "pdf": {
+        "page": 1,
+        "x_mm": 20.0,
+        "y_mm": 192.0,
+        "w_mm": 80.0,
+        "h_mm": 8.0,
+        "font_size_pt": 11.0,
+        "multiline": false
+      }
+    },
+    {
+      "key": "document_type",
+      "label": "Document type",
+      "help": "Paper may use checkboxes; options TBD, free text meanwhile.",
+      "type": "text",
+      "required": false,
+      "max_len": 120,
+      "pdf": {
+        "page": 1,
+        "x_mm": 105.0,
+        "y_mm": 192.0,
+        "w_mm": 85.0,
+        "h_mm": 8.0,
+        "font_size_pt": 11.0,
+        "multiline": false
+      }
+    }
+  ],
+  "accepts_replica": "unknown",
+  "accepts_drawn_signature": false,
+  "signature_mode": "wet_ink",
+  "verify_cadence_days": 90,
+  "created_by": "form-framework pilot",
+  "created_at": 1792800000
+}
