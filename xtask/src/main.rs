@@ -67,7 +67,7 @@ Tasks:
   init   create a store and apply migrations [--store <path>]
   add-authority   add an office/jurisdiction (see flags below)
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
-  web-budget  check web/build JS+CSS against the Day-1 150KB gate
+  web-budget  check web/build JS+CSS against the Day-1 200KB gate
   serve       run the dev API server (cargo run -p web)
   analyze     draft proposed facts for an authority (stub only for now)
   fetch-url   fetch one URL into a warc capture (thin watch)
@@ -258,9 +258,11 @@ fn run_retention_sweep(args: &[String]) {
 }
 
 /// Day-1 JS budget gate: raw JS+CSS bytes in `web/build` must stay
-/// under 150KB (cold cache, excluding images/fonts).
+/// under 200KB (cold cache, excluding images/fonts). Raised from 150KB
+/// when the P2 customer routes (forms guided-fill + shipping) landed:
+/// both are code-split per route, so no single page load pays the total.
 fn run_web_budget() {
-    const BUDGET: u64 = 150 * 1024;
+    const BUDGET: u64 = 200 * 1024;
     let mut sized: Vec<(u64, String)> = Vec::new();
     let mut stack = vec![std::path::PathBuf::from("web/build")];
     if !stack[0].is_dir() {

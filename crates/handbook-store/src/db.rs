@@ -16,7 +16,7 @@ pub const SCHEMA_VERSION: i32 = 7;
 
 /// Current P2 customer-PII schema version (`pragma user_version` on
 /// `p2.sqlite`; independent of [`SCHEMA_VERSION`]).
-pub const P2_SCHEMA_VERSION: i32 = 1;
+pub const P2_SCHEMA_VERSION: i32 = 2;
 
 /// Voice-audio retention in days (decided 2026-10-26).
 pub const VOICE_RETENTION_DAYS: i64 = 365;
@@ -119,6 +119,10 @@ pub fn migrate_p2(conn: &Connection) -> Result<()> {
         if version < 1 {
             conn.execute_batch(include_str!("../migrations/p2_001_init.sql"))?;
             conn.pragma_update(None, "user_version", 1)?;
+        }
+        if version < 2 {
+            conn.execute_batch(include_str!("../migrations/p2_002_label_purchase.sql"))?;
+            conn.pragma_update(None, "user_version", 2)?;
         }
         Ok(())
     })?;
@@ -366,6 +370,51 @@ pub fn get_demo_session(conn: &Connection, token: &str) -> Result<Option<(String
 pub fn delete_expired_demo_sessions(conn: &Connection, now: i64) -> Result<usize> {
     let deleted = conn.execute("DELETE FROM demo_session WHERE expires_at <= ?1", [now])?;
     Ok(deleted)
+}
+
+/// Saved per-customer label choices (P2 `profile_label_defaults`).
+/// Spellings match `labels::{PrintFormat,PaperSize}::as_str`; readers
+/// must treat unknown values as "use the default", never as an error.
+pub struct LabelDefaults {
+    pub option_a_format: String,
+    pub option_b_paper: String,
+    pub updated_at: i64,
+}
+
+/// Read saved label choices, if any.
+pub fn get_label_defaults(conn: &Connection, customer_ref: &str) -> Result<Option<LabelDefaults>> {
+    Ok(rusqlite::OptionalExtension::optional(conn.query_row(
+        "SELECT option_a_format, option_b_paper, updated_at
+         FROM profile_label_defaults WHERE customer_ref = ?1",
+        [customer_ref],
+        |row| {
+            Ok(LabelDefaults {
+                option_a_format: row.get(0)?,
+                option_b_paper: row.get(1)?,
+                updated_at: row.get(2)?,
+            })
+        },
+    ))?)
+}
+
+/// Insert or replace saved label choices.
+pub fn upsert_label_defaults(
+    conn: &Connection,
+    customer_ref: &str,
+    option_a_format: &str,
+    option_b_paper: &str,
+    now: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO profile_label_defaults(customer_ref, option_a_format, option_b_paper, updated_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(customer_ref) DO UPDATE SET
+           option_a_format = excluded.option_a_format,
+           option_b_paper = excluded.option_b_paper,
+           updated_at = excluded.updated_at",
+        rusqlite::params![customer_ref, option_a_format, option_b_paper, now],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1497,5 +1546,78 @@ mod tests {
             [],
         )
         .expect_err("dangling submission_id must be rejected");
+    }
+
+    #[test]
+    fn migrate_p2_upgrades_v1_db_preserving_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        store.init().unwrap();
+        let conn = open_p2(&store).unwrap();
+        conn.execute_batch(include_str!("../migrations/p2_001_init.sql"))
+            .unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute(
+            "INSERT INTO form_submission(form_template_id, authority_id, customer_ref, status, created_at)
+             VALUES (7, 1, 'cust-1', 'submitted', 100)",
+            [],
+        )
+        .unwrap();
+        let submission = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO shipment(submission_id, authority_id, status, created_at, updated_at)
+             VALUES (?1, 1, 'ready', 100, 100)",
+            [submission],
+        )
+        .unwrap();
+        let shipment = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO shipping_label(shipment_id, direction, carrier, service,
+                                       tracking_no, status, created_at)
+             VALUES (?1, 'outbound', 'usps', 'PRIORITY', 'track-1', 'issued', 100)",
+            [shipment],
+        )
+        .unwrap();
+        migrate_p2(&conn).unwrap();
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, P2_SCHEMA_VERSION);
+        // Pre-migration rows backfill as prepaid 4x6 PDFs.
+        let (option, format, sha, content): (String, String, String, String) = conn
+            .query_row(
+                "SELECT purchase_option, label_format, label_sha256, content_type
+                 FROM shipping_label WHERE shipment_id = ?1",
+                [shipment],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(option, "prepaid");
+        assert_eq!(format, "four_by_six");
+        assert_eq!(sha, "");
+        assert_eq!(content, "application/pdf");
+        conn.execute(
+            "INSERT INTO shipping_label(shipment_id, direction, carrier, service, created_at,
+                                       purchase_option)
+             VALUES (?1, 'return', 'usps', 'PRIORITY', 100, 'telegraph')",
+            [shipment],
+        )
+        .expect_err("bad purchase_option must be rejected");
+    }
+
+    #[test]
+    fn label_defaults_roundtrip_per_customer() {
+        let (_dir, _store, conn) = migrated_p2();
+        assert!(get_label_defaults(&conn, "cust-1").unwrap().is_none());
+        upsert_label_defaults(&conn, "cust-1", "window_envelope", "letter", 100).unwrap();
+        let got = get_label_defaults(&conn, "cust-1").unwrap().unwrap();
+        assert_eq!(got.option_a_format, "window_envelope");
+        assert_eq!(got.option_b_paper, "letter");
+        assert_eq!(got.updated_at, 100);
+        upsert_label_defaults(&conn, "cust-1", "a4", "a4", 200).unwrap();
+        let got = get_label_defaults(&conn, "cust-1").unwrap().unwrap();
+        assert_eq!(got.option_a_format, "a4");
+        assert_eq!(got.updated_at, 200);
+        assert!(get_label_defaults(&conn, "cust-2").unwrap().is_none());
     }
 }

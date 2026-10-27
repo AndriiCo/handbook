@@ -13,6 +13,29 @@ use crate::client::BuyOutcome;
 use crate::manual::LabelStatus;
 use crate::payload::Direction;
 
+/// Carrier tracking page for a tracking number. Carriers accept the
+/// number as a query value; spaces are percent-encoded.
+pub fn tracking_url(carrier: Carrier, tracking_no: &str) -> Option<String> {
+    let trimmed = tracking_no.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let encoded: String = trimmed
+        .chars()
+        .flat_map(|c| {
+            if c == ' ' {
+                "%20".chars().collect::<Vec<_>>()
+            } else {
+                vec![c]
+            }
+        })
+        .collect();
+    Some(match carrier {
+        Carrier::Usps => format!("https://tools.usps.com/go/TrackConfirmAction?tLabels={encoded}"),
+        Carrier::FedEx => format!("https://www.fedex.com/fedextrack/?trknbr={encoded}"),
+    })
+}
+
 /// Everything the UI may show about a label. Deliberately missing:
 /// `postage_cost_cents`, `created_at`, `issued_at`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,6 +46,7 @@ pub struct LabelSummary {
     pub service_name: String,
     pub status: LabelStatus,
     pub tracking_no: Option<String>,
+    pub tracking_url: Option<String>,
     pub label_url: Option<String>,
 }
 
@@ -42,6 +66,7 @@ impl LabelSummary {
             service_name: crate::service_name(carrier, service),
             status: LabelStatus::Issued,
             tracking_no: Some(outcome.tracking_no.clone()),
+            tracking_url: tracking_url(carrier, &outcome.tracking_no),
             label_url,
         }
     }
@@ -54,6 +79,10 @@ impl LabelSummary {
             service_name: crate::service_name(task.carrier, task.service),
             status: task.status,
             tracking_no: task.tracking_no.clone(),
+            tracking_url: task
+                .tracking_no
+                .as_deref()
+                .and_then(|no| tracking_url(task.carrier, no)),
             label_url,
         }
     }
@@ -107,7 +136,23 @@ mod tests {
                 "service_name",
                 "status",
                 "tracking_no",
+                "tracking_url",
             ]
         );
+    }
+
+    #[test]
+    fn tracking_links_point_at_carrier_pages() {
+        assert_eq!(
+            tracking_url(Carrier::Usps, "9405 5000 0000 0000 0000 00").as_deref(),
+            Some(
+                "https://tools.usps.com/go/TrackConfirmAction?tLabels=9405%205000%200000%200000%200000%2000"
+            )
+        );
+        assert_eq!(
+            tracking_url(Carrier::FedEx, "123456789012").as_deref(),
+            Some("https://www.fedex.com/fedextrack/?trknbr=123456789012")
+        );
+        assert_eq!(tracking_url(Carrier::Usps, "  "), None);
     }
 }

@@ -1,0 +1,270 @@
+{
+  "version": 1,
+  "note": "Validation parity vectors: executed by web/test/forms-validate.test.mjs (TS port) and the Rust parity test in crates/web/src/p2.rs. Both must produce exactly `expect` (codes AND messages). Fields use the API shape {key,label,type,required,max_len,pattern,options}. Use omit:true when the key is absent from values entirely.",
+  "cases": [
+    {
+      "name": "required text missing",
+      "field": { "key": "name", "label": "Name", "type": "text", "required": true },
+      "omit": true,
+      "expect": [{ "code": "required", "message": "Name is required" }]
+    },
+    {
+      "name": "required text empty",
+      "field": { "key": "name", "label": "Name", "type": "text", "required": true },
+      "value": "",
+      "expect": [{ "code": "required", "message": "Name is required" }]
+    },
+    {
+      "name": "required text whitespace",
+      "field": { "key": "name", "label": "Name", "type": "text", "required": true },
+      "value": "   ",
+      "expect": [{ "code": "required", "message": "Name is required" }]
+    },
+    {
+      "name": "optional text missing passes",
+      "field": { "key": "nick", "label": "Nick", "type": "text", "required": false },
+      "omit": true,
+      "expect": []
+    },
+    {
+      "name": "text valid",
+      "field": { "key": "name", "label": "Name", "type": "text", "required": true },
+      "value": "Jane Doe",
+      "expect": []
+    },
+    {
+      "name": "text wrong type",
+      "field": { "key": "name", "label": "Name", "type": "text", "required": true },
+      "value": 42,
+      "expect": [{ "code": "type", "message": "Name must be text" }]
+    },
+    {
+      "name": "max_len counts chars",
+      "field": { "key": "name", "label": "Name", "type": "text", "required": true, "max_len": 3 },
+      "value": "abcd",
+      "expect": [{ "code": "max_len", "message": "Name must be at most 3 characters" }]
+    },
+    {
+      "name": "max_len unicode scalar count",
+      "field": { "key": "name", "label": "Name", "type": "text", "required": true, "max_len": 1 },
+      "value": "éé",
+      "expect": [{ "code": "max_len", "message": "Name must be at most 1 characters" }]
+    },
+    {
+      "name": "pattern full match passes",
+      "field": { "key": "zip", "label": "ZIP", "type": "text", "required": true, "pattern": "\\d{5}" },
+      "value": "90210",
+      "expect": []
+    },
+    {
+      "name": "pattern substring rejected",
+      "field": { "key": "zip", "label": "ZIP", "type": "text", "required": true, "pattern": "\\d{5}" },
+      "value": "x90210x",
+      "expect": [{ "code": "pattern", "message": "ZIP has an invalid format" }]
+    },
+    {
+      "name": "pattern that cannot compile fails closed",
+      "field": { "key": "zip", "label": "ZIP", "type": "text", "required": true, "pattern": "([" },
+      "value": "90210",
+      "expect": [{ "code": "pattern", "message": "ZIP has an invalid format" }]
+    },
+    {
+      "name": "email valid",
+      "field": { "key": "email", "label": "Email", "type": "email", "required": true },
+      "value": "a@b.co",
+      "expect": []
+    },
+    {
+      "name": "email no at",
+      "field": { "key": "email", "label": "Email", "type": "email", "required": true },
+      "value": "nope",
+      "expect": [{ "code": "email", "message": "Email must be a valid email address" }]
+    },
+    {
+      "name": "email no dot in domain",
+      "field": { "key": "email", "label": "Email", "type": "email", "required": true },
+      "value": "a@b",
+      "expect": [{ "code": "email", "message": "Email must be a valid email address" }]
+    },
+    {
+      "name": "email with space",
+      "field": { "key": "email", "label": "Email", "type": "email", "required": true },
+      "value": "a @b.co",
+      "expect": [{ "code": "email", "message": "Email must be a valid email address" }]
+    },
+    {
+      "name": "email second at quirk passes both",
+      "field": { "key": "email", "label": "Email", "type": "email", "required": true },
+      "value": "a@b@c.co",
+      "expect": []
+    },
+    {
+      "name": "tel valid",
+      "field": { "key": "tel", "label": "Phone", "type": "tel", "required": true },
+      "value": "+1 (555) 123-4567",
+      "expect": []
+    },
+    {
+      "name": "tel too few digits",
+      "field": { "key": "tel", "label": "Phone", "type": "tel", "required": true },
+      "value": "123",
+      "expect": [{ "code": "tel", "message": "Phone must be a valid phone number" }]
+    },
+    {
+      "name": "tel bad chars",
+      "field": { "key": "tel", "label": "Phone", "type": "tel", "required": true },
+      "value": "call me maybe",
+      "expect": [{ "code": "tel", "message": "Phone must be a valid phone number" }]
+    },
+    {
+      "name": "date leap day",
+      "field": { "key": "d", "label": "Day", "type": "date", "required": true },
+      "value": "2024-02-29",
+      "expect": []
+    },
+    {
+      "name": "date non-leap feb 29",
+      "field": { "key": "d", "label": "Day", "type": "date", "required": true },
+      "value": "2023-02-29",
+      "expect": [{ "code": "date", "message": "Day must be a date like 2026-11-04" }]
+    },
+    {
+      "name": "date wrong shape",
+      "field": { "key": "d", "label": "Day", "type": "date", "required": true },
+      "value": "11/04/2026",
+      "expect": [{ "code": "date", "message": "Day must be a date like 2026-11-04" }]
+    },
+    {
+      "name": "date month 13",
+      "field": { "key": "d", "label": "Day", "type": "date", "required": true },
+      "value": "2026-13-01",
+      "expect": [{ "code": "date", "message": "Day must be a date like 2026-11-04" }]
+    },
+    {
+      "name": "number json number",
+      "field": { "key": "n", "label": "Count", "type": "number", "required": true },
+      "value": 5,
+      "expect": []
+    },
+    {
+      "name": "number exponent string",
+      "field": { "key": "n", "label": "Count", "type": "number", "required": true },
+      "value": "1e3",
+      "expect": []
+    },
+    {
+      "name": "number junk string",
+      "field": { "key": "n", "label": "Count", "type": "number", "required": true },
+      "value": "abc",
+      "expect": [{ "code": "number", "message": "Count must be a number" }]
+    },
+    {
+      "name": "number hex rejected",
+      "field": { "key": "n", "label": "Count", "type": "number", "required": true },
+      "value": "0x10",
+      "expect": [{ "code": "number", "message": "Count must be a number" }]
+    },
+    {
+      "name": "money dollars",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": "25",
+      "expect": []
+    },
+    {
+      "name": "money one decimal",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": "25.5",
+      "expect": []
+    },
+    {
+      "name": "money cents",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": "0.99",
+      "expect": []
+    },
+    {
+      "name": "money three decimals",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": "25.999",
+      "expect": [{ "code": "money", "message": "Fee must be an amount like 25.00" }]
+    },
+    {
+      "name": "money negative",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": "-5",
+      "expect": [{ "code": "money", "message": "Fee must be an amount like 25.00" }]
+    },
+    {
+      "name": "money thousands comma",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": "1,000",
+      "expect": [{ "code": "money", "message": "Fee must be an amount like 25.00" }]
+    },
+    {
+      "name": "money trailing dot",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": "1.",
+      "expect": [{ "code": "money", "message": "Fee must be an amount like 25.00" }]
+    },
+    {
+      "name": "money bare cents",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": ".5",
+      "expect": [{ "code": "money", "message": "Fee must be an amount like 25.00" }]
+    },
+    {
+      "name": "money integer cents number",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": 2500,
+      "expect": []
+    },
+    {
+      "name": "money negative number",
+      "field": { "key": "fee", "label": "Fee", "type": "money", "required": true },
+      "value": -5,
+      "expect": [{ "code": "money", "message": "Fee must be an amount like 25.00" }]
+    },
+    {
+      "name": "select valid option",
+      "field": { "key": "s", "label": "Service", "type": "select", "required": true, "options": ["a", "b"] },
+      "value": "a",
+      "expect": []
+    },
+    {
+      "name": "select unknown option",
+      "field": { "key": "s", "label": "Service", "type": "select", "required": true, "options": ["a", "b"] },
+      "value": "zzz",
+      "expect": [{ "code": "option", "message": "Service must be one of the listed options" }]
+    },
+    {
+      "name": "checkbox checked",
+      "field": { "key": "ok", "label": "Agree", "type": "checkbox", "required": true },
+      "value": true,
+      "expect": []
+    },
+    {
+      "name": "checkbox string rejected",
+      "field": { "key": "ok", "label": "Agree", "type": "checkbox", "required": true },
+      "value": "yes",
+      "expect": [{ "code": "type", "message": "Agree must be checked or unchecked" }]
+    },
+    {
+      "name": "address complete",
+      "field": { "key": "mail", "label": "Mail to", "type": "address_block", "required": true },
+      "value": { "name": "N", "street": "S", "city": "C", "state": "WA", "zip": "00000" },
+      "expect": []
+    },
+    {
+      "name": "address missing city",
+      "field": { "key": "mail", "label": "Mail to", "type": "address_block", "required": true },
+      "value": { "name": "N", "street": "S" },
+      "expect": [{ "code": "address", "message": "Mail to is missing city" }]
+    },
+    {
+      "name": "address string quirk passes both",
+      "field": { "key": "mail", "label": "Mail to", "type": "address_block", "required": true },
+      "value": "whatever",
+      "expect": []
+    }
+  ]
+}

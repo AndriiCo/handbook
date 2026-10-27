@@ -21,17 +21,24 @@
 pub mod carrier;
 pub mod client;
 pub mod display;
+pub mod format;
 pub mod manual;
 pub mod payload;
+pub mod printable;
+pub mod purchase;
 
 pub use carrier::{Carrier, CarrierError, MailHop, carrier_for_hop, service_name};
 pub use client::{
-    BuyOutcome, BuyRequest, HttpResponse, HttpTransport, LabelClient, LabelError, TransportError,
-    UreqTransport,
+    BuyOutcome, BuyRequest, FEDEX_BASE_PROD, FEDEX_BASE_SANDBOX, FedExClient, HttpResponse,
+    HttpTransport, LabelClient, LabelError, TransportError, USPS_BASE_PROD, USPS_BASE_TEST,
+    UreqTransport, UspsClient,
 };
-pub use display::LabelSummary;
+pub use display::{LabelSummary, tracking_url};
+pub use format::{PaperSize, PrintFormat};
 pub use manual::{FallbackOutcome, LabelStatus, ManualError, ManualLabelTask, buy_with_fallback};
 pub use payload::{
     Direction, Parcel, ParcelDims, PayloadError, PostalAddress, ServiceClass, ShipmentPayload,
     validate_address, validate_shipment,
 };
+pub use printable::render_printable;
+pub use purchase::{PurchaseOption, SandboxError, SandboxGuard};

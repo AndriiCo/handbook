@@ -249,6 +249,7 @@ pub struct UspsClient<T: HttpTransport> {
     base_url: String,
     transport: T,
     certified: bool,
+    paper: crate::PaperSize,
 }
 
 impl<T: HttpTransport> UspsClient<T> {
@@ -257,7 +258,14 @@ impl<T: HttpTransport> UspsClient<T> {
             base_url: base_url.trim_end_matches('/').to_string(),
             transport,
             certified,
+            paper: crate::PaperSize::FourBySix,
         }
+    }
+
+    /// Prepaid paper size for bought labels (Option B). Defaults to 4x6.
+    pub fn with_paper(mut self, paper: crate::PaperSize) -> Self {
+        self.paper = paper;
+        self
     }
 
     fn label_url(&self, direction: Direction) -> String {
@@ -282,7 +290,7 @@ impl<T: HttpTransport> LabelClient for UspsClient<T> {
             return Err(LabelError::NotReady);
         }
         check_payment_ref(request.payment_ref)?;
-        let body = usps_label_body(request);
+        let body = usps_label_body_with_paper(request, self.paper);
         let response = self.transport.post_json(
             &self.label_url(request.direction),
             bearer,
@@ -307,7 +315,11 @@ impl<T: HttpTransport> LabelClient for UspsClient<T> {
 
     fn cancel(&self, bearer: &str, tracking_no: &str) -> Result<(), LabelError> {
         check_tracking(tracking_no)?;
-        let url = format!("{}/labels/v3/label/{tracking_no}", self.base_url);
+        // USPS tracking numbers are commonly space-separated; the
+        // path segment must be encoded (`check_tracking` already
+        // restricted the charset to alnum/space/dash).
+        let encoded = tracking_no.trim().replace(' ', "%20");
+        let url = format!("{}/labels/v3/label/{encoded}", self.base_url);
         let response = self.transport.delete(&url, bearer)?;
         check_ok(&response)?;
         Ok(())
@@ -383,6 +395,12 @@ impl<T: HttpTransport> LabelClient for FedExClient<T> {
 /// migration guide + catalog; verify against the v3 spec at
 /// integration (sandbox) time.
 pub fn usps_label_body(request: &BuyRequest) -> Value {
+    usps_label_body_with_paper(request, crate::PaperSize::FourBySix)
+}
+
+/// [`usps_label_body`] with an explicit prepaid paper size (Option B).
+/// The default body keeps 4x6 so existing callers are unaffected.
+pub fn usps_label_body_with_paper(request: &BuyRequest, paper: crate::PaperSize) -> Value {
     let payload = request.payload;
     let dims = payload.parcel.dims();
     json!({
@@ -397,7 +415,10 @@ pub fn usps_label_body(request: &BuyRequest) -> Value {
             "heightIn": (dims.height_cm / 2.54).ceil() as u32,
             "mailClass": usps_mail_class(payload.service),
         },
-        "labelSpecification": { "imageType": "PDF" },
+        "labelSpecification": {
+            "imageType": "PDF",
+            "paperSize": paper.usps_label_option(),
+        },
         "paymentAuthorizationToken": request.payment_ref,
     })
 }
@@ -833,8 +854,26 @@ mod tests {
                 .transport
                 .last_url
                 .borrow()
-                .contains("/labels/v3/label/9405")
+                .contains("/labels/v3/label/9405%205000"),
+            "spaced tracking must be encoded: {}",
+            client.transport.last_url.borrow()
         );
+    }
+
+    #[test]
+    fn with_paper_reaches_the_wire() {
+        let transport = StubTransport::canned(200, &usps_answer());
+        let client =
+            UspsClient::new(USPS_BASE_TEST, transport, true).with_paper(crate::PaperSize::Letter);
+        let payload = crate::payload::tests::sample_payload();
+        let request = BuyRequest {
+            payload: &payload,
+            direction: Direction::Outbound,
+            payment_ref: "pay-synthetic",
+        };
+        client.buy("bearer-synthetic", &request).unwrap();
+        let body = client.transport.last_body.borrow();
+        assert_eq!(body["labelSpecification"]["paperSize"], json!("LETTER"));
     }
 
     /// The live transport against a stub HTTP server on an ephemeral

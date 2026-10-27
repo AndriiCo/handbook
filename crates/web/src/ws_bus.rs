@@ -83,9 +83,10 @@ pub async fn ws_bus_upgrade(
         Ok(caller) => caller,
         Err(()) => return store_unavailable(),
     };
-    // SEAM: S6 swaps `NoOwners` for the P2 ownership lookup; until
-    // then customers fail closed on submission/shipment topics.
-    if !auth::ws::authorize(role, customer_ref.as_deref(), &auth::ws::NoOwners, &topic) {
+    // S6 seam filled: P2 ownership lookup, so submission/shipment
+    // owners (and staff) subscribe; strangers still fail closed.
+    let owners = crate::p2::P2Owners::new(&state.store_root);
+    if !auth::ws::authorize(role, customer_ref.as_deref(), &owners, &topic) {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"error": "topic forbidden"})),
@@ -110,20 +111,41 @@ fn resolve_caller(
         .unwrap_or("");
     let token = auth::cookie_value(cookies, auth::ADM_COOKIE)
         .or_else(|| auth::cookie_value(cookies, auth::PUB_COOKIE));
-    let Some(token) = token else {
+    let demo = demo_cookie_value(cookies);
+    if token.is_none() && demo.is_none() {
         return Ok((auth::Role::Anonymous, None));
-    };
+    }
     let Ok(conn) = db::open(&handbook_store::store::Store::new(&state.store_root)) else {
         return Err(());
     };
-    let Ok(Some(session)) = auth::get_session(&conn, token) else {
-        return Ok((auth::Role::Anonymous, None));
-    };
-    if !session.valid(unix_now()) {
-        return Ok((auth::Role::Anonymous, None));
+    if let Some(token) = token {
+        let Ok(Some(session)) = auth::get_session(&conn, token) else {
+            return Ok((auth::Role::Anonymous, None));
+        };
+        if !session.valid(unix_now()) {
+            return Ok((auth::Role::Anonymous, None));
+        }
+        let _ = auth::touch_session(&conn, &session.id, unix_now());
+        return Ok((session.role, session.customer_ref));
     }
-    let _ = auth::touch_session(&conn, &session.id, unix_now());
-    Ok((session.role, session.customer_ref))
+    // DEMO login until real auth lands: a valid demo_session cookie
+    // subscribes as its customer (P2 submission/shipment topics).
+    if let Some(demo) = demo
+        && let Ok(Some((customer_ref, expires_at))) = db::get_demo_session(&conn, demo)
+        && unix_now() < expires_at
+    {
+        return Ok((auth::Role::Customer, Some(customer_ref)));
+    }
+    Ok((auth::Role::Anonymous, None))
+}
+
+/// `demo_session` cookie value, if present and non-empty.
+fn demo_cookie_value(cookies: &str) -> Option<&str> {
+    cookies
+        .split(';')
+        .map(str::trim)
+        .find_map(|pair| pair.strip_prefix("demo_session="))
+        .filter(|v| !v.is_empty())
 }
 
 /// Serve one subscription: a hello (with an ephemeral presence id

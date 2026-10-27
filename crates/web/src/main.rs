@@ -13,6 +13,7 @@
 mod admin;
 mod approval;
 mod p2;
+mod p2_labels;
 mod ws_bus;
 
 use axum::{
@@ -85,6 +86,8 @@ struct AppState {
     /// Meta data-handling read). Until then only synthetic fixtures
     /// upload; real media fails closed.
     media_terms_read: bool,
+    /// Prepaid-label config (USPS base URL + certification flag).
+    label_cfg: p2_labels::LabelCfg,
 }
 
 /// Build the full PUBLIC app router. `static_dir` roots
@@ -111,6 +114,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             admin_mtls_off: true,
             admin_spa_dir: PathBuf::from("test-admin-spa"),
             media_terms_read: false,
+            label_cfg: p2_labels::LabelCfg::default(),
         },
         static_dir,
         spa_dir,
@@ -417,6 +421,10 @@ async fn main() {
         db::open(&store).unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: open metadata DB: {e}"));
     db::migrate(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate metadata DB: {e}"));
+    let p2conn =
+        db::open_p2(&store).unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: open P2 DB: {e}"));
+    db::migrate_p2(&p2conn).unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate P2 DB: {e}"));
+    drop(p2conn);
     auth::migrate_auth_tables(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate auth tables: {e}"));
     config::migrate_config_tables(&conn)
@@ -454,6 +462,7 @@ async fn main() {
         admin_mtls_off,
         admin_spa_dir: PathBuf::from(admin_spa_dir),
         media_terms_read,
+        label_cfg: p2_labels::LabelCfg::from_env(),
     };
     let public = public_router(state.clone(), &static_dir, &spa_dir, &acme_dir);
     let admin = admin::router(state);
@@ -1068,6 +1077,7 @@ mod tests {
             admin_mtls_off: true,
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
+            label_cfg: p2_labels::LabelCfg::default(),
         };
         Fixture { _tmp: tmp, state }
     }
@@ -1812,7 +1822,7 @@ mod tests {
     #[tokio::test]
     async fn p2_stub_robots_and_no_admin_on_public() {
         let fx = fixture();
-        // P2 mount answers 501 with its owner until S6 lands.
+        // P2 mount is live (S6 landed): /status answers 200.
         let res = public_router_for(&fx.state)
             .oneshot(
                 Request::builder()
@@ -1822,8 +1832,8 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
-        assert_eq!(json_body(res).await["owner"], "S6");
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(json_body(res).await["flow"], "p2-forms");
 
         // Domain-root robots.txt.
         let res = public_router_for(&fx.state)

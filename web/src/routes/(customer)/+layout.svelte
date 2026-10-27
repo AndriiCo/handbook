@@ -36,6 +36,8 @@
 	<a href={resolve('/(customer)/order')}>New {t.orderLabel}</a>
 	<a href={resolve('/(customer)/uploads')}>Uploads</a>
 	<a href={resolve('/(customer)/precheck')}>Precheck</a>
+	<a href={resolve('/(customer)/forms')}>Forms</a>
+	<a href={resolve('/(customer)/shipping')}>Shipping</a>
 	<a href={resolve('/(customer)/billing')}>{t.billingLabel}</a>
 	<a href={resolve('/(public)')} title="Logout is not wired yet — returns home">{t.logoutLabel}</a>
 	<span class="session" aria-live="polite">
