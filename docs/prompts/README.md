@@ -78,3 +78,8 @@ to change history — append a correction section instead.
 - [2026-10-27-022-v1-subsystems.md](2026-10-27-022-v1-subsystems.md) —
   All v1 subsystems fanned out, merged, staging-deployed with admin
   UI + ingestion verified live.
+- [2026-10-27-023-rollout-plan.md](2026-10-27-023-rollout-plan.md) —
+  4–6h rollout plan (ACME, security, UI mock-up, forms, carriers,
+  rootless releases; plan only).
+- [2026-10-27-024-go-execution.md](2026-10-27-024-go-execution.md) —
+  Executing the rollout plan; label decision; bootstrap correction.
