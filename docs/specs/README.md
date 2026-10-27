@@ -154,6 +154,12 @@ G4. Full-parallel execution: the loop track (watch →
     and parent-owned merges behind `ci`. Author tracks
     (DNS, key+terms, seed, client certs, root window)
     run alongside.
+G5. Staging is conditional: if the box lands by Day 5
+    (Sat Oct 31), cut over to staging-gated deploys plus
+    the `xtask accept` suite; otherwise auto-relax to
+    prod-direct with prod smokes and atomic rollback
+    builds through the Nov 4 submission, and staging
+    becomes a post-submission item.
 
 **Still needed during the 5–7 days:**
 

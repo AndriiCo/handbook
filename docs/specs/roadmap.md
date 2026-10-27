@@ -219,9 +219,14 @@ Assumptions under challenge (author: correct if wrong):
   event page — format assumed, not verified.
 
 Interview state:
-- Asked: Q5 staging trigger.
-- Queued: final contract + explicit acceptance (success
-  criteria wording folded in).
+- Asked: final contract + explicit acceptance.
+- Queued: (none — acceptance flips Draft to Final).
+- Proposed success restatement (pending acceptance):
+  synthetic Viet Nam request → cited apostille routing
+  (effective 2026-09-11) → completed form PDF + prepaid
+  label payloads (synthetic, no charges) → F2 regression
+  proves the 2026-10-13 misroute class cannot recur.
+  "FedEx envelopes tomorrow" is restated, not promised.
 - Settled: D1 (Q1 = B) — SAM-via-API redaction is
   must-have in-slice, alongside the decided carrier-buy
   code; see specs/README.md G1 (Draft).
@@ -237,5 +242,9 @@ Interview state:
   track + admin track simultaneously on separate swarm
   tracks, single-writer sequencing on shared files,
   parent-owned merges; see G4 (Draft).
+- Settled: D5 (Q5 = A) — staging conditional: box by
+  Day 5 (Oct 31) → staging-gated deploys + `xtask
+  accept`; else auto-relax to prod-direct + smokes +
+  atomic rollback through submission; see G5 (Draft).
 - Doc debt: prompt-log entries pending for the memory /
   admin-plan / mTLS turns (numbering at interview end).
