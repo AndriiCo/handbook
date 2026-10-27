@@ -34,6 +34,8 @@ existing admin listener + staging.
   DS-4194 pilot, zero-env, swTPM) + prompt log.
 - `dc55238` Merge tpm-seal: software-TPM sealing abstraction
   in config (279 Rust tests green).
+- `f7aba20` Merge admin-workers: staff workers/captures API +
+  UI (290 Rust + 14 web green, smoke OK).
 - (further execution commits to be listed here as merges land)
 
 ## Follow-ups
