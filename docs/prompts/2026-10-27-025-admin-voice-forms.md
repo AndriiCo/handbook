@@ -36,6 +36,8 @@ existing admin listener + staging.
   in config (279 Rust tests green).
 - `f7aba20` Merge admin-workers: staff workers/captures API +
   UI (290 Rust + 14 web green, smoke OK).
+- `1767f9c` Merge form-framework: shared components +
+  DS-4194 pilot (296 Rust + 23 web green; budget 220KB).
 - (further execution commits to be listed here as merges land)
 
 ## Follow-ups
