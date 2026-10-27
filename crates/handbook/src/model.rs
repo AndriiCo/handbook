@@ -124,11 +124,23 @@ impl ModelClient for StubClient {
 /// env). The OAuth2 handshake cannot mint Model API tokens, so an
 /// auth-code exchange is unusable for Model API auth — key auth only.
 /// See `docs/meta-api.md`.
-#[derive(Debug, Clone)]
+///
+/// `Debug` is hand-written (M3): the key never appears in debug output,
+/// so a stray `{:?}` in an error or log path cannot leak it.
+#[derive(Clone)]
 #[allow(dead_code)] // fields wire up once HTTP is implemented
 pub struct MetaRestClient {
     base_url: String,
     api_key: String,
+}
+
+impl fmt::Debug for MetaRestClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MetaRestClient")
+            .field("base_url", &self.base_url)
+            .field("api_key", &"<redacted>")
+            .finish()
+    }
 }
 
 impl MetaRestClient {
@@ -187,6 +199,15 @@ mod tests {
             MetaRestClient::new("https://api.meta.ai/v1".to_string(), "sekrit".to_string());
         assert_eq!(client.base_url, "https://api.meta.ai/v1");
         assert_eq!(client.api_key, "sekrit");
+    }
+
+    #[test]
+    fn meta_client_debug_redacts_key() {
+        let client =
+            MetaRestClient::new("https://api.meta.ai/v1".to_string(), "sekrit".to_string());
+        let shown = format!("{client:?}");
+        assert!(!shown.contains("sekrit"), "got: {shown}");
+        assert!(shown.contains("api_key"), "got: {shown}");
     }
 
     #[test]

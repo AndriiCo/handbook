@@ -91,11 +91,12 @@ impl Store {
             return Ok(sha_hex);
         }
         // Stage in the same directory so the rename stays on one
-        // filesystem (atomic on APFS and ext4). `create_new` plus
-        // retries keep concurrent writers off one shared temp name.
+        // filesystem (atomic on APFS and ext4). Random suffix (m4):
+        // unpredictable names, so a same-user attacker cannot
+        // pre-create the temp path; `create_new` keeps racers apart.
         let mut staged: Option<PathBuf> = None;
-        for attempt in 0..100 {
-            let candidate = parent.join(format!(".tmp-{}-{attempt}", std::process::id()));
+        for _ in 0..100 {
+            let candidate = parent.join(format!(".tmp-{:016x}", rand::random::<u64>()));
             let mut file = match std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)

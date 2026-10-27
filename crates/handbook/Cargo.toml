@@ -8,6 +8,7 @@ name = "handbook"
 path = "src/lib.rs"
 
 [dependencies]
+rand = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 

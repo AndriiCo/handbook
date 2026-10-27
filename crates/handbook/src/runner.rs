@@ -15,7 +15,9 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::analyze::{build_prompt, validate_response};
-use crate::db::{NewProposedFact, insert_analysis_audit, insert_proposed_fact, upsert_watermark};
+use crate::db::{
+    NewProposedFact, in_transaction, insert_analysis_audit, insert_proposed_fact, upsert_watermark,
+};
 use crate::model::{DraftRequest, ModelClient, ModelError};
 use crate::topics::Topic;
 
@@ -95,34 +97,38 @@ pub fn run_analysis(
     // into the statement, citation/confidence are not stored (see
     // insert_proposed_fact docs).
     let created_by = format!("analysis-agent/{PROMPT_VERSION}");
-    let mut proposed = 0;
-    for (index, record) in resp.records.iter().enumerate() {
-        if failed.contains(&index) {
-            continue;
+    // B1: facts + watermark + audit commit atomically — a mid-run
+    // failure never leaves content rows without their audit row.
+    let (proposed, rejected) = in_transaction(conn, || {
+        let mut proposed = 0;
+        for (index, record) in resp.records.iter().enumerate() {
+            if failed.contains(&index) {
+                continue;
+            }
+            let statement = format!("{}: {}", record.field, record.value);
+            insert_proposed_fact(
+                conn,
+                &NewProposedFact {
+                    authority_id,
+                    capture_id: UNATTRIBUTED_CAPTURE_ID,
+                    topic: &record.topic,
+                    statement: &statement,
+                    created_by: &created_by,
+                    created_at: at,
+                },
+            )?;
+            proposed += 1;
         }
-        let statement = format!("{}: {}", record.field, record.value);
-        insert_proposed_fact(
-            conn,
-            &NewProposedFact {
-                authority_id,
-                capture_id: UNATTRIBUTED_CAPTURE_ID,
-                topic: &record.topic,
-                statement: &statement,
-                created_by: &created_by,
-                created_at: at,
-            },
-        )
-        .map_err(db_err)?;
-        proposed += 1;
-    }
-    let rejected = failed.len();
-
-    upsert_watermark(conn, slug, at, PROMPT_VERSION).map_err(db_err)?;
-    let reason = format!(
-        "proposed={proposed} rejected={rejected} input_tokens={} output_tokens={}",
-        resp.usage.input_tokens, resp.usage.output_tokens
-    );
-    insert_analysis_audit(conn, at, actor, authority_id, &reason).map_err(db_err)?;
+        let rejected = failed.len();
+        upsert_watermark(conn, slug, at, PROMPT_VERSION)?;
+        let reason = format!(
+            "proposed={proposed} rejected={rejected} input_tokens={} output_tokens={}",
+            resp.usage.input_tokens, resp.usage.output_tokens
+        );
+        insert_analysis_audit(conn, at, actor, authority_id, &reason)?;
+        Ok((proposed, rejected))
+    })
+    .map_err(db_err)?;
 
     Ok(RunReport {
         authority_slug: slug.to_string(),
@@ -142,7 +148,9 @@ fn db_err(e: rusqlite::Error) -> ModelError {
 mod tests {
     use super::*;
     use crate::db::{NewAuthority, add_authority, get_watermark, migrate, open};
-    use crate::model::{CitationRef, DraftResponse, ProposedRecord, StubClient, Usage};
+    use crate::model::{
+        CitationRef, DraftResponse, MetaRestClient, ModelError, ProposedRecord, StubClient, Usage,
+    };
     use crate::store::Store;
 
     fn migrated_with_authority(slug: &str) -> (tempfile::TempDir, Store, Connection) {
@@ -281,5 +289,60 @@ mod tests {
         assert_eq!(facts, 0);
         // The watermark still advances on a fully-rejected run.
         assert!(get_watermark(&conn, "usa-wa-sos").unwrap().is_some());
+    }
+
+    fn storage_counts(conn: &Connection) -> (i64, i64, bool) {
+        let facts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fact", [], |row| row.get(0))
+            .unwrap();
+        let audits: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'analysis_run'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let watermarked = get_watermark(conn, "usa-wa-sos").unwrap().is_some();
+        (facts, audits, watermarked)
+    }
+
+    #[test]
+    fn client_failure_leaves_storage_untouched() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let client = MetaRestClient::new("https://api.meta.ai/v1".to_string(), "k".to_string());
+        let mut sources = HashMap::new();
+        sources.insert("d1".to_string(), "evidence".to_string());
+        let err = run_analysis(
+            &conn,
+            &client,
+            "usa-wa-sos",
+            "evidence",
+            &sources,
+            "test",
+            1_800_000_300,
+        )
+        .expect_err("client error must propagate");
+        assert!(matches!(err, ModelError::Transport(_)), "got: {err}");
+        assert_eq!(storage_counts(&conn), (0, 0, false));
+    }
+
+    #[test]
+    fn unknown_slug_leaves_storage_untouched() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "PO Box 40220, Mon-Fri 9-5!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let err = run_analysis(
+            &conn,
+            &StubClient,
+            "nope",
+            text,
+            &sources,
+            "test",
+            1_800_000_300,
+        )
+        .expect_err("unknown slug must fail");
+        assert!(matches!(err, ModelError::Transport(_)), "got: {err}");
+        assert_eq!(storage_counts(&conn), (0, 0, false));
     }
 }

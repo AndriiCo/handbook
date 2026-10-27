@@ -60,7 +60,9 @@ pub fn validate_response(
             Some(source) => {
                 let start = record.citation.byte_start as usize;
                 let end = record.citation.byte_end as usize;
-                let in_bounds = start <= end && end <= source.len();
+                // m11: empty ranges cite nothing — a citation must
+                // cover at least one byte.
+                let in_bounds = start < end && end <= source.len();
                 let on_boundary =
                     in_bounds && source.is_char_boundary(start) && source.is_char_boundary(end);
                 if !on_boundary {
@@ -170,6 +172,20 @@ mod tests {
     }
 
     #[test]
+    fn build_prompt_inserts_evidence_verbatim() {
+        // Evidence is substituted LAST, so placeholder-looking text in
+        // the evidence is never expanded (anti-injection ordering).
+        let req = DraftRequest {
+            authority_slug: "wa".to_string(),
+            prompt_version: "aa-prompt-v1",
+            input_text: "{{slug}} {{max_records}}".to_string(),
+            max_records: 3,
+        };
+        let out = build_prompt("AUTH={{slug}} IN={{input}}", &req);
+        assert_eq!(out, "AUTH=wa IN={{slug}} {{max_records}}");
+    }
+
+    #[test]
     fn validator_accepts_good_response() {
         let mut sources = HashMap::new();
         sources.insert("d1".to_string(), "PO Box 40220".to_string());
@@ -196,6 +212,7 @@ mod tests {
         let sources = HashMap::new();
         let resp = response(vec![record("address", "nope", 0, 1, 0.5)]);
         let errs = validate_response(&resp, &sources, &["address"]).expect_err("missing doc");
+        assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].kind, ValidationErrorKind::MissingDoc);
     }
 
@@ -205,6 +222,7 @@ mod tests {
         sources.insert("d1".to_string(), "short".to_string());
         let resp = response(vec![record("address", "d1", 0, 99, 0.5)]);
         let errs = validate_response(&resp, &sources, &["address"]).expect_err("out of range");
+        assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].kind, ValidationErrorKind::BadRange);
     }
 
@@ -216,6 +234,17 @@ mod tests {
         assert!(!sources["d1"].is_char_boundary(6));
         let resp = response(vec![record("address", "d1", 5, 6, 0.5)]);
         let errs = validate_response(&resp, &sources, &["address"]).expect_err("split char");
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].kind, ValidationErrorKind::BadRange);
+    }
+
+    #[test]
+    fn validator_rejects_empty_range() {
+        let mut sources = HashMap::new();
+        sources.insert("d1".to_string(), "PO Box 40220".to_string());
+        let resp = response(vec![record("address", "d1", 5, 5, 0.5)]);
+        let errs = validate_response(&resp, &sources, &["address"]).expect_err("empty range");
+        assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].kind, ValidationErrorKind::BadRange);
     }
 
@@ -227,12 +256,36 @@ mod tests {
             let resp = response(vec![record("address", "d1", 0, 12, bad)]);
             let errs =
                 validate_response(&resp, &sources, &["address"]).expect_err("bad confidence");
+            assert_eq!(errs.len(), 1, "conf={bad}");
             assert_eq!(
                 errs[0].kind,
                 ValidationErrorKind::BadConfidence,
                 "conf={bad}"
             );
         }
+    }
+
+    #[test]
+    fn validator_returns_every_failure() {
+        let mut sources = HashMap::new();
+        sources.insert("d1".to_string(), "PO Box 40220".to_string());
+        let resp = response(vec![
+            record("mailing_address", "nope", 0, 12, 0.9),
+            record("address", "d1", 0, 12, 0.9),
+        ]);
+        let errs = validate_response(&resp, &sources, &["address"]).expect_err("two failures");
+        assert_eq!(errs.len(), 2);
+        assert_eq!(
+            errs.iter().map(|e| e.record_index).collect::<Vec<_>>(),
+            vec![0, 0]
+        );
+        assert_eq!(
+            errs.iter().map(|e| &e.kind).collect::<Vec<_>>(),
+            vec![
+                &ValidationErrorKind::UnknownTopic,
+                &ValidationErrorKind::MissingDoc,
+            ]
+        );
     }
 
     #[test]

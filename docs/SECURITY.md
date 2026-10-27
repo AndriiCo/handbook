@@ -338,3 +338,7 @@ pre-API must-fix list.
    WS-only with documented degradation?
 8. **Backup/DR for the single server** — SQLite + `store/` backup
    schedule, encryption, restore test; audit-log offsite shipping?
+9. **Audit-trigger limits (m12, noted 2026-10-26)** — the 002 triggers
+   block `UPDATE`/`DELETE` on `audit` (code-bug-level enforcement) but
+   not `DROP TRIGGER` by anyone with SQL access; true tamper-evidence
+   needs offsite audit shipping (see 8).

@@ -72,7 +72,7 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 /// back when `f` fails. Takes a shared `&Connection` (rusqlite uses
 /// interior mutability), so callers with a shared handle still get
 /// atomic multi-statement updates.
-fn in_transaction<T>(
+pub(crate) fn in_transaction<T>(
     conn: &Connection,
     f: impl FnOnce() -> rusqlite::Result<T>,
 ) -> rusqlite::Result<T> {
@@ -89,7 +89,6 @@ fn in_transaction<T>(
     }
 }
 
-/// Insert an authority (office / jurisdiction). Returns the new row id.
 /// New-authority fields plus audit attribution.
 pub struct NewAuthority<'a> {
     pub kind: &'a str,
@@ -102,19 +101,22 @@ pub struct NewAuthority<'a> {
 }
 
 /// Insert an authority (office / jurisdiction). Returns the new row id.
+/// The authority row and its audit row commit atomically (B1).
 pub fn add_authority(conn: &Connection, a: &NewAuthority<'_>) -> rusqlite::Result<i64> {
-    conn.execute(
-        "INSERT INTO authority(kind, country, region, name, slug)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        (a.kind, a.country, a.region, a.name, a.slug),
-    )?;
-    let id = conn.last_insert_rowid();
-    conn.execute(
-        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
-         VALUES (?1, ?2, 'authority_add', 'authority', ?3, ?4)",
-        rusqlite::params![a.at, a.actor, id, a.slug],
-    )?;
-    Ok(id)
+    in_transaction(conn, || {
+        conn.execute(
+            "INSERT INTO authority(kind, country, region, name, slug)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            (a.kind, a.country, a.region, a.name, a.slug),
+        )?;
+        let id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+             VALUES (?1, ?2, 'authority_add', 'authority', ?3, ?4)",
+            rusqlite::params![a.at, a.actor, id, a.slug],
+        )?;
+        Ok(id)
+    })
 }
 
 /// Delete voice-audio captures older than `VOICE_RETENTION_DAYS`.
@@ -564,7 +566,7 @@ mod tests {
     }
 
     #[test]
-    fn migrate_upgrades_001_db_to_002() {
+    fn migrate_upgrades_001_db_to_current() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::new(dir.path());
         store.init().unwrap();
@@ -705,6 +707,121 @@ mod tests {
         assert_eq!(evil_audits, 1);
         // The legitimate capture is fully swept.
         assert!(!store.blob_path(&legit).unwrap().exists());
+    }
+
+    #[test]
+    fn retention_sweep_deletes_missing_file_row_skips_absolute_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().join("store"));
+        store.init().unwrap();
+        let conn = open(&store).unwrap();
+        migrate(&conn).unwrap();
+
+        let sentinel = dir.path().join("sentinel.txt");
+        std::fs::write(&sentinel, b"do not touch").unwrap();
+
+        let authority = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa",
+                actor: "test",
+                at: 1_800_000_000,
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO channel(authority_id, visibility, kind, value, purpose)
+             VALUES (?1, 'private', 'phone', '+1', 'our_validation')",
+            [authority],
+        )
+        .unwrap();
+        let channel = conn.last_insert_rowid();
+
+        let now = 1_800_000_000;
+        let old = now - 366 * 86_400;
+        // A blob whose file vanished but whose parent dirs remain (the
+        // guard needs a resolvable parent), plus an absolute path
+        // outside the root (`Path::join` discards the root for
+        // absolute joins — the guard must still catch it).
+        let ghost = store.write_blob(b"ghost audio").unwrap();
+        let ghost_full = store.blob_path(&ghost).unwrap();
+        std::fs::remove_file(&ghost_full).unwrap();
+        let ghost_rel = ghost_full
+            .strip_prefix(store.root())
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        let absolute = sentinel.to_str().unwrap().to_string();
+        for path in [ghost_rel.as_str(), absolute.as_str()] {
+            conn.execute(
+                "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                     bytes_raw, bytes_stored, sha256, trust)
+                 VALUES (?1, ?2, 'audio', ?3, 0, 0, 'x', 'staff_verified')",
+                rusqlite::params![authority, old, path],
+            )
+            .unwrap();
+            let capture = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO call_session(authority_id, channel_id, consent,
+                                          audio_capture_id)
+                 VALUES (?1, ?2, 'granted', ?3)",
+                rusqlite::params![authority, channel, capture],
+            )
+            .unwrap();
+        }
+
+        let deleted = retention_sweep(&conn, &store, now, "test").unwrap();
+        assert_eq!(deleted, 1);
+
+        // Missing file: row swept anyway ("already swept enough").
+        let ghost_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM capture WHERE path = ?1",
+                [&ghost_rel],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(ghost_rows, 0);
+        // Absolute path: skipped, sentinel intact.
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"do not touch");
+        let abs_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM capture WHERE path = ?1",
+                [&absolute],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(abs_rows, 1);
+    }
+
+    #[test]
+    fn migrate_rolls_back_failed_upgrade() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        store.init().unwrap();
+        let conn = open(&store).unwrap();
+        // A 001 database with a conflicting trigger name: applying 002
+        // must fail, and the failure must roll back cleanly.
+        conn.execute_batch(include_str!("../migrations/001_init.sql"))
+            .unwrap();
+        conn.execute(
+            "CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit BEGIN SELECT 1; END",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+
+        migrate(&conn).unwrap_err();
+
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 1);
     }
 
     #[test]

@@ -120,6 +120,9 @@ async fn demo_login(
         Ok(conn) => conn,
         Err(_) => return store_unavailable(),
     };
+    // M1: sweep expired rows on every login so the demo table cannot
+    // grow unboundedly (a per-IP rate limit is still Day-7 work).
+    let _ = db::delete_expired_demo_sessions(&conn, now);
     if db::create_demo_session(&conn, &token, &body.customer_ref, now, now + 86_400).is_err() {
         return store_unavailable();
     }
@@ -175,6 +178,7 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> impl IntoRespo
 }
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)] // m3: mass-assignment hygiene on mutating DTOs
 struct LoginBody {
     customer_ref: String,
 }
@@ -440,5 +444,68 @@ mod tests {
                 customer_ref.len()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn demo_login_rejects_unknown_fields() {
+        let tmp = tempfile::tempdir().unwrap();
+        let res = session_app(tmp.path())
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/demo/login")
+                    .method("POST")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({"customer_ref": "demo-1", "admin": true}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn me_with_expired_cookie_is_unauthorized() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::new(tmp.path());
+        store.init().unwrap();
+        let conn = db::open(&store).unwrap();
+        db::migrate(&conn).unwrap();
+        db::create_demo_session(&conn, "tok-old", "demo-1", 1000, 1001).unwrap();
+        drop(conn);
+        let res = session_app(tmp.path())
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/me")
+                    .header("cookie", "demo_session=tok-old")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"], "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn login_with_broken_store_is_500() {
+        let tmp = tempfile::tempdir().unwrap();
+        // A regular FILE as store root: db::open cannot create
+        // `<file>/handbook.sqlite`, so handlers must 500, not panic.
+        let blocker = tmp.path().join("blocker");
+        std::fs::write(&blocker, b"not a dir").unwrap();
+        let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
+        let spa = std::env::var("SPA_DIR").unwrap_or_else(|_| "test-spa".to_string());
+        let res = app(&dir, &spa, blocker)
+            .oneshot(login_request("demo-1"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"], "store unavailable");
     }
 }
