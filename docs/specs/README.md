@@ -135,6 +135,11 @@ G1. SAM-via-API redaction (F9) is must-have in-slice,
     of it. Glimmer self-host stays cut (Weeks 4–5).
     Prerequisites: `META_API_KEY` Day 2, F8 upload path +
     rights grant, demo photo source (Q3), SEC review.
+G2. SAM is schedule-funded (Days 4–5 parallel track,
+    absorbed by the Nov 2–4 spare). Tripwire: if the
+    Day 4 gate slips more than a day, the Egypt
+    chain-view UI defers to the spare (chain data and
+    API stay) and SAM keeps its slot.
 
 **Still needed during the 5–7 days:**
 

@@ -219,11 +219,15 @@ Assumptions under challenge (author: correct if wrong):
   event page — format assumed, not verified.
 
 Interview state:
-- Asked: Q2 SAM funding + tripwire.
-- Queued: transcription path, admin-vs-loop ordering,
-  staging/acceptance, restated success criteria wording.
+- Asked: Q3 media scope (demo photo + transcription path).
+- Queued: admin-vs-loop ordering, staging/acceptance,
+  restated success criteria wording.
 - Settled: D1 (Q1 = B) — SAM-via-API redaction is
   must-have in-slice, alongside the decided carrier-buy
   code; see specs/README.md G1 (Draft).
+- Settled: D2 (Q2 = A) — SAM schedule-funded via the
+  Nov 2–4 spare, Days 4–5 parallel track; tripwire: a
+  Day-4 slip over 1 day defers the Egypt chain-view UI
+  (data/API stay), SAM keeps its slot; see G2 (Draft).
 - Doc debt: prompt-log entries pending for the memory /
   admin-plan / mTLS turns (numbering at interview end).
