@@ -11,6 +11,7 @@
 //! `auth` crate and the DEMO session stays until then.
 
 mod admin;
+mod admin_workers;
 mod approval;
 mod p2;
 mod p2_labels;
@@ -472,7 +473,15 @@ async fn main() {
         label_cfg: p2_labels::LabelCfg::from_env(),
     };
     let public = public_router(state.clone(), &static_dir, &spa_dir, &acme_dir);
-    let admin = admin::router(state);
+    // ===== ADMIN-WORKERS (goal-025 stream 1; parent reconciles) =====
+    // Staff workers/captures API merged onto the ADMIN listener only.
+    // Same guards as admin::router (staff AdminAuth per handler, host
+    // guard + CSRF layers inside admin_workers::router); the merge is
+    // fallback-safe because admin_workers sets no custom fallback, so
+    // the admin SPA fallback still wins. Sibling streams: keep your
+    // mount in your own clearly-commented block, do not edit this one.
+    // ================================================================
+    let admin = admin::router(state.clone()).merge(admin_workers::router(state));
     let tls = load_tls(
         std::env::var("TLS_CERT").ok(),
         std::env::var("TLS_KEY").ok(),

@@ -16,6 +16,7 @@
 	<a href={resolve('/(admin)/admin/triage')}>Triage</a>
 	<a href={resolve('/(admin)/admin/console')}>Call console</a>
 	<a href={resolve('/(admin)/admin/config')}>Config</a>
+	<a href={resolve('/(admin)/workers')}>Workers</a>
 </nav>
 
 {@render children()}

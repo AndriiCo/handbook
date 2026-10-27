@@ -3290,6 +3290,7 @@ dependencies = [
  "forms",
  "futures-util",
  "handbook-store",
+ "ingest",
  "labels",
  "media",
  "rand 0.9.5",

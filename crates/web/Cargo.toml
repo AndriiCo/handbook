@@ -14,6 +14,7 @@ base64 = "0.22"
 config = { path = "../config" }
 forms = { path = "../forms" }
 handbook-store = { path = "../handbook-store" }
+ingest = { path = "../ingest" }
 labels = { path = "../labels" }
 media = { path = "../media" }
 rand = "0.9"

@@ -41,6 +41,8 @@ the consolidated author-decision list is at the bottom of this file.
 - [tpm-seal.md](tpm-seal.md) — software-TPM sealing abstraction
   (`Sealer` trait, software provider default, hardware stub seam,
   key hierarchy, Mac-vs-Linux matrix).
+- [admin-workers.md](admin-workers.md) — admin workers/captures
+  API + UI (status, retry, fetch, sweep; staff-only).
 - Legal drafts (lawyer review required, do not publish):
   [tos-draft.md](../legal/tos-draft.md),
   [privacy-draft.md](../legal/privacy-draft.md).
