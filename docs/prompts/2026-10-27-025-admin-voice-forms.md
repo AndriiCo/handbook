@@ -41,6 +41,10 @@ existing admin listener + staging.
 - `af44e2c` Merge config-db: zero-env runtime config
   (307 Rust green; staging note: release now refuses
   mtls_off + KEK-missing boot).
+- `eb56e18` Merge voice-telnyx: calls + recording +
+  transcript UI (333 Rust + 29 web green; telnyx.* keys
+  registered, 29 total; secrets-scan false positive fixed
+  via Option::clone spelling).
 - (further execution commits to be listed here as merges land)
 
 ## Follow-ups
