@@ -55,7 +55,7 @@
 <a class="skip" href="#content">Skip to content</a>
 
 <header class="masthead">
-	<a class="wordmark" href={resolve('/')}>Apostille Handbook</a>
+	<a class="wordmark" href={resolve('/(public)')}>Apostille Handbook</a>
 	<div class="menus">
 		<label>
 			<span>{t.themeLabel}</span>

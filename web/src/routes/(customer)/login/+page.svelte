@@ -7,7 +7,10 @@
 	let error = $state<string | null>(null);
 	let loggedInAs = $state<string | null>(null);
 
-	const api = (path: string) => `${resolve('/').replace(/\/$/, '')}/api/v1${path}`;
+	// Kit 3 types expose no `base`, so the API root derives from the
+	// home route id (base + '/'). Same value in both builds' sync.
+	const apiRoot = resolve('/(public)').replace(/\/$/, '');
+	const api = (path: string) => `${apiRoot}/api/v1${path}`;
 	const t = $derived(STRINGS[locale]);
 
 	async function login(event: SubmitEvent) {
@@ -41,7 +44,7 @@
 
 {#if loggedInAs}
 	<p class="notice ok" role="status">
-		Logged in as <code>{loggedInAs}</code>. <a href={resolve('/(customer)/order')}>Continue to {t.orderLabel}</a>
+		Logged in as <code>{loggedInAs}</code>. <a href={resolve('/(customer)/orders')}>Continue to {t.orderLabel}s</a>
 	</p>
 {:else}
 	<form onsubmit={login}>

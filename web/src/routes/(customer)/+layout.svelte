@@ -10,7 +10,10 @@
 	let status = $state<'checking' | 'in' | 'out'>('checking');
 	let customerRef = $state<string | null>(null);
 
-	const api = (path: string) => `${resolve('/').replace(/\/$/, '')}/api/v1${path}`;
+	// Kit 3 types expose no `base`, so the API root derives from the
+	// home route id (base + '/'). Same value in both builds' sync.
+	const apiRoot = resolve('/(public)').replace(/\/$/, '');
+	const api = (path: string) => `${apiRoot}/api/v1${path}`;
 
 	onMount(async () => {
 		locale = resolveLocale();
@@ -29,9 +32,12 @@
 </script>
 
 <nav class="customer-nav" aria-label="Customer">
-	<a href={resolve('/(customer)/order')}>{t.orderLabel}</a>
+	<a href={resolve('/(customer)/orders')}>{t.orderLabel}s</a>
+	<a href={resolve('/(customer)/order')}>New {t.orderLabel}</a>
+	<a href={resolve('/(customer)/uploads')}>Uploads</a>
+	<a href={resolve('/(customer)/precheck')}>Precheck</a>
 	<a href={resolve('/(customer)/billing')}>{t.billingLabel}</a>
-	<a href={resolve('/')} title="Logout is not wired yet — returns home">{t.logoutLabel}</a>
+	<a href={resolve('/(public)')} title="Logout is not wired yet — returns home">{t.logoutLabel}</a>
 	<span class="session" aria-live="polite">
 		{#if status === 'checking'}
 			…

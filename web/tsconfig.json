@@ -3,5 +3,6 @@
 	"compilerOptions": {
 		"strict": true
 	},
-	"include": ["src", "vite.config.ts"]
+	"include": ["src", "vite.config.ts"],
+	"exclude": ["node_modules", "src/routes-public", "build", "build-admin", ".svelte-kit"]
 }

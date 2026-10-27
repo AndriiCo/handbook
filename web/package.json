@@ -5,16 +5,22 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
+		"dev:admin": "WEB_BUILD=admin vite dev",
 		"build": "vite build",
+		"build:admin": "WEB_BUILD=admin vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"prepare": "WEB_BUILD=admin svelte-kit sync || echo ''",
+		"check": "WEB_BUILD=admin svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "WEB_BUILD=admin svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"check:imports": "node scripts/check-imports.mjs",
+		"smoke": "node scripts/smoke.mjs",
+		"test": "node --test test/"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^4.0.0",
 		"@sveltejs/kit": "^3.0.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
+		"@types/node": "^26.6.5",
 		"svelte": "^5.57.1",
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",

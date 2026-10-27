@@ -1,48 +1,51 @@
-# Public web shell (SvelteKit)
+# Web shells (SvelteKit, two builds)
 
-Day-1 skeleton for the S4 lane. Public shell + `(customer)` route
-group skeleton. `(admin)` comes later. Public routes must never
-import customer/admin routes (see `docs/specs/spa-separation.md`).
+S4/S5 lanes. One codebase, three route groups, two deploy units
+(`docs/specs/spa-separation.md` §1.2):
 
-## Customer routes
+- `src/routes/(public)/` — anonymous: home search + authority dossiers.
+  Themed, EN-only. Must never import customer/admin libs.
+- `src/routes/(customer)/` — logged-in: orders, uploads, precheck,
+  billing, order form, demo login.
+- `src/routes/(admin)/` — staff only: dashboard, triage, call console,
+  config. Ships ONLY in the admin build served from `admin.andrii.ai`.
 
-`src/routes/(customer)/` (logged-in side, wired-where-possible):
+## Builds
 
-- `login/` — DEMO login form (`customer_ref` → `POST
-  /apostille/api/v1/demo/login`). 200 shows logged-in state + link
-  to order; 422 shows an inline error.
-- `order/` — order shell (authority select, document-type radio,
-  contact/address with native `required` validation). Submit shows
-  "not wired yet" — no fake success.
-- `billing/` — invoice table shell (2 placeholder rows) + "no
-  invoices yet" empty state. No payment buttons.
-- `(customer)/+layout.svelte` — nav (Order, Billing, Log out→`/`)
-  + `GET /apostille/api/v1/me` on mount: shows `customer_ref` or
-  "not logged in" with a login link.
+```sh
+npm run build        # public: (public)+(customer), base /apostille → build/
+npm run build:admin  # admin: full routes, base '' (host root) → build-admin/
+```
 
-API URLs are built from `resolve('/')` + `/api/v1/...` — relative,
-never a hardcoded host. Routes land at `/apostille/login`,
-`/apostille/order`, `/apostille/billing` (group name is URL-free).
+The split uses Kit config keys verified against `@sveltejs/kit`
+3.1.0 + adapter-static 4 (`files.routes`, `paths.base`, adapter
+`pages`), switched by `WEB_BUILD=admin` in `vite.config.ts`. The
+public tree is `src/routes-public/` (symlinks to the shared
+layouts + `(public)`/`(customer)` — no `(admin)`).
 
-## Demo-login flow
+## Routes
 
-1. Customer enters any reference on `/apostille/login`.
-2. Browser `fetch`es `POST /apostille/api/v1/demo/login` (JSON
-   `{ customer_ref }`, `credentials: same-origin`).
-3. On 200 the **server** sets the session cookie (HttpOnly —
-   unreadable from JS); the page shows the logged-in state.
-4. The customer layout probes `GET /apostille/api/v1/me` on mount
-   to display the identity.
+Public (`/apostille/…`): `/` (search-first ledger home),
+`/authority/[slug]` (dossier: tabs, fee tally, citations).
 
-## NOT wired yet
+Customer: `/orders` (list), `/order` (new-order form), `/uploads`
+(file picker + validation), `/precheck` (WS status pill + snapshot),
+`/billing`, `/login` (DEMO login).
 
-- Order submit (shows a notice, sends nothing).
-- Invoices (placeholder rows + empty state only; no data fetch).
-- Real auth (no passkey/OAuth/magic link; no logout endpoint —
-  the Log out link just returns home).
-- The demo endpoints themselves: no axum handler exists yet, so
-  login currently fails with "service unreachable" until the API
-  lane lands.
+Admin (admin host `/…`): `/admin` (dashboard), `/admin/triage`
+(review queue), `/admin/console` (call console), `/admin/config`
+(typed keys: bool/text editable, secrets set-new-only, never
+displayed — `docs/specs/secure-config.md` §1.5).
+
+API URLs derive from the home route id (`resolve('/(public)')` →
+base + '/'). Kit 3 types expose no `base` export and narrow `Path`
+to page pathnames, so `resolve()` pathnames can't carry `/api/…`
+(see `apiRoot` in any wired page).
+
+Shared libs: `src/lib/public-ui/` (both builds), `src/lib/customer/`
+uploads helpers, `src/lib/admin/config-client.js`,
+`src/lib/ws-client.js` (topic envelopes, backoff, Live /
+Reconnecting / Offline status; lazy-imported after mount only).
 
 ## Setup
 
@@ -50,15 +53,17 @@ Requires Node 26 + npm. From this directory:
 
 ```sh
 npm install
-npm run dev      # serves under /apostille (matches kit.paths.base)
-npm run build    # adapter-static output in build/, served by axum
-npm run check    # svelte-check
+npm run dev          # public tree under /apostille
+npm run dev:admin    # full tree at host root (admin shape)
+npm run build && npm run build:admin && npm run smoke
+npm run check        # svelte-check (syncs FULL routes via WEB_BUILD=admin)
+npm run check:imports
+npm test             # node --test over test/
 ```
 
-`kit.paths.base` is `/apostille`: dev and prod both serve under
-`/apostille`. Always build links with `resolve()`/`base` from
-`$app/paths`, never root-absolute hrefs. (Kit 3 removed the `base`
-export — use `resolve('/')`.)
+`npm run check` must sync with `WEB_BUILD=admin`: Kit 3 sync reads
+the inline vite options, so a plain sync would type only the public
+tree and reject `/(admin)/…` route ids.
 
 ## JS budgets
 
@@ -67,6 +72,10 @@ export — use `resolve('/')`.)
 - Week-3 targets per `docs/site-theme.md` §2: entry ≤ 40 KB Brotli,
   per-route chunk ≤ 30 KB, anonymous page ≤ 80 KB total, customer ≤
   120 KB. CI gate (`xtask web-budget`) not built yet.
+- Measured 2026-10-27 (approx, whole-bundle Brotli): public JS total
+  45 KB; anonymous home ≈ entry 1.3 KB + runtime chunks ≈ 28 KB +
+  route nodes ≈ 2 KB ≈ **33 KB** — inside entry/page budgets. Formal
+  per-navigation gate stays Week 3+.
 
 ## Notes
 
@@ -74,6 +83,9 @@ export — use `resolve('/')`.)
   covers deep links. Prerendered handbook pages may return later.
 - No CSS framework, no runtime deps; mobile-first CSS in `src/app.css`.
 - Theme: OS default + `localStorage` override (`theme:
-  light|dark|auto`), blocking init snippet in the root layout.
+  light|dark|auto`), blocking init snippet in `src/app.html`.
 - i18n: `src/lib/i18n.ts` detects `?l=` → stored → `navigator.languages`
-  (EN/ES/FR header labels only for now).
+  (EN/ES/FR header labels only for now); new pages render EN-only.
+- Links always use `resolve()` with route ids (group segments
+  included, e.g. `/(customer)/orders`); groups are URL-free at
+  runtime.
