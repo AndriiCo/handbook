@@ -15,6 +15,7 @@ mod form_scaffold;
 mod mcp_serve;
 mod packs;
 mod pii_sweep;
+mod quic_probe;
 mod release;
 mod review_conflicts;
 mod secrets;
@@ -37,6 +38,7 @@ fn main() {
         Some("pii-sweep") => pii_sweep::run(&args[1..]),
         Some("accept") => accept::run(&args[1..]),
         Some("form-scaffold") => form_scaffold::run(&args[1..]),
+        Some("quic-probe") => quic_probe::run(&args[1..]),
         Some("packs-validate") => run_packs_validate(&args[1..]),
         Some("packs-load") => run_packs_load(&args[1..]),
         Some("config-enroll") => config::run_enroll(&args[1..]),
@@ -79,6 +81,7 @@ Tasks:
   pii-sweep   fail closed on PII in publishable surfaces
   accept      deploy gate: --expect-build must match latest build + facts_hash
   form-scaffold  per-form skeleton: --authority --code --title [--out] [--force]; --check compares
+  quic-probe  HTTP/3 GET probe: --addr <ip:port> --server-name <sni> [--cacert <pem>] [--path <p>] [--host <h>]
   packs-validate  validate packs/*.json (F13; needs_review invariants)
   packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)

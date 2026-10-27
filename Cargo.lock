@@ -3792,23 +3792,31 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "chacha20poly1305",
  "contracts",
+ "futures-util",
+ "h3",
+ "h3-quinn",
  "handbook-agent",
  "handbook-store",
+ "http",
  "ingest",
  "mcp",
  "publish",
+ "quinn",
  "rand 0.9.5",
  "rcgen 0.13.2",
  "regex",
  "rusqlite",
+ "rustls",
  "rustls-pemfile",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
  "toml",
+ "webpki-roots",
  "zeroize",
 ]
 
