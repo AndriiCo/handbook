@@ -73,3 +73,8 @@ to change history — append a correction section instead.
   mTLS mechanism research (reply preempted by grill).
 - [2026-10-27-020-grill.md](2026-10-27-020-grill.md) —
   Assumptions audit grill, scope lock (Final).
+- [2026-10-27-021-build-plan.md](2026-10-27-021-build-plan.md) —
+  Build plan: subsystem crates + contracts (plan only).
+- [2026-10-27-022-v1-subsystems.md](2026-10-27-022-v1-subsystems.md) —
+  All v1 subsystems fanned out, merged, staging-deployed with admin
+  UI + ingestion verified live.
