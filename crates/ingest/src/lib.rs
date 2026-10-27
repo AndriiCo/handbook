@@ -3,8 +3,8 @@
 //!
 //! Day-2 scope only: single-URL fetch, plain-blob WARC (raw bytes under
 //! their sha256 address, no WARC envelope yet), naive tag-stripped text
-//! extraction. Full 500-URL crawl, politeness scheduling, and robots
-//! handling are Week-3 work.
+//! extraction, and a minimal robots.txt gate for third-party hosts.
+//! Full 500-URL crawl and politeness scheduling are Week-3 work.
 
 pub mod capture;
 pub mod fetch;

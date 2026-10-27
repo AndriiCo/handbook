@@ -7,6 +7,13 @@ use std::process::Command;
 
 use handbook_store::store::Store;
 
+mod accept;
+mod admin_cert;
+mod build_handbook;
+mod config;
+mod mcp_serve;
+mod pii_sweep;
+mod review_conflicts;
 mod secrets;
 
 fn main() {
@@ -21,6 +28,19 @@ fn main() {
         Some("serve") => run_serve(),
         Some("analyze") => run_analyze(&args[1..]),
         Some("fetch-url") => run_fetch_url(&args[1..]),
+        Some("review-conflicts") => review_conflicts::run(&args[1..]),
+        Some("build-handbook") => build_handbook::run(&args[1..]),
+        Some("mcp-serve") => mcp_serve::run(&args[1..]),
+        Some("pii-sweep") => pii_sweep::run(&args[1..]),
+        Some("accept") => accept::run(&args[1..]),
+        Some("config-enroll") => config::run_enroll(&args[1..]),
+        Some("config-set") => config::run_set(&args[1..]),
+        Some("config-get") => config::run_get(&args[1..]),
+        Some("config-verify") => config::run_verify(&args[1..]),
+        Some("config-rotate") => config::run_rotate(&args[1..]),
+        Some("admin-cert-issue") => admin_cert::run_issue(&args[1..]),
+        Some("admin-cert-verify") => admin_cert::run_verify(&args[1..]),
+        Some("admin-cert-revoke") => admin_cert::run_revoke(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("install-hooks") => run_install_hooks(),
         Some("audit") => run_audit(),
@@ -45,6 +65,13 @@ Tasks:
   serve       run the dev API server (cargo run -p web)
   analyze     draft proposed facts for an authority (stub only for now)
   fetch-url   fetch one URL into a warc capture (thin watch)
+  review-conflicts print F6 conflicts with citations
+  build-handbook accepted-only static build + sitemap/robots [--out --base-url]
+  mcp-serve   serve lookup_authority on 127.0.0.1 [--port]
+  pii-sweep   fail closed on PII in publishable surfaces
+  accept      deploy gate: --expect-build must match latest build + facts_hash
+  config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)
+  admin-cert-issue|verify|revoke  admin mTLS client certs
   secrets-scan scan tracked files for secrets [--staged for the index]
   install-hooks point git at .githooks/ (pre-commit secret scan)
   audit       cargo-audit over Cargo.lock (needs network; not in ci)
@@ -76,7 +103,7 @@ add-authority flags:
 }
 
 /// Value of `--name <value>` in task args, if present.
-fn flag(args: &[String], name: &str) -> Option<String> {
+pub(crate) fn flag(args: &[String], name: &str) -> Option<String> {
     args.windows(2).find_map(|pair| {
         if pair[0] == format!("--{name}") {
             Some(pair[1].clone())
@@ -86,20 +113,20 @@ fn flag(args: &[String], name: &str) -> Option<String> {
     })
 }
 
-fn required(args: &[String], name: &str) -> String {
+pub(crate) fn required(args: &[String], name: &str) -> String {
     flag(args, name).unwrap_or_else(|| {
         eprintln!("missing required flag: --{name}");
         std::process::exit(2);
     })
 }
 
-fn open_store(args: &[String]) -> Store {
+pub(crate) fn open_store(args: &[String]) -> Store {
     Store::new(flag(args, "store").unwrap_or_else(|| "store".to_string()))
 }
 
 /// Database handle for an already-opened store (F6: one open path — tasks
 /// must not reimplement the open-and-handle-error sequence themselves).
-fn open_db(store: &Store) -> rusqlite::Connection {
+pub(crate) fn open_db(store: &Store) -> rusqlite::Connection {
     handbook_store::db::open(store).unwrap_or_else(|e| {
         eprintln!("open database (run `cargo xtask init` first): {e}");
         std::process::exit(1);
@@ -174,7 +201,7 @@ fn run_add_authority(args: &[String]) {
 }
 
 /// Current unix time as i64 (audit `at` values).
-fn unix_now() -> i64 {
+pub(crate) fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock is before 1970")
@@ -420,6 +447,34 @@ fn run_fetch_url(args: &[String]) {
 
     let authority = authority_id(&conn, &slug);
     let source_id = ensure_source(&conn, authority, &source_kind, &url);
+
+    // Robots gate for third-party hosts (F1): re-checked each crawl,
+    // verdict persisted on the source row. A disallow files a task and
+    // skips the fetch without an error exit.
+    if source_kind == "website_thirdparty" {
+        let verdict = ingest::fetch::check_robots(&url, std::time::Duration::from_secs(30));
+        conn.execute(
+            "UPDATE source SET robots = ?1 WHERE id = ?2",
+            rusqlite::params![format!("{} at {now}", verdict.text), source_id],
+        )
+        .unwrap_or_else(|e| {
+            eprintln!("fetch-url: record robots verdict: {e}");
+            std::process::exit(1);
+        });
+        if !verdict.allowed {
+            record_fetch_failure(
+                &conn,
+                authority,
+                &slug,
+                &url,
+                "robots disallow",
+                &actor,
+                now,
+            );
+            println!("skipped (robots disallow): {url}");
+            return;
+        }
+    }
 
     let fetched = match ingest::fetch::fetch_url(&url, std::time::Duration::from_secs(30)) {
         Ok(fetched) => fetched,

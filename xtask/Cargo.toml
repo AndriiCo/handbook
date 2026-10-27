@@ -12,4 +12,16 @@ path = "src/main.rs"
 handbook-agent = { path = "../crates/handbook-agent" }
 handbook-store = { path = "../crates/handbook-store" }
 ingest = { path = "../crates/ingest" }
+mcp = { path = "../crates/mcp" }
+publish = { path = "../crates/publish" }
 rusqlite = { version = "0.32", features = ["bundled"] }
+rand = "0.9"
+chacha20poly1305 = { version = "0.10" }
+zeroize = "1"
+rcgen = "0.13"
+rustls-pemfile = "2"
+regex = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+tempfile = "3"

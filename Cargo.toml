@@ -5,6 +5,8 @@ members = [
     "crates/handbook-store",
     "crates/handbook-agent",
     "crates/ingest",
+    "crates/mcp",
+    "crates/publish",
     "crates/web",
     "xtask",
 ]

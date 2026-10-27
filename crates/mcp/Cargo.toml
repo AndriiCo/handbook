@@ -1,0 +1,17 @@
+[package]
+name = "mcp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+contracts = { path = "../contracts" }
+handbook-store = { path = "../handbook-store" }
+publish = { path = "../publish" }
+axum = { version = "0.8" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "io-util"] }
+
+[dev-dependencies]
+tempfile = "3"
