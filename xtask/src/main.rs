@@ -17,6 +17,7 @@ fn main() {
         Some("retention-sweep") => run_retention_sweep(&args[1..]),
         Some("web-budget") => run_web_budget(),
         Some("serve") => run_serve(),
+        Some("analyze") => run_analyze(&args[1..]),
         Some(unknown) => {
             eprintln!("unknown task: {unknown}\n");
             print_help();
@@ -36,6 +37,13 @@ Tasks:
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
   web-budget  check web/build JS+CSS against the Day-1 150KB gate
   serve       run the dev API server (cargo run -p web)
+  analyze     draft proposed facts for an authority (stub only for now)
+
+analyze flags:
+  --store <path>  store root (default: store)
+  --slug <s>      authority slug, e.g. usa-wa-sos (required)
+  --input <text>  evidence text, or @path/to/file (required)
+  --actor <a>     audit actor (default: xtask)
 
 add-authority flags:
   --store <path>  store root (default: store)
@@ -226,5 +234,56 @@ fn run_serve() {
         .expect("failed to run cargo");
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));
+    }
+}
+
+fn run_analyze(args: &[String]) {
+    use handbook::model::StubClient;
+    use std::collections::HashMap;
+
+    let store = open_store(args);
+    let conn = open_db(&store);
+    if let Err(e) = handbook::db::migrate(&conn) {
+        eprintln!("migrate: {e}");
+        std::process::exit(1);
+    }
+    let slug = required(args, "slug");
+    let raw_input = required(args, "input");
+    let input = match raw_input.strip_prefix('@') {
+        Some(path) => std::fs::read_to_string(path).unwrap_or_else(|e| {
+            eprintln!("read input file: {e}");
+            std::process::exit(1);
+        }),
+        None => raw_input,
+    };
+    let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
+    // Stub-only for now: the stub cites doc_id "fixture", so the CLI
+    // evidence IS the fixture text. Live Meta calls arrive with the
+    // MetaRestClient HTTP wiring (roadmap S2 Day 3).
+    let client = StubClient;
+    let mut sources = HashMap::new();
+    sources.insert("fixture".to_string(), input.clone());
+    match handbook::runner::run_analysis(
+        &conn,
+        &client,
+        &slug,
+        &input,
+        &sources,
+        &actor,
+        unix_now(),
+    ) {
+        Ok(report) => {
+            println!(
+                "authority: {}\nproposed: {}\nrejected: {}",
+                report.authority_slug, report.proposed, report.rejected
+            );
+            for error in &report.errors {
+                println!("rejected: {error}");
+            }
+        }
+        Err(e) => {
+            eprintln!("analyze: {e}");
+            std::process::exit(1);
+        }
     }
 }
