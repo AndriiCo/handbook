@@ -106,6 +106,72 @@ repo policy. Migrations run forward-only at boot: a rollback
 across a migration needs the author's explicit call (SQLite
 has no down-migrations by design).
 
+## Root install (one-time) — copy-paste for the author
+
+Prereqs: `andrii-ai` user exists; EAB `keyId`/`hmac` minted
+(prompt 013 gcloud); the three drafts reviewed
+(`apostille.service`, `apostille-ship.sh`,
+`apostille-cert-deploy.sh`).
+
+```sh
+# ---- Step 0, on the Mac: stage the reviewed files. ----
+cd /Users/andrii/Code/handbook
+scp docs/ops/apostille.service docs/ops/apostille-ship.sh \
+  docs/ops/apostille-cert-deploy.sh andrii.ai:/tmp/
+
+# ---- Step 1, on the server as root: install units/scripts. ----
+id andrii-ai   # must exist
+install -o root -g root -m 644 \
+  /tmp/apostille.service /etc/systemd/system/apostille.service
+install -o root -g root -m 755 \
+  /tmp/apostille-ship.sh /usr/local/sbin/apostille-ship
+install -o root -g root -m 755 \
+  /tmp/apostille-cert-deploy.sh /usr/local/sbin/apostille-cert-deploy
+chattr +i /usr/local/sbin/apostille-ship \
+  /usr/local/sbin/apostille-cert-deploy
+echo 'hal ALL=(root) NOPASSWD: /usr/local/sbin/apostille-ship *' \
+  > /etc/sudoers.d/apostille-ship
+chmod 440 /etc/sudoers.d/apostille-ship
+visudo -c   # must print OK — stop here if not
+install -d -o root -g andrii-ai -m 755 \
+  /srv/apostille /srv/apostille/releases
+apt update && apt install -y certbot
+systemctl daemon-reload
+
+# ---- Step 2, on the server as root: register + first cert. ----
+# Paste the EAB values (shell vars, not committed anywhere):
+EAB_KID='paste-keyId'; EAB_HMAC='paste-b64MacKey'
+certbot register --server https://dv.acme-v02.api.pki.goog/directory \
+  --eab-kid "$EAB_KID" --eab-hmac-key "$EAB_HMAC" \
+  --email <author-email> --no-eff-email
+# First issuance: nothing listens on :80 yet, so standalone just works.
+certbot certonly --server https://dv.acme-v02.api.pki.goog/directory \
+  -d andrii.ai \
+  --standalone --preferred-challenges http \
+  --http-01-address 199.184.91.41 \
+  --pre-hook "systemctl stop apostille" \
+  --post-hook "systemctl start apostille" \
+  --deploy-hook "/usr/local/sbin/apostille-cert-deploy"
+unset EAB_KID EAB_HMAC
+ls -l /var/lib/apostille/tls/   # cert.pem + key.pem (600) must exist
+
+# ---- Step 3, on the server as hal: first ship + enable. ----
+sudo /usr/local/sbin/apostille-ship c1960da   # smokes itself
+# Back as root: start on boot (only AFTER the first green smoke).
+systemctl enable apostille
+
+# ---- Step 4, on the server as hal: retire the interim service. ----
+pkill -f "apostille/current/we[b]"
+
+# ---- Step 5, on the Mac: public verification. ----
+curl -fsS https://andrii.ai/apostille/healthz
+```
+
+Rollback of the install itself: `systemctl disable --now
+apostille`, remove the sudoers drop-in + unit + scripts
+(`chattr -i` first), and the interim hal service can be
+restarted per the interim section.
+
 ## End of the direct path (day 10)
 
 After day 10 the direct Mac→prod path is forbidden: every

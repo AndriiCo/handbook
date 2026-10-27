@@ -50,9 +50,11 @@ gcloud config unset api_endpoint_overrides/publicca
 Server side (no Caddy — prompt 015): our Rust binary terminates
 TLS itself (axum-server + rustls, cert/key from
 `/var/lib/apostille/tls/`). Issuance + renewal is certbot
-(OS-level tooling, Google CA only) with http-01 through the
-app's `/.well-known/acme-challenge/` route (zero downtime, no
-DNS API, no stop/start):
+(OS-level tooling, Google CA only) in standalone mode: certbot
+binds :80 itself while the service is briefly stopped
+(~30s downtime per issuance/renewal, every ~60 days —
+acceptable for now; the zero-downtime upgrade path below
+removes even that).
 
 ```sh
 # One-time registration (as root; EAB values from step 2):
@@ -60,24 +62,38 @@ certbot register --server https://dv.acme-v02.api.pki.goog/directory \
   --eab-kid "$EAB_KID" --eab-hmac-key "$EAB_HMAC" \
   --email <author-email> --no-eff-email
 
-# Issue + install (renewals reuse the hooks automatically):
+# Issue + install. Run BEFORE the first `systemctl start`
+# (nothing listens on :80 yet, so no --pre-hook needed the
+# first time). Renewals reuse these hooks automatically.
 certbot certonly --server https://dv.acme-v02.api.pki.goog/directory \
   -d andrii.ai \
-  --manual --preferred-challenges http \
-  --manual-auth-hook "/usr/local/sbin/acme-auth-hook" \
-  --manual-cleanup-hook "/usr/local/sbin/acme-cleanup-hook" \
-  --deploy-hook "/usr/local/sbin/acme-deploy-hook"
+  --standalone --preferred-challenges http \
+  --http-01-address 199.184.91.41 \
+  --pre-hook "systemctl stop apostille" \
+  --post-hook "systemctl start apostille" \
+  --deploy-hook "/usr/local/sbin/apostille-cert-deploy"
 ```
 
-Hooks (root-owned scripts, author to place): auth-hook writes
-`$CERTBOT_TOKEN` to `/var/lib/apostille/acme/$CERTBOT_TOKEN`
-(mode 644, root:andrii-ai); cleanup-hook removes it;
-deploy-hook installs `fullchain.pem`/`privkey.pem` to
+(`--http-01-address` is load-bearing: sibling services own
+:80 on OTHER IPs of this box; a wildcard standalone bind
+would fail — or worse, briefly steal their port.)
+
+The deploy-hook (draft: `docs/ops/apostille-cert-deploy.sh`,
+root-owned 755, `chattr +i` recommended) installs
+`fullchain.pem`/`privkey.pem` to
 `/var/lib/apostille/tls/{cert.pem,key.pem}` (key 600,
-`andrii-ai:andrii-ai`) and runs
-`systemctl restart apostille` (the binary loads certs at
-boot; SIGHUP hot-reload is a follow-up). Nothing else on
-the box touches private keys.
+`andrii-ai:andrii-ai`), restarts the service (the binary
+loads certs at boot; SIGHUP hot-reload is a follow-up), and
+smokes the public endpoint. Nothing else on the box touches
+private keys.
+
+Zero-downtime upgrade path (later, optional): switch the
+renewal authenticator to `--manual` http-01 with auth/cleanup
+hooks writing `$CERTBOT_TOKEN` files into
+`/var/lib/apostille/acme/` (mode 644, root:andrii-ai),
+served by the app's `/.well-known/acme-challenge/` route
+(already implemented + tested) — then drop the stop/start
+hooks and renewals never interrupt the service.
 
 ## Rotation / revocation
 
