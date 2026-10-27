@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 4;
+pub const SCHEMA_VERSION: i32 = 5;
 
 /// Voice-audio retention in days (decided 2026-10-26).
 pub const VOICE_RETENTION_DAYS: i64 = 365;
@@ -58,6 +58,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         if version < 4 {
             conn.execute_batch(include_str!("../migrations/004_watermarks.sql"))?;
             conn.pragma_update(None, "user_version", 4)?;
+        }
+        if version < 5 {
+            conn.execute_batch(include_str!("../migrations/005_constraints.sql"))?;
+            conn.pragma_update(None, "user_version", 5)?;
         }
         Ok(())
     })?;
@@ -898,5 +902,223 @@ mod tests {
         );
         upsert_watermark(&conn, "usa-wa", 5, "aa-prompt-v1").unwrap();
         assert!(get_watermark(&conn, "usa-wa").unwrap().is_some());
+    }
+
+    #[test]
+    fn migrate_upgrades_001_db_to_005_preserving_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        store.init().unwrap();
+        let conn = open(&store).unwrap();
+        // Build a 001-only database, as an older install would have.
+        conn.execute_batch(include_str!("../migrations/001_init.sql"))
+            .unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+
+        // One valid row per table that 005 rebuilds (plus build, which
+        // audit.build_id references). Ids are 1 throughout: AUTOINCREMENT
+        // starts there, so nothing collides with the id-0 sentinels.
+        conn.execute(
+            "INSERT INTO authority(kind, country, region, name, slug)
+             VALUES ('state', 'USA', 'WA', 'WA', 'usa-wa')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO build(at, code_git_commit, build_no, facts_hash)
+             VALUES (1, 'abc', 1, 'hash')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO domain(name, authority_id, status)
+             VALUES ('wa.gov', 1, 'official')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO source(authority_id, kind, uri, domain_id)
+             VALUES (1, 'website_official', 'https://wa.gov', 'wa.gov')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO channel(authority_id, visibility, kind, value, purpose)
+             VALUES (1, 'private', 'phone', '+1', 'our_validation')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO capture(authority_id, source_id, captured_at, kind,
+                                 path, bytes_raw, bytes_stored, sha256, trust)
+             VALUES (1, 1, 100, 'file', 'x', 1, 1, 's', 'official')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE domain SET evidence_capture_id = 1 WHERE name = 'wa.gov'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                              status, created_at)
+             VALUES (1, 1, 'hours', 'open 9-5', 'proposed', 100)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO batch(authority_id, channel_id, status)
+             VALUES (1, 1, 'draft')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO task(authority_id, kind, title, status, dedup_key,
+                              batch_id, created_at)
+             VALUES (1, 'call', 't', 'batched', 'k1', 1, 100)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO call_session(batch_id, authority_id, channel_id,
+                                      consent, transcript_capture_id)
+             VALUES (1, 1, 1, 'granted', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transcript_note(capture_id, start_byte, end_byte,
+                                         kind, text, created_at)
+             VALUES (1, 0, 5, 'correction', 'fix', 100)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id, build_id)
+             VALUES (1, 'test', 'accept', 'fact', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        // Every rebuilt table kept its row. authority/capture hold one
+        // extra row each: the migration-005 unattributed sentinels (id 0).
+        for table in [
+            "domain",
+            "source",
+            "channel",
+            "fact",
+            "task",
+            "batch",
+            "call_session",
+            "transcript_note",
+            "audit",
+            "build",
+        ] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 1, "table {table} lost its row");
+        }
+        for table in ["authority", "capture"] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 2, "table {table} should hold seed + sentinel");
+        }
+        // Spot-check values and links survived the rebuild.
+        let statement: String = conn
+            .query_row("SELECT statement FROM fact WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(statement, "open 9-5");
+        let evidence: i64 = conn
+            .query_row(
+                "SELECT evidence_capture_id FROM domain WHERE name = 'wa.gov'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(evidence, 1);
+        // The audit triggers were recreated on the new audit table.
+        assert_eq!(audit_trigger_count(&conn), 2);
+        // Idempotent on the upgraded database too.
+        migrate(&conn).unwrap();
+        assert_eq!(audit_trigger_count(&conn), 2);
+    }
+
+    #[test]
+    fn constraints_reject_bad_values_and_dangling_refs() {
+        let (_dir, _store, conn) = migrated();
+        let authority = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa",
+                actor: "test",
+                at: 1_800_000_000,
+            },
+        )
+        .unwrap();
+        // Bad CHECK value on a controlled vocabulary.
+        conn.execute(
+            "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                 bytes_raw, bytes_stored, sha256, trust)
+             VALUES (?1, 0, 'file', 'x', 0, 0, 's', 'bogus')",
+            [authority],
+        )
+        .expect_err("bad trust value must be rejected");
+        conn.execute(
+            "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                 bytes_raw, bytes_stored, sha256, trust)
+             VALUES (?1, 0, 'file', 'x', 0, 0, 's', 'official')",
+            [authority],
+        )
+        .unwrap();
+        let capture = conn.last_insert_rowid();
+        // Bad fact.topic (not one of the 25 TOPICS.md strings).
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                              status, created_at)
+             VALUES (?1, ?2, 'bitcoin', 's', 'proposed', 0)",
+            rusqlite::params![authority, capture],
+        )
+        .expect_err("bad fact.topic must be rejected");
+        // Dangling foreign key.
+        conn.execute(
+            "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                 bytes_raw, bytes_stored, sha256, trust)
+             VALUES (99999, 0, 'file', 'x', 0, 0, 's', 'official')",
+            [],
+        )
+        .expect_err("dangling capture.authority_id must be rejected");
+    }
+
+    #[test]
+    fn audit_stays_append_only_after_constraint_rebuild() {
+        let (_dir, _store, conn) = migrated();
+        conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id)
+             VALUES (1, 'test', 'accept', 'fact', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE audit SET actor = 'evil' WHERE id = 1", [])
+            .expect_err("audit UPDATE must fail after the 005 rebuild");
+        assert_eq!(audit_trigger_count(&conn), 2);
     }
 }
