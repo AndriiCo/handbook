@@ -1,7 +1,9 @@
 //! SQLite metadata database: migrations and foundation queries.
 //!
 //! Schema lives in `migrations/001_init.sql` (see `docs/design.md` §1).
-//! Later migrations add `N+1` files and extend [`migrate`].
+//! Later migrations add `N+1` files and extend [`migrate`]. The P2
+//! customer-PII database (`p2.sqlite`) has its own sequence
+//! (`migrations/p2_*.sql`) and its own [`migrate_p2`].
 
 use rusqlite::Connection;
 
@@ -10,7 +12,11 @@ use contracts::Result;
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 5;
+pub const SCHEMA_VERSION: i32 = 7;
+
+/// Current P2 customer-PII schema version (`pragma user_version` on
+/// `p2.sqlite`; independent of [`SCHEMA_VERSION`]).
+pub const P2_SCHEMA_VERSION: i32 = 1;
 
 /// Voice-audio retention in days (decided 2026-10-26).
 pub const VOICE_RETENTION_DAYS: i64 = 365;
@@ -31,11 +37,32 @@ pub const VOICE_RETENTION_DAYS: i64 = 365;
 /// - Never work around a violation with `PRAGMA foreign_keys=OFF`.
 pub fn open(store: &Store) -> Result<Connection> {
     let conn = Connection::open(store.db_path())?;
+    apply_pragmas(&conn)?;
+    Ok(conn)
+}
+
+/// Open (creating if missing) the P2 customer-PII database.
+///
+/// Same PRAGMAs as [`open`]. Cross-DB references (authority /
+/// form_template / capture ids) are opaque integers SQLite cannot
+/// enforce: readers must treat a missing parent as "open a task +
+/// audit", never as a join assumption. PII retention is OQ-7 (open).
+pub fn open_p2(store: &Store) -> Result<Connection> {
+    let conn = Connection::open(store.p2_db_path())?;
+    apply_pragmas(&conn)?;
+    Ok(conn)
+}
+
+/// The PRAGMA set every store database gets: `journal_mode=WAL` (one
+/// writer, many readers), `busy_timeout=5000` (wait out lock contention
+/// instead of failing), `synchronous=NORMAL` (WAL-safe durability),
+/// and `foreign_keys=ON` (deletes that would orphan a child row fail).
+fn apply_pragmas(conn: &Connection) -> Result<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "busy_timeout", 5000)?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    Ok(conn)
+    Ok(())
 }
 
 /// Apply pending migrations. Idempotent.
@@ -65,11 +92,39 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             conn.execute_batch(include_str!("../migrations/005_constraints.sql"))?;
             conn.pragma_update(None, "user_version", 5)?;
         }
+        if version < 6 {
+            conn.execute_batch(include_str!("../migrations/006_config.sql"))?;
+            conn.pragma_update(None, "user_version", 6)?;
+        }
+        if version < 7 {
+            conn.execute_batch(include_str!("../migrations/007_p2_templates.sql"))?;
+            conn.pragma_update(None, "user_version", 7)?;
+        }
         Ok(())
     })?;
     debug_assert_eq!(
         conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))?,
         SCHEMA_VERSION
+    );
+    Ok(())
+}
+
+/// Apply pending P2 migrations to a [`open_p2`] connection. Idempotent.
+///
+/// Same one-transaction discipline as [`migrate`]; versioned by the
+/// p2.sqlite `user_version`, independently of [`SCHEMA_VERSION`].
+pub fn migrate_p2(conn: &Connection) -> Result<()> {
+    in_transaction(conn, || {
+        let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version < 1 {
+            conn.execute_batch(include_str!("../migrations/p2_001_init.sql"))?;
+            conn.pragma_update(None, "user_version", 1)?;
+        }
+        Ok(())
+    })?;
+    debug_assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))?,
+        P2_SCHEMA_VERSION
     );
     Ok(())
 }
@@ -900,7 +955,7 @@ mod tests {
     }
 
     #[test]
-    fn migrate_upgrades_001_db_to_005_preserving_rows() {
+    fn migrate_upgrades_001_db_to_current_preserving_rows() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::new(dir.path());
         store.init().unwrap();
@@ -1046,6 +1101,16 @@ mod tests {
             )
             .unwrap();
         assert_eq!(evidence, 1);
+        // The 007 authority columns landed on the preserved legacy row.
+        let (replica_default, ship_to): (String, Option<i64>) = conn
+            .query_row(
+                "SELECT replica_default, ship_to_fact_id FROM authority WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(replica_default, "unknown");
+        assert_eq!(ship_to, None);
         // The audit triggers were recreated on the new audit table.
         assert_eq!(audit_trigger_count(&conn), 2);
         // Idempotent on the upgraded database too.
@@ -1115,5 +1180,322 @@ mod tests {
         conn.execute("UPDATE audit SET actor = 'evil' WHERE id = 1", [])
             .expect_err("audit UPDATE must fail after the 005 rebuild");
         assert_eq!(audit_trigger_count(&conn), 2);
+    }
+
+    #[test]
+    fn config_tables_roundtrip_and_constraints() {
+        let (_dir, _store, conn) = migrated();
+        conn.execute(
+            "INSERT INTO config(key, type, value_enc, enc_version, updated_at, updated_by)
+             VALUES ('app.mode', 'text', x'0102', 1, 100, 'test')",
+            [],
+        )
+        .unwrap();
+        let (type_, enc_version): (String, i64) = conn
+            .query_row(
+                "SELECT type, enc_version FROM config WHERE key = 'app.mode'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((type_.as_str(), enc_version), ("text", 1));
+        // Unknown key type violates the CHECK.
+        conn.execute(
+            "INSERT INTO config(key, type, value_enc, enc_version, updated_at, updated_by)
+             VALUES ('bad', 'bogus', x'00', 1, 100, 'test')",
+            [],
+        )
+        .expect_err("bad config.type must be rejected");
+        // STRICT table: TEXT is not storable in an INTEGER column.
+        conn.execute(
+            "INSERT INTO config(key, type, value_enc, enc_version, updated_at, updated_by)
+             VALUES ('strict', 'text', x'00', 'one', 100, 'test')",
+            [],
+        )
+        .expect_err("STRICT must reject TEXT in enc_version");
+        conn.execute(
+            "INSERT INTO config_kek(version, cred_path, created_at, retired_at)
+             VALUES (1, '/etc/credstore.encrypted/handbook-kek-v1.cred', 100, NULL)",
+            [],
+        )
+        .unwrap();
+        let retired: Option<i64> = conn
+            .query_row(
+                "SELECT retired_at FROM config_kek WHERE version = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(retired, None);
+    }
+
+    #[test]
+    fn form_template_active_unique_and_constraints() {
+        let (_dir, _store, conn) = migrated();
+        let authority = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa",
+                actor: "test",
+                at: 1_800_000_000,
+            },
+        )
+        .unwrap();
+        let insert = |authority: i64, code: &str, status: &str| {
+            conn.execute(
+                "INSERT INTO form_template(authority_id, code, title, version,
+                                           status, schema_json, created_at)
+                 VALUES (?1, ?2, 'WA request', 1, ?3, '{}', 0)",
+                rusqlite::params![authority, code, status],
+            )
+        };
+        insert(authority, "wa-apostille-request", "active").unwrap();
+        // Exactly one active template per (authority, code).
+        insert(authority, "wa-apostille-request", "active")
+            .expect_err("second active template must be rejected");
+        // Non-active rows with the same code are fine (partial index).
+        insert(authority, "wa-apostille-request", "superseded").unwrap();
+        // Unknown status violates the CHECK.
+        insert(authority, "wa-other", "bogus").expect_err("bad status must be rejected");
+        // Dangling authority violates the FK.
+        insert(99999, "wa-orphan", "draft").expect_err("dangling authority must be rejected");
+        // Spec defaults landed on the first row.
+        let (replica, drawn, mode, cadence): (String, String, String, i64) = conn
+            .query_row(
+                "SELECT accepts_replica, accepts_drawn_signature, signature_mode,
+                        verify_cadence_days
+                 FROM form_template WHERE code = 'wa-apostille-request' AND status = 'active'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (replica.as_str(), drawn.as_str(), mode.as_str(), cadence),
+            ("unknown", "no", "wet_ink", 90)
+        );
+    }
+
+    #[test]
+    fn authority_p2_columns_default_and_checked() {
+        let (_dir, _store, conn) = migrated();
+        let authority = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa",
+                actor: "test",
+                at: 1_800_000_000,
+            },
+        )
+        .unwrap();
+        let (replica_default, ship_to): (String, Option<i64>) = conn
+            .query_row(
+                "SELECT replica_default, ship_to_fact_id FROM authority WHERE id = ?1",
+                [authority],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(replica_default, "unknown");
+        assert_eq!(ship_to, None);
+        conn.execute(
+            "UPDATE authority SET replica_default = 'bogus' WHERE id = ?1",
+            [authority],
+        )
+        .expect_err("bad replica_default must be rejected");
+    }
+
+    #[test]
+    fn fact_topic_check_matches_frozen_enum() {
+        let (_dir, store, conn) = migrated();
+        let authority = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa",
+                actor: "test",
+                at: 1_800_000_000,
+            },
+        )
+        .unwrap();
+        let sha = store.write_blob(b"freeze proof").unwrap();
+        conn.execute(
+            "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                 bytes_raw, bytes_stored, sha256, trust)
+             VALUES (?1, 0, 'file', 'x', 0, 0, ?2, 'official')",
+            rusqlite::params![authority, sha],
+        )
+        .unwrap();
+        let capture = conn.last_insert_rowid();
+        // Every frozen topic string is storable; the CHECK and the enum
+        // agree exactly (rejections are covered by contracts' parse test
+        // plus constraints_reject_bad_values_and_dangling_refs).
+        for topic in contracts::topics::Topic::ALL {
+            conn.execute(
+                "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                                  status, created_at)
+                 VALUES (?1, ?2, ?3, 's', 'proposed', 0)",
+                rusqlite::params![authority, capture, topic.as_str()],
+            )
+            .unwrap();
+        }
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fact", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, contracts::topics::Topic::ALL.len() as i64);
+    }
+
+    #[test]
+    fn migrations_seed_no_facts_or_fixtures() {
+        let (_dir, _store, conn) = migrated();
+        // No migration inserts facts: fixtures can only enter via test
+        // helpers (crate::fixtures, cfg(test)) or real ingest.
+        let facts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fact", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(facts, 0);
+        // The only seeded rows are the id-0 sentinels from migration 005.
+        let slugs: Vec<String> = conn
+            .prepare("SELECT slug FROM authority ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(slugs, ["sentinel-unattributed-005"]);
+        // And no seeded text anywhere carries the canonical fixture values.
+        let mut leaks = 0;
+        for (table, column) in [
+            ("authority", "name"),
+            ("authority", "slug"),
+            ("capture", "path"),
+            ("capture", "sha256"),
+            ("capture", "notes"),
+            ("source", "uri"),
+            ("source", "notes"),
+            ("domain", "name"),
+            ("domain", "notes"),
+        ] {
+            let hits: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM {table} \
+                         WHERE {column} LIKE '%40220%' OR {column} LIKE '%40234%'"
+                    ),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            leaks += hits;
+        }
+        assert_eq!(leaks, 0, "fixture values leaked into seeded rows");
+    }
+
+    fn migrated_p2() -> (tempfile::TempDir, Store, Connection) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        store.init().unwrap();
+        let conn = open_p2(&store).unwrap();
+        migrate_p2(&conn).unwrap();
+        (dir, store, conn)
+    }
+
+    #[test]
+    fn migrate_p2_is_idempotent() {
+        let (_dir, _store, conn) = migrated_p2();
+        migrate_p2(&conn).unwrap();
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, P2_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn open_p2_sets_pragmas() {
+        let (_dir, _store, conn) = migrated_p2();
+        let journal: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(journal.to_lowercase(), "wal");
+        let busy: i32 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(busy, 5000);
+        let foreign_keys: i32 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1); // ON
+    }
+
+    #[test]
+    fn p2_tables_roundtrip_and_constraints() {
+        let (_dir, _store, conn) = migrated_p2();
+        conn.execute(
+            "INSERT INTO form_submission(form_template_id, authority_id, customer_ref,
+                                        values_json, status, created_at)
+             VALUES (7, 1, 'cust-1', '{\"fee\": 30}', 'submitted', 100)",
+            [],
+        )
+        .unwrap();
+        let submission = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO shipment(submission_id, authority_id, status, created_at, updated_at)
+             VALUES (?1, 1, 'labels_pending', 100, 100)",
+            [submission],
+        )
+        .unwrap();
+        let shipment = conn.last_insert_rowid();
+        for direction in ["outbound", "return"] {
+            conn.execute(
+                "INSERT INTO shipping_label(shipment_id, direction, carrier, service,
+                                           tracking_no, status, created_at)
+                 VALUES (?1, ?2, 'usps', 'PRIORITY', 'track-1', 'issued', 100)",
+                rusqlite::params![shipment, direction],
+            )
+            .unwrap();
+        }
+        // The tracking index is non-unique per the spec sketch: duplicate
+        // tracking numbers insert fine (reissued labels share numbers).
+        let labels: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM shipping_label WHERE tracking_no = 'track-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(labels, 2);
+        let index: String = conn
+            .query_row(
+                "SELECT name FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_label_tracking'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(index, "idx_label_tracking");
+        // Unknown direction violates the CHECK.
+        conn.execute(
+            "INSERT INTO shipping_label(shipment_id, direction, carrier, service, created_at)
+             VALUES (?1, 'sideways', 'usps', 'PRIORITY', 100)",
+            [shipment],
+        )
+        .expect_err("bad direction must be rejected");
+        // Dangling in-file parent violates the FK (opaque cross-DB ids
+        // like form_template_id/authorities have no FK by design).
+        conn.execute(
+            "INSERT INTO shipment(submission_id, authority_id, status, created_at, updated_at)
+             VALUES (99999, 1, 'draft', 100, 100)",
+            [],
+        )
+        .expect_err("dangling submission_id must be rejected");
     }
 }

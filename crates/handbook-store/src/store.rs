@@ -39,6 +39,13 @@ impl Store {
         self.root.join("handbook.sqlite")
     }
 
+    /// Path of the P2 customer-PII database (separate file per the OQ-1
+    /// proposed default; see `migrations/p2_001_init.sql`). Opened only
+    /// via [`crate::db::open_p2`], never by path joins elsewhere.
+    pub fn p2_db_path(&self) -> PathBuf {
+        self.root.join("p2.sqlite")
+    }
+
     /// Create the root and well-known subdirectories (idempotent).
     pub fn init(&self) -> Result<()> {
         for dir in ["warc", "mbox", "blob", "text"] {
