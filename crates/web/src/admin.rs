@@ -1,11 +1,12 @@
-//! Admin listener: Host guard, session + mTLS-cert auth, CSRF/Origin.
+//! Admin branch: Host guard, session + mTLS-cert auth, CSRF/Origin.
 //!
-//! Served on its own listener (`ADMIN_PORT`, default 3001) and — in
-//! prod — its own origin (`https://admin.andrii.ai`, no public JS can
-//! touch the admin session). Every route here requires all of: the
-//! admin host, a staff/admin session, and (unless `ADMIN_MTLS=off` in
-//! local dev) a verified client cert. Mutations additionally require
-//! the Origin + double-submit CSRF checks.
+//! Served on the single-443 TLS listener's admin Host branch (and —
+//! in prod — its own origin `https://admin.andrii.ai`, so no public
+//! JS can touch the admin session); plain-HTTP dev keeps a separate
+//! admin port. Every route here requires all of: the admin host, a
+//! staff/admin session, and (unless `admin.mtls_off` in local dev) a
+//! verified client cert. Mutations additionally require the Origin +
+//! double-submit CSRF checks.
 
 use axum::{
     Router,
@@ -216,10 +217,11 @@ pub async fn csrf_guard(
     next.run(req).await
 }
 
-/// The admin-only router (own listener; never mounted on public).
-/// Serves the admin SPA shell (`ADMIN_SPA_DIR`) at every non-API path
-/// with SPA fallback; unknown API paths stay JSON 404s (never the
-/// shell), so API clients cannot mistake HTML for data.
+/// The admin-only router (admin Host branch of single-443; never
+/// on the public branch). Serves the admin SPA shell
+/// (`ADMIN_SPA_DIR`) at every non-API path with SPA fallback;
+/// unknown API paths stay JSON 404s (never the shell), so API
+/// clients cannot mistake HTML for data.
 pub fn router(state: AppState) -> Router {
     let spa_index = state.admin_spa_dir.join("index.html");
     Router::new()

@@ -18,9 +18,11 @@
 //! opaque TLS alert. End to end the requirement holds: no
 //! CA-chained + registered cert, no admin access.
 //!
-//! The public listener never uses this module: it serves the same
-//! plain [`axum_server`] TLS config as before and no client-cert
-//! state ever reaches its requests.
+//! Single-443 shares ONE handshake for both branches, so the
+//! acceptor below captures peer chains on every connection — but
+//! the public branch never reads this module's state: Host dispatch
+//! strips the extension before forwarding, and the fingerprint
+//! layer runs on the admin branch only.
 
 use axum::{
     http::Request,
@@ -43,9 +45,10 @@ impl PeerCertificates {
         self.0.first().map(|der| der.as_ref())
     }
 
-    /// Test-only constructor from raw DER blobs.
-    #[cfg(test)]
-    pub(crate) fn from_ders(ders: Vec<Vec<u8>>) -> Self {
+    /// Constructor from raw DER blobs. The QUIC bridge uses this
+    /// for the peer chain quinn captured (same shape the TCP
+    /// acceptor builds); tests use it for synthetic chains.
+    pub fn from_ders(ders: Vec<Vec<u8>>) -> Self {
         PeerCertificates(
             ders.into_iter()
                 .map(rustls::pki_types::CertificateDer::from)
@@ -141,12 +144,42 @@ pub fn admin_server_config(
     }
 }
 
-/// axum-server acceptor for the ADMIN listener: TLS-handshakes via
-/// the stock [`axum_server`] rustls acceptor, then wraps the
-/// per-connection service so every request carries the verified peer
-/// chain ([`PeerCertificates`]) for [`inject_verified_cert`].
-/// Connections without a client cert get the inner service
-/// unwrapped — indistinguishable from plain TLS downstream.
+/// True when the FIRST certificate in `cert_pem` carries
+/// `dns_name` as a DNS SAN (case-insensitive compare).
+/// Single-443 serves one pair for both hosts, so boot warns loudly
+/// when the admin SAN is missing (the pair still loads — a missing
+/// SAN only breaks browsers on the admin host, and refusing the
+/// boot would brick staging before the reissue lands).
+/// Error strings name the problem, never PEM bytes.
+pub fn cert_has_dns_san(cert_pem: &[u8], dns_name: &str) -> Result<bool, String> {
+    let mut reader = std::io::BufReader::new(cert_pem);
+    let certs = rustls_pemfile::certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("TLS cert SAN check: parse PEM: {e}"))?;
+    let Some(first) = certs.first() else {
+        return Err("TLS cert SAN check: no CERTIFICATE blocks".to_string());
+    };
+    let (_, cert) = x509_parser::parse_x509_certificate(first.as_ref())
+        .map_err(|e| format!("TLS cert SAN check: parse DER: {e}"))?;
+    let sans = cert
+        .subject_alternative_name()
+        .map_err(|e| format!("TLS cert SAN check: read SANs: {e}"))?;
+    let Some(sans) = sans else {
+        return Ok(false);
+    };
+    Ok(sans.value.general_names.iter().any(|name| {
+        matches!(name, x509_parser::extensions::GeneralName::DNSName(dns) if dns.eq_ignore_ascii_case(dns_name))
+    }))
+}
+
+/// axum-server acceptor for the single-443 listener:
+/// TLS-handshakes via the stock [`axum_server`] rustls acceptor,
+/// then wraps the per-connection service so every request carries
+/// the verified peer chain ([`PeerCertificates`]) for
+/// [`inject_verified_cert`] (Host dispatch strips it again on the
+/// public branch). Connections without a client cert get the inner
+/// service unwrapped — indistinguishable from plain TLS
+/// downstream.
 #[derive(Clone)]
 pub struct MtlsAcceptor {
     inner: axum_server::tls_rustls::RustlsAcceptor,
@@ -317,6 +350,32 @@ mod tests {
             .expect_err("key-only file is no CA bundle");
         assert!(err.contains("tls.client_ca_file"), "{err}");
         assert!(!err.contains("BEGIN"), "{err}");
+    }
+
+    #[test]
+    fn san_check_matches_admin_host_case_insensitively() {
+        let both = rcgen::generate_simple_self_signed(vec![
+            "andrii.ai".to_string(),
+            "admin.andrii.ai".to_string(),
+        ])
+        .unwrap();
+        let pem = both.cert.pem().into_bytes();
+        assert!(cert_has_dns_san(&pem, "admin.andrii.ai").unwrap());
+        assert!(cert_has_dns_san(&pem, "ADMIN.ANDRII.AI").unwrap());
+        assert!(cert_has_dns_san(&pem, "andrii.ai").unwrap());
+        assert!(!cert_has_dns_san(&pem, "other.test").unwrap());
+
+        let public_only =
+            rcgen::generate_simple_self_signed(vec!["andrii.ai".to_string()]).unwrap();
+        let pem = public_only.cert.pem().into_bytes();
+        assert!(!cert_has_dns_san(&pem, "admin.andrii.ai").unwrap());
+
+        // Garbage input errors redacted (labels only, never bytes).
+        for bad in [b"".as_slice(), b"not a pem file".as_slice()] {
+            let err = cert_has_dns_san(bad, "admin.andrii.ai").expect_err("must fail");
+            assert!(err.contains("TLS cert SAN check"), "{err}");
+            assert!(!err.contains("not a pem"), "{err}");
+        }
     }
 
     #[test]

@@ -1,10 +1,14 @@
 //! Apostille web API (S3 lane, roadmap items 2+6; G4 admin track).
 //!
-//! Public listener: everything under `/apostille` (health/version,
-//! static, WS bus, accepted-facts reads, DEMO login/session) plus
-//! the P2 mount stub. Admin listener (own port/origin): approval
-//! API, encrypted-config API, bus publish — all behind the admin
-//! host guard, staff sessions, mTLS-cert seam, and CSRF/Origin.
+//! Single-443 TLS: ONE listener on `net.https_port` serves both
+//! branches by Host header — `admin.andrii.ai` → merged admin
+//! router (approval/config, workers, voice staff+webhook, mTLS
+//! fingerprint layer on that branch only), everything else →
+//! public router (`/apostille` health/version, static, WS bus,
+//! accepted-facts reads, DEMO login/session, P2 stub). Iff
+//! `quic.enabled`, a UDP QUIC/h3 endpoint on the same port serves
+//! the same merged router. Plain-HTTP dev keeps two listeners
+//! (`net.port` / `net.admin_port`).
 //!
 //! Real login (passkey/Apple/Google/Meta + magic-link fallback) is
 //! still ahead per `docs/auth-playbook.md`; the policy lives in the
@@ -14,9 +18,11 @@ mod admin;
 mod admin_voice;
 mod admin_workers;
 mod approval;
+mod host;
 mod mtls;
 mod p2;
 mod p2_labels;
+mod quic;
 mod ws_bus;
 
 use axum::{
@@ -351,45 +357,48 @@ async fn ws_echo(mut socket: WebSocket) {
     }
 }
 
-/// Load rustls config from `tls.cert_file`/`tls.key_file` PEM paths
-/// (DB config). Neither set → plain HTTP dev mode; exactly one
-/// set, or an unreadable file → Err, and main refuses to start
-/// (TLS misconfiguration must never silently downgrade to HTTP).
-async fn load_tls(
-    cert: Option<String>,
-    key: Option<String>,
-) -> Result<Option<axum_server::tls_rustls::RustlsConfig>, String> {
+/// Explicit-file TLS material: serving cert PEM + key PEM.
+type TlsPair = (Vec<u8>, Vec<u8>);
+
+/// Explicit-file TLS material from `tls.cert_file`/`tls.key_file`
+/// PEM paths (DB config): read both, or neither (ACME mode or
+/// plain-HTTP dev). Exactly one set, or an unreadable file → Err,
+/// and main refuses to start (TLS misconfiguration must never
+/// silently downgrade to HTTP). Error labels name the keys — key
+/// bytes never appear.
+fn explicit_tls_pair(cert: Option<String>, key: Option<String>) -> Result<Option<TlsPair>, String> {
     match (cert, key) {
         (None, None) => Ok(None),
         (Some(cert), Some(key)) => {
-            axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
-                .await
-                .map(Some)
-                .map_err(|e| format!("read tls.cert_file={cert} tls.key_file=<redacted>: {e}"))
+            let cert_pem = std::fs::read(&cert)
+                .map_err(|e| format!("read tls.cert_file={cert} tls.key_file=<redacted>: {e}"))?;
+            let key_pem = std::fs::read(&key)
+                .map_err(|_| format!("read tls.cert_file={cert} tls.key_file=<redacted>"))?;
+            Ok(Some((cert_pem, key_pem)))
         }
         _ => Err("set both tls.cert_file and tls.key_file, or neither".to_string()),
     }
 }
 
-/// Admin TLS config: the same server cert/key as the public
-/// listener, plus client-cert chain verification against
-/// `tls.client_ca_file` when set. No CA → plain TLS (strict mode
-/// then 403s for lack of a verified cert, as before). A set but
-/// unreadable/invalid CA refuses the boot — mTLS must never
-/// silently downgrade.
-fn load_admin_tls(
-    cert_path: &str,
-    key_path: &str,
-    ca_path: Option<&str>,
-) -> Result<axum_server::tls_rustls::RustlsConfig, String> {
-    let cert_pem = std::fs::read(cert_path)
-        .map_err(|e| format!("read tls.cert_file={cert_path} tls.key_file=<redacted>: {e}"))?;
-    let key_pem = std::fs::read(key_path)
-        .map_err(|_| format!("read tls.cert_file={cert_path} tls.key_file=<redacted>"))?;
-    load_admin_tls_from_pem(&cert_pem, &key_pem, ca_path)
+/// Loud boot warning when the serving pair lacks the admin SAN
+/// (single-443 serves both hosts from one pair). Warning, not
+/// refusal — see [`mtls::cert_has_dns_san`].
+fn warn_unless_admin_san(cert_pem: &[u8]) {
+    match mtls::cert_has_dns_san(cert_pem, auth::ADMIN_HOST) {
+        Ok(true) => {}
+        Ok(false) => eprintln!(
+            "WARNING: TLS certificate lacks the {} SAN — browsers on the admin host will fail closed; reissue with both SANs (single-443)",
+            auth::ADMIN_HOST
+        ),
+        Err(e) => eprintln!("WARNING: {e} — cannot confirm the admin SAN is present"),
+    }
 }
 
-/// Same as [`load_admin_tls`] for in-memory PEMs (ACME path).
+/// Single-443 listener TLS: the serving cert/key plus client-cert
+/// chain verification against `tls.client_ca_file` when set. No CA
+/// → plain TLS (strict mode then 403s for lack of a verified cert,
+/// as before). A set but unreadable/invalid CA refuses the boot —
+/// mTLS must never silently downgrade.
 fn load_admin_tls_from_pem(
     cert_pem: &[u8],
     key_pem: &[u8],
@@ -570,18 +579,24 @@ async fn main() {
         .merge(admin_voice::staff_router(state.clone()))
         .merge(admin_voice::webhook_router(state))
         .layer(axum::middleware::from_fn(mtls::inject_verified_cert));
-    let tls = load_tls(cfg.tls_cert.clone(), cfg.tls_key.clone()).await;
-    match tls {
-        // Explicit files always win: ACME stays off when the
-        // operator pinned a certificate.
-        Ok(Some(public_tls)) => {
-            let admin_tls = load_admin_tls(
-                cfg.tls_cert.as_deref().unwrap_or_default(),
-                cfg.tls_key.as_deref().unwrap_or_default(),
-                cfg.tls_client_ca.as_deref(),
-            );
-            match admin_tls {
-                Ok(admin_tls) => serve_tls(public, admin, public_tls, admin_tls, &cfg).await,
+    // Explicit files always win: ACME stays off when the
+    // operator pinned a certificate.
+    match explicit_tls_pair(cfg.tls_cert.clone(), cfg.tls_key.clone()) {
+        Ok(Some((cert_pem, key_pem))) => {
+            warn_unless_admin_san(&cert_pem);
+            match load_admin_tls_from_pem(&cert_pem, &key_pem, cfg.tls_client_ca.as_deref()) {
+                Ok(admin_tls) => {
+                    serve_tls(
+                        public,
+                        admin,
+                        admin_tls,
+                        &cfg,
+                        cert_pem,
+                        key_pem,
+                        quic::QuicReloader::default(),
+                    )
+                    .await;
+                }
                 Err(message) => {
                     eprintln!("refusing to start: {message}");
                     std::process::exit(1);
@@ -628,39 +643,52 @@ async fn serve_acme(public: Router, admin: Router, cfg: &config::RuntimeConfig, 
         eprintln!("refusing to start: {e}");
         std::process::exit(1);
     });
-    let tls = axum_server::tls_rustls::RustlsConfig::from_pem(
-        pair.cert_pem.clone(),
-        pair.key_pem.clone(),
-    )
-    .await
-    .unwrap_or_else(|e| {
-        eprintln!("refusing to start: ACME pair does not load: {e}");
-        std::process::exit(1);
-    });
+    warn_unless_admin_san(&pair.cert_pem);
     let admin_tls =
         load_admin_tls_from_pem(&pair.cert_pem, &pair.key_pem, cfg.tls_client_ca.as_deref())
             .unwrap_or_else(|e| {
                 eprintln!("refusing to start: {e}");
                 std::process::exit(1);
             });
-    let loop_tls = tls.clone();
+    let quic_reloader = quic::QuicReloader::default();
     let loop_admin_tls = admin_tls.clone();
+    let loop_quic = quic_reloader.clone();
+    let loop_quic_enabled = cfg.quic_enabled;
     let loop_ca = cfg.tls_client_ca.clone();
     tokio::spawn(async move {
         acme::renewal_loop(config, |cert, key| {
-            let tls = loop_tls.clone();
             let admin_tls = loop_admin_tls.clone();
+            let loop_quic = loop_quic.clone();
             let ca = loop_ca.clone();
             async move {
-                tls.reload_from_pem(cert.clone(), key.clone())
-                    .await
-                    .map_err(|e| e.to_string())?;
-                reload_admin_tls(&admin_tls, &cert, &key, ca.as_deref())
+                reload_admin_tls(&admin_tls, &cert, &key, ca.as_deref())?;
+                // QUIC serves the same pair: swap its crypto too so a
+                // renewal never leaves h3 on a stale certificate.
+                if loop_quic_enabled {
+                    let ca_pem = ca
+                        .as_deref()
+                        .map(|path| {
+                            std::fs::read(path)
+                                .map_err(|e| format!("read tls.client_ca_file={path}: {e}"))
+                        })
+                        .transpose()?;
+                    loop_quic.reload(&cert, &key, ca_pem.as_deref())?;
+                }
+                Ok(())
             }
         })
         .await
     });
-    serve_tls(public, admin, tls, admin_tls, cfg).await
+    serve_tls(
+        public,
+        admin,
+        admin_tls,
+        cfg,
+        pair.cert_pem,
+        pair.key_pem,
+        quic_reloader,
+    )
+    .await
 }
 
 /// Plain-HTTP dev mode: public on `net.port` (default 3000) and
@@ -694,73 +722,175 @@ async fn serve_http(public: Router, admin: Router, cfg: &config::RuntimeConfig) 
     supervise(servers, handles).await;
 }
 
-/// Prod mode: HTTPS public on `net.https_port` (443) + HTTPS admin
-/// on `net.admin_https_port` (444) plus an HTTP→HTTPS redirector on
-/// `net.http_port` (80), on every bind IP.
+/// The single-443 TLS router: Host-dispatched branches plus the
+/// Alt-Svc advertisement IFF `quic.enabled` (serve path and tests
+/// build it the same way, so the header wiring is covered).
+fn tls_router(public: Router, admin: Router, cfg: &config::RuntimeConfig) -> Router {
+    let merged = host::host_router(public, admin);
+    if cfg.quic_enabled {
+        merged.layer(axum::middleware::from_fn_with_state(
+            cfg.https_port,
+            host::add_alt_svc,
+        ))
+    } else {
+        merged
+    }
+}
+
+/// One planned TLS-mode listener kind (pure plan, executed by
+/// [`serve_tls`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TlsListenerKind {
+    /// TCP+TLS single-443 (Host-dispatched public+admin).
+    Https,
+    /// UDP QUIC/h3 on the same port (iff `quic.enabled`).
+    Quic,
+    /// HTTP→HTTPS redirector (+ ACME challenges).
+    Redirect,
+}
+
+/// One planned TLS-mode listener: address + kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TlsListener {
+    addr: SocketAddr,
+    kind: TlsListenerKind,
+}
+
+/// Every listener TLS mode binds, per bind IP: single-443 TCP on
+/// `net.https_port` (NO 444 — `net.admin_https_port` is deprecated
+/// and never bound), UDP QUIC on the same port iff
+/// `quic.enabled`, and the port-80 redirector.
+fn tls_listen_plan(cfg: &config::RuntimeConfig) -> Vec<TlsListener> {
+    let mut plan = Vec::new();
+    for ip in cfg.bind_ips() {
+        plan.push(TlsListener {
+            addr: SocketAddr::new(ip, cfg.https_port),
+            kind: TlsListenerKind::Https,
+        });
+        if cfg.quic_enabled {
+            plan.push(TlsListener {
+                addr: SocketAddr::new(ip, cfg.https_port),
+                kind: TlsListenerKind::Quic,
+            });
+        }
+        plan.push(TlsListener {
+            addr: SocketAddr::new(ip, cfg.http_port),
+            kind: TlsListenerKind::Redirect,
+        });
+    }
+    plan
+}
+
+/// Prod mode: ONE TCP+TLS listener on `net.https_port` (443)
+/// serving BOTH branches by Host header, an HTTP→HTTPS redirector
+/// on `net.http_port` (80), and — iff `quic.enabled` — a UDP
+/// QUIC/h3 endpoint on the same port as 443, on every bind IP.
+/// Port 444 is gone: `net.admin_https_port` parses but binds
+/// nothing.
 ///
-/// The listeners use SEPARATE TLS configs: public stays plain (no
-/// client certs ever), admin verifies client chains against
-/// `tls.client_ca_file` when set and captures the peer chain for the
-/// fingerprint layer via [`mtls::MtlsAcceptor`].
+/// The single TCP listener uses the ADMIN TLS shape for every
+/// connection (optional client certs at the handshake, chain
+/// verification against `tls.client_ca_file` when set, peer-chain
+/// capture via [`mtls::MtlsAcceptor`]); the fingerprint layer runs
+/// on the admin branch only, and Host dispatch strips cert state
+/// from the public branch.
 async fn serve_tls(
     public: Router,
     admin: Router,
-    public_tls: axum_server::tls_rustls::RustlsConfig,
     admin_tls: axum_server::tls_rustls::RustlsConfig,
     cfg: &config::RuntimeConfig,
+    cert_pem: Vec<u8>,
+    key_pem: Vec<u8>,
+    quic_reloader: quic::QuicReloader,
 ) {
+    let router = tls_router(public, admin, cfg);
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
-    for ip in cfg.bind_ips() {
-        let addr = SocketAddr::new(ip, cfg.https_port);
-        let handle = axum_server::Handle::new();
-        handles.push(handle.clone());
-        eprintln!("listening on https://{addr}/apostille (public)");
-        servers.spawn({
-            let router = public.clone();
-            let tls = public_tls.clone();
-            async move {
-                axum_server::bind_rustls(addr, tls)
-                    .handle(handle)
-                    .serve(router.into_make_service())
-                    .await
+    for listener in tls_listen_plan(cfg) {
+        match listener.kind {
+            TlsListenerKind::Https => {
+                let addr = listener.addr;
+                let handle = axum_server::Handle::new();
+                handles.push(handle.clone());
+                let mtls = if cfg.tls_client_ca.is_some() {
+                    "public+admin, mTLS-capable"
+                } else {
+                    "public+admin"
+                };
+                eprintln!("listening on https://{addr}/apostille (single-443 {mtls})");
+                servers.spawn({
+                    let router = router.clone();
+                    let tls = admin_tls.clone();
+                    async move {
+                        axum_server::bind(addr)
+                            .acceptor(mtls::MtlsAcceptor::new(tls))
+                            .handle(handle)
+                            .serve(router.into_make_service())
+                            .await
+                    }
+                });
             }
-        });
-        let addr = SocketAddr::new(ip, cfg.admin_https_port);
-        let handle = axum_server::Handle::new();
-        handles.push(handle.clone());
-        let mtls = if cfg.tls_client_ca.is_some() {
-            "admin, mTLS"
-        } else {
-            "admin"
-        };
-        eprintln!("listening on https://{addr}/apostille ({mtls})");
-        servers.spawn({
-            let router = admin.clone();
-            let tls = admin_tls.clone();
-            async move {
-                axum_server::bind(addr)
-                    .acceptor(mtls::MtlsAcceptor::new(tls))
-                    .handle(handle)
-                    .serve(router.into_make_service())
-                    .await
+            TlsListenerKind::Quic => {
+                let addr = listener.addr;
+                // A UDP bind failure must fail the boot the same way
+                // a TCP bind failure does — so bind NOW, in the
+                // parent, before spawning the serve task.
+                let endpoint = bind_quic_listener(addr, &cert_pem, &key_pem, cfg);
+                quic_reloader.register(&endpoint);
+                eprintln!("listening on udp://{addr} (quic/h3)");
+                servers.spawn({
+                    let router = router.clone();
+                    async move {
+                        quic::serve(endpoint, router).await;
+                        Ok::<(), std::io::Error>(())
+                    }
+                });
             }
-        });
-        let addr = SocketAddr::new(ip, cfg.http_port);
-        let handle = axum_server::Handle::new();
-        handles.push(handle.clone());
-        eprintln!("listening on http://{addr} (redirect + ACME challenges)");
-        servers.spawn({
-            let redirect = redirect_router(cfg.public_host.clone(), &cfg.acme_challenge_dir);
-            async move {
-                axum_server::bind(addr)
-                    .handle(handle)
-                    .serve(redirect.into_make_service())
-                    .await
+            TlsListenerKind::Redirect => {
+                let addr = listener.addr;
+                let handle = axum_server::Handle::new();
+                handles.push(handle.clone());
+                eprintln!("listening on http://{addr} (redirect + ACME challenges)");
+                servers.spawn({
+                    let redirect =
+                        redirect_router(cfg.public_host.clone(), &cfg.acme_challenge_dir);
+                    async move {
+                        axum_server::bind(addr)
+                            .handle(handle)
+                            .serve(redirect.into_make_service())
+                            .await
+                    }
+                });
             }
-        });
+        }
     }
     supervise(servers, handles).await;
+}
+
+/// Bind one QUIC UDP endpoint for [`serve_tls`]: build the h3
+/// crypto from the serving pair (re-reading the CA file, like the
+/// TCP config) and bind. Refuses the boot on any failure — QUIC
+/// misconfiguration must never silently halve the service.
+fn bind_quic_listener(
+    addr: SocketAddr,
+    cert_pem: &[u8],
+    key_pem: &[u8],
+    cfg: &config::RuntimeConfig,
+) -> quinn::Endpoint {
+    let ca_pem = cfg.tls_client_ca.as_deref().map(|path| {
+        std::fs::read(path).unwrap_or_else(|e| {
+            eprintln!("refusing to start: read tls.client_ca_file={path}: {e}");
+            std::process::exit(1);
+        })
+    });
+    let config = quic::server_config(cert_pem, key_pem, ca_pem.as_deref()).unwrap_or_else(|e| {
+        eprintln!("refusing to start: {e}");
+        std::process::exit(1);
+    });
+    quic::bind_endpoint(addr, &config).unwrap_or_else(|e| {
+        eprintln!("refusing to start: bind UDP {addr} (quic): {e}");
+        std::process::exit(1);
+    })
 }
 
 /// Supervise every listener: SIGINT/SIGTERM (unix-only: our dev and
@@ -1151,21 +1281,30 @@ mod tests {
         assert_eq!(location, "https://example.test/apostille/order?q=1");
     }
 
-    #[tokio::test]
-    async fn load_tls_requires_both_or_neither() {
-        assert!(load_tls(None, None).await.unwrap().is_none());
-        load_tls(Some("a".to_string()), None)
-            .await
-            .expect_err("cert without key must fail");
-        load_tls(None, Some("b".to_string()))
-            .await
-            .expect_err("key without cert must fail");
-        load_tls(
+    #[test]
+    fn explicit_tls_pair_requires_both_or_neither() {
+        assert!(explicit_tls_pair(None, None).unwrap().is_none());
+        explicit_tls_pair(Some("a".to_string()), None).expect_err("cert without key must fail");
+        explicit_tls_pair(None, Some("b".to_string())).expect_err("key without cert must fail");
+        explicit_tls_pair(
             Some("no-such-cert.pem".to_string()),
             Some("no-such-key.pem".to_string()),
         )
-        .await
         .expect_err("missing files must fail");
+        // Roundtrip: written PEMs read back byte-identical.
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let tmp = tempfile::tempdir().unwrap();
+        let cert_path = tmp.path().join("cert.pem");
+        let key_path = tmp.path().join("key.pem");
+        std::fs::write(&cert_path, &cert_pem).unwrap();
+        std::fs::write(&key_path, &key_pem).unwrap();
+        let pair = explicit_tls_pair(
+            Some(cert_path.to_str().unwrap().to_string()),
+            Some(key_path.to_str().unwrap().to_string()),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(pair, (cert_pem, key_pem));
     }
 
     /// rcgen localhost cert + key as PEM bytes (test-only CA-less fixture).
@@ -2677,21 +2816,19 @@ mod tests {
 
     #[test]
     fn load_admin_tls_refuses_bad_files_and_redacts() {
-        load_admin_tls("no-such-cert.pem", "no-such-key.pem", None)
-            .expect_err("missing server files must fail");
+        // Missing server files refuse (via the pair loader).
+        explicit_tls_pair(
+            Some("no-such-cert.pem".to_string()),
+            Some("no-such-key.pem".to_string()),
+        )
+        .expect_err("missing server files must fail");
         let dir = tempfile::tempdir().unwrap();
         let (cert_pem, key_pem) = self_signed_localhost();
-        let cert_path = dir.path().join("cert.pem");
-        let key_path = dir.path().join("key.pem");
-        std::fs::write(&cert_path, &cert_pem).unwrap();
-        std::fs::write(&key_path, &key_pem).unwrap();
         let (ca, _) = test_ca("test-admin-ca");
-        let ca_path = dir.path().join("ca.pem");
-        std::fs::write(&ca_path, ca.pem().as_bytes()).unwrap();
         // Missing CA refuses the boot (never silently downgrades).
-        let err = load_admin_tls(
-            cert_path.to_str().unwrap(),
-            key_path.to_str().unwrap(),
+        let err = load_admin_tls_from_pem(
+            &cert_pem,
+            &key_pem,
             Some(dir.path().join("no-ca.pem").to_str().unwrap()),
         )
         .expect_err("missing CA must fail");
@@ -2700,25 +2837,523 @@ mod tests {
         // Empty CA refuses too.
         let empty = dir.path().join("empty.pem");
         std::fs::write(&empty, b"").unwrap();
-        load_admin_tls(
-            cert_path.to_str().unwrap(),
-            key_path.to_str().unwrap(),
-            Some(empty.to_str().unwrap()),
-        )
-        .expect_err("empty CA must fail");
+        load_admin_tls_from_pem(&cert_pem, &key_pem, Some(empty.to_str().unwrap()))
+            .expect_err("empty CA must fail");
         // Full triple loads.
-        load_admin_tls(
-            cert_path.to_str().unwrap(),
-            key_path.to_str().unwrap(),
-            Some(ca_path.to_str().unwrap()),
-        )
-        .expect("valid triple loads");
+        let ca_path = dir.path().join("ca.pem");
+        std::fs::write(&ca_path, ca.pem().as_bytes()).unwrap();
+        load_admin_tls_from_pem(&cert_pem, &key_pem, Some(ca_path.to_str().unwrap()))
+            .expect("valid triple loads");
         // No CA loads as plain TLS.
-        load_admin_tls(
-            cert_path.to_str().unwrap(),
-            key_path.to_str().unwrap(),
+        load_admin_tls_from_pem(&cert_pem, &key_pem, None).expect("no-CA pair loads");
+    }
+
+    // ===== Single-443 + QUIC (goal-026) =====
+
+    /// Merged single-443 router exactly as production serves it:
+    /// full admin stack + fingerprint layer, Host-dispatched with
+    /// the public router, Alt-Svc iff `quic_enabled`.
+    fn merged_router_for(state: &AppState, quic_enabled: bool) -> Router {
+        let public = public_router_for(state);
+        let admin = admin::router(state.clone())
+            .merge(admin_workers::router(state.clone()))
+            .merge(admin_voice::staff_router(state.clone()))
+            .merge(admin_voice::webhook_router(state.clone()))
+            .layer(axum::middleware::from_fn(mtls::inject_verified_cert));
+        let cfg = config::RuntimeConfig {
+            quic_enabled,
+            ..config::RuntimeConfig::default()
+        };
+        tls_router(public, admin, &cfg)
+    }
+
+    #[tokio::test]
+    async fn host_matrix_admin_public_unknown() {
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let router = merged_router_for(&fx.state, false);
+
+        // Admin host + staff session (dev seam: no cert needed) → 200.
+        let res = router
+            .clone()
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/me",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(json_body(res).await["user_id"], "staff-1");
+
+        // Admin host without a session → 401 (auth untouched).
+        let res = router
+            .clone()
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/me",
+                Some("admin.andrii.ai"),
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+        // Public, unknown, and missing hosts → public branch.
+        for host in [Some("andrii.ai"), Some("unknown.test"), None] {
+            let mut builder = Request::builder().uri("/apostille/healthz");
+            if let Some(host) = host {
+                builder = builder.header("host", host);
+            }
+            let res = router
+                .clone()
+                .oneshot(builder.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "host: {host:?}");
+        }
+
+        // Admin paths are unreachable via the public host: the
+        // public branch answers 404, never the admin handler.
+        let res = router
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/me",
+                Some("andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn host_matrix_strict_cert_semantics() {
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (ca, ca_key) = test_ca("strict-ca");
+        let client = test_client(&ca, &ca_key, "staff-1");
+        enroll_cert(&fx.state.store_root, &client.fingerprint, "staff-1");
+        let router = merged_router_for(&fx.state, false);
+        let admin_me = || {
+            admin_request(
+                "GET",
+                "/apostille/api/v1/admin/me",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            )
+        };
+
+        // Session but no cert → 403.
+        let res = router.clone().oneshot(admin_me()).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+
+        // Session + registered cert (as the acceptor would capture,
+        // via the branch's own fingerprint layer) → 200, echoed.
+        let mut req = admin_me();
+        let mut reader = std::io::BufReader::new(client.cert_pem.as_slice());
+        let ders: Vec<Vec<u8>> = rustls_pemfile::certs(&mut reader)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .iter()
+            .map(|der| der.as_ref().to_vec())
+            .collect();
+        req.extensions_mut()
+            .insert(mtls::PeerCertificates::from_ders(ders));
+        let res = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(json_body(res).await["cert_fingerprint"], client.fingerprint);
+
+        // Session + unknown cert → 403.
+        let mut req = admin_me();
+        req.extensions_mut()
+            .insert(mtls::PeerCertificates::from_ders(vec![vec![0x30, 0x03]]));
+        let res = router.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn tls_listen_plan_has_no_444_and_gates_quic() {
+        let mut cfg = config::RuntimeConfig {
+            bind: std::net::IpAddr::from([127, 0, 0, 1]),
+            ..config::RuntimeConfig::default()
+        };
+        // QUIC off: one TCP 443 + the port-80 redirector; 444 nowhere.
+        let plan = tls_listen_plan(&cfg);
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[0].kind, TlsListenerKind::Https);
+        assert_eq!(plan[0].addr.port(), 443);
+        assert_eq!(plan[1].kind, TlsListenerKind::Redirect);
+        assert_eq!(plan[1].addr.port(), 80);
+        assert!(
+            plan.iter()
+                .all(|l| l.addr.port() != cfg.admin_https_port && l.addr.port() != 444),
+            "plan: {plan:?}"
+        );
+        // QUIC on: a UDP entry on the SAME port as TCP.
+        cfg.quic_enabled = true;
+        let plan = tls_listen_plan(&cfg);
+        assert_eq!(plan.len(), 3);
+        assert_eq!(plan[1].kind, TlsListenerKind::Quic);
+        assert_eq!(plan[1].addr, plan[0].addr);
+        // A v6 bind doubles every entry — still no 444.
+        cfg.bind6 = Some(std::net::IpAddr::from(std::net::Ipv6Addr::LOCALHOST));
+        let plan = tls_listen_plan(&cfg);
+        assert_eq!(plan.len(), 6);
+        assert!(plan.iter().all(|l| l.addr.port() != 444), "plan: {plan:?}");
+    }
+
+    #[tokio::test]
+    async fn alt_svc_wired_iff_quic_enabled() {
+        let fx = fixture();
+        for enabled in [false, true] {
+            let res = merged_router_for(&fx.state, enabled)
+                .oneshot(
+                    Request::builder()
+                        .uri("/apostille/healthz")
+                        .header("host", "andrii.ai")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+            assert_eq!(
+                res.headers().contains_key(axum::http::header::ALT_SVC),
+                enabled,
+                "quic: {enabled}"
+            );
+        }
+        let res = merged_router_for(&fx.state, true)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/healthz")
+                    .header("host", "andrii.ai")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            res.headers().get(axum::http::header::ALT_SVC).unwrap(),
+            "h3=\":443\""
+        );
+    }
+
+    /// QUIC+h3 test client config: verification skipped (rcgen
+    /// certs), h3 ALPN, optional client identity. NEVER outside tests.
+    struct QuicTestIdentity {
+        certs: Vec<rustls::pki_types::CertificateDer<'static>>,
+        key: rustls::pki_types::PrivateKeyDer<'static>,
+    }
+
+    fn quic_test_client_config(identity: Option<QuicTestIdentity>) -> rustls::ClientConfig {
+        let builder = rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(std::sync::Arc::new(AcceptAny));
+        let mut config = match identity {
+            None => builder.with_no_client_auth(),
+            Some(identity) => builder
+                .with_client_auth_cert(identity.certs, identity.key)
+                .expect("test client identity"),
+        };
+        config.alpn_protocols = vec![b"h3".to_vec()];
+        config
+    }
+
+    fn quic_identity_from_pem(cert_pem: &[u8], key_pem: &[u8]) -> QuicTestIdentity {
+        let mut cert_reader = std::io::BufReader::new(cert_pem);
+        let certs = rustls_pemfile::certs(&mut cert_reader)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let mut key_reader = std::io::BufReader::new(key_pem);
+        let key = rustls_pemfile::private_key(&mut key_reader)
+            .unwrap()
+            .unwrap();
+        QuicTestIdentity { certs, key }
+    }
+
+    /// Bound QUIC endpoint on loopback port 0 serving `router` in
+    /// the background. Returns the endpoint (close it at test end)
+    /// and its bound address.
+    async fn serve_quic_for_test(
+        router: Router,
+        cert_pem: &[u8],
+        key_pem: &[u8],
+        ca_pem: Option<&[u8]>,
+    ) -> (quinn::Endpoint, SocketAddr) {
+        let config = quic::server_config(cert_pem, key_pem, ca_pem).unwrap();
+        let endpoint = quic::bind_endpoint("127.0.0.1:0".parse().unwrap(), &config).unwrap();
+        let addr = endpoint.local_addr().unwrap();
+        tokio::spawn(quic::serve(endpoint.clone(), router));
+        (endpoint, addr)
+    }
+
+    /// One h3 GET over a fresh QUIC connection (fresh client
+    /// endpoint on loopback port 0): returns status + full body.
+    async fn h3_get(
+        server: SocketAddr,
+        client_tls: rustls::ClientConfig,
+        host: &str,
+        path: &str,
+        cookie: Option<&str>,
+    ) -> (StatusCode, Vec<u8>) {
+        use bytes::Buf as _;
+        let mut endpoint = quinn::Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
+        let quic_client =
+            quinn::crypto::rustls::QuicClientConfig::try_from(client_tls).expect("quic client");
+        endpoint
+            .set_default_client_config(quinn::ClientConfig::new(std::sync::Arc::new(quic_client)));
+        let conn = endpoint
+            .connect(server, "localhost")
+            .unwrap()
+            .await
+            .unwrap();
+        let (mut driver, mut send) = h3::client::new(h3_quinn::Connection::new(conn))
+            .await
+            .unwrap();
+        tokio::spawn(async move {
+            std::future::poll_fn(|cx| driver.poll_close(cx)).await;
+        });
+        let mut builder = axum::http::Request::builder()
+            .method("GET")
+            .uri(format!("https://{host}{path}"))
+            .header("host", host);
+        if let Some(cookie) = cookie {
+            builder = builder.header("cookie", cookie);
+        }
+        let mut stream = send.send_request(builder.body(()).unwrap()).await.unwrap();
+        stream.finish().await.unwrap();
+        let resp = stream.recv_response().await.unwrap();
+        let status = resp.status();
+        let mut body = Vec::new();
+        while let Some(chunk) = stream.recv_data().await.unwrap() {
+            body.extend_from_slice(chunk.chunk());
+        }
+        endpoint.close(0u32.into(), b"done");
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn quic_serves_healthz_and_version_over_h3() {
+        let fx = fixture();
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let (endpoint, addr) = serve_quic_for_test(
+            merged_router_for(&fx.state, true),
+            &cert_pem,
+            &key_pem,
             None,
         )
-        .expect("no-CA pair loads");
+        .await;
+
+        let (status, body) = h3_get(
+            addr,
+            quic_test_client_config(None),
+            "andrii.ai",
+            "/apostille/healthz",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let health: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(health["status"], "ok");
+        assert_eq!(health["version"], FULL_VERSION);
+
+        let (status, body) = h3_get(
+            addr,
+            quic_test_client_config(None),
+            "andrii.ai",
+            "/apostille/version",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let version: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(version["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(version["build"], env!("BUILD_SHA"));
+        endpoint.close(0u32.into(), b"done");
+    }
+
+    #[tokio::test]
+    async fn quic_admin_branch_enforces_mtls_allow_and_deny() {
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (ca, ca_key) = test_ca("quic-admin-ca");
+        let client = test_client(&ca, &ca_key, "quic-staff");
+        enroll_cert(&fx.state.store_root, &client.fingerprint, "quic-staff");
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let (endpoint, addr) = serve_quic_for_test(
+            merged_router_for(&fx.state, true),
+            &cert_pem,
+            &key_pem,
+            Some(&ca.pem().into_bytes()),
+        )
+        .await;
+        let session_cookie = format!("{}=staff-1", auth::ADM_COOKIE);
+        let admin_me = "/apostille/api/v1/admin/me";
+
+        // DENY: staff session but no client cert → 403.
+        let (status, _) = h3_get(
+            addr,
+            quic_test_client_config(None),
+            "admin.andrii.ai",
+            admin_me,
+            Some(&session_cookie),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // ALLOW: same session + registered client cert → 200, echoed.
+        let identity = quic_identity_from_pem(&client.cert_pem, &client.key_pem);
+        let (status, body) = h3_get(
+            addr,
+            quic_test_client_config(Some(identity)),
+            "admin.andrii.ai",
+            admin_me,
+            Some(&session_cookie),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let me: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(me["cert_fingerprint"], client.fingerprint);
+
+        // Cert alone is not a session → 401.
+        let identity = quic_identity_from_pem(&client.cert_pem, &client.key_pem);
+        let (status, _) = h3_get(
+            addr,
+            quic_test_client_config(Some(identity)),
+            "admin.andrii.ai",
+            admin_me,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        endpoint.close(0u32.into(), b"done");
+    }
+
+    #[tokio::test]
+    async fn quic_wrong_ca_handshake_fails() {
+        let fx = strict_fixture();
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let (server_ca, _) = test_ca("server-ca");
+        let (endpoint, addr) = serve_quic_for_test(
+            merged_router_for(&fx.state, true),
+            &cert_pem,
+            &key_pem,
+            Some(&server_ca.pem().into_bytes()),
+        )
+        .await;
+        // A client cert from a DIFFERENT CA → handshake failure, no HTTP.
+        let (other_ca, other_key) = test_ca("other-ca");
+        let rogue = test_client(&other_ca, &other_key, "rogue");
+        let identity = quic_identity_from_pem(&rogue.cert_pem, &rogue.key_pem);
+        let mut client_endpoint = quinn::Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
+        let quic_client = quinn::crypto::rustls::QuicClientConfig::try_from(
+            quic_test_client_config(Some(identity)),
+        )
+        .unwrap();
+        client_endpoint
+            .set_default_client_config(quinn::ClientConfig::new(std::sync::Arc::new(quic_client)));
+        // quinn's `connect` resolves once the client flight is out —
+        // the server's verdict arrives as a close, not a connect
+        // error. What matters: the server aborts with a crypto
+        // close before serving anything on this connection.
+        let conn = client_endpoint
+            .connect(addr, "localhost")
+            .unwrap()
+            .await
+            .unwrap();
+        let err = tokio::time::timeout(std::time::Duration::from_secs(10), conn.closed())
+            .await
+            .expect("server must close a wrong-CA connection, not serve it");
+        assert!(
+            matches!(err, quinn::ConnectionError::ConnectionClosed(_)),
+            "got: {err:?}"
+        );
+        endpoint.close(0u32.into(), b"done");
+        client_endpoint.close(0u32.into(), b"done");
+    }
+
+    #[tokio::test]
+    async fn quic_ws_path_is_501_over_h3() {
+        let fx = fixture();
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let (endpoint, addr) = serve_quic_for_test(
+            merged_router_for(&fx.state, true),
+            &cert_pem,
+            &key_pem,
+            None,
+        )
+        .await;
+        let (status, body) = h3_get(
+            addr,
+            quic_test_client_config(None),
+            "andrii.ai",
+            "/apostille/ws/echo",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            value["error"].as_str().unwrap().contains("TCP"),
+            "got: {value}"
+        );
+        endpoint.close(0u32.into(), b"done");
+    }
+
+    #[tokio::test]
+    async fn quic_disabled_binds_no_udp_socket() {
+        // Reserve a concrete loopback UDP port, then release it.
+        let probe = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+        // Disabled (the default): the plan holds no QUIC entry,
+        // and a UDP bind on the would-be QUIC port succeeds
+        // (nothing is there).
+        let mut cfg = config::RuntimeConfig {
+            bind: std::net::IpAddr::from([127, 0, 0, 1]),
+            https_port: port,
+            ..config::RuntimeConfig::default()
+        };
+        let plan = tls_listen_plan(&cfg);
+        assert!(plan.iter().all(|l| l.kind != TlsListenerKind::Quic));
+        let free = std::net::UdpSocket::bind(("127.0.0.1", port));
+        assert!(free.is_ok(), "disabled QUIC must leave UDP {port} free");
+        drop(free);
+
+        // Enabled: binding the planned entry holds the port — the
+        // same probe now fails with AddrInUse (which also proves the
+        // probe above is a real negative).
+        cfg.quic_enabled = true;
+        let plan = tls_listen_plan(&cfg);
+        let quic_addrs: Vec<SocketAddr> = plan
+            .iter()
+            .filter(|l| l.kind == TlsListenerKind::Quic)
+            .map(|l| l.addr)
+            .collect();
+        assert_eq!(quic_addrs, vec![SocketAddr::new(cfg.bind, port)]);
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let config = quic::server_config(&cert_pem, &key_pem, None).unwrap();
+        let endpoint = quic::bind_endpoint(quic_addrs[0], &config).unwrap();
+        let held = std::net::UdpSocket::bind(("127.0.0.1", port));
+        assert!(
+            matches!(held, Err(ref e) if e.kind() == std::io::ErrorKind::AddrInUse),
+            "got: {held:?}"
+        );
+        endpoint.close(0u32.into(), b"done");
     }
 }

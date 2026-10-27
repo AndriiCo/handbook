@@ -56,8 +56,10 @@ on purpose; every item below is checkable by one command.
 ## Security posture (prod box)
 
 - SSH: key-only, non-root service user, unattended-upgrades
-  on. Firewall: 80/443 from anywhere, SSH from author's IPs
-  only.
+  on. Firewall: TCP 80/443 from anywhere (plus UDP 443 once
+  `quic.enabled` flips — QUIC serves on the same port), SSH
+  from author's IPs only. The old 444 opening is moot after
+  single-443 (nothing binds it).
 - Service runs as unprivileged user, `NoNewPrivileges`,
   `ProtectSystem=strict`, `ReadWritePaths` limited to
   `/var/lib/apostille` + log dir (systemd hardening in the

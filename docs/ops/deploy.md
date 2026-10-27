@@ -88,8 +88,9 @@ Server-side prerequisites (one-time, needs root):
 `docs/ops/apostille.service` installed to
 `/etc/systemd/system/` (runs `/srv/apostille/current/web` as
 `andrii-ai:andrii-ai` with only `CAP_NET_BIND_SERVICE`,
-binds 80/443 on the .41 addresses directly — no Caddy, no
-proxy); TLS files + certbot hooks per `certificates.md`;
+binds TCP 80/443 (plus UDP 443 for QUIC when `quic.enabled`)
+on the .41 addresses directly — no Caddy, no proxy); TLS
+files + certbot hooks per `certificates.md`;
 `hal` sudoers entry for the reviewed ship script:
 `hal ALL=(root) NOPASSWD: /usr/local/sbin/apostille-ship *`
 (script at `docs/ops/apostille-ship.sh`; install root-owned

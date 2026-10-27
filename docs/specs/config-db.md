@@ -24,7 +24,7 @@ config migrations) run; `config::load_kek` loads the KEK and the
 process **refuses to start** when no KEK is available (new —
 runtime config is unreadable without it, and silently serving on
 dev defaults would bind localhost in prod); one
-`RuntimeConfig::load` reads all 30 keys; listeners serve from the
+`RuntimeConfig::load` reads all 31 keys; listeners serve from the
 loaded values. No runtime env fallback exists by design.
 
 Restart semantics: config is read once at boot. Every admin PUT
@@ -33,7 +33,7 @@ follow-up, see OQ-C4).
 
 ## 2. Full env-var inventory and disposition
 
-### 2.1 Migrated to DB keys (30 keys)
+### 2.1 Migrated to DB keys (31 keys)
 
 | Env var | DB key | Type | Default (= old env default) |
 |---|---|---|---|
@@ -46,7 +46,7 @@ follow-up, see OQ-C4).
 | `PORT` | `net.port` | text (u16) | `3000` |
 | `ADMIN_PORT` | `net.admin_port` | text (u16) | `3001` |
 | `HTTPS_PORT` | `net.https_port` | text (u16) | `443` |
-| `ADMIN_HTTPS_PORT` | `net.admin_https_port` | text (u16) | `444` |
+| `ADMIN_HTTPS_PORT` | `net.admin_https_port` | text (u16) | `444` (**deprecated** since single-443; set row warns, nothing binds) |
 | `HTTP_PORT` | `net.http_port` | text (u16) | `80` |
 | `PUBLIC_HOST` | `net.public_host` | text | `andrii.ai` |
 | `TLS_CERT` | `tls.cert_file` | text (path, empty = unset) | empty |
@@ -67,6 +67,7 @@ follow-up, see OQ-C4).
 | *(voice stream)* | `telnyx.webhook_public_key` | text (empty = unset) | empty |
 | *(voice stream)* | `telnyx.api_key` | **secret** | unset (= voice 503) |
 | *(mtls stream)* | `tls.client_ca_file` | text (path, empty = unset) | empty |
+| *(quic stream)* | `quic.enabled` | bool | false |
 
 Shapes are exactly secure-config.md §1.5 (`bool`/`text`/
 `secret`); ports ride as text and parse to u16 at load. Missing

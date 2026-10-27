@@ -55,6 +55,10 @@ the consolidated author-decision list is at the bottom of this file.
 - [mtls-seam.md](mtls-seam.md) — admin-listener mTLS (H6 fix
   part 2): rustls client-cert verification, fingerprint layer,
   cert lifecycle, staging/prod enrollment, acceptance.
+- [single-443-quic.md](single-443-quic.md) — single-443
+  Host-routed admin (444 deprecated, both-SANs cert) +
+  native QUIC/HTTP-3 (quinn + h3 bridge, `quic.enabled`,
+  Alt-Svc, aws-lc-rs only).
 - Legal drafts (lawyer review required, do not publish):
   [tos-draft.md](../legal/tos-draft.md),
   [privacy-draft.md](../legal/privacy-draft.md).

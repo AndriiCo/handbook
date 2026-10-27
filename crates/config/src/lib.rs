@@ -809,6 +809,9 @@ pub mod keys {
     pub const TELNYX_CONNECTION_ID: &str = "telnyx.connection_id";
     pub const TELNYX_WEBHOOK_PUBLIC_KEY: &str = "telnyx.webhook_public_key";
     pub const TELNYX_API_KEY: &str = "telnyx.api_key";
+    /// Native QUIC/HTTP-3 listener (single-443 spec §2): bind UDP
+    /// on `net.https_port`, serve h3, send Alt-Svc. Default false.
+    pub const QUIC_ENABLED: &str = "quic.enabled";
 
     /// Every registered key with its type (admin UI + roundtrip tests).
     pub const ALL: &[(&str, super::ConfigType)] = &[
@@ -842,6 +845,7 @@ pub mod keys {
         (TELNYX_CONNECTION_ID, super::ConfigType::Text),
         (TELNYX_WEBHOOK_PUBLIC_KEY, super::ConfigType::Text),
         (TELNYX_API_KEY, super::ConfigType::Secret),
+        (QUIC_ENABLED, super::ConfigType::Bool),
     ];
 }
 
@@ -920,7 +924,10 @@ pub struct RuntimeConfig {
     pub port: u16,
     pub admin_port: u16,
     pub https_port: u16,
+    /// DEPRECATED (single-443): parsed but never bound. Kept so
+    /// existing rows do not become unknown keys mid-rollout.
     pub admin_https_port: u16,
+    pub quic_enabled: bool,
     pub http_port: u16,
     pub public_host: String,
     pub tls_cert: Option<String>,
@@ -957,6 +964,7 @@ impl Default for RuntimeConfig {
             admin_port: 3001,
             https_port: 443,
             admin_https_port: 444,
+            quic_enabled: false,
             http_port: 80,
             public_host: "andrii.ai".to_string(),
             tls_cert: None,
@@ -1300,6 +1308,27 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.admin_https_port,
         )?;
+        // DEPRECATED (single-443): the value parses but no listener
+        // binds it. A SET row warns loudly; unset stays silent so
+        // existing DBs boot exactly as before.
+        match get_text_for_job(conn, kek, keys::NET_ADMIN_HTTPS_PORT) {
+            Ok(Some(_)) => warnings.push(format!(
+                "{} is deprecated and IGNORED: single-443 serves admin on {} — no listener is bound to this port",
+                keys::NET_ADMIN_HTTPS_PORT,
+                keys::NET_HTTPS_PORT
+            )),
+            Ok(None) => {}
+            // Wrong-typed rows already warned in overlay_port above.
+            Err(ConfigError::BadValue(_)) => {}
+            Err(e) => return Err(e),
+        }
+        overlay_bool(
+            conn,
+            kek,
+            keys::QUIC_ENABLED,
+            &mut warnings,
+            &mut cfg.quic_enabled,
+        )?;
         overlay_port(
             conn,
             kek,
@@ -1400,12 +1429,13 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_30_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 30);
+    fn registry_holds_31_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 31);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
-        // Two secrets (EAB HMAC, Telnyx API key); four bools; rest text.
+        // Two secrets (EAB HMAC, Telnyx API key); five bools
+        // (quic.enabled is the fifth); rest text.
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1414,7 +1444,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (4, 24, 2));
+        assert_eq!(counts, (5, 24, 2));
     }
 
     #[test]
@@ -1433,6 +1463,7 @@ mod runtime_tests {
         assert_eq!(cfg.admin_port, 3001);
         assert_eq!(cfg.https_port, 443);
         assert_eq!(cfg.admin_https_port, 444);
+        assert!(!cfg.quic_enabled);
         assert_eq!(cfg.http_port, 80);
         assert_eq!(cfg.public_host, "andrii.ai");
         assert_eq!(cfg.tls_cert, None);
@@ -1507,11 +1538,18 @@ mod runtime_tests {
                 "pubkey-x",
             ),
             (keys::TELNYX_API_KEY, ConfigType::Secret, "key-x"),
+            (keys::QUIC_ENABLED, ConfigType::Bool, "1"),
         ] {
             put(&conn, &kek, key, key_type, plaintext.as_bytes());
         }
         let (cfg, warnings) = RuntimeConfig::load(&conn, &kek).expect("load full db");
-        assert!(warnings.is_empty(), "warnings: {warnings:?}");
+        // The deprecated `net.admin_https_port` row (set above) is the
+        // ONLY warning; every other key overlays cleanly.
+        assert_eq!(warnings.len(), 1, "warnings: {warnings:?}");
+        assert!(
+            warnings[0].contains(keys::NET_ADMIN_HTTPS_PORT) && warnings[0].contains("deprecated"),
+            "warnings: {warnings:?}"
+        );
         assert_eq!(cfg.static_dir, "static-x");
         assert_eq!(cfg.spa_dir, "spa-x");
         assert_eq!(cfg.admin_spa_dir, "admin-spa-x");
@@ -1529,6 +1567,7 @@ mod runtime_tests {
         assert_eq!(cfg.admin_port, 0);
         assert_eq!(cfg.https_port, 8443);
         assert_eq!(cfg.admin_https_port, 8444);
+        assert!(cfg.quic_enabled);
         assert_eq!(cfg.http_port, 8080);
         assert_eq!(cfg.public_host, "example.test");
         assert_eq!(cfg.tls_cert.as_deref(), Some("/x/cert.pem"));
@@ -1554,6 +1593,30 @@ mod runtime_tests {
         assert_eq!(
             cfg.telnyx_api_key.as_ref().map(SecretText::as_str),
             Some("key-x")
+        );
+    }
+
+    #[test]
+    fn deprecated_admin_https_port_warns_only_when_set() {
+        let conn = memory();
+        let kek = Kek::generate();
+        let (_, warnings) = RuntimeConfig::load(&conn, &kek).expect("load empty db");
+        assert!(warnings.is_empty());
+        put(
+            &conn,
+            &kek,
+            keys::NET_ADMIN_HTTPS_PORT,
+            ConfigType::Text,
+            b"8444",
+        );
+        let (cfg, warnings) = RuntimeConfig::load(&conn, &kek).expect("load");
+        assert_eq!(cfg.admin_https_port, 8444); // still parsed, never bound
+        assert_eq!(warnings.len(), 1, "warnings: {warnings:?}");
+        assert!(
+            warnings[0].contains(keys::NET_ADMIN_HTTPS_PORT)
+                && warnings[0].contains("deprecated")
+                && warnings[0].contains(keys::NET_HTTPS_PORT),
+            "warnings: {warnings:?}"
         );
     }
 

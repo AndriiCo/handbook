@@ -116,8 +116,9 @@ Owner of issuance: `xtask admin-cert-*` (CA at
 3. **Enroll**: issuance IS enrollment (same table `AdminAuth`
    reads). No second step.
 4. **Use**: staffer's browser/`curl` presents the client cert on
-   `https://admin.<host>:444`. Session login still required (mTLS
-   is defense in depth, not a session replacement).
+   `https://admin.<host>/apostille` (single-443 Host routing since
+   goal-026; the old `:444` split is gone). Session login still
+   required (mTLS is defense in depth, not a session replacement).
 5. **Revoke**: `cargo xtask admin-cert-revoke --cn <staff>` (or
    `--fingerprint <hex>`) — effective on the next request. Revoke
    on offboarding, device loss, or suspected key compromise.
@@ -145,7 +146,8 @@ cargo xtask config-set --key tls.client_ca_file \
 cargo xtask config-get --key admin.mtls_off   # expect: missing/false
 
 # 4. Restart the release binary; expect in stderr:
-#      listening on https://…:444/apostille (admin, mTLS)
+#      listening on https://…:443/apostille (single-443, mTLS on the
+#      admin Host branch since goal-026; no :444 anymore)
 
 # 5. Negative probes (all hermetic-equivalent, run from a shell):
 #    - no cert     → 403 {"error":"client cert required"}
