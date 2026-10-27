@@ -9,16 +9,23 @@
 
 use axum::{
     Router,
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::{
+        State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
+    http::StatusCode,
     response::{IntoResponse, Json},
     routing::get,
 };
 use serde_json::json;
 use std::net::SocketAddr;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
-/// Build the full app router. `static_dir` roots `/apostille/static`.
-fn app(static_dir: &str) -> Router {
+/// Build the full app router. `static_dir` roots `/apostille/static`;
+/// `spa_dir` (the SvelteKit `build/` output) serves the app shell at
+/// `/apostille/` and every other `/apostille/*` path via SPA fallback.
+fn app(static_dir: &str, spa_dir: &str) -> Router {
+    let spa_index = std::path::Path::new(spa_dir).join("index.html");
     let api = Router::new()
         .route("/healthz", get(healthz))
         .route("/version", get(version))
@@ -28,8 +35,29 @@ fn app(static_dir: &str) -> Router {
             ServeDir::new(static_dir)
                 .precompressed_gzip()
                 .precompressed_br(),
-        );
-    Router::new().nest("/apostille", api)
+        )
+        .fallback_service(ServeDir::new(spa_dir).fallback(ServeFile::new(spa_index.clone())));
+    // axum 0.8 `nest` does not route the bare `/apostille/` (trailing
+    // slash) into the nest, so the shell gets explicit outer routes.
+    Router::new()
+        .route("/apostille", get(serve_spa_index))
+        .route("/apostille/", get(serve_spa_index))
+        .nest("/apostille", api)
+        .with_state(spa_index)
+}
+
+/// Serve the SPA shell for `/apostille/` exactly (the nested `/` never
+/// reaches `ServeDir`'s directory-index handling, so it needs its own
+/// route; deep links fall through to the `ServeDir` fallback above).
+async fn serve_spa_index(State(index): State<std::path::PathBuf>) -> impl IntoResponse {
+    match tokio::fs::read(&index).await {
+        Ok(bytes) => (
+            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn healthz() -> impl IntoResponse {
@@ -74,12 +102,13 @@ async fn main() {
         .unwrap_or(3000);
     let static_dir =
         std::env::var("STATIC_DIR").unwrap_or_else(|_| "crates/web/static".to_string());
+    let spa_dir = std::env::var("SPA_DIR").unwrap_or_else(|_| "web/build".to_string());
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("bind 127.0.0.1:PORT");
     eprintln!("listening on http://{addr}/apostille");
-    axum::serve(listener, app(&static_dir))
+    axum::serve(listener, app(&static_dir, &spa_dir))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("serve");
@@ -101,9 +130,10 @@ mod tests {
 
     fn test_app() -> Router {
         // Tests run with cwd = crates/web, so the workspace-relative
-        // default would miss; point at the local static dir.
+        // defaults would miss; point at local fixture dirs.
         let dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
-        app(&dir)
+        let spa = std::env::var("SPA_DIR").unwrap_or_else(|_| "test-spa".to_string());
+        app(&dir, &spa)
     }
 
     #[tokio::test]
@@ -125,17 +155,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unknown_api_route_is_404() {
-        let res = test_app()
-            .oneshot(
-                Request::builder()
-                    .uri("/apostille/nope")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    async fn deep_route_serves_spa_index() {
+        for uri in [
+            "/apostille",
+            "/apostille/",
+            "/apostille/nope",
+            "/apostille/deep/link",
+        ] {
+            let res = test_app()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "uri: {uri}");
+            let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+            assert!(
+                body.windows(b"spa-fixture".len())
+                    .any(|w| w == b"spa-fixture"),
+                "uri: {uri}"
+            );
+        }
     }
 
     #[tokio::test]

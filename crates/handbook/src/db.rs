@@ -82,20 +82,31 @@ fn in_transaction<T>(
 }
 
 /// Insert an authority (office / jurisdiction). Returns the new row id.
-pub fn add_authority(
-    conn: &Connection,
-    kind: &str,
-    country: &str,
-    region: &str,
-    name: &str,
-    slug: &str,
-) -> rusqlite::Result<i64> {
+/// New-authority fields plus audit attribution.
+pub struct NewAuthority<'a> {
+    pub kind: &'a str,
+    pub country: &'a str,
+    pub region: &'a str,
+    pub name: &'a str,
+    pub slug: &'a str,
+    pub actor: &'a str,
+    pub at: i64,
+}
+
+/// Insert an authority (office / jurisdiction). Returns the new row id.
+pub fn add_authority(conn: &Connection, a: &NewAuthority<'_>) -> rusqlite::Result<i64> {
     conn.execute(
         "INSERT INTO authority(kind, country, region, name, slug)
          VALUES (?1, ?2, ?3, ?4, ?5)",
-        (kind, country, region, name, slug),
+        (a.kind, a.country, a.region, a.name, a.slug),
     )?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+         VALUES (?1, ?2, 'authority_add', 'authority', ?3, ?4)",
+        rusqlite::params![a.at, a.actor, id, a.slug],
+    )?;
+    Ok(id)
 }
 
 /// Delete voice-audio captures older than `VOICE_RETENTION_DAYS`.
@@ -202,11 +213,15 @@ mod tests {
         let (_dir, _store, conn) = migrated();
         let id = add_authority(
             &conn,
-            "state",
-            "USA",
-            "Washington",
-            "WA Secretary of State",
-            "usa-wa-sos",
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "Washington",
+                name: "WA Secretary of State",
+                slug: "usa-wa-sos",
+                actor: "test",
+                at: 1_800_000_000,
+            },
         )
         .unwrap();
         let slug: String = conn
@@ -220,7 +235,19 @@ mod tests {
     #[test]
     fn task_dedup_key_rejects_live_duplicates() {
         let (_dir, _store, conn) = migrated();
-        let authority = add_authority(&conn, "state", "USA", "WA", "WA", "usa-wa").unwrap();
+        let authority = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa",
+                actor: "test",
+                at: 1_800_000_000,
+            },
+        )
+        .unwrap();
         let insert = || {
             conn.execute(
                 "INSERT INTO task(authority_id, kind, title, status, dedup_key, created_at)
@@ -244,7 +271,19 @@ mod tests {
     #[test]
     fn retention_sweep_deletes_only_expired_audio() {
         let (_dir, store, conn) = migrated();
-        let authority = add_authority(&conn, "state", "USA", "WA", "WA", "usa-wa").unwrap();
+        let authority = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa",
+                actor: "test",
+                at: 1_800_000_000,
+            },
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO channel(authority_id, visibility, kind, value, purpose)
              VALUES (?1, 'private', 'phone', '+1', 'our_validation')",
@@ -464,7 +503,19 @@ mod tests {
         let sentinel = dir.path().join("sentinel.txt");
         std::fs::write(&sentinel, b"do not touch").unwrap();
 
-        let authority = add_authority(&conn, "state", "USA", "WA", "WA", "usa-wa").unwrap();
+        let authority = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa",
+                actor: "test",
+                at: 1_800_000_000,
+            },
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO channel(authority_id, visibility, kind, value, purpose)
              VALUES (?1, 'private', 'phone', '+1', 'our_validation')",

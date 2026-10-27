@@ -39,7 +39,8 @@ add-authority flags:
   --country <c>   e.g. USA (required)
   --region <r>    e.g. Washington (default: empty)
   --name <n>      display name (required)
-  --slug <s>      unique slug, e.g. usa-wa-sos (required)"
+  --slug <s>      unique slug, e.g. usa-wa-sos (required)
+  --actor <a>     audit actor (default: xtask)"
     );
 }
 
@@ -116,14 +117,21 @@ fn run_add_authority(args: &[String]) {
     let store = open_store(args);
     let conn = open_db(&store);
     let region = flag(args, "region").unwrap_or_default();
-    match handbook::db::add_authority(
-        &conn,
-        &required(args, "kind"),
-        &required(args, "country"),
-        &region,
-        &required(args, "name"),
-        &required(args, "slug"),
-    ) {
+    let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
+    let kind = required(args, "kind");
+    let country = required(args, "country");
+    let name = required(args, "name");
+    let slug = required(args, "slug");
+    let new = handbook::db::NewAuthority {
+        kind: &kind,
+        country: &country,
+        region: &region,
+        name: &name,
+        slug: &slug,
+        actor: &actor,
+        at: unix_now(),
+    };
+    match handbook::db::add_authority(&conn, &new) {
         Ok(id) => println!("authority id: {id}"),
         Err(e) => {
             eprintln!("add-authority: {e}");
@@ -132,15 +140,20 @@ fn run_add_authority(args: &[String]) {
     }
 }
 
-fn run_retention_sweep(args: &[String]) {
-    let store = open_store(args);
-    let conn = open_db(&store);
-    let now = std::time::SystemTime::now()
+/// Current unix time as i64 (audit `at` values).
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock is before 1970")
         .as_secs()
         .try_into()
-        .expect("unix time exceeds i64");
+        .expect("unix time exceeds i64")
+}
+
+fn run_retention_sweep(args: &[String]) {
+    let store = open_store(args);
+    let conn = open_db(&store);
+    let now = unix_now();
     let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
     match handbook::db::retention_sweep(&conn, &store, now, &actor) {
         Ok(deleted) => println!("expired audio captures deleted: {deleted}"),
