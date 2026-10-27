@@ -1,2 +1,8 @@
 [alias]
 xtask = "run -p xtask --"
+
+# No custom Linux linker flags: rustc already passes
+# -z,relro,-z,now,-z,noexecstack plus -pie on this target (verified
+# in the link line and on the shipped ELF, prompt 015). A previous
+# revision added capitalized -z,Relro variants that zig-ld rejects —
+# removed as redundant. Re-check after every toolchain bump.

@@ -11,11 +11,15 @@ path = "src/main.rs"
 handbook = { path = "../handbook" }
 rand = "0.9"
 axum = { version = "0.8", features = ["ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower-http = { version = "0.6", features = ["fs", "compression-gzip", "compression-br"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "fs", "io-util"] }
 tower = { version = "0.5", features = ["util"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"
+rcgen = "0.13"
+rustls = "0.23"
+tokio-rustls = "0.26"

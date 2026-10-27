@@ -1,3 +1,11 @@
 [workspace]
 resolver = "2"
 members = ["crates/handbook", "crates/web", "xtask"]
+
+# Release hardening (prompt 015; see docs/ops/threat-model.md).
+# Tests always run on the dev profile, so these never affect `cargo test`.
+[profile.release]
+overflow-checks = true  # panic on arithmetic overflow (cheap fail-closed)
+panic = "abort"         # never unwind across a request; systemd restarts
+strip = true            # no symbol tables in shipped binaries
+lto = "thin"            # smaller + faster; full LTO not worth the build time

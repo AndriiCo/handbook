@@ -217,12 +217,73 @@ async fn ws_echo(mut socket: WebSocket) {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    let port: u16 = std::env::var("PORT")
+/// Env port with a default; garbage parses to the default (fail-safe:
+/// never bind a surprising port because of a typo).
+fn port_env(name: &str, default: u16) -> u16 {
+    std::env::var(name)
         .ok()
         .and_then(|p| p.parse().ok())
-        .unwrap_or(3000);
+        .unwrap_or(default)
+}
+
+/// IPs to bind: `BIND` (default 127.0.0.1) plus optional `BIND6`.
+/// Prod sets the public .41 addresses explicitly — never 0.0.0.0
+/// (other services own :80/:443 on sibling IPs of the same box).
+fn bind_ips() -> Vec<std::net::IpAddr> {
+    let v4 = std::env::var("BIND")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(std::net::IpAddr::from([127, 0, 0, 1]));
+    let mut ips = vec![v4];
+    if let Some(v6) = std::env::var("BIND6").ok().and_then(|s| s.parse().ok()) {
+        ips.push(v6);
+    }
+    ips
+}
+
+/// Load rustls config from `TLS_CERT`/`TLS_KEY` PEM paths.
+/// Neither set → plain HTTP dev mode; exactly one set, or an
+/// unreadable file → Err, and main refuses to start (TLS
+/// misconfiguration must never silently downgrade to HTTP).
+async fn load_tls(
+    cert: Option<String>,
+    key: Option<String>,
+) -> Result<Option<axum_server::tls_rustls::RustlsConfig>, String> {
+    match (cert, key) {
+        (None, None) => Ok(None),
+        (Some(cert), Some(key)) => {
+            axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
+                .await
+                .map(Some)
+                .map_err(|e| format!("read TLS_CERT={cert} TLS_KEY=<redacted>: {e}"))
+        }
+        _ => Err("set both TLS_CERT and TLS_KEY, or neither".to_string()),
+    }
+}
+
+/// 308 every HTTP request to `https://{PUBLIC_HOST}{path}`.
+/// The host comes from config, never from the Host header (a
+/// header-derived target would be an open redirect).
+fn redirect_router(public_host: String) -> Router {
+    Router::new()
+        .fallback(redirect_to_https)
+        .with_state(public_host)
+}
+
+async fn redirect_to_https(State(host): State<String>, uri: axum::http::Uri) -> impl IntoResponse {
+    let path = uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    match HeaderValue::from_str(&format!("https://{host}{path}")) {
+        Ok(location) => (
+            StatusCode::PERMANENT_REDIRECT,
+            [(header::LOCATION, location)],
+        )
+            .into_response(),
+        Err(_) => StatusCode::BAD_REQUEST.into_response(),
+    }
+}
+
+#[tokio::main]
+async fn main() {
     let static_dir =
         std::env::var("STATIC_DIR").unwrap_or_else(|_| "crates/web/static".to_string());
     let spa_dir = std::env::var("SPA_DIR").unwrap_or_else(|_| "web/build".to_string());
@@ -236,25 +297,142 @@ async fn main() {
     db::migrate(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate metadata DB: {e}"));
     drop(conn);
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("bind 127.0.0.1:PORT");
-    eprintln!("listening on http://{addr}/apostille");
-    axum::serve(
-        listener,
-        app(&static_dir, &spa_dir, PathBuf::from(store_dir)),
+    let router = app(&static_dir, &spa_dir, PathBuf::from(store_dir));
+    let tls = load_tls(
+        std::env::var("TLS_CERT").ok(),
+        std::env::var("TLS_KEY").ok(),
     )
-    .with_graceful_shutdown(shutdown_signal())
-    .await
-    .expect("serve");
+    .await;
+    match tls {
+        Ok(Some(tls)) => serve_tls(router, tls).await,
+        Ok(None) => serve_http(router).await,
+        Err(message) => {
+            eprintln!("refusing to start: {message}");
+            std::process::exit(1);
+        }
+    }
 }
 
-async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("install ctrl-c handler");
-    eprintln!("shutting down");
+/// Plain-HTTP dev mode: `PORT` (default 3000) on every bind IP.
+async fn serve_http(router: Router) {
+    let port = port_env("PORT", 3000);
+    let mut servers = tokio::task::JoinSet::new();
+    let mut handles = Vec::new();
+    for ip in bind_ips() {
+        let addr = SocketAddr::new(ip, port);
+        let handle = axum_server::Handle::new();
+        handles.push(handle.clone());
+        eprintln!("listening on http://{addr}/apostille");
+        servers.spawn({
+            let router = router.clone();
+            async move {
+                axum_server::bind(addr)
+                    .handle(handle)
+                    .serve(router.into_make_service())
+                    .await
+            }
+        });
+    }
+    supervise(servers, handles).await;
+}
+
+/// Prod mode: HTTPS on `HTTPS_PORT` (443) plus an HTTP→HTTPS
+/// redirector on `HTTP_PORT` (80), on every bind IP.
+async fn serve_tls(router: Router, tls: axum_server::tls_rustls::RustlsConfig) {
+    let https_port = port_env("HTTPS_PORT", 443);
+    let http_port = port_env("HTTP_PORT", 80);
+    let public_host = std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "andrii.ai".to_string());
+    let mut servers = tokio::task::JoinSet::new();
+    let mut handles = Vec::new();
+    for ip in bind_ips() {
+        for (port, plain) in [(https_port, false), (http_port, true)] {
+            let addr = SocketAddr::new(ip, port);
+            let handle = axum_server::Handle::new();
+            handles.push(handle.clone());
+            if plain {
+                eprintln!("listening on http://{addr} (redirect only)");
+                servers.spawn({
+                    let redirect = redirect_router(public_host.clone());
+                    async move {
+                        axum_server::bind(addr)
+                            .handle(handle)
+                            .serve(redirect.into_make_service())
+                            .await
+                    }
+                });
+            } else {
+                eprintln!("listening on https://{addr}/apostille");
+                servers.spawn({
+                    let router = router.clone();
+                    let tls = tls.clone();
+                    async move {
+                        axum_server::bind_rustls(addr, tls)
+                            .handle(handle)
+                            .serve(router.into_make_service())
+                            .await
+                    }
+                });
+            }
+        }
+    }
+    supervise(servers, handles).await;
+}
+
+/// Supervise every listener: SIGINT/SIGTERM (unix-only: our dev and
+/// prod are both unix) starts a 10s graceful drain; a listener that
+/// fails BEFORE the signal (e.g. bind error) fails the whole
+/// process at once — half-listening on one IP while another errors
+/// out would split the service into halves silently.
+async fn supervise(
+    mut servers: tokio::task::JoinSet<std::io::Result<()>>,
+    handles: Vec<axum_server::Handle>,
+) -> ! {
+    fn drain(handles: &[axum_server::Handle]) {
+        eprintln!("shutting down");
+        for handle in handles {
+            handle.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
+        }
+    }
+    let ctrl_c = tokio::signal::ctrl_c();
+    tokio::pin!(ctrl_c);
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .expect("install SIGTERM handler");
+    let mut draining = false;
+    let mut failed = false;
+    loop {
+        tokio::select! {
+            _ = &mut ctrl_c, if !draining => {
+                drain(&handles);
+                draining = true;
+            }
+            _ = sigterm.recv(), if !draining => {
+                drain(&handles);
+                draining = true;
+            }
+            outcome = servers.join_next() => {
+                match outcome {
+                    None => std::process::exit(i32::from(failed)),
+                    Some(Ok(Ok(()))) => {}
+                    Some(Ok(Err(e))) => {
+                        eprintln!("listener failed: {e}");
+                        failed = true;
+                        if !draining {
+                            drain(&handles);
+                            draining = true;
+                        }
+                    }
+                    Some(Err(e)) => {
+                        eprintln!("listener task failed: {e}");
+                        failed = true;
+                        if !draining {
+                            drain(&handles);
+                            draining = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -488,6 +666,147 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["error"], "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn https_redirect_points_at_public_host() {
+        let res = redirect_router("example.test".to_string())
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/order?q=1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::PERMANENT_REDIRECT);
+        let location = res
+            .headers()
+            .get(axum::http::header::LOCATION)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(location, "https://example.test/apostille/order?q=1");
+    }
+
+    #[tokio::test]
+    async fn load_tls_requires_both_or_neither() {
+        assert!(load_tls(None, None).await.unwrap().is_none());
+        load_tls(Some("a".to_string()), None)
+            .await
+            .expect_err("cert without key must fail");
+        load_tls(None, Some("b".to_string()))
+            .await
+            .expect_err("key without cert must fail");
+        load_tls(
+            Some("no-such-cert.pem".to_string()),
+            Some("no-such-key.pem".to_string()),
+        )
+        .await
+        .expect_err("missing files must fail");
+    }
+
+    /// rcgen localhost cert + key as PEM bytes (test-only CA-less fixture).
+    fn self_signed_localhost() -> (Vec<u8>, Vec<u8>) {
+        let key = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        (
+            key.cert.pem().into_bytes(),
+            key.key_pair.serialize_pem().into_bytes(),
+        )
+    }
+
+    /// Test-only TLS client that skips verification (the rcgen cert
+    /// is self-signed). NEVER use outside tests.
+    #[derive(Debug)]
+    struct AcceptAny;
+
+    impl rustls::client::danger::ServerCertVerifier for AcceptAny {
+        fn verify_server_cert(
+            &self,
+            _end_entity: &rustls::pki_types::CertificateDer<'_>,
+            _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+            _server_name: &rustls::pki_types::ServerName<'_>,
+            _ocsp_response: &[u8],
+            _now: rustls::pki_types::UnixTime,
+        ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+            Ok(rustls::client::danger::ServerCertVerified::assertion())
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            _message: &[u8],
+            _cert: &rustls::pki_types::CertificateDer<'_>,
+            _dss: &rustls::DigitallySignedStruct,
+        ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+            Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            _message: &[u8],
+            _cert: &rustls::pki_types::CertificateDer<'_>,
+            _dss: &rustls::DigitallySignedStruct,
+        ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+            Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+            vec![
+                rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+                rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
+                rustls::SignatureScheme::ED25519,
+                rustls::SignatureScheme::RSA_PSS_SHA256,
+            ]
+        }
+    }
+
+    #[tokio::test]
+    async fn tls_serves_healthz_end_to_end() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let tls = axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
+            .await
+            .unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = axum_server::Handle::new();
+        let server = tokio::spawn({
+            let handle = handle.clone();
+            async move {
+                axum_server::tls_rustls::from_tcp_rustls(listener, tls)
+                    .handle(handle)
+                    .serve(test_app().into_make_service())
+                    .await
+            }
+        });
+
+        let config = rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(std::sync::Arc::new(AcceptAny))
+            .with_no_client_auth();
+        let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
+        let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
+        let mut tls = connector.connect(name, stream).await.unwrap();
+        tls.write_all(
+            b"GET /apostille/healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+        let mut raw = Vec::new();
+        tls.read_to_end(&mut raw).await.unwrap();
+        let text = String::from_utf8_lossy(&raw);
+        assert!(
+            text.starts_with("HTTP/1.1 200"),
+            "got: {}",
+            text.lines().next().unwrap_or("")
+        );
+        assert!(text.contains("\"status\""), "got: {text}");
+
+        handle.shutdown();
+        server.await.unwrap().unwrap();
     }
 
     #[tokio::test]

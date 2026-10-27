@@ -22,6 +22,7 @@ fn main() {
         Some("analyze") => run_analyze(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("install-hooks") => run_install_hooks(),
+        Some("audit") => run_audit(),
         Some(unknown) => {
             eprintln!("unknown task: {unknown}\n");
             print_help();
@@ -44,6 +45,7 @@ Tasks:
   analyze     draft proposed facts for an authority (stub only for now)
   secrets-scan scan tracked files for secrets [--staged for the index]
   install-hooks point git at .githooks/ (pre-commit secret scan)
+  audit       cargo-audit over Cargo.lock (needs network; not in ci)
 
 analyze flags:
   --store <path>  store root (default: store)
@@ -399,4 +401,18 @@ fn run_install_hooks() {
         });
     }
     println!("hooks installed: core.hooksPath=.githooks");
+}
+
+/// Surface `cargo audit` as a task. Deliberately NOT part of `ci`
+/// (needs the network + the plugin); run before releases.
+fn run_audit() {
+    let status = Command::new("cargo").args(["audit"]).status();
+    match status {
+        Ok(s) if s.success() => println!("audit: clean"),
+        Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+        Err(e) => {
+            eprintln!("audit: cargo-audit not installed ({e}); run `cargo install cargo-audit`");
+            std::process::exit(1);
+        }
+    }
 }
