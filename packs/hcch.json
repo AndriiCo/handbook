@@ -1,0 +1,50 @@
+{
+    "authorities": [
+        {
+            "country": "",
+            "kind": "office",
+            "name": "HCCH \u2014 Apostille Section status table",
+            "region": "",
+            "slug": "hcch"
+        }
+    ],
+    "chain_steps": [],
+    "domains": [
+        {
+            "authority": "hcch",
+            "name": "www.hcch.net",
+            "notes": "Researcher firsthand fetch 2026-10-26; OUR staff capture pending.",
+            "status": "unverified"
+        }
+    ],
+    "observations": [
+        {
+            "authority": "hcch",
+            "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+            "statement": "OBSERVED (fetched table 2026-10-26): status table last updated 30-VI-2026, 130 Contracting Parties. Match on HCCH canonical names (cautionary tale: 'Turkiye' vs 'Turkey' grep miss).",
+            "status": "needs_review",
+            "topic": "website",
+            "validation": "F2"
+        },
+        {
+            "authority": "hcch",
+            "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+            "statement": "OBSERVED (researcher grep of the complete fetched table): ABSENT (consular route) \u2014 Egypt, UAE, Qatar, Kuwait, Malaysia, Nigeria, Ghana, Kenya, Ethiopia, Jordan, Lebanon, Iraq, Syria, Yemen, Iran, Libya, Sudan, Cuba, Sri Lanka, Nepal, Afghanistan. PRESENT (apostille-only) \u2014 Saudi Arabia, China, Indonesia, Thailand, Philippines, Singapore, Israel, Morocco, South Africa, Canada, Mexico, Viet Nam, Pakistan, Bangladesh, Turkiye. NOT asserted: Hong Kong/Macau extensions, Taiwan.",
+            "status": "needs_review",
+            "topic": "jurisdiction",
+            "validation": "V-19"
+        }
+    ],
+    "pack": "hcch",
+    "title": "HCCH Apostille status table \u2014 the ONE feed URI (F2)",
+    "version": 1,
+    "watch": [
+        {
+            "authority": "hcch",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "THE ONE HCCH URI (roadmap item 4). Effective-date/member changes produce high-priority F4 records.",
+            "uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41"
+        }
+    ]
+}

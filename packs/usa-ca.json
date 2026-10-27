@@ -1,0 +1,52 @@
+{
+    "authorities": [
+        {
+            "country": "USA",
+            "kind": "state",
+            "name": "California Secretary of State \u2014 Notary & Authentications",
+            "region": "California",
+            "slug": "usa-ca-sos"
+        }
+    ],
+    "chain_steps": [
+        {
+            "authority": "usa-ca-sos",
+            "detail": "Whether CA needs a county/clerk pre-step is unknown \u2014 covered by the 50-state survey.",
+            "id": "ca-notary",
+            "order": 0,
+            "status": "needs_review",
+            "title": "Notarization on the document",
+            "validation": "V-4"
+        },
+        {
+            "authority": "usa-ca-sos",
+            "detail": "Verify authentication-vs-apostille form wording and fees before any customer copy.",
+            "id": "ca-sos-auth",
+            "order": 1,
+            "status": "needs_review",
+            "title": "CA Secretary of State authentication",
+            "validation": "P3-b"
+        }
+    ],
+    "domains": [
+        {
+            "authority": "usa-ca-sos",
+            "name": "www.sos.ca.gov",
+            "notes": "Seed; first fetch verifies reachability and pins deep links.",
+            "status": "unverified"
+        }
+    ],
+    "observations": [],
+    "pack": "usa-ca",
+    "title": "USA California \u2014 volume state (unverified)",
+    "version": 1,
+    "watch": [
+        {
+            "authority": "usa-ca-sos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Seed homepage; pin deep authentication links after first fetch (P3-b).",
+            "uri": "https://www.sos.ca.gov/"
+        }
+    ]
+}

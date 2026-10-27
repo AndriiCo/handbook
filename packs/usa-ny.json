@@ -1,0 +1,82 @@
+{
+    "authorities": [
+        {
+            "country": "USA",
+            "kind": "state",
+            "name": "New York Department of State \u2014 Apostille & Authentication",
+            "region": "New York",
+            "slug": "usa-ny-dos"
+        }
+    ],
+    "chain_steps": [
+        {
+            "authority": "usa-ny-dos",
+            "detail": "Required before NY DOS acts, including NYC vital records and notarized school records; county of the notary's qualification.",
+            "id": "ny-county",
+            "order": 0,
+            "status": "needs_review",
+            "title": "County Clerk certification of the notary signature (NY-confirmed pre-step)",
+            "validation": "V-4"
+        },
+        {
+            "authority": "usa-ny-dos",
+            "detail": "Authentication product name, fee, and form wording unverified; NYC vs rest-of-state vital-record paths to confirm.",
+            "id": "ny-dos-auth",
+            "order": 1,
+            "status": "needs_review",
+            "title": "NY Department of State authentication",
+            "validation": "P3-a"
+        }
+    ],
+    "domains": [
+        {
+            "authority": "usa-ny-dos",
+            "name": "dos.ny.gov",
+            "notes": "Official-claimed; staff capture pending.",
+            "status": "unverified"
+        },
+        {
+            "authority": "usa-ny-dos",
+            "name": "www.businessexpress.ny.gov",
+            "notes": "Official-claimed NY business portal; staff capture pending.",
+            "status": "unverified"
+        }
+    ],
+    "observations": [
+        {
+            "authority": "usa-ny-dos",
+            "source_uri": "https://dos.ny.gov/apostillecertificate-authentication-request-forms",
+            "statement": "OBSERVED (official page): NY requires the notary signature certified by the County Clerk of the county where the notary is qualified.",
+            "status": "needs_review",
+            "topic": "notarization",
+            "validation": "V-4"
+        },
+        {
+            "authority": "usa-ny-dos",
+            "source_uri": "https://www4.erie.gov/clerk/apostilles",
+            "statement": "OBSERVED (county corroboration): NYC vital records and notarized school records need county certification first.",
+            "status": "needs_review",
+            "topic": "authentication",
+            "validation": "V-4"
+        }
+    ],
+    "pack": "usa-ny",
+    "title": "USA New York \u2014 county pre-step baseline",
+    "version": 1,
+    "watch": [
+        {
+            "authority": "usa-ny-dos",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Apostille/authentication request forms hub.",
+            "uri": "https://dos.ny.gov/apostillecertificate-authentication-request-forms"
+        },
+        {
+            "authority": "usa-ny-dos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "County-certification guidance answer.",
+            "uri": "https://www.businessexpress.ny.gov/app/answers/cms/a_id/3423"
+        }
+    ]
+}

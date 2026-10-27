@@ -1,0 +1,52 @@
+{
+    "authorities": [
+        {
+            "country": "USA",
+            "kind": "state",
+            "name": "Texas Secretary of State \u2014 Authentications",
+            "region": "Texas",
+            "slug": "usa-tx-sos"
+        }
+    ],
+    "chain_steps": [
+        {
+            "authority": "usa-tx-sos",
+            "detail": "Whether TX needs a county/clerk pre-step is unknown \u2014 covered by the 50-state survey.",
+            "id": "tx-notary",
+            "order": 0,
+            "status": "needs_review",
+            "title": "Notarization on the document",
+            "validation": "V-4"
+        },
+        {
+            "authority": "usa-tx-sos",
+            "detail": "Verify authentication-vs-apostille form wording and fees before any customer copy.",
+            "id": "tx-sos-auth",
+            "order": 1,
+            "status": "needs_review",
+            "title": "TX Secretary of State authentication",
+            "validation": "P3-b"
+        }
+    ],
+    "domains": [
+        {
+            "authority": "usa-tx-sos",
+            "name": "www.sos.state.tx.us",
+            "notes": "Seed; first fetch verifies reachability and pins deep links.",
+            "status": "unverified"
+        }
+    ],
+    "observations": [],
+    "pack": "usa-tx",
+    "title": "USA Texas \u2014 volume state (unverified)",
+    "version": 1,
+    "watch": [
+        {
+            "authority": "usa-tx-sos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Seed homepage; pin deep authentication links after first fetch (P3-b).",
+            "uri": "https://www.sos.state.tx.us/"
+        }
+    ]
+}

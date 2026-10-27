@@ -1,0 +1,100 @@
+{
+    "authorities": [
+        {
+            "country": "USA",
+            "kind": "state",
+            "name": "Washington Secretary of State \u2014 Apostilles & Authentications",
+            "region": "Washington",
+            "slug": "usa-wa-sos"
+        }
+    ],
+    "chain_steps": [
+        {
+            "authority": "usa-wa-sos",
+            "detail": "Notary seal on the document itself. Whether WA needs a county/clerk pre-step is unknown \u2014 covered by the 50-state survey.",
+            "id": "wa-notary",
+            "order": 0,
+            "status": "needs_review",
+            "title": "Notarization on the document",
+            "validation": "V-4"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "detail": "Request wording and authentication product name unverified; mail-to address unresolved (two-PO-Box conflict); see observations.",
+            "id": "wa-sos-auth",
+            "order": 1,
+            "status": "needs_review",
+            "title": "WA Secretary of State: Certificate of Authentication (NOT apostille)",
+            "validation": "V-5"
+        }
+    ],
+    "domains": [
+        {
+            "authority": "usa-wa-sos",
+            "name": "www.sos.wa.gov",
+            "notes": "Official-claimed but bot-blocked (403/404 to fetcher 2026-10-26); staff capture pending.",
+            "status": "unverified"
+        }
+    ],
+    "observations": [
+        {
+            "authority": "usa-wa-sos",
+            "source_uri": "http://www.sos.wa.gov/about-office/contact-us",
+            "statement": "OBSERVED (contact-page snippet): walk-in apostille/authentication moved to Town Center 3, 243 Israel Rd SE, Tumwater, WA 98501; eastern office at Eastern Washington University, 960 Washington Street, Cheney, WA 99004.",
+            "status": "needs_review",
+            "topic": "walkin",
+            "validation": "V-5"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "source_uri": "https://www.sos.wa.gov/sites/default/files/2025-01/Apostilles.Request.Form_.12.2024.pdf",
+            "statement": "OBSERVED (Dec-2024 form, now 404): fee $15/document; $100 expedite per 10 docs.",
+            "status": "needs_review",
+            "topic": "fees",
+            "validation": "V-5"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "source_uri": "https://www.sos.wa.gov/sites/default/files/2025-01/Apostilles.Request.Form_.12.2024.pdf",
+            "statement": "OBSERVED (Dec-2024 form, now 404): mail to PO Box 40228, Olympia WA 98504-0234. SUPERSEDED \u2014 conflicts with a second PO Box; NOT a fixture (canonical fixtures are pinned in specs/README.md resolution 9).",
+            "status": "needs_review",
+            "topic": "po_box",
+            "validation": "V-5"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "source_uri": "https://www.sos.wa.gov/sites/default/files/2025-01/Apostilles.Request.Form_.12.2024.pdf",
+            "statement": "OBSERVED (Dec-2024 form, now 404): overnight by commercial carrier; phone 360-725-0377 opt 3.",
+            "status": "needs_review",
+            "topic": "mailing",
+            "validation": "V-5"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "source_uri": "https://www.globeia.com/blogs/how-to-get-washington-state-apostille",
+            "statement": "OBSERVED (third-party 2026): 7-10 business days by mail; same-day in person $150 first 10 docs + $15/doc.",
+            "status": "needs_review",
+            "topic": "processing_time",
+            "validation": "V-5"
+        }
+    ],
+    "pack": "usa-wa",
+    "title": "USA Washington \u2014 pilot authority (F7 skeleton)",
+    "version": 1,
+    "watch": [
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Post-Tumwater contact page; bot-blocked, headless capture pending (V-2).",
+            "uri": "http://www.sos.wa.gov/about-office/contact-us"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Superseded Dec-2024 form; now 404 \u2014 regression seed for the superseded-form hazard.",
+            "uri": "https://www.sos.wa.gov/sites/default/files/2025-01/Apostilles.Request.Form_.12.2024.pdf"
+        }
+    ]
+}

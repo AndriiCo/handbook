@@ -12,6 +12,7 @@ mod admin_cert;
 mod build_handbook;
 mod config;
 mod mcp_serve;
+mod packs;
 mod pii_sweep;
 mod review_conflicts;
 mod secrets;
@@ -33,6 +34,8 @@ fn main() {
         Some("mcp-serve") => mcp_serve::run(&args[1..]),
         Some("pii-sweep") => pii_sweep::run(&args[1..]),
         Some("accept") => accept::run(&args[1..]),
+        Some("packs-validate") => run_packs_validate(&args[1..]),
+        Some("packs-load") => run_packs_load(&args[1..]),
         Some("config-enroll") => config::run_enroll(&args[1..]),
         Some("config-set") => config::run_set(&args[1..]),
         Some("config-get") => config::run_get(&args[1..]),
@@ -70,6 +73,8 @@ Tasks:
   mcp-serve   serve lookup_authority on 127.0.0.1 [--port]
   pii-sweep   fail closed on PII in publishable surfaces
   accept      deploy gate: --expect-build must match latest build + facts_hash
+  packs-validate  validate packs/*.json (F13; needs_review invariants)
+  packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)
   admin-cert-issue|verify|revoke  admin mTLS client certs
   secrets-scan scan tracked files for secrets [--staged for the index]
@@ -583,6 +588,95 @@ fn run_secrets_scan(args: &[String]) {
         "secrets-scan: clean ({} file(s){})",
         paths.len(),
         if staged { ", staged" } else { "" }
+    );
+}
+
+/// Validate every `*.json` pack in `--packs <dir>` (default: `packs`).
+/// Exit 1 lists every violation; exit 0 prints the clean count.
+fn run_packs_validate(args: &[String]) {
+    let dir = flag(args, "packs").unwrap_or_else(|| "packs".to_string());
+    let errors = packs::validate_dir(std::path::Path::new(&dir));
+    if errors.is_empty() {
+        let count = std::fs::read_dir(&dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok().map(|e| e.path()))
+                    .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+                    .count()
+            })
+            .unwrap_or(0);
+        println!("packs-validate: clean ({count} pack(s) in {dir})");
+    } else {
+        for error in &errors {
+            println!("{error}");
+        }
+        eprintln!("packs-validate: {} pack(s) rejected", errors.len());
+        std::process::exit(1);
+    }
+}
+
+/// Load every validated pack into `--store <path>`. Refuses to load
+/// when validation fails. Never writes `fact` or `capture` rows.
+fn run_packs_load(args: &[String]) {
+    let dir = flag(args, "packs").unwrap_or_else(|| "packs".to_string());
+    let errors = packs::validate_dir(std::path::Path::new(&dir));
+    if !errors.is_empty() {
+        for error in &errors {
+            println!("{error}");
+        }
+        eprintln!("packs-load: refusing to load invalid packs");
+        std::process::exit(1);
+    }
+    let store = open_store(args);
+    if let Err(e) = store.init() {
+        eprintln!("init store dirs: {e}");
+        std::process::exit(1);
+    }
+    let conn = open_db(&store);
+    if let Err(e) = handbook_store::db::migrate(&conn) {
+        eprintln!("migrate: {e}");
+        std::process::exit(1);
+    }
+    let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
+    let now = unix_now();
+    let mut entries: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| {
+            eprintln!("packs-load: list {dir}: {e}");
+            std::process::exit(1);
+        })
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    entries.sort();
+    let mut packs = 0;
+    for path in entries {
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| {
+            eprintln!("packs-load: read {}: {e}", path.display());
+            std::process::exit(1);
+        });
+        // Validation above already parsed this file; a second parse
+        // failure means the file changed mid-run — abort loudly.
+        let pack: packs::Pack = serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+            eprintln!("packs-load: re-parse {}: {e}", path.display());
+            std::process::exit(1);
+        });
+        match packs::load_pack(&conn, &pack, &actor, now) {
+            Ok(report) => {
+                println!(
+                    "{}: +{} authorities +{} domains +{} sources +{} tasks",
+                    pack.pack, report.authorities, report.domains, report.sources, report.tasks
+                );
+                packs += 1;
+            }
+            Err(e) => {
+                eprintln!("packs-load: {}: {e}", path.display());
+                std::process::exit(1);
+            }
+        }
+    }
+    println!(
+        "packs-load: {packs} pack(s) into {}",
+        store.root().display()
     );
 }
 

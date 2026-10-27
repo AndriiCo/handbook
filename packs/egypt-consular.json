@@ -1,0 +1,362 @@
+{
+    "authorities": [
+        {
+            "country": "Egypt",
+            "kind": "country",
+            "name": "Egypt \u2014 destination",
+            "region": "",
+            "slug": "egypt"
+        },
+        {
+            "country": "Egypt",
+            "kind": "office",
+            "name": "Embassy of Egypt, Washington DC \u2014 Consular Section",
+            "region": "DC",
+            "slug": "egypt-embassy-dc"
+        },
+        {
+            "country": "Egypt",
+            "kind": "office",
+            "name": "Consulate General of Egypt, New York",
+            "region": "NY",
+            "slug": "egypt-consulate-ny"
+        },
+        {
+            "country": "Egypt",
+            "kind": "office",
+            "name": "Consulate General of Egypt, Chicago",
+            "region": "IL",
+            "slug": "egypt-consulate-chicago"
+        },
+        {
+            "country": "Egypt",
+            "kind": "office",
+            "name": "Consulate General of Egypt, Los Angeles",
+            "region": "CA",
+            "slug": "egypt-consulate-la"
+        },
+        {
+            "country": "Egypt",
+            "kind": "office",
+            "name": "Consulate General of Egypt, Houston",
+            "region": "TX",
+            "slug": "egypt-consulate-houston"
+        },
+        {
+            "country": "Egypt",
+            "kind": "office",
+            "name": "Egyptian Cultural & Educational Bureau, Washington DC",
+            "region": "DC",
+            "slug": "egypt-cultural-bureau"
+        }
+    ],
+    "chain_steps": [
+        {
+            "authority": "egypt",
+            "detail": "Notary seal on the document itself (POAs: over the principal signature, never on a separate paper). Arabic-only docs: use an Arabic-knowing notary or a one-page Arabic+English POA. County pre-step per issuing state (NY confirmed).",
+            "id": "eg-notary",
+            "order": 0,
+            "status": "needs_review",
+            "title": "Notarization (on-document seal)",
+            "validation": "V-3"
+        },
+        {
+            "authority": "egypt",
+            "detail": "Embassy rule in its own English: the consulate only accepts authentication and certification from the Secretary of State; apostilles are NOT accepted. Per-state product name/fee unverified.",
+            "id": "eg-sos",
+            "order": 1,
+            "status": "needs_review",
+            "title": "Secretary of State Certificate of Authentication \u2014 NEVER apostille",
+            "validation": "V-5"
+        },
+        {
+            "authority": "egypt",
+            "detail": "Mandatory for commercial, court, and marriage/divorce instruments. Personal-doc need is V-6. See the usdos pack.",
+            "id": "eg-usdos",
+            "order": 2,
+            "status": "needs_review",
+            "title": "USDOS authentication (conditional)",
+            "validation": "V-6"
+        },
+        {
+            "authority": "egypt-cultural-bureau",
+            "detail": "Educational certificates and US academic-track docs: Cultural Bureau first, then final consulate legalization ($47). Whether this applies in all consulate jurisdictions or DC-only is V-17.",
+            "id": "eg-cultural",
+            "order": 3,
+            "status": "needs_review",
+            "title": "Cultural & Educational Bureau pre-step (educational docs)",
+            "validation": "V-17"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "detail": "Route by the state that ISSUED/AUTHENTICATED the document, not where the customer lives. DC accepts ONLY DE, FL, GA, MD, NC, SC, VA, DC, WV.",
+            "id": "eg-post",
+            "order": 4,
+            "status": "needs_review",
+            "title": "Embassy/consulate legalization \u2014 routed by issuing state",
+            "validation": "V-9"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "detail": "Stated identically on all three DC legalization pages. Return envelope must be pre-paid, pre-addressed, with tracking; Express/Certified strongly advised. Non-compliant packaging sits pending and unprocessed. Prepaid labels for this hop must be USPS.",
+            "id": "eg-mail",
+            "order": 5,
+            "status": "needs_review",
+            "title": "Consulate mail hop: USPS ONLY \u2014 FedEx/UPS refused",
+            "validation": "V-18"
+        }
+    ],
+    "domains": [
+        {
+            "authority": "egypt-embassy-dc",
+            "name": "egyptembassy.net",
+            "notes": "Researcher firsthand fetch 2026-10-26; OUR staff capture pending.",
+            "status": "unverified"
+        },
+        {
+            "authority": "egypt-consulate-la",
+            "name": "www.egyconsulatela.com",
+            "notes": "Researcher firsthand fetch 2026-10-26; OUR staff capture pending.",
+            "status": "unverified"
+        },
+        {
+            "authority": "egypt-consulate-ny",
+            "name": "www.egypt-nyc.com",
+            "notes": "Renders a JS shell only; legalization pages 404 on all URL variants \u2014 phone is the channel (V-12).",
+            "status": "unverified"
+        }
+    ],
+    "observations": [
+        {
+            "authority": "egypt-embassy-dc",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official jurisdiction map): DC serves DE, FL, GA, MD, NC, SC, VA, DC, WV.",
+            "status": "needs_review",
+            "topic": "jurisdiction",
+            "validation": "V-9"
+        },
+        {
+            "authority": "egypt-consulate-ny",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official jurisdiction map): NY serves CT, ME, MA, NH, NJ, OH, PA, PR, RI, VT, NY.",
+            "status": "needs_review",
+            "topic": "jurisdiction",
+            "validation": "V-12"
+        },
+        {
+            "authority": "egypt-consulate-chicago",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official jurisdiction map): Chicago serves IL, IN, IA, KY, MI, MN, NE, ND, SD, WI.",
+            "status": "needs_review",
+            "topic": "jurisdiction",
+            "validation": "V-13"
+        },
+        {
+            "authority": "egypt-consulate-la",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official jurisdiction map, re-confirmed on LA site): LA serves AK, AZ, CA, ID, HI, MT, NV, OR, WA, WY, UT.",
+            "status": "needs_review",
+            "topic": "jurisdiction",
+            "validation": "V-10"
+        },
+        {
+            "authority": "egypt-consulate-houston",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official jurisdiction map): Houston serves AL, AR, CO, KS, LA, MS, MO, NM, OK, TN, TX.",
+            "status": "needs_review",
+            "topic": "jurisdiction",
+            "validation": "V-14"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): DC post at 3521 International Ct NW, Washington DC 20008.",
+            "status": "needs_review",
+            "topic": "address",
+            "validation": "V-9"
+        },
+        {
+            "authority": "egypt-consulate-ny",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): NY post at 866 UN Plaza, Suite 586, NY 10017.",
+            "status": "needs_review",
+            "topic": "address",
+            "validation": "V-12"
+        },
+        {
+            "authority": "egypt-consulate-chicago",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): Chicago post at 180 N Michigan Ave, Suite 1150, Chicago IL 60601. Directories list 500 N Michigan #1900, 60611 (C-4).",
+            "status": "needs_review",
+            "topic": "address",
+            "validation": "V-13"
+        },
+        {
+            "authority": "egypt-consulate-la",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): LA post at 6300 Wilshire Blvd, Suite 1890, LA CA 90048. Directories list 4929 Wilshire Suite 300, 90010 (C-1).",
+            "status": "needs_review",
+            "topic": "address",
+            "validation": "V-10"
+        },
+        {
+            "authority": "egypt-consulate-houston",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): Houston post at 5718 Westheimer St, Suite 1350, Houston TX 77057. One directory lists 1000 West Loop N #200, 77055 (C-5).",
+            "status": "needs_review",
+            "topic": "address",
+            "validation": "V-14"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): DC 202-966-6342, consulate@egyptembassy.net.",
+            "status": "needs_review",
+            "topic": "contacts",
+            "validation": "V-9"
+        },
+        {
+            "authority": "egypt-consulate-ny",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): NY 212-759-7120, egyptnyc@gmail.com.",
+            "status": "needs_review",
+            "topic": "contacts",
+            "validation": "V-12"
+        },
+        {
+            "authority": "egypt-consulate-chicago",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): Chicago 312-332-7210/7214, consulateofegyptchicago@gmail.com. No official website found (V-16).",
+            "status": "needs_review",
+            "topic": "contacts",
+            "validation": "V-13"
+        },
+        {
+            "authority": "egypt-consulate-la",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): LA 323-933-9700, egyconsulatela@egyconsulatela.com, www.egyconsulatela.com.",
+            "status": "needs_review",
+            "topic": "contacts",
+            "validation": "V-10"
+        },
+        {
+            "authority": "egypt-consulate-houston",
+            "source_uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/",
+            "statement": "OBSERVED (official page): Houston 713-961-4915/4916, consulateofegyptinhouston@gmail.com. No official website found (V-16).",
+            "status": "needs_review",
+            "topic": "contacts",
+            "validation": "V-14"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "source_uri": "https://egyptembassy.net/consular-services/legalization/personal-legalization-procedure/",
+            "statement": "OBSERVED (official DC pages): personal $47/doc; commercial $132/doc; pet $132; signature certification $47 non-commercial / $132 commercial; translation $47. CONTRADICTED by the LA-hosted 'unified fee schedule effective 1/3/2026' ($42 non-commercial, $52 translation \u2014 C-2).",
+            "status": "needs_review",
+            "topic": "fees",
+            "validation": "V-11"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "source_uri": "https://egyptembassy.net/consular-services/legalization/commercial-legalization-procedure/",
+            "statement": "OBSERVED (official DC pages): cashier's check only from a US bank payable to 'Consulate of Egypt' (mail); cash in person; NO personal checks, NO money orders; commercial checks must stay valid >1 month after receipt.",
+            "status": "needs_review",
+            "topic": "payment",
+            "validation": "V-11"
+        },
+        {
+            "authority": "egypt-consulate-ny",
+            "source_uri": "https://www.egypt-nyc.com/",
+            "statement": "CONTRADICTION C-3 (do not publish): a snippet of NY's own commercial page stated $55/doc payable by cash, USPS money order, or cashier's \u2014 contradicting DC ($132, no money orders) and the unified schedule ($132). The page now 404s.",
+            "status": "needs_review",
+            "topic": "fees",
+            "validation": "V-12"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "source_uri": "https://egyptembassy.net/consular-services/legalization/personal-legalization-procedure/",
+            "statement": "OBSERVED (official DC pages): walk-ins Mon-Fri 9:30am-12:30pm, pickup 3:00-4:00pm (pet docs same-day); mailed personal 10 business days; commercial (walked or mailed) 5 business days.",
+            "status": "needs_review",
+            "topic": "hours",
+            "validation": "V-9"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "source_uri": "https://egyptembassy.net/consular-services/legalization/legalization-of-signatures/",
+            "statement": "OBSERVED (official DC pages, wording varies): personal/commercial say 'USPS Priority Mail envelope (approx. 11x8.5)'; signatures page says 'letter-sized USPS envelope'. Single canonical spec is V-18.",
+            "status": "needs_review",
+            "topic": "mailing",
+            "validation": "V-18"
+        },
+        {
+            "authority": "egypt-cultural-bureau",
+            "source_uri": "https://egyptembassy.net/consular-services/legalization/personal-legalization-procedure/",
+            "statement": "OBSERVED (official DC pages): educational certificates go first to the Egyptian Cultural & Educational Bureau, 1303 New Hampshire Ave NW, Washington DC 20036, 202-296-4042, then final consulate legalization ($47).",
+            "status": "needs_review",
+            "topic": "legalization_chain",
+            "validation": "V-17"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "source_uri": "https://egyptembassy.net/consular-services/legalization/personal-legalization-procedure/",
+            "statement": "OBSERVED (official DC page): pets \u2014 vet health letter with USDA APHIS authentication and dry embossed seal; certificate valid ONLY 14 days from issuance, so 10-business-day mail processing must fit inside; $132. Handbook must show a countdown warning.",
+            "status": "needs_review",
+            "topic": "processing_time",
+            "validation": "V-9"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "source_uri": "https://egyptembassy.net/consular-services/legalization/legalization-of-signatures/",
+            "statement": "OBSERVED (official signatures page): POA/declaration mail route \u2014 sign before notary (ID data in POA text), SOS, USDOS if commercial, consulate with bank-accepted check + ID copy + tracked self-addressed return. Foreigners' sale/bank POAs: NO mail, in-person only. US-passport ID forces in-person. Cancellations never at the embassy.",
+            "status": "needs_review",
+            "topic": "id_requirements",
+            "validation": "V-3"
+        }
+    ],
+    "pack": "egypt-consular",
+    "title": "Egypt consular-legalization chain in the USA (F7 skeleton)",
+    "version": 1,
+    "watch": [
+        {
+            "authority": "egypt-embassy-dc",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Full jurisdiction map + post addresses/phones.",
+            "uri": "https://egyptembassy.net/consular-services/egyptian-consulate-in-us/"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Personal legalization procedure + fees + mail rules.",
+            "uri": "https://egyptembassy.net/consular-services/legalization/personal-legalization-procedure/"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Commercial legalization procedure + fees + mail rules.",
+            "uri": "https://egyptembassy.net/consular-services/legalization/commercial-legalization-procedure/"
+        },
+        {
+            "authority": "egypt-embassy-dc",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Decisive 'Apostilles are not accepted' sentence; POA/signature rules.",
+            "uri": "https://egyptembassy.net/consular-services/legalization/legalization-of-signatures/"
+        },
+        {
+            "authority": "egypt-consulate-la",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "LA jurisdiction re-confirmation; hours 9:30-1:00 intake, 2:00-3:00 pickup.",
+            "uri": "https://www.egyconsulatela.com/en/home"
+        },
+        {
+            "authority": "egypt-consulate-la",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Hosts the 'unified fee schedule effective 1/3/2026' PDF (C-2 contradictions).",
+            "uri": "https://www.egyconsulatela.com/en/consular-fees"
+        }
+    ]
+}

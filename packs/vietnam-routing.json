@@ -1,0 +1,52 @@
+{
+    "authorities": [
+        {
+            "country": "Viet Nam",
+            "kind": "country",
+            "name": "Viet Nam \u2014 receiving authorities",
+            "region": "",
+            "slug": "vietnam"
+        }
+    ],
+    "chain_steps": [
+        {
+            "authority": "vietnam",
+            "detail": "Routing must derive from the watched HCCH status fact. Regression: the 2026-10-13 misroute class (stale consular copy for an apostille country) cannot recur.",
+            "id": "vn-routing-check",
+            "order": 0,
+            "status": "needs_review",
+            "title": "F2 routing check via HCCH feed",
+            "validation": "F2"
+        }
+    ],
+    "domains": [
+        {
+            "authority": "vietnam",
+            "name": "www.hcch.net",
+            "notes": "Shared HCCH feed host; verdict owned by the hcch pack.",
+            "status": "unverified"
+        }
+    ],
+    "observations": [
+        {
+            "authority": "vietnam",
+            "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+            "statement": "SYNTHETIC DEMO SEED (never a fact): Viet Nam apostille route, effective 2026-09-11. Live routing derives from the watched HCCH fact, never from this seed.",
+            "status": "needs_review",
+            "topic": "jurisdiction",
+            "validation": "F2"
+        }
+    ],
+    "pack": "vietnam-routing",
+    "title": "Viet Nam routing \u2014 synthetic demo seed + F2 regression",
+    "version": 1,
+    "watch": [
+        {
+            "authority": "vietnam",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Same HCCH feed, attributed to Viet Nam so F2 tasks land on this authority.",
+            "uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41"
+        }
+    ]
+}

@@ -9,6 +9,7 @@ name = "xtask"
 path = "src/main.rs"
 
 [dependencies]
+contracts = { path = "../crates/contracts" }
 handbook-agent = { path = "../crates/handbook-agent" }
 handbook-store = { path = "../crates/handbook-store" }
 ingest = { path = "../crates/ingest" }
@@ -21,6 +22,8 @@ zeroize = "1"
 rcgen = "0.13"
 rustls-pemfile = "2"
 regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [dev-dependencies]

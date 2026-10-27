@@ -1,0 +1,92 @@
+{
+    "authorities": [
+        {
+            "country": "USA",
+            "kind": "office",
+            "name": "U.S. Department of State \u2014 Office of Authentications",
+            "region": "",
+            "slug": "usdos-authentications"
+        }
+    ],
+    "chain_steps": [
+        {
+            "authority": "usdos-authentications",
+            "detail": "Mandatory for commercial, court-issued, and marriage/divorce instruments. Whether plain personal docs (e.g. employment letters) can skip this hop is validation task V-6.",
+            "id": "usdos-auth",
+            "order": 0,
+            "status": "needs_review",
+            "title": "USDOS authentication (conditional hop)",
+            "validation": "V-6"
+        }
+    ],
+    "domains": [
+        {
+            "authority": "usdos-authentications",
+            "name": "travel.state.gov",
+            "notes": "Official-claimed but bot-blocked (HTTP 403 x3 to fetcher 2026-10-26); headless capture pending.",
+            "status": "unverified"
+        }
+    ],
+    "observations": [
+        {
+            "authority": "usdos-authentications",
+            "source_uri": "https://www.lurodocs.com/guides/federal-apostille",
+            "statement": "OBSERVED (third-party): fee $20/document; form DS-4194; check/money order payable to 'U.S. Department of State'; prepaid return envelope; country of use in Section 4.",
+            "status": "needs_review",
+            "topic": "fees",
+            "validation": "V-6"
+        },
+        {
+            "authority": "usdos-authentications",
+            "source_uri": "https://www.lurodocs.com/guides/federal-apostille",
+            "statement": "OBSERVED (third-party): mail to Office of Authentications, U.S. Department of State, 44132 Mercure Circle, PO Box 1206, Sterling, VA 20166-1206.",
+            "status": "needs_review",
+            "topic": "mailing",
+            "validation": "V-1"
+        },
+        {
+            "authority": "usdos-authentications",
+            "source_uri": "https://casetext.com/regulation/code-of-federal-regulations/title-22-foreign-relations/chapter-i-department-of-state/subchapter-a-general/part-5-organization/section-53-rules-of-procedure-description-of-forms-available-or-the-places-at-which-forms-may-be-obtained",
+            "statement": "OBSERVED (22 CFR 5.3 via casetext): walk-in 600 19th St NW, Washington DC 20006.",
+            "status": "needs_review",
+            "topic": "walkin",
+            "validation": "V-7"
+        },
+        {
+            "authority": "usdos-authentications",
+            "source_uri": "https://quartzmountain.org/article/is-state-department-travel-advisory",
+            "statement": "OBSERVED (single third-party): counter open 8am-3pm Mon-Fri; walk-ins 8-9am Mon-Thu; appointments 10:30am-2:30pm Mon-Thu; no counter service Friday.",
+            "status": "needs_review",
+            "topic": "hours",
+            "validation": "V-7"
+        },
+        {
+            "authority": "usdos-authentications",
+            "source_uri": "https://www.sespanish.com/how-to-get-an-apostille-for-an-fbi-background-check/amp/",
+            "statement": "OBSERVED (third-party, disagreeing): mail 'within five weeks' vs '6-8+ weeks'; walk-in 7 business days vs 7-9 days; same-day only for documented life-or-death emergency with advance approval. Handbook must show a range with as-of date, never a point estimate.",
+            "status": "needs_review",
+            "topic": "processing_time",
+            "validation": "V-8"
+        },
+        {
+            "authority": "usdos-authentications",
+            "source_uri": "https://travel.state.gov/content/travel/en/passports/resources/authentications-sidebars.html",
+            "statement": "OBSERVED (official sidebar snippet): status phone 202-485-8000.",
+            "status": "needs_review",
+            "topic": "contacts",
+            "validation": "V-7"
+        }
+    ],
+    "pack": "usdos",
+    "title": "U.S. Department of State \u2014 Office of Authentications (conditional hop)",
+    "version": 1,
+    "watch": [
+        {
+            "authority": "usdos-authentications",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Authentications sidebar (status phone); bot-blocked, headless capture pending (V-1).",
+            "uri": "https://travel.state.gov/content/travel/en/passports/resources/authentications-sidebars.html"
+        }
+    ]
+}

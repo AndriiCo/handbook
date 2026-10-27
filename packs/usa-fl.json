@@ -1,0 +1,52 @@
+{
+    "authorities": [
+        {
+            "country": "USA",
+            "kind": "state",
+            "name": "Florida Department of State \u2014 Apostille & Authentication",
+            "region": "Florida",
+            "slug": "usa-fl-dos"
+        }
+    ],
+    "chain_steps": [
+        {
+            "authority": "usa-fl-dos",
+            "detail": "Whether FL needs a county/clerk pre-step is unknown \u2014 covered by the 50-state survey.",
+            "id": "fl-notary",
+            "order": 0,
+            "status": "needs_review",
+            "title": "Notarization on the document",
+            "validation": "V-4"
+        },
+        {
+            "authority": "usa-fl-dos",
+            "detail": "Verify authentication-vs-apostille form wording and fees before any customer copy.",
+            "id": "fl-dos-auth",
+            "order": 1,
+            "status": "needs_review",
+            "title": "FL Department of State authentication",
+            "validation": "P3-b"
+        }
+    ],
+    "domains": [
+        {
+            "authority": "usa-fl-dos",
+            "name": "dos.fl.gov",
+            "notes": "Seed; first fetch verifies reachability and pins deep links.",
+            "status": "unverified"
+        }
+    ],
+    "observations": [],
+    "pack": "usa-fl",
+    "title": "USA Florida \u2014 volume state (unverified)",
+    "version": 1,
+    "watch": [
+        {
+            "authority": "usa-fl-dos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Seed homepage; pin deep authentication links after first fetch (P3-b).",
+            "uri": "https://dos.fl.gov/"
+        }
+    ]
+}

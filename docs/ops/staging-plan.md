@@ -1,4 +1,15 @@
-# Staging plan (box arrives later; gate enforced from day 10)
+# Staging plan (G5 conditional; gate enforced from day 10)
+
+## G5: staging is conditional (decided 2026-10-26)
+
+- **Box lands by Day 5 (Sat Oct 31)** → cut over to staging-gated
+  deploys plus the `xtask accept` suite below; the cutover
+  checklist at the bottom of this file becomes the gate.
+- **No box by Oct 31** → auto-relax to prod-direct with prod smokes
+  and atomic rollback builds through the Nov 4 submission (see
+  `deploy.md` ship/rollback sections and `drill.md` drills 1–2);
+  staging becomes a post-submission item. No re-decision needed —
+  this paragraph IS the decision.
 
 ## What staging is for (in priority order)
 
