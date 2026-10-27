@@ -30,7 +30,11 @@ existing admin listener + staging.
 
 ## Commits
 
-- (execution commits to be listed here as merges land)
+- `f5258e1` Record goal-025 decisions (admin host, Telnyx,
+  DS-4194 pilot, zero-env, swTPM) + prompt log.
+- `dc55238` Merge tpm-seal: software-TPM sealing abstraction
+  in config (279 Rust tests green).
+- (further execution commits to be listed here as merges land)
 
 ## Follow-ups
 
