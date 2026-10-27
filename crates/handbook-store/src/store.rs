@@ -13,6 +13,8 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use contracts::Result;
+
 use sha2::{Digest, Sha256};
 
 /// A file-store root on local disk.
@@ -38,7 +40,7 @@ impl Store {
     }
 
     /// Create the root and well-known subdirectories (idempotent).
-    pub fn init(&self) -> io::Result<()> {
+    pub fn init(&self) -> Result<()> {
         for dir in ["warc", "mbox", "blob", "text"] {
             std::fs::create_dir_all(self.root.join(dir))?;
         }
@@ -51,7 +53,7 @@ impl Store {
     /// else (wrong length, non-hex, uppercase, separators) returns
     /// [`io::ErrorKind::InvalidInput`] instead of panicking, so
     /// untrusted input can never escape the blob directory.
-    pub fn blob_path(&self, sha_hex: &str) -> io::Result<PathBuf> {
+    pub fn blob_path(&self, sha_hex: &str) -> Result<PathBuf> {
         let valid = sha_hex.len() == 64
             && sha_hex
                 .bytes()
@@ -60,7 +62,8 @@ impl Store {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("invalid sha256 digest: {sha_hex:?}"),
-            ));
+            )
+            .into());
         }
         Ok(self
             .root
@@ -76,7 +79,7 @@ impl Store {
     /// The write is atomic: bytes go to a temp file in the same
     /// directory, then `rename` publishes the final address, so a
     /// concurrent reader never sees a torn file.
-    pub fn write_blob(&self, bytes: &[u8]) -> io::Result<String> {
+    pub fn write_blob(&self, bytes: &[u8]) -> Result<String> {
         let sha_hex = sha256_hex(bytes);
         let path = self.blob_path(&sha_hex)?;
         if path.exists() {
@@ -104,7 +107,7 @@ impl Store {
             {
                 Ok(file) => file,
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(e),
+                Err(e) => return Err(e.into()),
             };
             use std::io::Write as _;
             file.write_all(bytes)?;
@@ -115,7 +118,8 @@ impl Store {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "could not stage blob temp file",
-            ));
+            )
+            .into());
         };
         match std::fs::rename(&tmp, &path) {
             Ok(()) => Ok(sha_hex),
@@ -123,14 +127,18 @@ impl Store {
                 let _ = std::fs::remove_file(&tmp);
                 // A racing writer may have published identical bytes
                 // first (same bytes hash to the same address): a win.
-                if path.exists() { Ok(sha_hex) } else { Err(e) }
+                if path.exists() {
+                    Ok(sha_hex)
+                } else {
+                    Err(e.into())
+                }
             }
         }
     }
 
     /// Read a blob by its hex digest.
-    pub fn read_blob(&self, sha_hex: &str) -> io::Result<Vec<u8>> {
-        std::fs::read(self.blob_path(sha_hex)?)
+    pub fn read_blob(&self, sha_hex: &str) -> Result<Vec<u8>> {
+        Ok(std::fs::read(self.blob_path(sha_hex)?)?)
     }
 }
 
@@ -148,6 +156,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use contracts::HandbookError;
 
     #[test]
     fn blob_roundtrip_and_dedup() {
@@ -202,7 +211,10 @@ mod tests {
         ];
         for bad in &bad_inputs {
             let err = store.blob_path(bad).unwrap_err();
-            assert_eq!(err.kind(), io::ErrorKind::InvalidInput, "input: {bad:?}");
+            let HandbookError::Io(io_err) = err else {
+                panic!("expected Io error, input: {bad:?}");
+            };
+            assert_eq!(io_err.kind(), io::ErrorKind::InvalidInput, "input: {bad:?}");
         }
     }
 }

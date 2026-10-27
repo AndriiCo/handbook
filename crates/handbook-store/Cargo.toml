@@ -1,0 +1,13 @@
+[package]
+name = "handbook-store"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+contracts = { path = "../contracts" }
+rand = "0.9"
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"

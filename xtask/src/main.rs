@@ -5,7 +5,7 @@
 
 use std::process::Command;
 
-use handbook::store::Store;
+use handbook_store::store::Store;
 
 mod secrets;
 
@@ -89,7 +89,7 @@ fn open_store(args: &[String]) -> Store {
 /// Database handle for an already-opened store (F6: one open path — tasks
 /// must not reimplement the open-and-handle-error sequence themselves).
 fn open_db(store: &Store) -> rusqlite::Connection {
-    handbook::db::open(store).unwrap_or_else(|e| {
+    handbook_store::db::open(store).unwrap_or_else(|e| {
         eprintln!("open database (run `cargo xtask init` first): {e}");
         std::process::exit(1);
     })
@@ -128,7 +128,7 @@ fn run_init(args: &[String]) {
         std::process::exit(1);
     }
     let conn = open_db(&store);
-    if let Err(e) = handbook::db::migrate(&conn) {
+    if let Err(e) = handbook_store::db::migrate(&conn) {
         eprintln!("migrate: {e}");
         std::process::exit(1);
     }
@@ -144,7 +144,7 @@ fn run_add_authority(args: &[String]) {
     let country = required(args, "country");
     let name = required(args, "name");
     let slug = required(args, "slug");
-    let new = handbook::db::NewAuthority {
+    let new = handbook_store::db::NewAuthority {
         kind: &kind,
         country: &country,
         region: &region,
@@ -153,7 +153,7 @@ fn run_add_authority(args: &[String]) {
         actor: &actor,
         at: unix_now(),
     };
-    match handbook::db::add_authority(&conn, &new) {
+    match handbook_store::db::add_authority(&conn, &new) {
         Ok(id) => println!("authority id: {id}"),
         Err(e) => {
             eprintln!("add-authority: {e}");
@@ -177,7 +177,7 @@ fn run_retention_sweep(args: &[String]) {
     let conn = open_db(&store);
     let now = unix_now();
     let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
-    match handbook::db::retention_sweep(&conn, &store, now, &actor) {
+    match handbook_store::db::retention_sweep(&conn, &store, now, &actor) {
         Ok(deleted) => println!("expired audio captures deleted: {deleted}"),
         Err(e) => {
             eprintln!("retention-sweep: {e}");
@@ -248,12 +248,12 @@ fn run_serve() {
 }
 
 fn run_analyze(args: &[String]) {
-    use handbook::model::StubClient;
+    use handbook_agent::model::StubClient;
     use std::collections::HashMap;
 
     let store = open_store(args);
     let conn = open_db(&store);
-    if let Err(e) = handbook::db::migrate(&conn) {
+    if let Err(e) = handbook_store::db::migrate(&conn) {
         eprintln!("migrate: {e}");
         std::process::exit(1);
     }
@@ -273,7 +273,7 @@ fn run_analyze(args: &[String]) {
     let client = StubClient;
     let mut sources = HashMap::new();
     sources.insert("fixture".to_string(), input.clone());
-    match handbook::runner::run_analysis(
+    match handbook_agent::runner::run_analysis(
         &conn,
         &client,
         &slug,

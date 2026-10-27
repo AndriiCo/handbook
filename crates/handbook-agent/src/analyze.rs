@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::model::{DraftRequest, DraftResponse};
+use contracts::model::{DraftRequest, DraftResponse};
 
 /// Fill `{{slug}}`, `{{input}}`, `{{max_records}}` in a prompt template.
 ///
@@ -133,7 +133,7 @@ fn ceil_boundary(text: &str, mut i: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{CitationRef, ProposedRecord, Usage};
+    use contracts::model::{CitationRef, ProposedRecord, Usage};
 
     fn record(topic: &str, doc_id: &str, start: u32, end: u32, confidence: f32) -> ProposedRecord {
         ProposedRecord {

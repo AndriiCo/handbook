@@ -5,6 +5,8 @@
 
 use rusqlite::Connection;
 
+use contracts::Result;
+
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
@@ -27,7 +29,7 @@ pub const VOICE_RETENTION_DAYS: i64 = 365;
 /// - New tables MUST declare real `REFERENCES` clauses for references.
 /// - Deletes MUST remove (or null, where nullable) child rows first.
 /// - Never work around a violation with `PRAGMA foreign_keys=OFF`.
-pub fn open(store: &Store) -> rusqlite::Result<Connection> {
+pub fn open(store: &Store) -> Result<Connection> {
     let conn = Connection::open(store.db_path())?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "busy_timeout", 5000)?;
@@ -40,7 +42,7 @@ pub fn open(store: &Store) -> rusqlite::Result<Connection> {
 ///
 /// The whole upgrade runs inside one transaction, so a crash or error
 /// can never leave a half-applied migration behind.
-pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+pub fn migrate(conn: &Connection) -> Result<()> {
     in_transaction(conn, || {
         let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         if version < 1 {
@@ -76,10 +78,7 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 /// back when `f` fails. Takes a shared `&Connection` (rusqlite uses
 /// interior mutability), so callers with a shared handle still get
 /// atomic multi-statement updates.
-pub(crate) fn in_transaction<T>(
-    conn: &Connection,
-    f: impl FnOnce() -> rusqlite::Result<T>,
-) -> rusqlite::Result<T> {
+pub fn in_transaction<T>(conn: &Connection, f: impl FnOnce() -> Result<T>) -> Result<T> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
     match f() {
         Ok(value) => {
@@ -106,7 +105,7 @@ pub struct NewAuthority<'a> {
 
 /// Insert an authority (office / jurisdiction). Returns the new row id.
 /// The authority row and its audit row commit atomically (B1).
-pub fn add_authority(conn: &Connection, a: &NewAuthority<'_>) -> rusqlite::Result<i64> {
+pub fn add_authority(conn: &Connection, a: &NewAuthority<'_>) -> Result<i64> {
     in_transaction(conn, || {
         conn.execute(
             "INSERT INTO authority(kind, country, region, name, slug)
@@ -132,12 +131,7 @@ pub fn add_authority(conn: &Connection, a: &NewAuthority<'_>) -> rusqlite::Resul
 /// not resolve inside the store root is skipped entirely (neither file
 /// nor row is touched). Returns the number of audio captures deleted.
 /// `now` is unix seconds (a parameter so tests don't depend on the clock).
-pub fn retention_sweep(
-    conn: &Connection,
-    store: &Store,
-    now: i64,
-    actor: &str,
-) -> rusqlite::Result<usize> {
+pub fn retention_sweep(conn: &Connection, store: &Store, now: i64, actor: &str) -> Result<usize> {
     let cutoff = now.saturating_sub(VOICE_RETENTION_DAYS * 86_400);
     let expired: Vec<(i64, String)> = conn
         .prepare(
@@ -146,7 +140,7 @@ pub fn retention_sweep(
              WHERE c.kind = 'audio' AND c.captured_at < ?1",
         )?
         .query_map([cutoff], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     // Canonicalize once: symlinked parents (e.g. macOS `/var` ->
     // `/private/var`) must compare against the resolved root.
     let canonical_root = store
@@ -205,7 +199,7 @@ pub fn upsert_watermark(
     slug: &str,
     at: i64,
     prompt_version: &str,
-) -> rusqlite::Result<()> {
+) -> Result<()> {
     conn.execute(
         "INSERT INTO watermark(authority_slug, last_run_at, last_prompt_version)
          VALUES (?1, ?2, ?3)
@@ -218,7 +212,7 @@ pub fn upsert_watermark(
 }
 
 /// Read back `(last_run_at, last_prompt_version)` for one authority, if any.
-pub fn get_watermark(conn: &Connection, slug: &str) -> rusqlite::Result<Option<(i64, String)>> {
+pub fn get_watermark(conn: &Connection, slug: &str) -> Result<Option<(i64, String)>> {
     match conn.query_row(
         "SELECT last_run_at, last_prompt_version FROM watermark
          WHERE authority_slug = ?1",
@@ -227,7 +221,7 @@ pub fn get_watermark(conn: &Connection, slug: &str) -> rusqlite::Result<Option<(
     ) {
         Ok(found) => Ok(Some(found)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(e) => Err(e),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -249,7 +243,7 @@ pub struct NewProposedFact<'a> {
 /// fallback was needed). The `fact` table has no `field`/`citation`/
 /// `confidence` columns: the caller folds `field` into `statement`, and
 /// citation byte ranges plus confidence are not stored.
-pub fn insert_proposed_fact(conn: &Connection, f: &NewProposedFact<'_>) -> rusqlite::Result<i64> {
+pub fn insert_proposed_fact(conn: &Connection, f: &NewProposedFact<'_>) -> Result<i64> {
     conn.execute(
         "INSERT INTO fact(authority_id, capture_id, topic, statement,
                            status, created_by, created_at)
@@ -275,7 +269,7 @@ pub fn insert_analysis_audit(
     actor: &str,
     authority_id: i64,
     reason: &str,
-) -> rusqlite::Result<i64> {
+) -> Result<i64> {
     conn.execute(
         "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
          VALUES (?1, ?2, 'analysis_run', 'authority', ?3, ?4)",
@@ -292,7 +286,7 @@ pub fn create_demo_session(
     customer_ref: &str,
     created_at: i64,
     expires_at: i64,
-) -> rusqlite::Result<()> {
+) -> Result<()> {
     conn.execute(
         "INSERT INTO demo_session(token, customer_ref, created_at, expires_at)
          VALUES (?1, ?2, ?3, ?4)",
@@ -303,17 +297,18 @@ pub fn create_demo_session(
 
 /// Look up a DEMO session by token. Returns `(customer_ref, expires_at)`;
 /// callers must reject expired rows (`now >= expires_at`).
-pub fn get_demo_session(conn: &Connection, token: &str) -> rusqlite::Result<Option<(String, i64)>> {
+pub fn get_demo_session(conn: &Connection, token: &str) -> Result<Option<(String, i64)>> {
     // Fully-qualified trait call: avoids touching the import block.
-    rusqlite::OptionalExtension::optional(conn.query_row(
+    // `?` lifts the rusqlite error into `contracts::Result`.
+    Ok(rusqlite::OptionalExtension::optional(conn.query_row(
         "SELECT customer_ref, expires_at FROM demo_session WHERE token = ?1",
         [token],
         |row| Ok((row.get(0)?, row.get(1)?)),
-    ))
+    ))?)
 }
 
 /// Delete DEMO sessions with `expires_at <= now`. Returns rows deleted.
-pub fn delete_expired_demo_sessions(conn: &Connection, now: i64) -> rusqlite::Result<usize> {
+pub fn delete_expired_demo_sessions(conn: &Connection, now: i64) -> Result<usize> {
     let deleted = conn.execute("DELETE FROM demo_session WHERE expires_at <= ?1", [now])?;
     Ok(deleted)
 }

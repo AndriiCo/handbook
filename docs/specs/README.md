@@ -160,6 +160,9 @@ G5. Staging is conditional: if the box lands by Day 5
     prod-direct with prod smokes and atomic rollback
     builds through the Nov 4 submission, and staging
     becomes a post-submission item.
+G6. Postgres declined for the slice (decided 2026-10-27):
+    SQLite stands (rusqlite bundled); HTTP integration
+    tests run on temp SQLite. Revisit only post-submission.
 
 **Still needed during the 5–7 days:**
 

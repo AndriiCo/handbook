@@ -1,8 +1,8 @@
 //! Analysis-runner core (S2 lane): draft, validate, store as `proposed`.
 //!
-//! Pure orchestration around [`ModelClient`](crate::model::ModelClient):
+//! Pure orchestration around [`ModelClient`](contracts::model::ModelClient):
 //! build a draft request, draft records, validate each record against the
-//! frozen [`Topic`](crate::topics::Topic) enum and source texts, and store
+//! frozen [`Topic`](contracts::topics::Topic) enum and source texts, and store
 //! valid records as `proposed` facts. Never auto-accepts.
 //!
 //! Whole-response failures (client errors) return `Err` with no writes and
@@ -15,11 +15,12 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::analyze::{build_prompt, validate_response};
-use crate::db::{
+use contracts::error::HandbookError;
+use contracts::model::{DraftRequest, ModelClient, ModelError};
+use contracts::topics::Topic;
+use handbook_store::db::{
     NewProposedFact, in_transaction, insert_analysis_audit, insert_proposed_fact, upsert_watermark,
 };
-use crate::model::{DraftRequest, ModelClient, ModelError};
-use crate::topics::Topic;
 
 /// Version of `prompts/aa-prompt-v1.md`, recorded in watermarks and `created_by`.
 pub const PROMPT_VERSION: &str = "aa-prompt-v1";
@@ -86,6 +87,7 @@ pub fn run_analysis(
             row.get(0)
         })
         .optional()
+        .map_err(HandbookError::from)
         .map_err(db_err)?;
     let Some(authority_id) = authority_id else {
         return Err(ModelError::Transport(format!(
@@ -140,18 +142,17 @@ pub fn run_analysis(
 
 /// The runner signature only carries [`ModelError`], so database failures
 /// map there (a dedicated runner error is follow-up work).
-fn db_err(e: rusqlite::Error) -> ModelError {
+fn db_err(e: HandbookError) -> ModelError {
     ModelError::Transport(format!("runner db error: {e}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{NewAuthority, add_authority, get_watermark, migrate, open};
-    use crate::model::{
-        CitationRef, DraftResponse, MetaRestClient, ModelError, ProposedRecord, StubClient, Usage,
-    };
-    use crate::store::Store;
+    use crate::model::{MetaRestClient, StubClient};
+    use contracts::model::{CitationRef, DraftResponse, ModelError, ProposedRecord, Usage};
+    use handbook_store::db::{NewAuthority, add_authority, get_watermark, migrate, open};
+    use handbook_store::store::Store;
 
     fn migrated_with_authority(slug: &str) -> (tempfile::TempDir, Store, Connection) {
         let dir = tempfile::tempdir().unwrap();

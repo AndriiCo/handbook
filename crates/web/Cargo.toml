@@ -8,7 +8,7 @@ name = "web"
 path = "src/main.rs"
 
 [dependencies]
-handbook = { path = "../handbook" }
+handbook-store = { path = "../handbook-store" }
 rand = "0.9"
 axum = { version = "0.8", features = ["ws"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }

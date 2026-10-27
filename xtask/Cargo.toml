@@ -9,5 +9,6 @@ name = "xtask"
 path = "src/main.rs"
 
 [dependencies]
-handbook = { path = "../crates/handbook" }
+handbook-agent = { path = "../crates/handbook-agent" }
+handbook-store = { path = "../crates/handbook-store" }
 rusqlite = { version = "0.32", features = ["bundled"] }

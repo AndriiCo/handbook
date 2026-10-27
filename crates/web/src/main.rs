@@ -19,7 +19,7 @@ use axum::{
     response::{IntoResponse, Json},
     routing::{get, post},
 };
-use handbook::{db, store::Store};
+use handbook_store::{db, store::Store};
 use serde_json::json;
 use std::net::SocketAddr;
 use std::path::PathBuf;

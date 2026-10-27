@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/handbook", "crates/web", "xtask"]
+members = [
+    "crates/contracts",
+    "crates/handbook-store",
+    "crates/handbook-agent",
+    "crates/web",
+    "xtask",
+]
 
 # Release hardening (prompt 015; see docs/ops/threat-model.md).
 # Tests always run on the dev profile, so these never affect `cargo test`.
