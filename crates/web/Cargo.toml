@@ -8,6 +8,7 @@ name = "web"
 path = "src/main.rs"
 
 [dependencies]
+acme = { path = "../acme" }
 auth = { path = "../auth" }
 base64 = "0.22"
 config = { path = "../config" }

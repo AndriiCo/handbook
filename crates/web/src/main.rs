@@ -152,8 +152,8 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
     // axum 0.8 `nest` does not route the bare `/apostille/` (trailing
     // slash) into the nest, so the shell gets explicit outer routes.
     // The ACME challenge path lives at the domain root (not under
-    // /apostille): the port-80 308 redirects http-01 there, and ACME
-    // follows redirects to this HTTPS route.
+    // /apostille): port 80 serves it directly for http-01, and this
+    // HTTPS route covers CAs that follow the 308 here instead.
     Router::new()
         .route("/apostille", get(serve_spa_index))
         .route("/apostille/", get(serve_spa_index))
@@ -381,8 +381,15 @@ async fn load_tls(
 /// 308 every HTTP request to `https://{PUBLIC_HOST}{path}`.
 /// The host comes from config, never from the Host header (a
 /// header-derived target would be an open redirect).
-fn redirect_router(public_host: String) -> Router {
+///
+/// One path is exempt: `/.well-known/acme-challenge/` serves token
+/// files straight from port 80. The CA must fetch http-01 answers
+/// over plain HTTP, and on first issuance there is no certificate
+/// yet to complete a redirected HTTPS fetch — so the redirector
+/// answers challenges itself instead of bouncing them.
+fn redirect_router(public_host: String, acme_dir: &str) -> Router {
     Router::new()
+        .nest_service("/.well-known/acme-challenge", ServeDir::new(acme_dir))
         .fallback(redirect_to_https)
         .with_state(public_host)
 }
@@ -456,7 +463,7 @@ async fn main() {
     let state = AppState {
         spa_index: std::path::Path::new(&spa_dir).join("index.html"),
         static_dir: PathBuf::from(&static_dir),
-        store_root: PathBuf::from(store_dir),
+        store_root: PathBuf::from(store_dir.as_str()),
         bus: ws_bus::Bus::new(),
         kek,
         admin_mtls_off,
@@ -472,13 +479,60 @@ async fn main() {
     )
     .await;
     match tls {
+        // Explicit files always win: ACME stays off when the
+        // operator pinned a certificate.
         Ok(Some(tls)) => serve_tls(public, admin, tls).await,
+        Ok(None) if acme_enabled() => serve_acme(public, admin, &store_dir, &acme_dir).await,
         Ok(None) => serve_http(public, admin).await,
         Err(message) => {
             eprintln!("refusing to start: {message}");
             std::process::exit(1);
         }
     }
+}
+
+/// In-binary ACME is opt-in: `ACME_ENABLED=1` plus the `ACME_*`
+/// variables (`docs/ops/acme.md`). Anything else is plain HTTP dev
+/// mode (or explicit TLS files above).
+fn acme_enabled() -> bool {
+    std::env::var("ACME_ENABLED").ok().is_some_and(|v| v == "1")
+}
+
+/// ACME mode: load the persisted pair or issue it (Google Public CA,
+/// http-01 via `acme_dir`), serve TLS with it, and renew in the
+/// background with hot reloads — no restarts, ever.
+async fn serve_acme(public: Router, admin: Router, store_dir: &str, acme_dir: &str) {
+    let config = acme::AcmeConfig::from_env(std::path::Path::new(store_dir), acme_dir.into())
+        .unwrap_or_else(|e| {
+            eprintln!("refusing to start: {e}");
+            std::process::exit(1);
+        });
+    if config.staging() {
+        eprintln!("WARNING: ACME staging directory — issued certs are UNTRUSTED (test only)");
+    }
+    let pair = acme::ensure_certificate(&config).await.unwrap_or_else(|e| {
+        eprintln!("refusing to start: {e}");
+        std::process::exit(1);
+    });
+    let tls = axum_server::tls_rustls::RustlsConfig::from_pem(pair.cert_pem, pair.key_pem)
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("refusing to start: ACME pair does not load: {e}");
+            std::process::exit(1);
+        });
+    let loop_tls = tls.clone();
+    tokio::spawn(async move {
+        acme::renewal_loop(config, |cert, key| {
+            let tls = loop_tls.clone();
+            async move {
+                tls.reload_from_pem(cert, key)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
+        })
+        .await
+    });
+    serve_tls(public, admin, tls).await
 }
 
 /// Plain-HTTP dev mode: public on `PORT` (default 3000) and admin
@@ -516,6 +570,7 @@ async fn serve_tls(public: Router, admin: Router, tls: axum_server::tls_rustls::
     let admin_https_port = port_env("ADMIN_HTTPS_PORT", 444);
     let http_port = port_env("HTTP_PORT", 80);
     let public_host = std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "andrii.ai".to_string());
+    let acme_dir = std::env::var("ACME_CHALLENGE_DIR").unwrap_or_else(|_| "acme".to_string());
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
     for ip in bind_ips() {
@@ -541,9 +596,9 @@ async fn serve_tls(public: Router, admin: Router, tls: axum_server::tls_rustls::
         let addr = SocketAddr::new(ip, http_port);
         let handle = axum_server::Handle::new();
         handles.push(handle.clone());
-        eprintln!("listening on http://{addr} (redirect only)");
+        eprintln!("listening on http://{addr} (redirect + ACME challenges)");
         servers.spawn({
-            let redirect = redirect_router(public_host.clone());
+            let redirect = redirect_router(public_host.clone(), &acme_dir);
             async move {
                 axum_server::bind(addr)
                     .handle(handle)
@@ -865,8 +920,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn redirector_serves_challenge_but_redirects_rest() {
+        // The CA's http-01 fetch must get the token over plain HTTP;
+        // everything else 308s to the configured host.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("tok-1"), "key-auth-body").unwrap();
+        let dir = tmp.path().to_str().unwrap().to_string();
+        let hit = redirect_router("example.test".to_string(), &dir)
+            .oneshot(
+                Request::builder()
+                    .uri("/.well-known/acme-challenge/tok-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(hit.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(hit.into_body(), 4096).await.unwrap();
+        assert_eq!(body.as_ref(), b"key-auth-body");
+        let miss = redirect_router("example.test".to_string(), &dir)
+            .oneshot(
+                Request::builder()
+                    .uri("/.well-known/acme-challenge/nope")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(miss.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn https_redirect_points_at_public_host() {
-        let res = redirect_router("example.test".to_string())
+        let res = redirect_router("example.test".to_string(), "test-acme")
             .oneshot(
                 Request::builder()
                     .uri("/apostille/order?q=1")
