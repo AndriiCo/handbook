@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 4;
 
 /// Voice-audio retention in days (decided 2026-10-26).
 pub const VOICE_RETENTION_DAYS: i64 = 365;
@@ -50,6 +50,10 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         if version < 2 {
             conn.execute_batch(include_str!("../migrations/002_hardening.sql"))?;
             conn.pragma_update(None, "user_version", 2)?;
+        }
+        if version < 4 {
+            conn.execute_batch(include_str!("../migrations/004_watermarks.sql"))?;
+            conn.pragma_update(None, "user_version", 4)?;
         }
         Ok(())
     })?;
@@ -183,6 +187,91 @@ fn parent_inside_root(canonical_root: &std::path::Path, candidate: &std::path::P
         .unwrap_or(candidate)
         .canonicalize()
         .is_ok_and(|parent| parent.starts_with(canonical_root))
+}
+
+/// Insert or replace the per-authority analysis watermark row (S2 lane).
+pub fn upsert_watermark(
+    conn: &Connection,
+    slug: &str,
+    at: i64,
+    prompt_version: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO watermark(authority_slug, last_run_at, last_prompt_version)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(authority_slug) DO UPDATE SET
+           last_run_at = excluded.last_run_at,
+           last_prompt_version = excluded.last_prompt_version",
+        rusqlite::params![slug, at, prompt_version],
+    )?;
+    Ok(())
+}
+
+/// Read back `(last_run_at, last_prompt_version)` for one authority, if any.
+pub fn get_watermark(conn: &Connection, slug: &str) -> rusqlite::Result<Option<(i64, String)>> {
+    match conn.query_row(
+        "SELECT last_run_at, last_prompt_version FROM watermark
+         WHERE authority_slug = ?1",
+        [slug],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ) {
+        Ok(found) => Ok(Some(found)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// One row for [`insert_proposed_fact`].
+pub struct NewProposedFact<'a> {
+    pub authority_id: i64,
+    pub capture_id: i64,
+    pub topic: &'a str,
+    pub statement: &'a str,
+    pub created_by: &'a str,
+    pub created_at: i64,
+}
+
+/// Insert ONE `fact` row with `status='proposed'`. Returns the new row id.
+///
+/// Column mapping (`migrations/001_init.sql`): `authority_id`, `capture_id`,
+/// `topic`, `statement`, `created_by`, `created_at` pass through; `status` is
+/// always `'proposed'` (the existing status column fits, so no mapping
+/// fallback was needed). The `fact` table has no `field`/`citation`/
+/// `confidence` columns: the caller folds `field` into `statement`, and
+/// citation byte ranges plus confidence are not stored.
+pub fn insert_proposed_fact(conn: &Connection, f: &NewProposedFact<'_>) -> rusqlite::Result<i64> {
+    conn.execute(
+        "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                           status, created_by, created_at)
+         VALUES (?1, ?2, ?3, ?4, 'proposed', ?5, ?6)",
+        rusqlite::params![
+            f.authority_id,
+            f.capture_id,
+            f.topic,
+            f.statement,
+            f.created_by,
+            f.created_at
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Append one `action='analysis_run'` audit row for a finished analysis run.
+/// `authority_id` is the run's `entity_id` (`entity='authority'`); `reason`
+/// carries the proposed/rejected counts plus token usage.
+pub fn insert_analysis_audit(
+    conn: &Connection,
+    at: i64,
+    actor: &str,
+    authority_id: i64,
+    reason: &str,
+) -> rusqlite::Result<i64> {
+    conn.execute(
+        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+         VALUES (?1, ?2, 'analysis_run', 'authority', ?3, ?4)",
+        rusqlite::params![at, actor, authority_id, reason],
+    )?;
+    Ok(conn.last_insert_rowid())
 }
 
 #[cfg(test)]
@@ -578,5 +667,28 @@ mod tests {
         assert_eq!(evil_audits, 1);
         // The legitimate capture is fully swept.
         assert!(!store.blob_path(&legit).unwrap().exists());
+    }
+
+    #[test]
+    fn watermark_upsert_get_roundtrip() {
+        let (_dir, _store, conn) = migrated();
+        assert_eq!(get_watermark(&conn, "usa-wa").unwrap(), None);
+        upsert_watermark(&conn, "usa-wa", 100, "aa-prompt-v1").unwrap();
+        assert_eq!(
+            get_watermark(&conn, "usa-wa").unwrap(),
+            Some((100, "aa-prompt-v1".to_string()))
+        );
+        // Upsert replaces the row for the same authority.
+        upsert_watermark(&conn, "usa-wa", 200, "aa-prompt-v2").unwrap();
+        assert_eq!(
+            get_watermark(&conn, "usa-wa").unwrap(),
+            Some((200, "aa-prompt-v2".to_string()))
+        );
+        // Other authorities are independent rows.
+        upsert_watermark(&conn, "usa-ca", 300, "aa-prompt-v1").unwrap();
+        assert_eq!(
+            get_watermark(&conn, "usa-ca").unwrap(),
+            Some((300, "aa-prompt-v1".to_string()))
+        );
     }
 }
