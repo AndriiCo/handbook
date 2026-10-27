@@ -52,6 +52,9 @@ the consolidated author-decision list is at the bottom of this file.
 - [voice-telnyx.md](voice-telnyx.md) — Telnyx voice calls
   (Call Control client, webhook verify, recording + transcript
   UI; staff-only, consent-gated).
+- [mtls-seam.md](mtls-seam.md) — admin-listener mTLS (H6 fix
+  part 2): rustls client-cert verification, fingerprint layer,
+  cert lifecycle, staging/prod enrollment, acceptance.
 - Legal drafts (lawyer review required, do not publish):
   [tos-draft.md](../legal/tos-draft.md),
   [privacy-draft.md](../legal/privacy-draft.md).

@@ -24,11 +24,12 @@ use crate::{AppState, approval, store_unavailable, unix_now};
 /// Verified mTLS client identity (SHA-256 hex), inserted as a request
 /// extension by the TLS terminator.
 ///
-/// SEAM: axum-server exposes no per-connection client cert yet, so no
-/// production layer inserts this today — strict mode therefore fails
-/// closed (403) until the rustls client-cert verifier lands. Local
-/// dev sets `ADMIN_MTLS=off` and identifies test certs with the
-/// `x-admin-cert-sha256` header instead (see [`AdminAuth`]).
+/// Inserted by the [`mtls`](crate::mtls) fingerprint layer from the
+/// peer chain the admin listener's [`MtlsAcceptor`](crate::mtls::MtlsAcceptor)
+/// captured at handshake time. No chain (plain dev HTTP, no-CA TLS,
+/// cert-less peer) means no extension, and strict mode fails closed
+/// (403). Local dev sets `admin.mtls_off` and identifies test certs
+/// with the `x-admin-cert-sha256` header instead (see [`AdminAuth`]).
 #[derive(Debug, Clone)]
 pub struct VerifiedClientCert(pub String);
 

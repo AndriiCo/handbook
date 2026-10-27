@@ -14,6 +14,7 @@ mod admin;
 mod admin_voice;
 mod admin_workers;
 mod approval;
+mod mtls;
 mod p2;
 mod p2_labels;
 mod ws_bus;
@@ -365,6 +366,57 @@ async fn load_tls(
     }
 }
 
+/// Admin TLS config: the same server cert/key as the public
+/// listener, plus client-cert chain verification against
+/// `tls.client_ca_file` when set. No CA → plain TLS (strict mode
+/// then 403s for lack of a verified cert, as before). A set but
+/// unreadable/invalid CA refuses the boot — mTLS must never
+/// silently downgrade.
+fn load_admin_tls(
+    cert_path: &str,
+    key_path: &str,
+    ca_path: Option<&str>,
+) -> Result<axum_server::tls_rustls::RustlsConfig, String> {
+    let cert_pem = std::fs::read(cert_path)
+        .map_err(|e| format!("read tls.cert_file={cert_path} tls.key_file=<redacted>: {e}"))?;
+    let key_pem = std::fs::read(key_path)
+        .map_err(|_| format!("read tls.cert_file={cert_path} tls.key_file=<redacted>"))?;
+    load_admin_tls_from_pem(&cert_pem, &key_pem, ca_path)
+}
+
+/// Same as [`load_admin_tls`] for in-memory PEMs (ACME path).
+fn load_admin_tls_from_pem(
+    cert_pem: &[u8],
+    key_pem: &[u8],
+    ca_path: Option<&str>,
+) -> Result<axum_server::tls_rustls::RustlsConfig, String> {
+    let ca_pem = ca_path
+        .map(|path| std::fs::read(path).map_err(|e| format!("read tls.client_ca_file={path}: {e}")))
+        .transpose()?;
+    let config = mtls::admin_server_config(cert_pem, key_pem, ca_pem.as_deref())?;
+    Ok(axum_server::tls_rustls::RustlsConfig::from_config(
+        std::sync::Arc::new(config),
+    ))
+}
+
+/// Hot-reload the admin config after an ACME renewal: rebuild the
+/// whole `ServerConfig` (rustls has no in-place cert swap on a
+/// custom-built config) and swap it in. Re-reads the CA file, so a
+/// rotated bundle takes effect at the next renewal with no restart.
+fn reload_admin_tls(
+    admin_tls: &axum_server::tls_rustls::RustlsConfig,
+    cert_pem: &[u8],
+    key_pem: &[u8],
+    ca_path: Option<&str>,
+) -> Result<(), String> {
+    let ca_pem = ca_path
+        .map(|path| std::fs::read(path).map_err(|e| format!("read tls.client_ca_file={path}: {e}")))
+        .transpose()?;
+    let config = mtls::admin_server_config(cert_pem, key_pem, ca_pem.as_deref())?;
+    admin_tls.reload_from_config(std::sync::Arc::new(config));
+    Ok(())
+}
+
 /// 308 every HTTP request to `https://{host}{path}`.
 /// The host comes from DB config, never from the Host header (a
 /// header-derived target would be an open redirect).
@@ -504,15 +556,33 @@ async fn main() {
     // Voice staff routes (AdminAuth + host guard + CSRF, applied in
     // the voice routers themselves) and the Telnyx webhook (host
     // guard + Ed25519 signature, no session).
+    // H6 mTLS seam: the fingerprint layer runs OUTSIDE every merged
+    // admin router (approval/config, workers, voice staff, webhook),
+    // so each one's `AdminAuth` sees the same TLS-supplied identity.
+    // Without peer certs (plain HTTP dev, no-CA TLS) it no-ops.
     let admin = admin::router(state.clone())
         .merge(admin_workers::router(state.clone()))
         .merge(admin_voice::staff_router(state.clone()))
-        .merge(admin_voice::webhook_router(state));
+        .merge(admin_voice::webhook_router(state))
+        .layer(axum::middleware::from_fn(mtls::inject_verified_cert));
     let tls = load_tls(cfg.tls_cert.clone(), cfg.tls_key.clone()).await;
     match tls {
         // Explicit files always win: ACME stays off when the
         // operator pinned a certificate.
-        Ok(Some(tls)) => serve_tls(public, admin, tls, &cfg).await,
+        Ok(Some(public_tls)) => {
+            let admin_tls = load_admin_tls(
+                cfg.tls_cert.as_deref().unwrap_or_default(),
+                cfg.tls_key.as_deref().unwrap_or_default(),
+                cfg.tls_client_ca.as_deref(),
+            );
+            match admin_tls {
+                Ok(admin_tls) => serve_tls(public, admin, public_tls, admin_tls, &cfg).await,
+                Err(message) => {
+                    eprintln!("refusing to start: {message}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Ok(None) if cfg.acme_enabled => serve_acme(public, admin, &cfg, &store_dir).await,
         Ok(None) => serve_http(public, admin, &cfg).await,
         Err(message) => {
@@ -553,30 +623,47 @@ async fn serve_acme(public: Router, admin: Router, cfg: &config::RuntimeConfig, 
         eprintln!("refusing to start: {e}");
         std::process::exit(1);
     });
-    let tls = axum_server::tls_rustls::RustlsConfig::from_pem(pair.cert_pem, pair.key_pem)
-        .await
-        .unwrap_or_else(|e| {
-            eprintln!("refusing to start: ACME pair does not load: {e}");
-            std::process::exit(1);
-        });
+    let tls = axum_server::tls_rustls::RustlsConfig::from_pem(
+        pair.cert_pem.clone(),
+        pair.key_pem.clone(),
+    )
+    .await
+    .unwrap_or_else(|e| {
+        eprintln!("refusing to start: ACME pair does not load: {e}");
+        std::process::exit(1);
+    });
+    let admin_tls =
+        load_admin_tls_from_pem(&pair.cert_pem, &pair.key_pem, cfg.tls_client_ca.as_deref())
+            .unwrap_or_else(|e| {
+                eprintln!("refusing to start: {e}");
+                std::process::exit(1);
+            });
     let loop_tls = tls.clone();
+    let loop_admin_tls = admin_tls.clone();
+    let loop_ca = cfg.tls_client_ca.clone();
     tokio::spawn(async move {
         acme::renewal_loop(config, |cert, key| {
             let tls = loop_tls.clone();
+            let admin_tls = loop_admin_tls.clone();
+            let ca = loop_ca.clone();
             async move {
-                tls.reload_from_pem(cert, key)
+                tls.reload_from_pem(cert.clone(), key.clone())
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                reload_admin_tls(&admin_tls, &cert, &key, ca.as_deref())
             }
         })
         .await
     });
-    serve_tls(public, admin, tls, cfg).await
+    serve_tls(public, admin, tls, admin_tls, cfg).await
 }
 
 /// Plain-HTTP dev mode: public on `net.port` (default 3000) and
 /// admin on `net.admin_port` (default 3001), on every bind IP.
 async fn serve_http(public: Router, admin: Router, cfg: &config::RuntimeConfig) {
+    if cfg.tls_client_ca.is_some() {
+        eprintln!("WARNING: tls.client_ca_file is set but admin TLS is off — mTLS inert");
+    }
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
     for ip in cfg.bind_ips() {
@@ -605,34 +692,55 @@ async fn serve_http(public: Router, admin: Router, cfg: &config::RuntimeConfig) 
 /// Prod mode: HTTPS public on `net.https_port` (443) + HTTPS admin
 /// on `net.admin_https_port` (444) plus an HTTP→HTTPS redirector on
 /// `net.http_port` (80), on every bind IP.
+///
+/// The listeners use SEPARATE TLS configs: public stays plain (no
+/// client certs ever), admin verifies client chains against
+/// `tls.client_ca_file` when set and captures the peer chain for the
+/// fingerprint layer via [`mtls::MtlsAcceptor`].
 async fn serve_tls(
     public: Router,
     admin: Router,
-    tls: axum_server::tls_rustls::RustlsConfig,
+    public_tls: axum_server::tls_rustls::RustlsConfig,
+    admin_tls: axum_server::tls_rustls::RustlsConfig,
     cfg: &config::RuntimeConfig,
 ) {
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
     for ip in cfg.bind_ips() {
-        for (router, port, name) in [
-            (&public, cfg.https_port, "public"),
-            (&admin, cfg.admin_https_port, "admin"),
-        ] {
-            let addr = SocketAddr::new(ip, port);
-            let handle = axum_server::Handle::new();
-            handles.push(handle.clone());
-            eprintln!("listening on https://{addr}/apostille ({name})");
-            servers.spawn({
-                let router = router.clone();
-                let tls = tls.clone();
-                async move {
-                    axum_server::bind_rustls(addr, tls)
-                        .handle(handle)
-                        .serve(router.into_make_service())
-                        .await
-                }
-            });
-        }
+        let addr = SocketAddr::new(ip, cfg.https_port);
+        let handle = axum_server::Handle::new();
+        handles.push(handle.clone());
+        eprintln!("listening on https://{addr}/apostille (public)");
+        servers.spawn({
+            let router = public.clone();
+            let tls = public_tls.clone();
+            async move {
+                axum_server::bind_rustls(addr, tls)
+                    .handle(handle)
+                    .serve(router.into_make_service())
+                    .await
+            }
+        });
+        let addr = SocketAddr::new(ip, cfg.admin_https_port);
+        let handle = axum_server::Handle::new();
+        handles.push(handle.clone());
+        let mtls = if cfg.tls_client_ca.is_some() {
+            "admin, mTLS"
+        } else {
+            "admin"
+        };
+        eprintln!("listening on https://{addr}/apostille ({mtls})");
+        servers.spawn({
+            let router = admin.clone();
+            let tls = admin_tls.clone();
+            async move {
+                axum_server::bind(addr)
+                    .acceptor(mtls::MtlsAcceptor::new(tls))
+                    .handle(handle)
+                    .serve(router.into_make_service())
+                    .await
+            }
+        });
         let addr = SocketAddr::new(ip, cfg.http_port);
         let handle = axum_server::Handle::new();
         handles.push(handle.clone());
@@ -2121,5 +2229,468 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["error"], "store unavailable");
+    }
+
+    // ===== H6 mTLS seam: hermetic end-to-end over real TLS =====
+    // Synthetic rcgen CA/server/client certs, 127.0.0.1 port 0,
+    // staff session + `admin_cert` rows in a temp store.
+
+    /// Synthetic test CA (mirrors the xtask `admin-cert-issue` CA
+    /// shape, plus the key usages webpki chain validation needs).
+    fn test_ca(cn: &str) -> (rcgen::Certificate, rcgen::KeyPair) {
+        let mut params = rcgen::CertificateParams::default();
+        params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, cn);
+        params.key_usages = vec![
+            rcgen::KeyUsagePurpose::KeyCertSign,
+            rcgen::KeyUsagePurpose::DigitalSignature,
+            rcgen::KeyUsagePurpose::CrlSign,
+        ];
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key).unwrap();
+        (cert, key)
+    }
+
+    /// Synthetic client cert signed by `ca` (EKU ClientAuth, like a
+    /// production `admin-cert-issue`).
+    struct TestClient {
+        cert_pem: Vec<u8>,
+        key_pem: Vec<u8>,
+        fingerprint: String,
+    }
+
+    fn test_client(ca: &rcgen::Certificate, ca_key: &rcgen::KeyPair, cn: &str) -> TestClient {
+        let key = rcgen::KeyPair::generate().unwrap();
+        let mut params = rcgen::CertificateParams::new(vec![cn.to_string()]).unwrap();
+        params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, cn);
+        params.key_usages = vec![rcgen::KeyUsagePurpose::DigitalSignature];
+        params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ClientAuth];
+        let cert = params.signed_by(&key, ca, ca_key).unwrap();
+        let fingerprint = handbook_store::store::sha256_hex(cert.der());
+        TestClient {
+            cert_pem: cert.pem().into_bytes(),
+            key_pem: key.serialize_pem().into_bytes(),
+            fingerprint,
+        }
+    }
+
+    /// Strict-mode fixture (`admin.mtls_off` false, as in release).
+    fn strict_fixture() -> Fixture {
+        let mut fx = fixture();
+        fx.state.admin_mtls_off = false;
+        fx
+    }
+
+    /// Admin router exactly as production serves it: merged stack
+    /// plus the fingerprint layer outside.
+    fn strict_admin_router(state: &AppState) -> Router {
+        admin::router(state.clone()).layer(axum::middleware::from_fn(mtls::inject_verified_cert))
+    }
+
+    fn enroll_cert(store_root: &std::path::Path, fingerprint: &str, cn: &str) {
+        let store = Store::new(store_root);
+        let conn = db::open(&store).unwrap();
+        auth::issue_admin_cert(&conn, fingerprint, cn, unix_now(), unix_now() + 86_400, "")
+            .unwrap();
+    }
+
+    fn revoke_cert(store_root: &std::path::Path, fingerprint: &str) {
+        let store = Store::new(store_root);
+        let conn = db::open(&store).unwrap();
+        auth::revoke_admin_cert(&conn, fingerprint, unix_now()).unwrap();
+    }
+
+    /// Serve `router` over real TLS on 127.0.0.1:0 through the
+    /// production [`mtls::MtlsAcceptor`].
+    fn spawn_mtls_admin(
+        router: Router,
+        server: (Vec<u8>, Vec<u8>),
+        ca_pem: Option<&[u8]>,
+    ) -> (
+        SocketAddr,
+        axum_server::Handle,
+        tokio::task::JoinHandle<std::io::Result<()>>,
+    ) {
+        let config = mtls::admin_server_config(&server.0, &server.1, ca_pem).unwrap();
+        let tls = axum_server::tls_rustls::RustlsConfig::from_config(std::sync::Arc::new(config));
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = axum_server::Handle::new();
+        let server = tokio::spawn({
+            let handle = handle.clone();
+            async move {
+                axum_server::from_tcp(listener)
+                    .acceptor(mtls::MtlsAcceptor::new(tls))
+                    .handle(handle)
+                    .serve(router.into_make_service())
+                    .await
+            }
+        });
+        (addr, handle, server)
+    }
+
+    /// Test-only TLS client (accepts the synthetic server cert like
+    /// [`AcceptAny`]), with or without a client certificate.
+    fn mtls_client_config(client: Option<&TestClient>) -> rustls::ClientConfig {
+        let builder = rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(std::sync::Arc::new(AcceptAny));
+        match client {
+            Some(client) => {
+                let mut cert_reader = std::io::BufReader::new(client.cert_pem.as_slice());
+                let chain: Vec<rustls::pki_types::CertificateDer<'static>> =
+                    rustls_pemfile::certs(&mut cert_reader)
+                        .collect::<Result<_, _>>()
+                        .unwrap();
+                let mut key_reader = std::io::BufReader::new(client.key_pem.as_slice());
+                let key = rustls_pemfile::private_key(&mut key_reader)
+                    .unwrap()
+                    .unwrap();
+                builder.with_client_auth_cert(chain, key).unwrap()
+            }
+            None => builder.with_no_client_auth(),
+        }
+    }
+
+    /// Raw HTTPS GET over a rustls client. `Err` = TCP/TLS failure
+    /// (wrong-CA certs fail HERE — the server aborts before any HTTP
+    /// response exists, surfacing at connect or first-read time).
+    async fn mtls_get(
+        addr: SocketAddr,
+        client: &rustls::ClientConfig,
+        host: &str,
+        cookie: Option<&str>,
+        extra_header: Option<(&str, &str)>,
+        path: &str,
+    ) -> Result<String, String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(client.clone()));
+        let stream = tokio::net::TcpStream::connect(addr)
+            .await
+            .map_err(|e| e.to_string())?;
+        let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
+        let mut tls = connector
+            .connect(name, stream)
+            .await
+            .map_err(|e| format!("handshake: {e}"))?;
+        let mut req = format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
+        if let Some(cookie) = cookie {
+            req.push_str(&format!("Cookie: {cookie}\r\n"));
+        }
+        if let Some((name, value)) = extra_header {
+            req.push_str(&format!("{name}: {value}\r\n"));
+        }
+        req.push_str("\r\n");
+        tls.write_all(req.as_bytes())
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut raw = Vec::new();
+        tls.read_to_end(&mut raw).await.map_err(|e| e.to_string())?;
+        Ok(String::from_utf8_lossy(&raw).into_owned())
+    }
+
+    fn staff_cookie() -> String {
+        format!("{}=staff-1", auth::ADM_COOKIE)
+    }
+
+    #[tokio::test]
+    async fn mtls_strict_known_good_cert_returns_200() {
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (ca, ca_key) = test_ca("test-admin-ca");
+        let client = test_client(&ca, &ca_key, "ops-1");
+        enroll_cert(&fx.state.store_root, &client.fingerprint, "ops-1");
+        let (addr, handle, server) = spawn_mtls_admin(
+            strict_admin_router(&fx.state),
+            self_signed_localhost(),
+            Some(ca.pem().as_bytes()),
+        );
+        let raw = mtls_get(
+            addr,
+            &mtls_client_config(Some(&client)),
+            "admin.andrii.ai",
+            Some(&staff_cookie()),
+            None,
+            "/apostille/api/v1/admin/me",
+        )
+        .await
+        .unwrap();
+        assert!(raw.starts_with("HTTP/1.1 200"), "got: {raw}");
+        assert!(raw.contains(&client.fingerprint), "got: {raw}");
+        handle.shutdown();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn mtls_strict_unknown_cert_returns_403() {
+        // CA-signed (passes the handshake) but never enrolled.
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (ca, ca_key) = test_ca("test-admin-ca");
+        let client = test_client(&ca, &ca_key, "ops-1");
+        let (addr, handle, server) = spawn_mtls_admin(
+            strict_admin_router(&fx.state),
+            self_signed_localhost(),
+            Some(ca.pem().as_bytes()),
+        );
+        let raw = mtls_get(
+            addr,
+            &mtls_client_config(Some(&client)),
+            "admin.andrii.ai",
+            Some(&staff_cookie()),
+            None,
+            "/apostille/api/v1/admin/me",
+        )
+        .await
+        .unwrap();
+        assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+        handle.shutdown();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn mtls_strict_revoked_cert_returns_403() {
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (ca, ca_key) = test_ca("test-admin-ca");
+        let client = test_client(&ca, &ca_key, "ops-1");
+        enroll_cert(&fx.state.store_root, &client.fingerprint, "ops-1");
+        revoke_cert(&fx.state.store_root, &client.fingerprint);
+        let (addr, handle, server) = spawn_mtls_admin(
+            strict_admin_router(&fx.state),
+            self_signed_localhost(),
+            Some(ca.pem().as_bytes()),
+        );
+        let raw = mtls_get(
+            addr,
+            &mtls_client_config(Some(&client)),
+            "admin.andrii.ai",
+            Some(&staff_cookie()),
+            None,
+            "/apostille/api/v1/admin/me",
+        )
+        .await
+        .unwrap();
+        assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+        handle.shutdown();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn mtls_strict_missing_cert_returns_403() {
+        // No client cert: the handshake SUCCEEDS (presence is an app
+        // check, so the cert-less webhook keeps working) and strict
+        // mode answers an auditable 403.
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (ca, _) = test_ca("test-admin-ca");
+        let (addr, handle, server) = spawn_mtls_admin(
+            strict_admin_router(&fx.state),
+            self_signed_localhost(),
+            Some(ca.pem().as_bytes()),
+        );
+        let raw = mtls_get(
+            addr,
+            &mtls_client_config(None),
+            "admin.andrii.ai",
+            Some(&staff_cookie()),
+            None,
+            "/apostille/api/v1/admin/me",
+        )
+        .await
+        .unwrap();
+        assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+        assert!(raw.contains("client cert required"), "got: {raw}");
+        handle.shutdown();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn mtls_wrong_ca_cert_fails_handshake() {
+        // Chained to a CA the server does not trust: dead at the
+        // handshake, before HTTP exists.
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (ca, _) = test_ca("test-admin-ca");
+        let (other_ca, other_key) = test_ca("other-ca");
+        let client = test_client(&other_ca, &other_key, "ops-1");
+        enroll_cert(&fx.state.store_root, &client.fingerprint, "ops-1");
+        let (addr, handle, server) = spawn_mtls_admin(
+            strict_admin_router(&fx.state),
+            self_signed_localhost(),
+            Some(ca.pem().as_bytes()),
+        );
+        let err = mtls_get(
+            addr,
+            &mtls_client_config(Some(&client)),
+            "admin.andrii.ai",
+            Some(&staff_cookie()),
+            None,
+            "/apostille/api/v1/admin/me",
+        )
+        .await
+        .expect_err("wrong-CA cert must fail the handshake");
+        assert!(
+            !err.starts_with("HTTP/"),
+            "got HTTP, want TLS failure: {err}"
+        );
+        handle.shutdown();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn mtls_strict_ignores_dev_cert_header() {
+        // A forwardable header must never authenticate a cert: the
+        // enrolled fingerprint arrives via header, no TLS cert — 403.
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (ca, ca_key) = test_ca("test-admin-ca");
+        let client = test_client(&ca, &ca_key, "ops-1");
+        enroll_cert(&fx.state.store_root, &client.fingerprint, "ops-1");
+        let (addr, handle, server) = spawn_mtls_admin(
+            strict_admin_router(&fx.state),
+            self_signed_localhost(),
+            Some(ca.pem().as_bytes()),
+        );
+        let raw = mtls_get(
+            addr,
+            &mtls_client_config(None),
+            "admin.andrii.ai",
+            Some(&staff_cookie()),
+            Some(("x-admin-cert-sha256", &client.fingerprint)),
+            "/apostille/api/v1/admin/me",
+        )
+        .await
+        .unwrap();
+        assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+        handle.shutdown();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn mtls_no_ca_configured_fails_closed() {
+        // No `tls.client_ca_file`: strict behaves as before the seam
+        // (403 for lack of a verified cert), with or without a
+        // client cert presented.
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (ca, ca_key) = test_ca("test-admin-ca");
+        let client = test_client(&ca, &ca_key, "ops-1");
+        enroll_cert(&fx.state.store_root, &client.fingerprint, "ops-1");
+        let (addr, handle, server) = spawn_mtls_admin(
+            strict_admin_router(&fx.state),
+            self_signed_localhost(),
+            None,
+        );
+        for config in [mtls_client_config(None), mtls_client_config(Some(&client))] {
+            let raw = mtls_get(
+                addr,
+                &config,
+                "admin.andrii.ai",
+                Some(&staff_cookie()),
+                None,
+                "/apostille/api/v1/admin/me",
+            )
+            .await
+            .unwrap();
+            assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+        }
+        handle.shutdown();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn mtls_public_listener_needs_no_cert() {
+        // The public listener serves plain TLS with no acceptor and
+        // no fingerprint layer: health checks pass cert-less.
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let fx = fixture();
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let tls = axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
+            .await
+            .unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = axum_server::Handle::new();
+        let server = tokio::spawn({
+            let handle = handle.clone();
+            async move {
+                axum_server::tls_rustls::from_tcp_rustls(listener, tls)
+                    .handle(handle)
+                    .serve(public_router_for(&fx.state).into_make_service())
+                    .await
+            }
+        });
+        let connector =
+            tokio_rustls::TlsConnector::from(std::sync::Arc::new(mtls_client_config(None)));
+        let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
+        let mut tls = connector.connect(name, stream).await.unwrap();
+        tls.write_all(
+            b"GET /apostille/healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .unwrap();
+        let mut raw = Vec::new();
+        tls.read_to_end(&mut raw).await.unwrap();
+        let text = String::from_utf8_lossy(&raw);
+        assert!(
+            text.starts_with("HTTP/1.1 200"),
+            "got: {}",
+            text.lines().next().unwrap_or("")
+        );
+        handle.shutdown();
+        server.await.unwrap().unwrap();
+    }
+
+    #[test]
+    fn load_admin_tls_refuses_bad_files_and_redacts() {
+        load_admin_tls("no-such-cert.pem", "no-such-key.pem", None)
+            .expect_err("missing server files must fail");
+        let dir = tempfile::tempdir().unwrap();
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let cert_path = dir.path().join("cert.pem");
+        let key_path = dir.path().join("key.pem");
+        std::fs::write(&cert_path, &cert_pem).unwrap();
+        std::fs::write(&key_path, &key_pem).unwrap();
+        let (ca, _) = test_ca("test-admin-ca");
+        let ca_path = dir.path().join("ca.pem");
+        std::fs::write(&ca_path, ca.pem().as_bytes()).unwrap();
+        // Missing CA refuses the boot (never silently downgrades).
+        let err = load_admin_tls(
+            cert_path.to_str().unwrap(),
+            key_path.to_str().unwrap(),
+            Some(dir.path().join("no-ca.pem").to_str().unwrap()),
+        )
+        .expect_err("missing CA must fail");
+        assert!(err.contains("tls.client_ca_file"), "{err}");
+        assert!(!err.contains("BEGIN"), "{err}");
+        // Empty CA refuses too.
+        let empty = dir.path().join("empty.pem");
+        std::fs::write(&empty, b"").unwrap();
+        load_admin_tls(
+            cert_path.to_str().unwrap(),
+            key_path.to_str().unwrap(),
+            Some(empty.to_str().unwrap()),
+        )
+        .expect_err("empty CA must fail");
+        // Full triple loads.
+        load_admin_tls(
+            cert_path.to_str().unwrap(),
+            key_path.to_str().unwrap(),
+            Some(ca_path.to_str().unwrap()),
+        )
+        .expect("valid triple loads");
+        // No CA loads as plain TLS.
+        load_admin_tls(
+            cert_path.to_str().unwrap(),
+            key_path.to_str().unwrap(),
+            None,
+        )
+        .expect("no-CA pair loads");
     }
 }

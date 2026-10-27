@@ -793,6 +793,7 @@ pub mod keys {
     pub const NET_PUBLIC_HOST: &str = "net.public_host";
     pub const TLS_CERT_FILE: &str = "tls.cert_file";
     pub const TLS_KEY_FILE: &str = "tls.key_file";
+    pub const TLS_CLIENT_CA_FILE: &str = "tls.client_ca_file";
     pub const ADMIN_MTLS_OFF: &str = "admin.mtls_off";
     pub const MEDIA_TERMS_READ: &str = "media.terms_read";
     pub const ACME_ENABLED: &str = "acme.enabled";
@@ -825,6 +826,7 @@ pub mod keys {
         (NET_PUBLIC_HOST, super::ConfigType::Text),
         (TLS_CERT_FILE, super::ConfigType::Text),
         (TLS_KEY_FILE, super::ConfigType::Text),
+        (TLS_CLIENT_CA_FILE, super::ConfigType::Text),
         (ADMIN_MTLS_OFF, super::ConfigType::Bool),
         (MEDIA_TERMS_READ, super::ConfigType::Bool),
         (ACME_ENABLED, super::ConfigType::Bool),
@@ -923,6 +925,7 @@ pub struct RuntimeConfig {
     pub public_host: String,
     pub tls_cert: Option<String>,
     pub tls_key: Option<String>,
+    pub tls_client_ca: Option<String>,
     pub admin_mtls_off: bool,
     pub media_terms_read: bool,
     pub acme_enabled: bool,
@@ -958,6 +961,7 @@ impl Default for RuntimeConfig {
             public_host: "andrii.ai".to_string(),
             tls_cert: None,
             tls_key: None,
+            tls_client_ca: None,
             admin_mtls_off: false,
             media_terms_read: false,
             acme_enabled: false,
@@ -1228,6 +1232,13 @@ impl RuntimeConfig {
         overlay_optional_text(
             conn,
             kek,
+            keys::TLS_CLIENT_CA_FILE,
+            &mut warnings,
+            &mut cfg.tls_client_ca,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
             keys::ACME_EMAIL,
             &mut warnings,
             &mut cfg.acme_email,
@@ -1389,8 +1400,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_29_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 29);
+    fn registry_holds_30_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 30);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -1403,7 +1414,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (4, 23, 2));
+        assert_eq!(counts, (4, 24, 2));
     }
 
     #[test]
@@ -1426,6 +1437,7 @@ mod runtime_tests {
         assert_eq!(cfg.public_host, "andrii.ai");
         assert_eq!(cfg.tls_cert, None);
         assert_eq!(cfg.tls_key, None);
+        assert_eq!(cfg.tls_client_ca, None);
         assert!(!cfg.admin_mtls_off);
         assert!(!cfg.media_terms_read);
         assert!(!cfg.acme_enabled);
@@ -1471,6 +1483,7 @@ mod runtime_tests {
             (keys::NET_PUBLIC_HOST, ConfigType::Text, "example.test"),
             (keys::TLS_CERT_FILE, ConfigType::Text, "/x/cert.pem"),
             (keys::TLS_KEY_FILE, ConfigType::Text, "/x/key.pem"),
+            (keys::TLS_CLIENT_CA_FILE, ConfigType::Text, "/x/ca.pem"),
             (keys::ADMIN_MTLS_OFF, ConfigType::Bool, "1"),
             (keys::MEDIA_TERMS_READ, ConfigType::Bool, "1"),
             (keys::ACME_ENABLED, ConfigType::Bool, "1"),
@@ -1520,6 +1533,7 @@ mod runtime_tests {
         assert_eq!(cfg.public_host, "example.test");
         assert_eq!(cfg.tls_cert.as_deref(), Some("/x/cert.pem"));
         assert_eq!(cfg.tls_key.as_deref(), Some("/x/key.pem"));
+        assert_eq!(cfg.tls_client_ca.as_deref(), Some("/x/ca.pem"));
         assert!(cfg.admin_mtls_off); // debug build allows the dev seam
         assert!(cfg.media_terms_read);
         assert!(cfg.acme_enabled);

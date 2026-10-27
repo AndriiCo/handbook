@@ -24,7 +24,7 @@ config migrations) run; `config::load_kek` loads the KEK and the
 process **refuses to start** when no KEK is available (new —
 runtime config is unreadable without it, and silently serving on
 dev defaults would bind localhost in prod); one
-`RuntimeConfig::load` reads all 29 keys; listeners serve from the
+`RuntimeConfig::load` reads all 30 keys; listeners serve from the
 loaded values. No runtime env fallback exists by design.
 
 Restart semantics: config is read once at boot. Every admin PUT
@@ -33,7 +33,7 @@ follow-up, see OQ-C4).
 
 ## 2. Full env-var inventory and disposition
 
-### 2.1 Migrated to DB keys (29 keys)
+### 2.1 Migrated to DB keys (30 keys)
 
 | Env var | DB key | Type | Default (= old env default) |
 |---|---|---|---|
@@ -66,6 +66,7 @@ follow-up, see OQ-C4).
 | *(voice stream)* | `telnyx.connection_id` | text (empty = unset) | empty |
 | *(voice stream)* | `telnyx.webhook_public_key` | text (empty = unset) | empty |
 | *(voice stream)* | `telnyx.api_key` | **secret** | unset (= voice 503) |
+| *(mtls stream)* | `tls.client_ca_file` | text (path, empty = unset) | empty |
 
 Shapes are exactly secure-config.md §1.5 (`bool`/`text`/
 `secret`); ports ride as text and parse to u16 at load. Missing
