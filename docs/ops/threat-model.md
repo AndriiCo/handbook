@@ -138,7 +138,7 @@ PLANNED (owning doc): rate limits + lockout (`SECURITY.md` Baseline);
 Origin/CSRF + security headers + `__Host-` cookies (same); token hashing
 (demo-login comment); real auth playbook (`auth-playbook.md`);
 TPM-sealed config (`secure-config.md`); certbot issuance + unit install
-(`certificates.md`, `apostille.service` — both drafted, need root);
+(`acme.md`, `apostille.service` — both drafted, need root);
 offsite audit ship + backup drills (`prod.md`, `SECURITY.md` Q8);
 upload allowlist/magic-bytes/EXIF/redaction pipeline (F8/F9,
 `SECURITY.md` Uploads).

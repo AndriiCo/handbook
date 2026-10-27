@@ -15,7 +15,7 @@ build, not papered over per-host.
   GLIBC 2.30, box ships newer — runs fine.
 - No Docker, no system services beyond certbot + systemd.
 
-## Parity checklist (Day 6 gate: `ci` green on BOTH hosts)
+## Parity checklist (`ci` green on BOTH hosts)
 
 On the Mac (this repo):
 
@@ -43,9 +43,10 @@ not by relaxing lints.
 - Systemd unit + `andrii-ai` user + `/var/lib/apostille` exist on
   the box only; dev runs `STORE_DIR=… cargo run -p web` (ports and
   all other settings come from sealed DB rows, `config-db.md`).
-- TPM absent on `enodia` → no release-usable KEK source exists
-  there yet (tpm-seal stream owns it); until it lands, the new
-  binary refuses to start on that box by design (config-db.md
-  §3). No Mac behavior change (dev KEK).
+- TPM absent on `enodia` → the KEK is file-backed: root holds
+  `/etc/apostille/handbook-kek` (0600), systemd exposes it via
+  `LoadCredential=handbook-kek` (see `apostille.service`).
+  Hardware-sealed upgrade lands with TPM hardware. No Mac
+  behavior change (dev KEK).
 - Research traffic (URL watching, fetches) originates ONLY from the
   prod IPs — dev machines must never fetch watched URLs directly.

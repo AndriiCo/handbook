@@ -1,15 +1,16 @@
-# apostille.service — DRAFT FOR AUTHOR REVIEW (prompt 015).
+# apostille.service — LIVE since 2026-10-27 (reviewed prompt 015,
+# installed by the author, verified serving).
 #
 # Install (as root, once): copy to /etc/systemd/system/apostille.service,
 # `systemctl daemon-reload && systemctl enable --now apostille`.
-# Ships via /usr/local/sbin/apostille-ship (reviewed separately).
+# Ships via `xtask deploy` as hal (runbook-release.md); the
+# /usr/local/sbin/apostille-ship script stays as reviewed fallback.
 #
 # Privilege summary: runs as andrii-ai:andrii-ai, keeps ONLY
 # CAP_NET_BIND_SERVICE (to bind 80/443), cannot gain more
 # (NoNewPrivileges), sees almost no filesystem (ProtectSystem=strict
 # + ReadWritePaths), no home, no tmp sharing, no new namespaces,
-# native syscalls only. Nothing here was live-tested (no root in
-# this session) — soak on staging before trusting.
+# native syscalls only.
 [Unit]
 Description=Apostille Handbook API (andrii.ai/apostille)
 After=network-online.target
@@ -28,6 +29,12 @@ ExecStart=/srv/apostille/current/web
 # Explicit IPs (now DB keys net.bind/net.bind6): never 0.0.0.0 —
 # sibling services own :80/:443 on other addresses of this box.
 Environment=STORE_DIR=/var/lib/apostille
+# KEK credential (REQUIRED — release refuses KEK-less boot):
+# root-owned 0600 source, exposed to the service at
+# $CREDENTIALS_DIRECTORY/handbook-kek. Enrolled via
+# `xtask config-enroll --kek-file /etc/apostille/handbook-kek`
+# (see the prod cutover notes); TPM-sealed upgrade later.
+LoadCredential=handbook-kek:/etc/apostille/handbook-kek
 # State dir auto-created and chowned to andrii-ai on first start.
 StateDirectory=apostille
 StateDirectoryMode=0750

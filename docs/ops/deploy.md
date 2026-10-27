@@ -1,4 +1,10 @@
-# Deploy: direct-to-prod (allowed until end of day 10 only)
+# Deploy paths (staging user-space + prod system paths)
+
+Current flow: build on the Mac, verify on staging, then ship
+prod via `runbook-release.md` (`xtask deploy` as hal — rootless
+once the §0 bootstrap there completes; the flip still needs root
+today). This doc keeps the build, the staging interim flow, and
+the historical root install for reference/rebuilds.
 
 - Server: `ssh andrii.ai` (alias on the author's Mac ONLY;
   key on the Mac, never in repo). Serves ONLY `199.184.91.41`
@@ -27,18 +33,22 @@ cargo install --root /tmp/czb cargo-zigbuild
 rustup target add x86_64-unknown-linux-gnu
 
 # Every release (from the repo root):
-export PATH="/tmp/zig-aarch64-macos-0.17.0:/tmp/czb/bin:$PATH"
-cargo zigbuild --release -p web --target x86_64-unknown-linux-gnu
-(cd web && npm install --no-audit --no-fund && npm run build)
-cargo xtask web-budget   # 150KB gate must pass
+export PATH="/tmp/zig-aarch64-macos-0.17.0:$PATH"   # + cargo-zigbuild in ~/.cargo/bin
+cargo zigbuild --release -p web -p xtask --target x86_64-unknown-linux-gnu
+(cd web && npm run build && npm run build:admin)
+cargo xtask web-budget   # 220KB gate must pass
 ```
 
-Artifacts: `target/x86_64-unknown-linux-gnu/release/web` +
-`web/build/` (static SPA). No other runtime deps. Verified
-2026-10-26: ELF 64-bit x86-64, 3.8MB, bundled SQLite compiled
-in, max GLIBC 2.30 (Ubuntu 26.04 ships newer — runs fine).
-On-target smoke (healthz after first deploy) still pending
-SSH access.
+(/tmp gets wiped — if the zig toolchain is gone, re-run the
+one-time block above. Prefer `cargo install cargo-zigbuild`
+without `--root` so it lands in `~/.cargo/bin` and survives.)
+
+Artifacts: `target/x86_64-unknown-linux-gnu/release/{web,xtask}` +
+`web/build/` (public SPA) + `web/build-admin/` (admin SPA) +
+`packs/` + `crates/web/static/`. No other runtime deps. Verified
+2026-10-27: ELF 64-bit x86-64, bundled SQLite compiled in,
+runs on the Ubuntu 26.04 box; `/healthz` reports
+`0.1.0+<short-sha>` so every deploy names its release.
 
 ## Ship, interim: user-space (no root — used prompt 014)
 
@@ -57,8 +67,9 @@ ssh andrii.ai "ln -sfn ~/apostille/releases/$VERSION ~/apostille/current \
 # Runtime settings (ports, SPA dir, …) live in sealed DB rows now
 # (`docs/specs/config-db.md`); only STORE_DIR stays env. Non-default
 # values must be `config-set` into the store before first boot.
-# Smoke (runs ON the box; the binary binds 127.0.0.1 only):
-ssh andrii.ai "curl -fsS http://127.0.0.1:3000/apostille/healthz"
+# Smoke (runs ON the box; loopback only; current staging uses the
+# TLS ports from its DB rows — e.g. https://127.0.0.1:3443 with -k):
+ssh andrii.ai "curl -fsSk https://127.0.0.1:3443/apostille/healthz"
 ```
 
 Verified 2026-10-26: healthz JSON, shell 200, demo
@@ -90,12 +101,12 @@ Server-side prerequisites (one-time, needs root):
 `andrii-ai:andrii-ai` with only `CAP_NET_BIND_SERVICE`,
 binds TCP 80/443 (plus UDP 443 for QUIC when `quic.enabled`)
 on the .41 addresses directly — no Caddy, no proxy); TLS
-files + certbot hooks per `certificates.md`;
-`hal` sudoers entry for the reviewed ship script:
-`hal ALL=(root) NOPASSWD: /usr/local/sbin/apostille-ship *`
-(script at `docs/ops/apostille-ship.sh`; install root-owned
-755, `chattr +i` recommended). Journald collects stdout
-logs per `prod.md`.
+files + certbot hooks per `acme.md`;
+`hal` sudoers entry per `runbook-release.md` §0 (pinned
+`systemctl restart`/`status` — the old
+`/usr/local/sbin/apostille-ship` sudoers line is superseded;
+the script stays as reviewed fallback only). Journald collects
+stdout logs per `prod.md`.
 
 ## Rollback
 
@@ -105,11 +116,13 @@ ssh andrii.ai "ln -sfn /srv/apostille/releases/$PREV \
   /srv/apostille/current && sudo systemctl restart apostille"
 ```
 
-Keep the last 3 releases; delete older. Rollback is a symlink
-flip + restart (<30s), plus a revert commit with reason per
-repo policy. Migrations run forward-only at boot: a rollback
-across a migration needs the author's explicit call (SQLite
-has no down-migrations by design).
+Keep the last 10 releases; prune older, oldest-first, never
+the live one (the rule lives in `runbook-release.md`, enforced
+by `xtask deploy`/`rollback`). Rollback is a symlink flip +
+restart (<30s), plus a revert commit with reason per repo
+policy. Migrations run forward-only at boot: a rollback across
+a HARD migration is refused without `--force --backup-note`
+(live hard list in `xtask/src/release.rs`).
 
 ## Status: LIVE since 2026-10-27 (~05:20 UTC)
 
@@ -118,10 +131,12 @@ healthz, shell, JSON 404, demo login → me (proves the
 `andrii-ai` user writes `/var/lib/apostille`), Google Trust
 Services cert valid to 2027-01-25. Interim hal service retired.
 
-## Root install (one-time) — copy-paste for the author
+## Root install (one-time) — DONE 2026-10-27, kept for rebuilds
 
-Prereqs: `andrii-ai` user exists; EAB `keyId`/`hmac` minted
-(prompt 013 gcloud); the three drafts reviewed
+This ran once (prod is live). Keep for disaster rebuilds; do
+not re-run against the live box. Prereqs at the time:
+`andrii-ai` user exists; EAB `keyId`/`hmac` minted
+(`acme.md` gcloud); the three drafts reviewed
 (`apostille.service`, `apostille-ship.sh`,
 `apostille-cert-deploy.sh`).
 
@@ -184,9 +199,11 @@ apostille`, remove the sudoers drop-in + unit + scripts
 (`chattr -i` first), and the interim hal service can be
 restarted per the interim section.
 
-## End of the direct path (day 10)
+## Release discipline (standing rule)
 
-After day 10 the direct Mac→prod path is forbidden: every
-release must pass acceptance on staging first (see
-`staging-plan.md`). Enforcement: `xtask release` (to be built)
-will refuse without a fresh staging acceptance stamp.
+No direct Mac→prod ships: every release builds on the Mac,
+verifies on staging first (see `staging-plan.md`), then ships
+prod via `runbook-release.md`. `xtask deploy` enforces the
+mechanical gates (packs-validate + accept + smoke + revert);
+the staging-soak itself is process-enforced (a fresh staging
+acceptance stamp per release).

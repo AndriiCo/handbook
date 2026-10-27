@@ -125,20 +125,26 @@ pub fn validate_version(version: &str) -> Result<(), String> {
     }
 }
 
-/// Refuse a staged dir that cannot become a release: `web` must be
-/// an ELF binary (script/zip/empty installs rejected), `spa` a dir.
+/// Refuse a staged dir that cannot become a release: `web` and
+/// `xtask` must be ELF binaries (script/zip/empty installs
+/// rejected); `spa`, `spa-admin`, and `static` must be dirs.
+/// `packs/` ships for reference when staged (optional).
 ///
 /// # Errors
 ///
-/// Returns a message when `web` is missing/not ELF or `spa` is missing.
+/// Returns a message naming the first missing/rejected member.
 pub fn validate_release_src(src: &Path) -> Result<(), String> {
-    let bin = src.join("web");
-    let magic = std::fs::read(&bin).map_err(|_| format!("missing {}", bin.display()))?;
-    if magic.len() < 4 || magic[0..4] != [0x7f, b'E', b'L', b'F'] {
-        return Err(format!("not an ELF binary: {}", bin.display()));
+    for bin in ["web", "xtask"] {
+        let path = src.join(bin);
+        let magic = std::fs::read(&path).map_err(|_| format!("missing {}", path.display()))?;
+        if magic.len() < 4 || magic[0..4] != [0x7f, b'E', b'L', b'F'] {
+            return Err(format!("not an ELF binary: {}", path.display()));
+        }
     }
-    if !src.join("spa").is_dir() {
-        return Err(format!("missing {}", src.join("spa").display()));
+    for dir in ["spa", "spa-admin", "static"] {
+        if !src.join(dir).is_dir() {
+            return Err(format!("missing {}", src.join(dir).display()));
+        }
     }
     Ok(())
 }
@@ -368,7 +374,8 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<(), String> {
 pub struct DeployOptions {
     /// Releases root (`/srv/apostille` on prod, tempdir in tests).
     pub root: PathBuf,
-    /// Staged dir holding `web` + `spa/`.
+    /// Staged dir: `web` + `xtask` ELFs, `spa/` + `spa-admin/` +
+    /// `static/` dirs, optional `packs/` (see [`validate_release_src`]).
     pub src: PathBuf,
     /// Release dir name (git short sha).
     pub version: String,
@@ -392,7 +399,7 @@ pub struct DeployOptions {
     pub smoke_url: String,
 }
 
-/// Ship one release: gates (packs-validate + accept), ELF/spa
+/// Ship one release: gates (packs-validate + accept), staged-set
 /// validation, install + manifest, atomic `current` swap, restart,
 /// smoke; on smoke failure the symlink flips back and the old
 /// release restarts. Prunes to [`MAX_RELEASES`] on success only.
@@ -419,18 +426,27 @@ pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
 
     let dst = opts.root.join("releases").join(&opts.version);
     std::fs::create_dir_all(&dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
-    std::fs::copy(opts.src.join("web"), dst.join("web")).map_err(|e| format!("copy web: {e}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(dst.join("web"))
-            .map_err(|e| format!("stat web: {e}"))?
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(dst.join("web"), perms).map_err(|e| format!("chmod web: {e}"))?;
+    for bin in ["web", "xtask"] {
+        std::fs::copy(opts.src.join(bin), dst.join(bin)).map_err(|e| format!("copy {bin}: {e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(dst.join(bin))
+                .map_err(|e| format!("stat {bin}: {e}"))?
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(dst.join(bin), perms)
+                .map_err(|e| format!("chmod {bin}: {e}"))?;
+        }
     }
-    let _ = std::fs::remove_dir_all(dst.join("spa"));
-    copy_dir(&opts.src.join("spa"), &dst.join("spa"))?;
+    for dir in ["spa", "spa-admin", "static"] {
+        let _ = std::fs::remove_dir_all(dst.join(dir));
+        copy_dir(&opts.src.join(dir), &dst.join(dir))?;
+    }
+    if opts.src.join("packs").is_dir() {
+        let _ = std::fs::remove_dir_all(dst.join("packs"));
+        copy_dir(&opts.src.join("packs"), &dst.join("packs"))?;
+    }
     write_manifest(
         &dst.join("release.toml"),
         &ReleaseManifest {
@@ -670,13 +686,19 @@ mod tests {
         write_manifest(&dst.join("release.toml"), &manifest(version, schema, safe)).unwrap();
     }
 
-    /// Staged `web` (ELF magic only) + `spa/` tree.
+    /// Staged full set: `web` + `xtask` (ELF magic only),
+    /// `spa/` + `spa-admin/` + `static/` trees, optional `packs/`.
     fn staged(dir: &Path) -> PathBuf {
         let src = dir.join("staging");
         std::fs::create_dir_all(src.join("spa/assets")).unwrap();
+        std::fs::create_dir_all(src.join("spa-admin")).unwrap();
+        std::fs::create_dir_all(src.join("static")).unwrap();
         std::fs::write(src.join("web"), [0x7f, b'E', b'L', b'F', 1, 2, 3]).unwrap();
+        std::fs::write(src.join("xtask"), [0x7f, b'E', b'L', b'F', 4, 5, 6]).unwrap();
         std::fs::write(src.join("spa/index.html"), "<html></html>").unwrap();
         std::fs::write(src.join("spa/assets/app.js"), "console.log(1)").unwrap();
+        std::fs::write(src.join("spa-admin/index.html"), "<html>admin</html>").unwrap();
+        std::fs::write(src.join("static/robots.txt"), "User-agent: *").unwrap();
         src
     }
 
@@ -743,6 +765,20 @@ mod tests {
         read_manifest(&dir.path().join("missing.toml")).unwrap_err();
         std::fs::write(&path, "version = [\n").unwrap();
         read_manifest(&path).unwrap_err();
+    }
+
+    #[test]
+    fn staged_set_refuses_partial_members() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = staged(dir.path());
+        validate_release_src(&src).unwrap();
+        std::fs::remove_dir_all(src.join("spa-admin")).unwrap();
+        let err = validate_release_src(&src).unwrap_err();
+        assert!(err.contains("spa-admin"), "{err}");
+        std::fs::create_dir_all(src.join("spa-admin")).unwrap();
+        std::fs::remove_file(src.join("xtask")).unwrap();
+        let err = validate_release_src(&src).unwrap_err();
+        assert!(err.contains("xtask"), "{err}");
     }
 
     #[test]
@@ -872,6 +908,9 @@ mod tests {
         assert_eq!(installed.schema_version, handbook_store::db::SCHEMA_VERSION);
         assert!(installed.rollback_safe);
         assert!(root.join("releases/eeeeeee/spa/assets/app.js").is_file());
+        assert!(root.join("releases/eeeeeee/spa-admin/index.html").is_file());
+        assert!(root.join("releases/eeeeeee/static/robots.txt").is_file());
+        assert!(root.join("releases/eeeeeee/xtask").is_file());
         let mut kept: Vec<String> = std::fs::read_dir(root.join("releases"))
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())

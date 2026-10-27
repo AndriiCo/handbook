@@ -8,7 +8,8 @@ ARI window (RFC 9773) with a lifetime fallback, and hot-swapped
 into the live server.
 
 Constraint (unchanged): the ONLY certificates we may use come from
-Google PKI. See `certificates.md` for the EAB minting runbook.
+Google PKI. No Let's Encrypt, no ZeroSSL, no self-signed in prod
+(staging self-signed CAs are fine — they never leave the box).
 
 ## Configuration (DB keys, not env — see `docs/specs/config-db.md`)
 
@@ -35,6 +36,75 @@ Google endpoints: prod
 `https://dv.acme-v02.test-api.pki.goog/directory`. Staging boots
 with a loud `UNTRUSTED` banner; its certs fail client validation
 by design.
+
+## EAB minting (author, gcloud — absorbed from certificates.md)
+
+GCP project: `www-andrii-ai`. The EAB secret binds the ACME
+account to this project. Lifecycle: each secret dies 7 days
+after creation if unused, and dies on first use (single
+registration) — every fresh account (prod, staging,
+rebuild-after-disk-loss) needs a new `create` call. If a secret
+leaks it cannot revoke issued certs, but mint a new one for any
+future account and delete the file.
+
+```sh
+# 1. One-time: enable the Public CA API on the project.
+gcloud services enable publicca.googleapis.com \
+  --project=www-andrii-ai
+
+# 2. Mint an EAB secret (keyId + b64MacKey) into a LOCAL file.
+#    Never commit this file; use within 7 days.
+gcloud publicca external-account-keys create \
+  --project=www-andrii-ai \
+  --key-output-file="$HOME/.config/andrii/eab-prod.txt"
+chmod 600 "$HOME/.config/andrii/eab-prod.txt"
+```
+
+Hand the server ONLY the two values: sealed config, never in the
+repo, never in shell history on the server — paste via a file +
+`shred` after import, type into the admin config page, or pipe
+via `--value-from-stdin` (see §Configuration).
+
+```sh
+# 3. (Optional, for staging-box testing.) A staging EAB needs
+#    the staging API endpoint override:
+gcloud config set api_endpoint_overrides/publicca \
+  https://preprod-publicca.googleapis.com/
+gcloud publicca external-account-keys create \
+  --project=www-andrii-ai \
+  --key-output-file="$HOME/.config/andrii/eab-staging.txt"
+chmod 600 "$HOME/.config/andrii/eab-staging.txt"
+gcloud config unset api_endpoint_overrides/publicca
+```
+
+## Certificate sources today (2026-10-27)
+
+Prod currently terminates explicit files
+(`/var/lib/apostille/tls/{cert.pem,key.pem}`, certbot-issued,
+**`andrii.ai`-only** — no admin SAN), NOT in-binary ACME:
+`acme.enabled` defaults false and explicit `tls.*` rows always
+win, so no issuance is ever attempted there. That is also why
+`admin.andrii.ai` never got SSL automatically — the one manual
+certbot issuance covered only `-d andrii.ai`, and nothing has
+reissued since.
+
+Two ways to fix the admin SAN (pick one):
+
+- **A. certbot reissue (quick, keeps current flow).** As root,
+  re-run issuance with both names (keep `--http-01-address
+  199.184.91.41` — sibling services own :80 on OTHER IPs of
+  this box; a wildcard bind would fail or steal their port),
+  then restart. Same stop/start hooks as the first issuance.
+- **B. in-binary ACME (automatic from then on).** Mint EAB (§
+  above), set `acme.enabled=true` + `acme.eab_kid` +
+  `acme.eab_hmac` (+ optional `acme.email`), then hand off by
+  emptying the explicit rows (`tls.cert_file`/`tls.key_file`
+  set to empty ≡ unset — explicit files win while set), and
+  restart. The binary issues for `acme.domains`
+  (`andrii.ai,admin.andrii.ai`) and renews via ARI forever.
+
+Either way the port-80 lesson holds: our redirector binds the
+explicit `net.bind`/`net.bind6` IPs only, never 0.0.0.0.
 
 ## How it works
 
@@ -121,6 +191,10 @@ staging chain, and `<store>/acme/` holding all three files. Then
   writability — then just wait for the next retry.
 - Clock skew breaks ARI math and expiry checks before anything
   else does; NTP first when windows look wrong.
+- Leaked CERT private keys live only on the server disk; rotate
+  by deleting `/var/lib/apostille/tls/*` (explicit-files mode)
+  or `<store>/acme/*` (ACME mode) and re-issuing, plus one
+  service restart (downtime ~seconds).
 
 ## Follow-ups (not this change)
 
