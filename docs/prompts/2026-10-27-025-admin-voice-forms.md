@@ -50,6 +50,12 @@ existing admin listener + staging.
   Found live: staging pkill pattern never matched
   `./current/web` — old binary served new SPA (proves the
   need for the anchored `^\./current/web$` pattern).
+- Staging `f97afe4` on strict TLS+mTLS (3443/3444/3080),
+  zero-env boot (STORE_DIR + CREDENTIALS_DIRECTORY only):
+  public 200 cert-less; wrong CA = handshake fail; no
+  cert = 403; cert + staff = 200 (fingerprint echoed);
+  workers live (14 captures/16 sources); calls [];
+  dial 503 unconfigured / 422 no-consent. Prod 200 ever.
 - (further execution commits to be listed here as merges land)
 
 ## Follow-ups
