@@ -20,6 +20,7 @@ fn main() {
         Some("web-budget") => run_web_budget(),
         Some("serve") => run_serve(),
         Some("analyze") => run_analyze(&args[1..]),
+        Some("fetch-url") => run_fetch_url(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("install-hooks") => run_install_hooks(),
         Some("audit") => run_audit(),
@@ -43,6 +44,7 @@ Tasks:
   web-budget  check web/build JS+CSS against the Day-1 150KB gate
   serve       run the dev API server (cargo run -p web)
   analyze     draft proposed facts for an authority (stub only for now)
+  fetch-url   fetch one URL into a warc capture (thin watch)
   secrets-scan scan tracked files for secrets [--staged for the index]
   install-hooks point git at .githooks/ (pre-commit secret scan)
   audit       cargo-audit over Cargo.lock (needs network; not in ci)
@@ -50,7 +52,16 @@ Tasks:
 analyze flags:
   --store <path>  store root (default: store)
   --slug <s>      authority slug, e.g. usa-wa-sos (required)
+  --lang <code>   evidence language tag (default: en; EN-only slice)
   --input <text>  evidence text, or @path/to/file (required)
+  --actor <a>     audit actor (default: xtask)
+
+fetch-url flags:
+  --store <path>  store root (default: store)
+  --slug <s>      authority slug, e.g. usa-wa-sos (required)
+  --url <u>       URL to fetch (required)
+  --source-kind <k> website_official | website_thirdparty (default: website_official)
+  --trust <t>     official | staff_verified | community (default: official)
   --actor <a>     audit actor (default: xtask)
 
 add-authority flags:
@@ -258,6 +269,7 @@ fn run_analyze(args: &[String]) {
         std::process::exit(1);
     }
     let slug = required(args, "slug");
+    let lang = flag(args, "lang").unwrap_or_else(|| "en".to_string());
     let raw_input = required(args, "input");
     let input = match raw_input.strip_prefix('@') {
         Some(path) => std::fs::read_to_string(path).unwrap_or_else(|e| {
@@ -273,19 +285,19 @@ fn run_analyze(args: &[String]) {
     let client = StubClient;
     let mut sources = HashMap::new();
     sources.insert("fixture".to_string(), input.clone());
-    match handbook_agent::runner::run_analysis(
-        &conn,
-        &client,
-        &slug,
-        &input,
-        &sources,
-        &actor,
-        unix_now(),
-    ) {
+    let req = handbook_agent::runner::RunRequest {
+        slug: &slug,
+        lang: &lang,
+        input_text: &input,
+        sources: &sources,
+        actor: &actor,
+        at: unix_now(),
+    };
+    match handbook_agent::runner::run_analysis(&conn, &client, &req) {
         Ok(report) => {
             println!(
-                "authority: {}\nproposed: {}\nrejected: {}",
-                report.authority_slug, report.proposed, report.rejected
+                "authority: {}\nproposed: {}\nrejected: {}\nskipped: {}",
+                report.authority_slug, report.proposed, report.rejected, report.skipped
             );
             for error in &report.errors {
                 println!("rejected: {error}");
@@ -294,6 +306,154 @@ fn run_analyze(args: &[String]) {
         Err(e) => {
             eprintln!("analyze: {e}");
             std::process::exit(1);
+        }
+    }
+}
+
+/// Authority id for a slug, or exit 1.
+fn authority_id(conn: &rusqlite::Connection, slug: &str) -> i64 {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |row| {
+        row.get(0)
+    })
+    .optional()
+    .unwrap_or_else(|e| {
+        eprintln!("fetch-url: database error: {e}");
+        std::process::exit(1);
+    })
+    .unwrap_or_else(|| {
+        eprintln!("fetch-url: unknown authority slug: {slug}");
+        std::process::exit(1);
+    })
+}
+
+/// Find-or-create the `source` row for a watched URL.
+fn ensure_source(conn: &rusqlite::Connection, authority: i64, kind: &str, uri: &str) -> i64 {
+    use rusqlite::OptionalExtension as _;
+    if let Some(id) = conn
+        .query_row(
+            "SELECT id FROM source WHERE authority_id = ?1 AND uri = ?2",
+            rusqlite::params![authority, uri],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap_or_else(|e| {
+            eprintln!("fetch-url: database error: {e}");
+            std::process::exit(1);
+        })
+    {
+        return id;
+    }
+    conn.execute(
+        "INSERT INTO source(authority_id, kind, uri) VALUES (?1, ?2, ?3)",
+        rusqlite::params![authority, kind, uri],
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("fetch-url: insert source: {e}");
+        std::process::exit(1);
+    });
+    conn.last_insert_rowid()
+}
+
+/// Record a fetch failure as a `validate_fact` task (F1 acceptance 4):
+/// insert, or refresh the live row's detail on dedup hit. Never silent.
+fn record_fetch_failure(
+    conn: &rusqlite::Connection,
+    authority: i64,
+    slug: &str,
+    url: &str,
+    failure: &str,
+    actor: &str,
+    at: i64,
+) {
+    let dedup_key = handbook_store::store::sha256_hex(format!("{slug}|fetch|{url}").as_bytes());
+    let inserted = conn.execute(
+        "INSERT INTO task(authority_id, kind, title, detail, status,
+                           priority, dedup_key, created_by, created_at)
+         VALUES (?1, 'validate_fact', ?2, ?3, 'open', 0, ?4, ?5, ?6)",
+        rusqlite::params![
+            authority,
+            format!("fetch failed: {url}"),
+            failure,
+            dedup_key,
+            actor,
+            at,
+        ],
+    );
+    match inserted {
+        Ok(_) => {}
+        Err(rusqlite::Error::SqliteFailure(e, _))
+            if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            conn.execute(
+                "UPDATE task SET detail = ?1, created_at = ?2
+                 WHERE dedup_key = ?3
+                   AND status IN ('open', 'batched', 'in_progress')",
+                rusqlite::params![failure, at, dedup_key],
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("fetch-url: refresh task: {e}");
+                std::process::exit(1);
+            });
+        }
+        Err(e) => {
+            eprintln!("fetch-url: insert task: {e}");
+            std::process::exit(1);
+        }
+    }
+    println!("task: fetch failure recorded for {url}");
+}
+
+fn run_fetch_url(args: &[String]) {
+    let store = open_store(args);
+    let conn = open_db(&store);
+    if let Err(e) = handbook_store::db::migrate(&conn) {
+        eprintln!("migrate: {e}");
+        std::process::exit(1);
+    }
+    let slug = required(args, "slug");
+    let url = required(args, "url");
+    let source_kind = flag(args, "source-kind").unwrap_or_else(|| "website_official".to_string());
+    let trust = flag(args, "trust").unwrap_or_else(|| "official".to_string());
+    let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
+    let now = unix_now();
+
+    let authority = authority_id(&conn, &slug);
+    let source_id = ensure_source(&conn, authority, &source_kind, &url);
+
+    let fetched = match ingest::fetch::fetch_url(&url, std::time::Duration::from_secs(30)) {
+        Ok(fetched) => fetched,
+        Err(e) => {
+            record_fetch_failure(&conn, authority, &slug, &url, &e.to_string(), &actor, now);
+            std::process::exit(1);
+        }
+    };
+    let text = ingest::capture::extract_text(&fetched.bytes);
+    let outcome = ingest::capture::ingest_bytes(
+        &conn,
+        &store,
+        &ingest::capture::IngestInput {
+            authority_id: authority,
+            source_id: Some(source_id),
+            kind: "warc",
+            trust: &trust,
+            bytes: &fetched.bytes,
+            text: &text,
+            captured_at: now,
+            actor: &actor,
+            origin: &url,
+        },
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("fetch-url: ingest: {e}");
+        std::process::exit(1);
+    });
+    match outcome {
+        ingest::capture::IngestOutcome::Created { capture_id } => {
+            println!("capture: {capture_id} (status {})", fetched.status);
+        }
+        ingest::capture::IngestOutcome::Duplicate { capture_id } => {
+            println!("duplicate: {capture_id} (unchanged bytes)");
         }
     }
 }

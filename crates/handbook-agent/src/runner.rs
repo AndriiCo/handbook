@@ -40,60 +40,81 @@ pub struct RunReport {
     pub authority_slug: String,
     pub proposed: usize,
     pub rejected: usize,
+    /// True when the run skipped analysis (unsupported language): no
+    /// model call, no facts — only watermark, task, and audit rows.
+    pub skipped: bool,
     pub errors: Vec<String>,
+}
+
+/// One [`run_analysis`] call's caller-owned inputs.
+#[derive(Debug)]
+pub struct RunRequest<'a> {
+    pub slug: &'a str,
+    /// Evidence language tag (`"en"` analyzed; anything else skipped).
+    pub lang: &'a str,
+    pub input_text: &'a str,
+    /// Citation `doc_id` → source text for byte-exact validation.
+    pub sources: &'a HashMap<String, String>,
+    pub actor: &'a str,
+    pub at: i64,
 }
 
 /// Draft records for one authority and store the valid ones as `proposed` facts.
 ///
-/// `sources` maps citation `doc_id` to source text for byte-exact citation
-/// validation. Always upserts the authority watermark and appends one
-/// `action='analysis_run'` audit row on the success path (including
-/// fully-rejected and empty runs); returns `Err` untouched-storage on client
-/// or database failure.
+/// EN-only for the Day-2 slice: any `req.lang` but `"en"` skips analysis
+/// (no model call) and opens a `correction` task instead. Always upserts
+/// the authority watermark and appends one `action='analysis_run'` audit
+/// row on the success path (including fully-rejected, empty, and skipped
+/// runs); returns `Err` untouched-storage on client or database failure.
 pub fn run_analysis(
     conn: &Connection,
     client: &dyn ModelClient,
-    slug: &str,
-    input_text: &str,
-    sources: &HashMap<String, String>,
-    actor: &str,
-    at: i64,
+    req: &RunRequest<'_>,
 ) -> Result<RunReport, ModelError> {
-    let req = DraftRequest {
-        authority_slug: slug.to_string(),
-        prompt_version: PROMPT_VERSION,
-        input_text: input_text.to_string(),
-        max_records: DEFAULT_MAX_RECORDS,
-    };
-    // Rendered for template validation; the current ModelClient shape carries
-    // the evidence via DraftRequest, so no consumer takes this string yet.
-    let _ = build_prompt(include_str!("../prompts/aa-prompt-v1.md"), &req);
-
-    // Whole-response failure: no writes, no watermark advance.
-    let resp = client.draft_records(&req)?;
-
-    let allowed: Vec<&str> = Topic::ALL.iter().map(|t| t.as_str()).collect();
-    let mut errors = Vec::new();
-    let mut failed = HashSet::new();
-    if let Err(validation_errors) = validate_response(&resp, sources, &allowed) {
-        for e in validation_errors {
-            errors.push(format!("record {}: {:?}", e.record_index, e.kind));
-            failed.insert(e.record_index);
-        }
-    }
-
     let authority_id: Option<i64> = conn
-        .query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT id FROM authority WHERE slug = ?1",
+            [req.slug],
+            |row| row.get(0),
+        )
         .optional()
         .map_err(HandbookError::from)
         .map_err(db_err)?;
     let Some(authority_id) = authority_id else {
         return Err(ModelError::Transport(format!(
-            "unknown authority slug: {slug}"
+            "unknown authority slug: {}",
+            req.slug
         )));
     };
+
+    // EN-only + unknown-skip (roadmap item 5): never guess-translate a
+    // fact out of an unsupported language. The model is not called.
+    if req.lang != "en" {
+        return skip_unsupported_lang(conn, req, authority_id);
+    }
+
+    let draft = DraftRequest {
+        authority_slug: req.slug.to_string(),
+        prompt_version: PROMPT_VERSION,
+        input_text: req.input_text.to_string(),
+        max_records: DEFAULT_MAX_RECORDS,
+    };
+    // Rendered for template validation; the current ModelClient shape carries
+    // the evidence via DraftRequest, so no consumer takes this string yet.
+    let _ = build_prompt(include_str!("../prompts/aa-prompt-v1.md"), &draft);
+
+    // Whole-response failure: no writes, no watermark advance.
+    let resp = client.draft_records(&draft)?;
+
+    let allowed: Vec<&str> = Topic::ALL.iter().map(|t| t.as_str()).collect();
+    let mut errors = Vec::new();
+    let mut failed = HashSet::new();
+    if let Err(validation_errors) = validate_response(&resp, req.sources, &allowed) {
+        for e in validation_errors {
+            errors.push(format!("record {}: {:?}", e.record_index, e.kind));
+            failed.insert(e.record_index);
+        }
+    }
 
     // The fact table has no field/citation/confidence columns: field folds
     // into the statement, citation/confidence are not stored (see
@@ -116,27 +137,84 @@ pub fn run_analysis(
                     topic: &record.topic,
                     statement: &statement,
                     created_by: &created_by,
-                    created_at: at,
+                    created_at: req.at,
                 },
             )?;
             proposed += 1;
         }
         let rejected = failed.len();
-        upsert_watermark(conn, slug, at, PROMPT_VERSION)?;
+        upsert_watermark(conn, req.slug, req.at, PROMPT_VERSION)?;
         let reason = format!(
             "proposed={proposed} rejected={rejected} input_tokens={} output_tokens={}",
             resp.usage.input_tokens, resp.usage.output_tokens
         );
-        insert_analysis_audit(conn, at, actor, authority_id, &reason)?;
+        insert_analysis_audit(conn, req.at, req.actor, authority_id, &reason)?;
         Ok((proposed, rejected))
     })
     .map_err(db_err)?;
 
     Ok(RunReport {
-        authority_slug: slug.to_string(),
+        authority_slug: req.slug.to_string(),
         proposed,
         rejected,
+        skipped: false,
         errors,
+    })
+}
+
+/// Skip path for unsupported evidence languages: no model call, no
+/// facts. Opens (or dedup-hits) one `correction` task, advances the
+/// watermark, and writes the audit row atomically.
+fn skip_unsupported_lang(
+    conn: &Connection,
+    req: &RunRequest<'_>,
+    authority_id: i64,
+) -> Result<RunReport, ModelError> {
+    let dedup_key = handbook_store::store::sha256_hex(
+        format!("{}|lang-skip|{}", req.slug, req.lang).as_bytes(),
+    );
+    in_transaction(conn, || {
+        match conn.execute(
+            "INSERT INTO task(authority_id, kind, title, detail, status,
+                               priority, dedup_key, created_by, created_at)
+             VALUES (?1, 'correction', ?2, ?3, 'open', 0, ?4, ?5, ?6)",
+            rusqlite::params![
+                authority_id,
+                format!("unsupported evidence language: {}", req.lang),
+                "EN-only slice: evidence needs translation before analysis; no fact drafted",
+                dedup_key,
+                req.actor,
+                req.at,
+            ],
+        ) {
+            Ok(_) => Ok(()),
+            // A live task with this key already exists: duplicate hit is
+            // success, not failure (analysis-agent §2).
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                Ok(())
+            }
+            Err(e) => Err(HandbookError::from(e)),
+        }?;
+        upsert_watermark(conn, req.slug, req.at, PROMPT_VERSION)?;
+        insert_analysis_audit(
+            conn,
+            req.at,
+            req.actor,
+            authority_id,
+            &format!("skipped: unsupported lang {} (EN-only slice)", req.lang),
+        )?;
+        Ok(())
+    })
+    .map_err(db_err)?;
+
+    Ok(RunReport {
+        authority_slug: req.slug.to_string(),
+        proposed: 0,
+        rejected: 0,
+        skipped: true,
+        errors: Vec::new(),
     })
 }
 
@@ -182,18 +260,18 @@ mod tests {
         let text = "PO Box 40220, Mon-Fri 9-5!";
         let mut sources = HashMap::new();
         sources.insert("fixture".to_string(), text.to_string());
-        let report = run_analysis(
-            &conn,
-            &StubClient,
-            "usa-wa-sos",
-            text,
-            &sources,
-            "test",
-            1_800_000_100,
-        )
-        .unwrap();
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+        };
+        let report = run_analysis(&conn, &StubClient, &req).unwrap();
         assert_eq!(report.authority_slug, "usa-wa-sos");
         assert_eq!((report.proposed, report.rejected), (2, 0));
+        assert!(!report.skipped);
         assert!(report.errors.is_empty());
 
         let facts: Vec<(String, String, String)> = conn
@@ -262,17 +340,17 @@ mod tests {
         let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
         let mut sources = HashMap::new();
         sources.insert("fixture".to_string(), "PO Box 99999!".to_string());
-        let report = run_analysis(
-            &conn,
-            &BadTopicClient,
-            "usa-wa-sos",
-            "PO Box 99999!",
-            &sources,
-            "test",
-            1_800_000_200,
-        )
-        .unwrap();
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: "PO Box 99999!",
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_200,
+        };
+        let report = run_analysis(&conn, &BadTopicClient, &req).unwrap();
         assert_eq!((report.proposed, report.rejected), (0, 1));
+        assert!(!report.skipped);
         assert_eq!(report.errors.len(), 1);
         assert!(
             report.errors[0].contains("record 0"),
@@ -313,18 +391,73 @@ mod tests {
         let client = MetaRestClient::new("https://api.meta.ai/v1".to_string(), "k".to_string());
         let mut sources = HashMap::new();
         sources.insert("d1".to_string(), "evidence".to_string());
-        let err = run_analysis(
-            &conn,
-            &client,
-            "usa-wa-sos",
-            "evidence",
-            &sources,
-            "test",
-            1_800_000_300,
-        )
-        .expect_err("client error must propagate");
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: "evidence",
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_300,
+        };
+        let err = run_analysis(&conn, &client, &req).expect_err("client error must propagate");
         assert!(matches!(err, ModelError::Transport(_)), "got: {err}");
         assert_eq!(storage_counts(&conn), (0, 0, false));
+    }
+
+    #[test]
+    fn unsupported_lang_skips_without_model_call() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        // MetaRestClient always errors: a skipped run must succeed, which
+        // proves the model was never called.
+        let client = MetaRestClient::new("https://api.meta.ai/v1".to_string(), "k".to_string());
+        let mut sources = HashMap::new();
+        sources.insert("d1".to_string(), "evidence".to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "unknown",
+            input_text: "evidence",
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_400,
+        };
+        let report = run_analysis(&conn, &client, &req).unwrap();
+        assert!(report.skipped);
+        assert_eq!((report.proposed, report.rejected), (0, 0));
+
+        let facts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fact", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(facts, 0);
+        let tasks: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM task WHERE kind = 'correction' AND status = 'open'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tasks, 1);
+        assert!(get_watermark(&conn, "usa-wa-sos").unwrap().is_some());
+
+        // A second skip dedup-hits the same task: still success, still
+        // exactly one task row.
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "unknown",
+            input_text: "evidence",
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_500,
+        };
+        let again = run_analysis(&conn, &client, &req).unwrap();
+        assert!(again.skipped);
+        let tasks: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM task WHERE kind = 'correction' AND status = 'open'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tasks, 1);
     }
 
     #[test]
@@ -333,16 +466,15 @@ mod tests {
         let text = "PO Box 40220, Mon-Fri 9-5!";
         let mut sources = HashMap::new();
         sources.insert("fixture".to_string(), text.to_string());
-        let err = run_analysis(
-            &conn,
-            &StubClient,
-            "nope",
-            text,
-            &sources,
-            "test",
-            1_800_000_300,
-        )
-        .expect_err("unknown slug must fail");
+        let req = RunRequest {
+            slug: "nope",
+            lang: "en",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_300,
+        };
+        let err = run_analysis(&conn, &StubClient, &req).expect_err("unknown slug must fail");
         assert!(matches!(err, ModelError::Transport(_)), "got: {err}");
         assert_eq!(storage_counts(&conn), (0, 0, false));
     }

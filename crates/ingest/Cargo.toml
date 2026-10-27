@@ -1,0 +1,22 @@
+[package]
+name = "ingest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+contracts = { path = "../contracts" }
+handbook-store = { path = "../handbook-store" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+# No default features: ureq's `rustls` feature pins rustls/ring, but the
+# workspace already pins rustls/aws-lc-rs (web via axum-server). Two
+# providers break rustls auto-detection, so take the no-provider rustls
+# backend here and pin aws-lc-rs explicitly to match.
+ureq = { version = "3", default-features = false, features = [
+    "rustls-no-provider",
+    "rustls-webpki-roots",
+    "gzip",
+] }
+rustls = { version = "0.23", features = ["aws-lc-rs"] }
+
+[dev-dependencies]
+tempfile = "3"

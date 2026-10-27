@@ -4,6 +4,7 @@ members = [
     "crates/contracts",
     "crates/handbook-store",
     "crates/handbook-agent",
+    "crates/ingest",
     "crates/web",
     "xtask",
 ]

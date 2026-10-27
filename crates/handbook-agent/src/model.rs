@@ -61,6 +61,10 @@ impl ModelClient for StubClient {
 /// auth-code exchange is unusable for Model API auth — key auth only.
 /// See `docs/meta-api.md`.
 ///
+/// No real media flows here until the Meta data-handling terms are read
+/// (roadmap §5 external dependency): the slice stays synthetic-only,
+/// and this client keeps returning an honest error until then.
+///
 /// `Debug` is hand-written (M3): the key never appears in debug output,
 /// so a stray `{:?}` in an error or log path cannot leak it.
 #[derive(Clone)]

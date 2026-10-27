@@ -11,4 +11,5 @@ path = "src/main.rs"
 [dependencies]
 handbook-agent = { path = "../crates/handbook-agent" }
 handbook-store = { path = "../crates/handbook-store" }
+ingest = { path = "../crates/ingest" }
 rusqlite = { version = "0.32", features = ["bundled"] }
