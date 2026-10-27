@@ -125,6 +125,11 @@ Ubuntu parity Day 6).
 
 - **Day 1**: item 1 fixes; trait + Stub; scaffold health/static/
   shell; enum draft. EOD: `ci` green, dev serves `/apostille`.
+  - DONE 2026-10-26 night run (prompt 012): F1–F7 + 005 CHECKs/FKs,
+    trait + Stub + validator + runner + `xtask analyze`, axum
+    scaffold + demo sessions + SPA shell serving, enum frozen
+    (TOPICS.md), SEC/TEST review lanes + fixes. 55 tests, `ci`
+    green, shell/healthz/login/me smoke-verified live.
 - **Day 2 GATE (watch→approve)**: changed URL → capture →
   analyze → proposed → approval → banner on fixtures; enum
   frozen; WS live in two windows.

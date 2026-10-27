@@ -12,6 +12,10 @@ export interface HeaderStrings {
 	searchButton: string;
 	themeLabel: string;
 	langLabel: string;
+	orderLabel: string;
+	billingLabel: string;
+	loginLabel: string;
+	logoutLabel: string;
 }
 
 export const STRINGS: Record<Locale, HeaderStrings> = {
@@ -20,21 +24,33 @@ export const STRINGS: Record<Locale, HeaderStrings> = {
 		searchPlaceholder: 'Country, state, or authority…',
 		searchButton: 'Search',
 		themeLabel: 'Theme',
-		langLabel: 'Language'
+		langLabel: 'Language',
+		orderLabel: 'Order',
+		billingLabel: 'Billing',
+		loginLabel: 'Log in',
+		logoutLabel: 'Log out'
 	},
 	es: {
 		searchLabel: 'Buscar en el manual',
 		searchPlaceholder: 'País, estado o autoridad…',
 		searchButton: 'Buscar',
 		themeLabel: 'Tema',
-		langLabel: 'Idioma'
+		langLabel: 'Idioma',
+		orderLabel: 'Pedido',
+		billingLabel: 'Facturación',
+		loginLabel: 'Iniciar sesión',
+		logoutLabel: 'Cerrar sesión'
 	},
 	fr: {
 		searchLabel: 'Rechercher dans le manuel',
 		searchPlaceholder: 'Pays, État ou autorité…',
 		searchButton: 'Rechercher',
 		themeLabel: 'Thème',
-		langLabel: 'Langue'
+		langLabel: 'Langue',
+		orderLabel: 'Commande',
+		billingLabel: 'Facturation',
+		loginLabel: 'Se connecter',
+		logoutLabel: 'Se déconnecter'
 	}
 };
 

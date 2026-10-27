@@ -1,6 +1,8 @@
 # Handbook fact topics (frozen vocabulary)
 
-- Status: draft for Day 2 enum freeze (roadmap item 3).
+- Status: FROZEN 2026-10-26 (night run; enforced by `topics.rs` +
+  migration 005 `fact.topic` CHECK). Changes need a new migration
+  and author sign-off.
 - Code: `crates/handbook/src/topics.rs` (`Topic`, closed enum —
   `parse` rejects unknown input, no `Other` variant).
 - Every `fact.topic` value MUST be one of the 25 strings below.
