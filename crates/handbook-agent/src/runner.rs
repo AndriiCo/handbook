@@ -31,7 +31,7 @@ pub const DEFAULT_MAX_RECORDS: u32 = 32;
 
 /// `fact.capture_id` for draft evidence with no ingest capture row behind it
 /// yet. Accepted because `capture_id` has no FK enforcement (see
-/// `migrations/001_init.sql`); the CLI should pass a real capture id once
+/// `migrations/schema_baseline.sql`); the CLI should pass a real capture id once
 /// ingest exists.
 pub const UNATTRIBUTED_CAPTURE_ID: i64 = 0;
 

@@ -1,21 +1,9 @@
--- P2 PII store, file 1 (docs/specs/p2-forms-labels.md §8 P2-D2/D3/D4).
--- Separate from handbook.sqlite's migration sequence: versioned by the
--- p2.sqlite user_version, migrated by db::migrate_p2 (same PRAGMAs, same
--- txn discipline). Placement follows the proposed default (separate
--- p2.sqlite, roadmap §7); OQ-1 still open for author confirmation.
---
--- Cross-DB references (authority / form_template / capture ids) are OPAQUE
--- integers: SQLite cannot enforce FKs across files, so readers must treat a
--- missing parent as "open a task + audit", never as a join assumption.
--- FKs below cover only in-file parents.
---
--- Mutations here are audited in handbook.sqlite's audit table
--- (entity='form_submission'|'shipment'|'shipping_label'); there is
--- deliberately no second audit table. Retention: OQ-7 open (proposed:
--- submitted 2y, drafts 90d, drawn PNGs 1y) -- no sweep until decided.
--- New tables only.
+-- p2_schema_baseline.sql — P2 v2 baseline squash (prompt 055).
+-- = p2_001_init + p2_002_label_purchase (deleted; see git history).
+-- Fresh P2 databases apply this file once and stamp user_version=2.
+-- P2 databases at v1 MUST upgrade through the last incremental
+-- release first. Future P2 migrations resume p2_N+1.
 
--- P2-D2: one customer fill-in (PII).
 CREATE TABLE form_submission(
   id INTEGER PRIMARY KEY,
   form_template_id INTEGER NOT NULL,  -- form_template.id (handbook.sqlite, opaque)
@@ -32,8 +20,6 @@ CREATE TABLE form_submission(
   created_at INTEGER NOT NULL,
   submitted_at INTEGER                -- NULL until submitted
 );
-
--- P2-D3: outbound+return pair per submission.
 CREATE TABLE shipment(
   id INTEGER PRIMARY KEY,
   submission_id INTEGER NOT NULL,
@@ -48,8 +34,6 @@ CREATE TABLE shipment(
   updated_at INTEGER NOT NULL,
   FOREIGN KEY(submission_id) REFERENCES form_submission(id)
 );
-
--- P2-D4: one label PDF + tracking per direction.
 CREATE TABLE shipping_label(
   id INTEGER PRIMARY KEY,
   shipment_id INTEGER NOT NULL,
@@ -63,7 +47,14 @@ CREATE TABLE shipping_label(
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK(status IN ('pending', 'issued', 'voided', 'reissued')),
   created_at INTEGER NOT NULL,
-  issued_at INTEGER,                  -- NULL until issued
+  issued_at INTEGER, purchase_option TEXT NOT NULL DEFAULT 'prepaid'
+    CHECK(purchase_option IN ('printable', 'prepaid')), label_format TEXT NOT NULL DEFAULT 'four_by_six', label_sha256 TEXT NOT NULL DEFAULT '', content_type TEXT NOT NULL DEFAULT 'application/pdf',                  -- NULL until issued
   FOREIGN KEY(shipment_id) REFERENCES shipment(id)
 );
 CREATE INDEX idx_label_tracking ON shipping_label(tracking_no);
+CREATE TABLE profile_label_defaults(
+  customer_ref TEXT PRIMARY KEY,
+  option_a_format TEXT NOT NULL DEFAULT 'four_by_six',
+  option_b_paper TEXT NOT NULL DEFAULT 'four_by_six',
+  updated_at INTEGER NOT NULL
+);

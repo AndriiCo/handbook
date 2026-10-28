@@ -406,7 +406,7 @@ columns; U6 fixed newest-first (FIFO oldest-first not requested).
 Evidence: `p2_labels.rs` (Shipment 268-276, `queue_manual` 1007-1079,
 owner-404 564-572, 422s 526-532), `approval.rs:115-186`,
 `admin_workers.rs:96-250`, `admin.rs` guards (CSRF passthrough at 242),
-P2 DDL `migrations/p2_001_init.sql`.
+P2 DDL `migrations/p2_schema_baseline.sql`.
 
 ### Proposed addition: staff printing + full-service packet
 (author direction 2026-10-28; still proposed — approve together with

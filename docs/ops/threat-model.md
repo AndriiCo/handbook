@@ -114,9 +114,9 @@ is trusted); customers attacking each other's browsers outside our pages.
 
 - Bound SQL params everywhere, no `format!` SQL: `db.rs` (all queries).
 - FK enforcement + WAL/busy-timeout/sync PRAGMAs: `db.rs:30-37`.
-- Transactional migrate: `db.rs:43-73`. CHECKs + FKs + id-0 sentinels:
-  `migrations/005_constraints.sql`. Append-only audit triggers:
-  `migrations/002_hardening.sql:8-16`, recreated `005:250-257`.
+- Transactional migrate: `db.rs:43-73`. CHECKs + FKs + id-0 sentinels
+  + append-only audit triggers: `migrations/schema_baseline.sql`
+  (v11 squash of the 001–011 incrementals).
 - Atomic retention sweep + `saturating_sub` + traversal guard:
   `db.rs:141-189`, `:194-200`.
 - Hex-validated `blob_path → Result`: `store.rs:54-71`. Atomic

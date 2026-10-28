@@ -1,13 +1,16 @@
 //! SQLite metadata database: migrations and foundation queries.
 //!
-//! Schema lives in `migrations/001_init.sql` (see `docs/design.md` §1).
-//! Later migrations add `N+1` files and extend [`migrate`]. The P2
-//! customer-PII database (`p2.sqlite`) has its own sequence
-//! (`migrations/p2_*.sql`) and its own [`migrate_p2`].
+//! Fresh databases start from the `migrations/schema_baseline.sql`
+//! snapshot (= v11; the 001–011 incrementals were squashed away in
+//! prompt 055 after prod reached v11 — see git history). Later
+//! migrations add `N+1` files and extend [`migrate`]. The P2
+//! customer-PII database (`p2.sqlite`) has its own baseline
+//! (`migrations/p2_schema_baseline.sql`, = P2 v2) and its own
+//! [`migrate_p2`].
 
 use rusqlite::Connection;
 
-use contracts::Result;
+use contracts::{HandbookError, Result};
 
 use crate::store::Store;
 
@@ -67,54 +70,22 @@ fn apply_pragmas(conn: &Connection) -> Result<()> {
 
 /// Apply pending migrations. Idempotent.
 ///
-/// The whole upgrade runs inside one transaction, so a crash or error
-/// can never leave a half-applied migration behind.
+/// Fresh (`user_version = 0`) databases get the v11 baseline
+/// snapshot in one transaction, so a crash or error can never
+/// leave a half-applied schema behind. Databases already at
+/// [`SCHEMA_VERSION`] are untouched. Anything in between (v1–v10)
+/// is refused loudly: the incremental path was squashed away, so
+/// those databases must first open under the last incremental
+/// release (≤ dc400a9) or be restored from a v11 backup — silently
+/// stamping them current would corrupt the version contract.
 pub fn migrate(conn: &Connection) -> Result<()> {
     in_transaction(conn, || {
         let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version < 1 {
-            conn.execute_batch(include_str!("../migrations/001_init.sql"))?;
-            conn.pragma_update(None, "user_version", 1)?;
-        }
-        if version < 2 {
-            conn.execute_batch(include_str!("../migrations/002_hardening.sql"))?;
-            conn.pragma_update(None, "user_version", 2)?;
-        }
-        if version < 3 {
-            conn.execute_batch(include_str!("../migrations/003_sessions.sql"))?;
-            conn.pragma_update(None, "user_version", 3)?;
-        }
-        if version < 4 {
-            conn.execute_batch(include_str!("../migrations/004_watermarks.sql"))?;
-            conn.pragma_update(None, "user_version", 4)?;
-        }
-        if version < 5 {
-            conn.execute_batch(include_str!("../migrations/005_constraints.sql"))?;
-            conn.pragma_update(None, "user_version", 5)?;
-        }
-        if version < 6 {
-            conn.execute_batch(include_str!("../migrations/006_config.sql"))?;
-            conn.pragma_update(None, "user_version", 6)?;
-        }
-        if version < 7 {
-            conn.execute_batch(include_str!("../migrations/007_p2_templates.sql"))?;
-            conn.pragma_update(None, "user_version", 7)?;
-        }
-        if version < 8 {
-            conn.execute_batch(include_str!("../migrations/008_capture_watermark.sql"))?;
-            conn.pragma_update(None, "user_version", 8)?;
-        }
-        if version < 9 {
-            conn.execute_batch(include_str!("../migrations/009_watch.sql"))?;
-            conn.pragma_update(None, "user_version", 9)?;
-        }
-        if version < 10 {
-            conn.execute_batch(include_str!("../migrations/010_mail_poll.sql"))?;
-            conn.pragma_update(None, "user_version", 10)?;
-        }
-        if version < 11 {
-            conn.execute_batch(include_str!("../migrations/011_review_queue.sql"))?;
-            conn.pragma_update(None, "user_version", 11)?;
+        if version == 0 {
+            conn.execute_batch(include_str!("../migrations/schema_baseline.sql"))?;
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        } else if version != SCHEMA_VERSION {
+            return Err(version_gap("handbook.sqlite", version, SCHEMA_VERSION));
         }
         Ok(())
     })?;
@@ -127,18 +98,18 @@ pub fn migrate(conn: &Connection) -> Result<()> {
 
 /// Apply pending P2 migrations to a [`open_p2`] connection. Idempotent.
 ///
-/// Same one-transaction discipline as [`migrate`]; versioned by the
-/// p2.sqlite `user_version`, independently of [`SCHEMA_VERSION`].
+/// Same baseline discipline as [`migrate`]: fresh databases get the
+/// P2 v2 snapshot; v1 databases are refused loudly (upgrade through
+/// the last incremental release first); versioned by the p2.sqlite
+/// `user_version`, independently of [`SCHEMA_VERSION`].
 pub fn migrate_p2(conn: &Connection) -> Result<()> {
     in_transaction(conn, || {
         let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version < 1 {
-            conn.execute_batch(include_str!("../migrations/p2_001_init.sql"))?;
-            conn.pragma_update(None, "user_version", 1)?;
-        }
-        if version < 2 {
-            conn.execute_batch(include_str!("../migrations/p2_002_label_purchase.sql"))?;
-            conn.pragma_update(None, "user_version", 2)?;
+        if version == 0 {
+            conn.execute_batch(include_str!("../migrations/p2_schema_baseline.sql"))?;
+            conn.pragma_update(None, "user_version", P2_SCHEMA_VERSION)?;
+        } else if version != P2_SCHEMA_VERSION {
+            return Err(version_gap("p2.sqlite", version, P2_SCHEMA_VERSION));
         }
         Ok(())
     })?;
@@ -147,6 +118,27 @@ pub fn migrate_p2(conn: &Connection) -> Result<()> {
         P2_SCHEMA_VERSION
     );
     Ok(())
+}
+
+/// Loud refusal for databases stranded between the old incremental
+/// versions and the squashed baseline (or newer than this binary).
+/// Ad-hoc error via the same `ToSqlConversionFailure` carrier db.rs
+/// already uses for non-SQLite failures.
+fn version_gap(db: &str, version: i32, current: i32) -> HandbookError {
+    let remedy = if version < current {
+        format!(
+            "upgrade it through the last incremental release first \
+             (≤ dc400a9 applies v{version}→v{current} step by step), \
+             or restore from a v{current} backup"
+        )
+    } else {
+        format!("it was written by a newer binary (v{version} > v{current}); upgrade this binary")
+    };
+    HandbookError::Db(rusqlite::Error::ToSqlConversionFailure(Box::new(
+        std::io::Error::other(format!(
+            "{db} is at schema v{version}, this binary baselines v{current}: {remedy}"
+        )),
+    )))
 }
 
 /// Run `f` inside one `BEGIN IMMEDIATE`/`COMMIT` transaction, rolling
@@ -581,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_009_adds_source_fetch_state() {
+    fn baseline_has_source_fetch_state() {
         use rusqlite::OptionalExtension as _;
         let (_dir, _store, conn) = migrated();
         conn.execute(
@@ -628,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_010_adds_mail_poll_cursor() {
+    fn baseline_has_mail_poll_cursor() {
         let (_dir, _store, conn) = migrated();
         conn.execute("INSERT INTO mail_poll(id) VALUES (1)", [])
             .unwrap();
@@ -649,7 +641,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_011_adds_suppression_and_citation_home() {
+    fn baseline_has_suppression_and_citation_home() {
         let (_dir, _store, conn) = migrated();
         for table in ["suppress_rule", "suppression"] {
             let found: String = conn
@@ -1021,7 +1013,7 @@ mod tests {
     }
 
     #[test]
-    fn migrate_fresh_db_applies_all_migrations() {
+    fn migrate_fresh_db_applies_baseline() {
         let (_dir, _store, conn) = migrated();
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -1031,27 +1023,32 @@ mod tests {
     }
 
     #[test]
-    fn migrate_upgrades_001_db_to_current() {
+    fn migrate_refuses_stale_v1_db() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::new(dir.path());
         store.init().unwrap();
         let conn = open(&store).unwrap();
-        // Build a 001-only database, as an older install would have.
-        conn.execute_batch(include_str!("../migrations/001_init.sql"))
+        // A stranded v1 database: the version stamp alone triggers the
+        // refusal — the old incremental path is gone.
+        conn.execute("CREATE TABLE probe(id INTEGER PRIMARY KEY)", [])
+            .unwrap();
+        conn.execute("INSERT INTO probe(id) VALUES (1)", [])
             .unwrap();
         conn.pragma_update(None, "user_version", 1).unwrap();
-        assert_eq!(audit_trigger_count(&conn), 0);
 
-        migrate(&conn).unwrap();
+        let err = migrate(&conn).unwrap_err().to_string();
+        assert!(err.contains("schema v1"), "unexpected error: {err}");
+        assert!(err.contains("incremental"), "unexpected error: {err}");
 
+        // Refusal touches nothing: version and rows intact.
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(audit_trigger_count(&conn), 2);
-        // Idempotent on the upgraded database too.
-        migrate(&conn).unwrap();
-        assert_eq!(audit_trigger_count(&conn), 2);
+        assert_eq!(version, 1);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM probe", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]
@@ -1265,28 +1262,32 @@ mod tests {
     }
 
     #[test]
-    fn migrate_rolls_back_failed_upgrade() {
+    fn migrate_baseline_failure_rolls_back_cleanly() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::new(dir.path());
         store.init().unwrap();
         let conn = open(&store).unwrap();
-        // A 001 database with a conflicting trigger name: applying 002
-        // must fail, and the failure must roll back cleanly.
-        conn.execute_batch(include_str!("../migrations/001_init.sql"))
+        // A fresh (v0) database with a conflicting table name: the
+        // baseline must fail, and the failure must roll back cleanly —
+        // no partial schema, version still 0.
+        conn.execute("CREATE TABLE authority(id INTEGER PRIMARY KEY)", [])
             .unwrap();
-        conn.execute(
-            "CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit BEGIN SELECT 1; END",
-            [],
-        )
-        .unwrap();
-        conn.pragma_update(None, "user_version", 1).unwrap();
 
         migrate(&conn).unwrap_err();
 
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, 0);
+        let tables: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'table' AND name != 'authority'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tables, 0);
     }
 
     #[test]
@@ -1339,194 +1340,24 @@ mod tests {
     }
 
     #[test]
-    fn migrate_upgrades_002_db_to_current() {
+    fn migrate_refuses_stale_mid_version_db() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::new(dir.path());
         store.init().unwrap();
         let conn = open(&store).unwrap();
-        conn.execute_batch(include_str!("../migrations/001_init.sql"))
-            .unwrap();
-        conn.execute_batch(include_str!("../migrations/002_hardening.sql"))
-            .unwrap();
-        conn.pragma_update(None, "user_version", 2).unwrap();
+        // v8: the last prod schema before the squash. Same refusal as
+        // v1 — any version below the baseline must upgrade through
+        // the last incremental release first.
+        conn.pragma_update(None, "user_version", 8).unwrap();
 
-        migrate(&conn).unwrap();
-
-        let version: i32 = conn
-            .query_row("PRAGMA user_version", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
-        create_demo_session(&conn, "t", "demo-1", 0, 1).unwrap();
-        assert_eq!(
-            get_demo_session(&conn, "t").unwrap(),
-            Some(("demo-1".to_string(), 1))
-        );
-        upsert_watermark(&conn, "usa-wa", 5, "aa-prompt-v1").unwrap();
-        assert!(get_watermark(&conn, "usa-wa").unwrap().is_some());
-    }
-
-    #[test]
-    fn migrate_upgrades_001_db_to_current_preserving_rows() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::new(dir.path());
-        store.init().unwrap();
-        let conn = open(&store).unwrap();
-        // Build a 001-only database, as an older install would have.
-        conn.execute_batch(include_str!("../migrations/001_init.sql"))
-            .unwrap();
-        conn.pragma_update(None, "user_version", 1).unwrap();
-
-        // One valid row per table that 005 rebuilds (plus build, which
-        // audit.build_id references). Ids are 1 throughout: AUTOINCREMENT
-        // starts there, so nothing collides with the id-0 sentinels.
-        conn.execute(
-            "INSERT INTO authority(kind, country, region, name, slug)
-             VALUES ('state', 'USA', 'WA', 'WA', 'usa-wa')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO build(at, code_git_commit, build_no, facts_hash)
-             VALUES (1, 'abc', 1, 'hash')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO domain(name, authority_id, status)
-             VALUES ('wa.gov', 1, 'official')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO source(authority_id, kind, uri, domain_id)
-             VALUES (1, 'website_official', 'https://wa.gov', 'wa.gov')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO channel(authority_id, visibility, kind, value, purpose)
-             VALUES (1, 'private', 'phone', '+1', 'our_validation')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO capture(authority_id, source_id, captured_at, kind,
-                                 path, bytes_raw, bytes_stored, sha256, trust)
-             VALUES (1, 1, 100, 'file', 'x', 1, 1, 's', 'official')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "UPDATE domain SET evidence_capture_id = 1 WHERE name = 'wa.gov'",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO fact(authority_id, capture_id, topic, statement,
-                              status, created_at)
-             VALUES (1, 1, 'hours', 'open 9-5', 'proposed', 100)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO batch(authority_id, channel_id, status)
-             VALUES (1, 1, 'draft')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO task(authority_id, kind, title, status, dedup_key,
-                              batch_id, created_at)
-             VALUES (1, 'call', 't', 'batched', 'k1', 1, 100)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO call_session(batch_id, authority_id, channel_id,
-                                      consent, transcript_capture_id)
-             VALUES (1, 1, 1, 'granted', 1)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO transcript_note(capture_id, start_byte, end_byte,
-                                         kind, text, created_at)
-             VALUES (1, 0, 5, 'correction', 'fix', 100)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO audit(at, actor, action, entity, entity_id, build_id)
-             VALUES (1, 'test', 'accept', 'fact', 1, 1)",
-            [],
-        )
-        .unwrap();
-
-        migrate(&conn).unwrap();
+        let err = migrate(&conn).unwrap_err().to_string();
+        assert!(err.contains("schema v8"), "unexpected error: {err}");
+        assert!(err.contains("v8→v11"), "unexpected error: {err}");
 
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
-        // Every rebuilt table kept its row. authority/capture hold one
-        // extra row each: the migration-005 unattributed sentinels (id 0).
-        for table in [
-            "domain",
-            "source",
-            "channel",
-            "fact",
-            "task",
-            "batch",
-            "call_session",
-            "transcript_note",
-            "audit",
-            "build",
-        ] {
-            let count: i64 = conn
-                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                    row.get(0)
-                })
-                .unwrap();
-            assert_eq!(count, 1, "table {table} lost its row");
-        }
-        for table in ["authority", "capture"] {
-            let count: i64 = conn
-                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                    row.get(0)
-                })
-                .unwrap();
-            assert_eq!(count, 2, "table {table} should hold seed + sentinel");
-        }
-        // Spot-check values and links survived the rebuild.
-        let statement: String = conn
-            .query_row("SELECT statement FROM fact WHERE id = 1", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(statement, "open 9-5");
-        let evidence: i64 = conn
-            .query_row(
-                "SELECT evidence_capture_id FROM domain WHERE name = 'wa.gov'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(evidence, 1);
-        // The 007 authority columns landed on the preserved legacy row.
-        let (replica_default, ship_to): (String, Option<i64>) = conn
-            .query_row(
-                "SELECT replica_default, ship_to_fact_id FROM authority WHERE id = 1",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(replica_default, "unknown");
-        assert_eq!(ship_to, None);
-        // The audit triggers were recreated on the new audit table.
-        assert_eq!(audit_trigger_count(&conn), 2);
-        // Idempotent on the upgraded database too.
-        migrate(&conn).unwrap();
-        assert_eq!(audit_trigger_count(&conn), 2);
+        assert_eq!(version, 8);
     }
 
     #[test]
@@ -1766,10 +1597,10 @@ mod tests {
     }
 
     #[test]
-    fn migrations_seed_no_facts_or_fixtures() {
+    fn baseline_seeds_no_facts_or_fixtures() {
         let (_dir, _store, conn) = migrated();
-        // No migration inserts facts: fixtures can only enter via test
-        // helpers (crate::fixtures, cfg(test)) or real ingest.
+        // The baseline inserts no facts: fixtures can only enter via
+        // test helpers (crate::fixtures, cfg(test)) or real ingest.
         let facts: i64 = conn
             .query_row("SELECT COUNT(*) FROM fact", [], |row| row.get(0))
             .unwrap();
@@ -1911,14 +1742,32 @@ mod tests {
     }
 
     #[test]
-    fn migrate_p2_upgrades_v1_db_preserving_rows() {
+    fn migrate_p2_refuses_stale_v1_db() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::new(dir.path());
         store.init().unwrap();
         let conn = open_p2(&store).unwrap();
-        conn.execute_batch(include_str!("../migrations/p2_001_init.sql"))
-            .unwrap();
+        // A stranded P2 v1 database: same loud refusal as the main
+        // schema — upgrade through the last incremental release.
         conn.pragma_update(None, "user_version", 1).unwrap();
+
+        let err = migrate_p2(&conn).unwrap_err().to_string();
+        assert!(err.contains("p2.sqlite"), "unexpected error: {err}");
+        assert!(err.contains("schema v1"), "unexpected error: {err}");
+
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 1);
+    }
+
+    #[test]
+    fn p2_baseline_carries_label_purchase_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        store.init().unwrap();
+        let conn = open_p2(&store).unwrap();
+        migrate_p2(&conn).unwrap();
         conn.execute(
             "INSERT INTO form_submission(form_template_id, authority_id, customer_ref, status, created_at)
              VALUES (7, 1, 'cust-1', 'submitted', 100)",
@@ -1940,12 +1789,7 @@ mod tests {
             [shipment],
         )
         .unwrap();
-        migrate_p2(&conn).unwrap();
-        let version: i32 = conn
-            .query_row("PRAGMA user_version", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(version, P2_SCHEMA_VERSION);
-        // Pre-migration rows backfill as prepaid 4x6 PDFs.
+        // Fresh rows default to prepaid 4x6 PDFs (squashed p2_002 shape).
         let (option, format, sha, content): (String, String, String, String) = conn
             .query_row(
                 "SELECT purchase_option, label_format, label_sha256, content_type
