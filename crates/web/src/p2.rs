@@ -199,6 +199,16 @@ fn open_p2(state: &AppState) -> Option<Connection> {
     Some(conn)
 }
 
+/// Latest published build, 0 when nothing published yet (mirrors
+/// the MCP `lookup_authority` query; the answer is then explicitly
+/// unbuilt, never misattributed).
+fn current_build_no(meta: &Connection) -> i64 {
+    meta.query_row("SELECT COALESCE(MAX(build_no), 0) FROM build", [], |row| {
+        row.get(0)
+    })
+    .unwrap_or(0)
+}
+
 fn audit(conn: &Connection, actor: &str, action: &str, entity: &str, entity_id: i64, reason: &str) {
     let _ = conn.execute(
         "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
@@ -825,11 +835,12 @@ fn submit_validated(
     };
     // Render the filled PDF (wet-ink: empty signature + date lines).
     let notice = replica_notice(template);
+    let build_no = current_build_no(meta);
     let render = PdfRenderer::new().render(&RenderSubmission {
         template,
         values,
         generated_at_unix: now,
-        build_no: None,
+        build_no: Some(build_no),
         replica_notice: notice.as_deref(),
     });
     let Ok(artifact) = render else {
@@ -2048,5 +2059,107 @@ mod tests {
                 .collect();
             assert_eq!(got, want, "case: {name}");
         }
+    }
+
+    #[test]
+    fn current_build_no_zero_when_unbuilt_else_max() {
+        let fx = Fixture::new();
+        let meta = open_meta(&fx.state).unwrap();
+        assert_eq!(current_build_no(&meta), 0);
+        for build_no in [1, 7] {
+            meta.execute(
+                "INSERT INTO build(at, code_git_commit, build_no, facts_hash)
+                 VALUES (1, 'c', ?1, 'h')",
+                [build_no],
+            )
+            .unwrap();
+        }
+        assert_eq!(current_build_no(&meta), 7);
+    }
+
+    #[tokio::test]
+    async fn submitted_pdf_carries_current_build_stamp() {
+        let fx = Fixture::new();
+        let meta = open_meta(&fx.state).unwrap();
+        meta.execute(
+            "INSERT INTO build(at, code_git_commit, build_no, facts_hash)
+             VALUES (1, 'c', 7, 'h')",
+            [],
+        )
+        .unwrap();
+        // Happy-path submit (mirrors submit_happy_path_*).
+        let (status, _) = json_body(
+            fx.app()
+                .oneshot(authed(
+                    "POST",
+                    "/p2/submissions",
+                    TOKEN,
+                    Some(serde_json::json!({
+                        "template_id": fx.template_id,
+                        "values": {"full_name": "Jane Doe", "fee": "25.00"},
+                    })),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let (status, review) = json_body(
+            fx.app()
+                .oneshot(authed("GET", "/p2/submissions/1", TOKEN, None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        // Served bytes (also cross-checked against the stored sha below).
+        let served = fx
+            .app()
+            .oneshot(authed("GET", "/p2/submissions/1/pdf", TOKEN, None))
+            .await
+            .unwrap();
+        assert_eq!(served.status(), StatusCode::OK);
+        let served_bytes = axum::body::to_bytes(served.into_body(), 2 * 1024 * 1024)
+            .await
+            .unwrap();
+        // submitted_at is not in the review view: read it from the row
+        // (submit stamps render-time `now`, so re-render is byte-exact).
+        let p2 = open_p2(&fx.state).unwrap();
+        let submitted_at: i64 = p2
+            .query_row(
+                "SELECT submitted_at FROM form_submission WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let stored = load_template_by_id(&meta, fx.template_id)
+            .unwrap()
+            .unwrap();
+        let values: std::collections::BTreeMap<String, serde_json::Value> = review["values"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let rendered = |build_no| {
+            forms::PdfRenderer::new()
+                .render(&forms::Submission {
+                    template: &stored.template,
+                    values: &values,
+                    generated_at_unix: submitted_at,
+                    build_no,
+                    replica_notice: replica_notice(&stored.template).as_deref(),
+                })
+                .unwrap()
+        };
+        let stamped = rendered(Some(7));
+        let unstamped = rendered(None);
+        assert_ne!(stamped.bytes, unstamped.bytes, "stamp must move bytes");
+        assert_eq!(
+            served_bytes.as_ref(),
+            stamped.bytes.as_slice(),
+            "served PDF carries build #7"
+        );
+        assert_eq!(review["pdf_sha256"], stamped.sha256_hex);
     }
 }

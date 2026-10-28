@@ -90,6 +90,8 @@ struct CreateShipmentBody {
     to: PostalAddress,
     parcel: Parcel,
     service: ServiceClass,
+    #[serde(default)]
+    submission_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -533,19 +535,69 @@ async fn create_shipment(
         (Ok(p2), Ok(main)) => (p2, main),
         _ => return crate::store_unavailable(),
     };
+    // Optional order join: link a real caller-owned 'submitted'
+    // submission; absent → legacy shell path below (unchanged).
+    let linked_submission: Option<i64> = match body.submission_id {
+        None => None,
+        Some(wanted) => {
+            let found: rusqlite::Result<Option<(String, String)>> = p2
+                .query_row(
+                    "SELECT customer_ref, status FROM form_submission WHERE id = ?1",
+                    [wanted],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map(Some)
+                .or_else(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                    other => Err(other),
+                });
+            let Ok(found) = found else {
+                return crate::store_unavailable();
+            };
+            let Some((owner, status)) = found else {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({"error": "no such submission"})),
+                )
+                    .into_response();
+            };
+            if owner != customer_ref {
+                // File convention (get/purchase/paste-back/void): owner
+                // mismatch is 404, never 403 — no existence leak.
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({"error": "no such submission"})),
+                )
+                    .into_response();
+            }
+            if status != "submitted" {
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(serde_json::json!({"error": "submission is not submitted"})),
+                )
+                    .into_response();
+            }
+            Some(wanted)
+        }
+    };
     let now = crate::unix_now();
     let from_json = serde_json::to_string(&body.from).unwrap_or_default();
     let to_json = serde_json::to_string(&body.to).unwrap_or_default();
     let parcel_json =
         serde_json::json!({"parcel": body.parcel, "service": body.service}).to_string();
     let id = db::in_transaction(&p2, || {
-        p2.execute(
-            "INSERT INTO form_submission(form_template_id, authority_id, customer_ref,
-                                        values_json, status, created_at)
-             VALUES (0, ?1, ?2, '{}', 'draft', ?3)",
-            rusqlite::params![body.authority_id, customer_ref, now],
-        )?;
-        let submission_id = p2.last_insert_rowid();
+        let submission_id = match linked_submission {
+            Some(wanted) => wanted,
+            None => {
+                p2.execute(
+                    "INSERT INTO form_submission(form_template_id, authority_id, customer_ref,
+                                                values_json, status, created_at)
+                     VALUES (0, ?1, ?2, '{}', 'draft', ?3)",
+                    rusqlite::params![body.authority_id, customer_ref, now],
+                )?;
+                p2.last_insert_rowid()
+            }
+        };
         p2.execute(
             "INSERT INTO shipment(submission_id, authority_id, status, from_json, to_json,
                                  parcel_json, created_at, updated_at)
@@ -2152,5 +2204,151 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    fn seed_submission(fixture: &Fixture, customer_ref: &str, status: &str) -> i64 {
+        let store = Store::new(&fixture.state.store_root);
+        let p2 = db::open_p2(&store).unwrap();
+        p2.execute(
+            "INSERT INTO form_submission(form_template_id, authority_id, customer_ref,
+                    values_json, status, created_at)
+             VALUES (1, 1, ?1, '{}', ?2, 1000)",
+            rusqlite::params![customer_ref, status],
+        )
+        .unwrap();
+        p2.last_insert_rowid()
+    }
+
+    fn shipment_body_with(submission_id: i64) -> serde_json::Value {
+        let mut body = shipment_body();
+        body["submission_id"] = serde_json::json!(submission_id);
+        body
+    }
+
+    fn submission_count(fixture: &Fixture) -> i64 {
+        let store = Store::new(&fixture.state.store_root);
+        let p2 = db::open_p2(&store).unwrap();
+        p2.query_row("SELECT COUNT(*) FROM form_submission", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn shipment_links_owned_submitted_submission() {
+        let fixture = fixture(LabelCfg::default());
+        let sub = seed_submission(&fixture, "cust-1", "submitted");
+        let res = app(&fixture.state)
+            .oneshot(post(
+                "/apostille/api/v1/p2/shipments",
+                Some("tok-1"),
+                shipment_body_with(sub),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let id = body_json(res).await["id"].as_i64().unwrap();
+        let res = app(&fixture.state)
+            .oneshot(get(
+                &format!("/apostille/api/v1/p2/shipments/{id}"),
+                Some("tok-1"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(body_json(res).await["submission_id"], sub);
+        assert_eq!(submission_count(&fixture), 1); // no shell minted
+    }
+
+    #[tokio::test]
+    async fn shipment_unknown_submission_404s_without_side_effects() {
+        let fixture = fixture(LabelCfg::default());
+        let res = app(&fixture.state)
+            .oneshot(post(
+                "/apostille/api/v1/p2/shipments",
+                Some("tok-1"),
+                shipment_body_with(9999),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            body_json(res).await,
+            serde_json::json!({"error": "no such submission"})
+        );
+        assert_eq!(submission_count(&fixture), 0);
+    }
+
+    #[tokio::test]
+    async fn shipment_other_customer_submission_refused() {
+        let fixture = fixture(LabelCfg::default());
+        let sub = seed_submission(&fixture, "cust-2", "submitted");
+        let res = app(&fixture.state)
+            .oneshot(post(
+                "/apostille/api/v1/p2/shipments",
+                Some("tok-1"),
+                shipment_body_with(sub),
+            ))
+            .await
+            .unwrap();
+        // File convention: owner mismatch is 404, never 403.
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            body_json(res).await,
+            serde_json::json!({"error": "no such submission"})
+        );
+        assert_eq!(submission_count(&fixture), 1);
+    }
+
+    #[tokio::test]
+    async fn shipment_non_submitted_status_refused() {
+        let fixture = fixture(LabelCfg::default());
+        for status in ["draft", "superseded", "voided"] {
+            let sub = seed_submission(&fixture, "cust-1", status);
+            let res = app(&fixture.state)
+                .oneshot(post(
+                    "/apostille/api/v1/p2/shipments",
+                    Some("tok-1"),
+                    shipment_body_with(sub),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY, "{status}");
+            assert_eq!(
+                body_json(res).await,
+                serde_json::json!({"error": "submission is not submitted"}),
+                "{status}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn shipment_without_submission_keeps_shell_path() {
+        let fixture = fixture(LabelCfg::default());
+        let res = app(&fixture.state)
+            .oneshot(post(
+                "/apostille/api/v1/p2/shipments",
+                Some("tok-1"),
+                shipment_body(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let id = body_json(res).await["id"].as_i64().unwrap();
+        let res = app(&fixture.state)
+            .oneshot(get(
+                &format!("/apostille/api/v1/p2/shipments/{id}"),
+                Some("tok-1"),
+            ))
+            .await
+            .unwrap();
+        let sub = body_json(res).await["submission_id"].as_i64().unwrap();
+        let store = Store::new(&fixture.state.store_root);
+        let p2 = db::open_p2(&store).unwrap();
+        let (template_id, status): (i64, String) = p2
+            .query_row(
+                "SELECT form_template_id, status FROM form_submission WHERE id = ?1",
+                [sub],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((template_id, status.as_str()), (0, "draft"));
     }
 }
