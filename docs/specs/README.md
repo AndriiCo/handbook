@@ -260,3 +260,11 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     Cert identifies the device, passkey the person; either
     alone grants nothing. Invitation-gated enrolment — see
     [customer-auth.md](customer-auth.md) §5.
+32. Google OAuth (Phase 2, apex-only): flat
+    `/auth/google/start|callback` paths (playbook-consistent, no
+    `/oauth/` segment); server-side authorization-code flow, no
+    GIS JS; verification via Google tokeninfo (zero new crypto
+    deps); OAuth state reuses `webauthn_challenge`
+    (`kind='oauth'`) with a split binding cookie; Google-only
+    unlink accepts a fresh-session proof — see
+    [customer-auth.md](customer-auth.md) §9.

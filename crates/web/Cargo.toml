@@ -20,7 +20,7 @@ labels = { path = "../labels" }
 media = { path = "../media" }
 rand = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
-rustls = "0.23"
+rustls = { version = "0.23", features = ["aws-lc-rs"] }
 rustls-pemfile = "2"
 sha2 = "0.10"
 axum = { version = "0.8", features = ["ws", "multipart"] }
@@ -53,6 +53,15 @@ x509-parser = "0.18"
 webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
 uuid = { version = "1", features = ["v4"] }
 url = "2"
+# Google OAuth token/tokeninfo calls (spec customer-auth.md §9):
+# blocking ureq on spawn_blocking (voice/labels precedent).
+# `rustls-no-provider` + explicit `aws-lc-rs` install at first use
+# (ingest precedent — ureq's default would pull ring as a second
+# provider and rustls refuses); roots are bundled webpki-roots.
+ureq = { version = "3", default-features = false, features = [
+    "rustls-no-provider",
+    "rustls-webpki-roots",
+] }
 # Vendored OpenSSL for hermetic builds: Mac system OpenSSL is v4
 # (openssl-sys may reject it) and zigbuild cross targets have no
 # system libs. Precedent: rusqlite bundled, aws-lc-sys.

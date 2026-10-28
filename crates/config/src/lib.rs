@@ -815,6 +815,8 @@ pub mod keys {
     pub const AUTH_RP_ID: &str = "auth.rp_id";
     pub const AUTH_RP_NAME: &str = "auth.rp_name";
     pub const AUTH_ORIGIN: &str = "auth.origin";
+    pub const GOOGLE_CLIENT_ID: &str = "google.client_id";
+    pub const GOOGLE_CLIENT_SECRET: &str = "google.client_secret";
 
     /// Every registered key with its type (admin UI + roundtrip tests).
     pub const ALL: &[(&str, super::ConfigType)] = &[
@@ -852,6 +854,8 @@ pub mod keys {
         (AUTH_RP_ID, super::ConfigType::Text),
         (AUTH_RP_NAME, super::ConfigType::Text),
         (AUTH_ORIGIN, super::ConfigType::Text),
+        (GOOGLE_CLIENT_ID, super::ConfigType::Text),
+        (GOOGLE_CLIENT_SECRET, super::ConfigType::Secret),
     ];
 }
 
@@ -909,6 +913,12 @@ impl SecretText {
     }
 }
 
+impl From<String> for SecretText {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
 impl std::fmt::Debug for SecretText {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("SecretText(<redacted>)")
@@ -957,6 +967,8 @@ pub struct RuntimeConfig {
     pub auth_rp_id: String,
     pub auth_rp_name: String,
     pub auth_origin: String,
+    pub google_client_id: Option<String>,
+    pub google_client_secret: Option<SecretText>,
 }
 
 impl Default for RuntimeConfig {
@@ -1001,6 +1013,8 @@ impl Default for RuntimeConfig {
             auth_rp_id: "andrii.ai".to_string(),
             auth_rp_name: "Apostille Handbook".to_string(),
             auth_origin: "https://andrii.ai".to_string(),
+            google_client_id: None,
+            google_client_secret: None,
         }
     }
 }
@@ -1270,6 +1284,13 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.acme_eab_kid,
         )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::GOOGLE_CLIENT_ID,
+            &mut warnings,
+            &mut cfg.google_client_id,
+        )?;
         overlay_bool(
             conn,
             kek,
@@ -1415,6 +1436,13 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.telnyx_api_key,
         )?;
+        overlay_secret(
+            conn,
+            kek,
+            keys::GOOGLE_CLIENT_SECRET,
+            &mut warnings,
+            &mut cfg.google_client_secret,
+        )?;
         // H6 fix baked into the migration: a persistent dev-bypass
         // flag must never boot a release binary (spec §3).
         if cfg.admin_mtls_off && !cfg!(debug_assertions) {
@@ -1462,13 +1490,14 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_34_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 34);
+    fn registry_holds_36_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 36);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
-        // Two secrets (EAB HMAC, Telnyx API key); five bools
-        // (quic.enabled is the fifth); rest text (auth.* adds three).
+        // Three secrets (EAB HMAC, Telnyx API key, Google client
+        // secret); five bools (quic.enabled is the fifth); rest
+        // text (auth.* adds three, google.client_id one).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1477,7 +1506,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (5, 27, 2));
+        assert_eq!(counts, (5, 28, 3));
     }
 
     #[test]
@@ -1523,6 +1552,8 @@ mod runtime_tests {
         assert_eq!(cfg.auth_rp_id, "andrii.ai");
         assert_eq!(cfg.auth_rp_name, "Apostille Handbook");
         assert_eq!(cfg.auth_origin, "https://andrii.ai");
+        assert_eq!(cfg.google_client_id, None);
+        assert_eq!(cfg.google_client_secret, None);
     }
 
     #[test]
@@ -1581,6 +1612,12 @@ mod runtime_tests {
             (keys::AUTH_RP_ID, ConfigType::Text, "example.test"),
             (keys::AUTH_RP_NAME, ConfigType::Text, "Example RP"),
             (keys::AUTH_ORIGIN, ConfigType::Text, "https://example.test"),
+            (
+                keys::GOOGLE_CLIENT_ID,
+                ConfigType::Text,
+                "id-x.apps.googleusercontent.com",
+            ),
+            (keys::GOOGLE_CLIENT_SECRET, ConfigType::Secret, "secret-x"),
         ] {
             put(&conn, &kek, key, key_type, plaintext.as_bytes());
         }
@@ -1639,6 +1676,14 @@ mod runtime_tests {
         assert_eq!(cfg.auth_rp_id, "example.test");
         assert_eq!(cfg.auth_rp_name, "Example RP");
         assert_eq!(cfg.auth_origin, "https://example.test");
+        assert_eq!(
+            cfg.google_client_id.as_deref(),
+            Some("id-x.apps.googleusercontent.com")
+        );
+        assert_eq!(
+            cfg.google_client_secret.as_ref().map(SecretText::as_str),
+            Some("secret-x")
+        );
     }
 
     #[test]

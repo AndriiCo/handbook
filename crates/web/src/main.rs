@@ -20,6 +20,7 @@ mod admin_workers;
 mod approval;
 mod host;
 mod mtls;
+mod oauth;
 mod p2;
 mod p2_labels;
 mod passkey;
@@ -115,6 +116,10 @@ struct AppState {
     webauthn: std::sync::Arc<webauthn_rs::Webauthn>,
     /// Auth rate-limit buckets (spec decision 0.6).
     auth_limits: std::sync::Arc<passkey::RateBuckets>,
+    /// Google OAuth client (spec `customer-auth.md` §9): `None`
+    /// until `google.client_id` + `google.client_secret` rows are
+    /// set — the endpoints 503, the boot never refuses.
+    google_cfg: Option<oauth::GoogleCfg>,
 }
 
 /// Build the full PUBLIC app router. `static_dir` roots
@@ -146,6 +151,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             voice_api_key: None,
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+            google_cfg: None,
         },
         static_dir,
         spa_dir,
@@ -184,6 +190,8 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/profile/unlink", post(passkey::unlink))
         .route("/api/v1/auth/logout", post(passkey::logout))
         .route("/api/v1/auth/me", get(passkey::me))
+        .route("/api/v1/auth/google/start", post(oauth::start))
+        .route("/api/v1/auth/google/callback", get(oauth::callback))
         .route(
             "/api/v1/authorities/{slug}/facts",
             get(approval::public_facts),
@@ -589,6 +597,22 @@ async fn main() {
                 }),
         ),
         auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+        google_cfg: match (&cfg.google_client_id, &cfg.google_client_secret) {
+            (Some(id), Some(secret)) => Some(oauth::GoogleCfg::from_values(
+                id,
+                secret.clone(),
+                &format!(
+                    "{}/apostille/api/v1/auth/google/callback",
+                    cfg.auth_origin.trim_end_matches('/')
+                ),
+            )),
+            _ => {
+                eprintln!(
+                    "WARNING: config google.client_id/google.client_secret unset — Google login disabled"
+                );
+                None
+            }
+        },
     };
     let public = public_router(
         state.clone(),
@@ -1639,6 +1663,7 @@ mod tests {
             voice_api_key: None,
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+            google_cfg: None,
         };
         Fixture { _tmp: tmp, state }
     }

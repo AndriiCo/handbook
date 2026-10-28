@@ -3,7 +3,7 @@
 - Status: draft (for author review; Phase-1 implementation alongside)
 - Date: 2026-10-28
 - Grounding: [auth-playbook.md](../auth-playbook.md) (§1 passkeys, §6 linking rules), [spa-separation.md](spa-separation.md) §1.4 (sessions/cookies/roles), [SECURITY.md](../SECURITY.md) §1–§2, `crates/auth/src/` (`lib.rs` sessions+roles, `login.rs` policy, `csrf.rs`, `ws.rs`), `crates/web` session/cookie handling, and webauthn-rs 0.5.5 API (builder + ceremony shapes + error variants, verified against vendored sources).
-- Out of scope: OAuth/OIDC handlers for Apple/Google/Meta and the magic-link sender (playbook §2–§5 portal checklists stand; this spec defines the tables and link/unlink seams they plug into). Staff enrolment endpoints are Phase 4 (spec §6 here, tables land with the code).
+- Out of scope: OAuth/OIDC handlers for Apple/Meta and the magic-link sender (playbook §2–§5 portal checklists stand; this spec defines the tables and link/unlink seams they plug into). Google OAuth is §9 (Phase 2). Staff enrolment endpoints are Phase 4 (spec §6 here, tables land with the code).
 
 ## 0. Decisions embodied
 
@@ -196,4 +196,62 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 | OPEN-1 | Live-ceremony proof that RP ID `andrii.ai` + `allow_subdomains(true)` + `append_allowed_origin(admin)` serves both origins end-to-end | CODE (staging) | §5 admin login, Day-6 gate |
 | OPEN-2 | Magic-link `fallback_until` window length + tighter idle value (playbook §5 says "tighter" without numbers) | SEC | Phase 3 timeouts |
 | OPEN-3 | Staff enrolment if passkey stalls: fallback scope | Author | §5 enrolment |
+| OPEN-4 | Admin-branch Google OAuth: needed at all, or staff stays passkey+mTLS (§5)? Phase 2 ships apex-only either way | Author | admin login scope |
+| OPEN-5 | tokeninfo→JWKS migration trigger (quota/latency at scale); ID-token local validation design | CODE | post-Phase-2 scale |
+| OPEN-6 | Playbook §3 touch-up: no-GIS-JS decision (server-side code flow + tokeninfo), dev/staging Google-console story | CODE | portal setup |
+| OPEN-7 | Google RISC receiver phase + synthetic-SET fixtures (§3 table; `signal_action` rows already exist) | SEC | revocation handling |
+| OPEN-8 | Profile display for Google links (method-only vs masked email; raw email never stored) | Author | profile UI |
+
+## 9. Google OAuth (Phase 2)
+
+Scope: customer login + linking on the **apex branch only** (`https://andrii.ai`). Plain OAuth2 authorization-code flow with **server-side exchange**; no Google Identity Services JS (deviation from playbook §3 step 3, decided here: tokens never touch the browser, no FedCM/SDK dependency, verification stays one server round-trip). The admin branch gets **no** Google routes in Phase 2 (OPEN-4). Paths stay flat with passkey/Apple/Meta (`/auth/google/…`, matching the playbook §3 sketch — no `/oauth/` segment). Requested scopes: `openid email profile` only.
+
+### 9.1 Endpoints (public router, alongside §2)
+
+- `POST /auth/google/start` → `200 {"auth_url": "https://accounts.google.com/o/oauth2/v2/auth?…&state=<handle>"}`. DTO `{"mode"?: "login"|"link"}` with `deny_unknown_fields` (§2 header rule); absent mode means `login`. Modes mirror §2.1: (a) logged-out register-or-login; (b) logged-in link. Mode (b) requires a **customer** session cookie **and** freshness — `step_up_at` within 600s **or** session minted within 600s — else `403 {"error": "step-up required: log in again first"}` (same rule as `register_start` mode b; non-customer sessions get `403 {"error": "google linking is for customer accounts"}`). Guards: Origin + double-submit CSRF (start mints the `hb_csrf` cookie like every §2 start); unknown `mode` → 400. Unconfigured keys (§9.5) → `503 {"error": "google login unavailable"}`.
+- `GET /auth/google/callback?code=…&state=…` finishes the flow and **302s**, never JSON (top-level browser navigation; Google appends its own params, so no `deny_unknown_fields` — only `code`/`state`/`error` are read). Success → `302 /apostille/login` (login; the page shows the logged-in state) or `302 /apostille/security` (link; the fresh page load lists the new method — no success param). Failures → `302 /apostille/login?error=<code>` with codes `oauth_denied` (user cancelled at Google), `oauth_expired` (410 analog: missing/consumed/expired state), `oauth_failed` (binding mismatch, exchange/verify failure, role refusal — one generic code, no PII, no provider internals), `oauth_unavailable` (503 analog), `oauth_rate_limited` (429 analog), `link_required` (rule-5 hint: "an account with this email exists — log in with your passkey first, then link Google from Security"), `already_linked` (sub owned by another account in link mode), `account_locked`. The login page renders the `?error=` copy **outside** the logged-in gate (link-mode failures land there too); the SPA renders each code as copy, never a dead end.
+
+### 9.2 State: reuse `webauthn_challenge` with `kind='oauth'`
+
+No new table. The DDL puts no `CHECK` on `kind`, and `take_challenge`/`sweep_challenges`/`proof_fresh` are kind-generic, so the OAuth state rides the existing machinery: `id` = 256-bit hex handle (the `state` param), `user_id` = link-mode session user or NULL, `state_json` = `{"mode": "login"|"link", "binding": "<256-bit hex>"}`, 5-min expiry, single-use consume-on-first-callback (consume **before** the exchange call, mirroring §2.2/§2.4), sweep on every start. CSRF binding for the GET callback (no Origin enforcement on navigations): start also sets an `hb_oauth=<binding>` cookie (`HttpOnly; SameSite=Lax; Path=/; Max-Age=300; Secure` in prod); callback requires cookie binding == row binding, then clears the cookie on **all** exits. Replays die on single-use; cross-site forgery dies on the binding.
+
+### 9.3 Exchange + verification (no new crypto deps)
+
+On `spawn_blocking` (ureq is blocking; precedent: voice/labels call sites), with the workspace-standard ureq 3 `rustls-no-provider + rustls-webpki-roots` feature set plus the `aws-lc-rs` rustls feature (ingest precedent) — already in `Cargo.lock`, so the web crate gains dependency entries but **zero new crypto code**:
+
+1. `POST https://oauth2.googleapis.com/token` with `{code, client_id, client_secret, redirect_uri, grant_type=authorization_code}` (exact `redirect_uri` match, as registered). Take the `id_token`; the access token is unused (`access_type=online`, no refresh — our sessions are the credential; Google tokens are never stored — no table holds them, by design).
+2. `GET https://oauth2.googleapis.com/tokeninfo?id_token=…`, which returns `aud, sub, iss, exp, email, email_verified` (Google backend-auth docs; `email_verified` is the string `"true"`).
+3. Verify: `aud == google.client_id`; `iss` is `https://accounts.google.com` or `accounts.google.com`; `exp` (unix) > now; `sub` non-empty; `email` well-formed. `email_verified == "true"` sets `verified_email=1`, otherwise `0` — and only `1` rows ever match (§6 rule 2, enforced by the existing `usable_email_owner` query). Any failure → `oauth_failed`. No JWT/JWK stack, no JWKS fetch — tokeninfo does the signature work server-side. Scale-out trigger for a JWKS migration is OPEN-5.
+
+### 9.4 Account resolution (playbook §6 rules 1–5)
+
+`LoginMethod::Google` (`'google'`) + `identity_link(user_id, 'google', sub, email_hash, verified_email, 0, NULL)` — the table expresses this today (`method` is free text).
+
+- Known live `(google, sub)` → login: locked account → `account_locked`; non-customer role → `oauth_failed` + audit (staff log in with passkey+mTLS per §5, never Google); else `create_session` + rotate CSRF + `clear_fallback` + audit `oauth_login`; stamp the consumed state row's `user_id` (one `UPDATE`, so `proof_fresh` doubles as this login's unlink re-auth proof).
+- Unknown sub + link mode (row `user_id` + matching valid customer session): sub owned by another account → `already_linked`, never a merge; sub already linked to this account → idempotent success; else insert link in-txn (`ensure_account` is idempotent), audit `method_linked` with `hash_str(sub)` (rule 7, hashes only), `302 /apostille/security`.
+- Unknown sub + logged-out → `decide_unknown_sub(usable_email_owner(email).is_some())`: match → `link_required` (rule 5, no auto-merge, no account disclosure in the URL); no match → `ensure_account` + link + session + audit `oauth_login` (reason `new_account`), `302 /apostille/login`.
+- Login by sub is allowed regardless of `email_verified`; unverified rows just never match (rules 2–3 fall out of the existing query).
+
+Unlink reuses `POST /auth/profile/unlink` with `{"method": "google", "id": "<sub>", "reauth_proof": "<consumed challenge id | "session">"}`: the method gate accepts `passkey` and `google`; google disables the link row only (no credential row exists). Re-auth proof is a fresh consumed challenge (passkey ceremony or stamped oauth row via `proof_fresh`) **or**, for Google-only users who cannot run a passkey ceremony, the literal `"session"` when the current session was minted within 600s (accepted rule-6 tradeoff: recent auth + remaining-method lock; last-method removal stays refused). Keep `unlink_permitted` (`409 {"error": "last method cannot be removed"}`) and the rule-6 tail (`locked_at` + `account_locked`) verbatim; audit `method_unlinked` with the method as reason. `GET /auth/profile/methods` already lists `google` rows (label `""` — acceptable; OPEN-8 covers richer display).
+
+Rule-6 note: a Google-authenticated session counts as *fresh auth* for the mode-(b) session-minted window but does **not** set `step_up_at` (no UV signal) — same asymmetry as passkey login without UV.
+
+### 9.5 Config (auth.* overlay pattern)
+
+Two registry keys: `google.client_id` (`text`, `overlay_optional_text` → `Option<String>`) and `google.client_secret` (`secret`, `overlay_secret` → `Option<SecretText>`, redacting, never logged). `RuntimeConfig` defaults both to `None`; **boot always succeeds** without them (missing/empty/wrong-typed → silent `None`, mirroring the Telnyx-secret leniency); endpoints fail closed per §9.1. `AppState` carries both (secret as `SecretText`, same as `voice_api_key`). Registry `ALL` grows 34→36. Admin display: client_id readable text, secret presence-only. Redirect URI is derived (`https://{auth.origin}/apostille/api/v1/auth/google/callback`, trailing slash trimmed), not configured.
+
+### 9.6 Errors, rate limits, PII
+
+- Start errors mirror §2.x JSON shapes: 400 bad mode, 401 link-without-session, 403 CSRF/Origin/step-up/non-customer, 429 `{"error": "rate limited"}`, 503 unconfigured, 500 store unavailable. Never log `auth_url` (state is bearer-ish), codes, tokens, emails, or subs — hashes only.
+- Callback errors are the §9.1 `?error=` codes (302, no PII in URL or logs). All 302 targets are fixed same-origin paths, never reflected input (no open redirect).
+- Rate limits mirror §6: start `30/min/IP` (`gs:{ip}`); callback `60/min/IP` (`gc:{ip}`) pre-identify + `10/min/account` (`gc:{user_id}`) once resolved; unlink's existing `10/min/account` covers Google unlinks. Atomic check-and-decrement buckets, same struct.
+- Audit actions: `method_linked` / `method_unlinked` / `oauth_login` + `account_locked` tail, actor + sub/email hashes only; anonymous failures audit `google_denied` / `google_expired` / `google_failed` (reason carries the sub-cause: exchange, tokeninfo, binding — never bodies, which can echo secrets).
+
+### 9.7 Staging acceptance (extends §7)
+
+Google login green (new account → session + cookie rotation); known-sub login green; verified-email duplicate → `link_required`, accounts stay separate until explicit link flow (pre-account-takeover fixture red→green); link-mode without fresh step-up refused; state replay → `oauth_expired`; binding-cookie stripped → `oauth_failed`; user-cancel at Google → `oauth_denied`; keys unset → start 503 + callback `oauth_unavailable`, boot clean; last-method Google unlink refused; non-customer Google login refused; `cargo xtask ci` green.
+
+### 9.8 Table-expressiveness note
+
+Everything above fits the current schema — no DDL: `kind`/`method` are unconstrained text, `usable_email_owner`/`live_method_count`/`links_for_user` are method-generic, `proof_fresh` covers oauth rows once `user_id` is stamped. Deliberately unexpressed: Google access/refresh tokens (never stored — `access_type=online`, our sessions are the credential) and raw emails (hashes only, per §6 logging rules).
 

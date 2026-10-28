@@ -245,6 +245,7 @@ dependencies = [
  "rand 0.9.5",
  "rusqlite",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
  "tempfile",
 ]
@@ -3784,6 +3785,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "ureq",
  "url",
  "uuid",
  "voice",

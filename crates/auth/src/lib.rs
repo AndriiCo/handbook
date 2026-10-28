@@ -6,6 +6,7 @@
 
 pub mod csrf;
 pub mod login;
+pub mod oauth;
 pub mod passkey;
 pub mod ws;
 

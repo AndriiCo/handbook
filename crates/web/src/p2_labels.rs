@@ -1574,6 +1574,7 @@ mod tests {
             voice_api_key: None,
             webauthn: std::sync::Arc::new(crate::passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            google_cfg: None,
         };
         Fixture { _tmp: tmp, state }
     }

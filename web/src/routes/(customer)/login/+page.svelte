@@ -2,6 +2,11 @@
 	import { resolve } from '$app/paths';
 	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
 	import { cookieValue, loginPasskey, registerPasskey } from '../../../lib/customer/passkey.js';
+	import {
+		googleErrorCopy,
+		googleStartError,
+		startGoogle
+	} from '../../../lib/customer/google.js';
 
 	let locale = $state<Locale>(resolveLocale());
 	let displayName = $state('');
@@ -13,6 +18,7 @@
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 	let me = $state<{ user_id: string } | null>(null);
+	let googleError = $state<string | null>(null);
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
@@ -97,6 +103,19 @@
 		me = null;
 	}
 
+	async function googleLogin() {
+		error = null;
+		busy = true;
+		const res = await startGoogle(
+			{ post, redirect: (u: string) => (window.location.href = u) },
+			'login'
+		);
+		// On ok the browser is navigating away; on failure the page
+		// stays and the buttons re-enable.
+		busy = false;
+		if (!res.ok) error = googleStartError(res.status);
+	}
+
 	$effect(() => {
 		fetch(api('/auth/me'), { credentials: 'same-origin' })
 			.then((res) => (res.ok ? res.json() : null))
@@ -104,6 +123,15 @@
 				if (body?.user_id) me = { user_id: body.user_id };
 			})
 			.catch(() => {});
+		// Callback-failure copy from ?error= (friendly map, never raw
+		// server text); the param is dropped so a retry starts clean.
+		// $effect runs client-side only, so window is safe (and this
+		// avoids pulling $app/state into the chunk).
+		const params = new URLSearchParams(window.location.search);
+		googleError = googleErrorCopy(params);
+		if (params.has('error')) {
+			history.replaceState(null, '', window.location.pathname);
+		}
 	});
 </script>
 
@@ -120,7 +148,7 @@
 {:else if me}
 	<p class="notice ok" role="status">
 		Logged in. <a href={resolve('/(customer)/orders')}>Continue to {t.orderLabel}s</a>
-		· <a href={resolve('/(customer)/security')}>Manage passkeys</a>
+		· <a href={resolve('/(customer)/security')}>Manage sign-in methods</a>
 		· <button type="button" class="linklike" onclick={logout}>{t.logoutLabel}</button>
 	</p>
 {:else}
@@ -159,7 +187,15 @@
 		<p class="notice err" role="alert">{error}</p>
 	{/if}
 
-	<p class="muted">Apple, Google, and Meta sign-in plus email magic links arrive next; passkeys work today.</p>
+	<button type="button" class="google" disabled={busy} onclick={googleLogin}>
+		Continue with Google
+	</button>
+
+	<p class="muted">Apple and Meta sign-in plus email magic links arrive next.</p>
+{/if}
+
+{#if googleError}
+	<p class="notice err" role="alert">{googleError}</p>
 {/if}
 
 <style>
@@ -203,6 +239,12 @@
 	:root[data-theme='dark'] button {
 		background: var(--accent-fill);
 		border-color: var(--accent-fill);
+	}
+	.google {
+		max-width: 28rem;
+		color: var(--text);
+		background: var(--bg);
+		border-color: var(--border);
 	}
 	.linklike {
 		min-height: 0;

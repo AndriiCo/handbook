@@ -6,6 +6,7 @@
 		registerPasskey,
 		serializeAuthentication
 	} from '../../../lib/customer/passkey.js';
+	import { googleStartError, startGoogle } from '../../../lib/customer/google.js';
 
 	type Method = { method: string; id: string; label: string; disabled: boolean };
 
@@ -121,30 +122,79 @@
 		}
 	}
 
+	async function linkGoogle() {
+		error = null;
+		busy = true;
+		const res = await startGoogle(
+			{ post, redirect: (u: string) => (window.location.href = u) },
+			'link'
+		);
+		// On ok the browser is navigating away; on failure the page
+		// stays and the buttons re-enable.
+		busy = false;
+		if (!res.ok) error = googleStartError(res.status);
+	}
+
+	async function removeGoogle(id: string) {
+		error = null;
+		busy = true;
+		try {
+			// No passkey ceremony: a Google-only user has none. The
+			// server accepts a fresh session as the re-auth proof
+			// for google unlinks (spec §9.4).
+			const res = await post('/auth/profile/unlink', {
+				method: 'google',
+				id,
+				reauth_proof: 'session'
+			});
+			if (!res.ok) {
+				error =
+					res.status === 409
+						? 'This is your last sign-in method — add another first.'
+						: res.status === 403
+							? 'Log in again first (unlinking needs a fresh session).'
+							: ((res.body.error as string) ?? `Failed (HTTP ${res.status}).`);
+				return;
+			}
+			await refresh();
+		} finally {
+			busy = false;
+		}
+	}
+
 	$effect(() => {
 		refresh().catch(() => {});
 	});
 </script>
 
 <svelte:head>
-	<title>Passkeys — Apostille Handbook</title>
+	<title>Sign-in methods — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Passkeys</h1>
+<h1>Sign-in methods</h1>
 
 {#if !userId}
-	<p class="notice">Log in first to manage your passkeys.</p>
+	<p class="notice">Log in first to manage your sign-in methods.</p>
 	<p><a href={resolve('/(customer)/login')}>Go to log in</a></p>
 {:else}
 	{#if methods.length === 0}
-		<p class="notice">No passkeys yet — add your first below.</p>
+		<p class="notice">No sign-in methods yet — add your first below.</p>
 	{:else}
 		<ul>
-			{#each methods as method (method.id)}
+			<!-- Only passkey + google rows exist today; future methods
+				extend the ternaries below (never removeKey). -->
+			{#each methods as method (method.method + ':' + method.id)}
 				<li>
-					<strong>{method.label || 'Unnamed key'}</strong>
-					<span class="muted">{method.method}</span>
-					<button type="button" disabled={busy} onclick={() => removeKey(method.id)}>
+					<strong>{method.method === 'google' ? 'Google' : method.label || 'Unnamed key'}</strong>
+					<span class="muted">
+						{method.method === 'google' ? method.label || 'linked account' : method.method}
+					</span>
+					<button
+						type="button"
+						disabled={busy}
+						onclick={() =>
+							method.method === 'google' ? removeGoogle(method.id) : removeKey(method.id)}
+					>
 						Remove
 					</button>
 				</li>
@@ -157,6 +207,18 @@
 		<label for="new-label">Key label</label>
 		<input id="new-label" name="label" type="text" bind:value={label} placeholder="YubiKey" />
 		<button type="submit" disabled={busy}>Add passkey</button>
+	</form>
+
+	<form
+		onsubmit={(e) => {
+			e.preventDefault();
+			linkGoogle();
+		}}
+	>
+		<h2>Or link Google</h2>
+		<button type="submit" disabled={busy}>
+			Link Google account
+		</button>
 	</form>
 
 	{#if error}

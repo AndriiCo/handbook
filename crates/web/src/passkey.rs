@@ -81,11 +81,11 @@ fn origin_of(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::ORIGIN)?.to_str().ok()
 }
 
-fn origin_ok(headers: &HeaderMap, dev_off: bool) -> bool {
+pub(crate) fn origin_ok(headers: &HeaderMap, dev_off: bool) -> bool {
     auth::csrf::origin_allowed(origin_of(headers), dev_off)
 }
 
-fn csrf_echo_ok(headers: &HeaderMap) -> bool {
+pub(crate) fn csrf_echo_ok(headers: &HeaderMap) -> bool {
     let cookies = headers
         .get(header::COOKIE)
         .and_then(|v| v.to_str().ok())
@@ -98,7 +98,7 @@ fn csrf_echo_ok(headers: &HeaderMap) -> bool {
     auth::csrf::tokens_match(cookie_token, header_token)
 }
 
-fn csrf_fail() -> Response {
+pub(crate) fn csrf_fail() -> Response {
     (
         StatusCode::FORBIDDEN,
         Json(json!({"error": "csrf check failed"})),
@@ -106,11 +106,11 @@ fn csrf_fail() -> Response {
         .into_response()
 }
 
-fn client_ip(addr: SocketAddr) -> String {
+pub(crate) fn client_ip(addr: SocketAddr) -> String {
     addr.ip().to_string()
 }
 
-fn user_agent(headers: &HeaderMap) -> &str {
+pub(crate) fn user_agent(headers: &HeaderMap) -> &str {
     headers
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
@@ -118,7 +118,11 @@ fn user_agent(headers: &HeaderMap) -> &str {
 }
 
 /// Valid session from the public cookie (touches `last_seen`).
-fn session_of(conn: &rusqlite::Connection, headers: &HeaderMap, now: i64) -> Option<auth::Session> {
+pub(crate) fn session_of(
+    conn: &rusqlite::Connection,
+    headers: &HeaderMap,
+    now: i64,
+) -> Option<auth::Session> {
     let cookies = headers.get(header::COOKIE).and_then(|v| v.to_str().ok())?;
     let id = auth::cookie_value(cookies, auth::PUB_COOKIE)?;
     let session = auth::get_session(conn, id).ok()??;
@@ -129,7 +133,13 @@ fn session_of(conn: &rusqlite::Connection, headers: &HeaderMap, now: i64) -> Opt
     Some(session)
 }
 
-fn audit_auth(conn: &rusqlite::Connection, now: i64, actor: &str, action: &str, reason: &str) {
+pub(crate) fn audit_auth(
+    conn: &rusqlite::Connection,
+    now: i64,
+    actor: &str,
+    action: &str,
+    reason: &str,
+) {
     let _ = conn.execute(
         "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
          VALUES (?1, ?2, ?3, 'auth', 0, ?4)",
@@ -170,13 +180,13 @@ fn split_account(account: &str) -> Option<(Option<&str>, Option<String>)> {
     None
 }
 
-fn open_conn(state: &AppState) -> Option<rusqlite::Connection> {
+pub(crate) fn open_conn(state: &AppState) -> Option<rusqlite::Connection> {
     let store = handbook_store::store::Store::new(&state.store_root);
     handbook_store::db::open(&store).ok()
 }
 
 /// One `Set-Cookie` line per value (appended, never merged).
-fn set_cookies(values: &[String]) -> HeaderMap {
+pub(crate) fn set_cookies(values: &[String]) -> HeaderMap {
     let mut map = HeaderMap::new();
     for cookie in values {
         // Cookie strings are internally built (hex tokens, fixed
@@ -808,7 +818,7 @@ pub async fn unlink(
         )
             .into_response();
     };
-    if body.method != "passkey" {
+    if body.method != "passkey" && body.method != "google" {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "unknown method"})),
@@ -825,7 +835,16 @@ pub async fn unlink(
         )
             .into_response();
     }
-    if !store::proof_fresh(&conn, &body.reauth_proof, &session.user_id, now).unwrap_or(false) {
+    // Re-auth proof: a fresh consumed challenge (passkey ceremony
+    // or stamped oauth row) — or, for Google-only users who cannot
+    // run a passkey ceremony, the literal "session" while the
+    // current session is step-up fresh (spec §9.4 tradeoff).
+    let reauthed = store::proof_fresh(&conn, &body.reauth_proof, &session.user_id, now)
+        .unwrap_or(false)
+        || (body.method == "google"
+            && body.reauth_proof == "session"
+            && now - session.created_at <= store::STEP_UP_WINDOW_SECS);
+    if !reauthed {
         return (
             StatusCode::FORBIDDEN,
             Json(json!({"error": "re-authentication required"})),
@@ -841,7 +860,12 @@ pub async fn unlink(
         )
             .into_response();
     }
-    if store::revoke_credential(&conn, &session.user_id, &body.id, now).unwrap_or(0) == 0 {
+    let revoked = if body.method == "passkey" {
+        store::revoke_credential(&conn, &session.user_id, &body.id, now).unwrap_or(0)
+    } else {
+        store::disable_link(&conn, &session.user_id, &body.method, &body.id, now).unwrap_or(0)
+    };
+    if revoked == 0 {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "method unknown"})),
@@ -859,7 +883,13 @@ pub async fn unlink(
             "last link revoked",
         );
     }
-    audit_auth(&conn, now, &session.user_id, "method_unlinked", "passkey");
+    audit_auth(
+        &conn,
+        now,
+        &session.user_id,
+        "method_unlinked",
+        &body.method,
+    );
     let rotation = auth::csrf::mint_token();
     (
         StatusCode::OK,
@@ -1383,6 +1413,76 @@ mod tests {
         // Good proof but last method → 409.
         assert_eq!(
             call(&app, &cookies, &token, "proof-1", "cred-1").await,
+            StatusCode::CONFLICT
+        );
+    }
+
+    #[tokio::test]
+    async fn unlink_google_accepts_fresh_session_proof() {
+        let (tmp, app) = test_app();
+        let store = handbook_store::store::Store::new(tmp.path());
+        let conn = handbook_store::db::open(&store).unwrap();
+        let now = unix_now();
+        auth::passkey::ensure_account(&conn, "u-g", now).unwrap();
+        auth::create_session(
+            &conn,
+            "sess-g",
+            &auth::NewSession {
+                user_id: "u-g",
+                role: auth::Role::Customer,
+                customer_ref: Some("u-g"),
+                now,
+                ip: "127.0.0.1",
+                user_agent: "test",
+            },
+        )
+        .unwrap();
+        auth::oauth::insert_google_link(&conn, "u-g", "sub-1", "g@example.test", true).unwrap();
+        auth::oauth::insert_google_link(&conn, "u-g", "sub-2", "g@example.test", true).unwrap();
+        drop(conn);
+        let cookies = format!("{}=sess-g", auth::PUB_COOKIE);
+        let (_, _, set_cookie) = start_register(&app, "Andrii", "").await;
+        let (_, token) = csrf_pair(&set_cookie);
+        async fn call(
+            app: &axum::Router,
+            cookies: &str,
+            token: &str,
+            proof: &str,
+            id: &str,
+        ) -> StatusCode {
+            let jar = format!("{cookies}; {}={token}", auth::CSRF_COOKIE);
+            app.clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/apostille/api/v1/auth/profile/unlink")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .header(header::ORIGIN, "http://localhost")
+                        .header(header::COOKIE, jar)
+                        .header(auth::CSRF_HEADER, token)
+                        .extension(addr())
+                        .body(Body::from(format!(
+                            r#"{{"method":"google","id":"{id}","reauth_proof":"{proof}"}}"#
+                        )))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status()
+        }
+        // Bogus proof → 403.
+        assert_eq!(
+            call(&app, &cookies, &token, "nope", "sub-1").await,
+            StatusCode::FORBIDDEN
+        );
+        // Fresh session proof → 200 (a method remains).
+        assert_eq!(
+            call(&app, &cookies, &token, "session", "sub-1").await,
+            StatusCode::OK
+        );
+        // Last method → 409 even with a good proof.
+        assert_eq!(
+            call(&app, &cookies, &token, "session", "sub-2").await,
             StatusCode::CONFLICT
         );
     }

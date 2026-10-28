@@ -285,6 +285,22 @@ pub fn revoke_credential(
     )
 }
 
+/// Disable one non-passkey identity link (OAuth unlink path;
+/// passkeys go through [`revoke_credential`]); returns rows touched.
+pub fn disable_link(
+    conn: &Connection,
+    user_id: &str,
+    method: &str,
+    provider_sub: &str,
+    now: i64,
+) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE identity_link SET disabled_at = ?1
+         WHERE user_id = ?2 AND method = ?3 AND provider_sub = ?4 AND disabled_at IS NULL",
+        rusqlite::params![now, user_id, method, provider_sub],
+    )
+}
+
 /// Live (non-disabled) method count for rule 6.
 pub fn live_method_count(conn: &Connection, user_id: &str) -> rusqlite::Result<usize> {
     conn.query_row(
