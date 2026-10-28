@@ -471,7 +471,7 @@
 							</span>
 							<span class="ml-auto font-mono text-sm">#{item.id}</span>
 						</div>
-						<p class="mt-2 mb-0 font-mono break-anywhere">
+						<p class="mt-2 mb-0 font-mono wrap-anywhere">
 							{item.uri ?? '(unattributed — nothing to re-fetch)'}
 						</p>
 						<p class="mt-1 mb-0 text-sm text-ink-muted">

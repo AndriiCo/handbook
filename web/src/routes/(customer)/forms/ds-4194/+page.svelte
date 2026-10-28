@@ -281,7 +281,7 @@
 						{#if field}
 							<div class="grid grid-cols-[minmax(10rem,35%)_1fr] gap-3 py-[0.375rem] [border-bottom:1px_dotted_var(--border)]">
 								<dt class="font-semibold">{field.label}</dt>
-								<dd class="m-0 break-anywhere">{displayValue(field, values[field.key])}</dd>
+								<dd class="m-0 wrap-anywhere">{displayValue(field, values[field.key])}</dd>
 							</div>
 						{/if}
 					{/each}

@@ -13,6 +13,7 @@
 		"check": "WEB_BUILD=admin svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "WEB_BUILD=admin svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"check:imports": "node scripts/check-imports.mjs",
+		"check:tailwind": "node scripts/check-tailwind.mjs",
 		"smoke": "node scripts/smoke.mjs",
 		"test": "node --test test/"
 	},

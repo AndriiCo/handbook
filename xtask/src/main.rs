@@ -222,6 +222,9 @@ fn run_ci() {
     run_or_exit("npm", &["run", "build", "--prefix", "web"]);
     run_or_exit("npm", &["run", "build:admin", "--prefix", "web"]);
     run_or_exit("npm", &["run", "smoke", "--prefix", "web"]);
+    // Fail-closed Tailwind audit (unknown utilities emit no CSS):
+    // needs both builds fresh from this run.
+    run_or_exit("npm", &["run", "check:tailwind", "--prefix", "web"]);
 }
 
 /// Run one CI step: missing binary is a loud fatal (never a silent
