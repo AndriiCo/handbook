@@ -89,3 +89,6 @@ to change history — append a correction section instead.
 - [2026-10-28-036-f5d199f-live.md](2026-10-28-036-f5d199f-live.md) —
   Prod already on f5d199f (root deploy 02:32); verified stable;
   deploy pre-check for root-owned targets.
+- [2026-10-28-037-phase2-google-oauth.md](2026-10-28-037-phase2-google-oauth.md) —
+  Subagents rule in AGENTS.md; Phase 2 Google OAuth via 4
+  streams, implemented, deployed 9c28dd9 as hal, verified live.
