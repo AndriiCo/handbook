@@ -315,3 +315,10 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     truth; the `viet-nam` publish-test slug follows). O3:
     `build-handbook` + `accept` run staff-on-demand for audit
     checkpoints — no daemon, no served `out_dir`.
+37. P2 order container deferred (Slice D scoping): no order
+    record joining form + shipment + labels in v1 — the join is
+    the optional `submission_id` link on the shipment, and the
+    orders/billing pages stay honest placeholders. An order
+    container without money is scope without purpose; money is
+    cut per the roadmap (no Stripe charging), so the container
+    waits for the invoice mirror. Revisit with payments.

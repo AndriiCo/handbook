@@ -58,6 +58,12 @@
     andrii.ai/apostille.
   - `web-admin`: full routes, deployed only on admin host. Admin
     chunks therefore never exist on public origin — no URL guessing.
+  - Root decision (run-100): because the admin build registers the
+    `(public)` homepage at `/` too, the admin router answers `GET /`
+    with `303 → /admin` (dashboard; its layout gate forwards to
+    `/admin/login` when unauthenticated) instead of serving the
+    shell. `/mock/*` is a server 404 on the staff origin (demo
+    routes must never render on prod admin, even client-side).
   - Simpler interim (hackathon): one build, but Caddy/axum on public
     host refuses to serve `/apostille/admin*` and
     `/_app/immutable/...admin...` chunk names. Weaker (chunk names

@@ -181,7 +181,20 @@ POST /apostille/api/v1/admin/calls/{id}/record/start      → {recording: true}
 POST /apostille/api/v1/admin/calls/{id}/record/stop       → {recording: false}
 POST /apostille/api/v1/admin/calls/{id}/questions/{idx}/asked  → {asked: true}
 POST /apostille/api/v1/admin/calls/webhook (Telnyx → us; signature, no session)
+POST /apostille/api/v1/admin/calls/{id}/quote (Slice E, "quote to draft")
+  {segment_ids: [int...], topic, statement}
+  → 200 {fact_id} | 400 malformed | 404 unknown call/segment | 422 bad topic/statement
 ```
+
+Quote-to-draft inserts ONE proposed fact via the standard
+`insert_proposed_fact` path (same queue, same approval gate —
+voice drafts get no shortcut). Voice has no capture row, so the
+fact is unattributed at rest (`capture_id` 0-style, created_by
+`staff:<user>`); the call+segment refs ride the audit row
+(grep-able reason string, zero DDL — the magic `fallback` mark
+precedent). Staff-only with the file's standard guard stack;
+statement 1..1024 chars; topic must parse in the frozen
+25-enum. No auto-accept, no bulk import in v1.
 
 `to` accepts E.164 (`+1…`) only in this slice. `connection_id` /
 `from` default from sealed DB rows (`telnyx.connection_id`,

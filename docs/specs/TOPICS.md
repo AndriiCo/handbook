@@ -3,7 +3,7 @@
 - Status: FROZEN 2026-10-26 (night run; enforced by `topics.rs` +
   migration 005 `fact.topic` CHECK). Changes need a new migration
   and author sign-off.
-- Code: `crates/handbook/src/topics.rs` (`Topic`, closed enum —
+- Code: `crates/contracts/src/topics.rs` (`Topic`, closed enum —
   `parse` rejects unknown input, no `Other` variant).
 - Every `fact.topic` value MUST be one of the 25 strings below.
 - Owner column = the stream that validates and signs off facts of that

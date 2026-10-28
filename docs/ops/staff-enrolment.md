@@ -44,6 +44,18 @@ cargo xtask admin-cert-verify --fp <64-hex> --expect-cn jdoe
 cargo xtask admin-cert-revoke --cn jdoe --actor andrii
 ```
 
+Root-free path (prod): hal runs the same operations through the
+pinned wrappers (installed by `ops-hal-access.sh`, §5–6) — no
+new trust (hal already holds full sqlite + deploy):
+
+```sh
+# As hal on enodia. Issue prints paths + fenced PEM delivery blocks
+# (capture stdout to 0600 files, deliver out-of-band, then wipe).
+printf 'issue\njdoe\n365\n' | sudo -n -u andrii-ai /usr/local/sbin/apostille-cert
+printf 'verify\n<64-hex>\njdoe\n' | sudo -n -u andrii-ai /usr/local/sbin/apostille-cert
+printf 'revoke\njdoe\n\n' | sudo -n -u andrii-ai /usr/local/sbin/apostille-cert
+```
+
 CN rule (enforced): ASCII word chars, dots, dashes, ≤64 chars
 (`jdoe`, `ops.bot`, `admin-2` — not emails). One human MAY
 hold several CNs (per-device certs: `jdoe-laptop`,
@@ -61,6 +73,8 @@ cargo xtask admin-invite --role staff --cn jdoe --actor andrii
 #    Flags: --days 1..30 (default 7), --origin <url> for staging
 #    (default https://admin.andrii.ai; must be https:// or
 #    http://localhost), --store, --actor.
+# Root-free path (prod): 4 stdin lines (role, cn, days, origin-or-empty).
+printf 'staff\njdoe\n7\n\n' | sudo -n -u andrii-ai /usr/local/sbin/apostille-invite
 ```
 
 2. Operator delivers the URL out-of-band (default: a different

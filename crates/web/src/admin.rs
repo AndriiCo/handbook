@@ -11,7 +11,7 @@
 use axum::{
     Router,
     extract::{DefaultBodyLimit, FromRequestParts, Multipart, Path, State},
-    http::{Method, StatusCode, header, request::Parts},
+    http::{HeaderValue, Method, StatusCode, header, request::Parts},
     middleware::Next,
     response::{IntoResponse, Json},
     routing::{get, post, put},
@@ -288,6 +288,14 @@ pub async fn csrf_guard(
 pub fn router(state: AppState) -> Router {
     let spa_index = state.admin_spa_dir.join("index.html");
     Router::new()
+        // Domain root is staff-only: the admin build also registers the
+        // (public) homepage at `/`, so serve no shell here — send
+        // browsers to the dashboard (its layout gate forwards to
+        // /admin/login when unauthenticated).
+        .route("/", get(root_to_dashboard))
+        // Demo routes never serve on the staff origin: (mock) ships in
+        // the admin JS bundle (client-routable) but must 404 server-side.
+        .route("/mock/{*rest}", get(admin_not_found))
         .route("/apostille/api/v1/admin/me", get(admin_me))
         .route("/apostille/api/v1/admin/facts", get(approval::list_facts))
         .route(
@@ -352,6 +360,16 @@ async fn admin_me(auth: AdminAuth) -> impl IntoResponse {
 
 async fn admin_not_found() -> impl IntoResponse {
     (StatusCode::NOT_FOUND, Json(json!({"error": "not found"})))
+}
+
+/// `GET /` on the admin host is never the public homepage (the admin
+/// build registers `(public)/+page` at `/` too): redirect to the
+/// staff dashboard. Static target — no open redirect.
+async fn root_to_dashboard() -> impl IntoResponse {
+    (
+        StatusCode::SEE_OTHER,
+        [(header::LOCATION, HeaderValue::from_static("/admin"))],
+    )
 }
 
 async fn get_config(auth: AdminAuth, State(state): State<AppState>) -> impl IntoResponse {
@@ -688,4 +706,115 @@ async fn upload_media(
         })),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt as _;
+
+    fn state_with_spa(tmp: &tempfile::TempDir) -> AppState {
+        let store = Store::new(tmp.path());
+        store.init().unwrap();
+        let conn = db::open(&store).unwrap();
+        db::migrate(&conn).unwrap();
+        auth::migrate_auth_tables(&conn).unwrap();
+        // Prove the redirect wins over the SPA fallback: a shell exists.
+        std::fs::write(tmp.path().join("index.html"), "<html>admin-shell</html>").unwrap();
+        AppState {
+            spa_index: tmp.path().join("index.html"),
+            static_dir: tmp.path().to_path_buf(),
+            store_root: tmp.path().to_path_buf(),
+            bus: crate::ws_bus::Bus::new(),
+            kek: None,
+            admin_mtls_off: true,
+            admin_spa_dir: tmp.path().to_path_buf(),
+            media_terms_read: false,
+            label_cfg: crate::p2_labels::LabelCfg::default(),
+            voice_cfg: voice::VoiceConfig::default(),
+            voice_api_key: None,
+            webauthn: std::sync::Arc::new(crate::passkey::test_webauthn()),
+            auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            google_cfg: None,
+            apple_cfg: None,
+            meta_cfg: None,
+            mailer: None,
+            magic_link_base: "https://example.test/apostille/login".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn root_redirects_to_dashboard_not_public_shell() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = router(state_with_spa(&tmp));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header("host", "admin.andrii.ai")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SEE_OTHER);
+        assert_eq!(res.headers().get(header::LOCATION).unwrap(), "/admin");
+    }
+
+    #[tokio::test]
+    async fn root_redirect_still_requires_admin_host() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = router(state_with_spa(&tmp));
+        // Wrong host → host guard 403s before any redirect (dev loopback
+        // would pass; a public hostname must not).
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header("host", "andrii.ai")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn deep_staff_path_still_serves_shell() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = router(state_with_spa(&tmp));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin")
+                    .header("host", "admin.andrii.ai")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        assert!(body.windows(11).any(|w| w == b"admin-shell"));
+    }
+
+    #[tokio::test]
+    async fn mock_routes_404_on_staff_origin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = router(state_with_spa(&tmp));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/mock/admin/config")
+                    .header("host", "admin.andrii.ai")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
 }
