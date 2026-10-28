@@ -277,3 +277,14 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     (verified ring-free; hand-rolled JWS rejected); Meta is
     sub-only (no email scope, no `/me` call), Graph API v26.0
     pinned — see [customer-auth.md](customer-auth.md) §§10–11.
+34. Staff passkeys (Phase 4, §5): invite-gated enrolment
+    (`xtask admin-invite` flags, token-hash-only rows, CN-bound
+    to an issued cert) + UV-required login on the admin branch
+    only; separate challenge kinds (`staff_register`/
+    `staff_login`) as the branch boundary; enrol finish mints
+    the staff session (mirrors customer register); offboard is
+    xtask-only, cert-first, per-step transactions; step-up
+    helper pilots on `set_config` (full list OPEN-17);
+    OPEN-3/OPEN-4 parent-recommended (admin-assisted recovery
+    only; no admin-branch OAuth) pending author confirm —
+    see [customer-auth.md](customer-auth.md) §5.

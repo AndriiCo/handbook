@@ -17,9 +17,18 @@ pub const STEP_UP_WINDOW_SECS: i64 = 600;
 /// Challenge kinds (spec §1.4).
 pub const KIND_REGISTER: &str = "register";
 pub const KIND_LOGIN: &str = "login";
-/// Reserved for Phase-4 conditional mediation (spec §2.5).
+/// Staff branch kinds (spec §5.2–§5.3): customer/admin states
+/// are non-interchangeable — the branch confused-deputy
+/// boundary (cf. OAuth D2).
+pub const KIND_STAFF_REGISTER: &str = "staff_register";
+pub const KIND_STAFF_LOGIN: &str = "staff_login";
+/// Reserved for conditional mediation (spec §2.5, deferred past
+/// Phase 4 per OPEN-16).
 #[allow(dead_code)]
 pub const KIND_DISCOVERABLE: &str = "discoverable";
+
+/// Default staff-invite TTL, seconds (7d, single-use; spec §1.5).
+pub const INVITE_TTL_SECS: i64 = 604_800;
 
 /// Fresh 256-bit challenge id, hex (same shape as session ids).
 pub fn mint_challenge_id() -> String {
@@ -127,6 +136,125 @@ pub fn ensure_account(conn: &Connection, user_id: &str, now: i64) -> rusqlite::R
         rusqlite::params![user_id, now],
     )?;
     Ok(())
+}
+
+/// Create a staff/admin account if missing (enrolment); existing
+/// rows are untouched (the customer path keeps its own fn).
+pub fn ensure_staff_account(
+    conn: &Connection,
+    user_id: &str,
+    role: &str,
+    now: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO account(user_id, role, customer_ref, created_at, locked_at, step_up_at, fallback_until)
+         VALUES (?1, ?2, NULL, ?3, NULL, NULL, NULL)
+         ON CONFLICT(user_id) DO NOTHING",
+        rusqlite::params![user_id, role, now],
+    )?;
+    Ok(())
+}
+
+/// One staff invite (spec §1.5); caller minting the token stores
+/// its hash only, never the token.
+pub struct NewInvite<'a> {
+    pub role: &'a str,
+    pub cn: &'a str,
+    pub created_by: &'a str,
+    pub now: i64,
+    /// Lifetime in seconds (`INVITE_TTL_SECS` default; the CLI
+    /// `--days` flag overrides).
+    pub ttl_secs: i64,
+}
+
+/// Mint one invite row (hash only). Role/cn validated by the
+/// caller (xtask enforces both).
+pub fn store_invite(
+    conn: &Connection,
+    token_hash: &str,
+    inv: &NewInvite<'_>,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO staff_invite(token_hash, role, cn, created_by, created_at, expires_at, consumed_at, consumed_by)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL)",
+        rusqlite::params![
+            token_hash,
+            inv.role,
+            inv.cn,
+            inv.created_by,
+            inv.now,
+            inv.now.saturating_add(inv.ttl_secs),
+        ],
+    )?;
+    Ok(())
+}
+
+/// Peek an invite without consuming: missing/consumed/expired →
+/// `None` (start handlers use this; finish handlers consume).
+pub fn get_invite(
+    conn: &Connection,
+    token_hash: &str,
+    now: i64,
+) -> rusqlite::Result<Option<(String, String)>> {
+    let row: Option<(String, String, i64, Option<i64>)> = conn
+        .query_row(
+            "SELECT role, cn, expires_at, consumed_at FROM staff_invite WHERE token_hash = ?1",
+            [token_hash],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()?;
+    Ok(match row {
+        Some((role, cn, exp, None)) if now < exp => Some((role, cn)),
+        _ => None,
+    })
+}
+
+/// Consume an invite exactly once (spec §5.1: the `consumed_at IS
+/// NULL` guard makes the consume atomic — a racing second finish
+/// touches zero rows). Returns `(role, cn)` or `None`.
+pub fn consume_invite(
+    conn: &Connection,
+    token_hash: &str,
+    user_id: &str,
+    now: i64,
+) -> rusqlite::Result<Option<(String, String)>> {
+    let found = get_invite(conn, token_hash, now)?;
+    let Some((role, cn)) = found else {
+        return Ok(None);
+    };
+    let touched = conn.execute(
+        "UPDATE staff_invite SET consumed_at = ?1, consumed_by = ?2
+         WHERE token_hash = ?3 AND consumed_at IS NULL",
+        rusqlite::params![now, user_id, token_hash],
+    )?;
+    if touched == 0 {
+        return Ok(None);
+    }
+    Ok(Some((role, cn)))
+}
+
+/// CN for a live fingerprint (invite↔cert composition needs the
+/// CN; `admin_cert_valid` returns bool only). Unknown, revoked,
+/// or expired → `None`. Note: expiry is enforced here (never
+/// bind a fresh enrolment to a dead cert) but NOT by
+/// `AdminAuth`'s revoked-only check — that shipped gap is a
+/// SEC hardening item, deliberately unchanged here.
+pub fn admin_cert_cn(
+    conn: &Connection,
+    fingerprint: &str,
+    now: i64,
+) -> rusqlite::Result<Option<String>> {
+    let row: Option<(String, i64, Option<i64>)> = conn
+        .query_row(
+            "SELECT cn, expires_at, revoked_at FROM admin_cert WHERE fingerprint = ?1",
+            [fingerprint],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    Ok(match row {
+        Some((cn, exp, None)) if now < exp => Some(cn),
+        _ => None,
+    })
 }
 
 pub fn get_account(conn: &Connection, user_id: &str) -> rusqlite::Result<Option<Account>> {
@@ -516,6 +644,82 @@ mod tests {
         assert_eq!(account.locked_at, Some(1200));
         assert_eq!(account.fallback_until, None);
         assert_eq!(get_account(&conn, "nobody").unwrap(), None);
+    }
+
+    fn invite(ttl: i64) -> NewInvite<'static> {
+        NewInvite {
+            role: "staff",
+            cn: "jdoe",
+            created_by: "tester",
+            now: 1000,
+            ttl_secs: ttl,
+        }
+    }
+
+    #[test]
+    fn staff_account_keeps_role_and_is_idempotent() {
+        let conn = memory();
+        ensure_staff_account(&conn, "u-s", "staff", 1000).unwrap();
+        ensure_staff_account(&conn, "u-s", "admin", 1100).unwrap();
+        let account = get_account(&conn, "u-s").unwrap().unwrap();
+        assert_eq!(account.role, "staff"); // never upgraded on conflict
+    }
+
+    #[test]
+    fn invite_peek_consume_once_then_gone() {
+        let conn = memory();
+        let hash = crate::hash_str("token-1");
+        store_invite(&conn, &hash, &invite(INVITE_TTL_SECS)).unwrap();
+        assert_eq!(
+            get_invite(&conn, &hash, 1100).unwrap(),
+            Some(("staff".to_string(), "jdoe".to_string()))
+        );
+        assert_eq!(
+            consume_invite(&conn, &hash, "u-s", 1100).unwrap(),
+            Some(("staff".to_string(), "jdoe".to_string()))
+        );
+        // Second consume touches zero rows (atomic single-use).
+        assert_eq!(consume_invite(&conn, &hash, "u-s", 1100).unwrap(), None);
+        assert_eq!(get_invite(&conn, &hash, 1100).unwrap(), None);
+        assert_eq!(get_invite(&conn, "missing", 1100).unwrap(), None);
+        // Consumed-by is stamped.
+        let by: String = conn
+            .query_row(
+                "SELECT consumed_by FROM staff_invite WHERE token_hash = ?1",
+                [&hash],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(by, "u-s");
+    }
+
+    #[test]
+    fn invite_expiry_and_ttl_override() {
+        let conn = memory();
+        let short = crate::hash_str("short");
+        store_invite(&conn, &short, &invite(60)).unwrap();
+        assert!(get_invite(&conn, &short, 1000 + 59).unwrap().is_some());
+        assert_eq!(get_invite(&conn, &short, 1000 + 60).unwrap(), None);
+        assert_eq!(
+            consume_invite(&conn, &short, "u-s", 1000 + 60).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn cert_cn_live_revoked_expired_unknown() {
+        let conn = memory();
+        crate::issue_admin_cert(&conn, "fp-live", "jdoe", 1000, 2000, "").unwrap();
+        crate::issue_admin_cert(&conn, "fp-old", "jdoe", 1000, 1100, "").unwrap();
+        crate::issue_admin_cert(&conn, "fp-rev", "jdoe", 1000, 2000, "").unwrap();
+        crate::revoke_admin_cert(&conn, "fp-rev", 1200).unwrap();
+        assert_eq!(
+            admin_cert_cn(&conn, "fp-live", 1500).unwrap(),
+            Some("jdoe".to_string())
+        );
+        assert_eq!(admin_cert_cn(&conn, "fp-old", 1500).unwrap(), None);
+        assert_eq!(admin_cert_cn(&conn, "fp-rev", 1500).unwrap(), None);
+        assert_eq!(admin_cert_cn(&conn, "fp-missing", 1500).unwrap(), None);
     }
 
     #[test]

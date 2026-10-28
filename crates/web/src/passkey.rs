@@ -3,8 +3,7 @@
 //! Registration (first key mints the account; logged-in adds a
 //! key), username-either login (`user_id` hex or linked email),
 //! method list/unlink, logout, and `me`. Conditional mediation
-//! (autofill) is deferred to Phase 4: `DiscoverableKey` cannot be
-//! built from plain stored `Passkey`s (see spec §2.5).
+//! (autofill) is deferred past Phase 4 (see spec §2.5).
 
 use axum::{
     Json,
@@ -147,7 +146,7 @@ pub(crate) fn audit_auth(
     );
 }
 
-fn cred_id_string(cred_id: &CredentialID) -> String {
+pub(crate) fn cred_id_string(cred_id: &CredentialID) -> String {
     use base64::Engine as _;
     let bytes: &[u8] = cred_id.as_ref();
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
@@ -165,7 +164,7 @@ fn parse_cred_id(raw: &str) -> Option<CredentialID> {
 }
 
 /// `user_id` hex (32 lowercase) or a linked email (lowercased).
-fn split_account(account: &str) -> Option<(Option<&str>, Option<String>)> {
+pub(crate) fn split_account(account: &str) -> Option<(Option<&str>, Option<String>)> {
     let trimmed = account.trim();
     if trimmed.len() == 32
         && trimmed.bytes().all(|b| b.is_ascii_hexdigit())

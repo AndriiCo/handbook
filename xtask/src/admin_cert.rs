@@ -43,7 +43,7 @@ fn certs_dir(store: &Store) -> std::path::PathBuf {
     store.root().join("admin-certs")
 }
 
-fn valid_cn(cn: &str) -> bool {
+pub(crate) fn valid_cn(cn: &str) -> bool {
     !cn.is_empty()
         && cn.len() <= 64
         && cn

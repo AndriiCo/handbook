@@ -9,6 +9,7 @@ use handbook_store::store::Store;
 
 mod accept;
 mod admin_cert;
+mod admin_staff;
 mod build_handbook;
 mod config;
 mod form_scaffold;
@@ -49,6 +50,8 @@ fn main() {
         Some("admin-cert-issue") => admin_cert::run_issue(&args[1..]),
         Some("admin-cert-verify") => admin_cert::run_verify(&args[1..]),
         Some("admin-cert-revoke") => admin_cert::run_revoke(&args[1..]),
+        Some("admin-invite") => admin_staff::run_invite(&args[1..]),
+        Some("admin-offboard") => admin_staff::run_offboard(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("deploy") => release::run_deploy(&args[1..]),
         Some("rollback") => release::run_rollback(&args[1..]),
@@ -86,6 +89,8 @@ Tasks:
   packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)
   admin-cert-issue|verify|revoke  admin mTLS client certs
+  admin-invite  staff enrolment invite (spec customer-auth.md §5.1)
+  admin-offboard  staff offboard: certs, sessions, creds, lock (§5.6)
   secrets-scan scan tracked files for secrets [--staged for the index]
   install-hooks point git at .githooks/ (pre-commit secret scan)
   audit       cargo-audit over Cargo.lock (needs network; not in ci)

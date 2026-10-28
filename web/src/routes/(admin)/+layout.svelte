@@ -1,10 +1,28 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import type { LayoutProps } from './$types';
 
 	// Staff shell. Ships ONLY in the web-admin build (admin.andrii.ai);
 	// the public build's routes dir has no (admin) group at all.
 	let { children }: LayoutProps = $props();
+
+	// Client-side session gate (onMount only — never runs during
+	// prerender, so the static build stays green). /admin/login
+	// and /admin/enrol are exempt (redirect loop otherwise).
+	onMount(async () => {
+		const path = window.location.pathname;
+		if (path === '/admin/login' || path === '/admin/enrol') return;
+		try {
+			const res = await fetch('/apostille/api/v1/admin/me', { credentials: 'same-origin' });
+			if (res.status === 401 || res.status === 403) {
+				window.location.href = resolve('/(admin)/admin/login');
+			}
+		} catch {
+			// Offline or cert-less: pages surface their own errors;
+			// never strand the user on a blank shell.
+		}
+	});
 </script>
 
 <div class="staff-banner" role="note">

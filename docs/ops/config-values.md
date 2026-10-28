@@ -374,3 +374,17 @@ fixtures synthetic-only.
 
 Additive-only, no numbered migration (same paragraph as
 Apple with `method='meta'`).
+
+## Staff passkeys (Phase 4)
+
+Keyless slice: staff enrolment adds **no config keys**.
+Client certs live as files under `<store>/admin-certs/`
+(see the CA procedure in
+[staff-enrolment.md](staff-enrolment.md) §1), invites as
+rows in the `staff_invite` table (token hashes only, 7-day
+TTL, single-use). Nothing to paste into `/admin/config`.
+
+The full operator surface — invite ceremony, staff login,
+offboarding, step-up pilot, staging checklist, rollback —
+is the [staff-enrolment runbook](staff-enrolment.md)
+(spec: [customer-auth.md](../specs/customer-auth.md) §5).

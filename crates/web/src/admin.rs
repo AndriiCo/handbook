@@ -37,7 +37,7 @@ pub struct VerifiedClientCert(pub String);
 /// Dev/test header carrying a client-cert fingerprint. Honored ONLY
 /// when `ADMIN_MTLS=off`; strict mode ignores it (a forwardable
 /// header must never authenticate a cert).
-const DEV_CERT_HEADER: &str = "x-admin-cert-sha256";
+pub(crate) const DEV_CERT_HEADER: &str = "x-admin-cert-sha256";
 
 /// Authenticated staff caller on the admin listener.
 pub struct AdminAuth {
@@ -142,6 +142,58 @@ fn cert_known_good(conn: &rusqlite::Connection, fingerprint: &str) -> bool {
     auth::admin_cert_valid(conn, fingerprint).unwrap_or(false)
 }
 
+/// Presented client cert for the ceremony handlers (spec §5.2):
+/// `(fingerprint, cn)` for a LIVE cert, else `None`. Strict mode
+/// reads the TLS extension only; dev also accepts the test header
+/// (validated, like `AdminAuth`). Unlike `cert_known_good` this
+/// enforces expiry too — never bind a fresh enrolment to a dead
+/// cert (the `AdminAuth` revoked-only gap is a SEC hardening item).
+pub(crate) fn presented_cert_cn(
+    headers: &axum::http::HeaderMap,
+    verified: Option<&VerifiedClientCert>,
+    state: &AppState,
+    conn: &rusqlite::Connection,
+    now: i64,
+) -> Option<(String, String)> {
+    let fingerprint = if let Some(cert) = verified {
+        cert.0.clone()
+    } else if state.admin_mtls_off {
+        headers
+            .get(DEV_CERT_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)?
+    } else {
+        return None;
+    };
+    let cn = auth::passkey::admin_cert_cn(conn, &fingerprint, now).unwrap_or(None)?;
+    Some((fingerprint, cn))
+}
+
+/// Fresh step-up for destructive actions (spec §5.5): `step_up_at`
+/// within 600s, or the session itself minted within 600s (same
+/// freshness disjunct as customer mode-(b) link). Callers map
+/// `false` to `403 step-up required: log in again first`.
+pub(crate) fn require_step_up(
+    conn: &rusqlite::Connection,
+    user: &auth::AuthenticatedUser,
+    now: i64,
+) -> bool {
+    let window = auth::passkey::STEP_UP_WINDOW_SECS;
+    let stepped = auth::passkey::get_account(conn, &user.user_id)
+        .ok()
+        .flatten()
+        .and_then(|account| account.step_up_at)
+        .is_some_and(|at| now - at <= window);
+    if stepped {
+        return true;
+    }
+    auth::get_session(conn, &user.session_id)
+        .ok()
+        .flatten()
+        .is_some_and(|session| now - session.created_at <= window)
+}
+
 /// Audit a cert decision (fingerprint only — never key bytes).
 fn audit_cert(conn: &rusqlite::Connection, now: i64, actor: &str, fingerprint: &str, action: &str) {
     let _ = conn.execute(
@@ -177,13 +229,24 @@ pub async fn admin_host_guard(
 
 /// CSRF guard for admin mutations: allowed `Origin` plus the
 /// double-submit token (`hb_csrf` cookie echoed in `x-csrf`).
-/// Safe methods pass through.
+/// Safe methods pass through. The ceremony routes below pass
+/// through too: start POSTs have no token to echo yet, so those
+/// handlers enforce Origin (start) / Origin+echo (finish)
+/// per-handler exactly like customer §2 — there is exactly one
+/// enforcement site per route either way.
 pub async fn csrf_guard(
     State(state): State<AppState>,
     req: axum::http::Request<axum::body::Body>,
     next: Next,
 ) -> impl IntoResponse {
     if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
+        return next.run(req).await;
+    }
+    if req
+        .uri()
+        .path()
+        .starts_with("/apostille/api/v1/admin/auth/")
+    {
         return next.run(req).await;
     }
     let fail = || {
@@ -237,6 +300,22 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/apostille/api/v1/admin/config", get(get_config))
         .route("/apostille/api/v1/admin/config/{key}", put(set_config))
+        .route(
+            "/apostille/api/v1/admin/auth/passkey/enrol/start",
+            post(crate::staff_passkey::enrol_start),
+        )
+        .route(
+            "/apostille/api/v1/admin/auth/passkey/enrol/finish",
+            post(crate::staff_passkey::enrol_finish),
+        )
+        .route(
+            "/apostille/api/v1/admin/auth/passkey/login/start",
+            post(crate::staff_passkey::login_start),
+        )
+        .route(
+            "/apostille/api/v1/admin/auth/passkey/login/finish",
+            post(crate::staff_passkey::login_finish),
+        )
         .route("/apostille/api/v1/admin/bus/publish", post(publish))
         .route(
             "/apostille/api/v1/admin/media/upload",
@@ -319,8 +398,9 @@ struct SetConfigBody {
 }
 
 /// Set one config key (secret: set-new-only, never echoed).
-/// Requires an enrolled KEK generation; step-up re-auth gates this
-/// in prod (staff passkey/TOTP story still open — see playbook).
+/// Requires an enrolled KEK generation + fresh step-up (spec
+/// §5.5 pilot: staff login always steps up, so expiry forces
+/// re-login; the full destructive-action list is OPEN-17).
 async fn set_config(
     auth: AdminAuth,
     State(state): State<AppState>,
@@ -362,6 +442,13 @@ async fn set_config(
         Ok(conn) => conn,
         Err(_) => return store_unavailable(),
     };
+    if !require_step_up(&conn, &auth.user, unix_now()) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "step-up required: log in again first"})),
+        )
+            .into_response();
+    }
     let version = match config::active_kek_version(&conn) {
         Ok(Some(v)) => v,
         Ok(None) => {

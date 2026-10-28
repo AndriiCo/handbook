@@ -209,6 +209,16 @@ pub fn migrate_auth_tables(conn: &Connection) -> rusqlite::Result<()> {
            expires_at INTEGER NOT NULL,
            revoked_at INTEGER,
            cert_path TEXT NOT NULL DEFAULT ''
+         ) STRICT;
+         CREATE TABLE IF NOT EXISTS staff_invite(
+           token_hash TEXT PRIMARY KEY,
+           role TEXT NOT NULL,
+           cn TEXT NOT NULL,
+           created_by TEXT NOT NULL,
+           created_at INTEGER NOT NULL,
+           expires_at INTEGER NOT NULL,
+           consumed_at INTEGER,
+           consumed_by TEXT
          ) STRICT;",
     )?;
     Ok(())

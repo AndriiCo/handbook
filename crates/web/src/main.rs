@@ -27,6 +27,7 @@ mod p2;
 mod p2_labels;
 mod passkey;
 mod quic;
+mod staff_passkey;
 mod ws_bus;
 
 use axum::{
