@@ -1060,7 +1060,10 @@ impl Default for RuntimeConfig {
             apple_private_key: None,
             meta_client_id: None,
             meta_client_secret: None,
-            mailer_provider: "file".to_string(),
+            // Unset until configured (the OAuth unset→503 contract):
+            // dev sets `file`, prod sets `smtp` — never a silent prod
+            // default that files real users' links instead of mailing.
+            mailer_provider: String::new(),
             mailer_host: None,
             mailer_port: None,
             mailer_username: None,
@@ -1698,7 +1701,7 @@ mod runtime_tests {
         assert_eq!(cfg.auth_origin, "https://andrii.ai");
         assert_eq!(cfg.google_client_id, None);
         assert_eq!(cfg.google_client_secret, None);
-        assert_eq!(cfg.mailer_provider, "file");
+        assert_eq!(cfg.mailer_provider, "");
         assert_eq!(cfg.mailer_host, None);
         assert_eq!(cfg.mailer_port, None);
         assert_eq!(cfg.mailer_username, None);

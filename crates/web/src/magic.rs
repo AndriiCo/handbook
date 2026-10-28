@@ -221,6 +221,10 @@ pub fn mailer_from_config(
                 }
             }
         }
+        "" => {
+            eprintln!("WARNING: config mailer.provider unset — magic login disabled");
+            None
+        }
         other => {
             eprintln!(
                 "WARNING: config mailer.provider {other:?} unknown (want file|smtp) — magic login disabled"
@@ -1236,9 +1240,15 @@ mod tests {
     #[test]
     fn mailer_from_config_shapes() {
         let tmp = tempfile::tempdir().unwrap();
-        // Default (file, no rows): works, dir created.
+        // Default (no rows): unset → None (fail closed, loud 503).
         let cfg = config::RuntimeConfig::default();
-        let mailer = mailer_from_config(&cfg, tmp.path()).expect("file default");
+        assert!(mailer_from_config(&cfg, tmp.path()).is_none());
+        // Explicit file: works, dir created.
+        let cfg = config::RuntimeConfig {
+            mailer_provider: "file".to_string(),
+            ..Default::default()
+        };
+        let mailer = mailer_from_config(&cfg, tmp.path()).expect("explicit file");
         assert!(matches!(mailer, Mailer::File(_)));
         assert!(tmp.path().join("mail").is_dir());
         // Unknown provider: None (fail closed).

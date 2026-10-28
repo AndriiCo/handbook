@@ -713,8 +713,10 @@ imposes the seam contract; the swap is config-only by construction.
   sends real mail (stub asserts To-preservation +
   zero-sends-for-unknown).
 - Config keys (registry conventions; count test updated once):
-  `mailer.provider` text (`"file"` default | `"smtp"`; unknown →
-  warn + unconfigured = 503, fail closed), `mailer.host`,
+  `mailer.provider` text (`"smtp"` | `"file"`; unset/unknown →
+  warn + unconfigured = 503, fail closed — no silent default:
+  fresh stores 503 until dev sets `file` or prod sets `smtp`,
+  the OAuth unset→503 contract), `mailer.host`,
   `mailer.port` (text, ports-are-text precedent), `mailer.username`
   text, `mailer.password` **secret** (Gmail App Password —
   never a mailbox password), `mailer.from` text (header/envelope

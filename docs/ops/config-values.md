@@ -449,10 +449,12 @@ exact clicks in the current UI):
 ### The seven keys
 
 - `mailer.provider` — type `text`: `smtp` (prod) or `file`
-  (dev default — writes one 0600 file per message under
-  `{store}/mail/` instead of sending). Unknown value →
-  warn + magic login disabled (fail closed). Fresh stores
-  boot on `file` with zero config.
+  (dev — writes one 0600 file per message under `{store}/mail/`
+  instead of sending; local dev sets this one row explicitly:
+  `xtask config-set --key mailer.provider --type text --value file`).
+  Unset/unknown → warn + magic login disabled
+  (fail closed, loud 503 — fresh stores never silently file
+  real users' links instead of mailing them).
 - `mailer.host` — type `text` (SMTP hostname;
   `smtp.gmail.com` today, our relay host after the swap).
 - `mailer.port` — type `text` (ports are text rows, same as
