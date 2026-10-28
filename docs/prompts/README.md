@@ -86,3 +86,6 @@ to change history — append a correction section instead.
 - [2026-10-28-035-sudoers-wildcard-fix.md](2026-10-28-035-sudoers-wildcard-fix.md) —
   Zero-wildcard sudoers via validating wrappers (visudo rejected `*`).
   (Note: 025–034 exist as files but were never indexed.)
+- [2026-10-28-036-f5d199f-live.md](2026-10-28-036-f5d199f-live.md) —
+  Prod already on f5d199f (root deploy 02:32); verified stable;
+  deploy pre-check for root-owned targets.
