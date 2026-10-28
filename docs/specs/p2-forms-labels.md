@@ -339,6 +339,14 @@ shipment") falls out of tracked WS connections per web-stack §3.
 (Reconciled topic nouns: `submission`/`shipment` win over `order` —
 see [README.md](README.md).)
 
+OPEN-32 (owner: author; blocks: Slice D manual-label queue UI): no
+staff list route exists for the label queue — `queue_manual` is a
+server-side helper, not a handler, and §9 sketches only per-shipment
+writes. The admin queue surface stays cut until a follow-up specifies
+`GET /staff/shipments?status=labels_pending` (shape, pagination, and
+whether counts ride it or a sibling route). The ship-run quote-to-draft
+surface (voice §7) is unaffected.
+
 ## 10. P1 dependencies
 
 - P1-D1: `authority` rows + slugs for pilot (Washington) with

@@ -6,6 +6,7 @@
 // GET  {apiBase}/admin/calls/{id}     → detail + transcript
 // POST {apiBase}/admin/calls/{id}/hangup | /record/start | /record/stop
 // POST {apiBase}/admin/calls/{id}/questions/{idx}/asked
+// POST {apiBase}/admin/calls/{id}/quote → { fact_id, call_id, topic, status }
 //
 // Phone numbers never render here: the server stores only a hash,
 // and list/detail payloads carry no dial target.
@@ -283,4 +284,48 @@ export function markQuestionAsked(apiBase, id, idx, fetchFn = fetch) {
 		'Mark asked',
 		fetchFn
 	);
+}
+
+/**
+ * Build a quote-to-draft body. Pure (tested). Returns null when invalid —
+ * the page shows the reason instead of sending. The server re-validates
+ * everything (topic against the frozen 25-enum, segment membership).
+ * @param {unknown} segmentIds
+ * @param {unknown} topic
+ * @param {unknown} statement
+ * @returns {{ segment_ids: number[], topic: string, statement: string } | null}
+ */
+export function quoteBody(segmentIds, topic, statement) {
+	if (!Array.isArray(segmentIds) || segmentIds.length === 0) return null;
+	const seqs = [];
+	for (const seq of segmentIds) {
+		if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 0) return null;
+		seqs.push(seq);
+	}
+	if (typeof topic !== 'string' || topic.trim().length === 0) return null;
+	if (typeof statement !== 'string') return null;
+	const text = statement.trim();
+	if (text.length === 0 || text.length > 1024) return null;
+	return { segment_ids: seqs, topic: topic.trim(), statement: text };
+}
+
+/**
+ * @param {string} apiBase
+ * @param {string} id
+ * @param {{ segment_ids: number[], topic: string, statement: string }} body
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<{ fact_id: number, topic: string }>}
+ */
+export async function quoteToDraft(apiBase, id, body, fetchFn = fetch) {
+	const data = await postCall(
+		apiBase,
+		`/admin/calls/${encodeURIComponent(id)}/quote`,
+		body,
+		'Quote to draft',
+		fetchFn
+	);
+	if (!data || typeof data.fact_id !== 'number') {
+		throw new Error('Quote to draft returned an unexpected shape.');
+	}
+	return { fact_id: data.fact_id, topic: typeof data.topic === 'string' ? data.topic : '' };
 }

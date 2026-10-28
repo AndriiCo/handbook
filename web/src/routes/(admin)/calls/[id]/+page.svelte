@@ -8,6 +8,8 @@
 		hangupCall,
 		isLive,
 		markQuestionAsked,
+		quoteBody,
+		quoteToDraft,
 		recordCall
 	} from '../../../../lib/admin/calls-client.js';
 
@@ -44,6 +46,34 @@
 	let actionError = $state<string | null>(null);
 	let acting = $state(false);
 	let timer: ReturnType<typeof setInterval> | null = null;
+
+	// Quote-to-draft selection + form (voice-telnyx.md §7). Selection is
+	// keyed by stable segment seq, so the 2 s poll does not clear it.
+	let selected = $state<Set<number>>(new Set());
+	let topic = $state('');
+	let statement = $state('');
+	let quoteResult = $state<string | null>(null);
+
+	function toggle(seq: number) {
+		if (selected.has(seq)) selected.delete(seq);
+		else selected.add(seq);
+	}
+
+	async function quote() {
+		quoteResult = null;
+		const body = quoteBody([...selected], topic, statement);
+		if (!body) {
+			actionError = 'Pick at least one segment, a topic, and a 1–1024 char statement.';
+			return;
+		}
+		await act('Quote to draft', async () => {
+			const created = await quoteToDraft(api(), id, body);
+			quoteResult = `Proposed fact #${created.fact_id} created (${created.topic}).`;
+			selected = new Set();
+			topic = '';
+			statement = '';
+		});
+	}
 
 	async function load() {
 		try {
@@ -145,9 +175,47 @@
 			{:else}
 				<ol class="segments">
 					{#each detail.transcript as segment (segment.seq)}
-						<li>{segment.text}</li>
+						<li>
+							<label>
+								<input
+									type="checkbox"
+									checked={selected.has(segment.seq)}
+									onchange={() => toggle(segment.seq)}
+								/>
+								<span class="seq">#{segment.seq}</span>
+								{segment.text}
+							</label>
+						</li>
 					{/each}
 				</ol>
+			{/if}
+		</section>
+
+		<section aria-labelledby="quote">
+			<h2 id="quote">Quote to draft</h2>
+			<p class="muted">
+				Quote the checked segments into one proposed fact. The fact lands in the
+				standard approval queue — quoting never auto-accepts.
+			</p>
+			<p>
+				<label>
+					Topic
+					<input type="text" bind:value={topic} placeholder="e.g. fees" autocomplete="off" />
+				</label>
+			</p>
+			<p>
+				<label>
+					Statement
+					<textarea bind:value={statement} rows="3" maxlength="1024" placeholder="One handbook sentence."></textarea>
+				</label>
+			</p>
+			<p class="buttons">
+				<button type="button" disabled={acting || selected.size === 0} onclick={quote}>
+					Quote {selected.size} segment{selected.size === 1 ? '' : 's'} to draft
+				</button>
+			</p>
+			{#if quoteResult}
+				<p class="ok" role="status">{quoteResult}</p>
 			{/if}
 		</section>
 
@@ -209,6 +277,14 @@
 	.error {
 		color: var(--error, #b00020);
 		font-weight: 700;
+	}
+	.ok {
+		color: var(--ok, #1c7a2e);
+		font-weight: 700;
+	}
+	.seq {
+		color: var(--text-muted);
+		font-size: 0.85rem;
 	}
 	.asked span {
 		text-decoration: line-through;

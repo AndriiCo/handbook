@@ -13,6 +13,8 @@ import {
 	markQuestionAsked,
 	normalizeCallDetail,
 	normalizeCallSummary,
+	quoteBody,
+	quoteToDraft,
 	recordCall
 } from '../src/lib/admin/calls-client.js';
 
@@ -92,6 +94,27 @@ test('normalizeCallDetail types questions and transcript', () => {
 	);
 });
 
+test('quoteBody builds valid bodies and rejects the rest', () => {
+	assert.deepEqual(quoteBody([0, 1], 'fees', 'Counter fee is $8.'), {
+		segment_ids: [0, 1],
+		topic: 'fees',
+		statement: 'Counter fee is $8.'
+	});
+	// Trims topic and statement.
+	assert.deepEqual(quoteBody([2], '  fees  ', '  Fee.  '), {
+		segment_ids: [2],
+		topic: 'fees',
+		statement: 'Fee.'
+	});
+	assert.equal(quoteBody([], 'fees', 'Fee.'), null);
+	assert.equal(quoteBody([0, -1], 'fees', 'Fee.'), null);
+	assert.equal(quoteBody([0.5], 'fees', 'Fee.'), null);
+	assert.equal(quoteBody(['0'], 'fees', 'Fee.'), null);
+	assert.equal(quoteBody([0], '   ', 'Fee.'), null);
+	assert.equal(quoteBody([0], 'fees', '   '), null);
+	assert.equal(quoteBody([0], 'fees', 'x'.repeat(1025)), null);
+});
+
 test('isLive gates polling', () => {
 	assert.equal(isLive('queued'), true);
 	assert.equal(isLive('ringing'), true);
@@ -115,7 +138,15 @@ test('calls round-trip against a stub admin API', async () => {
 				assert.equal(parsed.consent_confirmed, true);
 				assert.ok(req.headers['x-csrf'], 'mutation sends x-csrf');
 				res.end(JSON.stringify({ call_id: 'c-2', status: 'queued' }));
-			} else if (req.url === '/api/v1/admin/calls/c-1') {
+			} else if (req.method === 'POST' && req.url === '/api/v1/admin/calls/c-1/quote') {
+			const parsed = JSON.parse(body);
+			assert.deepEqual(parsed.segment_ids, [0]);
+			assert.equal(parsed.topic, 'fees');
+			assert.ok(req.headers['x-csrf'], 'mutation sends x-csrf');
+			res.end(
+				JSON.stringify({ fact_id: 7, call_id: 'c-1', topic: 'fees', status: 'proposed' })
+			);
+		} else if (req.url === '/api/v1/admin/calls/c-1') {
 				res.end(
 					JSON.stringify({
 						call_id: 'c-1',
@@ -143,6 +174,9 @@ test('calls round-trip against a stub admin API', async () => {
 		await recordCall(base, 'c-1', true);
 		await recordCall(base, 'c-1', false);
 		await markQuestionAsked(base, 'c-1', 0);
+		const quoted = await quoteToDraft(base, 'c-1', quoteBody([0], 'fees', 'Fee.'));
+		assert.equal(quoted.fact_id, 7);
+		assert.equal(quoted.topic, 'fees');
 		assert.deepEqual(seen, [
 			'GET /api/v1/admin/calls',
 			'GET /api/v1/admin/calls/c-1',
@@ -150,7 +184,8 @@ test('calls round-trip against a stub admin API', async () => {
 			'POST /api/v1/admin/calls/c-1/hangup',
 			'POST /api/v1/admin/calls/c-1/record/start',
 			'POST /api/v1/admin/calls/c-1/record/stop',
-			'POST /api/v1/admin/calls/c-1/questions/0/asked'
+			'POST /api/v1/admin/calls/c-1/questions/0/asked',
+			'POST /api/v1/admin/calls/c-1/quote'
 		]);
 	} finally {
 		server.close();
