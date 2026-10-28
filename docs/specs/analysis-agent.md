@@ -1,6 +1,11 @@
 # Analysis Agent Job Spec (draft for review)
 
-- Status: draft (prompt 007, for author review; no implementation yet)
+- Status: draft (prompt 007) → direction APPROVED 2026-10-28 (D39,
+  prompt 050): no-new-binary (`xtask analyze` + `handbook-agent` +
+  timers), Meta chat API per `docs/meta-api-shapes.md`,
+  queue-not-pause HITL, suppression A+B, Gmail historyId polling,
+  vectors deferred unless discovery needs them. B1 implementation
+  underway; the analysis below is kept as the record.
 - Date: 2026-10-26
 - Source: parallel researcher draft (full text recovered from child
   session log).

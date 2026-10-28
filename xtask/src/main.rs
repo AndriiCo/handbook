@@ -80,7 +80,7 @@ Tasks:
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
   web-budget  report web/build JS+CSS size (advisory, no gate)
   serve       run the dev API server (cargo run -p web)
-  analyze     draft proposed facts for an authority (stub only for now)
+  analyze     draft proposed facts for an authority (stub default, --live for Meta API)
   fetch-url   fetch one URL into a warc capture (thin watch)
   fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
   review-conflicts print F6 conflicts with citations
@@ -134,6 +134,8 @@ analyze flags:
   --actor <a>     audit actor (default: xtask)
   --scan-captures Option-B mode: analyze captures with id > watermark (no --input)
   --limit <n>     max captures per scan (default: 25, scan mode only)
+  --live          draft via the Meta Model API (key from sealed meta.api_key)
+  --check         probe the Meta API key only (GET /models, no drafting)
 
 fetch-url flags:
   --store <path>  store root (default: store)
@@ -374,6 +376,9 @@ fn run_analyze(args: &[String]) {
         eprintln!("migrate: {e}");
         std::process::exit(1);
     }
+    if args.iter().any(|a| a == "--check") {
+        return run_analyze_check(&conn);
+    }
     if args.iter().any(|a| a == "--scan-captures") {
         return run_analyze_scan(&conn, &store, args);
     }
@@ -388,10 +393,14 @@ fn run_analyze(args: &[String]) {
         None => raw_input,
     };
     let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
-    // Stub-only for now: the stub cites doc_id "fixture", so the CLI
-    // evidence IS the fixture text. Live Meta calls arrive with the
-    // MetaRestClient HTTP wiring (roadmap S2 Day 3).
-    let client = StubClient;
+    // Stub default (offline-safe); --live drafts via the Meta Model
+    // API. The stub cites doc_id "fixture", so the CLI evidence IS
+    // the fixture text in both modes.
+    let client: Box<dyn contracts::model::ModelClient> = if args.iter().any(|a| a == "--live") {
+        Box::new(live_client(&conn))
+    } else {
+        Box::new(StubClient)
+    };
     let mut sources = HashMap::new();
     sources.insert("fixture".to_string(), input.clone());
     let req = handbook_agent::runner::RunRequest {
@@ -403,7 +412,7 @@ fn run_analyze(args: &[String]) {
         at: unix_now(),
         capture_id: handbook_agent::runner::UNATTRIBUTED_CAPTURE_ID,
     };
-    match handbook_agent::runner::run_analysis(&conn, &client, &req) {
+    match handbook_agent::runner::run_analysis(&conn, client.as_ref(), &req) {
         Ok(report) => {
             println!(
                 "authority: {}\nproposed: {}\nrejected: {}\nskipped: {}",
@@ -415,6 +424,42 @@ fn run_analyze(args: &[String]) {
         }
         Err(e) => {
             eprintln!("analyze: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Live Meta client from sealed config, or exit with a human message.
+/// Missing KEK / missing key / unreadable config all fail closed here —
+/// `--live` never silently falls back to the stub (a stub run billed
+/// as live would draft fixture records into real captures).
+fn live_client(conn: &rusqlite::Connection) -> handbook_agent::model::MetaRestClient {
+    let (kek, _source) = sealed_config::load_kek().unwrap_or_else(|e| {
+        eprintln!("analyze: {e}");
+        std::process::exit(1);
+    });
+    let (cfg, warnings) = sealed_config::RuntimeConfig::load(conn, &kek).unwrap_or_else(|e| {
+        eprintln!("analyze: config: {e}");
+        std::process::exit(1);
+    });
+    for warning in &warnings {
+        eprintln!("analyze: config warning: {warning}");
+    }
+    let Some(key) = cfg.meta_api_key else {
+        eprintln!("analyze: meta.api_key is not set (admin config UI)");
+        std::process::exit(2);
+    };
+    handbook_agent::model::MetaRestClient::new(cfg.meta_base_url, key.as_str().to_string())
+}
+
+/// `--check` probe: verify the sealed key against `GET /models` without
+/// drafting anything. Exit 0 prints the catalog; anything else exits 1.
+fn run_analyze_check(conn: &rusqlite::Connection) {
+    let client = live_client(conn);
+    match client.check() {
+        Ok(ids) => println!("meta api ok: {}", ids.join(", ")),
+        Err(e) => {
+            eprintln!("analyze --check: {e}");
             std::process::exit(1);
         }
     }
@@ -433,6 +478,11 @@ fn run_analyze_scan(
     use handbook_agent::model::StubClient;
     use std::collections::HashMap;
 
+    let client: Box<dyn contracts::model::ModelClient> = if args.iter().any(|a| a == "--live") {
+        Box::new(live_client(conn))
+    } else {
+        Box::new(StubClient)
+    };
     let slug = required(args, "slug");
     let lang = flag(args, "lang").unwrap_or_else(|| "en".to_string());
     let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
@@ -503,7 +553,7 @@ fn run_analyze_scan(
             at: now,
             capture_id: *id,
         };
-        match handbook_agent::runner::run_analysis(conn, &StubClient, &req) {
+        match handbook_agent::runner::run_analysis(conn, client.as_ref(), &req) {
             Ok(r) => {
                 proposed += r.proposed;
                 rejected += r.rejected;

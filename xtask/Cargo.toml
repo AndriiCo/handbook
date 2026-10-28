@@ -18,6 +18,8 @@ ingest = { path = "../crates/ingest" }
 labels = { path = "../crates/labels" }
 mcp = { path = "../crates/mcp" }
 publish = { path = "../crates/publish" }
+# Aliased: `mod config` in src/main.rs is the config-* CLI commands.
+sealed_config = { path = "../crates/config", package = "config" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 tempfile = "3"
 rand = "0.9"

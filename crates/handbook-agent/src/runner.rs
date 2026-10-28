@@ -304,8 +304,10 @@ pub fn skip_missing_sidecar(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{MetaRestClient, StubClient};
-    use contracts::model::{CitationRef, DraftResponse, ModelError, ProposedRecord, Usage};
+    use crate::model::StubClient;
+    use contracts::model::{
+        CitationRef, DraftRequest, DraftResponse, ModelError, ProposedRecord, Usage,
+    };
     use handbook_store::db::{
         NewAuthority, add_authority, get_capture_watermark, get_watermark, migrate, open,
     };
@@ -466,10 +468,26 @@ mod tests {
         (facts, audits, watermarked)
     }
 
+    /// Deterministic client failure (no network, no sleeps).
+    struct FailingClient;
+    impl ModelClient for FailingClient {
+        fn draft_records(&self, _req: &DraftRequest) -> Result<DraftResponse, ModelError> {
+            Err(ModelError::Transport("boom".to_string()))
+        }
+    }
+
+    /// Proves the model is never called: any call panics.
+    struct PanickingClient;
+    impl ModelClient for PanickingClient {
+        fn draft_records(&self, _req: &DraftRequest) -> Result<DraftResponse, ModelError> {
+            panic!("model must not be called");
+        }
+    }
+
     #[test]
     fn client_failure_leaves_storage_untouched() {
         let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
-        let client = MetaRestClient::new("https://api.meta.ai/v1".to_string(), "k".to_string());
+        let client = FailingClient;
         let mut sources = HashMap::new();
         sources.insert("d1".to_string(), "evidence".to_string());
         let req = RunRequest {
@@ -489,9 +507,9 @@ mod tests {
     #[test]
     fn unsupported_lang_skips_without_model_call() {
         let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
-        // MetaRestClient always errors: a skipped run must succeed, which
+        // A skipped run must succeed against a panicking client, which
         // proves the model was never called.
-        let client = MetaRestClient::new("https://api.meta.ai/v1".to_string(), "k".to_string());
+        let client = PanickingClient;
         let mut sources = HashMap::new();
         sources.insert("d1".to_string(), "evidence".to_string());
         let req = RunRequest {
@@ -625,7 +643,7 @@ mod tests {
             at: 1_800_000_100,
             capture_id: id,
         };
-        let client = MetaRestClient::new("https://api.meta.ai/v1".to_string(), "k".to_string());
+        let client = PanickingClient;
         let report = run_analysis(&conn, &client, &req).unwrap(); // success proves no model call
         assert!(report.skipped);
         let facts: i64 = conn

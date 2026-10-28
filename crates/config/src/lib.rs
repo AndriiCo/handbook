@@ -823,6 +823,10 @@ pub mod keys {
     pub const APPLE_PRIVATE_KEY: &str = "apple.private_key";
     pub const META_CLIENT_ID: &str = "meta.client_id";
     pub const META_CLIENT_SECRET: &str = "meta.client_secret";
+    /// Model API root (`docs/meta-api-shapes.md`). Default prod.
+    pub const META_BASE_URL: &str = "meta.base_url";
+    /// Model API key (`LLM_{id}_{secret}`). Secret: presence-only in UI.
+    pub const META_API_KEY: &str = "meta.api_key";
     pub const MAILER_PROVIDER: &str = "mailer.provider";
     pub const MAILER_HOST: &str = "mailer.host";
     pub const MAILER_PORT: &str = "mailer.port";
@@ -875,6 +879,8 @@ pub mod keys {
         (APPLE_PRIVATE_KEY, super::ConfigType::Secret),
         (META_CLIENT_ID, super::ConfigType::Text),
         (META_CLIENT_SECRET, super::ConfigType::Secret),
+        (META_BASE_URL, super::ConfigType::Text),
+        (META_API_KEY, super::ConfigType::Secret),
         (MAILER_PROVIDER, super::ConfigType::Text),
         (MAILER_HOST, super::ConfigType::Text),
         (MAILER_PORT, super::ConfigType::Text),
@@ -1001,6 +1007,8 @@ pub struct RuntimeConfig {
     pub apple_private_key: Option<SecretText>,
     pub meta_client_id: Option<String>,
     pub meta_client_secret: Option<SecretText>,
+    pub meta_base_url: String,
+    pub meta_api_key: Option<SecretText>,
     pub mailer_provider: String,
     pub mailer_host: Option<String>,
     pub mailer_port: Option<String>,
@@ -1060,6 +1068,10 @@ impl Default for RuntimeConfig {
             apple_private_key: None,
             meta_client_id: None,
             meta_client_secret: None,
+            // Model API prod root (`docs/meta-api-shapes.md`); keep in
+            // sync with `handbook_agent::model::META_BASE_URL`.
+            meta_base_url: "https://api.meta.ai/v1".to_string(),
+            meta_api_key: None,
             // Unset until configured (the OAuth unset→503 contract):
             // dev sets `file`, prod sets `smtp` — never a silent prod
             // default that files real users' links instead of mailing.
@@ -1282,6 +1294,13 @@ impl RuntimeConfig {
             keys::TELNYX_BASE_URL,
             &mut warnings,
             &mut cfg.telnyx_base_url,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::META_BASE_URL,
+            &mut warnings,
+            &mut cfg.meta_base_url,
         )?;
         overlay_optional_text(
             conn,
@@ -1585,6 +1604,13 @@ impl RuntimeConfig {
         overlay_secret(
             conn,
             kek,
+            keys::META_API_KEY,
+            &mut warnings,
+            &mut cfg.meta_api_key,
+        )?;
+        overlay_secret(
+            conn,
+            kek,
             keys::MAILER_PASSWORD,
             &mut warnings,
             &mut cfg.mailer_password,
@@ -1636,15 +1662,15 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_49_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 49);
+    fn registry_holds_51_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 51);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
-        // Six secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
-        // client secrets, mailer password); five bools
-        // (quic.enabled is the fifth); rest text (auth.* adds
-        // three, google/apple/meta ids six, mailer.* six).
+        // Seven secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
+        // client secrets, Meta Model API key, mailer password); five
+        // bools (quic.enabled is the fifth); rest text (auth.* adds
+        // three, google/apple/meta ids six, mailer.* six, meta.* one).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1653,7 +1679,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (5, 38, 6));
+        assert_eq!(counts, (5, 39, 7));
     }
 
     #[test]
@@ -1696,6 +1722,8 @@ mod runtime_tests {
         assert_eq!(cfg.telnyx_connection_id, None);
         assert_eq!(cfg.telnyx_webhook_public_key, None);
         assert_eq!(cfg.telnyx_api_key, None);
+        assert_eq!(cfg.meta_base_url, "https://api.meta.ai/v1");
+        assert_eq!(cfg.meta_api_key, None);
         assert_eq!(cfg.auth_rp_id, "andrii.ai");
         assert_eq!(cfg.auth_rp_name, "Apostille Handbook");
         assert_eq!(cfg.auth_origin, "https://andrii.ai");
@@ -1762,6 +1790,12 @@ mod runtime_tests {
                 "pubkey-x",
             ),
             (keys::TELNYX_API_KEY, ConfigType::Secret, "key-x"),
+            (
+                keys::META_BASE_URL,
+                ConfigType::Text,
+                "https://meta-stub.test",
+            ),
+            (keys::META_API_KEY, ConfigType::Secret, "LLM_1_stub"),
             (keys::QUIC_ENABLED, ConfigType::Bool, "1"),
             (keys::AUTH_RP_ID, ConfigType::Text, "example.test"),
             (keys::AUTH_RP_NAME, ConfigType::Text, "Example RP"),
@@ -1827,6 +1861,11 @@ mod runtime_tests {
         assert_eq!(cfg.usps_base_url, "https://stub.test");
         assert!(cfg.usps_certified);
         assert_eq!(cfg.telnyx_base_url, "https://telnyx-stub.test");
+        assert_eq!(cfg.meta_base_url, "https://meta-stub.test");
+        assert_eq!(
+            cfg.meta_api_key.as_ref().map(SecretText::as_str),
+            Some("LLM_1_stub")
+        );
         assert_eq!(cfg.telnyx_from_number.as_deref(), Some("+15550001111"));
         assert_eq!(cfg.telnyx_connection_id.as_deref(), Some("conn-x"));
         assert_eq!(cfg.telnyx_webhook_public_key.as_deref(), Some("pubkey-x"));
