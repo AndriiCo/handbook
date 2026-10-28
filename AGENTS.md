@@ -118,6 +118,11 @@ Speed rules for parallel-agent execution.
 - **Spec-before-surface.** New user-visible surfaces and schema
   changes get a reviewed spec section first; fixtures are
   synthetic only and canonical values never leak into facts.
+- **Subagents as appropriate (standing).** Use subagents whenever
+  genuinely independent streams exist — research, code drafts,
+  security review, test runs, specs — without asking first.
+  Solo inline work stays the default for trivial tasks,
+  single-stream edits, and lookups one turn can handle.
 
 ## 7. Operator Handoffs (root-required actions)
 
