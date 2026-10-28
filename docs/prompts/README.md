@@ -83,3 +83,6 @@ to change history — append a correction section instead.
   rootless releases; plan only).
 - [2026-10-27-024-go-execution.md](2026-10-27-024-go-execution.md) —
   Executing the rollout plan; label decision; bootstrap correction.
+- [2026-10-28-035-sudoers-wildcard-fix.md](2026-10-28-035-sudoers-wildcard-fix.md) —
+  Zero-wildcard sudoers via validating wrappers (visudo rejected `*`).
+  (Note: 025–034 exist as files but were never indexed.)
