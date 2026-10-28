@@ -128,8 +128,11 @@ committed script under `docs/ops/scripts/`:
 - Zero placeholders: derive values (VERSION/SHA from staging,
   build numbers from the DB) or prompt for secrets (hidden entry,
   never on the cmdline or in history).
-- Agent stages the script to the server (`~/apostille/scripts/`);
-  operator reviews the file, then runs `sudo bash <script>`.
+- Agent stages the script to the server
+  (`/home/hal/apostille/scripts/` — always absolute paths, never
+  `~`, since the operator may be a different user); scripts run
+  as hal (pinned sudo grants, one-time root setup) or root via
+  plain `bash <script>`.
 - Fail fast with `ABORT: <reason>`; never plow past a failure.
 - End by printing the evidence the agent needs pasted back.
 - `bash -n` clean before every commit; one script per action.

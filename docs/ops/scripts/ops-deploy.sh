@@ -1,7 +1,8 @@
 #!/bin/bash
-# Deploy a staged release + install its unit file. Run as root.
+# Deploy a staged release + install its unit file. Runs as hal
+# (pinned sudo grants, see ops-hal-access.sh) or root.
 #
-#   sudo bash ~/apostille/scripts/ops-deploy.sh ~/apostille/staging/<version>
+#   bash /home/hal/apostille/scripts/ops-deploy.sh /home/hal/apostille/staging/<version>
 #
 # Zero placeholders: VERSION comes from the staging dir name, SHA from
 # the staging/SHA file (written by the agent at stage time), and the
@@ -15,9 +16,13 @@
 # per release; the skip is always announced in the output.
 set -u
 
-STAGE="${1:?usage: $0 <staging-dir> [--skip-accept] (e.g. ~/apostille/staging/69480d3)}"
+STAGE="${1:?usage: $0 <staging-dir> [--skip-accept] (e.g. /home/hal/apostille/staging/69480d3)}"
 SKIP_ACCEPT=""
 [ "${2:-}" = "--skip-accept" ] && SKIP_ACCEPT="--skip-accept"
+# sudo -n fails fast when a grant is missing (never hangs on a
+# prompt); root passes everything through.
+SUDO="sudo -n"
+SVC="sudo -n -u andrii-ai"
 [ "$(id -u)" = 0 ] || { echo "ABORT: run as root"; exit 1; }
 [ -d "$STAGE" ] || { echo "ABORT: no such dir: $STAGE"; exit 1; }
 VERSION="$(basename "$STAGE")"
@@ -35,10 +40,10 @@ done
 
 echo "=== 0. install unit file (showing diff first)"
 diff -u /etc/systemd/system/apostille.service "$STAGE/apostille.service" || true
-cp "$STAGE/apostille.service" /etc/systemd/system/apostille.service \
+$SUDO /usr/bin/cp "$STAGE/apostille.service" /etc/systemd/system/apostille.service \
     || { echo "ABORT: unit install failed"; exit 1; }
-systemctl daemon-reload || { echo "ABORT: daemon-reload failed"; exit 1; }
-systemctl reset-failed apostille 2>/dev/null || true
+$SUDO /usr/bin/systemctl daemon-reload || { echo "ABORT: daemon-reload failed"; exit 1; }
+$SUDO /usr/bin/systemctl reset-failed apostille 2>/dev/null || true
 grep -H StartLimit /etc/systemd/system/apostille.service \
     || echo "(note: no StartLimit lines in installed unit)"
 
@@ -47,7 +52,7 @@ if [ -n "$SKIP_ACCEPT" ]; then
     echo "WARNING: accept gate SKIPPED by explicit operator flag"
     GATE_ARGS="--skip-accept"
 else
-    N="$(sqlite3 /var/lib/apostille/handbook.sqlite \
+    N="$($SVC /usr/bin/sqlite3 /var/lib/apostille/handbook.sqlite \
         "SELECT build_no FROM build ORDER BY build_no DESC LIMIT 1;" 2>/dev/null || true)"
     [ -n "$N" ] || {
         echo "ABORT: no build row in prod DB — refusing to --skip-accept silently; confirm with agent"

@@ -1,8 +1,9 @@
 # Root-action scripts (AGENTS.md §7)
 
-One script per operator action that needs root. The agent stages
-these to `~/apostille/scripts/` on the server; the operator reviews
-each file, then runs it with `sudo bash <script>`.
+One script per operator action that needs privilege. The agent
+stages these to `/home/hal/apostille/scripts/` on the server.
+Every script runs as hal (pinned sudo grants installed once by
+`ops-hal-access.sh`) or root — `bash <script>`, no placeholders.
 
 Rules for every script in this dir:
 
@@ -16,6 +17,8 @@ Rules for every script in this dir:
 
 Scripts:
 
+- `ops-hal-access.sh` — ONE-TIME root setup: installs the pinned
+  sudoers drop-in so hal deploys autonomously afterwards.
 - `ops-deploy.sh <staging-dir> [--skip-accept]` — install the
   staged unit file (diff shown first), run the accept gate +
   `xtask deploy`, verify the health stamp. `--skip-accept` is an
