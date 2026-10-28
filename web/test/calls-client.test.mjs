@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import {
+	defaultScript,
 	dialBody,
 	dialCall,
 	e164Valid,
@@ -33,10 +34,21 @@ test('dialBody builds valid bodies and rejects the rest', () => {
 	assert.equal(dialBody('3605550100', null, [], true), null);
 	assert.equal(dialBody('+13605550100', null, [], false), null);
 	assert.equal(dialBody('+13605550100', null, [''], true), null);
+	assert.equal(dialBody('+13605550100', null, [], true), null);
 	assert.equal(dialBody('+13605550100', null, ['x'.repeat(281)], true), null);
 	assert.equal(dialBody('+13605550100', null, new Array(21).fill('q'), true), null);
 	// Blank authority is dropped, not sent.
-	assert.ok(!('authority' in (dialBody('+13605550100', '  ', [], true) ?? {})));
+	assert.ok(!('authority' in (dialBody('+13605550100', '  ', ['q'], true) ?? {})));
+});
+
+test('defaultScript fits the server limits and copies', () => {
+	const script = defaultScript();
+	assert.ok(script.length >= 1 && script.length <= 20);
+	for (const line of script) {
+		assert.ok(line.length >= 1 && line.length <= 280, line);
+	}
+	script.push('mutated');
+	assert.equal(defaultScript().includes('mutated'), false);
 });
 
 test('normalizeCallSummary types rows, nulls junk', () => {
@@ -125,7 +137,7 @@ test('calls round-trip against a stub admin API', async () => {
 		assert.equal(calls[0].call_id, 'c-1');
 		const detail = await fetchCall(base, 'c-1');
 		assert.equal(detail?.status, 'completed');
-		const dialed = await dialCall(base, dialBody('+13605550100', null, [], true));
+		const dialed = await dialCall(base, dialBody('+13605550100', null, ['q'], true));
 		assert.equal(dialed.call_id, 'c-2');
 		await hangupCall(base, 'c-1');
 		await recordCall(base, 'c-1', true);

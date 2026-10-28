@@ -33,6 +33,27 @@ export function e164Valid(to) {
 	return typeof to === 'string' && /^\+\d{7,15}$/.test(to);
 }
 
+// Default authority-validation script (staff working notes, not
+// facts — the dial page loads these into the editable box). Every
+// line fits the server's 1–280 chars; the count fits 1–20.
+const DEFAULT_SCRIPT = [
+	'What is the current fee for an apostille per document?',
+	'What is the current processing time for a mail-in apostille request?',
+	'What is the correct mailing address for apostille requests?',
+	'Which payment methods do you accept for mail-in requests?',
+	'Is a cover letter or request form required, and which revision?',
+	'What are the walk-in hours and address, if different from mailing?',
+	'How are completed documents returned, and what return envelope is needed?'
+];
+
+/**
+ * Fresh copy of the default script (mutating it is safe).
+ * @returns {string[]}
+ */
+export function defaultScript() {
+	return [...DEFAULT_SCRIPT];
+}
+
 /**
  * Build a dial body. Pure (tested). Returns null when invalid —
  * the page shows the reason instead of sending.
@@ -46,7 +67,7 @@ export function dialBody(to, authority, questions, consent) {
 	if (typeof to !== 'string' || !e164Valid(to)) return null;
 	if (consent !== true) return null;
 	const list = Array.isArray(questions) ? questions : [];
-	if (list.length > 20) return null;
+	if (list.length === 0 || list.length > 20) return null;
 	const cleaned = [];
 	for (const q of list) {
 		if (typeof q !== 'string') return null;

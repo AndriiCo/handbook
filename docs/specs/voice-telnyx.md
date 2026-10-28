@@ -46,12 +46,16 @@ answer 2xx fast, doing slow work (audio download) afterwards.
 [receiving webhooks](https://developers.telnyx.com/docs/voice/programmable-voice/receiving-webhooks))
 
 Signature: every webhook carries `Telnyx-Signature-Ed25519` +
-`Telnyx-Timestamp`; verification is Standard-Webhooks compatible
-Ed25519. ([webhook reference](https://developers.telnyx.com/docs/voice/programmable-voice/voice-api-webhooks),
-[hangup ref](https://telnyx-openapi-ng.s3.us-east-1.amazonaws.com/call-control-commands/hangup.yml))
-Exact signed-payload construction (timestamp + body concatenation)
-is per the [webhook signing guide](https://developers.telnyx.com/docs/development/api-fundamentals/webhooks/receiving-webhooks.md#webhook-signing) —
-verify against the guide at integration time (OQ-1).
+`Telnyx-Timestamp`; verification is Ed25519 over
+`{timestamp}|{raw-body}` (ASCII pipe, exact body bytes), with the
+signature and the Mission Control public key both strict padded
+base64. Verified 2026-10-28 against Telnyx's own Node SDK
+(`src/lib/webhooks.ts`, `TelnyxWebhook.verify`) and the messaging
+webhook docs ("computed over `{timestamp}|{json_payload}`") — an
+earlier `{timestamp}.{body}`/hex guess was wrong and is fixed in
+`crates/voice/src/webhook.rs` (OQ-1 closed; a regression test pins
+the pipe construction and rejects the dotted one). Headers are
+case-insensitive; timestamps must be digits-only within 300 s.
 
 Event envelope: `data.{record_type, event_type, id, occurred_at,
 payload}`, `payload.{call_control_id, connection_id, call_leg_id,
@@ -211,8 +215,9 @@ closed); the webhook answers 401 (no key to verify with).
 2. One voice number on the account (`telnyx.from_number`, E.164).
 3. Voice API application (Call Control connection) with
    `webhook_event_url =
-   https://admin.andrii.ai:{net.admin_https_port}/apostille/api/v1/admin/calls/webhook`
-   (+ failover URL), `webhook_timeout_secs` ~10; its id is
+   https://admin.andrii.ai/apostille/api/v1/admin/calls/webhook`
+   (single-443, no port — the old `:444` form is dead) (+
+   failover URL), `webhook_timeout_secs` ~10; its id is
    `telnyx.connection_id`.
 4. Outbound Voice Profile attached to the application (outbound
    billing + destinations).
@@ -225,9 +230,10 @@ closed); the webhook answers 401 (no key to verify with).
 
 ## 10. Open questions
 
-- OQ-1 (blocks prod webhooks): exact Ed25519 signed-payload
-  construction — confirm against the signing guide + a portal
-  test webhook before trusting verification.
+- OQ-1 CLOSED 2026-10-28: `{timestamp}|{body}`, base64 sig +
+  key (Node SDK source + messaging docs; see §Signature). A live
+  portal test webhook during the Phase-0 proof call is still the
+  final confirmation.
 - OQ-2: is `call.recording.transcription.saved` available on our
   API version for post-call full text? Else segments + recording only.
 - OQ-3: 90-day recording retention OK? And who runs the sweep —

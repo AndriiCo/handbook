@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import {
+		defaultScript,
 		dialBody,
 		dialCall,
 		e164Valid,
@@ -56,6 +57,14 @@
 			.split('\n')
 			.map((line) => line.trim())
 			.filter((line) => line.length > 0);
+	}
+
+	function loadScript() {
+		const have = new Set(questions());
+		const missing = defaultScript().filter((line) => !have.has(line));
+		if (missing.length === 0) return;
+		questionsText = questionsText.trimEnd();
+		questionsText += (questionsText.length > 0 ? '\n' : '') + missing.join('\n');
 	}
 
 	async function dial(event: SubmitEvent) {
@@ -120,6 +129,9 @@
 					placeholder={'Current apostille fee?\nForm revision and where to mail?'}
 				></textarea>
 			</label>
+		</p>
+		<p>
+			<button type="button" onclick={loadScript}>Load default script</button>
 		</p>
 		<p>
 			<label class="consent" for="consent">

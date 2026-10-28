@@ -114,54 +114,59 @@ pub fn parse_envelope(body: &[u8]) -> Result<WebhookEnvelope, WebhookError> {
 
 /// Verify a Telnyx Ed25519 webhook signature.
 ///
-/// The signed message is `{timestamp}.{raw-body}` — the
-/// Standard-Webhooks shape minus the message id, which Telnyx does
-/// not send. This construction is inferred from the Telnyx docs
-/// (headers + Standard-Webhooks compatibility note), NOT quoted
-/// from a byte-level spec: confirm against a portal test webhook
-/// before trusting production traffic (spec OQ-1).
+/// Byte construction, verified against Telnyx's own Node SDK
+/// (`src/lib/webhooks.ts`, `TelnyxWebhook.verify`) plus the
+/// messaging webhook docs ("computed over
+/// `{timestamp}|{json_payload}`"):
+///
+/// - signed message: `{timestamp}|{raw-body}` (ASCII pipe, exact
+///   body bytes — never parse-and-reserialize first);
+/// - `telnyx-signature-ed25519`: strict padded base64, 64 bytes;
+/// - public key (Mission Control): strict padded base64, 32 bytes.
 ///
 /// # Errors
 ///
 /// [`WebhookError::BadSignature`] on malformed inputs or a mismatch
 /// (all failures look identical — no oracle for key probing).
 pub fn verify_signature(
-    public_key_hex: &str,
+    public_key_b64: &str,
     timestamp: &str,
     body: &[u8],
-    signature_hex: &str,
+    signature_b64: &str,
 ) -> Result<(), WebhookError> {
+    use base64::Engine as _;
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
-    let key_bytes: [u8; 32] = parse_hex(public_key_hex).ok_or(WebhookError::BadSignature)?;
-    let sig_bytes: [u8; 64] = parse_hex(signature_hex).ok_or(WebhookError::BadSignature)?;
+    let key_bytes: [u8; 32] = base64::engine::general_purpose::STANDARD
+        .decode(public_key_b64)
+        .ok()
+        .and_then(|v| v.try_into().ok())
+        .ok_or(WebhookError::BadSignature)?;
+    let sig_bytes: [u8; 64] = base64::engine::general_purpose::STANDARD
+        .decode(signature_b64)
+        .ok()
+        .and_then(|v| v.try_into().ok())
+        .ok_or(WebhookError::BadSignature)?;
     let key = VerifyingKey::from_bytes(&key_bytes).map_err(|_| WebhookError::BadSignature)?;
     let signature = Signature::from_bytes(&sig_bytes);
     let mut message = Vec::with_capacity(timestamp.len() + 1 + body.len());
     message.extend_from_slice(timestamp.as_bytes());
-    message.push(b'.');
+    message.push(b'|');
     message.extend_from_slice(body);
     key.verify(&message, &signature)
         .map_err(|_| WebhookError::BadSignature)
 }
 
-/// Replay window: the `telnyx-timestamp` header must be within
-/// `window_secs` of `now` (both unix seconds).
+/// Replay window: the `telnyx-timestamp` header must be ASCII digits
+/// within `window_secs` of `now` (both unix seconds). Matches the
+/// SDK's `^\d+$` + 5-minute tolerance shape.
 pub fn timestamp_fresh(timestamp: &str, now: i64, window_secs: i64) -> bool {
+    if timestamp.is_empty() || !timestamp.bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
     timestamp
         .parse::<i64>()
         .is_ok_and(|at| (now - at).abs() <= window_secs)
-}
-
-fn parse_hex<const N: usize>(input: &str) -> Option<[u8; N]> {
-    if input.len() != N * 2 {
-        return None;
-    }
-    let mut out = [0u8; N];
-    for (i, byte) in out.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&input[i * 2..i * 2 + 2], 16).ok()?;
-    }
-    Some(out)
 }
 
 /// Webhook parse/verification failure. `Display` stays opaque on
@@ -189,31 +194,47 @@ mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
 
-    fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    fn b64(bytes: &[u8]) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    /// Mirror of the Telnyx SDK's signed payload: `{timestamp}|{body}`.
+    fn signed_fixture(signing: &SigningKey, timestamp: &str, body: &[u8]) -> (String, String) {
+        let mut message = Vec::new();
+        message.extend_from_slice(timestamp.as_bytes());
+        message.push(b'|');
+        message.extend_from_slice(body);
+        (
+            b64(signing.verifying_key().as_bytes()),
+            b64(&signing.sign(&message).to_bytes()),
+        )
     }
 
     #[test]
     fn signature_round_trip_and_tamper_rejection() {
         let signing = SigningKey::from_bytes(&[7u8; 32]);
-        let public = hex(signing.verifying_key().as_bytes());
         let timestamp = "1761571200";
         let body = br#"{"data":{"id":"wh-1"}}"#;
-        let mut message = Vec::new();
-        message.extend_from_slice(timestamp.as_bytes());
-        message.push(b'.');
-        message.extend_from_slice(body);
-        let signature = hex(&signing.sign(&message).to_bytes());
+        let (public, signature) = signed_fixture(&signing, timestamp, body);
 
         assert!(verify_signature(&public, timestamp, body, &signature).is_ok());
         // Tampered body, timestamp, signature, or key all fail alike.
         assert!(verify_signature(&public, timestamp, b"{}", &signature).is_err());
         assert!(verify_signature(&public, "1761571201", body, &signature).is_err());
         let mut bad_sig = signature.clone();
-        bad_sig.replace_range(0..2, "ff");
+        bad_sig.replace_range(0..2, "AA");
         assert!(verify_signature(&public, timestamp, body, &bad_sig).is_err());
-        assert!(verify_signature(&public, timestamp, body, "zz").is_err());
-        assert!(verify_signature("zz", timestamp, body, &signature).is_err());
+        assert!(verify_signature(&public, timestamp, body, "!!!").is_err());
+        assert!(verify_signature("!!!", timestamp, body, &signature).is_err());
+        // The old (wrong) construction — dot separator, hex encoding —
+        // must NOT verify: guards against regressing to the guess.
+        let mut dotted = Vec::new();
+        dotted.extend_from_slice(timestamp.as_bytes());
+        dotted.push(b'.');
+        dotted.extend_from_slice(body);
+        let dotted_sig = b64(&signing.sign(&dotted).to_bytes());
+        assert!(verify_signature(&public, timestamp, body, &dotted_sig).is_err());
     }
 
     #[test]
@@ -222,6 +243,9 @@ mod tests {
         assert!(timestamp_fresh("900", 1000, 300));
         assert!(!timestamp_fresh("100", 1000, 300));
         assert!(!timestamp_fresh("not-a-time", 1000, 300));
+        assert!(!timestamp_fresh("", 1000, 300));
+        assert!(!timestamp_fresh("+1000", 1000, 300));
+        assert!(!timestamp_fresh("1000.0", 1000, 300));
     }
 
     #[test]

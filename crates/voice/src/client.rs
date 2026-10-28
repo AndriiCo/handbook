@@ -24,7 +24,7 @@ pub struct VoiceConfig {
     pub from_number: String,
     /// Voice API application id (`telnyx.connection_id`).
     pub connection_id: String,
-    /// Webhook signing public key, hex (`telnyx.webhook_public_key`).
+    /// Webhook signing public key, base64 (`telnyx.webhook_public_key`).
     pub webhook_public_key: String,
 }
 

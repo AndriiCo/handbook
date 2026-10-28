@@ -1025,17 +1025,14 @@ mod tests {
         timestamp: &str,
         body: &str,
     ) -> Request<Body> {
+        use base64::Engine as _;
         use ed25519_dalek::Signer as _;
         let mut message = Vec::new();
         message.extend_from_slice(timestamp.as_bytes());
-        message.push(b'.');
+        message.push(b'|');
         message.extend_from_slice(body.as_bytes());
-        let signature: String = key
-            .sign(&message)
-            .to_bytes()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        let signature: String =
+            base64::engine::general_purpose::STANDARD.encode(key.sign(&message).to_bytes());
         Request::builder()
             .uri("/apostille/api/v1/admin/calls/webhook")
             .method("POST")
@@ -1048,12 +1045,9 @@ mod tests {
     }
 
     fn webhook_config() -> voice::VoiceConfig {
-        let public: String = test_signing_key()
-            .verifying_key()
-            .as_bytes()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        use base64::Engine as _;
+        let public: String = base64::engine::general_purpose::STANDARD
+            .encode(test_signing_key().verifying_key().as_bytes());
         voice::VoiceConfig {
             webhook_public_key: public,
             ..voice::VoiceConfig::default()
