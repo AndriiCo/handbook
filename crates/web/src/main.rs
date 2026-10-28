@@ -21,6 +21,8 @@ mod approval;
 mod host;
 mod mtls;
 mod oauth;
+mod oauth_apple;
+mod oauth_meta;
 mod p2;
 mod p2_labels;
 mod passkey;
@@ -120,6 +122,14 @@ struct AppState {
     /// until `google.client_id` + `google.client_secret` rows are
     /// set — the endpoints 503, the boot never refuses.
     google_cfg: Option<oauth::GoogleCfg>,
+    /// Apple OAuth client (spec `customer-auth.md` §10): `None`
+    /// until the four `apple.*` rows are set — the endpoints 503,
+    /// the boot never refuses.
+    apple_cfg: Option<oauth_apple::AppleCfg>,
+    /// Meta OAuth client (spec `customer-auth.md` §11): `None`
+    /// until `meta.client_id` + `meta.client_secret` rows are
+    /// set — the endpoints 503, the boot never refuses.
+    meta_cfg: Option<oauth_meta::MetaCfg>,
 }
 
 /// Build the full PUBLIC app router. `static_dir` roots
@@ -152,6 +162,8 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             google_cfg: None,
+            apple_cfg: None,
+            meta_cfg: None,
         },
         static_dir,
         spa_dir,
@@ -192,6 +204,10 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/me", get(passkey::me))
         .route("/api/v1/auth/google/start", post(oauth::start))
         .route("/api/v1/auth/google/callback", get(oauth::callback))
+        .route("/api/v1/auth/apple/start", post(oauth_apple::start))
+        .route("/api/v1/auth/apple/callback", get(oauth_apple::callback))
+        .route("/api/v1/auth/meta/start", post(oauth_meta::start))
+        .route("/api/v1/auth/meta/callback", get(oauth_meta::callback))
         .route(
             "/api/v1/authorities/{slug}/facts",
             get(approval::public_facts),
@@ -609,6 +625,47 @@ async fn main() {
             _ => {
                 eprintln!(
                     "WARNING: config google.client_id/google.client_secret unset — Google login disabled"
+                );
+                None
+            }
+        },
+        apple_cfg: match (
+            &cfg.apple_client_id,
+            &cfg.apple_team_id,
+            &cfg.apple_key_id,
+            &cfg.apple_private_key,
+        ) {
+            (Some(id), Some(team), Some(kid), Some(key)) => {
+                Some(oauth_apple::AppleCfg::from_values(
+                    id,
+                    team,
+                    kid,
+                    key.clone(),
+                    &format!(
+                        "{}/apostille/api/v1/auth/apple/callback",
+                        cfg.auth_origin.trim_end_matches('/')
+                    ),
+                ))
+            }
+            _ => {
+                eprintln!(
+                    "WARNING: config apple.client_id/apple.team_id/apple.key_id/apple.private_key unset — Apple login disabled"
+                );
+                None
+            }
+        },
+        meta_cfg: match (&cfg.meta_client_id, &cfg.meta_client_secret) {
+            (Some(id), Some(secret)) => Some(oauth_meta::MetaCfg::from_values(
+                id,
+                secret.clone(),
+                &format!(
+                    "{}/apostille/api/v1/auth/meta/callback",
+                    cfg.auth_origin.trim_end_matches('/')
+                ),
+            )),
+            _ => {
+                eprintln!(
+                    "WARNING: config meta.client_id/meta.client_secret unset — Meta login disabled"
                 );
                 None
             }
@@ -1664,6 +1721,8 @@ mod tests {
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             google_cfg: None,
+            apple_cfg: None,
+            meta_cfg: None,
         };
         Fixture { _tmp: tmp, state }
     }

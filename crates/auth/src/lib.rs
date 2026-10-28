@@ -4,8 +4,10 @@
 //! `docs/specs/spa-separation.md` §1.4 and `docs/auth-playbook.md`.
 //! The web crate owns HTTP; this crate never sees a request.
 
+pub mod apple;
 pub mod csrf;
 pub mod login;
+pub mod meta;
 pub mod oauth;
 pub mod passkey;
 pub mod ws;
@@ -226,7 +228,7 @@ pub fn hash_str(value: &str) -> String {
     hex_of(&sha2::Sha256::digest(value.as_bytes()))
 }
 
-fn hex_of(bytes: &[u8]) -> String {
+pub(crate) fn hex_of(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
     for b in bytes {
         out.push_str(&format!("{b:02x}"));

@@ -817,6 +817,12 @@ pub mod keys {
     pub const AUTH_ORIGIN: &str = "auth.origin";
     pub const GOOGLE_CLIENT_ID: &str = "google.client_id";
     pub const GOOGLE_CLIENT_SECRET: &str = "google.client_secret";
+    pub const APPLE_CLIENT_ID: &str = "apple.client_id";
+    pub const APPLE_TEAM_ID: &str = "apple.team_id";
+    pub const APPLE_KEY_ID: &str = "apple.key_id";
+    pub const APPLE_PRIVATE_KEY: &str = "apple.private_key";
+    pub const META_CLIENT_ID: &str = "meta.client_id";
+    pub const META_CLIENT_SECRET: &str = "meta.client_secret";
 
     /// Every registered key with its type (admin UI + roundtrip tests).
     pub const ALL: &[(&str, super::ConfigType)] = &[
@@ -856,6 +862,12 @@ pub mod keys {
         (AUTH_ORIGIN, super::ConfigType::Text),
         (GOOGLE_CLIENT_ID, super::ConfigType::Text),
         (GOOGLE_CLIENT_SECRET, super::ConfigType::Secret),
+        (APPLE_CLIENT_ID, super::ConfigType::Text),
+        (APPLE_TEAM_ID, super::ConfigType::Text),
+        (APPLE_KEY_ID, super::ConfigType::Text),
+        (APPLE_PRIVATE_KEY, super::ConfigType::Secret),
+        (META_CLIENT_ID, super::ConfigType::Text),
+        (META_CLIENT_SECRET, super::ConfigType::Secret),
     ];
 }
 
@@ -969,6 +981,12 @@ pub struct RuntimeConfig {
     pub auth_origin: String,
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<SecretText>,
+    pub apple_client_id: Option<String>,
+    pub apple_team_id: Option<String>,
+    pub apple_key_id: Option<String>,
+    pub apple_private_key: Option<SecretText>,
+    pub meta_client_id: Option<String>,
+    pub meta_client_secret: Option<SecretText>,
 }
 
 impl Default for RuntimeConfig {
@@ -1015,6 +1033,12 @@ impl Default for RuntimeConfig {
             auth_origin: "https://andrii.ai".to_string(),
             google_client_id: None,
             google_client_secret: None,
+            apple_client_id: None,
+            apple_team_id: None,
+            apple_key_id: None,
+            apple_private_key: None,
+            meta_client_id: None,
+            meta_client_secret: None,
         }
     }
 }
@@ -1291,6 +1315,34 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.google_client_id,
         )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::APPLE_CLIENT_ID,
+            &mut warnings,
+            &mut cfg.apple_client_id,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::APPLE_TEAM_ID,
+            &mut warnings,
+            &mut cfg.apple_team_id,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::APPLE_KEY_ID,
+            &mut warnings,
+            &mut cfg.apple_key_id,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::META_CLIENT_ID,
+            &mut warnings,
+            &mut cfg.meta_client_id,
+        )?;
         overlay_bool(
             conn,
             kek,
@@ -1443,6 +1495,20 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.google_client_secret,
         )?;
+        overlay_secret(
+            conn,
+            kek,
+            keys::APPLE_PRIVATE_KEY,
+            &mut warnings,
+            &mut cfg.apple_private_key,
+        )?;
+        overlay_secret(
+            conn,
+            kek,
+            keys::META_CLIENT_SECRET,
+            &mut warnings,
+            &mut cfg.meta_client_secret,
+        )?;
         // H6 fix baked into the migration: a persistent dev-bypass
         // flag must never boot a release binary (spec §3).
         if cfg.admin_mtls_off && !cfg!(debug_assertions) {
@@ -1490,14 +1556,14 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_36_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 36);
+    fn registry_holds_42_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 42);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
-        // Three secrets (EAB HMAC, Telnyx API key, Google client
-        // secret); five bools (quic.enabled is the fifth); rest
-        // text (auth.* adds three, google.client_id one).
+        // Five secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
+        // client secrets); five bools (quic.enabled is the fifth);
+        // rest text (auth.* adds three, google/apple/meta ids six).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1506,7 +1572,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (5, 28, 3));
+        assert_eq!(counts, (5, 32, 5));
     }
 
     #[test]
@@ -1684,6 +1750,12 @@ mod runtime_tests {
             cfg.google_client_secret.as_ref().map(SecretText::as_str),
             Some("secret-x")
         );
+        assert_eq!(cfg.apple_client_id, None);
+        assert_eq!(cfg.apple_team_id, None);
+        assert_eq!(cfg.apple_key_id, None);
+        assert_eq!(cfg.apple_private_key, None);
+        assert_eq!(cfg.meta_client_id, None);
+        assert_eq!(cfg.meta_client_secret, None);
     }
 
     #[test]

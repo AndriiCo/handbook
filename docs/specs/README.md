@@ -268,3 +268,12 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     (`kind='oauth'`) with a split binding cookie; Google-only
     unlink accepts a fresh-session proof — see
     [customer-auth.md](customer-auth.md) §9.
+33. Apple + Meta OAuth (Phase 3, apex-only): flat
+    `/auth/apple|meta/start|callback` paths; separate state
+    kinds (`kind='apple'/'meta'`, the confused-deputy boundary)
+    + per-provider binding cookies (`hb_apple`/`hb_meta`);
+    shared 302 code vocabulary, provider-agnostic SPA copy;
+    `jsonwebtoken 11` on `aws_lc_rs` for Apple ES256
+    (verified ring-free; hand-rolled JWS rejected); Meta is
+    sub-only (no email scope, no `/me` call), Graph API v26.0
+    pinned — see [customer-auth.md](customer-auth.md) §§10–11.

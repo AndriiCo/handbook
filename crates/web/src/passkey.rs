@@ -818,7 +818,11 @@ pub async fn unlink(
         )
             .into_response();
     };
-    if body.method != "passkey" && body.method != "google" {
+    if body.method != "passkey"
+        && body.method != "google"
+        && body.method != "apple"
+        && body.method != "meta"
+    {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "unknown method"})),
@@ -836,12 +840,13 @@ pub async fn unlink(
             .into_response();
     }
     // Re-auth proof: a fresh consumed challenge (passkey ceremony
-    // or stamped oauth row) — or, for Google-only users who cannot
+    // or stamped oauth row) — or, for OAuth-only users who cannot
     // run a passkey ceremony, the literal "session" while the
-    // current session is step-up fresh (spec §9.4 tradeoff).
+    // current session is step-up fresh (spec §9.4 tradeoff,
+    // generalized to all OAuth methods).
     let reauthed = store::proof_fresh(&conn, &body.reauth_proof, &session.user_id, now)
         .unwrap_or(false)
-        || (body.method == "google"
+        || (body.method != "passkey"
             && body.reauth_proof == "session"
             && now - session.created_at <= store::STEP_UP_WINDOW_SECS);
     if !reauthed {
@@ -1483,6 +1488,77 @@ mod tests {
         // Last method → 409 even with a good proof.
         assert_eq!(
             call(&app, &cookies, &token, "session", "sub-2").await,
+            StatusCode::CONFLICT
+        );
+    }
+
+    #[tokio::test]
+    async fn unlink_apple_meta_accept_session_proof() {
+        let (tmp, app) = test_app();
+        let store = handbook_store::store::Store::new(tmp.path());
+        let conn = handbook_store::db::open(&store).unwrap();
+        let now = unix_now();
+        auth::passkey::ensure_account(&conn, "u-am", now).unwrap();
+        auth::create_session(
+            &conn,
+            "sess-am",
+            &auth::NewSession {
+                user_id: "u-am",
+                role: auth::Role::Customer,
+                customer_ref: Some("u-am"),
+                now,
+                ip: "127.0.0.1",
+                user_agent: "test",
+            },
+        )
+        .unwrap();
+        auth::apple::insert_apple_link(&conn, "u-am", "sub-a", "a@example.test", true, false)
+            .unwrap();
+        auth::meta::insert_meta_link(&conn, "u-am", "sub-m").unwrap();
+        drop(conn);
+        let cookies = format!("{}=sess-am", auth::PUB_COOKIE);
+        let (_, _, set_cookie) = start_register(&app, "Andrii", "").await;
+        let (_, token) = csrf_pair(&set_cookie);
+        async fn call(
+            app: &axum::Router,
+            cookies: &str,
+            token: &str,
+            method: &str,
+            id: &str,
+        ) -> StatusCode {
+            let jar = format!("{cookies}; {}={token}", auth::CSRF_COOKIE);
+            app.clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/apostille/api/v1/auth/profile/unlink")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .header(header::ORIGIN, "http://localhost")
+                        .header(header::COOKIE, jar)
+                        .header(auth::CSRF_HEADER, token)
+                        .extension(addr())
+                        .body(Body::from(format!(
+                            r#"{{"method":"{method}","id":"{id}","reauth_proof":"session"}}"#
+                        )))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status()
+        }
+        // Unknown methods still 400.
+        assert_eq!(
+            call(&app, &cookies, &token, "sso", "sub-a").await,
+            StatusCode::BAD_REQUEST
+        );
+        // Apple unlink with a fresh session proof → 200.
+        assert_eq!(
+            call(&app, &cookies, &token, "apple", "sub-a").await,
+            StatusCode::OK
+        );
+        // Last method (meta) → 409 even with a good proof.
+        assert_eq!(
+            call(&app, &cookies, &token, "meta", "sub-m").await,
             StatusCode::CONFLICT
         );
     }

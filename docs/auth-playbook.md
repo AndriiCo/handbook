@@ -49,6 +49,10 @@
    implementations — confirm exact strings in the current portal.)
 5. Server: validate `identityToken` against Apple's JWKS on every
    login (issuer, audience = Services ID / App ID, expiry, nonce).
+   Implementation (Phase 3a, spec §10.1): NO nonce — the
+   `state`+binding pair covers CSRF and the id_token arrives
+   via our own server-side token call, never through the
+   browser.
 
 Event → action table (endpoint verifies Apple's JWT signature first,
 rejects anything else with 403 + audit):
@@ -103,9 +107,16 @@ inspected 2026-10-26).
    `https://andrii.ai/apostille/api/v1/auth/meta/callback`.
 2. Set **Login with JavaScript SDK** to yes; add `andrii.ai` to
    **Allowed Domains for JavaScript SDK** (tokens only return to
-   authorized domains; HTTPS only).
+   authorized domains; HTTPS only). Implementation (Phase 3b,
+   spec §11): the SPA never loads the Meta JS SDK — the flow
+   is a server-built redirect, so this toggle is inert; leave
+   it off.
 3. Permissions: `public_profile` + `email` need no app review and
-   are auto-granted — request nothing more.
+   are auto-granted — request nothing more. Implementation
+   (Phase 3b, spec §11): NO email scope is requested and no
+   email is ever fetched — the flow is sub-only by design
+   (Meta email never matches), so there is no review surface
+   at all.
 4. Register the **Deauthorize Callback URL** and the **Data
    Deletion Request Callback URL** (both HTTPS, both in
    Facebook Login > Settings — exact field locations per
@@ -128,7 +139,7 @@ with the App Secret first; reject anything else 403 + audit):
 
 ## 5. Email click-to-login (fallback only)
 
-- Offered only when passkey/Apple/Google all fail for the customer.
+- Offered only when passkey/Apple/Google/Meta all fail for the customer.
   Token: 256-bit CSPRNG, single-use, 15-minute expiry, bound to the
   exact email address; consuming from a different browser is fine
   (that's the point) but the token never acts as a persistent

@@ -10,6 +10,11 @@ use rusqlite::{Connection, OptionalExtension};
 
 /// Challenge kind reusing `webauthn_challenge` (no migration).
 pub const KIND_OAUTH: &str = "oauth";
+/// Apple + Meta state kinds (spec §D2): the kind column is the
+/// confused-deputy boundary — a handle minted for one provider
+/// can never be consumed by another provider's callback.
+pub const KIND_APPLE: &str = "apple";
+pub const KIND_META: &str = "meta";
 pub const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const GOOGLE_TOKENINFO_URL: &str = "https://oauth2.googleapis.com/tokeninfo";
@@ -27,6 +32,10 @@ pub struct HttpResponse {
 pub trait HttpTransport {
     fn post_form(&self, url: &str, pairs: &[(&str, &str)]) -> Result<HttpResponse, String>;
     fn get(&self, url: &str) -> Result<HttpResponse, String>;
+    /// GET with pre-split pairs (Meta's GET calls, spec §11.3):
+    /// the transport encodes them — callers never build query
+    /// strings by hand (secrets travel in these URLs).
+    fn get_query(&self, base: &str, pairs: &[(&str, &str)]) -> Result<HttpResponse, String>;
 }
 
 /// Verified Google identity (tokeninfo claims we keep).
@@ -97,6 +106,19 @@ pub fn store_state(
     binding: &str,
     now: i64,
 ) -> rusqlite::Result<()> {
+    store_state_kind(conn, KIND_OAUTH, state, mode, link_user, binding, now)
+}
+
+/// Same, for an explicit state kind (Apple/Meta).
+pub fn store_state_kind(
+    conn: &Connection,
+    kind: &str,
+    state: &str,
+    mode: OauthMode,
+    link_user: Option<&str>,
+    binding: &str,
+    now: i64,
+) -> rusqlite::Result<()> {
     let _ = crate::passkey::sweep_challenges(conn, now);
     // Infallible: both fields are internally minted (enum + hex).
     let state_json = serde_json::to_string(&OauthState {
@@ -108,7 +130,7 @@ pub fn store_state(
         conn,
         state,
         &crate::passkey::NewChallenge {
-            kind: KIND_OAUTH,
+            kind,
             user_id: link_user,
             state_json: &state_json,
             now,
@@ -119,8 +141,18 @@ pub fn store_state(
 /// Take state exactly once (consume-before-exchange, mirroring
 /// the passkey finish handlers).
 pub fn take_state(conn: &Connection, state: &str, now: i64) -> rusqlite::Result<TakeOutcome> {
-    let Some((link_user, state_json)) =
-        crate::passkey::take_challenge(conn, state, KIND_OAUTH, now)?
+    take_state_kind(conn, KIND_OAUTH, state, now)
+}
+
+/// Same, for an explicit state kind: the `expected_kind` check
+/// runs before parsing anything (spec §D2).
+pub fn take_state_kind(
+    conn: &Connection,
+    kind: &str,
+    state: &str,
+    now: i64,
+) -> rusqlite::Result<TakeOutcome> {
+    let Some((link_user, state_json)) = crate::passkey::take_challenge(conn, state, kind, now)?
     else {
         return Ok(TakeOutcome::Missing);
     };
@@ -352,6 +384,13 @@ mod tests {
             assert!(url.contains("id_token="), "{url}");
             self.routes
                 .get("GET tokeninfo")
+                .cloned()
+                .ok_or_else(|| "no route".to_string())
+        }
+
+        fn get_query(&self, base: &str, _pairs: &[(&str, &str)]) -> Result<HttpResponse, String> {
+            self.routes
+                .get(&format!("GET {base}"))
                 .cloned()
                 .ok_or_else(|| "no route".to_string())
         }

@@ -6,7 +6,12 @@
 		registerPasskey,
 		serializeAuthentication
 	} from '../../../lib/customer/passkey.js';
-	import { googleStartError, startGoogle } from '../../../lib/customer/google.js';
+	import {
+		OAUTH_LABELS,
+		OAUTH_PROVIDERS,
+		oauthStartError,
+		startOAuth
+	} from '../../../lib/customer/oauth.js';
 
 	type Method = { method: string; id: string; label: string; disabled: boolean };
 
@@ -122,28 +127,29 @@
 		}
 	}
 
-	async function linkGoogle() {
+	async function linkOAuth(provider: string) {
 		error = null;
 		busy = true;
-		const res = await startGoogle(
+		const res = await startOAuth(
 			{ post, redirect: (u: string) => (window.location.href = u) },
+			provider,
 			'link'
 		);
 		// On ok the browser is navigating away; on failure the page
 		// stays and the buttons re-enable.
 		busy = false;
-		if (!res.ok) error = googleStartError(res.status);
+		if (!res.ok) error = oauthStartError(res.status, OAUTH_LABELS[provider] ?? provider);
 	}
 
-	async function removeGoogle(id: string) {
+	async function removeOAuth(method: string, id: string) {
 		error = null;
 		busy = true;
 		try {
-			// No passkey ceremony: a Google-only user has none. The
+			// No passkey ceremony: an OAuth-only user has none. The
 			// server accepts a fresh session as the re-auth proof
-			// for google unlinks (spec §9.4).
+			// for OAuth unlinks (spec §9.4, all methods).
 			const res = await post('/auth/profile/unlink', {
-				method: 'google',
+				method,
 				id,
 				reauth_proof: 'session'
 			});
@@ -181,19 +187,21 @@
 		<p class="notice">No sign-in methods yet — add your first below.</p>
 	{:else}
 		<ul>
-			<!-- Only passkey + google rows exist today; future methods
-				extend the ternaries below (never removeKey). -->
+			<!-- Passkey rows use the credential label; OAuth rows
+				(google/apple/meta) use the provider label. -->
 			{#each methods as method (method.method + ':' + method.id)}
 				<li>
-					<strong>{method.method === 'google' ? 'Google' : method.label || 'Unnamed key'}</strong>
+					<strong>{(OAUTH_LABELS[method.method] ?? method.label) || 'Unnamed key'}</strong>
 					<span class="muted">
-						{method.method === 'google' ? method.label || 'linked account' : method.method}
+						{OAUTH_LABELS[method.method] ? method.label || 'linked account' : method.method}
 					</span>
 					<button
 						type="button"
 						disabled={busy}
 						onclick={() =>
-							method.method === 'google' ? removeGoogle(method.id) : removeKey(method.id)}
+							method.method === 'passkey'
+								? removeKey(method.id)
+								: removeOAuth(method.method, method.id)}
 					>
 						Remove
 					</button>
@@ -209,17 +217,19 @@
 		<button type="submit" disabled={busy}>Add passkey</button>
 	</form>
 
-	<form
-		onsubmit={(e) => {
-			e.preventDefault();
-			linkGoogle();
-		}}
-	>
-		<h2>Or link Google</h2>
-		<button type="submit" disabled={busy}>
-			Link Google account
-		</button>
-	</form>
+	{#each OAUTH_PROVIDERS as provider (provider)}
+		<form
+			onsubmit={(e) => {
+				e.preventDefault();
+				linkOAuth(provider);
+			}}
+		>
+			<h2>Or link {OAUTH_LABELS[provider]}</h2>
+			<button type="submit" disabled={busy}>
+				Link {OAUTH_LABELS[provider]} account
+			</button>
+		</form>
+	{/each}
 
 	{#if error}
 		<p class="notice err" role="alert">{error}</p>

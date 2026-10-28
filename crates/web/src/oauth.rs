@@ -98,6 +98,14 @@ impl flow::HttpTransport for UreqTransport {
         let response = self.agent.get(url).call().map_err(|e| e.to_string())?;
         finish(response)
     }
+
+    fn get_query(&self, base: &str, pairs: &[(&str, &str)]) -> Result<flow::HttpResponse, String> {
+        // The `url` crate encodes every pair (Meta's GET calls carry
+        // secrets in the query — never hand-built strings).
+        let mut url = url::Url::parse(base).map_err(|e| e.to_string())?;
+        url.query_pairs_mut().extend_pairs(pairs.iter().copied());
+        self.get(url.as_str())
+    }
 }
 
 fn finish(response: ureq::http::Response<ureq::Body>) -> Result<flow::HttpResponse, String> {
@@ -641,6 +649,8 @@ mod tests {
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             google_cfg: google,
+            apple_cfg: None,
+            meta_cfg: None,
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
         (tmp, app)

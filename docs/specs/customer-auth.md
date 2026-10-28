@@ -3,7 +3,7 @@
 - Status: draft (for author review; Phase-1 implementation alongside)
 - Date: 2026-10-28
 - Grounding: [auth-playbook.md](../auth-playbook.md) (§1 passkeys, §6 linking rules), [spa-separation.md](spa-separation.md) §1.4 (sessions/cookies/roles), [SECURITY.md](../SECURITY.md) §1–§2, `crates/auth/src/` (`lib.rs` sessions+roles, `login.rs` policy, `csrf.rs`, `ws.rs`), `crates/web` session/cookie handling, and webauthn-rs 0.5.5 API (builder + ceremony shapes + error variants, verified against vendored sources).
-- Out of scope: OAuth/OIDC handlers for Apple/Meta and the magic-link sender (playbook §2–§5 portal checklists stand; this spec defines the tables and link/unlink seams they plug into). Google OAuth is §9 (Phase 2). Staff enrolment endpoints are Phase 4 (spec §6 here, tables land with the code).
+- Out of scope: the magic-link sender (playbook §2–§5 portal checklists stand; this spec defines the tables and link/unlink seams they plug into). Google OAuth is §9 (Phase 2); Apple + Meta are §§10–11 (Phase 3). Staff enrolment endpoints are Phase 4 (spec §6 here, tables land with the code).
 
 ## 0. Decisions embodied
 
@@ -201,6 +201,12 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 | OPEN-6 | Playbook §3 touch-up: no-GIS-JS decision (server-side code flow + tokeninfo), dev/staging Google-console story | CODE | portal setup |
 | OPEN-7 | Google RISC receiver phase + synthetic-SET fixtures (§3 table; `signal_action` rows already exist) | SEC | revocation handling |
 | OPEN-8 | Profile display for Google links (method-only vs masked email; raw email never stored) | Author | profile UI |
+| OPEN-9 | Apple `response_mode=query` + `email_verified`/`is_private_email` wire types confirmed at first real login | CODE (staging) | §10.1/§10.3 |
+| OPEN-10 | Apple JWKS TTL-cache trigger (latency/rate at scale); cache design (in-memory, never a table) | CODE | post-Phase-3a scale |
+| OPEN-11 | Apple `/auth/apple/events` receiver phase + signed-JWT fixtures (§10 scope cut; `signal_action` rows ready) | SEC | revocation handling |
+| OPEN-12 | Meta Graph API version pin recorded (v26.0) + sunset watch (versions expire ~2yr) | CODE | §11.1, ongoing |
+| OPEN-13 | Meta deauthorize + data-deletion phase; deletion-receipt `{url, confirmation_code}` tracker table design | SEC | §11.8 gap |
+| OPEN-14 | Profile display for `apple`/`meta` links (extends OPEN-8; raw email never stored) | Author | profile UI |
 
 ## 9. Google OAuth (Phase 2)
 
@@ -254,4 +260,143 @@ Google login green (new account → session + cookie rotation); known-sub login 
 ### 9.8 Table-expressiveness note
 
 Everything above fits the current schema — no DDL: `kind`/`method` are unconstrained text, `usable_email_owner`/`live_method_count`/`links_for_user` are method-generic, `proof_fresh` covers oauth rows once `user_id` is stamped. Deliberately unexpressed: Google access/refresh tokens (never stored — `access_type=online`, our sessions are the credential) and raw emails (hashes only, per §6 logging rules).
+
+## Shared chassis decisions (Apple + Meta)
+
+Both providers reuse the Phase-2 Google chassis (§9, decision 32): flat paths, `POST start` returning `auth_url`, `GET callback` doing exchange+verify+resolve on `spawn_blocking` through the stubbable `HttpTransport`, single-use state with a split binding cookie, and 302s with a fixed code vocabulary. Five cross-provider decisions are fixed here so §§10–11 stay parallel:
+
+**D1 — Flat paths.** `POST /auth/apple/start`, `GET /auth/apple/callback`, `POST /auth/meta/start`, `GET /auth/meta/callback` on the public router only (apex-only, like §9; OPEN-4 still governs the admin branch). The playbook already names both callback URLs (§2 step 2, §4 step 1).
+
+**D2 — Separate state kinds (`kind='apple'`, `kind='meta'`).** `take_challenge` enforces `expected_kind` before parsing anything, so a handle minted for one provider can never be consumed by another provider's callback even if an attacker swaps callback URLs — the kind column is the confused-deputy boundary. A shared kind with a provider field inside `state_json` would move that check to after consume+parse, strictly weaker. Cost is two consts plus thin wrappers; the `OauthState {mode, binding}` JSON shape, 5-min TTL, consume-before-exchange order, and sweep are reused verbatim.
+
+**D3 — Per-provider binding cookies (`hb_apple`, `hb_meta`).** A shared cookie breaks concurrent flows: start Google, then start Apple before finishing, and the second `Set-Cookie` clobbers the first binding. Per-provider names let flows coexist; each callback clears only its own cookie on all exits. Attributes identical to §9.2 (`HttpOnly; SameSite=Lax; Path=/; Max-Age=300; Secure` in prod).
+
+**D4 — One shared 302 code vocabulary, no provider-prefixed codes.** The §9.1 codes are reused verbatim for all three providers: the code in the URL buys the user nothing provider-specific — the page they land on already knows which button they pressed — and every provider-specific failure collapses to `oauth_failed`/`oauth_unavailable` by the §9.1 no-PII/no-internals rule anyway. The SPA keeps one 8-entry provider-agnostic map. Providers ARE distinguished server-side in audit actions (`apple_denied`, `meta_failed`, …).
+
+**D5 — Crypto: `jsonwebtoken 11` on the workspace provider (verified ring-free).** Apple needs ES256 (client_secret signing + id_token verification). Hand-rolling JWS/JWK verification (~150 lines of kid/alg/curve handling) is exactly the code that breeds auth vulnerabilities, so this phase takes the audited `jsonwebtoken` crate with the `aws_lc_rs` backend: manifest verified to contain zero `ring` mentions, exactly-one-backend auto-selects aws-lc (no `install_default`, no clash), new lock crates are `jsonwebtoken` + `simple_asn1` only (non-crypto; every transitive dep already locked). Meta's `appsecret_proof` (HMAC-SHA256) uses `aws-lc-rs` `hmac` directly (already locked). No new crypto implementations anywhere — the §9.3 rule holds in spirit: the policy bans `ring`, not vetted crates on the approved provider.
+
+## 10. Apple — Sign in with Apple (Phase 3a)
+
+Scope: customer login + linking, apex branch only. Server-side authorization-code flow; no Apple JS (tokens never touch the browser). Requested scope: `name email`. The `/auth/apple/events` endpoint (playbook §2 step 4) is OUT of this slice — same treatment as RISC/OPEN-7; `signal_action` rows already exist (OPEN-11 tracks it).
+
+### 10.1 Endpoints
+
+- `POST /auth/apple/start` → `200 {"auth_url": "https://appleid.apple.com/auth/authorize?…"}`. DTO, guards, link-mode rule-4 freshness (customer session + `step_up_at`/session-minted within 600s), and error shapes identical to §9.1 with `s/google/apple/`. Authorize params: `response_type=code`, `client_id` = Services ID, `redirect_uri` (derived, exact match), `scope=name email`, `state`, **`response_mode=query`** (explicit: keeps the GET-callback chassis; OPEN-9 confirms live behavior at the first real login). The `user` JSON Apple sends on first authorization is ignored (we store no display names; link rows carry hashes only).
+- `GET /auth/apple/callback?code=…&state=…` → 302s per D4. User-cancelled at Apple → `oauth_denied` (`error` param present → burn state best-effort, audit `apple_denied`). No `deny_unknown_fields` (provider appends params).
+- No nonce: the `state`+binding pair covers CSRF and the id_token arrives via our own server-side token call, never through the browser. The `real_user` id_token field is an informational anti-fraud signal, not authentication — ignored for auth decisions (documented here so nobody gates on it later).
+
+### 10.2 State: `webauthn_challenge` with `kind='apple'`
+
+D2/D3: `id` = state handle, `user_id` = link-mode user or NULL, `state_json` = `{"mode","binding"}` (same struct), 5-min TTL, consume-before-exchange, sweep on every start, `hb_apple` binding cookie required at callback, cleared on all exits.
+
+### 10.3 Exchange + verification
+
+On `spawn_blocking` through the existing `HttpTransport` + `UreqTransport` (plus a `get_query` transport method for Meta's GET calls — no other transport changes):
+
+1. Mint `client_secret` (ES256 JWT, per exchange — no cache): header `{"alg":"ES256","kid": key_id}`, claims `iss=team_id`, `sub=client_id` (Services ID), `aud=https://appleid.apple.com`, `iat=now`, `exp=now+300`, via `jsonwebtoken::encode` with `EncodingKey::from_ec_pem` (Apple `.p8` files are PKCS#8 — matches verbatim). Per-exchange minting is deliberate: zero cache invalidation, zero clock-skew risk, one ECDSA sign per login is negligible.
+2. `POST https://appleid.apple.com/auth/token` with `{grant_type=authorization_code, code, client_id, client_secret, redirect_uri}` (same POST shape as Google — the shared exchange fn). Take `id_token`; refresh tokens are neither requested nor stored (our sessions are the credential — same rule as §9.3).
+3. Verify `id_token` via Apple JWKS (no tokeninfo exists): `GET https://appleid.apple.com/auth/keys`, select JWK by the JWT header `kid` (reject unknown `kid` → `oauth_failed`, never retry-with-refresh in v1), build `DecodingKey::from_jwk`, decode with an ES256-only `Validation` (the crate enforces the algorithm — no alg-confusion class), then check claims manually with injected `now` (mirroring `tokeninfo_verify` testability): `iss == https://appleid.apple.com`, `aud == apple.client_id`, `exp > now`, `sub` non-empty. Round-trip count equals Google's (token + keys vs token + tokeninfo). No JWKS cache in v1 (correctness first; OPEN-10 tracks a TTL cache if latency demands it).
+4. Email claims: `email` (may be a `@privaterelay.appleid.com` relay, or absent for returning users), `email_verified` (accept boolean `true` OR string `"true"`, fail closed otherwise — lenient parse, exact wire type confirmed at staging per OPEN-9), `is_private_email` boolean → `is_relay`.
+
+Any failure → `oauth_failed` with an audit reason (`exchange`, `keys`, `sig`, `claims:aud`, … — tags only, never bodies/URLs/tokens).
+
+### 10.4 Account resolution (rules 1–5)
+
+`LoginMethod::Apple` (`'apple'`) + `identity_link(user_id, 'apple', sub, email_hash, verified_email, is_relay, NULL)`:
+
+- Known live `(apple, sub)` → login: locked → `account_locked`; non-customer → `oauth_failed` + audit; else session + CSRF rotation + `clear_fallback` + audit `oauth_login`; stamp the consumed `kind='apple'` row's `user_id` (`stamp_state_user` is kind-generic SQL — works verbatim) so `proof_fresh` doubles as this login's unlink proof.
+- Unknown sub + link mode: owned-by-other → `already_linked`; already-own → idempotent success + `302 /apostille/security`; else insert link in-txn (with the row's `is_relay` flag), audit `method_linked` with `hash_str(sub)`.
+- Unknown sub + logged-out → `decide_unknown_sub(usable)`: `usable = email_usable_for_matching(Identity{Apple, verified_email, is_relay}) && usable_email_owner(email).is_some()`. Relay rows: Apple verifies relay addresses, so store `verified_email=1, is_relay=1` — and both gates (login.rs method+relay exclusion AND the `usable_email_owner` `is_relay=0` clause) exclude them, so relay logins always mint fresh accounts unless the sub is known; joining happens only via explicit link flow (rule 3 falls out of existing code, zero new branches). Real-address rows: `is_relay=0`, verified flag per claim; verified duplicates → `link_required` (rule 5, no merge, no disclosure).
+- Login by sub works regardless of `email_verified`; unverified rows just never match (rules 2–3).
+
+Rule-6 note (mirrors §9.4): an Apple-authenticated session counts as fresh auth for the link-mode window but does **not** set `step_up_at` (no UV signal).
+
+### 10.5 Config
+
+Four registry keys: `apple.client_id` (text — Services ID, e.g. `ai.andrii.signin`), `apple.team_id` (text — 10-char Team ID), `apple.key_id` (text — Key ID), `apple.private_key` (**secret** — full `.p8` PEM text including `-----BEGIN/END PRIVATE KEY-----` lines and newlines). `Secret` accepts any non-empty bytes ≤ 8 KiB — a ~250-byte multiline PEM fits; `xtask config-set --value-from-stdin` carries multiline values (paste with real newlines, not `\n`-escaped). `RuntimeConfig` gains 4 `Option` fields; `AppState` gains `apple_cfg: Option<AppleCfg>` (id, team, kid, key, derived `redirect_uri`, overridable base URLs for the port-0 stub harness). **Boot always succeeds** without them; any missing/empty half → endpoints fail closed (start `503 {"error": "apple login unavailable"}`, callback `oauth_unavailable`). Registry `ALL` grows by 4 here (+2 Meta = 36→42; count test updated once). Redirect URI derived (`https://{auth.origin}/apostille/api/v1/auth/apple/callback`), never configured.
+
+### 10.6 Errors, rate limits, PII
+
+- Start: same JSON shapes as §9.6 with `s/google/apple/`. Never log `auth_url`, codes, tokens, `client_secret` JWTs, emails, or subs — hashes only. The private key lives only in the sealed row and `SecretText` (redacting `Debug`); the per-exchange JWT is built inside `spawn_blocking` and dropped.
+- Callback: D4 codes, fixed same-origin targets, no open redirect.
+- Rate keys mirror §9.6: start `30/min/IP` (`as:{ip}`); callback `60/min/IP` (`ac:{ip}`) + `10/min/account` (`ac:{user_id}`); unlink's existing `un:{user_id}` covers Apple unlinks. Same bucket struct.
+- Audit: `method_linked`/`method_unlinked`/`oauth_login` + `account_locked` tail; anonymous failures `apple_denied`/`apple_expired`/`apple_failed` (reason = static sub-cause tag).
+
+### 10.7 Staging acceptance (extends §7)
+
+Apple login green (new account → session + cookie rotation); known-sub login green; verified real-email duplicate → `link_required`, accounts stay separate (pre-account-takeover fixture red→green); **relay fixture**: relay login mints a fresh account and never matches the same user's real-address account by string; relay account joins only via explicit link flow; link-mode without fresh step-up refused; state replay → `oauth_expired`; binding stripped → `oauth_failed`; cancel at Apple → `oauth_denied`; unknown-JWKS-`kid` → `oauth_failed`; keys unset → start 503 + callback `oauth_unavailable`, boot clean; last-method Apple unlink refused; non-customer Apple login refused; `cargo xtask ci` green. Portal note: Hide-My-Email tested with a real Apple ID (synthetic subs/JWKS in unit tests via the stub harness, which serves token + keys bodies).
+
+### 10.8 Table-expressiveness note
+
+Fits the current schema — no DDL: `kind='apple'` is free text, `is_relay` already exists, `usable_email_owner`/`proof_fresh`/`disable_link`/`live_method_count` are relay-aware and method-generic. Deliberately unexpressed: `client_secret` JWTs (minted per exchange, never stored), Apple JWKS (fetched per verify, no cache table in v1 — a future cache should be in-memory with TTL like the rate buckets, never a table), refresh tokens (never requested), raw emails (hashes only).
+
+## 11. Meta — Login with Meta (Phase 3b)
+
+Scope: customer login + linking, apex branch only. Server-side code flow; no Meta JS SDK (tokens never touch the browser, no SDK dependency). "Login with Meta" on web is Facebook Login. **No email scope is requested and no email is ever fetched**: `debug_token` returns no email, a further `/me` call would buy nothing since Meta email never matches (login.rs exclusion), so the flow is sub-only by design — one less permission, no review surface, one less round trip. The deauthorize + data-deletion callbacks (playbook §4 step 4) are OUT of this slice (OPEN-13); `signal_action` rows already exist.
+
+### 11.1 Endpoints
+
+- `POST /auth/meta/start` → `200 {"auth_url": "https://www.facebook.com/v26.0/dialog/oauth?…"}`. Same DTO/guards/link-mode rule-4 shape as §9.1 with `s/google/meta/`. Auth params: `client_id` = App ID, `redirect_uri` (derived, exact match — must be listed in Client OAuth Settings), `state`; **no `scope` param** (default `public_profile`; see above). Graph API version is pinned as URL consts mirroring `GOOGLE_AUTH_URL` — currently `v26.0`, the highest valid version probed live on 2026-10-28 (recorded in code + the operator doc; versions sunset on ~2-year terms — OPEN-12 watches expiry).
+- `GET /auth/meta/callback?code=…&state=…` → 302s per D4. User-cancelled (`error` param) → `oauth_denied` + `meta_denied` audit. No `deny_unknown_fields`.
+
+### 11.2 State: `webauthn_challenge` with `kind='meta'`
+
+D2/D3: same `{"mode","binding"}` shape, 5-min TTL, consume-before-exchange, sweep on start, `hb_meta` binding cookie, cleared on all exits.
+
+### 11.3 Exchange + verification (no id_token — two HTTPS GETs)
+
+On `spawn_blocking` through `HttpTransport` + `UreqTransport` (both calls documented GETs; secrets travel in query strings here, so URLs are never logged — same rule as the tokeninfo GET):
+
+1. Exchange: `GET https://graph.facebook.com/v26.0/oauth/access_token?client_id=&redirect_uri=&client_secret=&code=` (Meta's documented code-exchange call; pairs encoded by the transport). Take `access_token` (a user token, opaque); it is verified and dropped, never stored.
+2. Validate via `debug_token`: `GET https://graph.facebook.com/v26.0/debug_token?input_token={user-token}&access_token={app-id}|{app-secret}&appsecret_proof={proof}` (app access token = `client_id|client_secret` pipe-joined, built in memory, never logged; `proof = hex(HMAC-SHA256(app_secret, input_token))`, always sent — required when the app's "Require App Secret Proof" is on, ignored otherwise). Require `data.is_valid == true`, `data.app_id == meta.client_id`, `data.user_id` non-empty (the stable app-scoped id = our `provider_sub`), `data.expires_at > now`. Any mismatch → `oauth_failed` (reason `debug`).
+
+Failures → `oauth_failed` (reasons `exchange`/`debug`); transport errors → `oauth_failed` (reason `transport`); statuses kept for audit, bodies never (they can echo secrets).
+
+### 11.4 Account resolution (rules 1–5; Meta is sub-only)
+
+`LoginMethod::Meta` (`'meta'`) + `identity_link(user_id, 'meta', app_scoped_id, NULL, 0, 0, NULL)` — email is never fetched so the hash is always NULL and `verified_email` is always 0 (uniform with the never-match rule, enforced twice by existing code: `email_usable_for_matching` excludes `LoginMethod::Meta`, and `usable_email_owner` has a `method != 'meta'` clause).
+
+- Known live `(meta, sub)` → login: locked → `account_locked`; non-customer → `oauth_failed` + audit; else session + rotation + `clear_fallback` + audit `oauth_login`; stamp the `kind='meta'` row for `proof_fresh`.
+- Unknown sub + link mode: owned-by-other → `already_linked`; already-own → idempotent success; else insert + `method_linked` with `hash_str(sub)`, `302 /apostille/security`.
+- Unknown sub + logged-out → **always `CreateFreshAccount`** (routed through `decide_unknown_sub` for uniformity, but the Meta gate makes `usable` false by construction) — `link_required` NEVER fires for Meta. The explicit link flow is the only way a Meta identity joins an existing account.
+- Rule-6 note: Meta session counts as fresh auth for the link window, never sets `step_up_at`.
+
+**App-review implications (decided here):** no permissions are requested beyond the default `public_profile`, so there is no review surface at all. While the Meta app is in dev mode only registered test users can complete login (staging acceptance adds test users, mirroring the Google test-user story). Secret rotation follows the revoke-after-verify order — except Meta secret reset is IMMEDIATE with no overlapping-secret grace, so reset-then-verify in one maintenance window (brief Meta-login outage is inherent; other methods unaffected).
+
+### 11.5 Config
+
+Two registry keys: `meta.client_id` (text — App ID) and `meta.client_secret` (**secret**). `RuntimeConfig` +2 `Option` fields, `AppState` + `meta_cfg: Option<MetaCfg>` (same shape as `GoogleCfg`: id + secret + derived `redirect_uri` + overridable base URLs for the stub harness). Boot always succeeds; missing halves → start `503 {"error": "meta login unavailable"}`, callback `oauth_unavailable`. Registry `ALL` 36→42 together with Apple (§10.5). Redirect URI derived (`…/auth/meta/callback`).
+
+### 11.6 Errors, rate limits, PII
+
+- Start: §9.6 shapes with `s/google/meta/`. Never log `auth_url`, codes, user/app tokens, `appsecret_proof` inputs, or subs — hashes only.
+- Callback: D4 codes, fixed targets.
+- Rate keys: start `ms:{ip}` 30/min; callback `mc:{ip}` 60/min + `mc:{user_id}` 10/min; unlink via existing `un:{user_id}`.
+- Audit: `method_linked`/`method_unlinked`/`oauth_login` + tail; anonymous `meta_denied`/`meta_expired`/`meta_failed` with static sub-cause reasons.
+
+### 11.7 Staging acceptance (extends §7)
+
+Meta login green (sub-only path: account + session, NULL email hash, no crash); known-sub login green; same-address Apple/Google account stays separate and NO `link_required` fires (always-fresh-account fixture red→green); explicit link flow joins correctly; link-mode without step-up refused; replay → `oauth_expired`; binding stripped → `oauth_failed`; cancel → `oauth_denied`; `debug_token` app_id mismatch → `oauth_failed`; keys unset → 503 + `oauth_unavailable`, boot clean; last-method Meta unlink refused; non-customer refused; `cargo xtask ci` green. Portal: dev-mode test users registered.
+
+### 11.8 Table-expressiveness note
+
+Fits today — no DDL: `kind='meta'`/`method='meta'` free text, NULL email hash + `verified_email=0` + `usable_email_owner`'s `method != 'meta'` clause give the never-match rule with zero new branches, `proof_fresh`/`disable_link`/counts generic. Deliberately unexpressed: user + app access tokens (verified and dropped), `appsecret_proof` values (per-call, never stored). **Not expressible yet (later slice):** Meta data-deletion receipts — the `{url, confirmation_code}` status tracker playbook §4 requires has no table; OPEN-13 designs it with the deauthorize/deletion endpoints.
+
+## Link/unlink generalization (all OAuth methods)
+
+- `POST /auth/profile/unlink` method gate extends from `{passkey, google}` to `{passkey, apple, google, meta}`; OAuth methods all take the `disable_link` path (no credential row). `{"method": "apple"|"meta", "id": "<sub>", "reauth_proof": …}` shapes mirror Google's.
+- The fresh-session `"session"` re-auth proof generalizes from Google-only to **all OAuth methods** (the `body.method == "google"` condition becomes `body.method != "passkey"`): same accepted rule-6 tradeoff — an OAuth-only user of any provider cannot run a passkey ceremony; the remaining-method lock and 600s session-freshness window are unchanged. Stamped `kind='apple'`/`'meta'` rows already satisfy `proof_fresh` (kind-generic).
+- `GET /auth/profile/methods` lists `apple`/`meta` rows generically today (label `""`); richer display folds into OPEN-8's successor OPEN-14. The link-mode session-ownership + never-merge + idempotent-success logic is reused per provider (parameterize over the find/insert fns).
+- Security page: per-method link buttons + unlink calls reuse the Google wiring with the method string swapped; unlink for OAuth-only users passes `"reauth_proof": "session"` (fresh session required).
+
+## New OPEN rows (append to §8)
+
+| ID | Question | Owner | Blocks |
+|---|---|---|---|
+| OPEN-9 | Apple `response_mode=query` + `email_verified`/`is_private_email` wire types confirmed at first real login | CODE (staging) | §10.1/§10.3 |
+| OPEN-10 | Apple JWKS TTL-cache trigger (latency/rate at scale); cache design (in-memory, never a table) | CODE | post-Phase-3a scale |
+| OPEN-11 | Apple `/auth/apple/events` receiver phase + signed-JWT fixtures (§10 scope cut; `signal_action` rows ready) | SEC | revocation handling |
+| OPEN-12 | Meta Graph API version pin recorded (v26.0) + sunset watch (versions expire ~2yr) | CODE | §11.1, ongoing |
+| OPEN-13 | Meta deauthorize + data-deletion phase; deletion-receipt `{url, confirmation_code}` tracker table design | SEC | §11.8 gap |
+| OPEN-14 | Profile display for `apple`/`meta` links (extends OPEN-8; raw email never stored) | Author | profile UI |
 

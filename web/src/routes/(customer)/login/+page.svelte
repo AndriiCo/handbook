@@ -3,10 +3,12 @@
 	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
 	import { cookieValue, loginPasskey, registerPasskey } from '../../../lib/customer/passkey.js';
 	import {
-		googleErrorCopy,
-		googleStartError,
-		startGoogle
-	} from '../../../lib/customer/google.js';
+		OAUTH_LABELS,
+		OAUTH_PROVIDERS,
+		oauthErrorCopy,
+		oauthStartError,
+		startOAuth
+	} from '../../../lib/customer/oauth.js';
 
 	let locale = $state<Locale>(resolveLocale());
 	let displayName = $state('');
@@ -18,7 +20,7 @@
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 	let me = $state<{ user_id: string } | null>(null);
-	let googleError = $state<string | null>(null);
+	let oauthError = $state<string | null>(null);
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
@@ -103,17 +105,18 @@
 		me = null;
 	}
 
-	async function googleLogin() {
+	async function oauthLogin(provider: string) {
 		error = null;
 		busy = true;
-		const res = await startGoogle(
+		const res = await startOAuth(
 			{ post, redirect: (u: string) => (window.location.href = u) },
+			provider,
 			'login'
 		);
 		// On ok the browser is navigating away; on failure the page
 		// stays and the buttons re-enable.
 		busy = false;
-		if (!res.ok) error = googleStartError(res.status);
+		if (!res.ok) error = oauthStartError(res.status, OAUTH_LABELS[provider] ?? provider);
 	}
 
 	$effect(() => {
@@ -128,7 +131,7 @@
 		// $effect runs client-side only, so window is safe (and this
 		// avoids pulling $app/state into the chunk).
 		const params = new URLSearchParams(window.location.search);
-		googleError = googleErrorCopy(params);
+		oauthError = oauthErrorCopy(params);
 		if (params.has('error')) {
 			history.replaceState(null, '', window.location.pathname);
 		}
@@ -187,15 +190,17 @@
 		<p class="notice err" role="alert">{error}</p>
 	{/if}
 
-	<button type="button" class="google" disabled={busy} onclick={googleLogin}>
-		Continue with Google
-	</button>
+	{#each OAUTH_PROVIDERS as provider (provider)}
+		<button type="button" class="oauth" disabled={busy} onclick={() => oauthLogin(provider)}>
+			Continue with {OAUTH_LABELS[provider]}
+		</button>
+	{/each}
 
-	<p class="muted">Apple and Meta sign-in plus email magic links arrive next.</p>
+	<p class="muted">Email magic links arrive next.</p>
 {/if}
 
-{#if googleError}
-	<p class="notice err" role="alert">{googleError}</p>
+{#if oauthError}
+	<p class="notice err" role="alert">{oauthError}</p>
 {/if}
 
 <style>
@@ -240,8 +245,9 @@
 		background: var(--accent-fill);
 		border-color: var(--accent-fill);
 	}
-	.google {
+	.oauth {
 		max-width: 28rem;
+		margin-bottom: 0.5rem;
 		color: var(--text);
 		background: var(--bg);
 		border-color: var(--border);
