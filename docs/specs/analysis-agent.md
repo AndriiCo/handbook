@@ -304,3 +304,422 @@ zero fact/task rows.
    or on-demand after each ingest run?
 8. Budget numbers: per-run token/call caps and per-authority batch
    sizes for the 500+ URL watch — what are acceptable day-1 values?
+
+## 11. Review queue + rejection-feedback suppression
+
+> Status: PROPOSED (prompt 053, needs author review — do not
+> implement). Drafted from researcher R4's text, corrected by the
+> parent against current code (schema v10, `approval.rs`,
+> `insert_proposed_fact`).
+
+### 11.0 Problem
+
+B8: `task` rows exist but staff have no list/work API or UI;
+`review-conflicts` only prints. Separately, D39 approved
+"suppression A+B" but no section defines it: today a staff
+rejection does not stop the analyzer from re-proposing the
+identical claim on the next recrawl, so reviewers re-triage the
+same junk every sweep. This section closes both gaps with one
+review surface backed by the existing `decide()` path.
+
+Definitions:
+
+- **Path A (rejected-memory):** an analyzer-proposed statement
+  byte-identical (after §11.3 normalization) to a `rejected`
+  fact on the same `(authority_id, topic)` is never re-proposed.
+  No staff action needed; the rejection itself is the rule.
+- **Path B (explicit rules):** staff-authored `suppress_rule`
+  rows that block future proposals matching a normalized
+  statement, scoped globally or to one authority, optionally
+  locked to a topic. Created from the reject control or
+  standalone.
+
+Invariants (non-negotiable):
+
+1. The analyzer writes `proposed` facts only (§2). Suppression
+   only *skips* inserts; it never deletes, never edits, never
+   writes `accepted`.
+2. The only write path to `accepted` is the existing `decide()`
+   in `crates/web/src/approval.rs`, behind `AdminAuth`. The
+   queue UI and accept-with-edit reuse it; no parallel path.
+3. Every suppression skip is logged (row + audit). Suppression
+   is observable, never silent.
+4. No new binary, no new crates. Work lands in `crates/web`
+   (routes), `handbook-store` (migration 011), `xtask analyze`
+   + `handbook-agent` (consultation + citation/reasoning store),
+   and the existing admin Svelte app.
+
+### 11.1 SQL deltas (migration `011_review_queue.sql`)
+
+```sql
+-- Migration 011: review queue + rejection-feedback suppression.
+-- Additive only. Timestamps INTEGER unix seconds. No FK enforcement
+-- (001 convention). Rollback-safe: new tables ignore cleanly; new
+-- fact columns are read-optional (see below).
+
+-- Explicit staff-authored suppression rules (path B).
+CREATE TABLE suppress_rule(
+  id INTEGER PRIMARY KEY,
+  authority_id INTEGER,           -- authority.id, NULL = global scope
+  topic TEXT,                     -- NULL = any topic; else exact enum member
+  statement_norm TEXT NOT NULL,   -- normalized per §11.3 (match key)
+  statement TEXT NOT NULL,        -- original display text (first-seen)
+  reason TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER              -- NULL = live; non-NULL = revoked (kept)
+);
+CREATE INDEX idx_rule_match ON suppress_rule(authority_id, topic, statement_norm)
+  WHERE revoked_at IS NULL;
+
+-- Observable log of every analyzer skip (paths A+B). Not a queue:
+-- staff never decide these; GET .../admin/suppressions exposes them.
+CREATE TABLE suppression(
+  id INTEGER PRIMARY KEY,
+  capture_id INTEGER NOT NULL,    -- capture.id being analyzed
+  authority_id INTEGER NOT NULL,  -- authority.id
+  topic TEXT NOT NULL,
+  statement TEXT NOT NULL,        -- skipped statement (one short claim)
+  statement_norm TEXT NOT NULL,
+  rule_id INTEGER,                -- suppress_rule.id, NULL = path A
+  path TEXT NOT NULL,             -- 'A' | 'B' (denormalized for listing)
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_suppression_capture ON suppression(capture_id);
+CREATE INDEX idx_suppression_at ON suppression(created_at);
+
+-- Citation home (OQ-5, answered): the analyzer's byte offsets were
+-- validated but never stored (`insert_proposed_fact` doc comment).
+-- -1/-1 = uncited (pre-011 rows, or unbound single-shot runs whose
+-- citation has no capture home). The doc is always the fact's own
+-- capture sidecar (`text/{capture_id}.txt`), so no doc column.
+ALTER TABLE fact ADD COLUMN citation_start INTEGER NOT NULL DEFAULT -1;
+ALTER TABLE fact ADD COLUMN citation_end INTEGER NOT NULL DEFAULT -1;
+-- Model's own per-response summary (quarantined in the UI, §11.4.4).
+-- '' = predates capture. Populated from the new `summary` response
+-- field (client truncates to 500 chars).
+ALTER TABLE fact ADD COLUMN reasoning TEXT NOT NULL DEFAULT '';
+```
+
+Deliberately NOT included: Gmail capture columns and a `kv`
+watermark table (an earlier draft's proposal — superseded by
+Phase B: gmail ids live in `capture.authenticity` JSON, the
+mailbox cursor in `mail_poll`).
+
+Rollback: `DROP TABLE suppress_rule/suppression`; the `fact`
+columns stay unread-optional (readers treat -1/'' as absent).
+No data migration at upgrade: path A reads live `rejected`
+rows; path B starts empty.
+
+### 11.2 API deltas (all under `/apostille/api/v1/admin/`)
+
+Guards (unchanged from existing admin routes): `AdminAuth`
+extractor; mutations additionally pass the Origin + double-submit
+CSRF layers. Error baseline: `401 {"error":"unauthorized"}`
+(session), `403` (role/cert), `503 {"error":"store
+unavailable"}` (DB). Bodies use
+`#[serde(deny_unknown_fields)]` like `DecisionBody`.
+
+#### 11.2.1 `GET .../admin/queue` — enriched review items
+
+Staff list of proposed facts with everything needed to decide
+inline. The existing `GET .../admin/facts?status=proposed` stays
+untouched (compat); the queue is a superset view, not a
+replacement.
+
+Query params: `authority` (slug, optional; unknown →
+`404 {"error":"unknown authority"}`), `topic` (enum member,
+optional; off-enum → `422 {"error":"unknown topic"}`),
+`limit` (default 50, clamp 1–200 like `list_facts`),
+`after_id` (cursor: `id > after_id`).
+
+Response `200`:
+
+```json
+{
+  "items": [
+    {
+      "id": 42,
+      "authority_slug": "usa-wa-sos",
+      "topic": "address",
+      "statement": "po_box: PO Box 40234",
+      "status": "proposed",
+      "created_by": "analysis-agent/aa-prompt-v1",
+      "created_at": 1761600000,
+      "diff": {"base_statement": "po_box: PO Box 40220",
+               "base_fact_id": 17, "base_status": "accepted"},
+      "citations": [
+        {"capture_id": 12, "start_byte": 200, "end_byte": 214,
+         "quote": "PO Box 40234"}
+      ],
+      "reasoning_untrusted": "Sidecar bytes 200-214 differ from live fact 17.",
+      "blast_radius": {
+        "conflict": true,
+        "conflicts": [{"id": 17, "statement": "po_box: PO Box 40220",
+                       "status": "accepted"}],
+        "open_tasks": 1
+      },
+      "provenance": {"capture_id": 12, "capture_kind": "warc",
+                     "trust": "official",
+                     "authenticity": "{\"tls\": true}",
+                     "sidecar": "text/12.txt"}
+    }
+  ],
+  "count": 1
+}
+```
+
+Field rules: `diff` is null when no live sibling; else the
+newest live sibling, accepted preferred (derived from the same
+sibling query as the banner). `citations` holds zero or one
+entry — the stored offsets plus the server-sliced sidecar quote
+(`""` when the sidecar is missing/unreadable; offsets still
+served). `reasoning_untrusted` is null for pre-011 rows, else
+the stored model summary verbatim — always under that key name
+so the UI quarantines it; never merged into a trusted field.
+`blast_radius.conflicts` reuses `sibling_conflicts` verbatim
+(same authority + topic, live statuses, cap 10);
+`open_tasks` counts live (`open`/`batched`/`in_progress`) tasks
+for the authority. (No `in_last_build`: the `build` table keeps
+a hash, not a fact set — unimplementable without a set; cut.)
+
+#### 11.2.2 `GET .../admin/queue/{id}` — single enriched item
+
+Same item shape for deep-linking. `404 {"error":"fact not
+found"}` when missing; returns any status (inspect decided rows
+too) with its current `status`.
+
+#### 11.2.3 `POST .../admin/facts/{id}/accept` — extended with edit
+
+Same route, extended body (existing clients keep working):
+
+```json
+{"reason": "matches Sept recrawl", "statement": "po_box: PO Box 40234, Olympia WA"}
+```
+
+- `reason` optional, ≤1024 chars (existing
+  `reason too long (max 1024 chars)` rule).
+- `statement` optional: non-empty after trim, ≤2000 chars, else
+  `422`. Topic is immutable here; to change topic, reject and
+  re-propose (OQ-4).
+- Semantics: through the existing `decide()` transaction —
+  `BEGIN IMMEDIATE`, re-check `status = 'proposed'`,
+  `UPDATE fact SET status='accepted'` (plus `statement = ?`
+  when edited), one `audit` row (§11.5), `COMMIT`, then the
+  unchanged `fact_accepted` fan-out.
+- Codes: `200` (`FactView`), `404` (unknown id),
+  `409 {"error":"fact is not proposed"}` (already decided — the
+  UI treats this as "someone else decided; refresh"), `422`,
+  `401/403/503`.
+
+#### 11.2.4 `POST .../admin/facts/{id}/reject` — with optional rule
+
+```json
+{"reason": "PO box belongs to DOL, not SOS",
+ "suppress": {"scope": "authority", "lock_topic": true}}
+```
+
+- `reason` required 1–1024 (existing
+  `reason required (1-1024 chars)` rule, unchanged).
+- `suppress` optional. When present, the same transaction that
+  flips the fact to `rejected` also inserts a `suppress_rule`
+  row: `statement_norm` = normalized rejected statement,
+  `statement` = rejected statement, `authority_id` = fact's
+  authority when `scope = "authority"`, NULL when `"global"`;
+  `topic` = fact's topic when `lock_topic = true`, else NULL;
+  `reason` = reject reason; `created_by` = staff user id.
+  `scope` must be `authority|global`, else `422`.
+- Codes: `200` (`FactView`), `404`, `409` (not proposed),
+  `422`, `401/403/503`. If an identical live rule exists, the
+  reject still succeeds (`200`) with
+  `"rule": {"id": N, "deduped": true}` — the decision is the
+  primary effect; rule creation is idempotent.
+
+#### 11.2.5 `GET/POST .../admin/suppress-rules` + revoke
+
+Standalone rule management (rules not tied to one rejection):
+
+- `GET .../suppress-rules?authority=SLUG&include_revoked=false`
+  → `200 {"rules": [...], "count": n}`. Rule shape: `{id,
+  authority_id, authority_slug|null, topic|null, statement,
+  reason, created_by, created_at, revoked_at|null}`.
+- `POST .../suppress-rules` body: `{"statement": "...",
+  "authority": "slug"|null, "topic": "member"|null, "reason":
+  "..."}`. `statement` required non-empty ≤2000; unknown slug
+  → `404`; off-enum topic → `422`. Identical live rule →
+  **`409 {"error":"duplicate rule","rule_id":N}`** (here the
+  rule *is* the effect, so dup is a conflict). Success → `200`
+  with the rule.
+- `POST .../suppress-rules/{id}/revoke` body `{"reason": "..."}`
+  (required 1–1024). Sets `revoked_at`; already-revoked →
+  `409 {"error":"rule already revoked"}`; unknown → `404`.
+  Append-only history (row kept); creation and revocation each
+  write one `audit` row (`suppress_rule.create` /
+  `suppress_rule.revoke`, entity `suppress_rule`).
+
+#### 11.2.6 `GET .../admin/suppressions` — skip log
+
+`200 {"suppressions": [{"id","capture_id","authority_slug",
+"topic","statement","path","rule_id","created_at"}], "count":
+n}`. Params: `authority`, `limit` (default 50, max 200),
+`after_id`. Append-only (retention: OQ-3).
+
+#### 11.2.7 409 semantics summary
+
+| Case | Code | Body |
+|---|---|---|
+| decide on non-`proposed` fact | 409 | `{"error":"fact is not proposed"}` (existing, unchanged) |
+| standalone rule duplicating a live rule | 409 | `{"error":"duplicate rule","rule_id":N}` |
+| revoke an already-revoked rule | 409 | `{"error":"rule already revoked"}` |
+| reject-with-`suppress` when rule exists | 200, not 409 | decision wins; `{"rule":{"id":N,"deduped":true}}` |
+
+### 11.3 Analyzer consultation rule (suppression check)
+
+Runs inside `xtask analyze` per candidate record, after citation
+validation (§5) and before the per-capture transaction inserts
+anything. Pure reads + skip; no new deps (std-only).
+
+Normalization (one shared helper, used identically by the
+analyzer, reject-with-suppress, and standalone rule create):
+
+```rust
+pub fn normalize_statement(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+```
+
+Trim + collapse whitespace + lowercase. No NFKC (no dep), no
+punctuation stripping (keeps `PO Box 40220.` distinct — safer to
+over-propose than over-suppress).
+
+Check order per `(authority_id, topic, statement)` candidate:
+
+1. Compute `statement_norm`.
+2. **Path A:** load `rejected` statements on
+   `(authority_id, topic)` (covered by `idx_fact_lookup`),
+   compare normalized in code (rejected sets are small). Hit →
+   skip.
+3. **Path B:** `SELECT id FROM suppress_rule WHERE revoked_at
+   IS NULL AND statement_norm = ? AND (authority_id IS NULL OR
+   authority_id = ?) AND (topic IS NULL OR topic = ?)` (covered
+   by `idx_rule_match`). Hit → skip with the lowest `rule_id`.
+4. Miss → normal §2 insert (with citation offsets + reasoning).
+
+On skip: one `suppression` row (`path='A'|'B'`, `rule_id` only
+for B) + one `audit` row in the same per-capture transaction;
+the watermark advances exactly as a restatement no-op (§3).
+Zero fact/task rows. Audit shape: `actor=
+'analysis-agent/<prompt-version>'` (§8 interpolation),
+`action='analyze.suppressed'` (new; `analyze.skipped` stays for
+restatements/unknown-language), `entity='capture'`,
+`entity_id=<capture_id>`, `before_ref=<input capture.sha256>`,
+`after_ref='suppression:<row-id>'`, `reason` = JSON
+`{"path","rule_id","topic","statement_norm","usage"}` (§7 usage
+object). Repair-retry interaction: suppression runs *after* a
+record passes validation (a suppressed record never consumes
+the repair re-prompt). Determinism (§3): reproducibility is
+evaluated on model output *before* suppression filtering.
+
+### 11.4 Review-queue UI page contract (admin Svelte app)
+
+Route `/review`: `web/src/routes/(admin)/review/+page.svelte`
+(sibling to `calls/`, `workers/`) + client
+`web/src/lib/admin/review-client.js` (sibling to
+`calls-client.js`). Data sources are exactly the §11.2
+endpoints; the page never invents unreturned state.
+
+Per-item card (one proposed fact), fixed field order:
+
+1. **Header:** `#id`, authority slug, topic chip, `created_by`,
+   relative age. Deep-link to `GET .../queue/{id}`.
+2. **Diff:** side-by-side (stacked on narrow) `base_statement`
+   → `statement`, word-level highlight; "no live sibling —
+   first claim on this topic" when `diff` is null.
+3. **Citations:** `capture_id` + byte range + verbatim `quote`
+   in `<code>` (truncation marked + expandable), linked to the
+   sidecar (`provenance.sidecar`).
+4. **Reasoning (quarantined):** `reasoning_untrusted` in a
+   visually distinct box (amber border, `Untrusted model
+   output — verify against citations, not this box` caption);
+   null renders "model gave no summary — review citations".
+   Never normal prose; never prefills the accept reason.
+5. **Blast radius:** conflict banner (reuse the public banner
+   component: sibling statements + statuses), `open_tasks`
+   count linking to the task view.
+6. **Provenance:** capture kind/trust chip (`official` green,
+   `staff_verified` blue, `community` grey; rejected captures
+   never yield facts per §1 eligibility), `authenticity`
+   summary, sidecar excerpt link.
+
+Controls per item (existing CSRF double-submit):
+
+- **Accept** → §11.2.3 without `statement` (one click; the
+  audit trail is the undo story).
+- **Accept with edit** → textarea prefilled with `statement`,
+  live diff preview; submit sends §11.2.3 with `statement`
+  (omit the key when unchanged).
+- **Reject** → reason textarea (required, 1–1024 counter,
+  submit disabled while empty) + collapsed "Also suppress
+  future copies": `scope` select (authority default / global)
+  + `lock_topic` checkbox (checked default). Submit → §11.2.4.
+- After `200`: card collapses to a decided one-liner; after
+  `409`: "Already decided — refreshing" + refetch (another
+  staffer won; `decide()` is the arbiter).
+- Chrome: authority/topic filters, `limit` select, "load more"
+  (`after_id`), empty state ("Queue clear"), error state with
+  retry, link to the suppressions log view (read-only table).
+
+No optimistic flips (server `decide()` is truth); ≤200 cards,
+no virtualization; bookmarkable filter params.
+
+### 11.5 Approve-with-edit audit shape
+
+Exactly one `audit` row per decision (no second row for the
+edit — keeps `decide()` single-write):
+
+- `at`, `actor` (staff `user_id`), `action='fact_accept'`
+  (unchanged — an edit-accept is still an accept; banner and
+  fan-out identical), `entity='fact'`, `before_ref='proposed'`,
+  `after_ref='accepted'` (existing pair, unchanged).
+- `reason`: unedited → staff reason verbatim (existing).
+  Edited → JSON envelope `{"note":"<reason or
+  \"\">","edit_before":"<previous statement>"}`. The ≤1024
+  check applies to the final stored value; on overflow,
+  `edit_before` truncates with a `…` marker (statements are one
+  short claim — never triggers in practice). Consumers tolerate
+  both forms (try JSON, fall back to plain note).
+
+Reject-with-rule: one `fact_reject` row + one
+`suppress_rule.create` row (two rows, one transaction; the rule
+row's `reason` echoes the reject reason).
+
+### 11.6 Open questions
+
+| # | Question | Owner | Blocks |
+|---|---|---|---|
+| OQ-1 | B8 remainder: named triage owner/rotation + SLO (daily clear?)? | author | staffing only; code can land |
+| OQ-2 | Is normalized-exact matching enough for v1, or prefix/contains/regex (phone variants)? Spec leans exact-only. | author | §11.3 scope |
+| OQ-3 | `suppression` retention: forever (audit-like) or expire? Default: forever until measured. | author | rollout notes |
+| OQ-4 | Topic edits: statement-only editing acceptable, or topic-change needed day 1? | author | §11.2.3 scope |
+| OQ-5 | `summary` response field: worth the client+schema addition for the reasoning box, or cut to citations+diff only? Spec leans keep (the author's HITL ask names reasoning). | author | client schema |
+
+Resolved while writing (parent-verified, author can reopen):
+OQ-5-orig (citation home) → 011 columns + sidecar slicing;
+OQ-7 (admin route homes) → `(admin)/review/` +
+`lib/admin/review-client.js`; gmail/kv proposals → superseded
+by Phase B (`authenticity` JSON + `mail_poll`);
+`in_last_build` → cut (no fact set in `build`).
+
+### 11.7 Rollout (no-flag, ordered)
+
+1. Land migration 011 (additive; safe under the running server).
+2. Land analyzer consultation (§11.3) + citation/reasoning
+   store (client `summary` field, runner insert). Path A live
+   immediately (reads existing `rejected` rows); path B inert
+   until rules exist.
+3. Land API deltas (§11.2) + `cargo xtask ci` gate.
+4. Land `/review` UI (§11.4); drill on staging: propose →
+   edit-accept → reject-with-rule → recrawl → confirm
+   `analyze.suppressed` + suppression row, `409` on double
+   decide.
+5. Name the OQ-1 owner.
