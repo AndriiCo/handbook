@@ -118,3 +118,18 @@ Speed rules for parallel-agent execution.
 - **Spec-before-surface.** New user-visible surfaces and schema
   changes get a reviewed spec section first; fixtures are
   synthetic only and canonical values never leak into facts.
+
+## 7. Operator Handoffs (root-required actions)
+
+Never hand the operator a sequence of one-liners with
+`<placeholders>`. Package every root-required action as a single
+committed script under `docs/ops/scripts/`:
+
+- Zero placeholders: derive values (VERSION/SHA from staging,
+  build numbers from the DB) or prompt for secrets (hidden entry,
+  never on the cmdline or in history).
+- Agent stages the script to the server (`~/apostille/scripts/`);
+  operator reviews the file, then runs `sudo bash <script>`.
+- Fail fast with `ABORT: <reason>`; never plow past a failure.
+- End by printing the evidence the agent needs pasted back.
+- `bash -n` clean before every commit; one script per action.
