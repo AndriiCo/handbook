@@ -156,6 +156,7 @@ mod tests {
                 input_tokens: 1,
                 output_tokens: 1,
             },
+            summary: String::new(),
         }
     }
 

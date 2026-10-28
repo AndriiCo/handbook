@@ -45,6 +45,9 @@ pub struct Usage {
 pub struct DraftResponse {
     pub records: Vec<ProposedRecord>,
     pub usage: Usage,
+    /// Model's own per-response summary (quarantined: served only as
+    /// `reasoning_untrusted`, never a decision input). May be empty.
+    pub summary: String,
 }
 
 /// Errors from a [`ModelClient`] draft call.

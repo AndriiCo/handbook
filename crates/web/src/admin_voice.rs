@@ -829,6 +829,9 @@ async fn quote_to_draft(
             statement,
             created_by: &created_by,
             created_at: now,
+            // Staff-quoted (not analyzer-drafted): uncited, no summary.
+            citation: None,
+            reasoning: "",
         },
     ) {
         Ok(fact_id) => fact_id,

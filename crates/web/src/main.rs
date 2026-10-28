@@ -27,6 +27,7 @@ mod oauth_meta;
 mod p2;
 mod p2_labels;
 mod passkey;
+mod queue;
 mod quic;
 mod staff_passkey;
 mod ws_bus;

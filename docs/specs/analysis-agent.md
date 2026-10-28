@@ -307,8 +307,8 @@ zero fact/task rows.
 
 ## 11. Review queue + rejection-feedback suppression
 
-> Status: PROPOSED (prompt 053, needs author review — do not
-> implement). Drafted from researcher R4's text, corrected by the
+> Status: APPROVED as-is (prompt 054, D40) — implementation
+> underway. Drafted from researcher R4's text, corrected by the
 > parent against current code (schema v10, `approval.rs`,
 > `insert_proposed_fact`).
 

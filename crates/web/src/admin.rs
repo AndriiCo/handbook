@@ -20,7 +20,7 @@ use handbook_store::{db, store::Store};
 use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
 
-use crate::{AppState, approval, store_unavailable, unix_now};
+use crate::{AppState, approval, queue, store_unavailable, unix_now};
 
 /// Verified mTLS client identity (SHA-256 hex), inserted as a request
 /// extension by the TLS terminator.
@@ -305,6 +305,20 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/apostille/api/v1/admin/facts/{id}/reject",
             post(approval::reject_fact),
+        )
+        .route("/apostille/api/v1/admin/queue", get(queue::queue_items))
+        .route("/apostille/api/v1/admin/queue/{id}", get(queue::queue_item))
+        .route(
+            "/apostille/api/v1/admin/suppress-rules",
+            get(queue::list_rules).post(queue::create_rule),
+        )
+        .route(
+            "/apostille/api/v1/admin/suppress-rules/{id}/revoke",
+            post(queue::revoke_rule),
+        )
+        .route(
+            "/apostille/api/v1/admin/suppressions",
+            get(queue::list_suppressions),
         )
         .route("/apostille/api/v1/admin/config", get(get_config))
         .route("/apostille/api/v1/admin/config/{key}", put(set_config))

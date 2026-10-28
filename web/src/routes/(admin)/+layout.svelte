@@ -35,6 +35,7 @@
 >
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin')}>Dashboard</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin/triage')}>Triage</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/review')}>Review</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin/console')}
 		>Call console</a
 	>

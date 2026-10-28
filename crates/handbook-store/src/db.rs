@@ -12,7 +12,7 @@ use contracts::Result;
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 10;
+pub const SCHEMA_VERSION: i32 = 11;
 
 /// Current P2 customer-PII schema version (`pragma user_version` on
 /// `p2.sqlite`; independent of [`SCHEMA_VERSION`]).
@@ -111,6 +111,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         if version < 10 {
             conn.execute_batch(include_str!("../migrations/010_mail_poll.sql"))?;
             conn.pragma_update(None, "user_version", 10)?;
+        }
+        if version < 11 {
+            conn.execute_batch(include_str!("../migrations/011_review_queue.sql"))?;
+            conn.pragma_update(None, "user_version", 11)?;
         }
         Ok(())
     })?;
@@ -318,28 +322,148 @@ pub struct NewProposedFact<'a> {
     pub statement: &'a str,
     pub created_by: &'a str,
     pub created_at: i64,
+    /// Validated citation offsets into the capture sidecar, or `None`
+    /// when uncited (stored as -1/-1).
+    pub citation: Option<(u32, u32)>,
+    /// Quarantined model summary (`fact.reasoning`; '' when absent).
+    pub reasoning: &'a str,
 }
 
 /// Insert ONE `fact` row with `status='proposed'`. Returns the new row id.
 ///
-/// Column mapping (`migrations/001_init.sql`): `authority_id`, `capture_id`,
-/// `topic`, `statement`, `created_by`, `created_at` pass through; `status` is
-/// always `'proposed'` (the existing status column fits, so no mapping
-/// fallback was needed). The `fact` table has no `field`/`citation`/
-/// `confidence` columns: the caller folds `field` into `statement`, and
-/// citation byte ranges plus confidence are not stored.
+/// Column mapping: `authority_id`, `capture_id`, `topic`, `statement`,
+/// `created_by`, `created_at` pass through; `status` is always
+/// `'proposed'`. The caller folds `field` into `statement`; citation
+/// offsets index the fact's own capture sidecar (`None` → -1/-1).
 pub fn insert_proposed_fact(conn: &Connection, f: &NewProposedFact<'_>) -> Result<i64> {
+    let (start, end) = match f.citation {
+        Some((s, e)) => (i64::from(s), i64::from(e)),
+        None => (-1, -1),
+    };
     conn.execute(
         "INSERT INTO fact(authority_id, capture_id, topic, statement,
-                           status, created_by, created_at)
-         VALUES (?1, ?2, ?3, ?4, 'proposed', ?5, ?6)",
+                           status, created_by, created_at,
+                           citation_start, citation_end, reasoning)
+         VALUES (?1, ?2, ?3, ?4, 'proposed', ?5, ?6, ?7, ?8, ?9)",
         rusqlite::params![
             f.authority_id,
             f.capture_id,
             f.topic,
             f.statement,
             f.created_by,
-            f.created_at
+            f.created_at,
+            start,
+            end,
+            f.reasoning,
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Normalize a statement for suppression matching (§11.3): trim,
+/// collapse internal whitespace, lowercase. One shared helper, used
+/// identically by the analyzer, reject-with-suppress, and standalone
+/// rule create.
+pub fn normalize_statement(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// A suppression-check hit: path A (rejected-memory) or B (rule id).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SuppressionHit {
+    RejectedMemory,
+    Rule(i64),
+}
+
+/// Check one candidate against suppression (§11.3): path A
+/// (normalized match on a `rejected` fact, same authority+topic),
+/// then path B (live `suppress_rule`). Pure reads.
+pub fn check_suppression(
+    conn: &Connection,
+    authority_id: i64,
+    topic: &str,
+    statement_norm: &str,
+) -> Result<Option<SuppressionHit>> {
+    let mut stmt = conn.prepare(
+        "SELECT statement FROM fact
+         WHERE authority_id = ?1 AND topic = ?2 AND status = 'rejected'",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![authority_id, topic], |row| {
+        row.get::<_, String>(0)
+    })?;
+    for statement in rows {
+        if normalize_statement(&statement?) == statement_norm {
+            return Ok(Some(SuppressionHit::RejectedMemory));
+        }
+    }
+    let rule: Option<i64> = rusqlite::OptionalExtension::optional(conn.query_row(
+        "SELECT id FROM suppress_rule
+         WHERE revoked_at IS NULL AND statement_norm = ?1
+           AND (authority_id IS NULL OR authority_id = ?2)
+           AND (topic IS NULL OR topic = ?3)
+         ORDER BY id LIMIT 1",
+        rusqlite::params![statement_norm, authority_id, topic],
+        |row| row.get(0),
+    ))?;
+    Ok(rule.map(SuppressionHit::Rule))
+}
+
+/// Log one analyzer skip (§11.3). Returns the new `suppression` row id.
+#[allow(clippy::too_many_arguments)]
+pub fn insert_suppression(
+    conn: &Connection,
+    capture_id: i64,
+    authority_id: i64,
+    topic: &str,
+    statement: &str,
+    statement_norm: &str,
+    hit: SuppressionHit,
+    created_at: i64,
+) -> Result<i64> {
+    let (path, rule_id) = match hit {
+        SuppressionHit::RejectedMemory => ("A", None),
+        SuppressionHit::Rule(id) => ("B", Some(id)),
+    };
+    conn.execute(
+        "INSERT INTO suppression(capture_id, authority_id, topic, statement,
+                                  statement_norm, rule_id, path, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![
+            capture_id,
+            authority_id,
+            topic,
+            statement,
+            statement_norm,
+            rule_id,
+            path,
+            created_at,
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Append one fully-specified `audit` row. Returns the new row id.
+#[allow(clippy::too_many_arguments)]
+pub fn insert_audit(
+    conn: &Connection,
+    at: i64,
+    actor: &str,
+    action: &str,
+    entity: &str,
+    entity_id: i64,
+    before_ref: &str,
+    after_ref: &str,
+    reason: &str,
+) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO audit(at, actor, action, entity, entity_id,
+                           before_ref, after_ref, reason)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![
+            at, actor, action, entity, entity_id, before_ref, after_ref, reason
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -522,6 +646,150 @@ mod tests {
             conn.execute("INSERT INTO mail_poll(id) VALUES (2)", [])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn migration_011_adds_suppression_and_citation_home() {
+        let (_dir, _store, conn) = migrated();
+        for table in ["suppress_rule", "suppression"] {
+            let found: String = conn
+                .query_row(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(found, table);
+        }
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(fact)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        for col in ["citation_start", "citation_end", "reasoning"] {
+            assert!(cols.contains(&col.to_string()), "fact.{col} missing");
+        }
+        // Insert stores offsets + reasoning; None citation → -1/-1.
+        let id = insert_proposed_fact(
+            &conn,
+            &NewProposedFact {
+                authority_id: 0,
+                capture_id: 0,
+                topic: "address",
+                statement: "po_box: PO Box 1",
+                created_by: "test",
+                created_at: 0,
+                citation: Some((3, 11)),
+                reasoning: "why",
+            },
+        )
+        .unwrap();
+        let (start, end, reasoning): (i64, i64, String) = conn
+            .query_row(
+                "SELECT citation_start, citation_end, reasoning FROM fact WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((start, end), (3, 11));
+        assert_eq!(reasoning, "why");
+        let bare = insert_proposed_fact(
+            &conn,
+            &NewProposedFact {
+                authority_id: 0,
+                capture_id: 0,
+                topic: "address",
+                statement: "s",
+                created_by: "test",
+                created_at: 0,
+                citation: None,
+                reasoning: "",
+            },
+        )
+        .unwrap();
+        let (start, end): (i64, i64) = conn
+            .query_row(
+                "SELECT citation_start, citation_end FROM fact WHERE id = ?1",
+                [bare],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((start, end), (-1, -1));
+    }
+
+    #[test]
+    fn suppression_check_paths_and_scopes() {
+        let (_dir, _store, conn) = migrated();
+        let auth = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "office",
+                country: "Test",
+                region: "",
+                name: "T",
+                slug: "t-sos",
+                actor: "test",
+                at: 0,
+            },
+        )
+        .unwrap();
+        // Path A: exact-norm match on a rejected row, same topic.
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement, status, created_at)
+             VALUES (?1, 0, 'address', 'PO Box  1', 'rejected', 0)",
+            [auth],
+        )
+        .unwrap();
+        assert_eq!(
+            check_suppression(&conn, auth, "address", "po box 1").unwrap(),
+            Some(SuppressionHit::RejectedMemory)
+        );
+        // Other topic: no hit.
+        assert_eq!(
+            check_suppression(&conn, auth, "hours", "po box 1").unwrap(),
+            None
+        );
+        // Path B: global rule, any topic.
+        conn.execute(
+            "INSERT INTO suppress_rule(statement_norm, statement, created_at)
+             VALUES ('fee $9', 'Fee $9', 0)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            check_suppression(&conn, auth, "fees", "fee $9").unwrap(),
+            Some(SuppressionHit::Rule(1))
+        );
+        // Revoked rules never match.
+        conn.execute("UPDATE suppress_rule SET revoked_at = 1 WHERE id = 1", [])
+            .unwrap();
+        assert_eq!(
+            check_suppression(&conn, auth, "fees", "fee $9").unwrap(),
+            None
+        );
+        // Authority-scoped rule does not leak across authorities.
+        conn.execute(
+            "INSERT INTO suppress_rule(authority_id, topic, statement_norm, statement, created_at)
+             VALUES (?1, 'fees', 'fee $8', 'Fee $8', 0)",
+            [auth],
+        )
+        .unwrap();
+        assert_eq!(
+            check_suppression(&conn, auth + 999, "fees", "fee $8").unwrap(),
+            None
+        );
+        assert!(matches!(
+            check_suppression(&conn, auth, "fees", "fee $8").unwrap(),
+            Some(SuppressionHit::Rule(_))
+        ));
+    }
+
+    #[test]
+    fn normalize_statement_folds_whitespace_and_case() {
+        assert_eq!(normalize_statement("  PO   Box 40220. "), "po box 40220.");
+        assert_eq!(normalize_statement("Fee\t$8\nMonday"), "fee $8 monday");
     }
 
     #[test]

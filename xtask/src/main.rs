@@ -436,8 +436,12 @@ fn run_analyze(args: &[String]) {
     match handbook_agent::runner::run_analysis(&conn, client.as_ref(), &req) {
         Ok(report) => {
             println!(
-                "authority: {}\nproposed: {}\nrejected: {}\nskipped: {}",
-                report.authority_slug, report.proposed, report.rejected, report.skipped
+                "authority: {}\nproposed: {}\nrejected: {}\nsuppressed: {}\nskipped: {}",
+                report.authority_slug,
+                report.proposed,
+                report.rejected,
+                report.suppressed,
+                report.skipped
             );
             for error in &report.errors {
                 println!("rejected: {error}");

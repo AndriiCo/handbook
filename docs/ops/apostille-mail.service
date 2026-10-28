@@ -1,5 +1,5 @@
-# apostille-mail.service — DRAFT (prompt 052, needs author review +
-# install; enabling on prod is an open question in the prompt log).
+# apostille-mail.service — APPROVED (prompt 054, D41: enable on prod
+# once Gmail credentials are sealed + the deploy train ships).
 #
 # One-shot Gmail poll: new mailbox mail becomes immutable `email`
 # captures with auth evidence. Triggered by apostille-mail.timer

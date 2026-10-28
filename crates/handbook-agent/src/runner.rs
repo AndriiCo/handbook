@@ -19,7 +19,8 @@ use contracts::error::HandbookError;
 use contracts::model::{DraftRequest, ModelClient, ModelError};
 use contracts::topics::Topic;
 use handbook_store::db::{
-    NewProposedFact, in_transaction, insert_analysis_audit, insert_proposed_fact, upsert_watermark,
+    NewProposedFact, SuppressionHit, check_suppression, in_transaction, insert_analysis_audit,
+    insert_audit, insert_proposed_fact, insert_suppression, normalize_statement, upsert_watermark,
 };
 
 /// Version of `prompts/aa-prompt-v1.md`, recorded in watermarks and `created_by`.
@@ -40,6 +41,9 @@ pub struct RunReport {
     pub authority_slug: String,
     pub proposed: usize,
     pub rejected: usize,
+    /// Valid records skipped by suppression (§11.3): logged, never
+    /// inserted. Disjoint from `rejected` (validation failures).
+    pub suppressed: usize,
     /// True when the run skipped analysis (unsupported language): no
     /// model call, no facts — only watermark, task, and audit rows.
     pub skipped: bool,
@@ -105,19 +109,68 @@ pub fn run_analysis(
         }
     }
 
-    // The fact table has no field/citation/confidence columns: field folds
-    // into the statement, citation/confidence are not stored (see
-    // insert_proposed_fact docs).
+    // The fact table has no field/confidence columns: field folds
+    // into the statement (see insert_proposed_fact docs).
     let created_by = format!("analysis-agent/{PROMPT_VERSION}");
+    let capture_sha = capture_sha256(conn, req.capture_id);
     // B1: facts + watermark + audit commit atomically — a mid-run
     // failure never leaves content rows without their audit row.
-    let (proposed, rejected) = in_transaction(conn, || {
+    let (proposed, rejected, suppressed) = in_transaction(conn, || {
         let mut proposed = 0;
+        let mut suppressed = 0;
         for (index, record) in resp.records.iter().enumerate() {
             if failed.contains(&index) {
                 continue;
             }
             let statement = format!("{}: {}", record.field, record.value);
+            // Consultation (§11.3): after validation, before insert.
+            let norm = normalize_statement(&statement);
+            if let Some(hit) = check_suppression(conn, authority_id, &record.topic, &norm)? {
+                let suppression_id = insert_suppression(
+                    conn,
+                    req.capture_id,
+                    authority_id,
+                    &record.topic,
+                    &statement,
+                    &norm,
+                    hit,
+                    req.at,
+                )?;
+                let (path, rule_id) = match hit {
+                    SuppressionHit::RejectedMemory => ("A", serde_json::json!(null)),
+                    SuppressionHit::Rule(id) => ("B", serde_json::json!(id)),
+                };
+                let reason = serde_json::json!({
+                    "path": path,
+                    "rule_id": rule_id,
+                    "topic": record.topic,
+                    "statement_norm": norm,
+                    "usage": {
+                        "input_tokens": resp.usage.input_tokens,
+                        "output_tokens": resp.usage.output_tokens,
+                    },
+                })
+                .to_string();
+                insert_audit(
+                    conn,
+                    req.at,
+                    &created_by,
+                    "analyze.suppressed",
+                    "capture",
+                    req.capture_id,
+                    &capture_sha,
+                    &format!("suppression:{suppression_id}"),
+                    &reason,
+                )?;
+                suppressed += 1;
+                continue;
+            }
+            // Citations index the capture sidecar — but only when the
+            // run is capture-bound (scan mode). Hand-fed runs carry
+            // UNATTRIBUTED_CAPTURE_ID: their offsets have no sidecar
+            // home and store as uncited (-1/-1).
+            let citation = (req.capture_id != UNATTRIBUTED_CAPTURE_ID)
+                .then_some((record.citation.byte_start, record.citation.byte_end));
             insert_proposed_fact(
                 conn,
                 &NewProposedFact {
@@ -127,6 +180,8 @@ pub fn run_analysis(
                     statement: &statement,
                     created_by: &created_by,
                     created_at: req.at,
+                    citation,
+                    reasoning: &resp.summary,
                 },
             )?;
             proposed += 1;
@@ -135,11 +190,11 @@ pub fn run_analysis(
         upsert_watermark(conn, req.slug, req.at, PROMPT_VERSION)?;
         advance_capture_watermark(conn, req.slug, req.capture_id)?;
         let reason = format!(
-            "proposed={proposed} rejected={rejected} input_tokens={} output_tokens={}",
+            "proposed={proposed} rejected={rejected} suppressed={suppressed} input_tokens={} output_tokens={}",
             resp.usage.input_tokens, resp.usage.output_tokens
         );
         insert_analysis_audit(conn, req.at, req.actor, authority_id, &reason)?;
-        Ok((proposed, rejected))
+        Ok((proposed, rejected, suppressed))
     })
     .map_err(db_err)?;
 
@@ -147,9 +202,21 @@ pub fn run_analysis(
         authority_slug: req.slug.to_string(),
         proposed,
         rejected,
+        suppressed,
         skipped: false,
         errors,
     })
+}
+
+/// `capture.sha256` for suppression `before_ref` ("" when unbound or
+/// the row is gone — the audit must never fail the run).
+fn capture_sha256(conn: &Connection, capture_id: i64) -> String {
+    conn.query_row(
+        "SELECT sha256 FROM capture WHERE id = ?1",
+        [capture_id],
+        |row| row.get::<_, String>(0),
+    )
+    .unwrap_or_default()
 }
 
 /// Skip path for unsupported evidence languages: no model call, no
@@ -204,6 +271,7 @@ fn skip_unsupported_lang(
         authority_slug: req.slug.to_string(),
         proposed: 0,
         rejected: 0,
+        suppressed: 0,
         skipped: true,
         errors: Vec::new(),
     })
@@ -296,6 +364,7 @@ pub fn skip_missing_sidecar(
         authority_slug: slug.to_string(),
         proposed: 0,
         rejected: 0,
+        suppressed: 0,
         skipped: true,
         errors: Vec::new(),
     })
@@ -413,6 +482,7 @@ mod tests {
                     input_tokens: 1,
                     output_tokens: 1,
                 },
+                summary: String::new(),
             })
         }
     }
@@ -626,6 +696,142 @@ mod tests {
             .unwrap();
         assert_eq!(attributed, 2);
         assert_eq!(get_capture_watermark(&conn, "usa-wa-sos").unwrap(), id);
+    }
+
+    fn bound_request<'a>(
+        sources: &'a HashMap<String, String>,
+        text: &'a str,
+        capture_id: i64,
+    ) -> RunRequest<'a> {
+        RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: text,
+            sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id,
+        }
+    }
+
+    #[test]
+    fn suppression_path_a_skips_rejected_restatement() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let id = seed_capture(&conn, "usa-wa-sos", "official");
+        let auth: i64 = conn
+            .query_row(
+                "SELECT id FROM authority WHERE slug = 'usa-wa-sos'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // The stub's address record restates this rejected claim.
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement, status, created_at)
+             VALUES (?1, ?2, 'address', 'po_box:  PO Box 40220', 'rejected', 0)",
+            rusqlite::params![auth, id],
+        )
+        .unwrap();
+        let text = "PO Box 40220, Mon-Fri 9-5!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let report = run_analysis(&conn, &StubClient, &bound_request(&sources, text, id)).unwrap();
+        assert_eq!(report.proposed, 1);
+        assert_eq!(report.suppressed, 1);
+        assert_eq!(report.rejected, 0);
+        let (path, rule_id): (String, Option<i64>) = conn
+            .query_row("SELECT path, rule_id FROM suppression", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(path, "A");
+        assert_eq!(rule_id, None);
+        let actions: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'analyze.suppressed'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(actions, 1);
+    }
+
+    #[test]
+    fn suppression_path_b_rule_skips_and_logs_rule_id() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let id = seed_capture(&conn, "usa-wa-sos", "official");
+        conn.execute(
+            "INSERT INTO suppress_rule(statement_norm, statement, created_at)
+             VALUES ('weekday: mon-fri 9-5', 'weekday: Mon-Fri 9-5', 0)",
+            [],
+        )
+        .unwrap();
+        let text = "PO Box 40220, Mon-Fri 9-5!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let report = run_analysis(&conn, &StubClient, &bound_request(&sources, text, id)).unwrap();
+        assert_eq!((report.proposed, report.suppressed), (1, 1));
+        let (path, rule_id): (String, Option<i64>) = conn
+            .query_row("SELECT path, rule_id FROM suppression", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(path, "B");
+        assert_eq!(rule_id, Some(1));
+    }
+
+    #[test]
+    fn bound_run_stores_citations_and_reasoning() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let id = seed_capture(&conn, "usa-wa-sos", "official");
+        let text = "PO Box 40220, Mon-Fri 9-5!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        run_analysis(&conn, &StubClient, &bound_request(&sources, text, id)).unwrap();
+        let rows: Vec<(i64, i64, String)> = conn
+            .prepare("SELECT citation_start, citation_end, reasoning FROM fact ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                (0, 12, "stub: two fixture records".to_string()),
+                (13, 24, "stub: two fixture records".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn unbound_run_stores_uncited_but_keeps_reasoning() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "PO Box 40220, Mon-Fri 9-5!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        run_analysis(&conn, &StubClient, &req).unwrap();
+        let rows: Vec<(i64, i64, String)> = conn
+            .prepare("SELECT citation_start, citation_end, reasoning FROM fact ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        for (start, end, reasoning) in &rows {
+            assert_eq!((*start, *end), (-1, -1));
+            assert_eq!(reasoning, "stub: two fixture records");
+        }
     }
 
     #[test]

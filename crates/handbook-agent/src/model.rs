@@ -54,6 +54,7 @@ impl ModelClient for StubClient {
                 input_tokens: 0,
                 output_tokens: 0,
             },
+            summary: "stub: two fixture records".to_string(),
         })
     }
 }
@@ -226,6 +227,7 @@ fn response_format() -> serde_json::Value {
             "schema": {
                 "type": "object",
                 "properties": {
+                    "summary": {"type": "string"},
                     "records": {
                         "type": "array",
                         "items": {
@@ -251,7 +253,7 @@ fn response_format() -> serde_json::Value {
                         }
                     }
                 },
-                "required": ["records"],
+                "required": ["summary", "records"],
                 "additionalProperties": false
             }
         }
@@ -365,9 +367,19 @@ fn parse_completion(body: &[u8]) -> Result<DraftResponse, ModelError> {
         input_tokens: tokens("prompt_tokens"),
         output_tokens: tokens("completion_tokens"),
     };
+    // Required by the schema, but tolerate absence (a summary must
+    // never fail a draft — it quarantines in the UI, unused here).
+    // Truncated to 500 chars on a char boundary.
+    let summary: String = inner["summary"]
+        .as_str()
+        .unwrap_or("")
+        .chars()
+        .take(500)
+        .collect();
     Ok(DraftResponse {
         records: out,
         usage,
+        summary,
     })
 }
 
@@ -441,7 +453,7 @@ mod tests {
 
     #[test]
     fn draft_posts_chat_and_parses_records() {
-        let records = r#"{"records": [
+        let records = r#"{"summary": "two address records", "records": [
             {"topic": "address", "field": "po_box", "value": "PO Box 40220",
              "citation": {"doc_id": "fixture", "byte_start": 0, "byte_end": 12},
              "confidence": 0.9},
@@ -465,7 +477,7 @@ mod tests {
             assert_eq!(v["response_format"]["type"], "json_schema");
             assert_eq!(
                 v["response_format"]["json_schema"]["schema"]["required"],
-                serde_json::json!(["records"])
+                serde_json::json!(["summary", "records"])
             );
             assert_eq!(v["prompt_cache_key"], "analysis-agent-aa-prompt-v1");
             (
@@ -482,6 +494,7 @@ mod tests {
         assert_eq!(resp.records[0].topic, "address");
         assert_eq!(resp.records[0].citation.byte_end, 12);
         assert_eq!(resp.records[1].value, "Mon-Fri 9-5");
+        assert_eq!(resp.summary, "two address records");
         assert_eq!(
             resp.usage,
             Usage {

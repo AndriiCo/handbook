@@ -1,5 +1,5 @@
-# apostille-watch.service — DRAFT (prompt 051, needs author review +
-# install; enabling on prod is an open question in the prompt log).
+# apostille-watch.service — APPROVED (prompt 054, D41: enable on prod
+# once the deploy train ships the matching xtask).
 #
 # One-shot watch sweep: poll due watch URLs (conditional GET, ingest
 # only changes), then poll the HCCH status table (task on change).

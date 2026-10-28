@@ -71,10 +71,9 @@ loud (re-consent).
 
 1. New Cloud project → enable Gmail API → OAuth client ID,
    type **Desktop app** (loopback redirect, no pre-registration).
-2. Consent screen: request `gmail.readonly` (restricted). Testing
-   mode refresh tokens die after 7 days — durable polling needs
-   a published + verified app (restricted-scope review). Decide
-   early: verify once, or weekly re-consent.
+2. Consent screen: request `gmail.readonly` (restricted).
+   DECIDED (prompt 054, D42): publish + verify once (no Testing-
+   mode weekly re-consent).
 3. One-time loopback PKCE authorization per mailbox
    (`access_type=offline&prompt=consent` yields the refresh
    token); store client id/secret + refresh token in sealed

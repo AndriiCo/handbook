@@ -187,8 +187,21 @@ pub async fn list_facts(
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SuppressBody {
+    /// `authority` (fact's authority) or `global` (all authorities).
+    pub scope: String,
+    /// Lock the rule to the fact's topic (default true when omitted).
+    pub lock_topic: Option<bool>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DecisionBody {
     pub reason: Option<String>,
+    /// Accept-only: replacement statement (non-empty, ≤2000 chars).
+    pub statement: Option<String>,
+    /// Reject-only: also create a `suppress_rule` row.
+    pub suppress: Option<SuppressBody>,
 }
 
 /// Accept one proposed fact (banner policy: conflicts do not block).
@@ -200,7 +213,34 @@ pub async fn accept_fact(
     Path(id): Path<i64>,
     Json(body): Json<DecisionBody>,
 ) -> impl IntoResponse {
-    decide(&state, &auth, id, body.reason.as_deref(), "accepted").await
+    if body.suppress.is_some() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "suppress is reject-only"})),
+        )
+            .into_response();
+    }
+    let statement = match body.statement.as_deref() {
+        None => None,
+        Some(s) if s.trim().is_empty() || s.len() > 2000 => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({"error": "statement must be 1-2000 chars"})),
+            )
+                .into_response();
+        }
+        Some(s) => Some(s),
+    };
+    decide(
+        &state,
+        &auth,
+        id,
+        body.reason.as_deref(),
+        statement,
+        None,
+        "accepted",
+    )
+    .await
 }
 
 /// Reject one proposed fact; a non-empty reason is required.
@@ -219,14 +259,43 @@ pub async fn reject_fact(
         )
             .into_response();
     }
-    decide(&state, &auth, id, Some(reason), "rejected").await
+    if body.statement.is_some() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "statement is accept-only"})),
+        )
+            .into_response();
+    }
+    if let Some(sup) = body.suppress.as_ref()
+        && sup.scope != "authority"
+        && sup.scope != "global"
+    {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "suppress.scope must be authority|global"})),
+        )
+            .into_response();
+    }
+    decide(
+        &state,
+        &auth,
+        id,
+        Some(reason),
+        None,
+        body.suppress.as_ref(),
+        "rejected",
+    )
+    .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn decide(
     state: &AppState,
     auth: &AdminAuth,
     id: i64,
     reason: Option<&str>,
+    statement: Option<&str>,
+    suppress: Option<&SuppressBody>,
     to: &str,
 ) -> axum::response::Response {
     if reason.is_some_and(|r| r.len() > 1024) {
@@ -256,6 +325,8 @@ async fn decide(
         &Decision {
             to,
             reason,
+            statement,
+            suppress,
             now,
             action,
         },
@@ -266,12 +337,17 @@ async fn decide(
 struct Decision<'a> {
     to: &'a str,
     reason: Option<&'a str>,
+    /// Accept-only replacement statement (pre-validated).
+    statement: Option<&'a str>,
+    /// Reject-only suppression request (pre-validated).
+    suppress: Option<&'a SuppressBody>,
     now: i64,
     action: &'a str,
 }
 
-/// Transaction outcome: DB failure, HTTP outcome, or the decided fact.
-type DecideOutcome = rusqlite::Result<Result<StoredFact, StatusCode>>;
+/// Transaction outcome: DB failure, HTTP outcome, or the decided fact
+/// plus an adopted rule id (`Some((id, deduped))` on reject-with-suppress).
+type DecideOutcome = rusqlite::Result<Result<(StoredFact, Option<(i64, bool)>), StatusCode>>;
 
 fn decide_inner(
     state: &AppState,
@@ -314,10 +390,26 @@ fn decide_inner(
             conn.execute_batch("ROLLBACK")?;
             return Ok(Err(StatusCode::CONFLICT));
         }
-        conn.execute(
-            "UPDATE fact SET status = ?1 WHERE id = ?2",
-            (decision.to, id),
-        )?;
+        // Accept-with-edit: the replacement statement lands in the same
+        // UPDATE; unchanged-or-absent keeps the current text. The audit
+        // reason becomes the §11.5 envelope when the text changed.
+        let edited = decision.statement.is_some_and(|s| s != fact.statement);
+        if edited {
+            conn.execute(
+                "UPDATE fact SET status = ?1, statement = ?2 WHERE id = ?3",
+                rusqlite::params![decision.to, decision.statement, id],
+            )?;
+        } else {
+            conn.execute(
+                "UPDATE fact SET status = ?1 WHERE id = ?2",
+                (decision.to, id),
+            )?;
+        }
+        let audit_reason = if edited {
+            edit_envelope(decision.reason.unwrap_or(""), &fact.statement)
+        } else {
+            decision.reason.unwrap_or("").to_string()
+        };
         conn.execute(
             "INSERT INTO audit(at, actor, action, entity, entity_id,
                                 before_ref, after_ref, reason)
@@ -328,13 +420,70 @@ fn decide_inner(
                 decision.action,
                 id,
                 decision.to,
-                decision.reason.unwrap_or("")
+                audit_reason,
             ],
         )?;
+        // Reject-with-suppress: idempotent rule adoption in the same
+        // transaction (BEGIN IMMEDIATE serializes concurrent deciders,
+        // so check-then-insert cannot duplicate).
+        let mut rule_outcome: Option<(i64, bool)> = None;
+        if let Some(sup) = decision.suppress {
+            let scope_authority = (sup.scope == "authority").then_some(fact.authority_id);
+            let topic = sup.lock_topic.unwrap_or(true).then(|| fact.topic.clone());
+            let norm = db::normalize_statement(&fact.statement);
+            let existing: Option<i64> = conn
+                .query_row(
+                    "SELECT id FROM suppress_rule
+                     WHERE revoked_at IS NULL AND statement_norm = ?1
+                       AND authority_id IS NOT DISTINCT FROM ?2
+                       AND topic IS NOT DISTINCT FROM ?3
+                     ORDER BY id LIMIT 1",
+                    rusqlite::params![norm, scope_authority, topic],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let (rule_id, deduped) = match existing {
+                Some(found) => (found, true),
+                None => {
+                    conn.execute(
+                        "INSERT INTO suppress_rule(authority_id, topic, statement_norm,
+                                                   statement, reason, created_by, created_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                        rusqlite::params![
+                            scope_authority,
+                            topic,
+                            norm,
+                            fact.statement,
+                            decision.reason.unwrap_or(""),
+                            auth.user.user_id,
+                            decision.now,
+                        ],
+                    )?;
+                    let rule_id = conn.last_insert_rowid();
+                    conn.execute(
+                        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+                         VALUES (?1, ?2, 'suppress_rule.create', 'suppress_rule', ?3, ?4)",
+                        rusqlite::params![
+                            decision.now,
+                            auth.user.user_id,
+                            rule_id,
+                            decision.reason.unwrap_or(""),
+                        ],
+                    )?;
+                    (rule_id, false)
+                }
+            };
+            rule_outcome = Some((rule_id, deduped));
+        }
+        // Serve the decided text (post-edit) in the response view.
+        let mut fact = fact;
+        if edited {
+            fact.statement = decision.statement.unwrap_or("").to_string();
+        }
         conn.execute_batch("COMMIT")?;
-        Ok(Ok(fact))
+        Ok(Ok((fact, rule_outcome)))
     })();
-    let fact = match outcome {
+    let (fact, rule) = match outcome {
         Ok(Ok(found)) => found,
         Ok(Err(status)) => {
             let body = if status == StatusCode::NOT_FOUND {
@@ -355,7 +504,27 @@ fn decide_inner(
         );
     }
     let view = fact_view(conn, &fact, false);
+    if let Some((rule_id, deduped)) = rule {
+        let mut body = serde_json::to_value(&view).unwrap_or(json!({}));
+        body["rule"] = json!({"id": rule_id, "deduped": deduped});
+        return (StatusCode::OK, Json(body)).into_response();
+    }
     (StatusCode::OK, Json(view)).into_response()
+}
+
+/// §11.5 edit envelope: `{"note","edit_before"}`, capped at 1024
+/// chars total by truncating `edit_before` with a `…` marker.
+fn edit_envelope(note: &str, edit_before: &str) -> String {
+    let envelope = |before: &str| json!({"note": note, "edit_before": before}).to_string();
+    let full = envelope(edit_before);
+    if full.len() <= 1024 {
+        return full;
+    }
+    // Budget the fixed framing by measuring with an empty before.
+    let framing = envelope("").len();
+    let keep = 1024usize.saturating_sub(framing + "…".len()).max(1);
+    let truncated: String = edit_before.chars().take(keep).collect();
+    envelope(&format!("{truncated}…"))
 }
 
 /// Public accepted-facts read for one authority, with conflict

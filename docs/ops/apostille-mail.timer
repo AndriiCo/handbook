@@ -1,5 +1,5 @@
-# apostille-mail.timer — DRAFT (prompt 052, ships with
-# apostille-mail.service; enabling on prod is an open question).
+# apostille-mail.timer — APPROVED (prompt 054, D41: enable on prod
+# with apostille-mail.service).
 #
 # A closure-tomorrow email should surface within minutes, not at the
 # next daily sweep: poll every 15 minutes. Persistent: a missed run
