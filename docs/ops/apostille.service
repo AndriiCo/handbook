@@ -15,6 +15,13 @@
 Description=Apostille Handbook API (andrii.ai/apostille)
 After=network-online.target
 Wants=network-online.target
+# Crash-loop guard (2026-10-27 ACME incident: a boot-time issuance
+# failure restarted into Google ~60x before anyone stopped it,
+# burning failed-validation rate limits): after 5 failures in 10
+# minutes the unit stays down for operator eyes instead of
+# hammering the CA. Reset with `systemctl reset-failed apostille`.
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -62,9 +69,9 @@ ProcSubset=pid
 ReadWritePaths=/var/lib/apostille
 
 # --- Network/namespaces/misc: smallest working set. ---
-# AF_UNIX (logging/NSS) + v4/v6 only: the app currently makes NO
-# outbound connections (Meta/carrier/Stripe clients land later and
-# must re-open this deliberately).
+# AF_UNIX (logging/NSS) + v4/v6: outbound HTTPS to the ACME
+# directory (Google Public CA) is required for issuance/renewal;
+# Meta/carrier/Stripe clients land later and need no sandbox change.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictNamespaces=yes
 LockPersonality=true

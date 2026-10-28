@@ -594,6 +594,7 @@ async fn main() {
                         cert_pem,
                         key_pem,
                         quic::QuicReloader::default(),
+                        None,
                     )
                     .await;
                 }
@@ -615,7 +616,16 @@ async fn main() {
 /// ACME mode: load the persisted pair or issue it (Google Public CA,
 /// http-01 via the challenge dir), serve TLS with it, and renew in the
 /// background with hot reloads — no restarts, ever.
+///
+/// Port 80 is bound and served BEFORE issuance: the CA's http-01
+/// validation fetches must reach us while the order is pending.
+/// (Binding it after — inside `serve_tls` only — invalidated every
+/// order: see the 2026-10-27 prod incident.)
 async fn serve_acme(public: Router, admin: Router, cfg: &config::RuntimeConfig, store_dir: &str) {
+    let prebound_redirect: Vec<axum_server::Handle> = spawn_challenge_servers(cfg)
+        .into_iter()
+        .map(|(_, handle)| handle)
+        .collect();
     // config-db: ACME values come from the `acme.*` DB keys.
     let stored = acme::StoredAcme {
         directory: cfg.acme_directory.clone(),
@@ -687,8 +697,50 @@ async fn serve_acme(public: Router, admin: Router, cfg: &config::RuntimeConfig, 
         pair.cert_pem,
         pair.key_pem,
         quic_reloader,
+        Some(prebound_redirect),
     )
     .await
+}
+
+/// Bind + serve the port-80 redirector (HTTP→HTTPS + ACME
+/// challenge files) on every bind IP, returning one bound address
+/// and shutdown handle per listener. Runs AHEAD of ACME issuance
+/// so http-01 validations succeed; [`serve_tls`] then reuses these
+/// listeners instead of binding :80 a second time.
+///
+/// A bind failure refuses the boot NOW (same fail-fast shape as the
+/// QUIC parent-bind): a missing :80 must never surface later as a
+/// mysterious CA-side order failure. A listener that dies after a
+/// clean start fails the process too — half-serving challenges
+/// would break renewals silently until expiry.
+fn spawn_challenge_servers(cfg: &config::RuntimeConfig) -> Vec<(SocketAddr, axum_server::Handle)> {
+    let mut bound = Vec::new();
+    for ip in cfg.bind_ips() {
+        let addr = SocketAddr::new(ip, cfg.http_port);
+        let listener = std::net::TcpListener::bind(addr).unwrap_or_else(|e| {
+            eprintln!("refusing to start: bind TCP {addr} (redirect + ACME challenges): {e}");
+            std::process::exit(1);
+        });
+        let local = listener.local_addr().unwrap_or_else(|e| {
+            eprintln!("refusing to start: bound :80 has no address ({e})");
+            std::process::exit(1);
+        });
+        let handle = axum_server::Handle::new();
+        bound.push((local, handle.clone()));
+        eprintln!("listening on http://{local} (redirect + ACME challenges)");
+        let redirect = redirect_router(cfg.public_host.clone(), &cfg.acme_challenge_dir);
+        tokio::spawn(async move {
+            if let Err(e) = axum_server::from_tcp(listener)
+                .handle(handle)
+                .serve(redirect.into_make_service())
+                .await
+            {
+                eprintln!("challenge server {local} failed ({e}); refusing to continue");
+                std::process::exit(1);
+            }
+        });
+    }
+    bound
 }
 
 /// Plain-HTTP dev mode: public on `net.port` (default 3000) and
@@ -794,6 +846,13 @@ fn tls_listen_plan(cfg: &config::RuntimeConfig) -> Vec<TlsListener> {
 /// capture via [`mtls::MtlsAcceptor`]); the fingerprint layer runs
 /// on the admin branch only, and Host dispatch strips cert state
 /// from the public branch.
+///
+/// `prebound_redirect` carries the :80 listeners ACME mode started
+/// ahead of issuance ([`spawn_challenge_servers`]): when present
+/// the Redirect plan entries are skipped (already serving) and
+/// their handles join the graceful-drain set. File-cert mode
+/// passes `None` and binds :80 here as before.
+#[allow(clippy::too_many_arguments)] // boot shape: 2 call sites, one TLS mode each
 async fn serve_tls(
     public: Router,
     admin: Router,
@@ -802,10 +861,16 @@ async fn serve_tls(
     cert_pem: Vec<u8>,
     key_pem: Vec<u8>,
     quic_reloader: quic::QuicReloader,
+    prebound_redirect: Option<Vec<axum_server::Handle>>,
 ) {
     let router = tls_router(public, admin, cfg);
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
+    let skip_redirect = prebound_redirect.is_some();
+    if let Some(extra) = prebound_redirect {
+        eprintln!("port-80 redirector already serving (pre-issuance bind); reusing");
+        handles.extend(extra);
+    }
     for listener in tls_listen_plan(cfg) {
         match listener.kind {
             TlsListenerKind::Https => {
@@ -846,6 +911,7 @@ async fn serve_tls(
                     }
                 });
             }
+            TlsListenerKind::Redirect if skip_redirect => {}
             TlsListenerKind::Redirect => {
                 let addr = listener.addr;
                 let handle = axum_server::Handle::new();
@@ -1279,6 +1345,55 @@ mod tests {
             .unwrap()
             .to_string();
         assert_eq!(location, "https://example.test/apostille/order?q=1");
+    }
+
+    /// Regression (2026-10-27 prod incident): the pre-issuance
+    /// :80 listeners must serve challenge files over real TCP. The
+    /// oneshot router tests above cannot catch a missing BIND — this
+    /// one binds ephemeral loopback, writes a token file, and GETs
+    /// it back the way the CA would.
+    ///
+    /// Multi-threaded: the blocking client below must not starve
+    /// the spawned server task (the default current-thread flavor
+    /// deadlocks this test).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn challenge_servers_serve_tokens_over_tcp() {
+        use std::io::{Read as _, Write as _};
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("tok-1"), "key-auth-body").unwrap();
+        let cfg = config::RuntimeConfig {
+            http_port: 0,
+            public_host: "example.test".to_string(),
+            acme_challenge_dir: tmp.path().to_str().unwrap().to_string(),
+            ..config::RuntimeConfig::default()
+        };
+        let bound = spawn_challenge_servers(&cfg);
+        // Default bind is loopback-only: exactly one listener.
+        assert_eq!(bound.len(), 1);
+        let (addr, _handle) = &bound[0];
+        assert_ne!(addr.port(), 0, "ephemeral port assigned");
+        for (target, want_status, want_snippet) in [
+            ("/.well-known/acme-challenge/tok-1", "200", "key-auth-body"),
+            ("/.well-known/acme-challenge/nope", "404", ""),
+            ("/apostille/order?q=1", "308", "https://example.test/"),
+        ] {
+            let mut stream = std::net::TcpStream::connect(*addr).unwrap();
+            write!(
+                stream,
+                "GET {target} HTTP/1.0\r\nHost: ca.test\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+            let mut response = String::new();
+            stream.read_to_string(&mut response).unwrap();
+            assert!(
+                response.contains(want_status),
+                "GET {target}: want {want_status} in {response:?}"
+            );
+            assert!(
+                response.contains(want_snippet),
+                "GET {target}: want {want_snippet:?} in {response:?}"
+            );
+        }
     }
 
     #[test]

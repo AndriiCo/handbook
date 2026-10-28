@@ -104,10 +104,13 @@ wildcard bind would fail or steal their port.
 
 ## How it works
 
-- Boot (`serve_acme` in `crates/web/src/main.rs`): load
+- Boot (`serve_acme` in `crates/web/src/main.rs`): bind + serve
+  port 80 FIRST (redirector + challenge files), then load
   `<store>/acme/cert.pem` + `key.pem` when the pair parses and has
   over a day of life left; otherwise issue now. No usable pair and
-  no issuance means no process — fail closed.
+  no issuance means no process — fail closed. (The :80-first order
+  is load-bearing: binding it after issuance invalidated every
+  order — see the 2026-10-27 incident in Troubleshooting.)
 - Issuance (`crates/acme`): restore the ACME account from
   `<store>/acme/account.json`, or register it with the EAB pair on
   first run; one order for all domains; one http-01 challenge per
@@ -187,6 +190,17 @@ staging chain, and `<store>/acme/` holding all three files. Then
   writability — then just wait for the next retry.
 - Clock skew breaks ARI math and expiry checks before anything
   else does; NTP first when windows look wrong.
+- 2026-10-27 incident: every order went `Invalid` within seconds
+  and the unit crash-looped into Google ~60x. Cause: port 80 was
+  bound only after issuance, so validation fetches hit a closed
+  port. Fixed by serving :80 before `ensure_certificate` (plus a
+  TCP-level regression test). Guardrails added the same night:
+  `StartLimitIntervalSec=600`/`StartLimitBurst=5` in
+  `apostille.service` parks the unit after 5 fast failures instead
+  of burning failed-validation rate limits — reset with
+  `systemctl reset-failed apostille`. If a retry greets you with
+  `rateLimited`, stop the unit and wait out the window (about an
+  hour) before trying again.
 - Leaked CERT private keys live only on the server disk; rotate
   by deleting `/var/lib/apostille/tls/*` (explicit-files mode)
   or `<store>/acme/*` (ACME mode) and re-issuing, plus one
