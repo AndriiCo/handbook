@@ -12,7 +12,7 @@ use contracts::Result;
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 8;
+pub const SCHEMA_VERSION: i32 = 9;
 
 /// Current P2 customer-PII schema version (`pragma user_version` on
 /// `p2.sqlite`; independent of [`SCHEMA_VERSION`]).
@@ -103,6 +103,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         if version < 8 {
             conn.execute_batch(include_str!("../migrations/008_capture_watermark.sql"))?;
             conn.pragma_update(None, "user_version", 8)?;
+        }
+        if version < 9 {
+            conn.execute_batch(include_str!("../migrations/009_watch.sql"))?;
+            conn.pragma_update(None, "user_version", 9)?;
         }
         Ok(())
     })?;
@@ -446,6 +450,53 @@ mod tests {
         let conn = open(&store).unwrap();
         migrate(&conn).unwrap();
         (dir, store, conn)
+    }
+
+    #[test]
+    fn migration_009_adds_source_fetch_state() {
+        use rusqlite::OptionalExtension as _;
+        let (_dir, _store, conn) = migrated();
+        conn.execute(
+            "INSERT INTO source(authority_id, kind, uri)
+             VALUES (0, 'website_official', 'https://example.com/')",
+            [],
+        )
+        .unwrap();
+        let (cadence, etag, last_modified, content_hash, simhash, checked): (
+            i64,
+            String,
+            String,
+            String,
+            i64,
+            i64,
+        ) = conn
+            .query_row(
+                "SELECT poll_cadence_sec, etag, last_modified, content_hash,
+                        simhash, last_checked_at FROM source",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!((cadence, simhash, checked), (86400, 0, 0));
+        assert!(etag.is_empty() && last_modified.is_empty() && content_hash.is_empty());
+        let index: Option<String> = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_source_due'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(index.as_deref(), Some("idx_source_due"));
     }
 
     #[test]

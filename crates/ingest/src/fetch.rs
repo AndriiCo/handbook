@@ -19,6 +19,20 @@ pub struct Fetched {
     pub url: String,
     pub status: u16,
     pub bytes: Vec<u8>,
+    /// Validators for the next conditional GET (absent when the
+    /// server did not send them — never the sole change signal).
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
+/// Outcome of a conditional GET.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FetchOutcome {
+    /// 304: validators match, no body. Counts as a liveness signal
+    /// ("still alive"), not a change.
+    NotModified,
+    /// 2xx with a body (validators may have rotated).
+    Fetched(Fetched),
 }
 
 /// Fetch failure kinds.
@@ -52,20 +66,60 @@ impl std::error::Error for FetchError {}
 /// [`FetchError::HttpStatus`] on non-2xx status,
 /// [`FetchError::TooLarge`] when the body exceeds [`MAX_BODY_BYTES`].
 pub fn fetch_url(url: &str, timeout: Duration) -> Result<Fetched, FetchError> {
+    match fetch_url_conditional(url, timeout, None, None)? {
+        FetchOutcome::Fetched(fetched) => Ok(fetched),
+        // An unconditional GET should never 304; a server that does
+        // is broken, and the status is the honest error.
+        FetchOutcome::NotModified => Err(FetchError::HttpStatus(304)),
+    }
+}
+
+/// Conditional GET: send the stored validators (`If-None-Match` /
+/// `If-Modified-Since`) and surface a 304 as [`FetchOutcome::NotModified`]
+/// instead of an error. Response validators are captured on every 2xx
+/// for the next round.
+///
+/// # Errors
+///
+/// Same as [`fetch_url`], except 304 is an outcome, not an error.
+pub fn fetch_url_conditional(
+    url: &str,
+    timeout: Duration,
+    etag: Option<&str>,
+    last_modified: Option<&str>,
+) -> Result<FetchOutcome, FetchError> {
     install_crypto_provider();
-    let agent = agent_with_timeout(timeout);
-    let mut response = agent
-        .get(url)
-        .header(
-            "User-Agent",
-            "handbook-watch/0.1 (+https://andrii.ai/apostille)",
-        )
-        .call()
-        .map_err(|e| map_ureq_error(e, url))?;
+    let agent = agent_with_timeout_status_ok(timeout);
+    let mut request = agent.get(url).header(
+        "User-Agent",
+        "handbook-watch/0.1 (+https://andrii.ai/apostille)",
+    );
+    if let Some(tag) = etag.filter(|t| !t.is_empty()) {
+        request = request.header("If-None-Match", tag);
+    }
+    if let Some(stamp) = last_modified.filter(|s| !s.is_empty()) {
+        request = request.header("If-Modified-Since", stamp);
+    }
+    let mut response = request.call().map_err(|e| map_ureq_error(e, url))?;
     let status = response.status().as_u16();
+    if status == 304 {
+        return Ok(FetchOutcome::NotModified);
+    }
     if !(200..300).contains(&status) {
         return Err(FetchError::HttpStatus(status));
     }
+    // Capture validators before the body read (headers borrow the
+    // response immutably; the body needs it mutably).
+    let etag = response
+        .headers()
+        .get("etag")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let last_modified = response
+        .headers()
+        .get("last-modified")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
     use std::io::Read as _;
     let mut body = Vec::new();
     response
@@ -77,11 +131,13 @@ pub fn fetch_url(url: &str, timeout: Duration) -> Result<Fetched, FetchError> {
     if body.len() as u64 > MAX_BODY_BYTES {
         return Err(FetchError::TooLarge);
     }
-    Ok(Fetched {
+    Ok(FetchOutcome::Fetched(Fetched {
         url: url.to_string(),
         status,
         bytes: body,
-    })
+        etag,
+        last_modified,
+    }))
 }
 
 fn map_ureq_error(e: ureq::Error, url: &str) -> FetchError {
@@ -93,6 +149,18 @@ fn map_ureq_error(e: ureq::Error, url: &str) -> FetchError {
 
 fn agent_with_timeout(timeout: Duration) -> ureq::Agent {
     let config = ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .build();
+    ureq::Agent::new_with_config(config)
+}
+
+/// Status-as-success variant for the conditional path: 304 is an
+/// outcome and every other status is branched explicitly, so ureq
+/// must not convert statuses to errors first. The robots path keeps
+/// the strict agent (a 404 robots.txt means "no robots", via Err).
+fn agent_with_timeout_status_ok(timeout: Duration) -> ureq::Agent {
+    let config = ureq::Agent::config_builder()
+        .http_status_as_error(false)
         .timeout_global(Some(timeout))
         .build();
     ureq::Agent::new_with_config(config)
@@ -232,6 +300,101 @@ mod tests {
         let (url, server) = serve_once("HTTP/1.0 404 Not Found", b"missing");
         let err = fetch_url(&url, Duration::from_secs(5)).expect_err("404 must fail");
         assert_eq!(err, FetchError::HttpStatus(404));
+        server.join().unwrap();
+    }
+
+    /// Serve one canned reply with extra headers, reporting the raw
+    /// request head over a channel. Binds port 0.
+    fn serve_exchange(
+        status_line: &'static str,
+        extra: &'static [(&'static str, &'static str)],
+        body: &'static [u8],
+    ) -> (
+        String,
+        std::sync::mpsc::Receiver<String>,
+        std::thread::JoinHandle<()>,
+    ) {
+        use std::io::BufRead as _;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let url = format!(
+            "http://127.0.0.1:{}/",
+            listener.local_addr().unwrap().port()
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+            let mut head = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).expect("read head");
+                if line.trim().is_empty() {
+                    break;
+                }
+                head.push_str(&line);
+            }
+            tx.send(head).expect("report head");
+            let mut head_text = format!(
+                "{status_line}\r\nContent-Length: {}\r\nConnection: close\r\n",
+                body.len()
+            );
+            for (name, value) in extra {
+                head_text.push_str(&format!("{name}: {value}\r\n"));
+            }
+            head_text.push_str("\r\n");
+            let mut stream = reader.into_inner();
+            stream.write_all(head_text.as_bytes()).expect("write head");
+            stream.write_all(body).expect("write body");
+        });
+        (url, rx, handle)
+    }
+
+    #[test]
+    fn conditional_304_is_not_modified() {
+        let (url, seen, server) = serve_exchange("HTTP/1.0 304 Not Modified", &[], b"");
+        let outcome = fetch_url_conditional(
+            &url,
+            Duration::from_secs(5),
+            Some("\"v1\""),
+            Some("Wed, 28 Oct 2026 00:00:00 GMT"),
+        )
+        .expect("304 is an outcome");
+        assert_eq!(outcome, FetchOutcome::NotModified);
+        let head = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        let head = head.to_ascii_lowercase();
+        assert!(head.contains("if-none-match: \"v1\""), "{head}");
+        assert!(
+            head.contains("if-modified-since: wed, 28 oct 2026 00:00:00 gmt"),
+            "{head}"
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn conditional_200_captures_response_validators() {
+        let (url, seen, server) = serve_exchange(
+            "HTTP/1.0 200 OK",
+            &[
+                ("ETag", "\"v2\""),
+                ("Last-Modified", "Wed, 28 Oct 2026 01:00:00 GMT"),
+            ],
+            b"body",
+        );
+        let outcome = fetch_url_conditional(&url, Duration::from_secs(5), None, None).expect("200");
+        let FetchOutcome::Fetched(fetched) = outcome else {
+            panic!("want fetched, got: {outcome:?}");
+        };
+        assert_eq!(fetched.bytes, b"body");
+        assert_eq!(fetched.etag.as_deref(), Some("\"v2\""));
+        assert_eq!(
+            fetched.last_modified.as_deref(),
+            Some("Wed, 28 Oct 2026 01:00:00 GMT")
+        );
+        let head = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            !head.to_ascii_lowercase().contains("if-none-match"),
+            "{head}"
+        );
         server.join().unwrap();
     }
 

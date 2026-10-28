@@ -1,4 +1,4 @@
-//! `xtask fetch-slug`: sweep creates, dedups, and reports failures.
+//! `xtask fetch-slug`: sweep creates, skips unchanged, and reports failures.
 //!
 //! Drives the real binary against a temp store and loopback HTTP
 //! servers on port 0. No network beyond 127.0.0.1.
@@ -88,7 +88,7 @@ fn seed_sources(store: &str, urls: &[String]) {
 }
 
 #[test]
-fn sweep_creates_then_dedups() {
+fn sweep_creates_then_skips_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let store = init_store(&dir);
     let (base, server) = serve_many(vec![
@@ -126,7 +126,12 @@ fn sweep_creates_then_dedups() {
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("dedup=2"), "got: {stdout}");
+    // Same extracted text, no validators served: the content-hash
+    // short-circuit skips re-ingest (near-dup), so no new captures.
+    assert!(
+        stdout.contains("near-dup=2") && stdout.contains("fetched=0"),
+        "got: {stdout}"
+    );
     let conn = rusqlite::Connection::open(format!("{store}/handbook.sqlite")).unwrap();
     let captures: i64 = conn
         .query_row(

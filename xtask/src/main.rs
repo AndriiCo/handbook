@@ -22,6 +22,7 @@ mod quic_probe;
 mod release;
 mod review_conflicts;
 mod secrets;
+mod watch;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -36,6 +37,8 @@ fn main() {
         Some("analyze") => run_analyze(&args[1..]),
         Some("fetch-url") => run_fetch_url(&args[1..]),
         Some("fetch-slug") => fetch_slug::run(&args[1..]),
+        Some("watch-sweep") => watch::run_sweep(&args[1..]),
+        Some("hcch-poll") => watch::run_hcch(&args[1..]),
         Some("review-conflicts") => review_conflicts::run(&args[1..]),
         Some("build-handbook") => build_handbook::run(&args[1..]),
         Some("mcp-serve") => mcp_serve::run(&args[1..]),
@@ -83,6 +86,8 @@ Tasks:
   analyze     draft proposed facts for an authority (stub default, --live for Meta API)
   fetch-url   fetch one URL into a warc capture (thin watch)
   fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
+  watch-sweep poll due watch URLs across authorities (timer runs this)
+  hcch-poll   poll the HCCH status table, task on change (timer runs this)
   review-conflicts print F6 conflicts with citations
   build-handbook accepted-only static build + sitemap/robots [--out --base-url]
   mcp-serve   serve lookup_authority on 127.0.0.1 [--port]
@@ -151,6 +156,16 @@ fetch-slug flags:
   --actor <a>     audit actor (default: xtask)
   --trust <t>     official | staff_verified | community (default: official)
   --limit <n>     max watch URLs per run (default: 25)
+
+watch-sweep flags:
+  --store <path>  store root (default: store)
+  --actor <a>     audit actor (default: xtask)
+  --trust <t>     official | staff_verified | community (default: official)
+  --limit <n>     max due URLs per run (default: 25)
+
+hcch-poll flags:
+  --store <path>  store root (default: store)
+  --actor <a>     audit actor (default: xtask)
 
 add-authority flags:
   --store <path>  store root (default: store)
@@ -635,40 +650,24 @@ pub(crate) fn record_fetch_failure(
     at: i64,
 ) {
     let dedup_key = handbook_store::store::sha256_hex(format!("{slug}|fetch|{url}").as_bytes());
-    let inserted = conn.execute(
-        "INSERT INTO task(authority_id, kind, title, detail, status,
-                           priority, dedup_key, created_by, created_at)
-         VALUES (?1, 'validate_fact', ?2, ?3, 'open', 0, ?4, ?5, ?6)",
-        rusqlite::params![
-            authority,
-            format!("fetch failed: {url}"),
-            failure,
-            dedup_key,
-            actor,
-            at,
-        ],
-    );
-    match inserted {
-        Ok(_) => {}
-        Err(rusqlite::Error::SqliteFailure(e, _))
-            if e.code == rusqlite::ErrorCode::ConstraintViolation =>
-        {
-            conn.execute(
-                "UPDATE task SET detail = ?1, created_at = ?2
-                 WHERE dedup_key = ?3
-                   AND status IN ('open', 'batched', 'in_progress')",
-                rusqlite::params![failure, at, dedup_key],
-            )
-            .unwrap_or_else(|e| {
-                eprintln!("fetch-url: refresh task: {e}");
-                std::process::exit(1);
-            });
-        }
-        Err(e) => {
-            eprintln!("fetch-url: insert task: {e}");
-            std::process::exit(1);
-        }
-    }
+    let title = format!("fetch failed: {url}");
+    ingest::sweep::record_task(
+        conn,
+        &ingest::sweep::NewTask {
+            authority_id: authority,
+            kind: "validate_fact",
+            title: &title,
+            detail: failure,
+            priority: 0,
+            dedup_key: &dedup_key,
+            created_by: actor,
+            created_at: at,
+        },
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("fetch-url: insert task: {e}");
+        std::process::exit(1);
+    });
     println!("task: fetch failure recorded for {url}");
 }
 

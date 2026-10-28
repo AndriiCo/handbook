@@ -1,0 +1,17 @@
+# apostille-watch.timer — DRAFT (prompt 051, ships with
+# apostille-watch.service; enabling on prod is an open question).
+#
+# Daily sweep with a random delay so 500 polite fetches never align
+# into a burst. Persistent: a missed run (downtime) fires once at the
+# next boot instead of silently skipping a day.
+[Unit]
+Description=Daily Apostille Handbook watch sweep
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1800
+Persistent=true
+Unit=apostille-watch.service
+
+[Install]
+WantedBy=timers.target
