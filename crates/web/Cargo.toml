@@ -45,6 +45,18 @@ h3-quinn = "0.0.10"
 # Both-SANs boot check (single-443 spec §1.3); already in the tree
 # via acme, added here as a direct dep for the web crate's use.
 x509-parser = "0.18"
+# Passkeys (spec customer-auth.md §0):
+# danger-allow-state-serialisation is the documented safe case
+# (ceremony state in server-side SQLite, single-use).
+# No `ring`: crypto backend is openssl (workspace TLS rule).
+# (conditional-ui arrives with §2.5 autofill in Phase 4.)
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+# Vendored OpenSSL for hermetic builds: Mac system OpenSSL is v4
+# (openssl-sys may reject it) and zigbuild cross targets have no
+# system libs. Precedent: rusqlite bundled, aws-lc-sys.
+openssl-sys = { version = "0.9", features = ["vendored"] }
 
 [dev-dependencies]
 ed25519-dalek = "2"

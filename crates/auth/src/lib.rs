@@ -6,6 +6,7 @@
 
 pub mod csrf;
 pub mod login;
+pub mod passkey;
 pub mod ws;
 
 use rusqlite::{Connection, OptionalExtension};
@@ -139,13 +140,44 @@ pub struct NewSession<'a> {
     pub user_agent: &'a str,
 }
 
-/// Create the `session`, `identity_link`, and `admin_cert` tables.
+/// Create the `session`, `identity_link`, `admin_cert`,
+/// `account`, `webauthn_credential`, and `webauthn_challenge`
+/// tables (spec `customer-auth.md` §1).
 ///
 /// Separate from `handbook-store` migrations (single-writer rule):
 /// the web binary runs both at startup.
 pub fn migrate_auth_tables(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS session(
+        "CREATE TABLE IF NOT EXISTS account(
+           user_id TEXT PRIMARY KEY,
+           role TEXT NOT NULL DEFAULT 'customer',
+           customer_ref TEXT UNIQUE,
+           created_at INTEGER NOT NULL,
+           locked_at INTEGER,
+           step_up_at INTEGER,
+           fallback_until INTEGER
+         ) STRICT;
+         CREATE TABLE IF NOT EXISTS webauthn_credential(
+           credential_id TEXT PRIMARY KEY,
+           user_id TEXT NOT NULL REFERENCES account(user_id),
+           passkey_json TEXT NOT NULL,
+           label TEXT NOT NULL DEFAULT '',
+           created_at INTEGER NOT NULL,
+           last_used_at INTEGER,
+           revoked_at INTEGER
+         ) STRICT;
+         CREATE INDEX IF NOT EXISTS idx_cred_user ON webauthn_credential(user_id);
+         CREATE TABLE IF NOT EXISTS webauthn_challenge(
+           id TEXT PRIMARY KEY,
+           user_id TEXT,
+           kind TEXT NOT NULL,
+           state_json TEXT NOT NULL,
+           created_at INTEGER NOT NULL,
+           expires_at INTEGER NOT NULL,
+           consumed_at INTEGER
+         ) STRICT;
+         CREATE INDEX IF NOT EXISTS idx_challenge_exp ON webauthn_challenge(expires_at);
+         CREATE TABLE IF NOT EXISTS session(
            id TEXT PRIMARY KEY,
            user_id TEXT NOT NULL,
            role TEXT NOT NULL,
@@ -354,6 +386,25 @@ pub fn admin_cert_valid(conn: &Connection, fingerprint: &str) -> rusqlite::Resul
 /// browser will not store it, which is correct fail-closed behavior.
 pub fn session_cookie(name: &str, id: &str, secure: bool) -> String {
     let mut cookie = format!("{name}={id}; HttpOnly; SameSite=Lax; Path=/");
+    if secure {
+        cookie.push_str("; Secure");
+    }
+    cookie
+}
+
+/// Double-submit CSRF cookie: readable by page JS (NOT HttpOnly),
+/// echoed back in [`CSRF_HEADER`].
+pub fn csrf_cookie(token: &str, secure: bool) -> String {
+    let mut cookie = format!("{CSRF_COOKIE}={token}; SameSite=Lax; Path=/");
+    if secure {
+        cookie.push_str("; Secure");
+    }
+    cookie
+}
+
+/// Expire a cookie immediately (logout).
+pub fn clear_cookie(name: &str, secure: bool) -> String {
+    let mut cookie = format!("{name}=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/");
     if secure {
         cookie.push_str("; Secure");
     }

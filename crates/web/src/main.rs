@@ -22,6 +22,7 @@ mod host;
 mod mtls;
 mod p2;
 mod p2_labels;
+mod passkey;
 mod quic;
 mod ws_bus;
 
@@ -109,6 +110,11 @@ struct AppState {
     // redacting `SecretText` so state dumps can never leak it.
     voice_cfg: voice::VoiceConfig,
     voice_api_key: Option<config::SecretText>,
+    /// Passkey ceremonies (spec `customer-auth.md`): process-wide
+    /// crate handle built from `auth.*` DB rows at boot.
+    webauthn: std::sync::Arc<webauthn_rs::Webauthn>,
+    /// Auth rate-limit buckets (spec decision 0.6).
+    auth_limits: std::sync::Arc<passkey::RateBuckets>,
 }
 
 /// Build the full PUBLIC app router. `static_dir` roots
@@ -138,6 +144,8 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             label_cfg: p2_labels::LabelCfg::default(),
             voice_cfg: voice::VoiceConfig::default(),
             voice_api_key: None,
+            webauthn: std::sync::Arc::new(passkey::test_webauthn()),
+            auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
         },
         static_dir,
         spa_dir,
@@ -156,6 +164,26 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/ws/bus", get(ws_bus::ws_bus_upgrade))
         .route("/api/v1/demo/login", post(demo_login))
         .route("/api/v1/me", get(me))
+        .route(
+            "/api/v1/auth/passkey/register/start",
+            post(passkey::register_start),
+        )
+        .route(
+            "/api/v1/auth/passkey/register/finish",
+            post(passkey::register_finish),
+        )
+        .route(
+            "/api/v1/auth/passkey/login/start",
+            post(passkey::login_start),
+        )
+        .route(
+            "/api/v1/auth/passkey/login/finish",
+            post(passkey::login_finish),
+        )
+        .route("/api/v1/auth/profile/methods", get(passkey::list_methods))
+        .route("/api/v1/auth/profile/unlink", post(passkey::unlink))
+        .route("/api/v1/auth/logout", post(passkey::logout))
+        .route("/api/v1/auth/me", get(passkey::me))
         .route(
             "/api/v1/authorities/{slug}/facts",
             get(approval::public_facts),
@@ -551,6 +579,16 @@ async fn main() {
         // `Option::clone` spelling: keeps the secrets-scan
         // `generic-secret-assignment` run under its length floor.
         voice_api_key: Option::clone(&cfg.telnyx_api_key),
+        webauthn: std::sync::Arc::new(
+            passkey::build_webauthn(&cfg.auth_rp_id, &cfg.auth_rp_name, &cfg.auth_origin)
+                .unwrap_or_else(|| {
+                    eprintln!(
+                        "refusing to start: auth.rp_id/auth.origin do not build a WebAuthn handle"
+                    );
+                    std::process::exit(1);
+                }),
+        ),
+        auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
     };
     let public = public_router(
         state.clone(),
@@ -765,7 +803,7 @@ async fn serve_http(public: Router, admin: Router, cfg: &config::RuntimeConfig) 
                 async move {
                     axum_server::bind(addr)
                         .handle(handle)
-                        .serve(router.into_make_service())
+                        .serve(router.into_make_service_with_connect_info::<SocketAddr>())
                         .await
                 }
             });
@@ -890,7 +928,7 @@ async fn serve_tls(
                         axum_server::bind(addr)
                             .acceptor(mtls::MtlsAcceptor::new(tls))
                             .handle(handle)
-                            .serve(router.into_make_service())
+                            .serve(router.into_make_service_with_connect_info::<SocketAddr>())
                             .await
                     }
                 });
@@ -1599,6 +1637,8 @@ mod tests {
             label_cfg: p2_labels::LabelCfg::default(),
             voice_cfg: voice::VoiceConfig::default(),
             voice_api_key: None,
+            webauthn: std::sync::Arc::new(passkey::test_webauthn()),
+            auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
         };
         Fixture { _tmp: tmp, state }
     }

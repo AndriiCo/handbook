@@ -777,6 +777,8 @@ mod tests {
             label_cfg: crate::p2_labels::LabelCfg::default(),
             voice_cfg,
             voice_api_key: None,
+            webauthn: std::sync::Arc::new(crate::passkey::test_webauthn()),
+            auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
         };
         Fixture { _tmp: tmp, state }
     }

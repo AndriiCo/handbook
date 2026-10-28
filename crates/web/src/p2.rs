@@ -1393,6 +1393,8 @@ mod tests {
                 label_cfg: crate::p2_labels::LabelCfg::default(),
                 voice_cfg: voice::VoiceConfig::default(), // ADMIN-VOICE
                 voice_api_key: None,
+                webauthn: std::sync::Arc::new(crate::passkey::test_webauthn()),
+                auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             };
             Self {
                 _dir: dir,

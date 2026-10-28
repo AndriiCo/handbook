@@ -59,6 +59,9 @@ the consolidated author-decision list is at the bottom of this file.
   Host-routed admin (444 deprecated, both-SANs cert) +
   native QUIC/HTTP-3 (quinn + h3 bridge, `quic.enabled`,
   Alt-Svc, aws-lc-rs only).
+- [customer-auth.md](customer-auth.md) — passkey ceremonies +
+  linked-methods endpoints (tables, RP-ID decision, §6 rule
+  enforcement points, staff enrolment for Phase 4).
 - Legal drafts (lawyer review required, do not publish):
   [tos-draft.md](../legal/tos-draft.md),
   [privacy-draft.md](../legal/privacy-draft.md).
@@ -249,3 +252,11 @@ G6. Postgres declined for the slice (decided 2026-10-27):
 30. `/healthz` reports `0.1.0+<short-sha>` semver build metadata
     (and `/version` exposes `build` sha) so every deploy is
     identifiable on the wire.
+
+**Decided 2026-10-28 (auth goal):**
+
+31. Staff login: **passkey + mTLS client cert** (the open staff
+    method from prompt 008 is closed; password+TOTP rejected).
+    Cert identifies the device, passkey the person; either
+    alone grants nothing. Invitation-gated enrolment — see
+    [customer-auth.md](customer-auth.md) §5.

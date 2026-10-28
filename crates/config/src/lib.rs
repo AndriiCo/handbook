@@ -812,6 +812,9 @@ pub mod keys {
     /// Native QUIC/HTTP-3 listener (single-443 spec §2): bind UDP
     /// on `net.https_port`, serve h3, send Alt-Svc. Default false.
     pub const QUIC_ENABLED: &str = "quic.enabled";
+    pub const AUTH_RP_ID: &str = "auth.rp_id";
+    pub const AUTH_RP_NAME: &str = "auth.rp_name";
+    pub const AUTH_ORIGIN: &str = "auth.origin";
 
     /// Every registered key with its type (admin UI + roundtrip tests).
     pub const ALL: &[(&str, super::ConfigType)] = &[
@@ -846,6 +849,9 @@ pub mod keys {
         (TELNYX_WEBHOOK_PUBLIC_KEY, super::ConfigType::Text),
         (TELNYX_API_KEY, super::ConfigType::Secret),
         (QUIC_ENABLED, super::ConfigType::Bool),
+        (AUTH_RP_ID, super::ConfigType::Text),
+        (AUTH_RP_NAME, super::ConfigType::Text),
+        (AUTH_ORIGIN, super::ConfigType::Text),
     ];
 }
 
@@ -948,6 +954,9 @@ pub struct RuntimeConfig {
     pub telnyx_connection_id: Option<String>,
     pub telnyx_webhook_public_key: Option<String>,
     pub telnyx_api_key: Option<SecretText>,
+    pub auth_rp_id: String,
+    pub auth_rp_name: String,
+    pub auth_origin: String,
 }
 
 impl Default for RuntimeConfig {
@@ -989,6 +998,9 @@ impl Default for RuntimeConfig {
             telnyx_connection_id: None,
             telnyx_webhook_public_key: None,
             telnyx_api_key: None,
+            auth_rp_id: "andrii.ai".to_string(),
+            auth_rp_name: "Apostille Handbook".to_string(),
+            auth_origin: "https://andrii.ai".to_string(),
         }
     }
 }
@@ -1329,6 +1341,27 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.quic_enabled,
         )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::AUTH_RP_ID,
+            &mut warnings,
+            &mut cfg.auth_rp_id,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::AUTH_RP_NAME,
+            &mut warnings,
+            &mut cfg.auth_rp_name,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::AUTH_ORIGIN,
+            &mut warnings,
+            &mut cfg.auth_origin,
+        )?;
         overlay_port(
             conn,
             kek,
@@ -1429,13 +1462,13 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_31_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 31);
+    fn registry_holds_34_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 34);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
         // Two secrets (EAB HMAC, Telnyx API key); five bools
-        // (quic.enabled is the fifth); rest text.
+        // (quic.enabled is the fifth); rest text (auth.* adds three).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1444,7 +1477,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (5, 24, 2));
+        assert_eq!(counts, (5, 27, 2));
     }
 
     #[test]
@@ -1487,6 +1520,9 @@ mod runtime_tests {
         assert_eq!(cfg.telnyx_connection_id, None);
         assert_eq!(cfg.telnyx_webhook_public_key, None);
         assert_eq!(cfg.telnyx_api_key, None);
+        assert_eq!(cfg.auth_rp_id, "andrii.ai");
+        assert_eq!(cfg.auth_rp_name, "Apostille Handbook");
+        assert_eq!(cfg.auth_origin, "https://andrii.ai");
     }
 
     #[test]
@@ -1542,6 +1578,9 @@ mod runtime_tests {
             ),
             (keys::TELNYX_API_KEY, ConfigType::Secret, "key-x"),
             (keys::QUIC_ENABLED, ConfigType::Bool, "1"),
+            (keys::AUTH_RP_ID, ConfigType::Text, "example.test"),
+            (keys::AUTH_RP_NAME, ConfigType::Text, "Example RP"),
+            (keys::AUTH_ORIGIN, ConfigType::Text, "https://example.test"),
         ] {
             put(&conn, &kek, key, key_type, plaintext.as_bytes());
         }
@@ -1597,6 +1636,9 @@ mod runtime_tests {
             cfg.telnyx_api_key.as_ref().map(SecretText::as_str),
             Some("key-x")
         );
+        assert_eq!(cfg.auth_rp_id, "example.test");
+        assert_eq!(cfg.auth_rp_name, "Example RP");
+        assert_eq!(cfg.auth_origin, "https://example.test");
     }
 
     #[test]
