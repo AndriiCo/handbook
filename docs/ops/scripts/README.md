@@ -16,9 +16,12 @@ Rules for every script in this dir:
 
 Scripts:
 
-- `ops-deploy.sh <staging-dir>` — install the staged unit file
-  (diff shown first), run the accept gate + `xtask deploy`,
-  verify the health stamp.
+- `ops-deploy.sh <staging-dir> [--skip-accept]` — install the
+  staged unit file (diff shown first), run the accept gate +
+  `xtask deploy`, verify the health stamp. `--skip-accept` is an
+  explicit, announced escape hatch for content/schema-free
+  releases when prod has no build row (agent confirms per
+  release; never the default).
 - `ops-acme-enable.sh` — guard on the fixed binary, flip
   `acme.enabled`, unpin the file cert, restart, poll health,
   print issuance evidence.
