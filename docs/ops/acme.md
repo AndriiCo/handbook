@@ -2,7 +2,7 @@
 
 Our Rust binary issues and renews its own TLS certificate — no
 external ACME client on the box, no restarts. One certificate covers `andrii.ai`
-+ `admin.andrii.ai`, issued via Google Public CA with External
++ `admin.andrii.ai` + `www.andrii.ai`, issued via Google Public CA with External
 Account Binding (EAB), validated over http-01, renewed on the CA's
 ARI window (RFC 9773) with a lifetime fallback, and hot-swapped
 into the live server.
@@ -17,7 +17,7 @@ Google PKI. No Let's Encrypt, no ZeroSSL, no self-signed in prod
 |---|---|---|---|
 | `acme.enabled` | bool | true turns ACME mode on | false |
 | `acme.directory` | text | `prod`, `staging`, or a full `https://` directory URL | `prod` |
-| `acme.domains` | text | Comma-separated names on the cert | `andrii.ai,admin.andrii.ai` |
+| `acme.domains` | text | Comma-separated names on the cert | `andrii.ai,admin.andrii.ai,www.andrii.ai` |
 | `acme.email` | text | Optional contact mailbox (`user@host`, no `mailto:`) | none |
 | `acme.eab_kid` | text | Google EAB key ID (**required**) | — |
 | `acme.eab_hmac` | **secret** | Google EAB HMAC, base64 std or URL-safe (**required**, write-only) | — |

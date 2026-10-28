@@ -974,7 +974,7 @@ impl Default for RuntimeConfig {
             media_terms_read: false,
             acme_enabled: false,
             acme_directory: "prod".to_string(),
-            acme_domains_csv: "andrii.ai,admin.andrii.ai".to_string(),
+            acme_domains_csv: "andrii.ai,admin.andrii.ai,www.andrii.ai".to_string(),
             acme_email: None,
             acme_eab_kid: None,
             acme_eab_hmac_b64: None,
@@ -1473,7 +1473,10 @@ mod runtime_tests {
         assert!(!cfg.media_terms_read);
         assert!(!cfg.acme_enabled);
         assert_eq!(cfg.acme_directory, "prod");
-        assert_eq!(cfg.acme_domains_csv, "andrii.ai,admin.andrii.ai");
+        assert_eq!(
+            cfg.acme_domains_csv,
+            "andrii.ai,admin.andrii.ai,www.andrii.ai"
+        );
         assert_eq!(cfg.acme_email, None);
         assert_eq!(cfg.acme_eab_kid, None);
         assert_eq!(cfg.acme_eab_hmac_b64, None);

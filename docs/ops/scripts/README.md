@@ -25,3 +25,6 @@ Scripts:
 - `ops-acme-enable.sh` — guard on the fixed binary, flip
   `acme.enabled`, unpin the file cert, restart, poll health,
   print issuance evidence.
+- `ops-acme-add-www.sh` — guard on fixed binary + ACME mode +
+  www DNS, set the 3-name `acme.domains`, drop the persisted
+  pair (account kept), restart, verify 3 SANs + www serving.

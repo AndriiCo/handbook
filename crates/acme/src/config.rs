@@ -14,7 +14,7 @@ pub const GOOGLE_PROD_DIRECTORY: &str = "https://dv.acme-v02.api.pki.goog/direct
 /// Google Public CA staging ACME directory (untrusted certs, same checks).
 pub const GOOGLE_STAGING_DIRECTORY: &str = "https://dv.acme-v02.test-api.pki.goog/directory";
 /// Domains covered by the single issued certificate.
-pub const DEFAULT_DOMAINS: [&str; 2] = ["andrii.ai", "admin.andrii.ai"];
+pub const DEFAULT_DOMAINS: [&str; 3] = ["andrii.ai", "admin.andrii.ai", "www.andrii.ai"];
 
 /// ACME client configuration. Build with [`AcmeConfig::builder`]
 /// (validation happens in `build`) or [`AcmeConfig::from_stored`].
@@ -51,7 +51,7 @@ impl std::fmt::Debug for AcmeConfig {
 pub struct StoredAcme {
     /// `prod`, `staging`, or a full `https://` directory URL.
     pub directory: String,
-    /// Comma-separated domains (empty = both prod names).
+    /// Comma-separated domains (empty = all three prod names).
     pub domains_csv: String,
     /// Optional contact mailbox (no `mailto:` prefix).
     pub email: Option<String>,
@@ -90,7 +90,7 @@ impl AcmeConfig {
     /// Read config from DB-backed values (goal-025 stream 4,
     /// zero-env; replaces the old env mapping 1:1). `directory` is
     /// `prod` (default), `staging`, or a full directory URL;
-    /// `domains_csv` is comma-separated (default: both prod names);
+    /// `domains_csv` is comma-separated (default: all three prod names);
     /// `email` is an optional contact; `eab_kid` / `eab_hmac_b64`
     /// are the required Google EAB pair. Certs persist under
     /// `<store_dir>/acme/`.
@@ -181,7 +181,7 @@ impl AcmeConfigBuilder {
         self
     }
 
-    /// Domains for the single certificate (default: both prod names).
+    /// Domains for the single certificate (default: all three prod names).
     pub fn domains(mut self, domains: Vec<String>) -> Self {
         self.domains = domains;
         self
@@ -294,13 +294,17 @@ mod tests {
     }
 
     #[test]
-    fn defaults_cover_both_prod_names_on_google_prod() {
+    fn defaults_cover_all_three_prod_names_on_google_prod() {
         let config = builder().build().unwrap();
         assert_eq!(config.directory_url(), GOOGLE_PROD_DIRECTORY);
         assert!(!config.staging());
         assert_eq!(
             config.domains(),
-            &["andrii.ai".to_string(), "admin.andrii.ai".to_string()]
+            &[
+                "andrii.ai".to_string(),
+                "admin.andrii.ai".to_string(),
+                "www.andrii.ai".to_string()
+            ]
         );
         assert_eq!(config.email(), None);
         assert_eq!(config.eab_kid(), "kid-1");
@@ -403,7 +407,11 @@ mod tests {
         assert_eq!(config.directory_url(), GOOGLE_PROD_DIRECTORY);
         assert_eq!(
             config.domains(),
-            &["andrii.ai".to_string(), "admin.andrii.ai".to_string()]
+            &[
+                "andrii.ai".to_string(),
+                "admin.andrii.ai".to_string(),
+                "www.andrii.ai".to_string()
+            ]
         );
         assert_eq!(config.email(), None);
         assert_eq!(config.cert_dir(), Path::new("store/acme"));
@@ -442,7 +450,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(empty.directory_url(), GOOGLE_PROD_DIRECTORY);
-        assert_eq!(empty.domains().len(), 2);
+        assert_eq!(empty.domains().len(), 3);
         assert_eq!(empty.email(), None);
     }
 

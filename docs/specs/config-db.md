@@ -55,7 +55,7 @@ follow-up, see OQ-C4).
 | `MEDIA_TERMS_READ=1` | `media.terms_read` | bool | false |
 | `ACME_ENABLED=1` | `acme.enabled` | bool | false |
 | `ACME_DIRECTORY` | `acme.directory` | text (`prod`/`staging`/URL) | `prod` |
-| `ACME_DOMAINS` | `acme.domains` | text (CSV) | `andrii.ai,admin.andrii.ai` |
+| `ACME_DOMAINS` | `acme.domains` | text (CSV) | `andrii.ai,admin.andrii.ai,www.andrii.ai` |
 | `ACME_EMAIL` | `acme.email` | text (empty = none) | empty |
 | `ACME_EAB_KID` | `acme.eab_kid` | text (public ID, safe to log) | empty (= missing) |
 | `ACME_EAB_HMAC` | `acme.eab_hmac` | **secret** (base64) | required when enabled |
