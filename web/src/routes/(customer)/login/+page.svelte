@@ -339,6 +339,6 @@
 		max-width: 28rem;
 	}
 	.notice.err {
-		background: var(--warning-bg);
+		background: var(--error-bg);
 	}
 </style>

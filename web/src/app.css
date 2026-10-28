@@ -1,6 +1,57 @@
 /* Design tokens per docs/site-theme.md §3. System font stacks for now;
    webfonts (Source Serif 4 / Public Sans / IBM Plex Mono) come later. */
 
+/* Tailwind v4 (D38): theme + utilities WITHOUT preflight — preflight's
+   reset would restyle the 33 unmigrated pages, so each page migrates
+   explicitly (form controls need `[font:inherit]` until preflight
+   lands). No cascade layers either: utilities stay unlayered, so a
+   utility class beats these element selectors by specificity.
+   Content scanning is automatic per build; when an admin page first
+   uses utilities, scope the scan — today admin uses zero, so nothing
+   leaks into the public entry. */
+@import 'tailwindcss/theme.css';
+@import 'tailwindcss/utilities.css';
+
+/* Civic palette as utilities, mapped onto the vars above — the
+   three-state theme (OS default + data-theme override + snippet)
+   keeps working untouched. Discipline: pages use THESE tokens
+   (bg-surface, text-ink-muted, border-line, …), never the default
+   palette — the taste law (no purple, no gradients) is enforced
+   by review, not by the build. */
+@theme {
+	--color-bg: var(--bg);
+	--color-surface: var(--surface);
+	--color-surface-2: var(--surface-2);
+	--color-line: var(--border);
+	--color-ink: var(--text);
+	--color-ink-muted: var(--text-muted);
+	--color-accent: var(--accent);
+	--color-accent-fill: var(--accent-fill);
+	--color-accent-ink: var(--accent-ink);
+	--color-accent-hover: var(--accent-hover);
+	--color-success: var(--success);
+	--color-success-bg: var(--success-bg);
+	--color-warning: var(--warning);
+	--color-warning-bg: var(--warning-bg);
+	--color-error: var(--error);
+	--color-error-bg: var(--error-bg);
+	--color-focus: var(--focus);
+
+	--font-display: var(--font-display);
+	--font-body: var(--font-body);
+	--font-mono: var(--font-mono);
+
+	--radius-xs: var(--radius-xs);
+	--radius-sm: var(--radius-sm);
+	--radius-md: var(--radius-md);
+
+	/* Repo breakpoints (720 / 1080 / 1440), not Tailwind's
+	   768 / 1024 / 1280 — md:/lg:/xl: keep their repo meaning. */
+	--breakpoint-md: 720px;
+	--breakpoint-lg: 1080px;
+	--breakpoint-xl: 1440px;
+}
+
 :root {
 	--bg: #ffffff;
 	--surface: #eff3f6;
@@ -9,6 +60,7 @@
 	--text: #0f1f2b;
 	--text-muted: #334e63;
 	--accent: #0b4a75;
+	--accent-fill: #0b4a75;
 	--accent-ink: #ffffff;
 	--accent-hover: #083a5c;
 	--success: #176b3a;
@@ -58,6 +110,7 @@
 	--text: #0f1f2b;
 	--text-muted: #334e63;
 	--accent: #0b4a75;
+	--accent-fill: #0b4a75;
 	--accent-ink: #ffffff;
 	--accent-hover: #083a5c;
 	--success: #176b3a;
@@ -126,5 +179,19 @@ h2 {
 	*::after {
 		animation: none !important;
 		transition: none !important;
+	}
+}
+
+/* Print stub (OPEN-30 drive-by): hide the interactive chrome, keep the
+   wordmark as letterhead; force light ink-on-paper. `!important` beats
+   the layout's scoped display rules — print is the one place it is. */
+@media print {
+	.masthead .menus,
+	footer {
+		display: none !important;
+	}
+	body {
+		background: #fff;
+		color: #000;
 	}
 }

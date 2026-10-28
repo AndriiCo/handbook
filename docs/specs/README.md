@@ -322,3 +322,12 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     container without money is scope without purpose; money is
     cut per the roadmap (no Stripe charging), so the container
     waits for the invoice mirror. Revisit with payments.
+38. UI framework (author, 2026-10-28, OPEN-29/30/31 resolved):
+    **Tailwind v4** (picked after the 223KB gate was removed the
+    same day — the proposal's Option-A headroom premise fell away,
+    leaving ecosystem/convention vs consolidation churn). Pilot =
+    public home + dossier together (OPEN-31); Phase-0 drive-bys
+    approved — login `.notice.err` to `error-bg` + print-stylesheet
+    stub (OPEN-30). Themes stay CSS-var-driven (no `dark:` variants
+    until a page needs non-var colors). See
+    [../ui-framework-proposal.md](../ui-framework-proposal.md).

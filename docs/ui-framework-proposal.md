@@ -1,6 +1,8 @@
 # UI Framework + Visual-Design Proposal (for author review)
 
-Status: proposal — no code changes until the author answers OPEN-29/30/31.
+Status: DECIDED 2026-10-28 (D38) — Tailwind v4, pilot home+dossier,
+drive-bys approved. Implementation underway; the analysis below is kept
+as the record.
 Research basis: every file cited below was read (bodies, not listings);
 bundle sizes measured with `wc -c` on the current tree. No builds, tests,
 or writes were performed for this proposal.

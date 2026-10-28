@@ -53,10 +53,12 @@
 	/>
 </svelte:head>
 
-<section class="search-panel" aria-labelledby="start">
-	<h1 id="start">Start with your destination</h1>
-	<form role="search" onsubmit={(e) => e.preventDefault()}>
-		<label class="visually-hidden" for="q">Search the handbook</label>
+<section class="py-6" aria-labelledby="start">
+	<h1 id="start" class="m-0 mb-4 font-display text-3xl md:text-4xl">
+		Start with your destination
+	</h1>
+	<form role="search" class="flex flex-col gap-2 md:flex-row" onsubmit={(e) => e.preventDefault()}>
+		<label class="sr-only" for="q">Search the handbook</label>
 		<input
 			id="q"
 			name="q"
@@ -64,13 +66,24 @@
 			bind:value={query}
 			placeholder="Country, state, or authority…"
 			autocomplete="off"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit] md:flex-1"
 		/>
-		<button type="submit">Search</button>
+		<button
+			type="submit"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit]"
+		>
+			Search
+		</button>
 	</form>
 </section>
 
-<section aria-labelledby="index">
-	<h2 id="index" class="section-label">Authority index</h2>
+<section class="pb-8" aria-labelledby="index">
+	<h2
+		id="index"
+		class="border-b border-line pb-[0.4rem] font-body text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase"
+	>
+		Authority index
+	</h2>
 	{#if loadError}
 		<Notice variant="error" heading="Search is unavailable."><p>{loadError}</p></Notice>
 	{:else if results === null}
@@ -84,107 +97,21 @@
 			<p>Try a country name or a shorter term.</p>
 		</Notice>
 	{:else}
-		<ul class="ledger" aria-label={blank ? 'Authority index' : 'Search results'}>
+		<ul class="m-0 mt-4 list-none p-0" aria-label={blank ? 'Authority index' : 'Search results'}>
 			{#each results as authority (authority.slug)}
-				<li>
-					<a href={resolve('/(public)/authority/[slug]', { slug: authority.slug })}
+				<li
+					class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line py-[0.7rem]"
+				>
+					<a
+						class="inline-flex min-h-11 items-center font-bold"
+						href={resolve('/(public)/authority/[slug]', { slug: authority.slug })}
 						>{authority.name}</a
 					>
-					<span class="kind">{authority.country} · {factCount(authority.fact_count ?? 0)}</span>
+					<span class="mr-auto text-sm text-ink-muted"
+						>{authority.country} · {factCount(authority.fact_count ?? 0)}</span
+					>
 				</li>
 			{/each}
 		</ul>
 	{/if}
 </section>
-
-<style>
-	.search-panel {
-		padding: 1.5rem 0;
-	}
-	h1 {
-		font-size: 1.875rem;
-		margin: 0 0 1rem;
-	}
-	.section-label {
-		font-size: 0.8rem;
-		font-family: var(--font-body);
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--text-muted);
-		border-bottom: 1px solid var(--border);
-		padding-bottom: 0.4rem;
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-	.visually-hidden {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip: rect(0 0 0 0);
-	}
-	input[type='search'] {
-		min-height: 44px;
-		padding: 0.6rem 0.8rem;
-		font: inherit;
-		color: var(--text);
-		background: var(--bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-xs);
-	}
-	button {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-	}
-	:root[data-theme='dark'] button {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-	section[aria-labelledby='index'] {
-		padding-bottom: 2rem;
-	}
-	.ledger {
-		list-style: none;
-		margin: 1rem 0 0;
-		padding: 0;
-	}
-	.ledger li {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.25rem 0.75rem;
-		padding: 0.7rem 0;
-		border-bottom: 1px solid var(--border);
-	}
-	.ledger a {
-		font-weight: 700;
-		min-height: 44px;
-		display: inline-flex;
-		align-items: center;
-	}
-	.kind {
-		color: var(--text-muted);
-		font-size: 0.875rem;
-		margin-right: auto;
-	}
-	@media (min-width: 720px) {
-		h1 {
-			font-size: 2.25rem;
-		}
-		form {
-			flex-direction: row;
-		}
-		input[type='search'] {
-			flex: 1;
-		}
-	}
-</style>
