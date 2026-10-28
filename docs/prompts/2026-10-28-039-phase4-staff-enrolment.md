@@ -105,7 +105,29 @@ Verification performed (all observed this turn):
 ## Commits
 
 - `df4bc6f` — Phase 4 work (this entry describes it).
-- (This log entry + README index: separate commit, next.)
+- `1c6856c` — this log entry + README index (docs only).
+
+## Deploy addendum (appended 2026-10-28T06:26Z, same turn)
+
+Staged and deployed as hal (third fully-hal end-to-end ship):
+
+- `cargo zigbuild --release -p web -p xtask --target
+  x86_64-unknown-linux-gnu` AFTER the log commit (Phase-3
+  lesson), so binary SHA == version `1c6856c`. Freshness
+  verified via `strings` (`staff_enrol_refused` +
+  `1c6856c` present) before staging.
+- Staging `/home/hal/apostille/staging/1c6856c/` (ELF,
+  40-hex SHA, `packs/` included per the Phase-3 lesson).
+- `ops-deploy.sh 1c6856c --skip-accept` (announced: zero
+  diff in `packs/`, `handbook-store/`, no `*.sql`; the new
+  `staff_invite` table self-migrates idempotently at boot).
+  Over bb54d04 (kept, 9 releases total, within the 10 cap).
+- Live proof: `healthz` → `0.1.0+1c6856c`; enrol/start
+  malformed invite → 400 `invite malformed`; no-Origin →
+  403 `csrf check failed` (handler-level, through the
+  exemption); login/start unknown → 401; GET → 405;
+  `/admin/login` + `/admin/enrol` → 200; `current` →
+  1c6856c; service active.
 
 ## Follow-ups
 

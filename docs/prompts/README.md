@@ -100,4 +100,5 @@ to change history — append a correction section instead.
 - [2026-10-28-039-phase4-staff-enrolment.md](2026-10-28-039-phase4-staff-enrolment.md) —
   Phase 4 staff enrolment via 4 streams, parent
   single-writer implementation (spec §5, backend, UI,
-  guide); committed df4bc6f, staging next.
+  guide); committed df4bc6f, deployed 1c6856c as hal,
+  verified live.
