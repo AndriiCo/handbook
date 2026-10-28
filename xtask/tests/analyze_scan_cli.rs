@@ -53,11 +53,9 @@ fn init_store(dir: &tempfile::TempDir) -> String {
 fn seed_capture(store: &str, slug: &str, with_sidecar: bool) -> i64 {
     let conn = rusqlite::Connection::open(format!("{store}/handbook.sqlite")).unwrap();
     let authority: i64 = conn
-        .query_row(
-            "SELECT id FROM authority WHERE slug = ?1",
-            [slug],
-            |r| r.get(0),
-        )
+        .query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |r| {
+            r.get(0)
+        })
         .unwrap();
     conn.execute(
         "INSERT INTO capture(authority_id, captured_at, kind, path, bytes_raw, bytes_stored, sha256, trust)

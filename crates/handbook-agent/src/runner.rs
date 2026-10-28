@@ -217,11 +217,9 @@ fn db_err(e: HandbookError) -> ModelError {
 
 fn authority_id(conn: &Connection, slug: &str) -> Result<i64, ModelError> {
     let found: Option<i64> = conn
-        .query_row(
-            "SELECT id FROM authority WHERE slug = ?1",
-            [slug],
-            |row| row.get(0),
-        )
+        .query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |row| {
+            row.get(0)
+        })
         .optional()
         .map_err(HandbookError::from)
         .map_err(db_err)?;
@@ -258,8 +256,9 @@ pub fn skip_missing_sidecar(
     at: i64,
 ) -> Result<RunReport, ModelError> {
     let authority_id = authority_id(conn, slug)?;
-    let dedup_key =
-        handbook_store::store::sha256_hex(format!("{slug}|sidecar-missing|{capture_id}").as_bytes());
+    let dedup_key = handbook_store::store::sha256_hex(
+        format!("{slug}|sidecar-missing|{capture_id}").as_bytes(),
+    );
     in_transaction(conn, || {
         match conn.execute(
             "INSERT INTO task(authority_id, kind, title, detail, status, priority, dedup_key, created_by, created_at)

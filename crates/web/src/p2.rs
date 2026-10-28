@@ -2132,9 +2132,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        let stored = load_template_by_id(&meta, fx.template_id)
-            .unwrap()
-            .unwrap();
+        let stored = load_template_by_id(&meta, fx.template_id).unwrap().unwrap();
         let values: std::collections::BTreeMap<String, serde_json::Value> = review["values"]
             .as_object()
             .unwrap()

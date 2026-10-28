@@ -101,9 +101,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             conn.pragma_update(None, "user_version", 7)?;
         }
         if version < 8 {
-            conn.execute_batch(include_str!(
-                "../migrations/008_capture_watermark.sql"
-            ))?;
+            conn.execute_batch(include_str!("../migrations/008_capture_watermark.sql"))?;
             conn.pragma_update(None, "user_version", 8)?;
         }
         Ok(())
