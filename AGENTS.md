@@ -110,7 +110,9 @@ Speed rules for parallel-agent execution.
 - **Decisions stick.** Record author decisions in
   `docs/specs/README.md` the same turn; never re-ask a decided
   item. Open questions carry a number, an owner, and the stream
-  they block.
+  they block. When asking the author/operator about an outstanding
+  OPEN item, always cite the file (and section) where it lives —
+  e.g. "OPEN-32 (`docs/specs/p2-forms-labels.md` §9)".
 - **Lanes and gates.** CODE merges behind `cargo xtask ci`; SEC
   blocks merges on trust/PII/auth findings; TEST owns red/green
   and the demo drills. Day 4/6/8/10 are demo gates per
