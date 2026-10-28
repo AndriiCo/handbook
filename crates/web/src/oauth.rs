@@ -79,7 +79,8 @@ impl Default for UreqTransport {
 /// Install the workspace's single rustls provider (aws-lc-rs).
 /// ureq runs with `rustls-no-provider`, so no default is installed
 /// for us. First install wins; a prior install is fine, not an error.
-fn ensure_provider() {
+/// Shared with the magic-link SMTP mailer (same no-provider rule).
+pub(crate) fn ensure_provider() {
     let provider = rustls::crypto::aws_lc_rs::default_provider();
     let _ = rustls::crypto::CryptoProvider::install_default(provider);
 }
@@ -651,6 +652,8 @@ mod tests {
             google_cfg: google,
             apple_cfg: None,
             meta_cfg: None,
+            mailer: None,
+            magic_link_base: "https://example.test/apostille/login".to_string(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
         (tmp, app)

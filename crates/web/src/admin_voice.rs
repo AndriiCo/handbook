@@ -782,6 +782,8 @@ mod tests {
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,
+            mailer: None,
+            magic_link_base: "https://example.test/apostille/login".to_string(),
         };
         Fixture { _tmp: tmp, state }
     }

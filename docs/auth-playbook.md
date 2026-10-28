@@ -55,6 +55,12 @@
    `state`+binding pair covers CSRF and the id_token arrives
    via our own server-side token call, never through the
    browser.
+6. Private-relay sender registration (REQUIRED before any
+   magic link can reach a `@privaterelay.appleid.com`
+   address): Services ID → Sign in with Apple → Configure →
+   register each sending address (Phase 5, spec §12.7).
+   Receiving relay addresses at login needs no registration —
+   sending does.
 
 Event → action table (endpoint verifies Apple's JWT signature first,
 rejects anything else with 403 + audit):
@@ -147,12 +153,18 @@ with the App Secret first; reject anything else 403 + audit):
   (that's the point) but the token never acts as a persistent
   credential — it mints a normal short session.
 - Sending: dedicated transactional subdomain (e.g.
-  `mail.andrii.ai`) with SPF/DKIM/DMARC passing — **decision
-  needed**: reuse existing Andrii Co. mail infra or a new
-  transactional provider? Rate-limit sends per email + per IP;
-  identical responses for known/unknown addresses (no enumeration).
+  `mail.andrii.ai`) with SPF/DKIM/DMARC passing. Implementation
+  (Phase 5, spec §12.8, OPEN-25 resolved): Gmail SMTP for
+  andrii.ai initially (App Password in a sealed row); the
+  host/port/credentials/From rows stay configurable so a later
+  slice swaps in our own sender. Rate-limit sends per email +
+  per IP; identical responses for known/unknown addresses (no
+  enumeration).
 - Fallback logins get a `auth_fallback=true` audit mark and
   tighter idle timeout until the customer registers a passkey.
+  Implementation (Phase 5, spec §12.6, OPEN-2 resolved): 7-day
+  window + 1h idle, enforced via `session_usable`; re-armed by
+  each magic login, cleared by passkey/OAuth login.
 
 ## 6. Account-linking rules (the anti-takeover core)
 

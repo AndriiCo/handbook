@@ -66,6 +66,19 @@ ureq = { version = "3", default-features = false, features = [
 # (openssl-sys may reject it) and zigbuild cross targets have no
 # system libs. Precedent: rusqlite bundled, aws-lc-sys.
 openssl-sys = { version = "0.9", features = ["vendored"] }
+# Magic-link SMTP (spec customer-auth.md §12.8): lettre SMTP with
+# the ring-free pin — `rustls` (no provider) + `rustls-no-provider`
+# + `aws-lc-rs`, webpki roots. NEVER the `rustls-tls` feature:
+# it pulls `ring` as a second rustls provider (workspace TLS rule).
+lettre = { version = "0.11", default-features = false, features = [
+    "smtp-transport",
+    "builder",
+    "rustls",
+    "rustls-no-provider",
+    "aws-lc-rs",
+    "webpki-roots",
+    "hostname",
+] }
 
 [dev-dependencies]
 aws-lc-rs = "1"

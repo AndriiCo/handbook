@@ -388,3 +388,184 @@ The full operator surface — invite ceremony, staff login,
 offboarding, step-up pilot, staging checklist, rollback —
 is the [staff-enrolment runbook](staff-enrolment.md)
 (spec: [customer-auth.md](../specs/customer-auth.md) §5).
+
+## Magic link / mailer (`mailer.*`, Phase 5)
+
+Spec: [customer-auth.md](../specs/customer-auth.md) §12
+(fallback-only, token shape, relay rules, no-enumeration).
+Flow: server-side request → transactional email → single-use
+15-min token (256-bit CSPRNG hex, SHA-256 hash at rest) bound
+to the exact email; consume mints a normal customer session
+with a 7-day fallback window (1h idle inside it) + a
+`magic_login`/`fallback` audit. The emailed link carries the
+token in the URL **fragment** (`#t=`), never the query —
+fragments never reach server logs. No mailer JS anywhere
+(send path is server-side).
+
+**Sender decision (author, OPEN-25 resolved): Gmail SMTP for
+andrii.ai initially.** Host/port/credentials/From stay plain
+config rows so a later slice swaps in our own sender once IP
+reputation is built — no code change for the swap. TLS policy
+is fixed by the implementation: STARTTLS required (Gmail
+`smtp.gmail.com:587`); no plaintext SMTP, no mode key.
+
+### Gmail setup click-path
+
+Extends [auth-playbook.md](../auth-playbook.md) §5 (verify
+exact clicks in the current UI):
+
+1. Sending identity: the andrii.ai mailbox that will send
+   (this exact address becomes `mailer.from` AND the
+   envelope sender). Sending limits apply per mailbox
+   (Workspace daily caps) — fallback-only volume fits
+   comfortably; check the Admin console quota if sends
+   start failing.
+2. Google Account → **Security → 2-Step Verification**
+   (must be ON) → **App passwords** → create one named
+   e.g. `handbook-magic-link` → copy the 16-character
+   password ONCE (this IS `mailer.password`). This is an
+   App Password — never a mailbox password, never OAuth.
+   Revoking it in the same screen kills the sender
+   instantly (rotation drill step 11 below).
+3. `mailer.host` = `smtp.gmail.com`, `mailer.port` =
+   `587`, `mailer.username` = the full sending address
+   (same as `mailer.from`), `mailer.provider` = `smtp`.
+4. SPF/DKIM for andrii.ai: Gmail sends from Google infra,
+   so delivery authenticates under Google's envelope —
+   but the From domain SHOULD still carry SPF/DKIM/DMARC
+   records per the playbook §5 checklist (providers score
+   the From domain too). Verify with the staging drill:
+   request a link, read the raw headers in the test
+   inbox — `Authentication-Results` should show dkim=pass
+   (google) at minimum.
+5. Apple private-relay sender registration (REQUIRED the
+   moment magic links can go to `@privaterelay.appleid.com`
+   addresses): developer.apple.com → Identifiers → the
+   Services ID → Sign in with Apple → Configure → sender
+   registration — register the `mailer.from` address, or
+   Apple bounces relay-address mail provider-side
+   (indistinguishable by design; staging item 5 proves it).
+
+### The seven keys
+
+- `mailer.provider` — type `text`: `smtp` (prod) or `file`
+  (dev default — writes one 0600 file per message under
+  `{store}/mail/` instead of sending). Unknown value →
+  warn + magic login disabled (fail closed). Fresh stores
+  boot on `file` with zero config.
+- `mailer.host` — type `text` (SMTP hostname;
+  `smtp.gmail.com` today, our relay host after the swap).
+- `mailer.port` — type `text` (ports are text rows, same as
+  `net.port`; must parse as a nonzero u16, else disabled).
+- `mailer.username` — type `text` (SMTP AUTH username; the
+  full Gmail address today).
+- `mailer.password` — type `secret` (write-only): the Gmail
+  App Password today, the relay credential after the swap.
+  Paste in `/admin/config` secret row (never echoes), or
+  seed headless:
+  `xtask config-set --key mailer.password --type secret --value-from-stdin`.
+- `mailer.from` — type `text` (header/envelope From; this
+  exact address is what gets relay-registered above).
+- `mailer.dir` — type `text` (default `mail`, store-root
+  relative; file-provider outbox — inert under `smtp`).
+
+Step-up note: `PUT /admin/config/{key}` requires fresh
+step-up (staff-enrolment §5), so log in fresh immediately
+before pasting keys. Every PUT audits key+version only; a
+restart applies new rows (read-once boot).
+
+Boot-without-keys: missing/partial SMTP set → `None`
+(lenient overlays + warning, same as every OAuth slice) —
+boot ALWAYS succeeds. The request endpoint fails closed with
+`503 {"error": "magic login unavailable"}` (a GLOBAL outage
+code, identical for known/unknown addresses — no
+enumeration), nothing is sent, and boot logs one
+`WARNING: config mailer.* … — magic login disabled` stderr
+line. Passkey/OAuth flows unaffected. Consume correctness
+never depends on mailer liveness (the token is
+self-sufficient).
+
+Rotation: set-new PUT overwrites the ciphertext; restart;
+verify a staging request→inbox→consume BEFORE revoking the
+old credential (revoke-after-verify order). Gmail App
+Passwords have NO overlap grace (revoke is immediate, same
+warning as Meta's reset) — create-new → set-new → restart →
+verify → revoke-old in one window; brief magic-link outage
+is inherent, other methods unaffected. KEK rotation re-wraps
+rows — it does NOT rotate the App Password; do both on
+suspected exposure. `from`/host/port/username rotate by
+overwrite + restart. Future own-sender swap: overwrite the
+four rows + restart + staging drill — no deploy needed.
+
+### Staging acceptance (magic slice)
+
+Preconditions: staging origin reachable; test inbox
+provisioned (synthetic addresses only, never real
+staff/customer mailboxes); `mailer.from` sender verified per
+the click-path above; keys pasted + service restarted;
+fixtures synthetic-only.
+
+1. Happy path: logged-out request for a test address →
+   200 → mail arrives → link consumed from a DIFFERENT
+   browser (no CSRF cookie on first touch — the
+   Origin-only design) → session minted; `GET /auth/me`
+   200; `account.fallback_until` set (~7d out);
+   `magic_login`/`fallback` audited.
+2. Unknown email: request for an unregistered address →
+   byte-identical 200, zero mail, zero token rows, zero
+   new audits (no enumeration).
+3. Token rules: replay → 410 (audit `replay`); link older
+   than 15 min → 410 (audit `magic_expired`); malformed
+   token → 400; garbage well-formed token → 410 (audit
+   `invalid`) with a body byte-identical to replay.
+4. Rate limits: 4th request for one address in an hour →
+   429 while a different address still 200s (per-target);
+   burst past the per-IP caps → 429s on both endpoints.
+5. Relay delivery: request for a `@privaterelay.appleid.com`
+   test address → delivered (proves sender registration)
+   → consume works; the relay row resolves to its own
+   owner only (rule 3 — never string-matched across
+   accounts).
+6. Fallback window: magic login sets `fallback_until`;
+   advance the session idle past 1h → 401; before → 200;
+   passkey/OAuth login clears `fallback_until`
+   (`clear_fallback` — asserted, not assumed); second
+   magic login re-arms the 7d window.
+7. Verified-email join: magic login for an address with an
+   unverified `method='email'` hint row flips it to
+   verified — a LATER OAuth login for the same address
+   then fires `link_required` (rule-2 chain red→green).
+   Magic NEVER creates `identity_link` rows (flip-only):
+   the methods list and unlink gate are byte-identical.
+8. Ambiguous duplicates: two accounts sharing one address
+   → consume 410s (audit `ambiguous`), accounts stay
+   separate; locked-mid-flight → 410-shaped (audit
+   `account_locked`); staff-account → 410 (audit `role`).
+9. Keys wiped on a scratch DB → restart → request 503s
+   with the exact `magic login unavailable` string for
+   known AND unknown addresses, passkey/OAuth unaffected;
+   restore + restart → green.
+10. Audit rows carry hashes only — no raw token, email, or
+    credential bytes; `magic_token` holds hashes only;
+    access logs show no token (fragment design — grep the
+    request spans for `#t=` and `token=`).
+11. Rotation drill: create-new App Password → set-new →
+    restart → request→inbox→consume green → revoke-old.
+12. `cargo xtask ci` green; `web-budget` green (223KB gate;
+    server-side send — no mailer JS in either bundle);
+    secrets-scan clean (no password in repo, logs, or
+    fixtures).
+
+### Rollback
+
+Additive-only, no numbered migration: new keys are ROWS in
+the generic config KV table; `magic_token` is untouched by
+the old binary (it never queries it); no `identity_link`
+method values were added (flip-only), so the old unlink
+gate and methods list behave identically. Rollback =
+previous binary + previous unit file. Residuals: outstanding
+tokens sit unconsumable until re-upgrade, bounded by the
+15-min TTL (worst case the user re-requests); `fallback_until`
+values set by the new binary are ignored by the old binary's
+role-only `Session::valid` (sessions stay usable — no lockout,
+no manual cleanup).

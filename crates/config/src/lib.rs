@@ -823,6 +823,13 @@ pub mod keys {
     pub const APPLE_PRIVATE_KEY: &str = "apple.private_key";
     pub const META_CLIENT_ID: &str = "meta.client_id";
     pub const META_CLIENT_SECRET: &str = "meta.client_secret";
+    pub const MAILER_PROVIDER: &str = "mailer.provider";
+    pub const MAILER_HOST: &str = "mailer.host";
+    pub const MAILER_PORT: &str = "mailer.port";
+    pub const MAILER_USERNAME: &str = "mailer.username";
+    pub const MAILER_PASSWORD: &str = "mailer.password";
+    pub const MAILER_FROM: &str = "mailer.from";
+    pub const MAILER_DIR: &str = "mailer.dir";
 
     /// Every registered key with its type (admin UI + roundtrip tests).
     pub const ALL: &[(&str, super::ConfigType)] = &[
@@ -868,6 +875,13 @@ pub mod keys {
         (APPLE_PRIVATE_KEY, super::ConfigType::Secret),
         (META_CLIENT_ID, super::ConfigType::Text),
         (META_CLIENT_SECRET, super::ConfigType::Secret),
+        (MAILER_PROVIDER, super::ConfigType::Text),
+        (MAILER_HOST, super::ConfigType::Text),
+        (MAILER_PORT, super::ConfigType::Text),
+        (MAILER_USERNAME, super::ConfigType::Text),
+        (MAILER_PASSWORD, super::ConfigType::Secret),
+        (MAILER_FROM, super::ConfigType::Text),
+        (MAILER_DIR, super::ConfigType::Text),
     ];
 }
 
@@ -987,6 +1001,13 @@ pub struct RuntimeConfig {
     pub apple_private_key: Option<SecretText>,
     pub meta_client_id: Option<String>,
     pub meta_client_secret: Option<SecretText>,
+    pub mailer_provider: String,
+    pub mailer_host: Option<String>,
+    pub mailer_port: Option<String>,
+    pub mailer_username: Option<String>,
+    pub mailer_password: Option<SecretText>,
+    pub mailer_from: Option<String>,
+    pub mailer_dir: String,
 }
 
 impl Default for RuntimeConfig {
@@ -1039,6 +1060,13 @@ impl Default for RuntimeConfig {
             apple_private_key: None,
             meta_client_id: None,
             meta_client_secret: None,
+            mailer_provider: "file".to_string(),
+            mailer_host: None,
+            mailer_port: None,
+            mailer_username: None,
+            mailer_password: None,
+            mailer_from: None,
+            mailer_dir: "mail".to_string(),
         }
     }
 }
@@ -1343,6 +1371,48 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.meta_client_id,
         )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::MAILER_PROVIDER,
+            &mut warnings,
+            &mut cfg.mailer_provider,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::MAILER_HOST,
+            &mut warnings,
+            &mut cfg.mailer_host,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::MAILER_PORT,
+            &mut warnings,
+            &mut cfg.mailer_port,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::MAILER_USERNAME,
+            &mut warnings,
+            &mut cfg.mailer_username,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::MAILER_FROM,
+            &mut warnings,
+            &mut cfg.mailer_from,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::MAILER_DIR,
+            &mut warnings,
+            &mut cfg.mailer_dir,
+        )?;
         overlay_bool(
             conn,
             kek,
@@ -1509,6 +1579,13 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.meta_client_secret,
         )?;
+        overlay_secret(
+            conn,
+            kek,
+            keys::MAILER_PASSWORD,
+            &mut warnings,
+            &mut cfg.mailer_password,
+        )?;
         // H6 fix baked into the migration: a persistent dev-bypass
         // flag must never boot a release binary (spec §3).
         if cfg.admin_mtls_off && !cfg!(debug_assertions) {
@@ -1556,14 +1633,15 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_42_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 42);
+    fn registry_holds_49_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 49);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
-        // Five secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
-        // client secrets); five bools (quic.enabled is the fifth);
-        // rest text (auth.* adds three, google/apple/meta ids six).
+        // Six secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
+        // client secrets, mailer password); five bools
+        // (quic.enabled is the fifth); rest text (auth.* adds
+        // three, google/apple/meta ids six, mailer.* six).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1572,7 +1650,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (5, 32, 5));
+        assert_eq!(counts, (5, 38, 6));
     }
 
     #[test]
@@ -1620,6 +1698,13 @@ mod runtime_tests {
         assert_eq!(cfg.auth_origin, "https://andrii.ai");
         assert_eq!(cfg.google_client_id, None);
         assert_eq!(cfg.google_client_secret, None);
+        assert_eq!(cfg.mailer_provider, "file");
+        assert_eq!(cfg.mailer_host, None);
+        assert_eq!(cfg.mailer_port, None);
+        assert_eq!(cfg.mailer_username, None);
+        assert_eq!(cfg.mailer_password, None);
+        assert_eq!(cfg.mailer_from, None);
+        assert_eq!(cfg.mailer_dir, "mail");
     }
 
     #[test]
@@ -1684,6 +1769,13 @@ mod runtime_tests {
                 "id-x.apps.googleusercontent.com",
             ),
             (keys::GOOGLE_CLIENT_SECRET, ConfigType::Secret, "secret-x"),
+            (keys::MAILER_PROVIDER, ConfigType::Text, "smtp"),
+            (keys::MAILER_HOST, ConfigType::Text, "smtp.example.test"),
+            (keys::MAILER_PORT, ConfigType::Text, "587"),
+            (keys::MAILER_USERNAME, ConfigType::Text, "user@example.test"),
+            (keys::MAILER_PASSWORD, ConfigType::Secret, "app-password-x"),
+            (keys::MAILER_FROM, ConfigType::Text, "noreply@example.test"),
+            (keys::MAILER_DIR, ConfigType::Text, "mail-x"),
         ] {
             put(&conn, &kek, key, key_type, plaintext.as_bytes());
         }
@@ -1756,6 +1848,16 @@ mod runtime_tests {
         assert_eq!(cfg.apple_private_key, None);
         assert_eq!(cfg.meta_client_id, None);
         assert_eq!(cfg.meta_client_secret, None);
+        assert_eq!(cfg.mailer_provider, "smtp");
+        assert_eq!(cfg.mailer_host.as_deref(), Some("smtp.example.test"));
+        assert_eq!(cfg.mailer_port.as_deref(), Some("587"));
+        assert_eq!(cfg.mailer_username.as_deref(), Some("user@example.test"));
+        assert_eq!(
+            cfg.mailer_password.as_ref().map(SecretText::as_str),
+            Some("app-password-x")
+        );
+        assert_eq!(cfg.mailer_from.as_deref(), Some("noreply@example.test"));
+        assert_eq!(cfg.mailer_dir, "mail-x");
     }
 
     #[test]

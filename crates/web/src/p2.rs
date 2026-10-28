@@ -125,7 +125,7 @@ fn caller_customer_ref(state: &AppState, headers: &HeaderMap) -> Option<String> 
     let token = auth::cookie_value(cookies, auth::ADM_COOKIE)
         .or_else(|| auth::cookie_value(cookies, auth::PUB_COOKIE))?;
     let session = auth::get_session(&conn, token).ok()??;
-    if !session.valid(unix_now()) {
+    if !auth::session_usable(&conn, &session, unix_now()) {
         return None;
     }
     session.customer_ref
@@ -1398,6 +1398,8 @@ mod tests {
                 google_cfg: None,
                 apple_cfg: None,
                 meta_cfg: None,
+                mailer: None,
+                magic_link_base: "https://example.test/apostille/login".to_string(),
             };
             Self {
                 _dir: dir,

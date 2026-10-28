@@ -590,6 +590,8 @@ mod tests {
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: meta,
+            mailer: None,
+            magic_link_base: "https://example.test/apostille/login".to_string(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
         (tmp, app)

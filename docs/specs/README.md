@@ -288,3 +288,19 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     OPEN-3/OPEN-4 parent-recommended (admin-assisted recovery
     only; no admin-branch OAuth) pending author confirm —
     see [customer-auth.md](customer-auth.md) §5.
+35. Magic link (Phase 5, apex-only, fallback-only): POST-only
+    JSON endpoints (`/auth/magic/start|consume`) — no GET
+    consume, because `request_id_and_log` logs full URIs and a
+    magic token is a standalone bearer (unlike the OAuth code,
+    which needs the server-side client_secret); the emailed link
+    carries the token in the URL fragment (`#t=`), never the
+    query. New `magic_token` table (not challenge-kind reuse);
+    owner resolved fresh at consume (ambiguous → fail closed);
+    unverified email-hint rows flip to verified, no new
+    `identity_link` rows; single 410 for miss/expired/replay;
+    Origin-only guards (no CSRF echo — cross-browser consume is
+    the point); mail via Gmail SMTP (author, OPEN-25) over
+    ring-free lettre, host/port/creds/From configurable for a
+    future own-sender swap; fallback window 7d + 1h idle
+    (author-confirmed, OPEN-2) enforced via `session_usable` —
+    see [customer-auth.md](customer-auth.md) §12.

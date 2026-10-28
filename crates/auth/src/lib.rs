@@ -7,6 +7,7 @@
 pub mod apple;
 pub mod csrf;
 pub mod login;
+pub mod magic;
 pub mod meta;
 pub mod oauth;
 pub mod passkey;
@@ -36,6 +37,11 @@ pub const CUSTOMER_ABSOLUTE_SECS: i64 = 43_200;
 pub const ADMIN_IDLE_SECS: i64 = 1_800;
 /// Staff/admin absolute timeout, seconds (8h).
 pub const ADMIN_ABSOLUTE_SECS: i64 = 28_800;
+/// Magic-link fallback window, seconds (7d; spec §12.6, OPEN-2).
+pub const FALLBACK_WINDOW_SECS: i64 = 604_800;
+/// Customer idle timeout while the fallback window is active,
+/// seconds (1h; the 12h absolute still binds above it).
+pub const FALLBACK_IDLE_SECS: i64 = 3_600;
 
 /// Caller role, ordered so `>=` is the privilege check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -113,6 +119,38 @@ impl Session {
     pub fn valid(&self, now: i64) -> bool {
         !self.expired(now) && !self.idle_expired(now)
     }
+
+    /// Usable right now honoring an active magic-link fallback
+    /// window (spec §12.6): customer idle tightens to 1h while
+    /// `fallback_until` is in the future; a stale past value
+    /// counts as inactive. Other roles are unchanged.
+    pub fn valid_with_fallback(&self, now: i64, fallback_until: Option<i64>) -> bool {
+        if self.expired(now) {
+            return false;
+        }
+        let idle = match self.role {
+            Role::Staff | Role::Admin => ADMIN_IDLE_SECS,
+            Role::Customer | Role::Anonymous if fallback_until.is_some_and(|u| u > now) => {
+                FALLBACK_IDLE_SECS
+            }
+            Role::Customer | Role::Anonymous => CUSTOMER_IDLE_SECS,
+        };
+        now.saturating_sub(self.last_seen_at) < idle
+    }
+}
+
+/// Session usable right now, honoring the account fallback window
+/// (customer role only: one `account` lookup; other roles skip
+/// it). Replaces bare `session.valid` at every call site.
+pub fn session_usable(conn: &Connection, session: &Session, now: i64) -> bool {
+    if !matches!(session.role, Role::Customer) {
+        return session.valid(now);
+    }
+    let fallback = passkey::get_account(conn, &session.user_id)
+        .ok()
+        .flatten()
+        .and_then(|a| a.fallback_until);
+    session.valid_with_fallback(now, fallback)
 }
 
 /// Authenticated caller resolved from a session cookie.
@@ -219,7 +257,16 @@ pub fn migrate_auth_tables(conn: &Connection) -> rusqlite::Result<()> {
            expires_at INTEGER NOT NULL,
            consumed_at INTEGER,
            consumed_by TEXT
-         ) STRICT;",
+         ) STRICT;
+         CREATE TABLE IF NOT EXISTS magic_token(
+           token_hash TEXT PRIMARY KEY,
+           email_hash TEXT NOT NULL,
+           created_at INTEGER NOT NULL,
+           expires_at INTEGER NOT NULL,
+           consumed_at INTEGER
+         ) STRICT;
+         CREATE INDEX IF NOT EXISTS idx_magic_email ON magic_token(email_hash);
+         CREATE INDEX IF NOT EXISTS idx_magic_exp ON magic_token(expires_at);",
     )?;
     Ok(())
 }
@@ -503,6 +550,55 @@ mod tests {
             .expect("present");
         assert!(s.valid(now + ADMIN_IDLE_SECS - 1));
         assert!(!s.valid(now + ADMIN_IDLE_SECS));
+    }
+
+    #[test]
+    fn fallback_window_tightens_customer_idle() {
+        let conn = memory();
+        let now = 1_800_000_000;
+        conn.execute(
+            "INSERT INTO account(user_id, role, customer_ref, created_at, locked_at, step_up_at, fallback_until)
+             VALUES ('u1', 'customer', 'cust-1', 1, NULL, NULL, NULL)",
+            [],
+        )
+        .unwrap();
+        create_session(&conn, "sess-1", &new_session(now)).expect("create");
+        let s = get_session(&conn, "sess-1").expect("get").expect("present");
+        // No window: role default (24h idle; absolute binds first).
+        assert!(session_usable(&conn, &s, now + FALLBACK_IDLE_SECS));
+        // Active window: 1h idle binds.
+        magic::set_fallback(&conn, "u1", now + FALLBACK_WINDOW_SECS).unwrap();
+        assert!(session_usable(&conn, &s, now + FALLBACK_IDLE_SECS - 1));
+        assert!(!session_usable(&conn, &s, now + FALLBACK_IDLE_SECS));
+        // Stale window: inactive again (compare > now, not non-NULL).
+        magic::set_fallback(&conn, "u1", now - 1).unwrap();
+        assert!(session_usable(&conn, &s, now + FALLBACK_IDLE_SECS));
+        // Graduation: passkey login clears the window.
+        magic::set_fallback(&conn, "u1", now + FALLBACK_WINDOW_SECS).unwrap();
+        passkey::clear_fallback(&conn, "u1").unwrap();
+        assert!(session_usable(&conn, &s, now + FALLBACK_IDLE_SECS));
+    }
+
+    #[test]
+    fn session_usable_skips_account_for_staff() {
+        let conn = memory();
+        let now = 1_800_000_000;
+        create_session(
+            &conn,
+            "sess-adm",
+            &NewSession {
+                role: Role::Admin,
+                customer_ref: None,
+                ..new_session(now)
+            },
+        )
+        .expect("create");
+        let s = get_session(&conn, "sess-adm")
+            .expect("get")
+            .expect("present");
+        // No account row at all: staff path never looks.
+        assert!(session_usable(&conn, &s, now + ADMIN_IDLE_SECS - 1));
+        assert!(!session_usable(&conn, &s, now + ADMIN_IDLE_SECS));
     }
 
     #[test]

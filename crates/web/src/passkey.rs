@@ -116,7 +116,8 @@ pub(crate) fn user_agent(headers: &HeaderMap) -> &str {
         .unwrap_or("")
 }
 
-/// Valid session from the public cookie (touches `last_seen`).
+/// Valid session from the public cookie (touches `last_seen`;
+/// honors the magic-link fallback window, spec §12.6).
 pub(crate) fn session_of(
     conn: &rusqlite::Connection,
     headers: &HeaderMap,
@@ -125,7 +126,7 @@ pub(crate) fn session_of(
     let cookies = headers.get(header::COOKIE).and_then(|v| v.to_str().ok())?;
     let id = auth::cookie_value(cookies, auth::PUB_COOKIE)?;
     let session = auth::get_session(conn, id).ok()??;
-    if !session.valid(now) {
+    if !auth::session_usable(conn, &session, now) {
         return None;
     }
     let _ = auth::touch_session(conn, id, now);
@@ -197,7 +198,7 @@ pub(crate) fn set_cookies(values: &[String]) -> HeaderMap {
     map
 }
 
-fn valid_email(raw: &str) -> Option<String> {
+pub(crate) fn valid_email(raw: &str) -> Option<String> {
     let email = raw.trim().to_lowercase();
     if email.len() <= 254 && email.contains('@') && !email.contains(' ') {
         Some(email)

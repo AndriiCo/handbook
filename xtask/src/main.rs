@@ -269,16 +269,20 @@ fn run_retention_sweep(args: &[String]) {
 }
 
 /// Day-1 JS budget gate: raw JS+CSS bytes in `web/build` must stay
-/// under 221KB (cold cache, excluding images/fonts). Raised from 150KB
+/// under 223KB (cold cache, excluding images/fonts). Raised from 150KB
 /// when the P2 customer routes (forms guided-fill + shipping) landed,
 /// then 200→220KB for the form-framework + DS-4194 pilot (goal-025),
 /// then 220→221KB for Apple + Meta OAuth UI (Phase 3): two more
 /// providers' login/link buttons plus the provider-parameterized
 /// helper and shared error map (~0.5KB; the per-provider login and
 /// security chunks stay code-split, so no single page load pays the
-/// total.
+/// total), then 221→223KB for magic-link UI (Phase 5): the request
+/// form + fragment-consume branch fold into the login page (a
+/// dedicated route cost a whole second chunk and missed the gate,
+/// so it was folded — no new route) plus the shared magic helper
+/// (~1.9KB raw; login chunk only, loaded once per login visit).
 fn run_web_budget() {
-    const BUDGET: u64 = 221 * 1024;
+    const BUDGET: u64 = 223 * 1024;
     let mut sized: Vec<(u64, String)> = Vec::new();
     let mut stack = vec![std::path::PathBuf::from("web/build")];
     if !stack[0].is_dir() {

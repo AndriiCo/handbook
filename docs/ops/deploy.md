@@ -36,7 +36,7 @@ rustup target add x86_64-unknown-linux-gnu
 export PATH="/tmp/zig-aarch64-macos-0.17.0:$PATH"   # + cargo-zigbuild in ~/.cargo/bin
 cargo zigbuild --release -p web -p xtask --target x86_64-unknown-linux-gnu
 (cd web && npm run build && npm run build:admin)
-cargo xtask web-budget   # 220KB gate must pass
+cargo xtask web-budget   # 223KB gate must pass
 ```
 
 (/tmp gets wiped — if the zig toolchain is gone, re-run the

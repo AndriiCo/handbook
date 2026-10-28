@@ -19,6 +19,7 @@ mod admin_voice;
 mod admin_workers;
 mod approval;
 mod host;
+mod magic;
 mod mtls;
 mod oauth;
 mod oauth_apple;
@@ -131,6 +132,13 @@ struct AppState {
     /// until `meta.client_id` + `meta.client_secret` rows are
     /// set — the endpoints 503, the boot never refuses.
     meta_cfg: Option<oauth_meta::MetaCfg>,
+    /// Magic-link mailer (spec `customer-auth.md` §12): `None`
+    /// until `mailer.provider` + its set are configured — the
+    /// request endpoint 503s, the boot never refuses.
+    mailer: Option<magic::Mailer>,
+    /// Magic-link landing base (origin-derived, never
+    /// configured): `{auth.origin}/apostille/login`.
+    magic_link_base: String,
 }
 
 /// Build the full PUBLIC app router. `static_dir` roots
@@ -165,6 +173,8 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,
+            mailer: None,
+            magic_link_base: "https://example.test/apostille/login".to_string(),
         },
         static_dir,
         spa_dir,
@@ -209,6 +219,8 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/apple/callback", get(oauth_apple::callback))
         .route("/api/v1/auth/meta/start", post(oauth_meta::start))
         .route("/api/v1/auth/meta/callback", get(oauth_meta::callback))
+        .route("/api/v1/auth/magic/start", post(magic::start))
+        .route("/api/v1/auth/magic/consume", post(magic::consume))
         .route(
             "/api/v1/authorities/{slug}/facts",
             get(approval::public_facts),
@@ -671,6 +683,8 @@ async fn main() {
                 None
             }
         },
+        mailer: magic::mailer_from_config(&cfg, std::path::Path::new(store_dir.as_str())),
+        magic_link_base: format!("{}/apostille/login", cfg.auth_origin.trim_end_matches('/')),
     };
     let public = public_router(
         state.clone(),
@@ -1724,6 +1738,8 @@ mod tests {
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,
+            mailer: None,
+            magic_link_base: "https://example.test/apostille/login".to_string(),
         };
         Fixture { _tmp: tmp, state }
     }

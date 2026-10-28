@@ -49,7 +49,7 @@ printf '\n' | sudo -n /usr/local/sbin/apostille-journal >/dev/null && echo JOURN
 export PATH="/tmp/zig-aarch64-macos-0.17.0:$PATH"   # + cargo-zigbuild: cargo install cargo-zigbuild
 cargo zigbuild --release -p web -p xtask --target x86_64-unknown-linux-gnu
 (cd web && npm run build && npm run build:admin)
-cargo xtask web-budget   # 220KB gate must pass
+cargo xtask web-budget   # 223KB gate must pass
 VERSION=$(git rev-parse --short HEAD)
 ```
 

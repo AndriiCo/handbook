@@ -9,6 +9,7 @@
 		oauthStartError,
 		startOAuth
 	} from '../../../lib/customer/oauth.js';
+	import { consumeMagic, magicError, requestMagic } from '../../../lib/customer/magic.js';
 
 	let locale = $state<Locale>(resolveLocale());
 	let displayName = $state('');
@@ -21,6 +22,10 @@
 	let busy = $state(false);
 	let me = $state<{ user_id: string } | null>(null);
 	let oauthError = $state<string | null>(null);
+	let magicEmail = $state('');
+	let magicSent = $state(false);
+	let magicBusy = $state(false);
+	let magicStarted = false;
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
@@ -119,7 +124,50 @@
 		if (!res.ok) error = oauthStartError(res.status, OAUTH_LABELS[provider] ?? provider);
 	}
 
+	async function magicRequest(event: SubmitEvent) {
+		event.preventDefault();
+		error = null;
+		busy = true;
+		try {
+			const res = await requestMagic(magicEmail.trim(), { post });
+			if (!res.ok) {
+				error = magicError(res.status, 'request');
+				return;
+			}
+			// Identical for unknown addresses (anti-enumeration:
+			// the server answers 200 either way).
+			magicSent = true;
+		} finally {
+			busy = false;
+		}
+	}
+
 	$effect(() => {
+		// Magic-link consume (#t= fragment — never a query param, so
+		// the token stays out of server logs). Read once, strip
+		// immediately, consume exactly once (single-use token: a
+		// double-POST would burn it and show a false error).
+		const hash = window.location.hash;
+		if (hash.startsWith('#t=') && !magicStarted) {
+			magicStarted = true;
+			magicBusy = true;
+			history.replaceState(null, '', window.location.pathname + window.location.search);
+			consumeMagic(hash.slice(3), { post })
+				.then((res) => {
+					if (!res.ok) {
+						error = magicError(res.status, 'consume');
+						return;
+					}
+					localStorage.setItem('hb_last_user', res.body.user_id);
+					me = { user_id: res.body.user_id };
+				})
+				.catch(() => {
+					error = magicError(500, 'consume');
+				})
+				.finally(() => {
+					magicBusy = false;
+				});
+		}
 		fetch(api('/auth/me'), { credentials: 'same-origin' })
 			.then((res) => (res.ok ? res.json() : null))
 			.then((body) => {
@@ -155,6 +203,9 @@
 		· <button type="button" class="linklike" onclick={logout}>{t.logoutLabel}</button>
 	</p>
 {:else}
+	{#if magicBusy}
+		<p class="notice" role="status">Signing you in…</p>
+	{/if}
 	<form onsubmit={login}>
 		<h2>Log in with a passkey</h2>
 		<label for="account">User ID or email</label>
@@ -196,7 +247,26 @@
 		</button>
 	{/each}
 
-	<p class="muted">Email magic links arrive next.</p>
+	<form onsubmit={magicRequest}>
+		<h2>Or get an email link</h2>
+		<label for="magic-email">Email</label>
+		<input
+			id="magic-email"
+			name="magic_email"
+			type="email"
+			bind:value={magicEmail}
+			required
+			autocomplete="email"
+			disabled={busy}
+		/>
+		<button type="submit" disabled={busy}>Send sign-in link</button>
+	</form>
+
+	{#if magicSent}
+		<p class="notice" role="status">
+			Check your inbox — if that address has an account, a sign-in link is on its way.
+		</p>
+	{/if}
 {/if}
 
 {#if oauthError}
@@ -270,9 +340,5 @@
 	}
 	.notice.err {
 		background: var(--warning-bg);
-	}
-	.muted {
-		color: var(--text-muted);
-		max-width: 28rem;
 	}
 </style>

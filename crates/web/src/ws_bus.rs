@@ -122,7 +122,7 @@ fn resolve_caller(
         let Ok(Some(session)) = auth::get_session(&conn, token) else {
             return Ok((auth::Role::Anonymous, None));
         };
-        if !session.valid(unix_now()) {
+        if !auth::session_usable(&conn, &session, unix_now()) {
             return Ok((auth::Role::Anonymous, None));
         }
         let _ = auth::touch_session(&conn, &session.id, unix_now());

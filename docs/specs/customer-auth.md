@@ -261,7 +261,7 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 | ID | Question | Owner | Blocks |
 |---|---|---|---|
 | OPEN-1 | Live-ceremony proof that RP ID `andrii.ai` + `allow_subdomains(true)` + `append_allowed_origin(admin)` serves both origins end-to-end | CODE (staging) | §5 admin login, Day-6 gate |
-| OPEN-2 | Magic-link `fallback_until` window length + tighter idle value (playbook §5 says "tighter" without numbers) | SEC | Phase 3 timeouts |
+| OPEN-2 | ~~Magic-link `fallback_until` window length + tighter idle value~~ RESOLVED by §12.6: 7d window + 1h idle (author-confirmed 2026-10-28) | Author | Phase 5 |
 | OPEN-3 | Staff enrolment if passkey stalls: fallback scope | Author | §5 enrolment |
 | OPEN-4 | Admin-branch Google OAuth: needed at all, or staff stays passkey+mTLS (§5)? Phase 2 ships apex-only either way | Author | admin login scope |
 | OPEN-5 | tokeninfo→JWKS migration trigger (quota/latency at scale); ID-token local validation design | CODE | post-Phase-2 scale |
@@ -284,6 +284,10 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 | OPEN-22 | Who may mint invites (any admin via xtask, or narrower set)? | Author | invite authz |
 | OPEN-23 | Admin-role enrolment quorum: single admin or two-person/break-glass? | Author | `--role admin` path |
 | OPEN-24 | CRL/OCSP needed, or registry-only revocation stands for Phase 4? | SEC | cert lifecycle |
+| OPEN-25 | ~~Mail provider choice~~ RESOLVED: Gmail SMTP for andrii.ai initially; host/port/creds/From stay configurable for a future own-sender swap (author, 2026-10-28, §12.8) | Author | Phase 5 send path |
+| OPEN-26 | Bounce/complaint handling phase + webhook receiver design (out of v1 scope per §12.8) | SEC | post-Phase-5 deliverability |
+| OPEN-27 | Link-prefetch confirmation step: build only if staging shows prefetcher burns (§12.4); design owned then | SEC | fallback UX, conditioned |
+| OPEN-28 | Contact-email change / email-row removal: `method='email'` rows count as live methods but are not unlinkable in v1 — define the change flow | Author | profile UI |
 
 ## 9. Google OAuth (Phase 2)
 
@@ -470,4 +474,317 @@ Fits today — no DDL: `kind='meta'`/`method='meta'` free text, NULL email hash 
 
 OPEN-9..14 (Apple + Meta) live in the §8 table — the canonical
 list. New rows always land there, not here.
+
+## 12. Magic link — email fallback (Phase 5)
+
+Scope: customer login + implicit email verification on the **apex
+branch only**. Fallback of last resort per playbook §5: offered
+only when passkey/Apple/Google/Meta all fail. No link mode, no
+account creation, no admin-branch routes (staff stay
+passkey+mTLS per §5). Flow: `POST /auth/magic/start` (email in,
+always-200) → email with link → SPA reads the token from the
+URL **fragment** → `POST /auth/magic/consume` (JSON, 200 + session
+cookies). Reuses verbatim: `mint_magic_token`/`token_hash`/
+`MAGIC_LINK_TTL_SECS` (`login.rs`), `RateBuckets`, `audit_auth`,
+`create_session` + `PUB_COOKIE` + CSRF rotation.
+
+### 12.1 Endpoints (public router, alongside §2)
+
+- `POST /api/v1/auth/magic/start`, DTO (`deny_unknown_fields`):
+  `{"email": "…"}`. No session required. Guards: Origin check;
+  mints `hb_csrf` like every §2 start. Malformed email →
+  `400 {"error": "email malformed"}` (mirrors `register_start`;
+  shape errors reveal nothing).
+- `POST /api/v1/auth/magic/consume`, DTO: `{"token": "<64-hex>"}`.
+  Guards: **Origin check only — no CSRF echo** (deliberate:
+  consuming from a different browser is the point, so no
+  double-submit cookie can exist on first touch). Success →
+  `200 {"user_id": …, "fallback": true}` + session cookies.
+- **POST, not GET — decided (D35).** `request_id_and_log`
+  (`web/main.rs`) logs the full `Uri` including query and asserts
+  our URLs never carry tokens. A magic token is a standalone
+  Bearer [REDACTED] full login grant; unlike the OAuth `code`
+  (useless without the server-side `client_secret`), it must never
+  appear in a query string. Hence the emailed link carries the
+  token in the **fragment** — `https://{auth.origin}/
+  apostille/login#t=<64hex>` (origin-derived, never
+  configured) — which never leaves the browser, and the SPA
+  POSTs it in the JSON body (bodies are never logged). No
+  `?token=` form exists anywhere. No 302 vocabulary: magic is
+  JSON-only, so no D4 codes are added or reused.
+- **No binding cookie — deliberate D3 deviation.** Playbook §5:
+  cross-browser consume is the point. Security is the 256-bit
+  single-use token + 900s TTL + email-channel authentication.
+
+### 12.2 State: NEW `magic_token` table
+
+**A dedicated table, not `webauthn_challenge` `kind='magic'` reuse:**
+(1) TTL differs and `store_challenge` hardcodes 300s — magic
+needs 900s; parameterizing risks silent ceremony TTL changes.
+(2) Lookup key points the opposite direction (hash of a
+client-presented bearer, `staff_invite` pattern). (3) Payload is
+relational (email binding, per-email invalidation) — queryable
+columns, not opaque JSON. (4) Lifecycle (per-email invalidation,
+send-failure delete) fits neither challenge sweep nor
+`proof_fresh`, whose kind-genericity would turn stamped magic
+rows into unlink proofs. (5) Precedent: `staff_invite` chose
+exactly this shape.
+
+```sql
+CREATE TABLE IF NOT EXISTS magic_token(
+  token_hash TEXT PRIMARY KEY,  -- SHA-256 hex of the 256-bit token; Bearer [REDACTED] lives here
+  email_hash TEXT NOT NULL,     -- hash_str(lowercased email); owner resolved at consume
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,  -- created_at + 900 (MAGIC_LINK_TTL_SECS)
+  consumed_at INTEGER           -- set on first consume attempt (take-and-burn)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_magic_email ON magic_token(email_hash);
+CREATE INDEX IF NOT EXISTS idx_magic_exp ON magic_token(expires_at);
+```
+
+Lands in `migrate_auth_tables` (single-writer rule, §1 header).
+No `user_id` column by design: the owner is resolved fresh at
+consume (§12.4), so a lock/disable landing between request and
+consume still fails closed. Store fns in `auth::magic` (mirrors
+the `auth::oauth` flow+transport module): `store_magic_token`,
+`take_magic_token` (atomic guarded `UPDATE … WHERE consumed_at
+IS NULL AND expires_at > ?`; zero rows → invalid),
+`sweep_magic_tokens`, `invalidate_email_tokens`,
+`owners_by_email_hash`, `verify_email_rows`, `set_fallback`.
+Sweep + per-email invalidation (re-request burns outstanding rows
+for that `email_hash`, so exactly one live token per address) run
+on every request.
+
+### 12.3 Request flow (anti-enumeration core)
+
+Known, unknown, and ambiguous addresses all return `200
+{"ok": true}` with indistinguishable bodies. The path always does
+hash + owner lookup; the send happens last and only when ≥1 live
+owner exists. Unknown/ambiguous addresses store nothing and send
+nothing. (No "no account here" email is ever sent — that would
+turn the endpoint into a spam oracle and an inbox oracle.)
+"Fallback-only" gating is a UX concern (when to *offer* the
+option), not a server refusal — refusing known-but-passkeyless
+users would itself enumerate.
+
+- Mailer unconfigured → `503 {"error": "magic login
+  unavailable"}` (mirrors §9.1's `google login unavailable`;
+  config state reveals nothing about accounts). Boot always
+  succeeds (lenient overlays + one stderr WARNING).
+- Provider send failure → row deleted + `magic_send_failed` audit
+  (static tag, never provider bodies), still `200` (a failure is
+  indistinguishable from unknown-address silence by design).
+- Rate keys: `mr:{ip}` 10/min + `mr:{email_hash-prefix-16}`
+  3/hour (hash-prefix keying mirrors §5.7 `ef:`; never raw
+  email; the hourly per-target cap bounds inbox harassment).
+  Exceeded → `429 {"error": "rate limited"}`.
+- No audit on request (mirrors OAuth/passkey starts — buckets are
+  the abuse control, and per-spam rows would be a DB-growth
+  vector).
+
+### 12.4 Consume flow (consume-before-session)
+
+Order (mirrors §2.2/§5.2): (1) take-and-burn the token —
+miss/expired/consumed → `410 {"error": "link invalid or
+expired"}` (single code for all three: no replay-vs-expired
+oracle, and both advise "request a new one"); malformed shape
+(non-64-hex) → `400 {"error": "link invalid"}` (shape errors
+reveal nothing); (2) resolve owners (§12.5); (3) per-account rate
+gate `mx:{user_id}` 10/min (`mx:{ip}` 60/min runs pre-identify,
+mirroring `gc:`); (4) locked → `410`-shaped (same body — a
+locked-account consume burns the token and the user re-requests
+after recovery; fail-closed, same tradeoff as §5.2 invite
+consume), non-customer → `410` + audit; (5) flip verification
+(§12.5), set `fallback_until` (§12.6), `create_session` + CSRF
+rotation + `PUB_COOKIE`; (6) `200 {"user_id", "fallback": true}`.
+
+- **Prefetcher hazard (accepted in v1, watched):** Gmail link
+  prefetchers may burn the single-use token before the user
+  clicks. Failure mode is safe but annoying (user re-requests;
+  per-email invalidation keeps re-request clean). A
+  confirmation-step follow-up is OPEN-27, conditioned on staging
+  evidence — not built blind.
+
+### 12.5 Account resolution (playbook §6 rules 1–5)
+
+`owners_by_email_hash`: `SELECT DISTINCT user_id FROM
+identity_link WHERE email_hash = ? AND disabled_at IS NULL` —
+any method, any verified flag, including relay (Meta hashes are
+NULL and never match). Three outcomes:
+
+- **0 owners → `410`** (the token was valid but the account
+  vanished or was disabled mid-flight — no disclosure, no
+  creation: magic never mints accounts; it is a login path for
+  existing customers, and request-time unknown addresses never
+  receive tokens).
+- **1 owner → login.** Then `verify_email_rows`: `UPDATE
+  identity_link SET verified_email = 1 WHERE user_id = ? AND
+  email_hash = ? AND verified_email = 0 AND disabled_at IS NULL`.
+  Playbook §6 rule 2 made mechanical — inbox control proven, so
+  the unverified `method='email'` hint row left by passkey
+  register (§2.2) flips to verified and joins the
+  `usable_email_owner` surface for future OAuth `link_required`
+  hints. Relay rows (already `verified=1`) and other-method rows
+  are unaffected. **No new `identity_link` row is ever
+  inserted** — no `magic_link` method rows exist in v1, so the
+  unlink method gate, profile list, `live_method_count`, and the
+  `"session"` proof (rule 6: a magic session counts as fresh
+  auth but never sets `step_up_at` — no UV signal) behave
+  correctly with zero new branches.
+- **≥2 distinct owners → `410` + audit `magic_failed` reason
+  `ambiguous`.** Rule 5 permits duplicate-email accounts across
+  methods; a bare email cannot disambiguate them, so login fails
+  closed (same accounts-stay-separate guarantee as
+  `link_required`). Distinct-user counting (not row counting)
+  keeps the common one-user-two-rows case (hint + Google row)
+  green.
+- Rules map: rule 1 untouched (no new links); rule 2 via the
+  flip; rule 3 preserved (relay resolves to its own row's owner
+  — inbox control of the relay mailbox — never by string-join);
+  rule 4 N/A (no link mode); rule 5 via never-create +
+  ambiguous-fail-closed; rules 6/7 via §12.8.
+
+### 12.6 `fallback_until` semantics (OPEN-2 resolved)
+
+**OPEN-2 decision (author-confirmed 2026-10-28):** magic consume
+sets `fallback_until = now + FALLBACK_WINDOW_SECS`; while
+`fallback_until > now`, the customer idle timeout tightens from
+24h to `FALLBACK_IDLE_SECS`.
+
+- `FALLBACK_WINDOW_SECS = 604_800` (7 days): covers a lost-device
+  week including a weekend; bounded; each magic login re-arms it,
+  so chronic-fallback users stay in the tighter regime until a
+  strong login graduates them. Helper `set_fallback` mirrors
+  `set_step_up`/`clear_fallback`.
+- `FALLBACK_IDLE_SECS = 3_600` (1 hour): 24× tighter than
+  customer idle, staff-adjacent strictness (staff 30m) without
+  breaking active fallback use (`last_seen` touch keeps live
+  sessions alive); it actually binds, since customer absolute
+  (12h) already dominates the normal 24h idle — during fallback
+  the 1h idle becomes the binding constraint. Absolute stays 12h.
+- Enforcement (code, no DDL): `Session::valid` is role-only
+  today, so `session_usable(conn, session, now)` (customer role
+  only: fetch `fallback_until`, idle 3600 when future, else role
+  default; other roles unchanged) replaces every `session.valid`
+  call site — the HTTP extractor/`session_of`/`me` path and
+  `ws::authorize` alike. Stale past `fallback_until` counts as
+  inactive (compare `> now`, not non-NULL). Graduation unchanged:
+  passkey/OAuth login calls `clear_fallback`; magic re-arms.
+- Playbook §5 `auth_fallback=true` audit mark is expressed
+  without schema change: `magic_login` audits carry reason
+  `"fallback"` plus the `fallback_until` set — grep-able,
+  joinable, zero DDL.
+
+### 12.7 Relay-address interaction
+
+Magic links **to** `@privaterelay.appleid.com` addresses are
+attempted uniformly (same-200; relay rows resolve per §12.5), but
+Apple delivers to relay addresses only from **registered
+senders** — so the sending identity must be registered in the
+Apple Developer portal or relay-address mail fails provider-side
+(indistinguishable by design; staging validates with a real relay
+address). The playbook §2 portal checklist gains that
+registration step at implementation (OPEN-6/OPEN-18 precedent).
+Relay toggles (`email-enabled/disabled`) stay owned by the future
+Apple events slice (OPEN-11), not this one.
+
+### 12.8 Mailer seam + Gmail decision (OPEN-25 resolved)
+
+**OPEN-25 decision (author, 2026-10-28): send via Gmail SMTP for
+andrii.ai initially; host/port/credentials/From stay configurable
+rows so a future slice can swap in our own sender once IP
+reputation is built — no code change for the swap.** The spec
+imposes the seam contract; the swap is config-only by construction.
+
+- `auth::magic::Mailer` trait mirrors the `HttpTransport`
+  precedent: `send(to, subject, text_body) -> Result<_,
+  MailError>` (secrets/links never appear in errors). Live
+  `SmtpMailer` lives in `web` next to the handlers (the
+  `oauth.rs` precedent) over **lettre 0.11 SMTP with the ring-free
+  pin** (`default-features = false`, `smtp-transport` + `builder`
+  + `rustls` + `rustls-no-provider` + `aws-lc-rs` +
+  `webpki-roots` + `hostname`; the `rustls-tls` feature pulls
+  `ring` and is forbidden — same one-provider rule as every
+  `Cargo.toml` TLS comment). TLS policy is fixed: STARTTLS
+  required (Gmail `smtp.gmail.com:587`); no plaintext SMTP, no
+  mode key. Blocking send runs on `spawn_blocking` (no new async
+  runtime deps — ureq precedent). Dev/test get a `FileMailer`
+  (~one 0600 file per message under `{store}/mail/`); CI never
+  sends real mail (stub asserts To-preservation +
+  zero-sends-for-unknown).
+- Config keys (registry conventions; count test updated once):
+  `mailer.provider` text (`"file"` default | `"smtp"`; unknown →
+  warn + unconfigured = 503, fail closed), `mailer.host`,
+  `mailer.port` (text, ports-are-text precedent), `mailer.username`
+  text, `mailer.password` **secret** (Gmail App Password —
+  never a mailbox password), `mailer.from` text (header/envelope
+  From on andrii.ai; this exact address gets relay-registered
+  per §12.7), `mailer.dir` text (default `"mail"`, store-root
+  relative). Missing/partial SMTP set → request `503`, boot clean.
+- No link/token logging: neither the full URL, the token, nor
+  the raw address appears in app logs, audit rows, or provider
+  metadata beyond the required `To:` delivery. Audit uses
+  `email_hash`; rate keys use hash prefixes.
+- Template: single link, 15-minute-expiry copy, no
+  account-existence language ("if you requested this…"),
+  plain-text + minimal HTML.
+- Bounce/complaint handling is out of scope (no webhook receiver
+  in v1) — OPEN-26.
+
+### 12.9 Session / timeout / audit rules
+
+- Session: `create_session` role customer, `customer_ref =
+  user_id`, `PUB_COOKIE`, CSRF rotation — verbatim §2.4 tail.
+  Fallback idle (§12.6) applies from the first request. No
+  `step_up_at` (mirrors OAuth rule-6 notes).
+- Audit actions: `magic_login` (actor `user_id`, reason
+  `"fallback"`); `magic_expired` (reason `expired`) /
+  `magic_failed` (actor `anonymous`, static-tag reasons: `replay`
+  for consumed, `invalid` for unknown well-formed tokens, `shape`
+  for malformed, `orphaned` for valid tokens whose owner
+  vanished, `ambiguous`, `role`, `store`); `magic_send_failed`
+  (actor `anonymous`, `transport` | `rejected`); `account_locked`
+  tail reuses the existing shape. Hashes only, per §6.
+- Rate summary: request `mr:{ip}` 10/min + `mr:{email_hash-16}`
+  3/hour → JSON 429; consume `mx:{ip}` 60/min + `mx:{user_id}`
+  10/min → JSON 429. All four prefixes are free (`mr`/`mx`
+  collide with nothing in §§2/5/9–11).
+- Link/unlink: no changes — method gate, `live_method_count`
+  semantics, profile list, and the `"session"` proof all behave
+  correctly with zero new branches (§12.5).
+
+### 12.10 Staging acceptance (extends §7)
+
+Request always-200 for known/unknown/ambiguous with identical
+bodies; stub harness asserts zero sends for unknown; malformed →
+400; mailer unconfigured → 503 + clean boot; consume green →
+session + `fallback_until` set + 1h idle enforced (clock advanced
+past idle → 401, before → 200) + 7d window re-armed on second
+consume; passkey login clears `fallback_until`; replay +
+post-900s consume → `410`; malformed token → `400`;
+different-browser consume green (Origin-only, no CSRF echo);
+locked → `410`-shaped; staff-account magic → `410`;
+ambiguous-dup fixture → `410`, accounts stay separate;
+unverified-hint flip → later OAuth duplicate fires `link_required`
+(rule-2 chain red→green); relay request delivered via registered
+sender (real relay address at staging); per-IP + per-email limits
+trip correctly on both endpoints (hourly per-target cap asserted
+with a short window override in tests, real window at staging);
+audit/log grep shows hashes only, no token/link/address; Gmail
+send proves end-to-end delivery at staging; `cargo xtask ci` green.
+
+### 12.11 Table-expressiveness note
+
+Fits today, no DDL: `identity_link` flip (plain `UPDATE`),
+`account.fallback_until` (already there), `audit` (reason tag),
+rate buckets (in-memory), `mint_magic_token`/`token_hash`/
+`MAGIC_LINK_TTL_SECS`, `LoginMethod::MagicLink`. Needs DDL —
+exactly one item: `magic_token` (§12.2) in `migrate_auth_tables`.
+Needs code but no DDL: fallback-aware `session_usable` in all
+`session.valid` call sites, the five store fns, the mailer trait +
+SMTP/file impls. Deliberately unexpressed: raw emails (hashes
+only, everywhere), Bearer [REDACTED] (hashes only),
+provider tokens/queue IDs (send-and-drop), bounces (OPEN-26),
+`mail.*` credential keys beyond §12.8's SMTP set (the swap is
+config-shaped by a later slice if the next sender is not SMTP).
 
