@@ -78,7 +78,7 @@ Tasks:
   init   create a store and apply migrations [--store <path>]
   add-authority   add an office/jurisdiction (see flags below)
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
-  web-budget  check web/build JS+CSS against the Day-1 223KB gate
+  web-budget  report web/build JS+CSS size (advisory, no gate)
   serve       run the dev API server (cargo run -p web)
   analyze     draft proposed facts for an authority (stub only for now)
   fetch-url   fetch one URL into a warc capture (thin watch)
@@ -213,15 +213,15 @@ fn run_ci() {
     // Web gates (Slice F: these ran manually every phase — now they
     // are part of `ci` so a green `ci` means the whole monorepo).
     // Order matters: unit tests, then types, then the import gate,
-    // then both builds (smoke needs them), then the budget gate
-    // in-process (needs web/build fresh from this run).
+    // then both builds (smoke needs them fresh from this run).
+    // (`web-budget` is advisory-only since 2026-10-28 — the author
+    // removed the size gate; initial-page optimization is deferred.)
     run_or_exit("node", &["--test", "web/test/"]);
     run_or_exit("npm", &["run", "check", "--prefix", "web"]);
     run_or_exit("npm", &["run", "check:imports", "--prefix", "web"]);
     run_or_exit("npm", &["run", "build", "--prefix", "web"]);
     run_or_exit("npm", &["run", "build:admin", "--prefix", "web"]);
     run_or_exit("npm", &["run", "smoke", "--prefix", "web"]);
-    run_web_budget();
 }
 
 /// Run one CI step: missing binary is a loud fatal (never a silent
@@ -301,21 +301,13 @@ fn run_retention_sweep(args: &[String]) {
     }
 }
 
-/// Day-1 JS budget gate: raw JS+CSS bytes in `web/build` must stay
-/// under 223KB (cold cache, excluding images/fonts). Raised from 150KB
-/// when the P2 customer routes (forms guided-fill + shipping) landed,
-/// then 200→220KB for the form-framework + DS-4194 pilot (goal-025),
-/// then 220→221KB for Apple + Meta OAuth UI (Phase 3): two more
-/// providers' login/link buttons plus the provider-parameterized
-/// helper and shared error map (~0.5KB; the per-provider login and
-/// security chunks stay code-split, so no single page load pays the
-/// total), then 221→223KB for magic-link UI (Phase 5): the request
-/// form + fragment-consume branch fold into the login page (a
-/// dedicated route cost a whole second chunk and missed the gate,
-/// so it was folded — no new route) plus the shared magic helper
-/// (~1.9KB raw; login chunk only, loaded once per login visit).
+/// Advisory size report: raw JS+CSS bytes in `web/build` (top 8 +
+/// total). History: this was a Day-1 budget gate (150KB, raised to
+/// 200→220→221→223KB as P2 routes, form-framework, OAuth UI, and
+/// magic-link UI landed). The author removed the gate on 2026-10-28:
+/// JS/HTML/image sizes are unlimited until the initial-page
+/// optimization pass; this command only reports, never fails on size.
 fn run_web_budget() {
-    const BUDGET: u64 = 223 * 1024;
     let mut sized: Vec<(u64, String)> = Vec::new();
     let mut stack = vec![std::path::PathBuf::from("web/build")];
     if !stack[0].is_dir() {
@@ -356,11 +348,7 @@ fn run_web_budget() {
     for (bytes, path) in sized.iter().take(8) {
         println!("{bytes:>8}  {path}");
     }
-    println!("total JS+CSS: {total} bytes (budget: {BUDGET})");
-    if total > BUDGET {
-        eprintln!("web-budget: OVER BUDGET by {} bytes", total - BUDGET);
-        std::process::exit(1);
-    }
+    println!("total JS+CSS: {total} bytes (advisory, no gate)");
 }
 
 fn run_serve() {

@@ -71,7 +71,7 @@ tree and reject `/(admin)/…` route ids.
   cold cache, excluding images/fonts).
 - Week-3 targets per `docs/site-theme.md` §2: entry ≤ 40 KB Brotli,
   per-route chunk ≤ 30 KB, anonymous page ≤ 80 KB total, customer ≤
-  120 KB. CI gate (`xtask web-budget`) not built yet.
+  120 KB. No CI size gate (`xtask web-budget` reports, advisory only).
 - Measured 2026-10-27 (approx, whole-bundle Brotli): public JS total
   45 KB; anonymous home ≈ entry 1.3 KB + runtime chunks ≈ 28 KB +
   route nodes ≈ 2 KB ≈ **33 KB** — inside entry/page budgets. Formal

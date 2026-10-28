@@ -190,10 +190,10 @@ warn in console, never crash).
 
 ### 6.2 Budgets
 
-`cargo xtask web-budget` (200 KB Day-1 gate) must pass with
-the pilot built. The framework + pilot are code-split per
-route; raising the budget needs a justification comment at
-the gate (same rule as the P2 raise).
+`cargo xtask web-budget` reports the built size with the pilot
+built (advisory since 2026-10-28 — the Day-1 gate was removed; no
+budget to raise). The framework + pilot stay code-split per route
+regardless.
 
 ### 6.3 Submission semantics: never invented
 
@@ -216,7 +216,7 @@ decisions 10/14–16.
 - A4: DS-4194 pilot route renders all non-TBD fields, prints
   on US Letter, shows the replica banner, and posts nothing.
 - A5: `cargo xtask ci` + `npm run build && build:admin &&
-  smoke` + `cargo xtask web-budget` green.
+  smoke` green (`cargo xtask web-budget` reports size, advisory).
 - A6: Synthetic fixtures only; no PII, no invented DOS
   semantics; TBDs explicit in `REQUIREMENTS.md`.
 

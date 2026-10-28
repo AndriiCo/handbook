@@ -53,7 +53,7 @@
 (to build, Day 8–9): health/version shape, SPA shell + deep
 links 200, demo login → me → 401 matrix, analyze round-trip
 on fixtures, retention sweep accounting, migration
-forward-roll on a scratch DB, web-budget gate, secrets-scan,
+forward-roll on a scratch DB, web-budget size report, secrets-scan,
 plus every user-journey happy path in `user-journeys.md`.
 Exit 0 writes a stamp file
 (`acceptance/<sha>.json`: sha, time, staging host, suite

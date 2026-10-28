@@ -95,8 +95,7 @@ restarted; fixtures synthetic-only.
    passkey flows unaffected; restore + restart → green.
 8. Audit rows carry hashes only — no raw sub, email, token,
    or secret bytes anywhere.
-9. `cargo xtask ci` green; `web-budget` green (Google UI must
-   fit the remaining headroom — no bundled Google scripts);
+9. `cargo xtask ci` green (no bundled Google scripts);
    secrets-scan clean.
 
 ### Rollback
@@ -248,8 +247,7 @@ nowhere in the repo); fixtures synthetic-only.
     the new key is live, not the old).
 11. Audit rows carry hashes only — no raw sub, email, token,
     relay address, or key bytes anywhere.
-12. `cargo xtask ci` green; `web-budget` green (221KB gate;
-    no Apple JS); secrets-scan clean.
+12. `cargo xtask ci` green (no Apple JS); secrets-scan clean.
 
 ### Rollback
 
@@ -367,8 +365,7 @@ fixtures synthetic-only.
    blip window).
 10. Audit rows carry hashes only — no raw app-scoped id,
     token, or secret bytes.
-11. `cargo xtask ci` green; `web-budget` green (221KB gate;
-    no Meta JS SDK); secrets-scan clean.
+11. `cargo xtask ci` green (no Meta JS SDK); secrets-scan clean.
 
 ### Rollback
 
@@ -553,9 +550,9 @@ fixtures synthetic-only.
     request spans for `#t=` and `token=`).
 11. Rotation drill: create-new App Password → set-new →
     restart → request→inbox→consume green → revoke-old.
-12. `cargo xtask ci` green; `web-budget` green (223KB gate;
-    server-side send — no mailer JS in either bundle);
-    secrets-scan clean (no password in repo, logs, or
+12. `cargo xtask ci` green (server-side send — no mailer
+    JS in either bundle); secrets-scan clean (no password
+    in repo, logs, or
     fixtures).
 
 ### Rollback

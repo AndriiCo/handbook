@@ -71,10 +71,10 @@
   - Parent note: exact SvelteKit config keys for the two-build split
     must be verified against the installed SvelteKit version at
     scaffolding; the interim refusal rule is the fallback.
-- Budget gate: `xtask web-budget` builds public bundle, asserts brotli
-  bytes of anonymous entry < threshold, fails CI otherwise. Uses `cargo
-  xtask` to wrap `npm run build` (the one sanctioned Node exception,
-  web-stack.md §7.1).
+- Size report (advisory, no gate since 2026-10-28): `xtask web-budget`
+  reports raw JS+CSS bytes of the public bundle. Uses `cargo xtask` to
+  wrap `npm run build` (the one sanctioned Node exception, web-stack.md
+  §7.1).
 
 ## 1.3 Hosts and TLS (flag: admin.andrii.ui typo?)
 

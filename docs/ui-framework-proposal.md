@@ -5,6 +5,14 @@ Research basis: every file cited below was read (bodies, not listings);
 bundle sizes measured with `wc -c` on the current tree. No builds, tests,
 or writes were performed for this proposal.
 
+> Amendment 2026-10-28: the author removed the 223KB gate the same day
+> (`cargo xtask web-budget` is now advisory-only; JS/HTML/image sizes are
+> unlimited until the initial-page optimization pass). The analysis below
+> still stands as measured, but the recommendation's premise changed: with
+> no gate, Tailwind v4's main objection (forcing a bump) is gone, and the
+> choice becomes ecosystem/convention vs consolidation churn. Re-read §1–§2
+> and OPEN-29 in that light before deciding.
+
 ## 0. Ground truth
 
 - **Gate** (`xtask/src/main.rs`, `run_web_budget`): sums raw bytes of every
@@ -172,22 +180,22 @@ the single raised shadow reserved for `CountrySelect` dropdown + mobile sheets.
   (`.btn`, `.btn-primary`, `.btn-secondary`, `.input`, `.label`, `.ledger`,
   `.card`, `.receipt`, skeleton rows) + print-stylesheet stub (§3.3). Verify:
   `npm run build` + `cargo xtask web-budget` shows total *down*; no page
-  restyled yet. No gate change.
+  restyled yet.
 - **Phase 1 — Pilot: public home:** restyle home onto shared classes; add
   skeleton + verified feed. Verify: visual diff, axe/keyboard pass,
-  `web-budget` still green (home chunk shrinks). No gate change expected.
+  `web-budget` total down (home chunk shrinks — advisory, no gate).
 - **Phase 2 — System:** add `FactRow`, `Field`, `DataTable` to `lib/public-ui/`
   (+ tests where logic exists); convert dossier + login. Verify per page:
   `check-imports` green (new shared components live in `public-ui` only —
-  never `lib/customer`), budget green.
+  never `lib/customer`).
 - **Phase 3 — Sweep:** customer pages (forms/AddressBlock/CountrySelect/
   PhoneInput adopt `.field`/`.input`), then admin (config/triage/calls).
   Admin ships in `build-admin` only — verify via `build:admin` + smoke,
   never in public bundle.
-- **Gate updates:** none planned — consolidation should *grow* the 2.2KB
-  headroom. If the verified-feed WS code pushes over, follow precedent: bump
-  `BUDGET` with a dated comment naming the feature, the bytes, and which
-  chunk pays. Never bump silently; never bump to absorb a framework.
+- **Size tracking:** no gate — `cargo xtask web-budget` is advisory-only
+  since 2026-10-28. Still report the total per phase (consolidation should
+  move it *down*); if a phase grows it notably, say so in the phase notes
+  with the bytes and which chunk pays.
 
 ## 5. Risks + what NOT to change
 

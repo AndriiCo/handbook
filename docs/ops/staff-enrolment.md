@@ -183,9 +183,8 @@ synthetic-only.
 10. Audit rows carry hashes/fingerprints only — no raw
     invite tokens, session IDs, challenges, or key bytes.
 11. `cargo xtask ci` green; `check`/`check:imports`/
-    `build`/`build:admin`/`smoke` green; `web-budget`
-    green (staff UI ships in the admin bundle only);
-    `secrets-scan` clean.
+    `build`/`build:admin`/`smoke` green (staff UI ships
+    in the admin bundle only); `secrets-scan` clean.
 
 ## 7. Rollback
 
