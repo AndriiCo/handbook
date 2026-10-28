@@ -14,6 +14,11 @@
 # facts gate. Only for releases with no content/schema surface when
 # prod has no build row to check against — the agent confirms this
 # per release; the skip is always announced in the output.
+#
+# Migration notes: when the release crosses a schema migration, the
+# agent stages a one-line `$STAGE/MIGRATION_NOTES` file; its content
+# is forwarded as `xtask deploy --migration-notes` into the release
+# manifest (and echoed below for the audit trail).
 set -u
 
 STAGE="${1:?usage: $0 <staging-dir> [--skip-accept] (e.g. /home/hal/apostille/staging/69480d3)}"
@@ -82,9 +87,19 @@ fi
 
 echo "=== 2. deploy $VERSION ($SHA)"
 cd "$STAGE" || { echo "ABORT: cannot cd $STAGE"; exit 1; }
+# Optional manifest notes: the agent writes one line to
+# $STAGE/MIGRATION_NOTES at stage time when the release crosses a
+# schema migration (rollback-safe or not — the manifest is the audit
+# trail; absent file keeps the old empty-notes behavior).
+ARGS=(--version "$VERSION" --sha "$SHA" --src . --store /var/lib/apostille)
 # shellcheck disable=SC2086
-./xtask deploy --version "$VERSION" --sha "$SHA" --src . \
-    --store /var/lib/apostille $GATE_ARGS || {
+ARGS+=($GATE_ARGS)
+if [ -f "$STAGE/MIGRATION_NOTES" ]; then
+    NOTES="$(cat "$STAGE/MIGRATION_NOTES")"
+    echo "migration notes: $NOTES"
+    ARGS+=(--migration-notes "$NOTES")
+fi
+./xtask deploy "${ARGS[@]}" || {
     echo "ABORT: deploy failed (smoke failure auto-rolls-back — see output above)"
     exit 1
 }
