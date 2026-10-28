@@ -95,4 +95,5 @@ to change history — append a correction section instead.
 - [2026-10-28-038-phase3-apple-meta.md](2026-10-28-038-phase3-apple-meta.md) —
   Phase 3 Apple + Meta OAuth via 4 streams, parent
   single-writer implementation (spec §§10–11, backend, UI,
-  guide); committed 27bef58, staging next.
+  guide); committed 27bef58, deployed bb54d04 as hal,
+  verified live.

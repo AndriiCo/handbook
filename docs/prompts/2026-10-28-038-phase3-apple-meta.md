@@ -100,7 +100,35 @@ Verification performed (all observed this turn):
 ## Commits
 
 - `27bef58` — Phase 3 work (this entry describes it).
-- (This log entry + README index: separate commit, next.)
+- `bb54d04` — this log entry + README index (docs only).
+
+## Deploy addendum (appended 2026-10-28T05:57Z, same turn)
+
+Staged and deployed as hal (second fully-hal end-to-end ship):
+
+- `cargo zigbuild --release -p web -p xtask --target
+  x86_64-unknown-linux-gnu` (first attempt missed `--target`
+  and built macOS binaries — caught by `strings` showing the
+  Phase-2 SHA and no `hb_apple`; rebuilt correctly).
+- Staging `/home/hal/apostille/staging/bb54d04/` (ELF-verified
+  x86-64, 40-hex SHA; first deploy attempt aborted on
+  packs-validate because staging lacked `packs/` — added,
+  matching the 9c28dd9 layout).
+- `ops-deploy.sh bb54d04 --skip-accept` (announced: no
+  packs/migration surface — zero diff in `packs/`,
+  `handbook-store/`, no `*.sql`). Deployed over 9c28dd9
+  (kept, 8 releases total, within the 10 cap).
+- Live proof: `healthz` → `0.1.0+bb54d04`; POST
+  apple/meta/google start → 503 with the correct provider
+  message (expected pre-key state); GET start → 405; both
+  callbacks → 302 `.../login?error=oauth_unavailable`;
+  `systemctl is-active` → active. (hal has no journal grant;
+  deploy smoke + healthz are the proof.)
+
+Note: the deployed version is `bb54d04` (log commit), not
+`27bef58`, so the binary's baked `BUILD_SHA`, the release
+dir, and the SHA file all agree. Code is identical to
+`27bef58` (log commit is docs-only).
 
 ## Follow-ups
 
