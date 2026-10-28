@@ -43,6 +43,15 @@ done
 for d in spa spa-admin static; do
     [ -d "$STAGE/$d" ] || { echo "ABORT: $STAGE/$d missing"; exit 1; }
 done
+# Same-version redeploy into a root-owned target fails deep inside
+# xtask with a bare "Permission denied" — catch it here with the
+# exact remedy instead.
+TARGET="/srv/apostille/releases/$VERSION"
+if [ -e "$TARGET" ] && { [ ! -d "$TARGET" ] || [ ! -w "$TARGET" ]; }; then
+    echo "ABORT: $TARGET exists but is not writable by $USER (root-owned from an earlier root deploy?)"
+    echo "remedy as root: rm -rf $TARGET   # then re-run this script"
+    exit 1
+fi
 
 echo "=== 0. install unit file (showing diff first)"
 diff -u /etc/systemd/system/apostille.service "$STAGE/apostille.service" || true
