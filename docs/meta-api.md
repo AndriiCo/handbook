@@ -2,8 +2,11 @@
 
 - Source: https://dev.meta.ai/docs/overview.md (fetched 2026-10-26) +
   https://dev.meta.ai/docs/speech-to-text (streaming details).
-- Status: decided input (prompt 008 Q1). Exact JSON shapes get pinned
-  at implementation against these pages.
+- Status: decided input (prompt 008 Q1). Re-verified 2026-10-28
+  (prompt 049): base URL + Bearer auth confirmed; upstream env name
+  is `MODEL_API_KEY` (`META_API_KEY` stays a project-local alias);
+  structured output confirmed; NO embeddings endpoint exists (404).
+  Pinned request/response shapes: [meta-api-shapes.md](meta-api-shapes.md).
 
 ## Connection
 
