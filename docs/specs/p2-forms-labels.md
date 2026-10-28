@@ -408,6 +408,56 @@ owner-404 564-572, 422s 526-532), `approval.rs:115-186`,
 `admin_workers.rs:96-250`, `admin.rs` guards (CSRF passthrough at 242),
 P2 DDL `migrations/p2_001_init.sql`.
 
+### Proposed addition: staff printing + full-service packet
+(author direction 2026-10-28; still proposed — approve together with
+the list route above, not separately)
+
+**Business rule.** Most labels are printed by customers (they hold the
+documents; existing customer routes unchanged). Staff can print any
+label when needed, and full-service customers get a complete printed
+packet from the staff side. Print location is an ops concern, not an
+API concern: the endpoints below are location-agnostic, so any staff
+host (or a future satellite location with DB access) can serve them.
+
+**Staff label print:**
+`GET /apostille/api/v1/admin/shipments/{id}/labels/{label_id}/download`
+— same bytes as the customer download (one shared loader; the customer
+route at `p2_labels.rs:1083` stays the reference behavior), but
+`AdminAuth` + admin host guard, deliberately unscoped (staff see all
+shipments, the U-decision above). 404s mirror the customer route (`no
+such shipment` / `no such label` / `label file not available yet`);
+401/403/503 as the list route. Every print writes an audit row
+(`label_print`, staff user + shipment/label ids — IDs only, never
+bytes; the admin banner promises every action is audited). Idempotent
+GET; no state change besides the audit row.
+
+**Staff form print:**
+`GET /apostille/api/v1/admin/submissions/{id}/pdf` — staff twin of the
+customer submission PDF (`p2.rs:1086`, same scoping problem, same fix).
+Same auth, same 404 vocabulary (`unknown submission`), same audit rule
+(`submission_print`).
+
+**Full-service packet:**
+`GET /apostille/api/v1/admin/shipments/{id}/packet` → manifest JSON,
+not a merged PDF (composition over new render work):
+`{"shipment_id", "service_tier", "pieces": [{"kind":
+"label|form|packing_slip", "label_id?", "submission_id?", "url",
+"sha256"}]}` — `url` points at the staff twins above (absolute path,
+same host). The staff UI prints piece by piece. `service_tier`:
+`self_serve` (default) | `full_service`, stored on the shipment (D37
+leaves no order container, so the shipment is the only home — U7).
+packing_slip is the one new render (printpdf packing list: pieces,
+counts, destination office, no prices — pricing table still open; U8
+owns its exact contents). 404 when the shipment is unknown; 422
+`not a full-service shipment` when tier is `self_serve` (printing one
+piece stays available via the twins — the packet is the bundle).
+
+**New unresolved:** U7 confirm `service_tier` lives on the shipment
+(vs waiting for an order container — recommended: shipment, per D37);
+U8 packing-slip contents and whether it needs a build stamp like the
+form PDFs; U9 print-audit retention (IDs-only rows — recommend the
+standard audit retention, no new rule).
+
 ## 10. P1 dependencies
 
 - P1-D1: `authority` rows + slugs for pilot (Washington) with
