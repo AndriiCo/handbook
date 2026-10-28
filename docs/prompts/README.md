@@ -97,3 +97,7 @@ to change history — append a correction section instead.
   single-writer implementation (spec §§10–11, backend, UI,
   guide); committed 27bef58, deployed bb54d04 as hal,
   verified live.
+- [2026-10-28-039-phase4-staff-enrolment.md](2026-10-28-039-phase4-staff-enrolment.md) —
+  Phase 4 staff enrolment via 4 streams, parent
+  single-writer implementation (spec §5, backend, UI,
+  guide); committed df4bc6f, staging next.
