@@ -221,6 +221,7 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/meta/callback", get(oauth_meta::callback))
         .route("/api/v1/auth/magic/start", post(magic::start))
         .route("/api/v1/auth/magic/consume", post(magic::consume))
+        .route("/api/v1/authorities", get(approval::public_authorities))
         .route(
             "/api/v1/authorities/{slug}/facts",
             get(approval::public_facts),
@@ -1971,6 +1972,114 @@ mod tests {
         assert_eq!(public["facts"][0]["id"], fact_a);
         // B is rejected, so no live conflict remains on the public banner.
         assert_eq!(public["facts"][0]["conflict"], false);
+    }
+
+    fn seed_authority_index(store_root: &std::path::Path) {
+        let store = Store::new(store_root);
+        let conn = db::open(&store).unwrap();
+        // Inserted out of slug order on purpose: the endpoint must sort.
+        let specs = [
+            ("usa-wa-sos", "WA", "USA"),
+            ("deu-berlin", "Berlin", "Germany"),
+            ("fra-paris", "Paris", "France"),
+        ];
+        let mut ids = std::collections::HashMap::new();
+        for (slug, name, country) in specs {
+            let id = db::add_authority(
+                &conn,
+                &db::NewAuthority {
+                    kind: "state",
+                    country,
+                    region: "",
+                    name,
+                    slug,
+                    actor: "t",
+                    at: 1,
+                },
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                      bytes_raw, bytes_stored, sha256, trust)
+                 VALUES (?1, 1, 'file', 'p', 0, 0, 's', 'staff_verified')",
+                [id],
+            )
+            .unwrap();
+            ids.insert(slug, (id, conn.last_insert_rowid()));
+        }
+        let insert = |slug: &str, topic: &str, statement: &str, status: &str| {
+            let (aid, cap) = ids[slug];
+            conn.execute(
+                "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                                   status, created_by, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 't', 1)",
+                rusqlite::params![aid, cap, topic, statement, status],
+            )
+            .unwrap();
+        };
+        // Topics must be 005-CHECK values (hours/fees/forms, not fee/form).
+        // usa-wa-sos: 2 accepted + 1 proposed + 1 rejected → count 2.
+        insert("usa-wa-sos", "hours", "open 9 to 5", "accepted");
+        insert("usa-wa-sos", "fees", "costs 10", "accepted");
+        insert("usa-wa-sos", "hours", "open 8 to 6", "proposed");
+        insert("usa-wa-sos", "forms", "use form X", "rejected");
+        // deu-berlin: 1 accepted + 1 superseded → count 1.
+        insert("deu-berlin", "hours", "open 9 to 5", "accepted");
+        insert("deu-berlin", "hours", "open 10 to 4", "superseded");
+        // fra-paris: proposed only → count 0, still listed.
+        insert("fra-paris", "hours", "open 9 to 5", "proposed");
+    }
+
+    #[tokio::test]
+    async fn public_authority_index_lists_counts_and_order() {
+        let fx = fixture();
+        seed_authority_index(&fx.state.store_root);
+
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/authorities")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = json_body(res).await;
+        let authorities = body["authorities"].as_array().unwrap();
+        assert_eq!(authorities.len(), 3);
+        // Ordered by slug, accepted-only counts.
+        assert_eq!(authorities[0]["slug"], "deu-berlin");
+        assert_eq!(authorities[0]["name"], "Berlin");
+        assert_eq!(authorities[0]["country"], "Germany");
+        assert_eq!(authorities[0]["fact_count"], 1);
+        assert_eq!(authorities[1]["slug"], "fra-paris");
+        assert_eq!(authorities[1]["fact_count"], 0);
+        assert_eq!(authorities[2]["slug"], "usa-wa-sos");
+        assert_eq!(authorities[2]["fact_count"], 2);
+        // No sentinel row, no other keys on the envelope.
+        assert!(authorities.iter().all(|a| a["slug"] != ""));
+        assert_eq!(
+            body.as_object().unwrap().keys().collect::<Vec<_>>(),
+            vec!["authorities"]
+        );
+    }
+
+    #[tokio::test]
+    async fn public_authority_index_empty_db_is_empty_array() {
+        let fx = fixture(); // migrated but unseeded: only the sentinel exists
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/authorities")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = json_body(res).await;
+        assert_eq!(body["authorities"], serde_json::json!([]));
     }
 
     #[tokio::test]

@@ -304,3 +304,14 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     future own-sender swap; fallback window 7d + 1h idle
     (author-confirmed, OPEN-2) enforced via `session_usable` —
     see [customer-auth.md](customer-auth.md) §12.
+36. Public serving (Slice A, O1 author-confirmed 2026-10-28):
+    Svelte SPA + live API, not publish static HTML. The public
+    search + dossier read `GET /api/v1/authorities` (new index:
+    slug/name/country/accepted-fact-count, anonymous) and the
+    existing per-slug `public_facts` (accepted-only + conflict
+    banners); static builds stay audit/accept artifacts, not
+    served content (build-pinned reads are a named follow-up).
+    O2: canonical Viet Nam slug is `vietnam` (the pack is prod
+    truth; the `viet-nam` publish-test slug follows). O3:
+    `build-handbook` + `accept` run staff-on-demand for audit
+    checkpoints — no daemon, no served `out_dir`.

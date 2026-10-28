@@ -1,20 +1,48 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import Notice from '../../lib/public-ui/Notice.svelte';
-	import VerifiedChip from '../../lib/public-ui/VerifiedChip.svelte';
 	import {
-		AUTHORITIES,
-		RECENT_CHANGES,
-		searchAuthorities
-	} from '../../lib/public-ui/authorities.js';
+		factCount,
+		filterAuthorities,
+		listAuthorities,
+		publicError
+	} from '../../lib/public-ui/handbook.js';
 
-	// EN-only until the Week 3+ i18n pass. No backend calls yet: the
-	// publish lane (accepted facts) has not landed, so search runs over
-	// the placeholder index in lib/public-ui.
+	// Slice A: live search over GET /api/v1/authorities, filtered
+	// client-side as you type. Same-origin, no auth. EN-only until
+	// the Week 3+ i18n pass.
 	let query = $state('');
-	let submitted = $state<string | null>(null);
+	let index = $state<
+		{ slug: string; name: string; country: string; fact_count: number }[] | null
+	>(null);
+	let loadError = $state<string | null>(null);
 
-	const results = $derived(submitted === null ? null : searchAuthorities(submitted));
+	const apiRoot = resolve('/(public)').replace(/\/$/, '');
+	const api = (path: string) => `${apiRoot}/api/v1${path}`;
+
+	async function get(path: string) {
+		const res = await fetch(api(path), { credentials: 'same-origin' });
+		const body = await res.json().catch(() => ({}));
+		return { ok: res.ok, status: res.status, body };
+	}
+
+	$effect(() => {
+		listAuthorities({ get })
+			.then((res) => {
+				if (!res.ok) {
+					loadError = publicError(res.status, 'index');
+					return;
+				}
+				const rows = res.body?.authorities;
+				index = Array.isArray(rows) ? rows : [];
+			})
+			.catch(() => {
+				loadError = publicError(500, 'index');
+			});
+	});
+
+	const blank = $derived(query.trim() === '');
+	const results = $derived(index === null ? null : filterAuthorities(index, query));
 </script>
 
 <svelte:head>
@@ -27,13 +55,7 @@
 
 <section class="search-panel" aria-labelledby="start">
 	<h1 id="start">Start with your destination</h1>
-	<form
-		role="search"
-		onsubmit={(e) => {
-			e.preventDefault();
-			submitted = query;
-		}}
-	>
+	<form role="search" onsubmit={(e) => e.preventDefault()}>
 		<label class="visually-hidden" for="q">Search the handbook</label>
 		<input
 			id="q"
@@ -45,58 +67,35 @@
 		/>
 		<button type="submit">Search</button>
 	</form>
-	{#if results !== null}
-		{#if results.length === 0}
-			<Notice variant="info" heading="No authority matches “{submitted}”.">
-				<p>
-					Search runs over {AUTHORITIES.length} placeholder authorities for now.
-					<a href={resolve('/(public)')}>Browse the full index below</a>.
-				</p>
-			</Notice>
-		{:else}
-			<ul class="ledger" aria-label="Search results">
-				{#each results as authority (authority.slug)}
-					<li>
-						<a href={resolve('/(public)/authority/[slug]', { slug: authority.slug })}
-							>{authority.name}</a
-						>
-						<span class="kind">{authority.kind}</span>
-						<VerifiedChip tier={authority.tier} verified={authority.verified} />
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	{/if}
 </section>
 
-<div class="ledger-grid">
-	<section aria-labelledby="index">
-		<h2 id="index" class="section-label">Authority index</h2>
-		<ul class="ledger">
-			{#each AUTHORITIES as authority (authority.slug)}
+<section aria-labelledby="index">
+	<h2 id="index" class="section-label">Authority index</h2>
+	{#if loadError}
+		<Notice variant="error" heading="Search is unavailable."><p>{loadError}</p></Notice>
+	{:else if results === null}
+		<p role="status">Loading the authority index…</p>
+	{:else if results.length === 0 && blank}
+		<Notice variant="info" heading="The handbook has no published authorities yet.">
+			<p>Check back after the first handbook build.</p>
+		</Notice>
+	{:else if results.length === 0}
+		<Notice variant="info" heading="No authority matches “{query}”.">
+			<p>Try a country name or a shorter term.</p>
+		</Notice>
+	{:else}
+		<ul class="ledger" aria-label={blank ? 'Authority index' : 'Search results'}>
+			{#each results as authority (authority.slug)}
 				<li>
 					<a href={resolve('/(public)/authority/[slug]', { slug: authority.slug })}
 						>{authority.name}</a
 					>
-					<span class="kind">{authority.kind}</span>
-					<VerifiedChip tier={authority.tier} verified={authority.verified} />
+					<span class="kind">{authority.country} · {factCount(authority.fact_count ?? 0)}</span>
 				</li>
 			{/each}
 		</ul>
-	</section>
-
-	<section aria-labelledby="recent">
-		<h2 id="recent" class="section-label">Recently verified changes</h2>
-		<ul class="ledger feed">
-			{#each RECENT_CHANGES as change (change.text)}
-				<li>
-					<p>{change.text}</p>
-					<p class="meta mono">{change.date} · {change.source}</p>
-				</li>
-			{/each}
-		</ul>
-	</section>
-</div>
+	{/if}
+</section>
 
 <style>
 	.search-panel {
@@ -150,9 +149,7 @@
 		background: var(--accent-fill);
 		border-color: var(--accent-fill);
 	}
-	.ledger-grid {
-		display: grid;
-		gap: 2rem;
+	section[aria-labelledby='index'] {
 		padding-bottom: 2rem;
 	}
 	.ledger {
@@ -179,16 +176,6 @@
 		font-size: 0.875rem;
 		margin-right: auto;
 	}
-	.feed p {
-		margin: 0;
-	}
-	.meta {
-		color: var(--text-muted);
-		font-size: 0.8rem;
-	}
-	.mono {
-		font-family: var(--font-mono);
-	}
 	@media (min-width: 720px) {
 		h1 {
 			font-size: 2.25rem;
@@ -198,9 +185,6 @@
 		}
 		input[type='search'] {
 			flex: 1;
-		}
-		.ledger-grid {
-			grid-template-columns: 3fr 2fr;
 		}
 	}
 </style>

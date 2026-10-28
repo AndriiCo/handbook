@@ -269,6 +269,44 @@ content dir with hash discipline.
 Dependencies: F4/F6; content-repo decision; SvelteKit build + axum
 static serving.
 
+### F11 Serving — public pages read live accepted facts (Slice A, D36)
+
+Decided (O1, author 2026-10-28): the Svelte public SPA + live
+API serves handbook pages, not the static publish HTML. Static
+builds stay audit/accept artifacts (`build` rows + `facts_hash`
++ `xtask accept` gate unchanged); what customers see is the
+currently accepted set. Build-pinned reads (serve facts as of
+`build_no`) are a named follow-up, not v1.
+
+- `GET /api/v1/authorities` (new, public router, anonymous):
+  `{"authorities": [{"slug", "name", "country", "fact_count"}]}`
+  from `authority WHERE id != 0 ORDER BY slug` (the id-0
+  sentinel backs unattributed facts and is never listed);
+  `fact_count` = accepted facts per authority, one query
+  (LEFT JOIN + GROUP BY). No pagination in v1 (dozens of
+  rows). Store failure → the standard `store unavailable`
+  shape. No auth, no rate limit beyond the shared public
+  posture (same as the per-slug route).
+- `GET /api/v1/authorities/{slug}/facts` (existing): unchanged
+  wire shape (`{"authority", "facts": [FactView...]}`, 404
+  `unknown authority`); the SPA is its first UI caller.
+- SPA contract: search filters the live index client-side
+  (name/slug/country substring); dossier groups accepted facts
+  by topic; `conflict: true` facts render the Notice banner
+  with sibling statements (F11(3) on the live site at last);
+  honest loading/empty/404 states throughout; the placeholder
+  authority array is deleted. Public code stays inside
+  `lib/public-ui` (import gate); no prices/dates rendered
+  (unchanged rule).
+- Empty prod is a valid state: zero authorities → search empty
+  state; zero facts → dossier empty tabs (not errors).
+- O3 (audit checkpoints, staff on demand — no daemon, no served
+  `out_dir`): `cargo xtask build-handbook --out <dir>` then
+  `cargo xtask accept`; builds stay under the given dir for
+  audit/hash verification only.
+- Out of slice: FTS search, pagination, build-pinned reads,
+  per-fact permalinks, ES body content.
+
 ## F12 — MCP server (approved content only)
 
 Goal: AI assistants (Claude/ChatGPT-class) can answer apostille

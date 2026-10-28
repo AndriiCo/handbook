@@ -1,0 +1,121 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+	factCount,
+	filterAuthorities,
+	groupFactsByTopic,
+	listAuthorities,
+	publicError,
+	readDossier,
+	topicLabel
+} from '../src/lib/public-ui/handbook.js';
+import { magicError } from '../src/lib/customer/magic.js';
+
+function fakeIo(responses) {
+	const seen = [];
+	return {
+		seen,
+		async get(path) {
+			seen.push(path);
+			return responses[seen.length - 1] ?? { ok: true, status: 200, body: {} };
+		}
+	};
+}
+
+const INDEX = [
+	{ slug: 'vietnam', name: 'Viet Nam Consular', country: 'Viet Nam', fact_count: 12 },
+	{ slug: 'austin-tx', name: 'Texas Secretary of State', country: 'United States', fact_count: 0 }
+];
+
+test('listAuthorities gets /authorities', async () => {
+	const io = fakeIo([{ ok: true, status: 200, body: { authorities: INDEX } }]);
+	const res = await listAuthorities(io);
+	assert.equal(res.ok, true);
+	assert.deepEqual(io.seen, ['/authorities']);
+});
+
+test('readDossier gets /authorities/{slug}/facts', async () => {
+	const io = fakeIo([{ ok: true, status: 200, body: { authority: 'vietnam', facts: [] } }]);
+	const res = await readDossier('vietnam', io);
+	assert.equal(res.ok, true);
+	assert.deepEqual(io.seen, ['/authorities/vietnam/facts']);
+});
+
+test('readDossier rejects bad slugs without requesting', async () => {
+	for (const bad of ['', 'a/b', 42, null, undefined]) {
+		const io = fakeIo([]);
+		const res = await readDossier(bad, io);
+		assert.equal(res.ok, false);
+		assert.equal(res.status, 400);
+		assert.deepEqual(io.seen, []);
+	}
+});
+
+test('readDossier propagates non-ok untouched', async () => {
+	const io = fakeIo([{ ok: false, status: 404, body: { error: 'unknown authority' } }]);
+	const res = await readDossier('nope', io);
+	assert.equal(res.ok, false);
+	assert.equal(res.status, 404);
+});
+
+test('filterAuthorities matches name/slug/country, case-insensitive', () => {
+	assert.deepEqual(filterAuthorities(INDEX, 'texas').map((a) => a.slug), ['austin-tx']);
+	assert.deepEqual(filterAuthorities(INDEX, 'VIET').map((a) => a.slug), ['vietnam']);
+	assert.deepEqual(filterAuthorities(INDEX, 'united states').map((a) => a.slug), ['austin-tx']);
+	assert.deepEqual(filterAuthorities(INDEX, 'zzz'), []);
+});
+
+test('filterAuthorities empty query returns the full list', () => {
+	assert.equal(filterAuthorities(INDEX, '').length, 2);
+	assert.equal(filterAuthorities(INDEX, '   ').length, 2);
+});
+
+test('groupFactsByTopic groups in first-seen order', () => {
+	const groups = groupFactsByTopic([
+		{ id: '1', topic: 'fees', statement: 's1' },
+		{ id: '2', topic: 'hours', statement: 's2' },
+		{ id: '3', topic: 'fees', statement: 's3' }
+	]);
+	assert.deepEqual(
+		groups.map((g) => [g.topic, g.facts.map((f) => f.id)]),
+		[
+			['fees', ['1', '3']],
+			['hours', ['2']]
+		]
+	);
+	assert.deepEqual(groupFactsByTopic(null), []);
+});
+
+test('topicLabel and factCount share copy literals', () => {
+	assert.equal(topicLabel('processing_time'), 'Processing time');
+	assert.equal(factCount(0), '0 facts');
+	assert.equal(factCount(1), '1 fact');
+	assert.equal(factCount(12), '12 facts');
+});
+
+test('publicError maps index/dossier statuses', () => {
+	assert.equal(publicError(500, 'index'), 'Could not load the authority index — try again.');
+	assert.equal(
+		publicError(404, 'dossier'),
+		'Unknown authority — it may have been renamed or removed.'
+	);
+	assert.equal(publicError(500, 'dossier'), 'Could not load this dossier — try again.');
+});
+
+test('publicError 429 shares the magic.js sentence', () => {
+	assert.equal(publicError(429, 'index'), magicError(429, 'request'));
+	assert.equal(publicError(429, 'dossier'), magicError(429, 'request'));
+});
+
+test('publicError takes status only — server text can never leak', () => {
+	// The mapper signature has no body parameter by construction; every
+	// output is a fixed literal (the 404 dossier sentence is our own
+	// copy, not the server's `unknown authority` error echoed).
+	for (const kind of ['index', 'dossier']) {
+		for (const status of [400, 404, 429, 500]) {
+			const copy = publicError(status, kind);
+			assert.match(copy, /[a-z]/i);
+			assert.doesNotMatch(copy, /<script>|{|}/);
+		}
+	}
+});

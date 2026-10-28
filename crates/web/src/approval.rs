@@ -410,3 +410,37 @@ pub async fn public_facts(
     )
         .into_response()
 }
+
+/// Public authority index. Anonymous callers reach this; rows are
+/// real authorities only (`id != 0` — the id-0 sentinel backs
+/// unattributed facts and is never listed) with their accepted-fact
+/// counts, ordered by slug.
+///
+/// v1 has no pagination: the authority table holds dozens of rows,
+/// so one unbounded query stays cheap.
+pub async fn public_authorities(State(state): State<AppState>) -> impl IntoResponse {
+    let Some(conn) = open(&state) else {
+        return store_unavailable();
+    };
+    let rows: Vec<serde_json::Value> = conn
+        .prepare(
+            "SELECT a.slug, a.name, a.country,
+                    COUNT(CASE WHEN f.status = 'accepted' THEN 1 END)
+             FROM authority a LEFT JOIN fact f ON f.authority_id = a.id
+             WHERE a.id != 0
+             GROUP BY a.id ORDER BY a.slug",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| {
+                Ok(json!({
+                    "slug": row.get::<_, String>(0)?,
+                    "name": row.get::<_, String>(1)?,
+                    "country": row.get::<_, String>(2)?,
+                    "fact_count": row.get::<_, i64>(3)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .unwrap_or_default();
+    (StatusCode::OK, Json(json!({"authorities": rows}))).into_response()
+}

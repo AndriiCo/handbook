@@ -482,7 +482,7 @@ mod tests {
                 country: "Viet Nam",
                 region: "",
                 name: "Viet Nam",
-                slug: "viet-nam",
+                slug: "vietnam",
                 actor: "test",
                 at: 1,
             },
@@ -540,10 +540,12 @@ mod tests {
     fn viet_nam_routing_banner_and_sitemap() {
         let (dir, store, conn) = seeded();
         let report = build(&dir, &store, &conn);
-        let page = std::fs::read_to_string(report.dir.join("viet-nam.html")).unwrap();
+        let page = std::fs::read_to_string(report.dir.join("vietnam.html")).unwrap();
         assert!(page.contains("routing: apostille"), "{page}");
         let sitemap = std::fs::read_to_string(report.dir.join("sitemap.xml")).unwrap();
         assert!(sitemap.contains("sitemap-usa.xml"), "{sitemap}");
+        // Shard names key on country ("Viet Nam" → viet-nam), not the
+        // authority slug (O2: `vietnam`).
         assert!(sitemap.contains("sitemap-viet-nam.xml"), "{sitemap}");
         let robots = std::fs::read_to_string(report.dir.join("robots.txt")).unwrap();
         assert!(
