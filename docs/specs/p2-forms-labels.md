@@ -342,10 +342,71 @@ see [README.md](README.md).)
 OPEN-32 (owner: author; blocks: Slice D manual-label queue UI): no
 staff list route exists for the label queue — `queue_manual` is a
 server-side helper, not a handler, and §9 sketches only per-shipment
-writes. The admin queue surface stays cut until a follow-up specifies
-`GET /staff/shipments?status=labels_pending` (shape, pagination, and
-whether counts ride it or a sibling route). The ship-run quote-to-draft
-surface (voice §7) is unaffected.
+writes. The ship-run quote-to-draft surface (voice §7) is unaffected.
+
+### Proposed resolution (pending author review — do NOT implement before approval)
+
+**Route:** `GET /apostille/api/v1/admin/shipments` — NOT the
+`/staff/shipments` sketch from the OPEN-32 note: no `/staff/...`
+prefix exists anywhere in the tree; every staff handler lives under
+`/apostille/api/v1/admin/...` on the admin listener.
+
+**Purpose:** staff work queue for manually-bought labels, defaulting
+to shipments awaiting staff action (`labels_pending`). Admin listener
+only (same merge block as `admin::router`).
+
+**Query params** (all optional; shape follows `list_captures`):
+
+| Param | Meaning | Default |
+|---|---|---|
+| `status` | `draft \| labels_pending \| ready \| voided` | `labels_pending` |
+| `authority` | Authority slug filter | none (all) |
+| `limit` | Page size, clamped 1..200 | 50 |
+| `before_id` | Keyset cursor (`id < before_id`) | none (first page) |
+
+Fixed newest-first sort; no `sort` param in v1. Out-of-range `limit`
+clamps, never rejects (both existing list handlers clamp).
+
+**Response (200):** `{"shipments": [{id, submission_id, authority_id,
+status, customer_ref, created_at, updated_at, pending_count,
+labels[]}], "count"}` — `labels[]` holds pending-status labels only
+(the actionable set); per-row tracking/file summaries omitted (pending
+labels have none yet — they ride the per-shipment GET once issued);
+`payload_json` is the stored buy payload; `count` is page-local
+(matching both existing list handlers). Full addresses do NOT ride the
+list. Reads write no audit row.
+
+**Counts:** sibling route `GET
+/apostille/api/v1/admin/shipments/counts` →
+`{"counts": {"draft": n, "labels_pending": n, "ready": n, "voided":
+n}}` (the `admin_workers` precedent: lists return page-local `count`,
+aggregate depths live on `workers/status`; the badge polls counts
+without fetching rows).
+
+**Auth:** `AdminAuth` extractor + admin host guard + mTLS seam,
+identical to `approval::list_facts`. GETs skip CSRF (`csrf_guard`
+passes `GET|HEAD|OPTIONS`).
+
+**Status codes:** 401 missing/invalid/expired session; 403 wrong host,
+below-Staff role, or strict-mode mTLS failure; 404 `unknown authority`
+(the `list_captures` precedent — no owner-mismatch 404: staff are
+deliberately unscoped); 422 `unknown status` (the `list_facts`
+precedent); 503 either DB fails to open.
+
+**Unresolved (author calls):** U1 `authority_slug` in rows needs a
+second cross-DB lookup per row (shipments live in `p2.sqlite`, slugs in
+`handbook.sqlite`, no FK) — draft emits `authority_id` only; U3 the
+queue UI is blocked on TWO more missing pieces, not just this route —
+a staff `GET .../admin/shipments/:id` (full addresses/payloads) and a
+staff paste-back (`paste_back` takes the customer DEMO caller, not
+`AdminAuth`); U4 `customer_ref` + address-bearing `payload_json` on a
+staff list assumes mTLS-listener PII visibility is allowed (OQ-1/OQ-7
+still open); U5 whether the queue needs `postage_cost_cents`/`paid_by`
+columns; U6 fixed newest-first (FIFO oldest-first not requested).
+Evidence: `p2_labels.rs` (Shipment 268-276, `queue_manual` 1007-1079,
+owner-404 564-572, 422s 526-532), `approval.rs:115-186`,
+`admin_workers.rs:96-250`, `admin.rs` guards (CSRF passthrough at 242),
+P2 DDL `migrations/p2_001_init.sql`.
 
 ## 10. P1 dependencies
 
