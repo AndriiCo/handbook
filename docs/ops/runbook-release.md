@@ -5,33 +5,32 @@ shell, no setuid ship script. Replaces the `apostille-ship.sh`
 flow in `deploy.md` (that script stays as the reviewed fallback
 until this runbook's first green prod deploy).
 
-Status 2026-10-27: bootstrap PARTIAL. Live: hal writes
-`releases/` + pinned `restart`/`status` sudoers (verified —
-`reload` was NOT granted). Missing: group-write on
-`/srv/apostille/` itself, so `xtask deploy`'s atomic `current`
-swap fails as hal today and the flip still needs root (one
-command in §0 finishes the job).
+Status 2026-10-28: bootstrap is the one-time root script
+`docs/ops/scripts/ops-hal-access.sh` (AGENTS.md §7): group +
+dirs + pinned sudoers + validating wrappers. The old one-liner
+block and the `apostille-hal` drop-in (restart/status only) are
+retired — the script subsumes and removes them. Note: this box's
+sudo rejects ALL wildcards in command arguments, so every grant
+is a fixed path and variable inputs travel via stdin/pointer
+files into the root-owned wrappers.
 
 ## 0. One-time bootstrap (needs root — author)
 
 ```sh
-groupadd -f apostille
-usermod -aG apostille hal
-install -d -o root -g apostille -m 775 /srv/apostille/releases
-# The deploy swap writes `current.tmp` + renames INSIDE the root,
-# so the root itself must be group-writable too (this was missed
-# in the first bootstrap — deploy fails at the swap without it).
-# hal still cannot touch the unit file (root-owned 644).
-chgrp apostille /srv/apostille
-chmod g+w /srv/apostille
-# systemctl restart/status ONLY (no stop/disable/start/reload).
-cat > /etc/sudoers.d/apostille-hal <<'EOF'
-hal ALL=(root) NOPASSWD: /usr/bin/systemctl restart apostille
-hal ALL=(root) NOPASSWD: /usr/bin/systemctl status apostille
-EOF
-chmod 440 /etc/sudoers.d/apostille-hal
-visudo -c   # must print OK — stop here if not
+bash /home/hal/apostille/scripts/ops-hal-access.sh
+# Paste the whole output back to the agent. The script is
+# idempotent (groupadd -f, install -d, drop-in rewrite) and
+# self-verifies with read-only probes as hal.
 ```
+
+What it installs: `hal` in group `apostille`;
+`/srv/apostille/releases` 775 + `/srv/apostille` itself
+group-writable (the deploy swap writes `current.tmp` + renames
+INSIDE the root); pinned grants — fixed systemctl verbs
+(restart/status/is-active/reset-failed/daemon-reload, NEVER
+stop/disable/start/reload) plus the install-unit, journal,
+config, and sqlite wrappers; the legacy `apostille-hal`
+drop-in removed (backup at `/root/apostille-hal.sudoers.bak`).
 
 Verify as hal (the pre-flight for every release day):
 
@@ -40,6 +39,8 @@ touch /srv/apostille/releases/.w && rm /srv/apostille/releases/.w && echo WRITE-
 touch /srv/apostille/.w && rm /srv/apostille/.w && echo FLIP-OK
 sudo -n systemctl status apostille >/dev/null && echo SUDO-OK
 sudo -n systemctl stop apostille  # must FAIL: "not allowed"
+echo 'SELECT 1;' | sudo -n -u andrii-ai /usr/local/sbin/apostille-sqlite >/dev/null && echo SQL-OK
+printf '\n' | sudo -n /usr/local/sbin/apostille-journal >/dev/null && echo JOURNAL-OK
 ```
 
 ## 1. Build (on the Mac, per `deploy.md`)

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Deploy a staged release + install its unit file. Runs as hal
-# (pinned sudo grants, see ops-hal-access.sh) or root.
+# (pinned grants + wrappers from ops-hal-access.sh) or root.
 #
 #   bash /home/hal/apostille/scripts/ops-deploy.sh /home/hal/apostille/staging/<version>
 #
@@ -23,8 +23,14 @@ SKIP_ACCEPT=""
 # prompt); root passes everything through.
 SUDO="sudo -n"
 SVC="sudo -n -u andrii-ai"
-[ "$(id -u)" = 0 ] || { echo "ABORT: run as root"; exit 1; }
 [ -d "$STAGE" ] || { echo "ABORT: no such dir: $STAGE"; exit 1; }
+# Canonical absolute path: the unit wrapper requires an absolute
+# staging path, and the deploy below cds into it.
+STAGE="$(cd "$STAGE" && pwd)"
+case "$STAGE" in
+    /home/hal/apostille/staging/*) ;;
+    *) echo "ABORT: staging dir must be under /home/hal/apostille/staging/"; exit 1 ;;
+esac
 VERSION="$(basename "$STAGE")"
 SHA="$(cat "$STAGE/SHA" 2>/dev/null || true)"
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || {
@@ -40,9 +46,12 @@ done
 
 echo "=== 0. install unit file (showing diff first)"
 diff -u /etc/systemd/system/apostille.service "$STAGE/apostille.service" || true
-$SUDO /usr/bin/cp "$STAGE/apostille.service" /etc/systemd/system/apostille.service \
+# The wrapper (root-owned, content-validated) installs + reloads;
+# the pointer names the staged source (sudoers has no wildcards).
+echo "$STAGE/apostille.service" > /home/hal/apostille/.pending-unit \
+    || { echo "ABORT: cannot write unit pointer"; exit 1; }
+$SUDO /usr/local/sbin/apostille-install-unit \
     || { echo "ABORT: unit install failed"; exit 1; }
-$SUDO /usr/bin/systemctl daemon-reload || { echo "ABORT: daemon-reload failed"; exit 1; }
 $SUDO /usr/bin/systemctl reset-failed apostille 2>/dev/null || true
 grep -H StartLimit /etc/systemd/system/apostille.service \
     || echo "(note: no StartLimit lines in installed unit)"
@@ -52,8 +61,8 @@ if [ -n "$SKIP_ACCEPT" ]; then
     echo "WARNING: accept gate SKIPPED by explicit operator flag"
     GATE_ARGS="--skip-accept"
 else
-    N="$($SVC /usr/bin/sqlite3 /var/lib/apostille/handbook.sqlite \
-        "SELECT build_no FROM build ORDER BY build_no DESC LIMIT 1;" 2>/dev/null || true)"
+    N="$(echo "SELECT build_no FROM build ORDER BY build_no DESC LIMIT 1;" \
+        | $SVC /usr/local/sbin/apostille-sqlite 2>/dev/null || true)"
     [ -n "$N" ] || {
         echo "ABORT: no build row in prod DB — refusing to --skip-accept silently; confirm with agent"
         exit 1

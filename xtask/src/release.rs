@@ -2,9 +2,9 @@
 //!
 //! Testable Rust replacement for `docs/ops/apostille-ship.sh`.
 //! Runs ON the server as the unprivileged `hal` user: `hal` needs
-//! group-write on `<root>/releases/` plus sudoers for exactly
-//! `systemctl restart/status/reload apostille` (bootstrap per
-//! `docs/ops/runbook-release.md`). Layout under `--root`
+//! group-write on `<root>/releases/` plus the pinned grants from
+//! `docs/ops/scripts/ops-hal-access.sh` (`systemctl restart`
+//! among them — never stop/disable). Layout under `--root`
 //! (default `/srv/apostille`):
 //!
 //! ```text
@@ -300,8 +300,9 @@ pub fn check_rollback_guard(
     ))
 }
 
-/// `sudo systemctl <action> apostille`. Only restart/status/reload
-/// are in hal's sudoers entry — never stop/disable.
+/// `sudo systemctl <action> apostille`. Only `restart` is used here,
+/// and hal's sudoers entry (see `ops-hal-access.sh`) covers restart
+/// plus read-only verbs — never stop/disable.
 ///
 /// # Errors
 ///
