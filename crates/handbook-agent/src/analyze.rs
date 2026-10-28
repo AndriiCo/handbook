@@ -166,6 +166,7 @@ mod tests {
             prompt_version: "aa-prompt-v1",
             input_text: "evidence here".to_string(),
             max_records: 3,
+            capture_id: 0,
         };
         let out = build_prompt("AUTH={{slug}} MAX={{max_records}} IN={{input}}", &req);
         assert_eq!(out, "AUTH=wa-sos MAX=3 IN=evidence here");
@@ -180,6 +181,7 @@ mod tests {
             prompt_version: "aa-prompt-v1",
             input_text: "{{slug}} {{max_records}}".to_string(),
             max_records: 3,
+            capture_id: 0,
         };
         let out = build_prompt("AUTH={{slug}} IN={{input}}", &req);
         assert_eq!(out, "AUTH=wa IN={{slug}} {{max_records}}");

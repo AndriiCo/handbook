@@ -11,6 +11,8 @@ pub struct DraftRequest {
     pub prompt_version: &'static str,
     pub input_text: String,
     pub max_records: u32,
+    /// Provenance id; `UNATTRIBUTED_CAPTURE_ID` when hand-fed.
+    pub capture_id: i64,
 }
 
 /// Byte-exact citation into a source document.

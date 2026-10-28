@@ -12,6 +12,7 @@ mod admin_cert;
 mod admin_staff;
 mod build_handbook;
 mod config;
+mod fetch_slug;
 mod form_scaffold;
 mod mcp_serve;
 mod packs;
@@ -33,6 +34,7 @@ fn main() {
         Some("serve") => run_serve(),
         Some("analyze") => run_analyze(&args[1..]),
         Some("fetch-url") => run_fetch_url(&args[1..]),
+        Some("fetch-slug") => fetch_slug::run(&args[1..]),
         Some("review-conflicts") => review_conflicts::run(&args[1..]),
         Some("build-handbook") => build_handbook::run(&args[1..]),
         Some("mcp-serve") => mcp_serve::run(&args[1..]),
@@ -74,10 +76,11 @@ Tasks:
   init   create a store and apply migrations [--store <path>]
   add-authority   add an office/jurisdiction (see flags below)
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
-  web-budget  check web/build JS+CSS against the Day-1 221KB gate
+  web-budget  check web/build JS+CSS against the Day-1 223KB gate
   serve       run the dev API server (cargo run -p web)
   analyze     draft proposed facts for an authority (stub only for now)
   fetch-url   fetch one URL into a warc capture (thin watch)
+  fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
   review-conflicts print F6 conflicts with citations
   build-handbook accepted-only static build + sitemap/robots [--out --base-url]
   mcp-serve   serve lookup_authority on 127.0.0.1 [--port]
@@ -126,6 +129,8 @@ analyze flags:
   --lang <code>   evidence language tag (default: en; EN-only slice)
   --input <text>  evidence text, or @path/to/file (required)
   --actor <a>     audit actor (default: xtask)
+  --scan-captures Option-B mode: analyze captures with id > watermark (no --input)
+  --limit <n>     max captures per scan (default: 25, scan mode only)
 
 fetch-url flags:
   --store <path>  store root (default: store)
@@ -134,6 +139,13 @@ fetch-url flags:
   --source-kind <k> website_official | website_thirdparty (default: website_official)
   --trust <t>     official | staff_verified | community (default: official)
   --actor <a>     audit actor (default: xtask)
+
+fetch-slug flags:
+  --store <path>  store root (default: store)
+  --slug <s>      authority slug, e.g. usa-wa-sos (required)
+  --actor <a>     audit actor (default: xtask)
+  --trust <t>     official | staff_verified | community (default: official)
+  --limit <n>     max watch URLs per run (default: 25)
 
 add-authority flags:
   --store <path>  store root (default: store)
@@ -193,13 +205,31 @@ fn run_ci() {
         .as_slice(),
         ["test", "--workspace"].as_slice(),
     ] {
-        let status = Command::new("cargo")
-            .args(args)
-            .status()
-            .expect("failed to run cargo");
-        if !status.success() {
-            std::process::exit(status.code().unwrap_or(1));
-        }
+        run_or_exit("cargo", args);
+    }
+    // Web gates (Slice F: these ran manually every phase — now they
+    // are part of `ci` so a green `ci` means the whole monorepo).
+    // Order matters: unit tests, then types, then the import gate,
+    // then both builds (smoke needs them), then the budget gate
+    // in-process (needs web/build fresh from this run).
+    run_or_exit("node", &["--test", "web/test/"]);
+    run_or_exit("npm", &["run", "check", "--prefix", "web"]);
+    run_or_exit("npm", &["run", "check:imports", "--prefix", "web"]);
+    run_or_exit("npm", &["run", "build", "--prefix", "web"]);
+    run_or_exit("npm", &["run", "build:admin", "--prefix", "web"]);
+    run_or_exit("npm", &["run", "smoke", "--prefix", "web"]);
+    run_web_budget();
+}
+
+/// Run one CI step: missing binary is a loud fatal (never a silent
+/// skip — that is how gates rot), a failing step propagates its code.
+fn run_or_exit(cmd: &str, args: &[&str]) {
+    let status = Command::new(cmd).args(args).status().unwrap_or_else(|e| {
+        eprintln!("ci: cannot run {cmd}: {e} (is it installed?)");
+        std::process::exit(1);
+    });
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
     }
 }
 
@@ -350,6 +380,9 @@ fn run_analyze(args: &[String]) {
         eprintln!("migrate: {e}");
         std::process::exit(1);
     }
+    if args.iter().any(|a| a == "--scan-captures") {
+        return run_analyze_scan(&conn, &store, args);
+    }
     let slug = required(args, "slug");
     let lang = flag(args, "lang").unwrap_or_else(|| "en".to_string());
     let raw_input = required(args, "input");
@@ -374,6 +407,7 @@ fn run_analyze(args: &[String]) {
         sources: &sources,
         actor: &actor,
         at: unix_now(),
+        capture_id: handbook_agent::runner::UNATTRIBUTED_CAPTURE_ID,
     };
     match handbook_agent::runner::run_analysis(&conn, &client, &req) {
         Ok(report) => {
@@ -392,8 +426,116 @@ fn run_analyze(args: &[String]) {
     }
 }
 
+/// Option-B scan mode: analyze captures with `id > watermark`, oldest
+/// first, presenting each sidecar as the `fixture` source (byte-exact
+/// citation checks preserved). A client error stops the run without
+/// advancing past the failed capture (exit 1); the watermark only ever
+/// moves inside a capture's own committed transaction.
+fn run_analyze_scan(
+    conn: &rusqlite::Connection,
+    store: &handbook_store::store::Store,
+    args: &[String],
+) {
+    use handbook_agent::model::StubClient;
+    use std::collections::HashMap;
+
+    let slug = required(args, "slug");
+    let lang = flag(args, "lang").unwrap_or_else(|| "en".to_string());
+    let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
+    let limit: i64 = match flag(args, "limit") {
+        None => 25,
+        Some(s) => s.parse().unwrap_or_else(|_| {
+            eprintln!("analyze: bad --limit (positive integer)");
+            std::process::exit(2);
+        }),
+    };
+    let authority = authority_id(conn, &slug);
+    let start = handbook_store::db::get_capture_watermark(conn, &slug).unwrap_or_else(|e| {
+        eprintln!("analyze: watermark: {e}");
+        std::process::exit(1);
+    });
+    let rows: Vec<(i64, i64)> = conn
+        .prepare(
+            "SELECT id, captured_at FROM capture
+             WHERE authority_id = ?1 AND id > ?2 AND id > 0 AND trust != 'rejected'
+             ORDER BY captured_at, id LIMIT ?3",
+        )
+        .unwrap_or_else(|e| {
+            eprintln!("analyze: database error: {e}");
+            std::process::exit(1);
+        })
+        .query_map(rusqlite::params![authority, start, limit], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap_or_else(|e| {
+            eprintln!("analyze: database error: {e}");
+            std::process::exit(1);
+        })
+        .collect::<rusqlite::Result<_>>()
+        .unwrap_or_else(|e| {
+            eprintln!("analyze: database error: {e}");
+            std::process::exit(1);
+        });
+    let (mut proposed, mut rejected, mut skipped) = (0, 0, 0);
+    let mut watermark = start;
+    for (id, _) in &rows {
+        let now = unix_now();
+        let sidecar = store.root().join("text").join(format!("{id}.txt"));
+        let text = match std::fs::read_to_string(&sidecar) {
+            Ok(t) => t,
+            Err(_) => {
+                match handbook_agent::runner::skip_missing_sidecar(conn, &slug, *id, &actor, now) {
+                    Ok(_) => {
+                        println!("capture {id}: skipped (missing sidecar)");
+                        skipped += 1;
+                        watermark = *id;
+                        continue;
+                    }
+                    Err(e) => {
+                        eprintln!("analyze: capture {id}: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        };
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.clone());
+        let req = handbook_agent::runner::RunRequest {
+            slug: &slug,
+            lang: &lang,
+            input_text: &text,
+            sources: &sources,
+            actor: &actor,
+            at: now,
+            capture_id: *id,
+        };
+        match handbook_agent::runner::run_analysis(conn, &StubClient, &req) {
+            Ok(r) => {
+                proposed += r.proposed;
+                rejected += r.rejected;
+                if r.skipped {
+                    skipped += 1;
+                }
+                println!(
+                    "capture {id}: proposed={} rejected={} skipped={}",
+                    r.proposed, r.rejected, r.skipped
+                );
+                watermark = *id;
+            }
+            Err(e) => {
+                eprintln!("analyze: capture {id}: {e} (watermark stays at {watermark})");
+                std::process::exit(1);
+            }
+        }
+    }
+    println!(
+        "analyze: {slug} scanned={} proposed={proposed} rejected={rejected} skipped={skipped} watermark={watermark}",
+        rows.len()
+    );
+}
+
 /// Authority id for a slug, or exit 1.
-fn authority_id(conn: &rusqlite::Connection, slug: &str) -> i64 {
+pub(crate) fn authority_id(conn: &rusqlite::Connection, slug: &str) -> i64 {
     use rusqlite::OptionalExtension as _;
     conn.query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |row| {
         row.get(0)
@@ -439,7 +581,7 @@ fn ensure_source(conn: &rusqlite::Connection, authority: i64, kind: &str, uri: &
 
 /// Record a fetch failure as a `validate_fact` task (F1 acceptance 4):
 /// insert, or refresh the live row's detail on dedup hit. Never silent.
-fn record_fetch_failure(
+pub(crate) fn record_fetch_failure(
     conn: &rusqlite::Connection,
     authority: i64,
     slug: &str,

@@ -12,7 +12,7 @@ use contracts::Result;
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 7;
+pub const SCHEMA_VERSION: i32 = 8;
 
 /// Current P2 customer-PII schema version (`pragma user_version` on
 /// `p2.sqlite`; independent of [`SCHEMA_VERSION`]).
@@ -99,6 +99,12 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         if version < 7 {
             conn.execute_batch(include_str!("../migrations/007_p2_templates.sql"))?;
             conn.pragma_update(None, "user_version", 7)?;
+        }
+        if version < 8 {
+            conn.execute_batch(include_str!(
+                "../migrations/008_capture_watermark.sql"
+            ))?;
+            conn.pragma_update(None, "user_version", 8)?;
         }
         Ok(())
     })?;
@@ -280,6 +286,20 @@ pub fn get_watermark(conn: &Connection, slug: &str) -> Result<Option<(i64, Strin
     ) {
         Ok(found) => Ok(Some(found)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Highest analyzed capture id for one authority (0 = none yet).
+/// The Option-B scan floor: captures at or below this id are done.
+pub fn get_capture_watermark(conn: &Connection, slug: &str) -> Result<i64> {
+    match conn.query_row(
+        "SELECT last_capture_id FROM watermark WHERE authority_slug = ?1",
+        [slug],
+        |row| row.get(0),
+    ) {
+        Ok(id) => Ok(id),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
         Err(e) => Err(e.into()),
     }
 }

@@ -107,6 +107,7 @@ mod tests {
             prompt_version: "aa-prompt-v1",
             input_text: "PO Box 40220".to_string(),
             max_records: 4,
+            capture_id: 0,
         }
     }
 
