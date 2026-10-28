@@ -81,6 +81,60 @@ pub fn run_sweep(args: &[String]) {
     );
 }
 
+pub fn run_mail(args: &[String]) {
+    let store = open_store(args);
+    let conn = open_db(&store);
+    if let Err(e) = handbook_store::db::migrate(&conn) {
+        eprintln!("migrate: {e}");
+        std::process::exit(1);
+    }
+    let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
+    let (kek, _source) = sealed_config::load_kek().unwrap_or_else(|e| {
+        eprintln!("mail-poll: {e}");
+        std::process::exit(1);
+    });
+    let (cfg, warnings) = sealed_config::RuntimeConfig::load(&conn, &kek).unwrap_or_else(|e| {
+        eprintln!("mail-poll: config: {e}");
+        std::process::exit(1);
+    });
+    for warning in &warnings {
+        eprintln!("mail-poll: config warning: {warning}");
+    }
+    let (Some(client_id), Some(client_secret), Some(refresh_token)) = (
+        cfg.mail_client_id,
+        cfg.mail_client_secret,
+        cfg.mail_refresh_token,
+    ) else {
+        eprintln!(
+            "mail-poll: mail.client_id/client_secret/refresh_token not set (admin config UI)"
+        );
+        std::process::exit(2);
+    };
+    let mut client = mail::client::MailClient::new(
+        &cfg.mail_base_url,
+        &cfg.mail_token_url,
+        &client_id,
+        client_secret.as_str(),
+        refresh_token.as_str(),
+    );
+    let opts = mail::poll::PollOpts {
+        actor,
+        now: unix_now(),
+        backoff_secs: vec![5, 20, 60],
+        max_fetches: 200,
+    };
+    match mail::poll::poll(&conn, &store, &mut client, &opts) {
+        Ok(report) => println!(
+            "mail-poll: listed={} created={} watermark={} reseeded={}",
+            report.listed, report.created, report.watermark, report.reseeded
+        ),
+        Err(e) => {
+            eprintln!("mail-poll: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 pub fn run_hcch(args: &[String]) {
     let store = open_store(args);
     let conn = open_db(&store);

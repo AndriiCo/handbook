@@ -39,6 +39,7 @@ fn main() {
         Some("fetch-slug") => fetch_slug::run(&args[1..]),
         Some("watch-sweep") => watch::run_sweep(&args[1..]),
         Some("hcch-poll") => watch::run_hcch(&args[1..]),
+        Some("mail-poll") => watch::run_mail(&args[1..]),
         Some("review-conflicts") => review_conflicts::run(&args[1..]),
         Some("build-handbook") => build_handbook::run(&args[1..]),
         Some("mcp-serve") => mcp_serve::run(&args[1..]),
@@ -88,6 +89,7 @@ Tasks:
   fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
   watch-sweep poll due watch URLs across authorities (timer runs this)
   hcch-poll   poll the HCCH status table, task on change (timer runs this)
+  mail-poll   poll Gmail into email captures (timer runs this)
   review-conflicts print F6 conflicts with citations
   build-handbook accepted-only static build + sitemap/robots [--out --base-url]
   mcp-serve   serve lookup_authority on 127.0.0.1 [--port]
@@ -164,6 +166,10 @@ watch-sweep flags:
   --limit <n>     max due URLs per run (default: 25)
 
 hcch-poll flags:
+  --store <path>  store root (default: store)
+  --actor <a>     audit actor (default: xtask)
+
+mail-poll flags:
   --store <path>  store root (default: store)
   --actor <a>     audit actor (default: xtask)
 

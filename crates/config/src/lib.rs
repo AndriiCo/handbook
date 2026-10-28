@@ -827,6 +827,14 @@ pub mod keys {
     pub const META_BASE_URL: &str = "meta.base_url";
     /// Model API key (`LLM_{id}_{secret}`). Secret: presence-only in UI.
     pub const META_API_KEY: &str = "meta.api_key";
+    /// Gmail inbound poll (`xtask mail-poll`): OAuth client, refresh
+    /// token, and overridable API roots. Distinct from `mailer.*`
+    /// (SMTP outbound).
+    pub const MAIL_CLIENT_ID: &str = "mail.client_id";
+    pub const MAIL_CLIENT_SECRET: &str = "mail.client_secret";
+    pub const MAIL_REFRESH_TOKEN: &str = "mail.refresh_token";
+    pub const MAIL_BASE_URL: &str = "mail.base_url";
+    pub const MAIL_TOKEN_URL: &str = "mail.token_url";
     pub const MAILER_PROVIDER: &str = "mailer.provider";
     pub const MAILER_HOST: &str = "mailer.host";
     pub const MAILER_PORT: &str = "mailer.port";
@@ -881,6 +889,11 @@ pub mod keys {
         (META_CLIENT_SECRET, super::ConfigType::Secret),
         (META_BASE_URL, super::ConfigType::Text),
         (META_API_KEY, super::ConfigType::Secret),
+        (MAIL_CLIENT_ID, super::ConfigType::Text),
+        (MAIL_CLIENT_SECRET, super::ConfigType::Secret),
+        (MAIL_REFRESH_TOKEN, super::ConfigType::Secret),
+        (MAIL_BASE_URL, super::ConfigType::Text),
+        (MAIL_TOKEN_URL, super::ConfigType::Text),
         (MAILER_PROVIDER, super::ConfigType::Text),
         (MAILER_HOST, super::ConfigType::Text),
         (MAILER_PORT, super::ConfigType::Text),
@@ -1009,6 +1022,11 @@ pub struct RuntimeConfig {
     pub meta_client_secret: Option<SecretText>,
     pub meta_base_url: String,
     pub meta_api_key: Option<SecretText>,
+    pub mail_client_id: Option<String>,
+    pub mail_client_secret: Option<SecretText>,
+    pub mail_refresh_token: Option<SecretText>,
+    pub mail_base_url: String,
+    pub mail_token_url: String,
     pub mailer_provider: String,
     pub mailer_host: Option<String>,
     pub mailer_port: Option<String>,
@@ -1072,6 +1090,13 @@ impl Default for RuntimeConfig {
             // sync with `handbook_agent::model::META_BASE_URL`.
             meta_base_url: "https://api.meta.ai/v1".to_string(),
             meta_api_key: None,
+            mail_client_id: None,
+            mail_client_secret: None,
+            mail_refresh_token: None,
+            // Gmail/token roots (`docs/gmail-shapes.md`); keep in sync
+            // with `mail::client::{GMAIL_BASE_URL, TOKEN_URL}`.
+            mail_base_url: "https://gmail.googleapis.com".to_string(),
+            mail_token_url: "https://oauth2.googleapis.com/token".to_string(),
             // Unset until configured (the OAuth unset→503 contract):
             // dev sets `file`, prod sets `smtp` — never a silent prod
             // default that files real users' links instead of mailing.
@@ -1393,6 +1418,27 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.meta_client_id,
         )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::MAIL_CLIENT_ID,
+            &mut warnings,
+            &mut cfg.mail_client_id,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::MAIL_BASE_URL,
+            &mut warnings,
+            &mut cfg.mail_base_url,
+        )?;
+        overlay_required_text(
+            conn,
+            kek,
+            keys::MAIL_TOKEN_URL,
+            &mut warnings,
+            &mut cfg.mail_token_url,
+        )?;
         overlay_required_text(
             conn,
             kek,
@@ -1615,6 +1661,20 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.mailer_password,
         )?;
+        overlay_secret(
+            conn,
+            kek,
+            keys::MAIL_CLIENT_SECRET,
+            &mut warnings,
+            &mut cfg.mail_client_secret,
+        )?;
+        overlay_secret(
+            conn,
+            kek,
+            keys::MAIL_REFRESH_TOKEN,
+            &mut warnings,
+            &mut cfg.mail_refresh_token,
+        )?;
         // H6 fix baked into the migration: a persistent dev-bypass
         // flag must never boot a release binary (spec §3).
         if cfg.admin_mtls_off && !cfg!(debug_assertions) {
@@ -1662,15 +1722,16 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_51_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 51);
+    fn registry_holds_56_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 56);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
-        // Seven secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
-        // client secrets, Meta Model API key, mailer password); five
-        // bools (quic.enabled is the fifth); rest text (auth.* adds
-        // three, google/apple/meta ids six, mailer.* six, meta.* one).
+        // Nine secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
+        // client secrets, Meta Model API key, Gmail client secret +
+        // refresh token, mailer password); five bools (quic.enabled is
+        // the fifth); rest text (auth.* adds three, google/apple/meta
+        // ids six, mailer.* six, meta.* one, mail.* three).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1679,7 +1740,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (5, 39, 7));
+        assert_eq!(counts, (5, 42, 9));
     }
 
     #[test]
@@ -1724,6 +1785,11 @@ mod runtime_tests {
         assert_eq!(cfg.telnyx_api_key, None);
         assert_eq!(cfg.meta_base_url, "https://api.meta.ai/v1");
         assert_eq!(cfg.meta_api_key, None);
+        assert_eq!(cfg.mail_client_id, None);
+        assert_eq!(cfg.mail_client_secret, None);
+        assert_eq!(cfg.mail_refresh_token, None);
+        assert_eq!(cfg.mail_base_url, "https://gmail.googleapis.com");
+        assert_eq!(cfg.mail_token_url, "https://oauth2.googleapis.com/token");
         assert_eq!(cfg.auth_rp_id, "andrii.ai");
         assert_eq!(cfg.auth_rp_name, "Apostille Handbook");
         assert_eq!(cfg.auth_origin, "https://andrii.ai");
@@ -1796,6 +1862,27 @@ mod runtime_tests {
                 "https://meta-stub.test",
             ),
             (keys::META_API_KEY, ConfigType::Secret, "LLM_1_stub"),
+            (
+                keys::MAIL_CLIENT_ID,
+                ConfigType::Text,
+                "id-x.apps.googleusercontent.com",
+            ),
+            (
+                keys::MAIL_CLIENT_SECRET,
+                ConfigType::Secret,
+                "mail-secret-x",
+            ),
+            (keys::MAIL_REFRESH_TOKEN, ConfigType::Secret, "rtok-x"),
+            (
+                keys::MAIL_BASE_URL,
+                ConfigType::Text,
+                "https://gmail-stub.test",
+            ),
+            (
+                keys::MAIL_TOKEN_URL,
+                ConfigType::Text,
+                "https://sts-stub.test/token",
+            ),
             (keys::QUIC_ENABLED, ConfigType::Bool, "1"),
             (keys::AUTH_RP_ID, ConfigType::Text, "example.test"),
             (keys::AUTH_RP_NAME, ConfigType::Text, "Example RP"),
@@ -1866,6 +1953,20 @@ mod runtime_tests {
             cfg.meta_api_key.as_ref().map(SecretText::as_str),
             Some("LLM_1_stub")
         );
+        assert_eq!(
+            cfg.mail_client_id.as_deref(),
+            Some("id-x.apps.googleusercontent.com")
+        );
+        assert_eq!(
+            cfg.mail_client_secret.as_ref().map(SecretText::as_str),
+            Some("mail-secret-x")
+        );
+        assert_eq!(
+            cfg.mail_refresh_token.as_ref().map(SecretText::as_str),
+            Some("rtok-x")
+        );
+        assert_eq!(cfg.mail_base_url, "https://gmail-stub.test");
+        assert_eq!(cfg.mail_token_url, "https://sts-stub.test/token");
         assert_eq!(cfg.telnyx_from_number.as_deref(), Some("+15550001111"));
         assert_eq!(cfg.telnyx_connection_id.as_deref(), Some("conn-x"));
         assert_eq!(cfg.telnyx_webhook_public_key.as_deref(), Some("pubkey-x"));

@@ -16,6 +16,7 @@ handbook-agent = { path = "../crates/handbook-agent" }
 handbook-store = { path = "../crates/handbook-store" }
 ingest = { path = "../crates/ingest" }
 labels = { path = "../crates/labels" }
+mail = { path = "../crates/mail" }
 mcp = { path = "../crates/mcp" }
 publish = { path = "../crates/publish" }
 # Aliased: `mod config` in src/main.rs is the config-* CLI commands.

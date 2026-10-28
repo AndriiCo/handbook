@@ -1,0 +1,46 @@
+# apostille-mail.service — DRAFT (prompt 052, needs author review +
+# install; enabling on prod is an open question in the prompt log).
+#
+# One-shot Gmail poll: new mailbox mail becomes immutable `email`
+# captures with auth evidence. Triggered by apostille-mail.timer
+# every 15 minutes.
+#
+# Install (as root, once): copy this file + apostille-mail.timer to
+# /etc/systemd/system/, `systemctl daemon-reload && systemctl enable
+# --now apostille-mail.timer`. Requires the Gmail OAuth client +
+# refresh token in sealed config first (docs/gmail-shapes.md
+# AUTHOR-ACTION items), or every run exits 2.
+#
+# Privilege summary: runs as andrii-ai:andrii-ai, no capabilities,
+# reads the KEK credential (sealed Gmail secrets), one writable dir.
+[Unit]
+Description=Apostille Handbook Gmail poll (mail into captures)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=andrii-ai
+Group=andrii-ai
+ExecStart=/srv/apostille/current/xtask mail-poll --actor timer
+Environment=STORE_DIR=/var/lib/apostille
+LoadCredential=handbook-kek:/etc/apostille/handbook-kek
+StateDirectory=apostille
+WorkingDirectory=/var/lib/apostille
+UMask=0027
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/apostille
+# Outbound HTTPS (Google APIs) + loopback only.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

@@ -1,0 +1,25 @@
+[package]
+name = "mail"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+contracts = { path = "../contracts" }
+handbook-store = { path = "../handbook-store" }
+ingest = { path = "../ingest" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"
+base64 = "0.22"
+# Same TLS shape as voice/ingest: blocking ureq over rustls, no
+# `ring` (the workspace TLS provider is aws-lc-rs; enabling `ring`
+# too leaves rustls unable to pick a process default).
+ureq = { version = "3", default-features = false, features = [
+    "gzip",
+    "json",
+    "rustls-no-provider",
+    "rustls-webpki-roots",
+] }
+rustls = { version = "0.23", features = ["aws-lc-rs"] }
+
+[dev-dependencies]
+tempfile = "3"

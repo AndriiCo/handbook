@@ -12,7 +12,7 @@ use contracts::Result;
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 9;
+pub const SCHEMA_VERSION: i32 = 10;
 
 /// Current P2 customer-PII schema version (`pragma user_version` on
 /// `p2.sqlite`; independent of [`SCHEMA_VERSION`]).
@@ -107,6 +107,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         if version < 9 {
             conn.execute_batch(include_str!("../migrations/009_watch.sql"))?;
             conn.pragma_update(None, "user_version", 9)?;
+        }
+        if version < 10 {
+            conn.execute_batch(include_str!("../migrations/010_mail_poll.sql"))?;
+            conn.pragma_update(None, "user_version", 10)?;
         }
         Ok(())
     })?;
@@ -497,6 +501,27 @@ mod tests {
             .optional()
             .unwrap();
         assert_eq!(index.as_deref(), Some("idx_source_due"));
+    }
+
+    #[test]
+    fn migration_010_adds_mail_poll_cursor() {
+        let (_dir, _store, conn) = migrated();
+        conn.execute("INSERT INTO mail_poll(id) VALUES (1)", [])
+            .unwrap();
+        let (email, history_id, polled, error): (String, String, i64, String) = conn
+            .query_row(
+                "SELECT email, history_id, last_poll_at, last_error FROM mail_poll WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert!(email.is_empty() && history_id.is_empty() && error.is_empty());
+        assert_eq!(polled, 0);
+        // Singleton: a second row is refused.
+        assert!(
+            conn.execute("INSERT INTO mail_poll(id) VALUES (2)", [])
+                .is_err()
+        );
     }
 
     #[test]

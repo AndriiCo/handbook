@@ -1,0 +1,16 @@
+# apostille-mail.timer — DRAFT (prompt 052, ships with
+# apostille-mail.service; enabling on prod is an open question).
+#
+# A closure-tomorrow email should surface within minutes, not at the
+# next daily sweep: poll every 15 minutes. Persistent: a missed run
+# fires once at the next boot.
+[Unit]
+Description=15-minute Apostille Handbook Gmail poll
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=apostille-mail.service
+
+[Install]
+WantedBy=timers.target
