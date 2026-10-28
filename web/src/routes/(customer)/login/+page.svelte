@@ -193,23 +193,28 @@
 <h1>{t.loginLabel}</h1>
 
 {#if !webauthnOk}
-	<p class="notice err" role="alert">
+	<p class="max-w-[28rem] rounded-sm border border-line bg-error-bg px-4 py-3" role="alert">
 		This browser cannot do passkeys. Use a current Safari, Chrome, Edge, or Firefox.
 	</p>
 {:else if me}
-	<p class="notice ok" role="status">
+	<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3" role="status">
 		Logged in. <a href={resolve('/(customer)/orders')}>Continue to {t.orderLabel}s</a>
 		· <a href={resolve('/(customer)/security')}>Manage sign-in methods</a>
-		· <button type="button" class="linklike" onclick={logout}>{t.logoutLabel}</button>
+		· <button
+			type="button"
+			class="min-h-0 cursor-pointer border-0 bg-transparent p-0 font-normal text-accent underline [font:inherit]"
+			onclick={logout}>{t.logoutLabel}</button
+		>
 	</p>
 {:else}
 	{#if magicBusy}
-		<p class="notice" role="status">Signing you in…</p>
+		<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3" role="status">Signing you in…</p>
 	{/if}
-	<form onsubmit={login}>
-		<h2>Log in with a passkey</h2>
-		<label for="account">User ID or email</label>
+	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={login}>
+		<h2 class="m-0 text-[1.1rem]">Log in with a passkey</h2>
+		<label class="font-bold" for="account">User ID or email</label>
 		<input
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 			id="account"
 			name="account"
 			type="text"
@@ -217,40 +222,69 @@
 			required
 			autocomplete="username"
 		/>
-		<button type="submit" disabled={busy}>Log in</button>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			type="submit"
+			disabled={busy}>Log in</button
+		>
 	</form>
 
-	<form onsubmit={register}>
-		<h2>New here? Register a passkey</h2>
-		<label for="display-name">Display name</label>
-		<input id="display-name" name="display_name" type="text" bind:value={displayName} required />
-		<label for="key-label">Key label (optional)</label>
+	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={register}>
+		<h2 class="m-0 text-[1.1rem]">New here? Register a passkey</h2>
+		<label class="font-bold" for="display-name">Display name</label>
 		<input
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			id="display-name"
+			name="display_name"
+			type="text"
+			bind:value={displayName}
+			required
+		/>
+		<label class="font-bold" for="key-label">Key label (optional)</label>
+		<input
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 			id="key-label"
 			name="label"
 			type="text"
 			bind:value={label}
 			placeholder="MacBook Pro"
 		/>
-		<label for="reg-email">Email (optional, for account recovery)</label>
-		<input id="reg-email" name="email" type="email" bind:value={email} autocomplete="email" />
-		<button type="submit" disabled={busy}>Register passkey</button>
+		<label class="font-bold" for="reg-email">Email (optional, for account recovery)</label>
+		<input
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			id="reg-email"
+			name="email"
+			type="email"
+			bind:value={email}
+			autocomplete="email"
+		/>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			type="submit"
+			disabled={busy}>Register passkey</button
+		>
 	</form>
 
 	{#if error}
-		<p class="notice err" role="alert">{error}</p>
+		<p class="max-w-[28rem] rounded-sm border border-line bg-error-bg px-4 py-3" role="alert">{error}</p>
 	{/if}
 
 	{#each OAUTH_PROVIDERS as provider (provider)}
-		<button type="button" class="oauth" disabled={busy} onclick={() => oauthLogin(provider)}>
+		<button
+			class="mb-2 min-h-11 max-w-[28rem] cursor-pointer rounded-sm border border-line bg-bg font-bold text-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			type="button"
+			disabled={busy}
+			onclick={() => oauthLogin(provider)}
+		>
 			Continue with {OAUTH_LABELS[provider]}
 		</button>
 	{/each}
 
-	<form onsubmit={magicRequest}>
-		<h2>Or get an email link</h2>
-		<label for="magic-email">Email</label>
+	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={magicRequest}>
+		<h2 class="m-0 text-[1.1rem]">Or get an email link</h2>
+		<label class="font-bold" for="magic-email">Email</label>
 		<input
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 			id="magic-email"
 			name="magic_email"
 			type="email"
@@ -259,86 +293,20 @@
 			autocomplete="email"
 			disabled={busy}
 		/>
-		<button type="submit" disabled={busy}>Send sign-in link</button>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			type="submit"
+			disabled={busy}>Send sign-in link</button
+		>
 	</form>
 
 	{#if magicSent}
-		<p class="notice" role="status">
+		<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3" role="status">
 			Check your inbox — if that address has an account, a sign-in link is on its way.
 		</p>
 	{/if}
 {/if}
 
 {#if oauthError}
-	<p class="notice err" role="alert">{oauthError}</p>
+	<p class="max-w-[28rem] rounded-sm border border-line bg-error-bg px-4 py-3" role="alert">{oauthError}</p>
 {/if}
-
-<style>
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-width: 28rem;
-		margin-bottom: 2rem;
-	}
-	h2 {
-		font-size: 1.1rem;
-		margin: 0;
-	}
-	label {
-		font-weight: 700;
-	}
-	input {
-		min-height: 44px;
-		padding: 0.6rem 0.8rem;
-		font: inherit;
-		color: var(--text);
-		background: var(--bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-xs);
-	}
-	button {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-	}
-	button:disabled {
-		opacity: 0.6;
-		cursor: wait;
-	}
-	:root[data-theme='dark'] button {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-	.oauth {
-		max-width: 28rem;
-		margin-bottom: 0.5rem;
-		color: var(--text);
-		background: var(--bg);
-		border-color: var(--border);
-	}
-	.linklike {
-		min-height: 0;
-		padding: 0;
-		font-weight: 400;
-		color: var(--accent);
-		background: none;
-		border: none;
-		text-decoration: underline;
-		cursor: pointer;
-	}
-	.notice {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem;
-		max-width: 28rem;
-	}
-	.notice.err {
-		background: var(--error-bg);
-	}
-</style>

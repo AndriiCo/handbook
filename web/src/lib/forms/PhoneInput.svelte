@@ -25,6 +25,7 @@
 </script>
 
 <input
+	class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 	{id}
 	{name}
 	type="tel"
@@ -38,15 +39,3 @@
 	}}
 />
 
-<style>
-	input {
-		width: 100%;
-		box-sizing: border-box;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.5rem 0.75rem;
-		background: var(--surface);
-		color: inherit;
-		font: inherit;
-	}
-</style>

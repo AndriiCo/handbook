@@ -43,6 +43,16 @@
 		};
 	});
 
+	// Full class strings per state: exactly one color set wins.
+	const pillCls = (state: Live) =>
+		`inline-block rounded-xs border px-3 py-1 text-sm font-bold ${
+			state === 'live'
+				? 'border-success bg-success-bg text-success'
+				: state === 'reconnecting'
+					? 'border-warning bg-warning-bg text-warning'
+					: 'border-line bg-surface-2 text-ink-muted'
+		}`;
+
 	async function refresh() {
 		error = null;
 		try {
@@ -66,7 +76,7 @@
 
 <h1>Document precheck</h1>
 
-<p class="pill" data-live={live} aria-live="polite">
+<p class={pillCls(live)} data-live={live} aria-live="polite">
 	{#if live === 'live'}Live
 	{:else if live === 'reconnecting'}Reconnecting…
 	{:else if live === 'offline'}Offline
@@ -84,43 +94,10 @@
 	<Notice variant="warning" heading="Snapshot unavailable."><p>{error}</p></Notice>
 {/if}
 
-<p><button onclick={refresh}>Refresh snapshot</button></p>
+<p>
+	<button
+		class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit]"
+		onclick={refresh}>Refresh snapshot</button
+	>
+</p>
 <p><a href={resolve('/(customer)/uploads')}>Go to uploads</a></p>
-
-<style>
-	.pill {
-		display: inline-block;
-		border-radius: var(--radius-xs);
-		padding: 0.25rem 0.75rem;
-		font-weight: 700;
-		font-size: 0.875rem;
-		background: var(--surface-2);
-		color: var(--text-muted);
-		border: 1px solid var(--border);
-	}
-	.pill[data-live='live'] {
-		background: var(--success-bg);
-		color: var(--success);
-		border-color: var(--success);
-	}
-	.pill[data-live='reconnecting'] {
-		background: var(--warning-bg);
-		color: var(--warning);
-		border-color: var(--warning);
-	}
-	button {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-		padding: 0 1.25rem;
-	}
-	:root[data-theme='dark'] button {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-</style>

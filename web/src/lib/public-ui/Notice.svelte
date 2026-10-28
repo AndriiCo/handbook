@@ -14,65 +14,39 @@
 		warning: '!',
 		error: '×'
 	};
+	// Full class strings per variant (never stacked): exactly one
+	// background wins on each element.
+	const boxCls = (v: Props['variant']) =>
+		`flex items-start gap-3 rounded-sm border border-line px-4 py-3 ${
+			v === 'success'
+				? 'bg-success-bg'
+				: v === 'warning'
+					? 'bg-warning-bg'
+					: v === 'error'
+						? 'bg-error-bg'
+						: 'bg-surface'
+		}`;
+	const iconCls = (v: Props['variant']) =>
+		`inline-flex size-6 flex-none items-center justify-center rounded-xs font-mono font-bold text-accent-ink ${
+			v === 'success' ? 'bg-success' : v === 'warning' ? 'bg-warning' : v === 'error' ? 'bg-error' : 'bg-accent'
+		}`;
 </script>
 
-<div class="notice {variant}" role={variant === 'error' ? 'alert' : 'status'}>
-	<span class="icon" aria-hidden="true">{icons[variant]}</span>
+<div class={boxCls(variant)} role={variant === 'error' ? 'alert' : 'status'}>
+	<span class={iconCls(variant)} aria-hidden="true">{icons[variant]}</span>
 	<div>
-		{#if heading}<p class="heading">{heading}</p>{/if}
+		{#if heading}<p class="m-0 mb-1 font-bold">{heading}</p>{/if}
 		{@render children()}
 	</div>
 </div>
 
 <style>
-	.notice {
-		display: flex;
-		gap: 0.75rem;
-		align-items: flex-start;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem;
-		background: var(--surface);
-	}
-	.notice.success {
-		background: var(--success-bg);
-	}
-	.notice.warning {
-		background: var(--warning-bg);
-	}
-	.notice.error {
-		background: var(--error-bg);
-	}
-	.icon {
-		flex: none;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.5rem;
-		height: 1.5rem;
-		border-radius: var(--radius-xs);
-		font-weight: 700;
-		font-family: var(--font-mono);
-		color: var(--accent-ink);
-		background: var(--accent);
-	}
-	.success .icon {
-		background: var(--success);
-	}
-	.warning .icon {
-		background: var(--warning);
-	}
-	.error .icon {
-		background: var(--error);
-	}
-	.heading {
-		margin: 0 0 0.25rem;
-		font-weight: 700;
-	}
-	.notice :global(p:last-child) {
+	/* Slotted-child resets stay global CSS: the children render from
+	   the CALLER's scope, so scoped utilities cannot reach them. */
+	div :global(p:last-child) {
 		margin-bottom: 0;
 	}
-	.notice :global(p:first-child) {
+	div :global(p:first-child) {
 		margin-top: 0;
 	}
 </style>

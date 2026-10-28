@@ -10,6 +10,16 @@
 	let live = $state<Live>('live');
 	let step = $state(1);
 
+	// Full class strings per state: exactly one background wins.
+	const liCls = (state: string) =>
+		`flex items-start gap-3 rounded-sm border border-line px-4 py-3 ${
+			state === 'pass' ? 'bg-success-bg' : state === 'warn' ? 'bg-warning-bg' : 'bg-error-bg'
+		}`;
+	const badgeCls = (state: string) =>
+		`inline-flex size-7 flex-none items-center justify-center rounded-xs font-bold text-accent-ink ${
+			state === 'pass' ? 'bg-success' : state === 'warn' ? 'bg-warning' : 'bg-error'
+		}`;
+
 	function cycle() {
 		step = (step + 1) % order.length;
 		live = order[step];
@@ -25,9 +35,12 @@
 
 <h1>Document precheck</h1>
 
-<p class="live" role="status">
+<p class="flex flex-wrap items-center gap-x-3 gap-y-1" role="status">
 	Connection: <strong>{live}</strong>
-	<button class="link" onclick={cycle}>Simulate next state</button>
+	<button
+		class="min-h-11 cursor-pointer border-0 bg-transparent p-0 text-accent underline [font:inherit]"
+		onclick={cycle}>Simulate next state</button
+	>
 </p>
 
 {#if fails > 0}
@@ -40,86 +53,16 @@
 	</Notice>
 {/if}
 
-<ul class="checks">
+<ul class="mt-4 mb-8 grid list-none gap-3 p-0">
 	{#each PRECHECK as check (check.label)}
-		<li data-state={check.state}>
-			<span class="badge">{check.state === 'pass' ? '✓' : check.state === 'warn' ? '!' : '×'}</span>
+		<li class={liCls(check.state)} data-state={check.state}>
+			<span class={badgeCls(check.state)}
+				>{check.state === 'pass' ? '✓' : check.state === 'warn' ? '!' : '×'}</span
+			>
 			<div>
-				<p class="label">{check.label}</p>
-				<p class="detail">{check.detail}</p>
+				<p class="m-0 font-bold">{check.label}</p>
+				<p class="mt-[0.15rem] mb-0 text-[0.9rem]">{check.detail}</p>
 			</div>
 		</li>
 	{/each}
 </ul>
-
-<style>
-	.live {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.25rem 0.75rem;
-	}
-	.link {
-		background: none;
-		border: none;
-		padding: 0;
-		font: inherit;
-		color: var(--accent);
-		text-decoration: underline;
-		cursor: pointer;
-		min-height: 44px;
-	}
-	.checks {
-		list-style: none;
-		margin: 1rem 0 2rem;
-		padding: 0;
-		display: grid;
-		gap: 0.75rem;
-	}
-	.checks li {
-		display: flex;
-		gap: 0.75rem;
-		align-items: flex-start;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem;
-	}
-	.checks li[data-state='pass'] {
-		background: var(--success-bg);
-	}
-	.checks li[data-state='warn'] {
-		background: var(--warning-bg);
-	}
-	.checks li[data-state='fail'] {
-		background: var(--error-bg);
-	}
-	.badge {
-		flex: none;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.75rem;
-		height: 1.75rem;
-		border-radius: var(--radius-xs);
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-	}
-	li[data-state='pass'] .badge {
-		background: var(--success);
-	}
-	li[data-state='warn'] .badge {
-		background: var(--warning);
-	}
-	li[data-state='fail'] .badge {
-		background: var(--error);
-	}
-	.label {
-		margin: 0;
-		font-weight: 700;
-	}
-	.detail {
-		margin: 0.15rem 0 0;
-		font-size: 0.9rem;
-	}
-</style>

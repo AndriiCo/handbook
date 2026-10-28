@@ -124,14 +124,16 @@
 	<title>DS-4194 draft resemblance — {template.title}</title>
 </svelte:head>
 
-<article class="sheet">
-	<header class="masthead">
-		<p class="kicker">US Department of State · draft resemblance · not the official form</p>
-		<h1>{template.title} (DS-4194)</h1>
-		<p class="edition">{template.authority_revision} · template v{template.version}</p>
+<article class="mx-auto max-w-[8.5in] border border-line bg-surface p-6 print:max-w-none print:border-0 print:p-0">
+	<header class="mb-4 pb-3 [border-bottom:3px_double_var(--border)]">
+		<p class="m-0 mb-1 text-[0.8125rem] tracking-[0.04em] uppercase">
+			US Department of State · draft resemblance · not the official form
+		</p>
+		<h1 class="m-0 mb-1 font-display text-2xl leading-[1.2]">{template.title} (DS-4194)</h1>
+		<p class="m-0 text-sm">{template.authority_revision} · template v{template.version}</p>
 	</header>
 
-	<div class="no-print">
+	<div class="print:hidden">
 		<Notice variant="warning" heading="Draft resemblance — verify against the official form">
 			<p>
 				This page mirrors the paper form's sections for drafting only. It submits
@@ -150,61 +152,63 @@
 			}}
 		>
 			{#each SECTIONS as section (section.title)}
-				<section>
-					<h2>{section.title}</h2>
+				<section class="mt-6 border-t border-line pt-4">
+					<h2 class="m-0 mb-4 text-[1.0625rem]">{section.title}</h2>
 					{#each section.keys as key (key)}
 						{@const field = byKey.get(key)}
 						{#if field}
-							<div class="field">
+							<div class="mb-4">
 								{#if field.type === 'address_block'}
-									<span class="label" id={`label-${field.key}`}>
+									<span class="mb-1 block font-semibold" id={`label-${field.key}`}>
 										{field.label}{#if field.required} *{/if}
 									</span>
-									{#if field.help}<p class="help">{field.help}</p>{/if}
+									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
 									<AddressBlock
 										idPrefix={field.key}
 										bind:value={values[field.key]}
 										{showErrors}
 									/>
 								{:else if field.type === 'tel'}
-									<label for={field.key}>
+									<label class="mb-1 block font-semibold" for={field.key}>
 										{field.label}{#if field.required} *{/if}
 									</label>
-									{#if field.help}<p class="help">{field.help}</p>{/if}
+									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
 									<PhoneInput id={field.key} bind:value={values[field.key]} />
 								{:else if field.key === 'countries_of_use'}
-									<label for={field.key}>
+									<label class="mb-1 block font-semibold" for={field.key}>
 										{field.label}{#if field.required} *{/if}
 									</label>
-									{#if field.help}<p class="help">{field.help}</p>{/if}
+									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
 									<textarea
+										class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 										id={field.key}
 										rows="2"
 										maxlength={field.max_len}
 										bind:value={values[field.key]}
 										placeholder="List each country; one per line"
 									></textarea>
-									<p class="help">Country picker for single-country use:</p>
+									<p class="m-0 mb-2 text-sm">Country picker for single-country use:</p>
 									<CountrySelect bind:value={values[field.key]} />
 								{:else if field.type === 'textarea'}
-									<label for={field.key}>
+									<label class="mb-1 block font-semibold" for={field.key}>
 										{field.label}{#if field.required} *{/if}
 									</label>
-									{#if field.help}<p class="help">{field.help}</p>{/if}
+									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
 									<textarea
+										class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 										id={field.key}
 										rows="3"
 										maxlength={field.max_len}
 										bind:value={values[field.key]}
 									></textarea>
 								{:else if field.type === 'radio'}
-									<span class="label" id={`label-${field.key}`}>
+									<span class="mb-1 block font-semibold" id={`label-${field.key}`}>
 										{field.label}{#if field.required} *{/if}
 									</span>
-									{#if field.help}<p class="help">{field.help}</p>{/if}
-									<div class="choices" role="radiogroup" aria-labelledby={`label-${field.key}`}>
+									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
+									<div class="flex gap-4" role="radiogroup" aria-labelledby={`label-${field.key}`}>
 										{#each (field.options ?? []) as option (option)}
-											<label class="choice">
+											<label class="mb-1 flex items-center gap-2 font-normal">
 												<input
 													type="radio"
 													name={field.key}
@@ -216,17 +220,18 @@
 										{/each}
 									</div>
 								{:else if field.type === 'checkbox'}
-									<label class="choice">
+									<label class="mb-1 flex items-center gap-2 font-normal">
 										<input type="checkbox" bind:checked={values[field.key]} />
 										{field.label}
 									</label>
-									{#if field.help}<p class="help">{field.help}</p>{/if}
+									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
 								{:else}
-									<label for={field.key}>
+									<label class="mb-1 block font-semibold" for={field.key}>
 										{field.label}{#if field.required} *{/if}
 									</label>
-									{#if field.help}<p class="help">{field.help}</p>{/if}
+									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
 									<input
+										class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 										id={field.key}
 										type={field.type === 'number' ? 'number' : field.type === 'email' ? 'email' : 'text'}
 										inputmode={field.type === 'number' ? 'numeric' : undefined}
@@ -235,7 +240,7 @@
 									/>
 								{/if}
 								{#if showErrors}
-									<ul class="errors">
+									<ul class="mt-[0.375rem] mb-0 pl-5 text-sm text-error">
 										{#each errorsForKey(errors, field.key) as error (error.code)}
 											<li>{error.message}</li>
 										{/each}
@@ -247,33 +252,36 @@
 				</section>
 			{/each}
 
-			<section>
-				<h2>Signature</h2>
-				<p class="help">
+			<section class="mt-6 border-t border-line pt-4">
+				<h2 class="m-0 mb-4 text-[1.0625rem]">Signature</h2>
+				<p class="m-0 mb-2 text-sm">
 					The paper form is signed in ink after printing. This draft keeps no
 					signature — sign the printed page.
 				</p>
-				<div class="sign-lines">
-					<div><span>Signature</span><span class="line"></span></div>
-					<div><span>Date</span><span class="line short"></span></div>
+				<div class="mt-8 grid grid-cols-[2fr_1fr] gap-8">
+					<div class="flex flex-col gap-7 text-sm"><span>Signature</span><span class="border-b border-current"></span></div>
+					<div class="flex flex-col gap-7 text-sm"><span>Date</span><span class="border-b border-current"></span></div>
 				</div>
 			</section>
 
-			<div class="actions no-print">
-				<button type="submit">Review draft</button>
+			<div class="mt-6 flex gap-3 print:hidden">
+				<button
+					class="cursor-pointer rounded-sm border border-line bg-accent px-5 py-[0.625rem] font-semibold text-accent-ink [font:inherit]"
+					type="submit">Review draft</button
+				>
 			</div>
 		</form>
 	{:else}
 		{#each SECTIONS as section (section.title)}
-			<section>
-				<h2>{section.title}</h2>
-				<dl class="review">
+			<section class="mt-6 border-t border-line pt-4">
+				<h2 class="m-0 mb-4 text-[1.0625rem]">{section.title}</h2>
+				<dl class="m-0">
 					{#each section.keys as key (key)}
 						{@const field = byKey.get(key)}
 						{#if field}
-							<div class="row">
-								<dt>{field.label}</dt>
-								<dd>{displayValue(field, values[field.key])}</dd>
+							<div class="grid grid-cols-[minmax(10rem,35%)_1fr] gap-3 py-[0.375rem] [border-bottom:1px_dotted_var(--border)]">
+								<dt class="font-semibold">{field.label}</dt>
+								<dd class="m-0 break-anywhere">{displayValue(field, values[field.key])}</dd>
 							</div>
 						{/if}
 					{/each}
@@ -281,159 +289,33 @@
 			</section>
 		{/each}
 
-		<section>
-			<h2>Signature</h2>
-			<div class="sign-lines">
-				<div><span>Signature</span><span class="line"></span></div>
-				<div><span>Date</span><span class="line short"></span></div>
+		<section class="mt-6 border-t border-line pt-4">
+			<h2 class="m-0 mb-4 text-[1.0625rem]">Signature</h2>
+			<div class="mt-8 grid grid-cols-[2fr_1fr] gap-8">
+				<div class="flex flex-col gap-7 text-sm"><span>Signature</span><span class="border-b border-current"></span></div>
+				<div class="flex flex-col gap-7 text-sm"><span>Date</span><span class="border-b border-current"></span></div>
 			</div>
 		</section>
 
-		<div class="actions no-print">
-			<button type="button" onclick={() => (step = 'fill')}>Back to edit</button>
-			<button type="button" onclick={printPage}>Print / save PDF</button>
+		<div class="mt-6 flex gap-3 print:hidden">
+			<button
+				class="cursor-pointer rounded-sm border border-line bg-accent px-5 py-[0.625rem] font-semibold text-accent-ink [font:inherit]"
+				type="button"
+				onclick={() => (step = 'fill')}>Back to edit</button
+			>
+			<button
+				class="cursor-pointer rounded-sm border border-line bg-accent px-5 py-[0.625rem] font-semibold text-accent-ink [font:inherit]"
+				type="button"
+				onclick={printPage}>Print / save PDF</button
+			>
 		</div>
 	{/if}
 </article>
 
 <style>
-	.sheet {
-		max-width: 8.5in;
-		margin: 0 auto;
-		padding: 1.5rem;
-		background: var(--surface);
-		border: 1px solid var(--border);
-	}
-	.masthead {
-		border-bottom: 3px double var(--border);
-		margin-bottom: 1rem;
-		padding-bottom: 0.75rem;
-	}
-	.kicker {
-		margin: 0 0 0.25rem;
-		font-size: 0.8125rem;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-	h1 {
-		margin: 0 0 0.25rem;
-		font-size: 1.5rem;
-		line-height: 1.2;
-	}
-	.edition {
-		margin: 0;
-		font-size: 0.875rem;
-	}
-	section {
-		margin-top: 1.5rem;
-		padding-top: 1rem;
-		border-top: 1px solid var(--border);
-	}
-	h2 {
-		margin: 0 0 1rem;
-		font-size: 1.0625rem;
-	}
-	.field {
-		margin-bottom: 1rem;
-	}
-	.label,
-	label {
-		display: block;
-		font-weight: 600;
-		margin-bottom: 0.25rem;
-	}
-	.help {
-		margin: 0 0 0.5rem;
-		font-size: 0.875rem;
-	}
-	input[type='text'],
-	input[type='email'],
-	input[type='number'],
-	textarea {
-		width: 100%;
-		box-sizing: border-box;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.5rem 0.75rem;
-		background: var(--surface);
-		color: inherit;
-		font: inherit;
-	}
-	.choices {
-		display: flex;
-		gap: 1rem;
-	}
-	.choice {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-weight: 400;
-	}
-	.errors {
-		margin: 0.375rem 0 0;
-		padding-left: 1.25rem;
-		color: var(--error);
-		font-size: 0.875rem;
-	}
-	.review {
-		margin: 0;
-	}
-	.review .row {
-		display: grid;
-		grid-template-columns: minmax(10rem, 35%) 1fr;
-		gap: 0.75rem;
-		padding: 0.375rem 0;
-		border-bottom: 1px dotted var(--border);
-	}
-	.review dt {
-		font-weight: 600;
-	}
-	.review dd {
-		margin: 0;
-		overflow-wrap: anywhere;
-	}
-	.sign-lines {
-		display: grid;
-		grid-template-columns: 2fr 1fr;
-		gap: 2rem;
-		margin-top: 2rem;
-	}
-	.sign-lines > div {
-		display: flex;
-		flex-direction: column;
-		gap: 1.75rem;
-		font-size: 0.875rem;
-	}
-	.sign-lines .line {
-		border-bottom: 1px solid currentColor;
-	}
-	.actions {
-		display: flex;
-		gap: 0.75rem;
-		margin-top: 1.5rem;
-	}
-	.actions button {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.625rem 1.25rem;
-		background: var(--accent);
-		color: var(--accent-ink);
-		font: inherit;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	@media print {
-		.no-print {
-			display: none;
-		}
-		.sheet {
-			max-width: none;
-			border: 0;
-			padding: 0;
-		}
-		@page {
-			size: Letter;
-			margin: 0.6in;
-		}
+	/* Tailwind has no @page support — the Letter page box stays. */
+	@page {
+		size: Letter;
+		margin: 0.6in;
 	}
 </style>

@@ -85,14 +85,16 @@
 	</Notice>
 {:else}
 	<form
+		class="mt-4 grid max-w-[28rem] gap-3"
 		onsubmit={(e) => {
 			e.preventDefault();
 			login();
 		}}
 	>
-		<label>
+		<label class="grid gap-1 font-bold">
 			Staff user ID
 			<input
+				class="rounded-[0.375rem] border border-line p-[0.6rem] text-base"
 				type="text"
 				bind:value={account}
 				autocomplete="username"
@@ -101,52 +103,18 @@
 				required
 			/>
 		</label>
-		<button type="submit" disabled={busy || account.trim() === ''}>
+		<button
+			class="min-h-11 cursor-pointer text-base font-bold disabled:cursor-wait disabled:opacity-70"
+			type="submit"
+			disabled={busy || account.trim() === ''}
+		>
 			{busy ? 'Waiting for security key…' : 'Sign in with passkey'}
 		</button>
 	</form>
 
-	<p class="muted">New here? Enrolment is invite-only — ask your admin for an invite link.</p>
+	<p class="mt-4">New here? Enrolment is invite-only — ask your admin for an invite link.</p>
 {/if}
 
 {#if error}
-	<p class="notice err" role="alert">{error}</p>
+	<p class="font-bold" role="alert">{error}</p>
 {/if}
-
-<style>
-	form {
-		display: grid;
-		gap: 0.75rem;
-		max-width: 28rem;
-		margin-top: 1rem;
-	}
-	label {
-		display: grid;
-		gap: 0.25rem;
-		font-weight: 700;
-	}
-	input {
-		padding: 0.6rem;
-		font-size: 1rem;
-		border: 1px solid var(--border);
-		border-radius: 0.375rem;
-	}
-	button {
-		min-height: 44px;
-		font-size: 1rem;
-		font-weight: 700;
-		cursor: pointer;
-	}
-	button:disabled {
-		cursor: wait;
-		opacity: 0.7;
-	}
-	.muted {
-		color: var(--muted);
-		margin-top: 1rem;
-	}
-	.notice.err {
-		color: var(--danger);
-		font-weight: 700;
-	}
-</style>

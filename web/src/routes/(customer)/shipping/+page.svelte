@@ -338,10 +338,10 @@
 <h1>Shipping labels</h1>
 
 {#if notice}
-	<p class="notice" role="status">{notice}</p>
+	<p class="rounded-sm border border-line bg-surface px-4 py-3" role="status">{notice}</p>
 {/if}
 {#if errors.length}
-	<ul class="errors" role="alert">
+	<ul class="rounded-sm border border-[var(--danger,#b3261e)] bg-surface py-3 pr-4 pl-8" role="alert">
 		{#each errors as err}
 			<li>{err.field ? `${err.field}: ` : ''}{err.message}</li>
 		{/each}
@@ -351,85 +351,196 @@
 <section aria-labelledby="shipment-h">
 	<h2 id="shipment-h">1. Shipment</h2>
 	<form
+		class="flex max-w-[44rem] flex-col gap-2"
 		onsubmit={(e) => {
 			e.preventDefault();
 			createShipment();
 		}}
 	>
-		<label for="authority">Authority ID</label>
-		<input id="authority" type="number" min="1" bind:value={authorityId} required />
+		<label class="font-bold" for="authority">Authority ID</label>
+		<input
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			id="authority"
+			type="number"
+			min="1"
+			bind:value={authorityId}
+			required
+		/>
 
-		<div class="addresses">
-			<fieldset>
-				<legend>From</legend>
-				<label for="from-name">Name</label>
-				<input id="from-name" type="text" bind:value={from.name} required autocomplete="name" />
-				<label for="from-street">Street</label>
+		<div class="grid grid-cols-1 gap-4 min-[48rem]:grid-cols-2">
+			<fieldset class="rounded-sm border border-line px-4 py-3">
+				<legend class="px-1 font-bold">From</legend>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-name">Name</label>
 				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="from-name"
+					type="text"
+					bind:value={from.name}
+					required
+					autocomplete="name"
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-street">Street</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 					id="from-street"
 					type="text"
 					bind:value={from.street1}
 					required
 					autocomplete="street-address"
 				/>
-				<label for="from-street2">Street, line 2 (optional)</label>
-				<input id="from-street2" type="text" bind:value={from.street2} />
-				<label for="from-city">City</label>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-street2">
+					Street, line 2 (optional)
+				</label>
 				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="from-street2"
+					type="text"
+					bind:value={from.street2}
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-city">City</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 					id="from-city"
 					type="text"
 					bind:value={from.city}
 					required
 					autocomplete="address-level2"
 				/>
-				<label for="from-state">State</label>
-				<input id="from-state" type="text" bind:value={from.state_province} required />
-				<label for="from-postal">Postal code</label>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-state">State</label>
 				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="from-state"
+					type="text"
+					bind:value={from.state_province}
+					required
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-postal">
+					Postal code
+				</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 					id="from-postal"
 					type="text"
 					bind:value={from.postal}
 					required
 					autocomplete="postal-code"
 				/>
-				<label for="from-country">Country (ISO-2)</label>
-				<input id="from-country" type="text" bind:value={from.country} required />
-				<label for="from-phone">Phone (optional)</label>
-				<input id="from-phone" type="tel" bind:value={from.phone} autocomplete="tel" />
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-country">
+					Country (ISO-2)
+				</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="from-country"
+					type="text"
+					bind:value={from.country}
+					required
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-phone">
+					Phone (optional)
+				</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="from-phone"
+					type="tel"
+					bind:value={from.phone}
+					autocomplete="tel"
+				/>
 			</fieldset>
-			<fieldset>
-				<legend>To</legend>
-				<label for="to-name">Name</label>
-				<input id="to-name" type="text" bind:value={to.name} required />
-				<label for="to-street">Street</label>
-				<input id="to-street" type="text" bind:value={to.street1} required />
-				<label for="to-street2">Street, line 2 (optional)</label>
-				<input id="to-street2" type="text" bind:value={to.street2} />
-				<label for="to-city">City</label>
-				<input id="to-city" type="text" bind:value={to.city} required />
-				<label for="to-state">State</label>
-				<input id="to-state" type="text" bind:value={to.state_province} required />
-				<label for="to-postal">Postal code</label>
-				<input id="to-postal" type="text" bind:value={to.postal} required />
-				<label for="to-country">Country (ISO-2)</label>
-				<input id="to-country" type="text" bind:value={to.country} required />
-				<label for="to-phone">Phone (optional)</label>
-				<input id="to-phone" type="tel" bind:value={to.phone} />
+			<fieldset class="rounded-sm border border-line px-4 py-3">
+				<legend class="px-1 font-bold">To</legend>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-name">Name</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="to-name"
+					type="text"
+					bind:value={to.name}
+					required
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-street">Street</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="to-street"
+					type="text"
+					bind:value={to.street1}
+					required
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-street2">
+					Street, line 2 (optional)
+				</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="to-street2"
+					type="text"
+					bind:value={to.street2}
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-city">City</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="to-city"
+					type="text"
+					bind:value={to.city}
+					required
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-state">State</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="to-state"
+					type="text"
+					bind:value={to.state_province}
+					required
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-postal">
+					Postal code
+				</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="to-postal"
+					type="text"
+					bind:value={to.postal}
+					required
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-country">
+					Country (ISO-2)
+				</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="to-country"
+					type="text"
+					bind:value={to.country}
+					required
+				/>
+				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-phone">
+					Phone (optional)
+				</label>
+				<input
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="to-phone"
+					type="tel"
+					bind:value={to.phone}
+				/>
 			</fieldset>
 		</div>
 
-		<div class="row">
-			<div>
-				<label for="parcel">Parcel</label>
-				<select id="parcel" bind:value={parcel}>
+		<div class="flex flex-wrap gap-4">
+			<div class="flex flex-col gap-1">
+				<label class="font-bold" for="parcel">Parcel</label>
+				<select
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="parcel"
+					bind:value={parcel}
+				>
 					{#each PARCELS as [value, label]}
 						<option {value}>{label}</option>
 					{/each}
 				</select>
 			</div>
-			<div>
-				<label for="service">Service</label>
-				<select id="service" bind:value={service}>
+			<div class="flex flex-col gap-1">
+				<label class="font-bold" for="service">Service</label>
+				<select
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					id="service"
+					bind:value={service}
+				>
 					{#each SERVICES as [value, label]}
 						<option {value}>{label}</option>
 					{/each}
@@ -437,69 +548,94 @@
 			</div>
 		</div>
 
-		<button type="submit" disabled={busy}>Create shipment</button>
+		<button
+			class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-[1.2rem] py-[0.6rem] font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			type="submit"
+			disabled={busy}>Create shipment</button
+		>
 	</form>
 </section>
 
 <section aria-labelledby="purchase-h">
 	<h2 id="purchase-h">2. Purchase a label</h2>
 	{#if shipmentId === null}
-		<p class="notice">Create a shipment first.</p>
+		<p class="rounded-sm border border-line bg-surface px-4 py-3">Create a shipment first.</p>
 	{:else}
 		<p>
 			Shipment {shipmentId} · status: <strong>{shipmentStatus || 'draft'}</strong>
-			<button type="button" class="linklike" onclick={refresh}>Refresh</button>
+			<button
+				type="button"
+				class="m-0 ml-2 min-h-0 cursor-pointer rounded-sm border border-accent bg-accent px-[0.6rem] py-1 font-bold text-accent-ink [font:inherit]"
+				onclick={refresh}>Refresh</button
+			>
 		</p>
 		<form
+			class="flex max-w-[44rem] flex-col gap-2"
 			onsubmit={(e) => {
 				e.preventDefault();
 				purchase();
 			}}
 		>
-			<fieldset>
-				<legend>Label option</legend>
-				<label>
+			<fieldset class="rounded-sm border border-line px-4 py-3">
+				<legend class="px-1 font-bold">Label option</legend>
+				<label class="flex min-h-11 items-center gap-[0.6rem] font-bold">
 					<input type="radio" name="kind" value="printable" bind:group={kind} />
 					A — Printable address label (you affix postage)
 				</label>
-				<label>
+				<label class="flex min-h-11 items-center gap-[0.6rem] font-bold">
 					<input type="radio" name="kind" value="prepaid" bind:group={kind} />
 					B — Prepaid USPS label (postage included)
 				</label>
 			</fieldset>
 
-			<div class="row">
-				<div>
-					<label for="direction">Direction</label>
-					<select id="direction" bind:value={direction}>
+			<div class="flex flex-wrap gap-4">
+				<div class="flex flex-col gap-1">
+					<label class="font-bold" for="direction">Direction</label>
+					<select
+						class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+						id="direction"
+						bind:value={direction}
+					>
 						<option value="outbound">Outbound (you → authority)</option>
 						<option value="return">Return (authority → you)</option>
 					</select>
 				</div>
 				{#if kind === 'printable'}
-					<div>
-						<label for="carrier">Carrier</label>
-						<select id="carrier" bind:value={carrier}>
+					<div class="flex flex-col gap-1">
+						<label class="font-bold" for="carrier">Carrier</label>
+						<select
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+							id="carrier"
+							bind:value={carrier}
+						>
 							<option value="usps">USPS</option>
 							<option value="fed_ex">FedEx</option>
 						</select>
 					</div>
-					<div>
-						<label for="format">Layout</label>
-						<select id="format" bind:value={format}>
+					<div class="flex flex-col gap-1">
+						<label class="font-bold" for="format">Layout</label>
+						<select
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+							id="format"
+							bind:value={format}
+						>
 							{#each FORMATS as [value, label]}
 								<option {value}>{label}</option>
 							{/each}
 						</select>
 					</div>
 				{:else}
-					<div>
-						<span class="static-label">Carrier</span>
-						<p class="static-value">USPS (prepaid is USPS-only)</p>
+					<div class="flex flex-col gap-1">
+						<span class="font-bold">Carrier</span>
+						<p class="mt-1 mb-0">USPS (prepaid is USPS-only)</p>
 					</div>
-					<div>
-						<label for="paper">Paper size</label>
-						<select id="paper" bind:value={paper}>
+					<div class="flex flex-col gap-1">
+						<label class="font-bold" for="paper">Paper size</label>
+						<select
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+							id="paper"
+							bind:value={paper}
+						>
 							{#each PAPERS as [value, label]}
 								<option {value}>{label}</option>
 							{/each}
@@ -508,9 +644,18 @@
 				{/if}
 			</div>
 
-			<div class="actions">
-				<button type="submit" disabled={busy}>Purchase label</button>
-				<button type="button" class="secondary" disabled={busy} onclick={saveDefaults}>
+			<div class="flex flex-wrap gap-3">
+				<button
+					class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-[1.2rem] py-[0.6rem] font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+					type="submit"
+					disabled={busy}>Purchase label</button
+				>
+				<button
+					class="mt-3 min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-[1.2rem] py-[0.6rem] font-bold text-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+					type="button"
+					disabled={busy}
+					onclick={saveDefaults}
+				>
 					Save choices as my defaults
 				</button>
 			</div>
@@ -521,11 +666,11 @@
 <section aria-labelledby="labels-h">
 	<h2 id="labels-h">3. Labels</h2>
 	{#if labels.length === 0}
-		<p class="notice">No labels yet for this shipment.</p>
+		<p class="rounded-sm border border-line bg-surface px-4 py-3">No labels yet for this shipment.</p>
 	{:else}
-		<ul class="labels">
+		<ul class="m-0 flex list-none flex-col gap-4 p-0">
 			{#each labels as label (label.id)}
-				<li>
+				<li class="rounded-sm border border-line px-4 py-3">
 					<p>
 						<strong>#{label.id}</strong>
 						{label.summary.service_name} ·
@@ -539,7 +684,7 @@
 						{#if label.summary.tracking_no}
 							Tracking: {label.summary.tracking_no}
 							{#if label.summary.tracking_url}
-								<a href={label.summary.tracking_url} target="_blank" rel="noreferrer">
+								<a class="ml-3" href={label.summary.tracking_url} target="_blank" rel="noreferrer">
 									Track
 								</a>
 							{/if}
@@ -547,38 +692,44 @@
 							No tracking yet.
 						{/if}
 						{#if label.summary.label_url}
-							<a href={downloadHref(label.id)} download>Download</a>
+							<a class="ml-3" href={downloadHref(label.id)} download>Download</a>
 						{/if}
 					</p>
 					{#if label.summary.status === 'pending' || label.summary.status === 'voided'}
 						<form
-							class="pasteback"
+							class="mt-2 flex max-w-[28rem] flex-col gap-2"
 							onsubmit={(e) => {
 								e.preventDefault();
 								pasteBack(label.id);
 							}}
 						>
-							<label for="track-{label.id}">Tracking number</label>
+							<label class="font-bold" for="track-{label.id}">Tracking number</label>
 							<input
+								class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 								id="track-{label.id}"
 								type="text"
 								bind:value={pasteTracking[label.id]}
 								placeholder="Pasted back by staff"
 							/>
-							<label for="file-{label.id}">Label PDF</label>
+							<label class="font-bold" for="file-{label.id}">Label PDF</label>
 							<input
+								class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 								id="file-{label.id}"
 								type="file"
 								accept="application/pdf"
 								onchange={(e) => pickFile(label.id, e)}
 							/>
-							<button type="submit" disabled={busy}>Paste back</button>
+							<button
+								class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-[1.2rem] py-[0.6rem] font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+								type="submit"
+								disabled={busy}>Paste back</button
+							>
 						</form>
 					{/if}
 					{#if label.summary.status === 'issued'}
 						<button
 							type="button"
-							class="secondary"
+							class="mt-3 min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-[1.2rem] py-[0.6rem] font-bold text-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
 							disabled={busy}
 							onclick={() => voidLabel(label.id)}
 						>
@@ -591,136 +742,3 @@
 	{/if}
 </section>
 
-<style>
-	.addresses {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 1rem;
-	}
-	@media (min-width: 48rem) {
-		.addresses {
-			grid-template-columns: 1fr 1fr;
-		}
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-width: 44rem;
-	}
-	fieldset {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem;
-	}
-	fieldset label {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		min-height: 44px;
-	}
-	fieldset > label[for] {
-		font-weight: 700;
-		min-height: 0;
-		margin-top: 0.5rem;
-	}
-	legend {
-		font-weight: 700;
-		padding: 0 0.25rem;
-	}
-	label {
-		font-weight: 700;
-	}
-	input[type='text'],
-	input[type='tel'],
-	input[type='number'],
-	input[type='file'],
-	select {
-		min-height: 44px;
-		padding: 0.6rem 0.8rem;
-		font: inherit;
-		color: var(--text);
-		background: var(--bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-xs);
-	}
-	.row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 1rem;
-	}
-	.row > div {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-	.static-label {
-		font-weight: 700;
-	}
-	.static-value {
-		margin: 0.25rem 0 0;
-	}
-	button {
-		min-height: 44px;
-		margin-top: 0.75rem;
-		padding: 0.6rem 1.2rem;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-	}
-	button:disabled {
-		opacity: 0.6;
-		cursor: wait;
-	}
-	button.secondary {
-		color: var(--text);
-		background: var(--surface);
-		border-color: var(--border);
-	}
-	.linklike {
-		min-height: 0;
-		margin: 0 0 0 0.5rem;
-		padding: 0.25rem 0.6rem;
-	}
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-	}
-	.notice {
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem;
-	}
-	.errors {
-		background: var(--surface);
-		border: 1px solid var(--danger, #b3261e);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem 0.75rem 2rem;
-	}
-	.labels {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-	.labels > li {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem;
-	}
-	.labels a {
-		margin-left: 0.75rem;
-	}
-	.pasteback {
-		max-width: 28rem;
-		margin-top: 0.5rem;
-	}
-</style>

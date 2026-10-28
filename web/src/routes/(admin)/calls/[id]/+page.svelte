@@ -133,7 +133,7 @@
 {#if loadState === 'loading'}
 	<p>Loading…</p>
 {:else if loadState === 'failed'}
-	<p class="error" role="alert">{loadError}</p>
+	<p class="font-bold text-error" role="alert">{loadError}</p>
 {:else if detail}
 	<h1>Call — {detail.status}</h1>
 
@@ -141,18 +141,19 @@
 		<Notice variant="info" heading="Note."><p>{detail.status_detail}</p></Notice>
 	{/if}
 
-	<div class="panes">
-		<section aria-labelledby="questions">
-			<h2 id="questions">Questions to ask</h2>
+	<div class="grid gap-4 pb-8">
+		<section class="rounded-sm border border-line px-4 py-[0.9rem]" aria-labelledby="questions">
+			<h2 class="m-0 mb-2 text-base" id="questions">Questions to ask</h2>
 			{#if detail.questions.length === 0}
-				<p class="muted">No prepared questions for this call.</p>
+				<p class="text-ink-muted">No prepared questions for this call.</p>
 			{:else}
-				<ol class="qlist">
+				<ol>
 					{#each detail.questions as question, idx (idx)}
-						<li class:asked={question.asked}>
-							<span>{question.text}</span>
+						<li class="mb-2">
+							<span class={question.asked ? 'text-ink-muted line-through' : ''}>{question.text}</span>
 							{#if !question.asked}
 								<button
+									class="ml-2"
 									type="button"
 									disabled={acting}
 									onclick={() => act('Mark asked', () => markQuestionAsked(api(), id, idx))}
@@ -166,23 +167,23 @@
 			{/if}
 		</section>
 
-		<section aria-labelledby="transcript">
-			<h2 id="transcript">Transcript</h2>
+		<section class="rounded-sm border border-line px-4 py-[0.9rem]" aria-labelledby="transcript">
+			<h2 class="m-0 mb-2 text-base" id="transcript">Transcript</h2>
 			{#if detail.transcript.length === 0}
-				<p class="muted">
+				<p class="text-ink-muted">
 					{isLive(detail.status) ? 'Listening — segments appear as they arrive.' : 'No transcript captured.'}
 				</p>
 			{:else}
-				<ol class="segments">
+				<ol class="m-0 grid list-none gap-2 p-0">
 					{#each detail.transcript as segment (segment.seq)}
-						<li>
+						<li class="pb-2 [border-bottom:1px_dotted_var(--border)]">
 							<label>
 								<input
 									type="checkbox"
 									checked={selected.has(segment.seq)}
 									onchange={() => toggle(segment.seq)}
 								/>
-								<span class="seq">#{segment.seq}</span>
+								<span class="text-[0.85rem] text-ink-muted">#{segment.seq}</span>
 								{segment.text}
 							</label>
 						</li>
@@ -191,9 +192,9 @@
 			{/if}
 		</section>
 
-		<section aria-labelledby="quote">
-			<h2 id="quote">Quote to draft</h2>
-			<p class="muted">
+		<section class="rounded-sm border border-line px-4 py-[0.9rem]" aria-labelledby="quote">
+			<h2 class="m-0 mb-2 text-base" id="quote">Quote to draft</h2>
+			<p class="text-ink-muted">
 				Quote the checked segments into one proposed fact. The fact lands in the
 				standard approval queue — quoting never auto-accepts.
 			</p>
@@ -209,22 +210,23 @@
 					<textarea bind:value={statement} rows="3" maxlength="1024" placeholder="One handbook sentence."></textarea>
 				</label>
 			</p>
-			<p class="buttons">
-				<button type="button" disabled={acting || selected.size === 0} onclick={quote}>
+			<p class="flex flex-wrap gap-2">
+				<button class="min-h-11" type="button" disabled={acting || selected.size === 0} onclick={quote}>
 					Quote {selected.size} segment{selected.size === 1 ? '' : 's'} to draft
 				</button>
 			</p>
 			{#if quoteResult}
-				<p class="ok" role="status">{quoteResult}</p>
+				<p class="font-bold text-[#1c7a2e]" role="status">{quoteResult}</p>
 			{/if}
 		</section>
 
-		<section aria-labelledby="controls">
-			<h2 id="controls">Controls</h2>
-			<p class="muted">Recording: {detail.recording_status}</p>
+		<section class="rounded-sm border border-line px-4 py-[0.9rem]" aria-labelledby="controls">
+			<h2 class="m-0 mb-2 text-base" id="controls">Controls</h2>
+			<p class="text-ink-muted">Recording: {detail.recording_status}</p>
 			{#if isLive(detail.status)}
-				<p class="buttons">
+				<p class="flex flex-wrap gap-2">
 					<button
+						class="min-h-11"
 						type="button"
 						disabled={acting}
 						onclick={() => act('Record start', () => recordCall(api(), id, true))}
@@ -232,6 +234,7 @@
 						Start recording
 					</button>
 					<button
+						class="min-h-11"
 						type="button"
 						disabled={acting}
 						onclick={() => act('Record stop', () => recordCall(api(), id, false))}
@@ -239,6 +242,7 @@
 						Stop recording
 					</button>
 					<button
+						class="min-h-11"
 						type="button"
 						disabled={acting}
 						onclick={() => act('Hangup', () => hangupCall(api(), id))}
@@ -247,72 +251,11 @@
 					</button>
 				</p>
 			{:else}
-				<p class="muted">Call ended — controls disabled.</p>
+				<p class="text-ink-muted">Call ended — controls disabled.</p>
 			{/if}
 			{#if actionError}
-				<p class="error" role="alert">{actionError}</p>
+				<p class="font-bold text-error" role="alert">{actionError}</p>
 			{/if}
 		</section>
 	</div>
 {/if}
-
-<style>
-	.panes {
-		display: grid;
-		gap: 1rem;
-		padding-bottom: 2rem;
-	}
-	.panes section {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.9rem 1rem;
-	}
-	.panes h2 {
-		font-size: 1rem;
-		margin: 0 0 0.5rem;
-	}
-	.muted {
-		color: var(--text-muted);
-	}
-	.error {
-		color: var(--error, #b00020);
-		font-weight: 700;
-	}
-	.ok {
-		color: var(--ok, #1c7a2e);
-		font-weight: 700;
-	}
-	.seq {
-		color: var(--text-muted);
-		font-size: 0.85rem;
-	}
-	.asked span {
-		text-decoration: line-through;
-		color: var(--text-muted);
-	}
-	.qlist li {
-		margin-bottom: 0.5rem;
-	}
-	.qlist button {
-		margin-left: 0.5rem;
-	}
-	.segments {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: grid;
-		gap: 0.5rem;
-	}
-	.segments li {
-		border-bottom: 1px dotted var(--border);
-		padding-bottom: 0.5rem;
-	}
-	.buttons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-	}
-	.buttons button {
-		min-height: 44px;
-	}
-</style>

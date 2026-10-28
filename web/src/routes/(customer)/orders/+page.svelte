@@ -22,85 +22,54 @@
 	</p>
 </Notice>
 
-<table>
-	<caption>Layout preview — placeholder rows, not real orders</caption>
-	<thead>
+<table class="mt-4 block w-full border-collapse md:table">
+	<caption class="pb-2 text-left text-sm text-ink-muted">
+		Layout preview — placeholder rows, not real orders
+	</caption>
+	<thead class="sr-only md:not-sr-only">
 		<tr>
-			<th scope="col">Order</th>
-			<th scope="col">Authority</th>
-			<th scope="col">Status</th>
+			<th class="border border-line bg-surface px-[0.8rem] py-[0.6rem] text-left" scope="col">Order</th>
+			<th class="border border-line bg-surface px-[0.8rem] py-[0.6rem] text-left" scope="col">
+				Authority
+			</th>
+			<th class="border border-line bg-surface px-[0.8rem] py-[0.6rem] text-left" scope="col">Status</th>
 		</tr>
 	</thead>
-	<tbody>
+	<tbody class="block w-full md:table-row-group">
 		{#each preview as row (row.id)}
-			<tr>
-				<td data-label="Order" class="mono">{row.id}</td>
-				<td data-label="Authority">{row.authority}</td>
-				<td data-label="Status">{row.status}</td>
+			<tr class="mb-3 block rounded-sm border border-line even:bg-surface md:mb-0 md:table-row md:rounded-none md:border-0">
+				<td
+					data-label="Order"
+					class="block border-0 border-b border-line px-[0.8rem] py-[0.6rem] text-left font-mono text-[0.9rem] last:border-b-0 md:table-cell md:border"
+					>{row.id}</td
+				>
+				<td
+					data-label="Authority"
+					class="block border-0 border-b border-line px-[0.8rem] py-[0.6rem] text-left last:border-b-0 md:table-cell md:border"
+					>{row.authority}</td
+				>
+				<td
+					data-label="Status"
+					class="block border-0 border-b border-line px-[0.8rem] py-[0.6rem] text-left last:border-b-0 md:table-cell md:border"
+					>{row.status}</td
+				>
 			</tr>
 		{/each}
 	</tbody>
 </table>
 
 <style>
-	table {
-		width: 100%;
-		border-collapse: collapse;
-		margin-top: 1rem;
+	/* Mobile-only label injection has no clean utility (attr() +
+	   string concat); the desktop kill inverts the old max-width
+	   query mobile-first. */
+	td::before {
+		content: attr(data-label) ': ';
+		font-weight: 700;
+		font-family: var(--font-body);
 	}
-	caption {
-		text-align: left;
-		color: var(--text-muted);
-		font-size: 0.875rem;
-		padding-bottom: 0.5rem;
-	}
-	th,
-	td {
-		border: 1px solid var(--border);
-		padding: 0.6rem 0.8rem;
-		text-align: left;
-	}
-	thead th {
-		background: var(--surface);
-	}
-	tbody tr:nth-child(even) {
-		background: var(--surface);
-	}
-	.mono {
-		font-family: var(--font-mono);
-		font-size: 0.9rem;
-	}
-	@media (max-width: 719px) {
-		thead {
-			position: absolute;
-			width: 1px;
-			height: 1px;
-			overflow: hidden;
-			clip: rect(0 0 0 0);
-		}
-		table,
-		tbody,
-		tr,
-		td {
-			display: block;
-			width: 100%;
-		}
-		tr {
-			margin-bottom: 0.75rem;
-			border: 1px solid var(--border);
-			border-radius: var(--radius-sm);
-		}
-		td {
-			border: none;
-			border-bottom: 1px solid var(--border);
-		}
-		td:last-child {
-			border-bottom: none;
-		}
+	@media (min-width: 720px) {
 		td::before {
-			content: attr(data-label) ': ';
-			font-weight: 700;
-			font-family: var(--font-body);
+			content: none;
 		}
 	}
 </style>

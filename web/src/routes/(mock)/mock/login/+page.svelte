@@ -32,18 +32,23 @@
 </svelte:head>
 
 <h1>Login</h1>
-<p class="demo"><strong>Mock login.</strong> Accepts {DEMO_REFS.join(' / ')}; anything else shows the error state.</p>
+<p class="rounded-sm border border-line bg-warning-bg px-4 py-3 text-ink">
+	<strong>Mock login.</strong> Accepts {DEMO_REFS.join(' / ')}; anything else shows the error state.
+</p>
 
 {#if loggedInAs}
-	<p class="notice ok" role="status">
-		Logged in as <code>{loggedInAs}</code>.
+	<p class="rounded-sm border border-line bg-success-bg px-4 py-3" role="status">
+		Logged in as <code class="font-mono">{loggedInAs}</code>.
 		<a href={resolve('/(mock)/mock/orders')}>Continue to orders</a> ·
-		<button class="link" onclick={logout}>Log out</button>
+		<button class="cursor-pointer border-0 bg-transparent p-0 text-accent underline [font:inherit]" onclick={logout}>
+			Log out
+		</button>
 	</p>
 {:else}
-	<form onsubmit={login}>
-		<label for="customer-ref">Customer reference</label>
+	<form class="flex max-w-[28rem] flex-col gap-2" onsubmit={login}>
+		<label class="font-bold" for="customer-ref">Customer reference</label>
 		<input
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 			id="customer-ref"
 			name="customer_ref"
 			type="text"
@@ -54,74 +59,13 @@
 			aria-describedby={error ? 'login-error' : undefined}
 		/>
 		{#if error}
-			<p class="notice err" id="login-error" role="alert">{error}</p>
+			<p class="rounded-sm border border-line bg-error-bg px-4 py-3 text-ink" id="login-error" role="alert">
+				{error}
+			</p>
 		{/if}
-		<button type="submit">Login</button>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit]"
+			type="submit">Login</button
+		>
 	</form>
 {/if}
-
-<style>
-	.demo {
-		background: var(--warning-bg);
-		color: var(--text);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem;
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-width: 28rem;
-	}
-	label {
-		font-weight: 700;
-	}
-	input {
-		min-height: 44px;
-		padding: 0.6rem 0.8rem;
-		font: inherit;
-		color: var(--text);
-		background: var(--bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-xs);
-	}
-	button[type='submit'] {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-	}
-	:root[data-theme='dark'] button[type='submit'] {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-	.notice {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem;
-	}
-	.notice.ok {
-		background: var(--success-bg);
-	}
-	.notice.err {
-		background: var(--error-bg);
-		color: var(--text);
-	}
-	code {
-		font-family: var(--font-mono);
-	}
-	.link {
-		background: none;
-		border: none;
-		padding: 0;
-		font: inherit;
-		color: var(--accent);
-		text-decoration: underline;
-		cursor: pointer;
-	}
-</style>

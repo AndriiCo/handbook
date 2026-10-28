@@ -33,6 +33,13 @@
 		open = false;
 	}
 
+	// Full class strings per state: the active option colors must
+	// never co-occur with the idle ones in the cascade.
+	const optionCls = (isActive: boolean) =>
+		`block w-full cursor-pointer rounded-xs border-0 px-2 py-[0.375rem] text-left [font:inherit] ${
+			isActive ? 'bg-accent text-accent-ink' : 'bg-transparent text-inherit'
+		}`;
+
 	function onKeyDown(event: KeyboardEvent) {
 		if (event.key === 'ArrowDown' && matches.length > 0) {
 			event.preventDefault();
@@ -51,8 +58,9 @@
 	}
 </script>
 
-<div class="combo">
+<div class="relative">
 	<input
+		class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 		{id}
 		{name}
 		type="text"
@@ -80,10 +88,15 @@
 		}}
 	/>
 	{#if open && matches.length > 0}
-		<ul class="options" role="listbox" id={countryListId}>
+		<ul
+			class="absolute right-0 left-0 z-20 m-0 mt-1 max-h-48 list-none overflow-y-auto rounded-sm border border-line bg-surface p-1"
+			role="listbox"
+			id={countryListId}
+		>
 			{#each matches as match, i (match.code)}
-				<li role="option" aria-selected={i === active} class:active={i === active}>
+				<li role="option" aria-selected={i === active}>
 					<button
+						class={optionCls(i === active)}
 						type="button"
 						tabindex="-1"
 						onmousedown={(event) => event.preventDefault()}
@@ -97,49 +110,3 @@
 		</ul>
 	{/if}
 </div>
-
-<style>
-	.combo {
-		position: relative;
-	}
-	input {
-		width: 100%;
-		box-sizing: border-box;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.5rem 0.75rem;
-		background: var(--surface);
-		color: inherit;
-		font: inherit;
-	}
-	.options {
-		position: absolute;
-		z-index: 20;
-		left: 0;
-		right: 0;
-		margin: 0.25rem 0 0;
-		padding: 0.25rem;
-		list-style: none;
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		max-height: 12rem;
-		overflow-y: auto;
-	}
-	.options button {
-		display: block;
-		width: 100%;
-		text-align: left;
-		border: 0;
-		background: transparent;
-		color: inherit;
-		font: inherit;
-		padding: 0.375rem 0.5rem;
-		border-radius: var(--radius-xs);
-		cursor: pointer;
-	}
-	.options li.active button {
-		background: var(--accent);
-		color: var(--accent-ink);
-	}
-</style>

@@ -17,14 +17,16 @@
 <section aria-labelledby="start">
 	<h1 id="start">Start with your destination</h1>
 	<form
+		class="my-4 flex gap-2"
 		role="search"
 		onsubmit={(e) => {
 			e.preventDefault();
 			submitted = query;
 		}}
 	>
-		<label class="visually-hidden" for="q">Search the handbook</label>
+		<label class="sr-only" for="q">Search the handbook</label>
 		<input
+			class="min-h-11 flex-1 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
 			id="q"
 			name="q"
 			type="search"
@@ -32,7 +34,10 @@
 			placeholder="Country, state, or authority…"
 			autocomplete="off"
 		/>
-		<button type="submit">Search</button>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit]"
+			type="submit">Search</button
+		>
 	</form>
 	{#if results !== null}
 		{#if results.length === 0}
@@ -40,13 +45,15 @@
 				<p>Try “secretary”, “consulate”, or “clerk”. Fixture index holds {AUTHORITIES.length} entries.</p>
 			</Notice>
 		{:else}
-			<ul class="ledger" aria-label="Search results">
+			<ul class="m-0 mb-8 list-none p-0" aria-label="Search results">
 				{#each results as authority (authority.slug)}
-					<li>
-						<a href={resolve('/(mock)/mock/authority/[slug]', { slug: authority.slug })}
+					<li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line py-[0.7rem]">
+						<a
+							class="inline-flex min-h-11 items-center font-bold"
+							href={resolve('/(mock)/mock/authority/[slug]', { slug: authority.slug })}
 							>{authority.name}</a
 						>
-						<span class="kind">{authority.kind}</span>
+						<span class="text-sm text-ink-muted">{authority.kind}</span>
 						<VerifiedChip tier={authority.tier} verified={authority.verified} />
 					</li>
 				{/each}
@@ -56,85 +63,18 @@
 </section>
 
 <section aria-labelledby="index">
-	<h2 id="index" class="section-label">Authority index</h2>
-	<ul class="ledger">
+	<h2 id="index" class="text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase">Authority index</h2>
+	<ul class="m-0 mb-8 list-none p-0">
 		{#each AUTHORITIES as authority (authority.slug)}
-			<li>
-				<a href={resolve('/(mock)/mock/authority/[slug]', { slug: authority.slug })}
+			<li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line py-[0.7rem]">
+				<a
+					class="inline-flex min-h-11 items-center font-bold"
+					href={resolve('/(mock)/mock/authority/[slug]', { slug: authority.slug })}
 					>{authority.name}</a
 				>
-				<span class="kind">{authority.kind}</span>
+				<span class="text-sm text-ink-muted">{authority.kind}</span>
 				<VerifiedChip tier={authority.tier} verified={authority.verified} />
 			</li>
 		{/each}
 	</ul>
 </section>
-
-<style>
-	.visually-hidden {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip: rect(0 0 0 0);
-	}
-	form {
-		display: flex;
-		gap: 0.5rem;
-		margin: 1rem 0;
-	}
-	input[type='search'] {
-		flex: 1;
-		min-height: 44px;
-		padding: 0.6rem 0.8rem;
-		font: inherit;
-		color: var(--text);
-		background: var(--bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-xs);
-	}
-	button {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-		padding: 0 1.25rem;
-	}
-	:root[data-theme='dark'] button {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-	.section-label {
-		font-size: 0.8rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--text-muted);
-	}
-	.ledger {
-		list-style: none;
-		margin: 0 0 2rem;
-		padding: 0;
-	}
-	.ledger li {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.25rem 0.75rem;
-		padding: 0.7rem 0;
-		border-bottom: 1px solid var(--border);
-	}
-	.ledger a {
-		font-weight: 700;
-		min-height: 44px;
-		display: inline-flex;
-		align-items: center;
-	}
-	.kind {
-		color: var(--text-muted);
-		font-size: 0.875rem;
-	}
-</style>

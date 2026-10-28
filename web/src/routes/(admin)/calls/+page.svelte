@@ -108,21 +108,36 @@
 	<h2 id="dial">Dial an office</h2>
 	<form onsubmit={dial}>
 		<p>
-			<label class="stack" for="to">
+			<label class="grid max-w-[36rem] gap-1 font-bold" for="to">
 				Office number (E.164)
-				<input id="to" type="tel" bind:value={to} placeholder="+13605550100" autocomplete="off" />
+				<input
+					class="p-2 font-normal"
+					id="to"
+					type="tel"
+					bind:value={to}
+					placeholder="+13605550100"
+					autocomplete="off"
+				/>
 			</label>
 		</p>
 		<p>
-			<label class="stack" for="authority">
+			<label class="grid max-w-[36rem] gap-1 font-bold" for="authority">
 				Authority slug (optional)
-				<input id="authority" type="text" bind:value={authority} placeholder="usa-wa-sos" autocomplete="off" />
+				<input
+					class="p-2 font-normal"
+					id="authority"
+					type="text"
+					bind:value={authority}
+					placeholder="usa-wa-sos"
+					autocomplete="off"
+				/>
 			</label>
 		</p>
 		<p>
-			<label class="stack" for="questions">
+			<label class="grid max-w-[36rem] gap-1 font-bold" for="questions">
 				Questions to ask (one per line, up to 20)
 				<textarea
+					class="p-2 font-normal"
 					id="questions"
 					rows="4"
 					bind:value={questionsText}
@@ -134,13 +149,13 @@
 			<button type="button" onclick={loadScript}>Load default script</button>
 		</p>
 		<p>
-			<label class="consent" for="consent">
+			<label class="flex max-w-[36rem] items-start gap-2" for="consent">
 				<input id="consent" type="checkbox" bind:checked={consent} />
 				I will announce that this call is recorded before asking anything.
 			</label>
 		</p>
 		{#if dialError}
-			<p class="error" role="alert">{dialError}</p>
+			<p class="font-bold text-error" role="alert">{dialError}</p>
 		{/if}
 		<p><button type="submit" disabled={dialing}>{dialing ? 'Dialing…' : 'Dial'}</button></p>
 	</form>
@@ -151,18 +166,21 @@
 	{#if loadState === 'loading'}
 		<p>Loading…</p>
 	{:else if loadState === 'failed'}
-		<p class="error" role="alert">{loadError}</p>
+		<p class="font-bold text-error" role="alert">{loadError}</p>
 		<p><button type="button" onclick={load}>Retry</button></p>
 	{:else if calls.length === 0}
-		<p class="muted">No calls yet.</p>
+		<p class="text-ink-muted">No calls yet.</p>
 	{:else}
-		<ul class="ledger">
+		<ul class="m-0 mt-4 list-none p-0 pb-8">
 			{#each calls as call (call.call_id)}
-				<li>
-					<a href={`${resolve('/(admin)/calls')}/${encodeURIComponent(call.call_id)}`}>
+				<li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line py-[0.7rem]">
+					<a
+						class="inline-flex min-h-11 items-center font-bold"
+						href={`${resolve('/(admin)/calls')}/${encodeURIComponent(call.call_id)}`}
+					>
 						{call.authority ?? 'call'} — {call.status}
 					</a>
-					<span class="kind">
+					<span class="text-sm text-ink-muted">
 						{call.questions_asked}/{call.questions_total} asked · recording {call.recording_status}
 					</span>
 				</li>
@@ -170,53 +188,3 @@
 		</ul>
 	{/if}
 </section>
-
-<style>
-	.stack {
-		display: grid;
-		gap: 0.25rem;
-		max-width: 36rem;
-		font-weight: 700;
-	}
-	.stack input,
-	.stack textarea {
-		font-weight: 400;
-		padding: 0.5rem;
-	}
-	.consent {
-		display: flex;
-		gap: 0.5rem;
-		align-items: flex-start;
-		max-width: 36rem;
-	}
-	.error {
-		color: var(--error, #b00020);
-		font-weight: 700;
-	}
-	.muted {
-		color: var(--text-muted);
-	}
-	.ledger {
-		list-style: none;
-		margin: 1rem 0 0;
-		padding: 0 0 2rem;
-	}
-	.ledger li {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.25rem 0.75rem;
-		padding: 0.7rem 0;
-		border-bottom: 1px solid var(--border);
-	}
-	.ledger a {
-		font-weight: 700;
-		min-height: 44px;
-		display: inline-flex;
-		align-items: center;
-	}
-	.kind {
-		color: var(--text-muted);
-		font-size: 0.875rem;
-	}
-</style>

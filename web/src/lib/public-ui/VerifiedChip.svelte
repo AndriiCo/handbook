@@ -5,27 +5,12 @@
 	}
 
 	let { tier, verified }: Props = $props();
+	const chipCls = (ok: boolean) =>
+		`inline-block rounded-xs border px-2 py-[0.15rem] font-mono text-[0.8rem] font-semibold ${
+			ok ? 'border-success bg-success-bg text-success' : 'border-line bg-surface-2 text-ink-muted'
+		}`;
 </script>
 
-<span class="chip" data-verified={verified ? 'yes' : 'no'}>
+<span class={chipCls(verified !== null && verified !== '')} data-verified={verified ? 'yes' : 'no'}>
 	{verified ? `Verified ${verified}` : tier}
 </span>
-
-<style>
-	.chip {
-		display: inline-block;
-		border-radius: var(--radius-xs);
-		padding: 0.15rem 0.5rem;
-		font-family: var(--font-mono);
-		font-size: 0.8rem;
-		font-weight: 600;
-		background: var(--surface-2);
-		color: var(--text-muted);
-		border: 1px solid var(--border);
-	}
-	.chip[data-verified='yes'] {
-		background: var(--success-bg);
-		color: var(--success);
-		border-color: var(--success);
-	}
-</style>

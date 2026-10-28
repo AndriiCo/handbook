@@ -72,7 +72,7 @@
 </svelte:head>
 
 <h1>Configuration</h1>
-<p class="lede">
+<p class="max-w-[44rem] text-ink-muted">
 	Encrypted server config. Secrets are set-new-only: this page can never
 	display one. Every save writes an audit row.
 </p>
@@ -83,23 +83,34 @@
 	<Notice variant="error" heading="Config unavailable.">
 		<p>{loadError}</p>
 	</Notice>
-	<p><button onclick={load}>Retry</button></p>
+	<p>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			onclick={load}>Retry</button
+		>
+	</p>
 {:else if rows.length === 0}
 	<Notice variant="info" heading="No config keys.">
 		<p>The server returned an empty key list. Seed keys first, then reload.</p>
 	</Notice>
-	<p><button onclick={load}>Reload</button></p>
+	<p>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			onclick={load}>Reload</button
+		>
+	</p>
 {:else}
-	<ul class="keys">
+	<ul class="mt-4 mb-0 grid max-w-[44rem] list-none gap-4 p-0 pb-8">
 		{#each rows as row (row.key)}
-			<li>
-				<div class="key-head">
-					<code class="mono">{row.key}</code>
-					<span class="type">{row.type}</span>
+			<li class="rounded-sm border border-line px-4 py-[0.9rem]">
+				<div class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+					<code class="font-mono font-semibold break-all">{row.key}</code>
+					<span class="text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase">{row.type}</span>
 				</div>
 				{#if row.type === 'bool'}
-					<label>
+					<label class="min-h-11">
 						<input
+							class="mr-2 size-5 accent-accent align-middle"
 							type="checkbox"
 							checked={row.value === true}
 							onchange={(e) => {
@@ -110,9 +121,10 @@
 						Enabled
 					</label>
 				{:else if row.type === 'text'}
-					<label class="stack" for={`cfg-${row.key}`}>
+					<label class="flex min-h-11 flex-col gap-[0.35rem] font-bold" for={`cfg-${row.key}`}>
 						Value
 						<input
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink [font:inherit]"
 							id={`cfg-${row.key}`}
 							type="text"
 							value={typeof row.value === 'string' ? row.value : ''}
@@ -124,12 +136,13 @@
 						/>
 					</label>
 				{:else}
-					<p class="secret-state" aria-live="polite">
+					<p class="mt-1 mb-2 font-bold" aria-live="polite">
 						{row.set ? 'Set (value hidden)' : 'Not set'}
 					</p>
-					<label class="stack" for={`cfg-${row.key}`}>
+					<label class="flex min-h-11 flex-col gap-[0.35rem] font-bold" for={`cfg-${row.key}`}>
 						New value (write-only — overwrites)
 						<input
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink [font:inherit]"
 							id={`cfg-${row.key}`}
 							type="password"
 							autocomplete="new-password"
@@ -152,6 +165,7 @@
 				{/if}
 				<p>
 					<button
+						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
 						onclick={() => save(row)}
 						disabled={!row.dirty || row.saving || (row.type === 'secret' && !row.draft)}
 					>
@@ -162,91 +176,3 @@
 		{/each}
 	</ul>
 {/if}
-
-<style>
-	.lede {
-		color: var(--text-muted);
-		max-width: 44rem;
-	}
-	.keys {
-		list-style: none;
-		margin: 1rem 0 0;
-		padding: 0 0 2rem;
-		display: grid;
-		gap: 1rem;
-		max-width: 44rem;
-	}
-	.keys li {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.9rem 1rem;
-	}
-	.key-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.25rem 0.75rem;
-		margin-bottom: 0.5rem;
-	}
-	.mono {
-		font-family: var(--font-mono);
-		font-weight: 600;
-		word-break: break-all;
-	}
-	.type {
-		font-size: 0.8rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--text-muted);
-	}
-	.stack {
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		font-weight: 700;
-	}
-	label {
-		min-height: 44px;
-	}
-	input[type='text'],
-	input[type='password'] {
-		min-height: 44px;
-		padding: 0.6rem 0.8rem;
-		font: inherit;
-		font-weight: 400;
-		color: var(--text);
-		background: var(--bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-xs);
-	}
-	input[type='checkbox'] {
-		width: 1.25rem;
-		height: 1.25rem;
-		accent-color: var(--accent);
-		vertical-align: middle;
-		margin-right: 0.5rem;
-	}
-	.secret-state {
-		font-weight: 700;
-		margin: 0.25rem 0 0.5rem;
-	}
-	button {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-		padding: 0 1.25rem;
-	}
-	:root[data-theme='dark'] button {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-	button:disabled {
-		opacity: 0.55;
-		cursor: not-allowed;
-	}
-</style>

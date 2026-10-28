@@ -38,36 +38,46 @@
 	<p>Decisions only flip the status label on this page.</p>
 </Notice>
 
-<ul class="queue">
+<ul class="mt-4 mb-0 grid list-none gap-4 p-0 pb-8">
 	{#each TRIAGE as fact (fact.id)}
 		{@const item = stateOf(fact.id)}
 		{#if item}
-			<li>
-				<div class="item-head">
-					<span class="kind">{fact.authority} · {fact.topic}</span>
+			<li class="rounded-sm border border-line px-4 py-[0.9rem]">
+				<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+					<span class="text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase">
+						{fact.authority} · {fact.topic}
+					</span>
 					{#if fact.conflict}
-						<span class="conflict" role="alert">conflict</span>
+						<span
+							class="rounded-xs border border-warning px-2 py-[0.1rem] text-[0.8rem] font-bold tracking-[0.08em] text-warning uppercase"
+							role="alert">conflict</span
+						>
 					{/if}
-					<span class="status mono">{item.status}</span>
+					<span class="ml-auto font-mono text-sm">{item.status}</span>
 				</div>
 				<p><strong>#{fact.id}</strong> {fact.statement}</p>
 				{#if fact.conflicts.length > 0}
-					<ul class="conflicts">
+					<ul
+						class="my-2 grid list-none gap-[0.4rem] border-l-[3px] border-warning bg-warning-bg px-[0.8rem] py-[0.6rem] text-[0.9rem]"
+					>
 						{#each fact.conflicts as other (other.id)}
 							<li>
-								<span class="mono">#{other.id} ({other.status})</span>
+								<span class="font-mono">#{other.id} ({other.status})</span>
 								{other.statement}
 							</li>
 						{/each}
 					</ul>
 				{/if}
 				{#if item.note}
-					<p class="note" role="status">{item.note}</p>
+					<p class="rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem]" role="status">
+						{item.note}
+					</p>
 				{/if}
 				<p>
-					<label>
+					<label class="grid gap-[0.3rem] text-sm text-ink-muted">
 						Reason (required to reject, optional to accept)
 						<input
+							class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
 							type="text"
 							bind:value={item.reason}
 							maxlength="1024"
@@ -75,111 +85,18 @@
 						/>
 					</label>
 				</p>
-				<p class="actions">
-					<button onclick={() => decide(fact.id, 'accept')}>Accept</button>
-					<button class="secondary" onclick={() => decide(fact.id, 'reject')}>Reject</button>
+				<p class="mb-0 flex gap-3">
+					<button
+						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit]"
+						onclick={() => decide(fact.id, 'accept')}>Accept</button
+					>
+					<button
+						class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink [font:inherit]"
+						onclick={() => decide(fact.id, 'reject')}>Reject</button
+					>
 				</p>
 			</li>
 		{/if}
 	{/each}
 </ul>
 
-<style>
-	.queue {
-		list-style: none;
-		margin: 1rem 0 0;
-		padding: 0 0 2rem;
-		display: grid;
-		gap: 1rem;
-	}
-	.queue > li {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.9rem 1rem;
-	}
-	.item-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.25rem 0.75rem;
-	}
-	.kind {
-		font-size: 0.8rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--text-muted);
-	}
-	.status {
-		margin-left: auto;
-		font-size: 0.875rem;
-	}
-	.mono {
-		font-family: var(--font-mono);
-	}
-	.note {
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.6rem 0.8rem;
-	}
-	.conflict {
-		font-size: 0.8rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--warning);
-		border: 1px solid var(--warning);
-		border-radius: var(--radius-xs);
-		padding: 0.1rem 0.5rem;
-	}
-	.conflicts {
-		list-style: none;
-		margin: 0.5rem 0;
-		padding: 0.6rem 0.8rem;
-		border-left: 3px solid var(--warning);
-		background: var(--warning-bg);
-		display: grid;
-		gap: 0.4rem;
-		font-size: 0.9rem;
-	}
-	label {
-		display: grid;
-		gap: 0.3rem;
-		font-size: 0.875rem;
-		color: var(--text-muted);
-	}
-	input[type='text'] {
-		font: inherit;
-		color: var(--text);
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.5rem 0.75rem;
-		min-height: 44px;
-	}
-	.actions {
-		display: flex;
-		gap: 0.75rem;
-		margin-bottom: 0;
-	}
-	button {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-		padding: 0 1.25rem;
-	}
-	:root[data-theme='dark'] button:not(.secondary) {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-	button.secondary {
-		color: var(--text);
-		background: var(--surface);
-		border-color: var(--border);
-	}
-</style>

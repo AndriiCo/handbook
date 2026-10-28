@@ -59,18 +59,27 @@
 </svelte:head>
 
 <h1>Uploads</h1>
-<p class="lede">
+<p class="max-w-[40rem] text-ink-muted">
 	Document photos and scans for your orders. Originals stay private to
 	your account and staff — community-visible copies are masked first.
 </p>
 
-<form onsubmit={upload}>
-	<label for="files">Choose files (up to 10, 25 MB each)</label>
-	<input id="files" name="files" type="file" multiple onchange={onChange} />
+<form class="flex max-w-[32rem] flex-col gap-3" onsubmit={upload}>
+	<label class="font-bold" for="files">Choose files (up to 10, 25 MB each)</label>
+	<input
+		class="min-h-11 py-[0.6rem] [font:inherit]"
+		id="files"
+		name="files"
+		type="file"
+		multiple
+		onchange={onChange}
+	/>
 	{#if files.length > 0}
-		<ul class="picked">
+		<ul class="m-0 list-none rounded-sm border border-line p-0">
 			{#each files as file (`${file.name}-${file.size}-${file.lastModified}`)}
-				<li><span>{file.name}</span> <span class="mono">{formatBytes(file.size)}</span></li>
+				<li class="flex justify-between gap-4 border-b border-line px-[0.8rem] py-2 last:border-b-0">
+					<span>{file.name}</span> <span class="font-mono text-sm text-ink-muted">{formatBytes(file.size)}</span>
+				</li>
 			{/each}
 		</ul>
 	{/if}
@@ -80,68 +89,11 @@
 	{#if result}
 		<Notice variant="success" heading="Uploaded."><p>{result}</p></Notice>
 	{/if}
-	<button type="submit" disabled={busy || files.length === 0}>
+	<button
+		class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-[0.55]"
+		type="submit"
+		disabled={busy || files.length === 0}
+	>
 		{busy ? 'Uploading…' : 'Upload'}
 	</button>
 </form>
-
-<style>
-	.lede {
-		color: var(--text-muted);
-		max-width: 40rem;
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		max-width: 32rem;
-	}
-	label {
-		font-weight: 700;
-	}
-	input[type='file'] {
-		min-height: 44px;
-		padding: 0.6rem 0;
-		font: inherit;
-	}
-	.picked {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-	}
-	.picked li {
-		display: flex;
-		justify-content: space-between;
-		gap: 1rem;
-		padding: 0.5rem 0.8rem;
-		border-bottom: 1px solid var(--border);
-	}
-	.picked li:last-child {
-		border-bottom: none;
-	}
-	.mono {
-		font-family: var(--font-mono);
-		font-size: 0.875rem;
-		color: var(--text-muted);
-	}
-	button {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-	}
-	:root[data-theme='dark'] button {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-	button:disabled {
-		opacity: 0.55;
-		cursor: not-allowed;
-	}
-</style>

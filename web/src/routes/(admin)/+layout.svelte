@@ -25,43 +25,22 @@
 	});
 </script>
 
-<div class="staff-banner" role="note">
+<div class="border-b border-line bg-warning-bg px-4 py-2 text-sm font-bold" role="note">
 	Staff only — served from admin.andrii.ai. Every action is audited.
 </div>
 
-<nav class="admin-nav" aria-label="Admin">
-	<a href={resolve('/(admin)/admin')}>Dashboard</a>
-	<a href={resolve('/(admin)/admin/triage')}>Triage</a>
-	<a href={resolve('/(admin)/admin/console')}>Call console</a>
-	<a href={resolve('/(admin)/calls')}>Voice calls</a>
-	<a href={resolve('/(admin)/admin/config')}>Config</a>
-	<a href={resolve('/(admin)/workers')}>Workers</a>
+<nav
+	class="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line bg-surface px-4 py-2"
+	aria-label="Admin"
+>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin')}>Dashboard</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin/triage')}>Triage</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin/console')}
+		>Call console</a
+	>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/calls')}>Voice calls</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin/config')}>Config</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/workers')}>Workers</a>
 </nav>
 
 {@render children()}
-
-<style>
-	.staff-banner {
-		background: var(--warning-bg);
-		color: var(--text);
-		border-bottom: 1px solid var(--border);
-		padding: 0.5rem 1rem;
-		font-size: 0.875rem;
-		font-weight: 700;
-	}
-	.admin-nav {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.25rem 1rem;
-		padding: 0.5rem 1rem;
-		border-bottom: 1px solid var(--border);
-		background: var(--surface);
-	}
-	.admin-nav a {
-		display: inline-flex;
-		align-items: center;
-		min-height: 44px;
-		font-weight: 700;
-	}
-</style>

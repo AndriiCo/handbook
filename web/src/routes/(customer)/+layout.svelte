@@ -31,51 +31,40 @@
 	const t = $derived(STRINGS[locale]);
 </script>
 
-<nav class="customer-nav" aria-label="Customer">
-	<a href={resolve('/(customer)/orders')}>{t.orderLabel}s</a>
-	<a href={resolve('/(customer)/order')}>New {t.orderLabel}</a>
-	<a href={resolve('/(customer)/uploads')}>Uploads</a>
-	<a href={resolve('/(customer)/precheck')}>Precheck</a>
-	<a href={resolve('/(customer)/forms')}>Forms</a>
-	<a href={resolve('/(customer)/shipping')}>Shipping</a>
-	<a href={resolve('/(customer)/billing')}>{t.billingLabel}</a>
-	<a href={resolve('/(public)')} title="Logout is not wired yet — returns home">{t.logoutLabel}</a>
-	<span class="session" aria-live="polite">
+<nav
+	class="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line bg-surface px-4 py-2"
+	aria-label="Customer"
+>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(customer)/orders')}
+		>{t.orderLabel}s</a
+	>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(customer)/order')}
+		>New {t.orderLabel}</a
+	>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(customer)/uploads')}>Uploads</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(customer)/precheck')}>Precheck</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(customer)/forms')}>Forms</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(customer)/shipping')}>Shipping</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(customer)/billing')}
+		>{t.billingLabel}</a
+	>
+	<a
+		class="inline-flex min-h-11 items-center font-bold"
+		href={resolve('/(public)')}
+		title="Logout is not wired yet — returns home">{t.logoutLabel}</a
+	>
+	<span class="ml-auto text-sm text-ink-muted" aria-live="polite">
 		{#if status === 'checking'}
 			…
 		{:else if status === 'in'}
-			<code>{customerRef}</code>
+			<code class="font-mono text-ink">{customerRef}</code>
 		{:else}
-			not logged in · <a href={resolve('/(customer)/login')}>{t.loginLabel}</a>
+			not logged in ·
+			<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(customer)/login')}
+				>{t.loginLabel}</a
+			>
 		{/if}
 	</span>
 </nav>
 
 {@render children()}
-
-<style>
-	.customer-nav {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.25rem 1rem;
-		padding: 0.5rem 1rem;
-		border-bottom: 1px solid var(--border);
-		background: var(--surface);
-	}
-	.customer-nav a {
-		display: inline-flex;
-		align-items: center;
-		min-height: 44px;
-		font-weight: 700;
-	}
-	.session {
-		margin-left: auto;
-		color: var(--text-muted);
-		font-size: 0.875rem;
-	}
-	.session code {
-		font-family: var(--font-mono);
-		color: var(--text);
-	}
-</style>

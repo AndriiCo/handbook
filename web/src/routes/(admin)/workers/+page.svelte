@@ -331,27 +331,47 @@
 </svelte:head>
 
 <h1>Workers</h1>
-<p class="lede">Manual drive over the URL download/analysis ingest paths. Every fetch runs now, inside the request — there is no background scheduler.</p>
+<p class="max-w-[60ch] text-ink-muted">
+	Manual drive over the URL download/analysis ingest paths. Every fetch runs now, inside the
+	request — there is no background scheduler.
+</p>
 
 {#if loadState === 'loading'}
 	<Notice variant="info" heading="Loading…"><p>Fetching worker status.</p></Notice>
 {:else if loadState === 'failed'}
 	<Notice variant="warning" heading="Workers unavailable."><p>{loadError}</p></Notice>
-	<p><button onclick={load}>Retry</button></p>
+	<p>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			onclick={load}>Retry</button
+		>
+	</p>
 {:else if status}
-	<section aria-label="Status">
-		<h2>Status</h2>
-		<dl class="facts">
-			<div><dt>Mode</dt><dd>{status.mode}</dd></div>
-			<div><dt>Fetch backend</dt><dd class="mono">{status.backend}</dd></div>
-			<div><dt>Fetch timeout</dt><dd>{status.timeoutSecs}s</dd></div>
-			<div><dt>Body cap</dt><dd>{status.maxBody} bytes</dd></div>
-			<div><dt>Captures</dt><dd>{status.captures}</dd></div>
-			<div><dt>Sources</dt><dd>{status.sources}</dd></div>
-			<div><dt>Open fetch failures</dt><dd>{status.failures}</dd></div>
-			<div>
-				<dt>Last sweep</dt>
-				<dd>
+	<section class="mt-8 border-t border-line pt-4" aria-label="Status">
+		<h2 class="m-0 mb-3 text-[1.1rem]">Status</h2>
+		<dl class="m-0 grid gap-[0.4rem]">
+			<div class="grid grid-cols-[12rem_1fr] gap-4"><dt class="text-ink-muted">Mode</dt><dd class="m-0">{status.mode}</dd></div>
+			<div class="grid grid-cols-[12rem_1fr] gap-4">
+				<dt class="text-ink-muted">Fetch backend</dt><dd class="m-0 font-mono">{status.backend}</dd>
+			</div>
+			<div class="grid grid-cols-[12rem_1fr] gap-4">
+				<dt class="text-ink-muted">Fetch timeout</dt><dd class="m-0">{status.timeoutSecs}s</dd>
+			</div>
+			<div class="grid grid-cols-[12rem_1fr] gap-4">
+				<dt class="text-ink-muted">Body cap</dt><dd class="m-0">{status.maxBody} bytes</dd>
+			</div>
+			<div class="grid grid-cols-[12rem_1fr] gap-4">
+				<dt class="text-ink-muted">Captures</dt><dd class="m-0">{status.captures}</dd>
+			</div>
+			<div class="grid grid-cols-[12rem_1fr] gap-4">
+				<dt class="text-ink-muted">Sources</dt><dd class="m-0">{status.sources}</dd>
+			</div>
+			<div class="grid grid-cols-[12rem_1fr] gap-4">
+				<dt class="text-ink-muted">Open fetch failures</dt><dd class="m-0">{status.failures}</dd>
+			</div>
+			<div class="grid grid-cols-[12rem_1fr] gap-4">
+				<dt class="text-ink-muted">Last sweep</dt>
+				<dd class="m-0">
 					{#if status.lastSweep}
 						{stamp(status.lastSweep.at)} by {status.lastSweep.actor} — {status.lastSweep.summary}
 					{:else}
@@ -362,31 +382,33 @@
 		</dl>
 	</section>
 
-	<section aria-label="Authorities">
-		<h2>Authorities</h2>
+	<section class="mt-8 border-t border-line pt-4" aria-label="Authorities">
+		<h2 class="m-0 mb-3 text-[1.1rem]">Authorities</h2>
 		{#if authorities.length === 0}
 			<p>No authorities yet.</p>
 		{:else}
-			<table>
+			<table class="w-full border-collapse text-[0.9rem]">
 				<thead>
 					<tr>
-						<th scope="col">Authority</th>
-						<th scope="col">Sources</th>
-						<th scope="col">Captures</th>
-						<th scope="col">Last capture</th>
-						<th scope="col">Fetch failures</th>
-						<th scope="col">Last analysis</th>
+						<th class="border-b border-line px-3 py-2 text-left" scope="col">Authority</th>
+						<th class="border-b border-line px-3 py-2 text-left" scope="col">Sources</th>
+						<th class="border-b border-line px-3 py-2 text-left" scope="col">Captures</th>
+						<th class="border-b border-line px-3 py-2 text-left" scope="col">Last capture</th>
+						<th class="border-b border-line px-3 py-2 text-left" scope="col">Fetch failures</th>
+						<th class="border-b border-line px-3 py-2 text-left" scope="col">Last analysis</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each authorities as row (row.slug)}
 						<tr>
-							<th scope="row">{row.name} <span class="mono dim">{row.slug}</span></th>
-							<td>{row.sources}</td>
-							<td>{row.captures}</td>
-							<td>{stamp(row.lastCaptureAt)}</td>
-							<td>{row.failures}</td>
-							<td>
+							<th class="border-b border-line px-3 py-2 text-left font-semibold" scope="row">
+								{row.name} <span class="font-mono text-ink-muted">{row.slug}</span>
+							</th>
+							<td class="border-b border-line px-3 py-2 text-left">{row.sources}</td>
+							<td class="border-b border-line px-3 py-2 text-left">{row.captures}</td>
+							<td class="border-b border-line px-3 py-2 text-left">{stamp(row.lastCaptureAt)}</td>
+							<td class="border-b border-line px-3 py-2 text-left">{row.failures}</td>
+							<td class="border-b border-line px-3 py-2 text-left">
 								{#if row.lastAnalysisAt}{stamp(row.lastAnalysisAt)} ({row.lastPromptVersion ?? '?'}){:else}—{/if}
 							</td>
 						</tr>
@@ -396,37 +418,76 @@
 		{/if}
 	</section>
 
-	<section aria-label="Captures">
-		<h2>Captures</h2>
+	<section class="mt-8 border-t border-line pt-4" aria-label="Captures">
+		<h2 class="m-0 mb-3 text-[1.1rem]">Captures</h2>
 		<form
-			class="filters"
+			class="flex flex-wrap items-end gap-3"
 			onsubmit={(event) => {
 				event.preventDefault();
 				load();
 			}}
 		>
-			<label>Authority <input type="text" bind:value={filterAuthority} placeholder="slug" /></label>
-			<label>Kind <input type="text" bind:value={filterKind} placeholder="warc" /></label>
-			<label>Trust <input type="text" bind:value={filterTrust} placeholder="official" /></label>
-			<button type="submit">Apply</button>
+			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
+				>Authority
+				<input
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					type="text"
+					bind:value={filterAuthority}
+					placeholder="slug"
+				/></label
+			>
+			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
+				>Kind
+				<input
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					type="text"
+					bind:value={filterKind}
+					placeholder="warc"
+				/></label
+			>
+			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
+				>Trust
+				<input
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					type="text"
+					bind:value={filterTrust}
+					placeholder="official"
+				/></label
+			>
+			<button
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+				type="submit">Apply</button
+			>
 		</form>
 		{#if captures.length === 0}
 			<p>No captures match.</p>
 		{:else}
-			<ul class="queue">
+			<ul class="mt-4 mb-0 grid list-none gap-4 p-0">
 				{#each captures as item (item.id)}
-					<li>
-						<div class="item-head">
-							<span class="kind">{item.authority} · {item.kind} · {item.trust}</span>
-							<span class="status mono">#{item.id}</span>
+					<li class="rounded-sm border border-line px-4 py-[0.9rem]">
+						<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+							<span class="text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase">
+								{item.authority} · {item.kind} · {item.trust}
+							</span>
+							<span class="ml-auto font-mono text-sm">#{item.id}</span>
 						</div>
-						<p class="uri mono">{item.uri ?? '(unattributed — nothing to re-fetch)'}</p>
-						<p class="meta">{stamp(item.capturedAt)} · {item.bytes} bytes · sha {item.sha.slice(0, 16)}…</p>
+						<p class="mt-2 mb-0 font-mono break-anywhere">
+							{item.uri ?? '(unattributed — nothing to re-fetch)'}
+						</p>
+						<p class="mt-1 mb-0 text-sm text-ink-muted">
+							{stamp(item.capturedAt)} · {item.bytes} bytes · sha {item.sha.slice(0, 16)}…
+						</p>
 						{#if item.note}
-							<p class="note" role="status">{item.note}</p>
+							<p class="rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem]" role="status">
+								{item.note}
+							</p>
 						{/if}
-						<p class="actions">
-							<button onclick={() => retry(item)} disabled={item.busy || !item.uri}>
+						<p class="mb-0 flex gap-3">
+							<button
+								class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+								onclick={() => retry(item)}
+								disabled={item.busy || !item.uri}
+							>
 								{item.busy ? 'Fetching…' : 'Retry'}
 							</button>
 						</p>
@@ -436,70 +497,117 @@
 		{/if}
 	</section>
 
-	<section aria-label="Fetch">
-		<h2>Fetch one URL</h2>
+	<section class="mt-8 border-t border-line pt-4" aria-label="Fetch">
+		<h2 class="m-0 mb-3 text-[1.1rem]">Fetch one URL</h2>
 		<form
-			class="stack"
+			class="grid max-w-[40rem] gap-3"
 			onsubmit={(event) => {
 				event.preventDefault();
 				runFetch();
 			}}
 		>
-			<label>Authority slug <input type="text" bind:value={fetchSlug} placeholder="usa-wa-sos" required /></label>
-			<label>URL <input type="url" bind:value={fetchUrl} placeholder="https://…" required /></label>
-			<div class="row">
-				<label>
+			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
+				>Authority slug
+				<input
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					type="text"
+					bind:value={fetchSlug}
+					placeholder="usa-wa-sos"
+					required
+				/></label
+			>
+			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
+				>URL
+				<input
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					type="url"
+					bind:value={fetchUrl}
+					placeholder="https://…"
+					required
+				/></label
+			>
+			<div class="flex flex-wrap gap-3">
+				<label class="grid flex-1 basis-48 gap-[0.3rem] text-sm text-ink-muted">
 					Source kind
-					<select bind:value={fetchKind}>
+					<select
+						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+						bind:value={fetchKind}
+					>
 						<option value="website_official">website_official</option>
 						<option value="website_thirdparty">website_thirdparty</option>
 					</select>
 				</label>
-				<label>
+				<label class="grid flex-1 basis-48 gap-[0.3rem] text-sm text-ink-muted">
 					Trust
-					<select bind:value={fetchTrust}>
+					<select
+						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+						bind:value={fetchTrust}
+					>
 						<option value="official">official</option>
 						<option value="staff_verified">staff_verified</option>
 						<option value="community">community</option>
 					</select>
 				</label>
 			</div>
-			<p class="actions"><button type="submit" disabled={fetchBusy}>{fetchBusy ? 'Fetching…' : 'Fetch now'}</button></p>
+			<p class="mb-0 flex gap-3">
+				<button
+					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+					type="submit"
+					disabled={fetchBusy}>{fetchBusy ? 'Fetching…' : 'Fetch now'}</button
+				>
+			</p>
 		</form>
 		{#if fetchNote}
-			<p class="note" role="status">{fetchNote}</p>
+			<p class="rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem]" role="status">
+				{fetchNote}
+			</p>
 		{/if}
 	</section>
 
-	<section aria-label="Sweep">
-		<h2>Watch sweep</h2>
+	<section class="mt-8 border-t border-line pt-4" aria-label="Sweep">
+		<h2 class="m-0 mb-3 text-[1.1rem]">Watch sweep</h2>
 		<p>Runs up to 10 fetches sequentially, right now. One per line:</p>
-		<pre class="example">usa-wa-sos | https://example.com/synthetic/1</pre>
+		<pre class="overflow-x-auto rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem] font-mono text-sm">usa-wa-sos | https://example.com/synthetic/1</pre>
 		<form
-			class="stack"
+			class="grid max-w-[40rem] gap-3"
 			onsubmit={(event) => {
 				event.preventDefault();
 				runSweep();
 			}}
 		>
-			<label>
+			<label class="grid gap-[0.3rem] text-sm text-ink-muted">
 				Sweep items
-				<textarea bind:value={sweepText} rows="6" placeholder="slug | https://…"></textarea>
+				<textarea
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 font-mono text-sm text-ink [font:inherit]"
+					bind:value={sweepText}
+					rows="6"
+					placeholder="slug | https://…"
+				></textarea>
 			</label>
-			<p class="actions"><button type="submit" disabled={sweepBusy}>{sweepBusy ? 'Sweeping…' : 'Run sweep'}</button></p>
+			<p class="mb-0 flex gap-3">
+				<button
+					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+					type="submit"
+					disabled={sweepBusy}>{sweepBusy ? 'Sweeping…' : 'Run sweep'}</button
+				>
+			</p>
 		</form>
 		{#if sweepNote}
-			<p class="note" role="status">{sweepNote}</p>
+			<p class="rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem]" role="status">
+				{sweepNote}
+			</p>
 		{/if}
 		{#if sweepSummary}
-			<p class="note" role="status">{sweepSummary}</p>
-			<ul class="results">
+			<p class="rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem]" role="status">
+				{sweepSummary}
+			</p>
+			<ul class="mt-3 mb-0 grid list-none gap-[0.4rem] p-0 text-[0.9rem]">
 				{#each sweepResults as row, index (`${row.slug}-${row.url}-${index}`)}
-					<li>
-						<span class="mono">{row.outcome}</span>
+					<li class="flex flex-wrap gap-x-3 gap-y-1 border-b border-line pb-[0.4rem]">
+						<span class="font-mono">{row.outcome}</span>
 						{row.slug} · {row.url}
-						{#if row.captureId !== null}<span class="mono">→ #{row.captureId}</span>{/if}
-						{#if row.detail}<span class="dim">{row.detail}</span>{/if}
+						{#if row.captureId !== null}<span class="font-mono">→ #{row.captureId}</span>{/if}
+						{#if row.detail}<span class="text-ink-muted">{row.detail}</span>{/if}
 					</li>
 				{/each}
 			</ul>
@@ -507,186 +615,3 @@
 	</section>
 {/if}
 
-<style>
-	.lede {
-		color: var(--text-muted);
-		max-width: 60ch;
-	}
-	section {
-		margin-top: 2rem;
-		border-top: 1px solid var(--border);
-		padding-top: 1rem;
-	}
-	h2 {
-		font-size: 1.1rem;
-		margin: 0 0 0.75rem;
-	}
-	.facts {
-		display: grid;
-		gap: 0.4rem;
-		margin: 0;
-	}
-	.facts div {
-		display: grid;
-		grid-template-columns: 12rem 1fr;
-		gap: 1rem;
-	}
-	.facts dt {
-		color: var(--text-muted);
-	}
-	.facts dd {
-		margin: 0;
-	}
-	.mono {
-		font-family: var(--font-mono);
-	}
-	.dim {
-		color: var(--text-muted);
-	}
-	table {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 0.9rem;
-	}
-	th,
-	td {
-		text-align: left;
-		padding: 0.5rem 0.75rem;
-		border-bottom: 1px solid var(--border);
-	}
-	tbody th {
-		font-weight: 600;
-	}
-	.queue {
-		list-style: none;
-		margin: 1rem 0 0;
-		padding: 0;
-		display: grid;
-		gap: 1rem;
-	}
-	.queue li {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.9rem 1rem;
-	}
-	.item-head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.25rem 0.75rem;
-	}
-	.kind {
-		font-size: 0.8rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--text-muted);
-	}
-	.status {
-		margin-left: auto;
-		font-size: 0.875rem;
-	}
-	.uri {
-		overflow-wrap: anywhere;
-		margin: 0.5rem 0 0;
-	}
-	.meta {
-		color: var(--text-muted);
-		font-size: 0.875rem;
-		margin: 0.25rem 0 0;
-	}
-	.note {
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.6rem 0.8rem;
-	}
-	.actions {
-		display: flex;
-		gap: 0.75rem;
-		margin-bottom: 0;
-	}
-	button {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-		padding: 0 1.25rem;
-	}
-	:root[data-theme='dark'] button {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-	button:disabled {
-		opacity: 0.55;
-		cursor: not-allowed;
-	}
-	.filters {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: end;
-		gap: 0.75rem;
-	}
-	.stack {
-		display: grid;
-		gap: 0.75rem;
-		max-width: 40rem;
-	}
-	.row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-	}
-	.row label {
-		flex: 1 1 12rem;
-	}
-	label {
-		display: grid;
-		gap: 0.3rem;
-		font-size: 0.875rem;
-		color: var(--text-muted);
-	}
-	input[type='text'],
-	input[type='url'],
-	select,
-	textarea {
-		font: inherit;
-		color: var(--text);
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.5rem 0.75rem;
-		min-height: 44px;
-	}
-	textarea {
-		font-family: var(--font-mono);
-		font-size: 0.875rem;
-	}
-	.example {
-		font-family: var(--font-mono);
-		font-size: 0.875rem;
-		background: var(--surface);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.6rem 0.8rem;
-		overflow-x: auto;
-	}
-	.results {
-		list-style: none;
-		margin: 0.75rem 0 0;
-		padding: 0;
-		display: grid;
-		gap: 0.4rem;
-		font-size: 0.9rem;
-	}
-	.results li {
-		border-bottom: 1px solid var(--border);
-		padding-bottom: 0.4rem;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem 0.75rem;
-	}
-</style>

@@ -147,7 +147,7 @@
 {:else if !submission}
 	<p>Loading…</p>
 {:else}
-	<p class="meta">
+	<p class="text-sm text-ink-muted">
 		{submission.code} v{submission.template_version} · {submission.status}
 		{#if submission.submitted_at}
 			· submitted {new Date(submission.submitted_at * 1000).toLocaleString()}
@@ -166,12 +166,12 @@
 		</Notice>
 	{/if}
 
-	<table>
+	<table class="my-4 max-w-[40rem] border-collapse">
 		<tbody>
 			{#each Object.entries(submission.values) as [key, value] (key)}
 				<tr>
-					<th scope="row">{labelFor(key)}</th>
-					<td>{displayValue(value)}</td>
+					<th class="border-b border-line px-3 py-2 text-left align-top" scope="row">{labelFor(key)}</th>
+					<td class="border-b border-line px-3 py-2 text-left align-top">{displayValue(value)}</td>
 				</tr>
 			{/each}
 		</tbody>
@@ -179,11 +179,15 @@
 
 	{#if submission.pdf_url}
 		<p>
-			<a class="button" href={submission.pdf_url} download>
+			<a
+				class="inline-block min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 py-[0.6rem] font-bold text-accent-ink no-underline [font:inherit]"
+				href={submission.pdf_url}
+				download
+			>
 				Download filled PDF
 			</a>
 		</p>
-		<p class="meta">sha256: <code>{submission.pdf_sha256}</code></p>
+		<p class="text-sm text-ink-muted">sha256: <code class="font-mono break-all">{submission.pdf_sha256}</code></p>
 		<p>Print it, sign in ink on the signature line, and mail it with your shipping labels.</p>
 	{:else}
 		<Notice variant="info" heading="No PDF yet.">
@@ -193,8 +197,19 @@
 
 	<h2>Something looks wrong?</h2>
 	<label for="correction">Report it and staff will re-check the prefilled values.</label>
-	<textarea id="correction" rows="3" maxlength="2000" bind:value={correctionNote}></textarea>
-	<button type="button" onclick={reportCorrection} disabled={busy}>
+	<textarea
+		class="my-2 block w-full max-w-[36rem] rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
+		id="correction"
+		rows="3"
+		maxlength="2000"
+		bind:value={correctionNote}
+	></textarea>
+	<button
+		class="inline-block min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 py-[0.6rem] font-bold text-accent-ink no-underline [font:inherit] disabled:cursor-wait disabled:opacity-60"
+		type="button"
+		onclick={reportCorrection}
+		disabled={busy}
+	>
 		{busy ? 'Sending…' : 'Send report'}
 	</button>
 	{#if correctionDone}
@@ -202,55 +217,3 @@
 	{/if}
 {/if}
 
-<style>
-	.meta {
-		color: var(--text-muted);
-		font-size: 0.875rem;
-	}
-	.meta code {
-		font-family: var(--font-mono);
-		word-break: break-all;
-	}
-	table {
-		border-collapse: collapse;
-		max-width: 40rem;
-		margin: 1rem 0;
-	}
-	th,
-	td {
-		border-bottom: 1px solid var(--border);
-		padding: 0.5rem 0.75rem;
-		text-align: left;
-		vertical-align: top;
-	}
-	textarea {
-		display: block;
-		font: inherit;
-		width: 100%;
-		max-width: 36rem;
-		padding: 0.5rem 0.6rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		background: var(--surface);
-		color: var(--text);
-		margin: 0.5rem 0;
-	}
-	button,
-	.button {
-		display: inline-block;
-		min-height: 44px;
-		padding: 0.6rem 1rem;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-		text-decoration: none;
-	}
-	button:disabled {
-		opacity: 0.6;
-		cursor: wait;
-	}
-</style>

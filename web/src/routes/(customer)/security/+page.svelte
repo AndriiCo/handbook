@@ -180,22 +180,27 @@
 <h1>Sign-in methods</h1>
 
 {#if !userId}
-	<p class="notice">Log in first to manage your sign-in methods.</p>
+	<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3">
+		Log in first to manage your sign-in methods.
+	</p>
 	<p><a href={resolve('/(customer)/login')}>Go to log in</a></p>
 {:else}
 	{#if methods.length === 0}
-		<p class="notice">No sign-in methods yet — add your first below.</p>
+		<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3">
+			No sign-in methods yet — add your first below.
+		</p>
 	{:else}
-		<ul>
+		<ul class="max-w-[28rem] list-none p-0">
 			<!-- Passkey rows use the credential label; OAuth rows
 				(google/apple/meta) use the provider label. -->
 			{#each methods as method (method.method + ':' + method.id)}
-				<li>
+				<li class="mb-2 flex items-baseline gap-3 rounded-sm border border-line px-[0.8rem] py-[0.6rem]">
 					<strong>{(OAUTH_LABELS[method.method] ?? method.label) || 'Unnamed key'}</strong>
-					<span class="muted">
+					<span class="text-ink-muted">
 						{OAUTH_LABELS[method.method] ? method.label || 'linked account' : method.method}
 					</span>
 					<button
+						class="ml-auto min-h-9 cursor-pointer rounded-sm border border-line bg-bg font-normal text-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
 						type="button"
 						disabled={busy}
 						onclick={() =>
@@ -210,108 +215,44 @@
 		</ul>
 	{/if}
 
-	<form onsubmit={addKey}>
-		<h2>Add another passkey</h2>
-		<label for="new-label">Key label</label>
-		<input id="new-label" name="label" type="text" bind:value={label} placeholder="YubiKey" />
-		<button type="submit" disabled={busy}>Add passkey</button>
+	<form class="my-6 flex max-w-[28rem] flex-col gap-2" onsubmit={addKey}>
+		<h2 class="m-0 text-[1.1rem]">Add another passkey</h2>
+		<label class="font-bold" for="new-label">Key label</label>
+		<input
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			id="new-label"
+			name="label"
+			type="text"
+			bind:value={label}
+			placeholder="YubiKey"
+		/>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			type="submit"
+			disabled={busy}>Add passkey</button
+		>
 	</form>
 
 	{#each OAUTH_PROVIDERS as provider (provider)}
 		<form
+			class="my-6 flex max-w-[28rem] flex-col gap-2"
 			onsubmit={(e) => {
 				e.preventDefault();
 				linkOAuth(provider);
 			}}
 		>
-			<h2>Or link {OAUTH_LABELS[provider]}</h2>
-			<button type="submit" disabled={busy}>
+			<h2 class="m-0 text-[1.1rem]">Or link {OAUTH_LABELS[provider]}</h2>
+			<button
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+				type="submit"
+				disabled={busy}
+			>
 				Link {OAUTH_LABELS[provider]} account
 			</button>
 		</form>
 	{/each}
 
 	{#if error}
-		<p class="notice err" role="alert">{error}</p>
+		<p class="max-w-[28rem] rounded-sm border border-line bg-warning-bg px-4 py-3" role="alert">{error}</p>
 	{/if}
 {/if}
-
-<style>
-	ul {
-		list-style: none;
-		padding: 0;
-		max-width: 28rem;
-	}
-	li {
-		display: flex;
-		align-items: baseline;
-		gap: 0.75rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.6rem 0.8rem;
-		margin-bottom: 0.5rem;
-	}
-	li button {
-		margin-left: auto;
-	}
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-width: 28rem;
-		margin: 1.5rem 0;
-	}
-	h2 {
-		font-size: 1.1rem;
-		margin: 0;
-	}
-	label {
-		font-weight: 700;
-	}
-	input {
-		min-height: 44px;
-		padding: 0.6rem 0.8rem;
-		font: inherit;
-		color: var(--text);
-		background: var(--bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-xs);
-	}
-	button {
-		min-height: 44px;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-	}
-	button:disabled {
-		opacity: 0.6;
-		cursor: wait;
-	}
-	li button {
-		min-height: 36px;
-		font-weight: 400;
-		color: var(--text);
-		background: var(--bg);
-		border-color: var(--border);
-	}
-	:root[data-theme='dark'] form button {
-		background: var(--accent-fill);
-		border-color: var(--accent-fill);
-	}
-	.notice {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.75rem 1rem;
-		max-width: 28rem;
-	}
-	.notice.err {
-		background: var(--warning-bg);
-	}
-	.muted {
-		color: var(--text-muted);
-	}
-</style>

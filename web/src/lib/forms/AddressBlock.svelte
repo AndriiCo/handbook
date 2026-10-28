@@ -44,11 +44,12 @@
 	}
 </script>
 
-<fieldset class="address" {disabled}>
-	<div class="grid">
-		<label class="span" for={fieldId('name')}>
+<fieldset class="m-0 border-0 p-0" {disabled}>
+	<div class="grid grid-cols-3 gap-3 max-[40rem]:grid-cols-1">
+		<label class="col-span-full flex flex-col gap-1 text-sm" for={fieldId('name')}>
 			{labels.name}
 			<input
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 				id={fieldId('name')}
 				type="text"
 				bind:value={value.name}
@@ -56,9 +57,10 @@
 				aria-invalid={showErrors && missing.has('name')}
 			/>
 		</label>
-		<label class="span" for={fieldId('street')}>
+		<label class="col-span-full flex flex-col gap-1 text-sm" for={fieldId('street')}>
 			{labels.street}
 			<input
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 				id={fieldId('street')}
 				type="text"
 				bind:value={value.street}
@@ -66,18 +68,20 @@
 				aria-invalid={showErrors && missing.has('street')}
 			/>
 		</label>
-		<label class="span" for={`${idPrefix}-line2`}>
+		<label class="col-span-full flex flex-col gap-1 text-sm" for={`${idPrefix}-line2`}>
 			Apartment, suite, etc. (optional)
 			<input
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 				id={`${idPrefix}-line2`}
 				type="text"
 				bind:value={value.line2}
 				autocomplete="address-line2"
 			/>
 		</label>
-		<label for={fieldId('city')}>
+		<label class="flex flex-col gap-1 text-sm" for={fieldId('city')}>
 			{labels.city}
 			<input
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 				id={fieldId('city')}
 				type="text"
 				bind:value={value.city}
@@ -85,9 +89,10 @@
 				aria-invalid={showErrors && missing.has('city')}
 			/>
 		</label>
-		<label for={fieldId('state')}>
+		<label class="flex flex-col gap-1 text-sm" for={fieldId('state')}>
 			{labels.state}
 			<select
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 				id={fieldId('state')}
 				bind:value={value.state}
 				autocomplete="address-level1"
@@ -99,9 +104,10 @@
 				{/each}
 			</select>
 		</label>
-		<label for={fieldId('zip')}>
+		<label class="flex flex-col gap-1 text-sm" for={fieldId('zip')}>
 			{labels.zip}
 			<input
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
 				id={fieldId('zip')}
 				type="text"
 				inputmode="numeric"
@@ -112,7 +118,7 @@
 		</label>
 	</div>
 	{#if showErrors}
-		<ul class="part-errors">
+		<ul class="m-0 mt-2 pl-5 text-sm text-error">
 			{#each ADDRESS_PARTS.filter((part) => missing.has(part)) as part (part)}
 				<li>{labels[part]} is missing</li>
 			{/each}
@@ -120,48 +126,3 @@
 	{/if}
 </fieldset>
 
-<style>
-	.address {
-		border: 0;
-		margin: 0;
-		padding: 0;
-	}
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 0.75rem;
-	}
-	.span {
-		grid-column: 1 / -1;
-	}
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		font-size: 0.875rem;
-	}
-	input,
-	select {
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.5rem 0.75rem;
-		background: var(--surface);
-		color: inherit;
-		font: inherit;
-	}
-	input[aria-invalid='true'],
-	select[aria-invalid='true'] {
-		border-color: var(--error);
-	}
-	.part-errors {
-		margin: 0.5rem 0 0;
-		padding-left: 1.25rem;
-		color: var(--error);
-		font-size: 0.875rem;
-	}
-	@media (max-width: 40rem) {
-		.grid {
-			grid-template-columns: 1fr;
-		}
-	}
-</style>

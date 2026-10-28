@@ -35,55 +35,23 @@
 	];
 </script>
 
-<p class="banner" role="note">
+<p class="rounded-sm border border-line bg-warning-bg px-4 py-[0.6rem] text-[0.9rem]" role="note">
 	<strong>Mock preview</strong> — fixture data only, nothing here touches the backend.
 	<a href={resolve('/(mock)/mock')}>Mock index</a>
 </p>
 
-<nav class="mocknav" aria-label="Mock pages">
+<nav
+	class="mb-4 flex flex-wrap gap-x-6 gap-y-2 border-b border-line px-0 pt-2 pb-4"
+	aria-label="Mock pages"
+>
 	{#each sections as section (section.label)}
-		<span class="group">
-			<span class="group-label">{section.label}</span>
+		<span class="flex flex-wrap items-baseline gap-x-[0.6rem] gap-y-1">
+			<span class="text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase">{section.label}</span>
 			{#each section.links as link (link.href + link.label)}
-				<a href={link.href}>{link.label}</a>
+				<a class="inline-flex min-h-11 items-center" href={link.href}>{link.label}</a>
 			{/each}
 		</span>
 	{/each}
 </nav>
 
 {@render children()}
-
-<style>
-	.banner {
-		background: var(--warning-bg);
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		padding: 0.6rem 1rem;
-		font-size: 0.9rem;
-	}
-	.mocknav {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem 1.5rem;
-		padding: 0.5rem 0 1rem;
-		border-bottom: 1px solid var(--border);
-		margin-bottom: 1rem;
-	}
-	.group {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.25rem 0.6rem;
-	}
-	.group-label {
-		font-size: 0.8rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--text-muted);
-	}
-	.mocknav a {
-		min-height: 44px;
-		display: inline-flex;
-		align-items: center;
-	}
-</style>

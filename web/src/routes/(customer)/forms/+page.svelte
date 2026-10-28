@@ -324,12 +324,12 @@
 <h1>Apostille request form</h1>
 
 {#if step === 'pick'}
-	<p class="lede">
+	<p class="max-w-[40rem] text-ink-muted">
 		Pick the issuing authority and the form. Verified addresses and fees
 		come prefilled; the server re-checks everything on submit.
 	</p>
 	<form
-		class="pick"
+		class="flex max-w-[36rem] flex-col gap-3"
 		onsubmit={(e) => {
 			e.preventDefault();
 			loadForm();
@@ -339,7 +339,11 @@
 		<input id="authority" name="authority" type="text" bind:value={authority} required />
 		<label for="code">Form code</label>
 		<input id="code" name="code" type="text" bind:value={code} required />
-		<button type="submit" disabled={busy}>{busy ? 'Loading…' : 'Load form'}</button>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			type="submit"
+			disabled={busy}>{busy ? 'Loading…' : 'Load form'}</button
+		>
 	</form>
 	{#if loadError}
 		<Notice variant="error" heading="Cannot load this form."><p>{loadError}</p></Notice>
@@ -347,9 +351,9 @@
 {/if}
 
 {#if step !== 'pick' && form}
-	<div class="formhead">
+	<div class="mb-4 max-w-[40rem]">
 		<h2>{form.title}</h2>
-		<p class="meta">
+		<p class="text-sm text-ink-muted">
 			{form.code} · edition {form.authority_revision} (v{form.version}) · wet-ink signature:
 			print and sign after submitting
 		</p>
@@ -366,7 +370,12 @@
 			{#if stale.added.length > 0}<p>Added: {stale.added.join(', ')}</p>{/if}
 			{#if stale.removed.length > 0}<p>Removed: {stale.removed.join(', ')}</p>{/if}
 			{#if stale.changed.length > 0}<p>Changed: {stale.changed.join(', ')}</p>{/if}
-			<button type="button" onclick={() => loadForm(values)} disabled={busy}>
+			<button
+				class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+				type="button"
+				onclick={() => loadForm(values)}
+				disabled={busy}
+			>
 				Load v{stale.new_version} and carry my entries over
 			</button>
 		</Notice>
@@ -375,27 +384,29 @@
 
 {#if step === 'fill' && form}
 	<form
-		class="fill"
+		class="flex max-w-[36rem] flex-col gap-3"
 		onsubmit={(e) => {
 			e.preventDefault();
 			backToReview();
 		}}
 	>
 		{#each form.fields as field (field.key)}
-			<div class="field">
-				<label for={fid(field)}>
+			<div class="flex flex-col gap-[0.35rem] border-b border-line pb-3">
+				<label class="font-bold" for={fid(field)}>
 					{field.label}{field.required ? ' *' : ''}
 				</label>
-				{#if field.help}<p class="help">{field.help}</p>{/if}
+				{#if field.help}<p class="m-0 text-sm text-ink-muted">{field.help}</p>{/if}
 				{#if prefilled[field.key] !== undefined}
-					<p class="prefill">Prefilled from verified record #{prefilled[field.key]} — fix it if it is wrong.</p>
+					<p class="m-0 text-sm text-ink-muted">
+						Prefilled from verified record #{prefilled[field.key]} — fix it if it is wrong.
+					</p>
 				{/if}
 				{#if withheldByKey[field.key]}
-					<p class="withheld">
+					<p class="m-0 text-sm font-bold">
 						{withheldByKey[field.key].reason}. Type it manually, or
 						<button
 							type="button"
-							class="link"
+							class="inline cursor-pointer border-0 bg-transparent p-0 text-inherit underline [font:inherit]"
 							onclick={() => {
 								correctionFor = field.key;
 								correctionNote = '';
@@ -405,14 +416,20 @@
 						</button>.
 					</p>
 					{#if correctionFor === field.key}
-						<label for={fid(field, '-note')}>What looks wrong?</label>
+						<label class="font-bold" for={fid(field, '-note')}>What looks wrong?</label>
 						<textarea
+							class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
 							id={fid(field, '-note')}
 							rows="2"
 							maxlength="2000"
 							bind:value={correctionNote}
 						></textarea>
-						<button type="button" onclick={() => reportCorrection(field)} disabled={busy}>
+						<button
+							class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+							type="button"
+							onclick={() => reportCorrection(field)}
+							disabled={busy}
+						>
 							Send report
 						</button>
 					{/if}
@@ -420,6 +437,7 @@
 
 				{#if field.type === 'textarea'}
 					<textarea
+						class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
 						id={fid(field)}
 						rows="4"
 						maxlength={field.max_len}
@@ -429,6 +447,7 @@
 					></textarea>
 				{:else if field.type === 'select'}
 					<select
+						class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
 						id={fid(field)}
 						value={strVal(field.key)}
 						onchange={(e) => setValue(field.key, e.currentTarget.value)}
@@ -440,10 +459,10 @@
 						{/each}
 					</select>
 				{:else if field.type === 'radio'}
-					<fieldset>
-						<legend class="visually-hidden">{field.label}</legend>
+					<fieldset class="m-0 border-0 p-0">
+						<legend class="sr-only">{field.label}</legend>
 						{#each field.options ?? [] as option (option)}
-							<label class="choice">
+							<label class="flex min-h-11 items-center gap-2 font-normal">
 								<input
 									type="radio"
 									name={fid(field)}
@@ -456,7 +475,7 @@
 						{/each}
 					</fieldset>
 				{:else if field.type === 'checkbox'}
-					<label class="choice">
+					<label class="flex min-h-11 items-center gap-2 font-normal">
 						<input
 							id={fid(field)}
 							type="checkbox"
@@ -466,11 +485,12 @@
 						Yes
 					</label>
 				{:else if field.type === 'address_block'}
-					<fieldset class="addr">
-						<legend class="visually-hidden">{field.label} address</legend>
+					<fieldset class="m-0 grid grid-cols-[5rem_1fr] items-center gap-x-[0.6rem] gap-y-[0.4rem] border-0 p-0">
+						<legend class="sr-only">{field.label} address</legend>
 						{#each ['name', 'street', 'city', 'state', 'zip'] as part (part)}
-							<label for={fid(field, `-${part}`)}>{part}</label>
+							<label class="font-bold" for={fid(field, `-${part}`)}>{part}</label>
 							<input
+								class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
 								id={fid(field, `-${part}`)}
 								type="text"
 								value={addrVal(field.key)[part] ?? ''}
@@ -481,6 +501,7 @@
 					</fieldset>
 				{:else}
 					<input
+						class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
 						id={fid(field)}
 						type={field.type === 'date'
 							? 'date'
@@ -495,7 +516,7 @@
 					/>
 				{/if}
 				{#if errors[field.key]}
-					<p class="error" role="alert">{errors[field.key]}</p>
+					<p class="m-0 font-bold text-error" role="alert">{errors[field.key]}</p>
 				{/if}
 			</div>
 		{/each}
@@ -509,21 +530,30 @@
 		{#if correctionDone}
 			<Notice variant="info" heading="Report sent."><p>{correctionDone}</p></Notice>
 		{/if}
-		<div class="actions">
-			<button type="button" onclick={saveDraft} disabled={busy}>Save draft</button>
-			<button type="submit" disabled={busy}>Review</button>
+		<div class="mt-2 flex gap-3">
+			<button
+				class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+				type="button"
+				onclick={saveDraft}
+				disabled={busy}>Save draft</button
+			>
+			<button
+				class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+				type="submit"
+				disabled={busy}>Review</button
+			>
 		</div>
 	</form>
 {/if}
 
 {#if step === 'review' && form}
 	<h2>Review</h2>
-	<table>
+	<table class="mb-4 max-w-[40rem] border-collapse">
 		<tbody>
 			{#each form.fields as field (field.key)}
 				<tr>
-					<th scope="row">{field.label}</th>
-					<td>{displayValue(field)}</td>
+					<th class="border-b border-line px-3 py-2 text-left align-top" scope="row">{field.label}</th>
+					<td class="border-b border-line px-3 py-2 text-left align-top">{displayValue(field)}</td>
 				</tr>
 			{/each}
 		</tbody>
@@ -541,140 +571,20 @@
 	{#if submitError}
 		<Notice variant="error" heading="Submit failed."><p>{submitError}</p></Notice>
 	{/if}
-	<div class="actions">
-		<button type="button" onclick={() => (step = 'fill')} disabled={busy}>Back to edit</button>
-		<button type="button" onclick={submit} disabled={busy}>
+	<div class="mt-2 flex gap-3">
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			type="button"
+			onclick={() => (step = 'fill')}
+			disabled={busy}>Back to edit</button
+		>
+		<button
+			class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			type="button"
+			onclick={submit}
+			disabled={busy}
+		>
 			{busy ? 'Submitting…' : 'Submit request'}
 		</button>
 	</div>
 {/if}
-
-<style>
-	.lede {
-		color: var(--text-muted);
-		max-width: 40rem;
-	}
-	.pick,
-	.fill {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		max-width: 36rem;
-	}
-	.formhead {
-		max-width: 40rem;
-		margin-bottom: 1rem;
-	}
-	.meta {
-		color: var(--text-muted);
-		font-size: 0.875rem;
-	}
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		padding-bottom: 0.75rem;
-		border-bottom: 1px solid var(--border);
-	}
-	.field label {
-		font-weight: 700;
-	}
-	.field input[type='text'],
-	.field input[type='email'],
-	.field input[type='tel'],
-	.field input[type='date'],
-	.field select,
-	.field textarea {
-		font: inherit;
-		min-height: 44px;
-		padding: 0.5rem 0.6rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		background: var(--surface);
-		color: var(--text);
-	}
-	.help {
-		margin: 0;
-		font-size: 0.875rem;
-		color: var(--text-muted);
-	}
-	.prefill,
-	.withheld {
-		margin: 0;
-		font-size: 0.875rem;
-	}
-	.prefill {
-		color: var(--text-muted);
-	}
-	.withheld {
-		font-weight: 700;
-	}
-	.error {
-		margin: 0;
-		font-weight: 700;
-		color: var(--error);
-	}
-	.choice {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-weight: 400;
-		min-height: 44px;
-	}
-	fieldset {
-		border: none;
-		margin: 0;
-		padding: 0;
-	}
-	.addr {
-		display: grid;
-		grid-template-columns: 5rem 1fr;
-		gap: 0.4rem 0.6rem;
-		align-items: center;
-	}
-	.visually-hidden {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip: rect(0 0 0 0);
-	}
-	.link {
-		all: unset;
-		text-decoration: underline;
-		cursor: pointer;
-		color: inherit;
-	}
-	table {
-		border-collapse: collapse;
-		max-width: 40rem;
-		margin-bottom: 1rem;
-	}
-	th,
-	td {
-		border-bottom: 1px solid var(--border);
-		padding: 0.5rem 0.75rem;
-		text-align: left;
-		vertical-align: top;
-	}
-	.actions {
-		display: flex;
-		gap: 0.75rem;
-		margin-top: 0.5rem;
-	}
-	button {
-		min-height: 44px;
-		padding: 0 1rem;
-		font: inherit;
-		font-weight: 700;
-		color: var(--accent-ink);
-		background: var(--accent);
-		border: 1px solid var(--accent);
-		border-radius: var(--radius-sm);
-		cursor: pointer;
-	}
-	button:disabled {
-		opacity: 0.6;
-		cursor: wait;
-	}
-</style>

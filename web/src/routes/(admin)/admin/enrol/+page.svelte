@@ -92,7 +92,7 @@
 			<p>This browser cannot do passkeys. Use a current Safari, Chrome, Edge, or Firefox.</p>
 		</Notice>
 	{:else}
-		<p class="muted">Checking invite link…</p>
+		<p class="mt-4">Checking invite link…</p>
 	{/if}
 {:else if linkState === 'invalid'}
 	<Notice variant="error" heading="Invalid invite link.">
@@ -103,16 +103,18 @@
 		<p>Continuing to the dashboard…</p>
 	</Notice>
 {:else}
-	<p class="muted">Create your staff passkey. Single-use link — it stops working after enrolment.</p>
+	<p class="mt-4">Create your staff passkey. Single-use link — it stops working after enrolment.</p>
 	<form
+		class="mt-4 grid max-w-[28rem] gap-3"
 		onsubmit={(e) => {
 			e.preventDefault();
 			enrol();
 		}}
 	>
-		<label>
+		<label class="grid gap-1 font-bold">
 			Display name
 			<input
+				class="rounded-[0.375rem] border border-line p-[0.6rem] text-base"
 				type="text"
 				bind:value={displayName}
 				autocomplete="name"
@@ -120,50 +122,16 @@
 				required
 			/>
 		</label>
-		<button type="submit" disabled={busy || displayName.trim() === ''}>
+		<button
+			class="min-h-11 cursor-pointer text-base font-bold disabled:cursor-wait disabled:opacity-70"
+			type="submit"
+			disabled={busy || displayName.trim() === ''}
+		>
 			{busy ? 'Waiting for security key…' : 'Enrol this device'}
 		</button>
 	</form>
 {/if}
 
 {#if error}
-	<p class="notice err" role="alert">{error}</p>
+	<p class="font-bold" role="alert">{error}</p>
 {/if}
-
-<style>
-	form {
-		display: grid;
-		gap: 0.75rem;
-		max-width: 28rem;
-		margin-top: 1rem;
-	}
-	label {
-		display: grid;
-		gap: 0.25rem;
-		font-weight: 700;
-	}
-	input {
-		padding: 0.6rem;
-		font-size: 1rem;
-		border: 1px solid var(--border);
-		border-radius: 0.375rem;
-	}
-	button {
-		min-height: 44px;
-		font-size: 1rem;
-		font-weight: 700;
-		cursor: pointer;
-	}
-	button:disabled {
-		cursor: wait;
-		opacity: 0.7;
-	}
-	.muted {
-		color: var(--muted);
-		margin-top: 1rem;
-	}
-	.notice.err {
-		color: var(--danger);
-		font-weight: 700;
-	}
-</style>
