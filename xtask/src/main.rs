@@ -12,6 +12,7 @@ mod admin_cert;
 mod admin_staff;
 mod build_handbook;
 mod config;
+mod demo_vietnam;
 mod fetch_slug;
 mod form_scaffold;
 mod mcp_serve;
@@ -42,6 +43,7 @@ fn main() {
         Some("accept") => accept::run(&args[1..]),
         Some("form-scaffold") => form_scaffold::run(&args[1..]),
         Some("quic-probe") => quic_probe::run(&args[1..]),
+        Some("demo-vietnam") => demo_vietnam::run(&args[1..]),
         Some("packs-validate") => run_packs_validate(&args[1..]),
         Some("packs-load") => run_packs_load(&args[1..]),
         Some("config-enroll") => config::run_enroll(&args[1..]),
@@ -88,6 +90,7 @@ Tasks:
   accept      deploy gate: --expect-build must match latest build + facts_hash
   form-scaffold  per-form skeleton: --authority --code --title [--out] [--force]; --check compares
   quic-probe  HTTP/3 GET probe: --addr <ip:port> --server-name <sni> [--cacert <pem>] [--path <p>] [--host <h>]
+  demo-vietnam  frozen VN drill on a temp store (never prod)
   packs-validate  validate packs/*.json (F13; needs_review invariants)
   packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)

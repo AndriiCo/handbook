@@ -183,7 +183,7 @@ POST /apostille/api/v1/admin/calls/{id}/questions/{idx}/asked  → {asked: true}
 POST /apostille/api/v1/admin/calls/webhook (Telnyx → us; signature, no session)
 POST /apostille/api/v1/admin/calls/{id}/quote (Slice E, "quote to draft")
   {segment_ids: [int...], topic, statement}
-  → 200 {fact_id} | 400 malformed | 404 unknown call/segment | 422 bad topic/statement
+  → 200 {fact_id, call_id, topic, status} | 400 malformed | 404 unknown call/segment | 422 bad topic/statement
 ```
 
 Quote-to-draft inserts ONE proposed fact via the standard

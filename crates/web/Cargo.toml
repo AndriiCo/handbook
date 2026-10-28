@@ -13,6 +13,7 @@ auth = { path = "../auth" }
 base64 = "0.22"
 bytes = "1"
 config = { path = "../config" }
+contracts = { path = "../contracts" }
 forms = { path = "../forms" }
 handbook-store = { path = "../handbook-store" }
 ingest = { path = "../ingest" }

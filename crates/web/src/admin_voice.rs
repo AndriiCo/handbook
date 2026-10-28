@@ -55,6 +55,10 @@ pub fn staff_router(state: AppState) -> Router {
             "/apostille/api/v1/admin/calls/{id}/questions/{idx}/asked",
             post(mark_asked),
         )
+        .route(
+            "/apostille/api/v1/admin/calls/{id}/quote",
+            post(quote_to_draft),
+        )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf_guard,
@@ -730,6 +734,134 @@ fn voice_unconfigured() -> axum::response::Response {
         .into_response()
 }
 
+/// Max statement length, in chars (contract).
+const MAX_STATEMENT_CHARS: usize = 1024;
+
+/// Unattributed-fact capture id: voice has no capture row. Same value as
+/// `handbook-agent`'s `UNATTRIBUTED_CAPTURE_ID`; migration 005's sentinel
+/// capture row (id 0) backs the FK.
+const UNATTRIBUTED_CAPTURE_ID: i64 = 0;
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)] // m3: mass-assignment hygiene on mutating DTOs
+struct QuoteBody {
+    segment_ids: Vec<i64>,
+    topic: String,
+    statement: String,
+}
+
+/// Quote transcript segments into ONE proposed fact ("quote to draft").
+///
+/// Staff-only (AdminAuth + host guard + CSRF via `staff_router`).
+/// Attribution: `capture_id = 0` (no capture row for voice) +
+/// `created_by = staff:<user>`; the audit row carries call+segment refs
+/// in its grep-able reason (zero DDL, the `voice_*` audit pattern).
+async fn quote_to_draft(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<QuoteBody>,
+) -> impl IntoResponse {
+    let conn = match db::open(&Store::new(&state.store_root)) {
+        Ok(conn) => conn,
+        Err(_) => return store_unavailable(),
+    };
+    let Some(call) = voice::store::get_call(&conn, &id).unwrap_or(None) else {
+        return not_found();
+    };
+    if body.segment_ids.is_empty() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "segment_ids must name at least one segment"})),
+        )
+            .into_response();
+    }
+    let segments = match voice::store::list_transcripts(&conn, &id) {
+        Ok(segments) => segments,
+        Err(_) => return store_unavailable(),
+    };
+    let have: std::collections::BTreeSet<i64> = segments.iter().map(|s| s.seq).collect();
+    if !body.segment_ids.iter().all(|seq| have.contains(seq)) {
+        return not_found();
+    }
+    let topic = match contracts::topics::Topic::parse(&body.topic) {
+        Ok(topic) => topic,
+        Err(_) => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({"error": "unknown handbook topic"})),
+            )
+                .into_response();
+        }
+    };
+    let statement = body.statement.trim();
+    let chars = statement.chars().count();
+    if chars == 0 || chars > MAX_STATEMENT_CHARS {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "statement must be 1-1024 chars"})),
+        )
+            .into_response();
+    }
+    // The call's authority slug owns the fact; without one there is no
+    // authority to attribute (422, not a guess).
+    let authority_id: Option<i64> = call.authority.as_deref().and_then(|slug| {
+        conn.query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |row| {
+            row.get(0)
+        })
+        .ok()
+    });
+    let Some(authority_id) = authority_id else {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "call has no known authority to quote into"})),
+        )
+            .into_response();
+    };
+    let now = unix_now();
+    let created_by = format!("staff:{}", auth.user.user_id);
+    let fact_id = match handbook_store::db::insert_proposed_fact(
+        &conn,
+        &handbook_store::db::NewProposedFact {
+            authority_id,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+            topic: topic.as_str(),
+            statement,
+            created_by: &created_by,
+            created_at: now,
+        },
+    ) {
+        Ok(fact_id) => fact_id,
+        Err(_) => return store_unavailable(),
+    };
+    // Zero-DDL attribution audit: the existing voice audit row, with the
+    // fact id + segment seqs + topic in the grep-able reason. Never the
+    // transcript text (no PII in audit, per the voice lane rule).
+    let seqs: Vec<String> = body.segment_ids.iter().map(|s| s.to_string()).collect();
+    audit(
+        &conn,
+        now,
+        &auth.user.user_id,
+        "voice_quote",
+        &id,
+        &format!(
+            "fact_id={fact_id} segments=[{}] topic={}",
+            seqs.join(","),
+            topic.as_str()
+        ),
+    );
+    (
+        StatusCode::OK,
+        Json(json!({
+            "fact_id": fact_id,
+            "call_id": id,
+            "topic": topic.as_str(),
+            "status": "proposed",
+        })),
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1169,5 +1301,228 @@ mod tests {
         let segments = voice::store::list_transcripts(&conn, "c-9").unwrap();
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].text, "the fee is eight dollars");
+    }
+
+    fn seed_call_with_transcripts(
+        conn: &rusqlite::Connection,
+        call_id: &str,
+        authority: Option<&str>,
+    ) {
+        conn.execute(
+            "INSERT OR IGNORE INTO authority(kind, country, region, name, slug)
+             VALUES ('state', 'US', 'WA', 'Washington SOS', 'usa-wa-sos')",
+            [],
+        )
+        .unwrap();
+        let leg = format!("leg-{call_id}");
+        let sess = format!("sess-{call_id}");
+        voice::store::insert_call(
+            conn,
+            &voice::store::NewCall {
+                id: call_id,
+                call_control_id: &leg,
+                call_leg_id: &leg,
+                call_session_id: &sess,
+                to_hash: "abc",
+                authority,
+                questions_json: r#"[{"text":"fee?","asked":true}]"#,
+                created_by: "staff-1",
+                now: 1,
+            },
+        )
+        .unwrap();
+        voice::store::append_transcript(conn, call_id, Some("agent"), "The fee?", 2).unwrap();
+        voice::store::append_transcript(conn, call_id, Some("them"), "Eight dollars.", 3).unwrap();
+    }
+
+    fn quote_body(segment_ids: Vec<i64>, topic: &str, statement: &str) -> serde_json::Value {
+        json!({
+            "segment_ids": segment_ids,
+            "topic": topic,
+            "statement": statement,
+        })
+    }
+
+    /// Happy path: segments 0-1 quote into ONE proposed fact with
+    /// unattributed capture id, staff created_by, and a grep-able audit row
+    /// that carries NO transcript text.
+    #[tokio::test]
+    async fn quote_to_draft_creates_one_proposed_fact() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        seed_call_with_transcripts(&conn, "c-q", Some("usa-wa-sos"));
+        drop(conn);
+
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/c-q/quote",
+                true,
+                true,
+                Some(quote_body(vec![0, 1], "fees", "Counter fee is $8.")),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let quote = json_body(res).await;
+        assert_eq!(quote["call_id"], "c-q");
+        assert_eq!(quote["topic"], "fees");
+        assert_eq!(quote["status"], "proposed");
+        let fact_id = quote["fact_id"].as_i64().unwrap();
+        assert!(fact_id > 0);
+
+        let conn = db::open(&store).unwrap();
+        let (status, created_by, capture_id, topic, statement): (
+            String,
+            String,
+            i64,
+            String,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT status, created_by, capture_id, topic, statement
+                 FROM fact WHERE id = ?1",
+                [fact_id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(status, "proposed");
+        assert_eq!(created_by, "staff:staff-1");
+        assert_eq!(capture_id, 0);
+        assert_eq!(topic, "fees");
+        assert_eq!(statement, "Counter fee is $8.");
+        // Attribution audit: refs in the reason, never the transcript text.
+        let reason: String = conn
+            .query_row(
+                "SELECT reason FROM audit
+                 WHERE action = 'voice_quote' AND after_ref = 'c-q'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(reason.contains(&format!("fact_id={fact_id}")), "{reason}");
+        assert!(reason.contains("segments=[0,1]"), "{reason}");
+        assert!(reason.contains("topic=fees"), "{reason}");
+        assert!(!reason.contains("Eight dollars"), "{reason}");
+    }
+
+    /// Every invalid shape is a 422 with a non-empty error; nothing lands.
+    #[tokio::test]
+    async fn quote_to_draft_validation_matrix() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        seed_call_with_transcripts(&conn, "c-q", Some("usa-wa-sos"));
+        seed_call_with_transcripts(&conn, "c-noauth", None);
+        drop(conn);
+
+        let overlong = "x".repeat(1025);
+        let cases: Vec<(&str, serde_json::Value)> = vec![
+            ("c-q", quote_body(vec![], "fees", "Counter fee is $8.")),
+            (
+                "c-q",
+                quote_body(vec![0], "not-a-topic", "Counter fee is $8."),
+            ),
+            ("c-q", quote_body(vec![0], "fees", "   ")),
+            ("c-q", quote_body(vec![0], "fees", &overlong)),
+            (
+                "c-noauth",
+                quote_body(vec![0], "fees", "Counter fee is $8."),
+            ),
+        ];
+        for (call_id, body) in cases {
+            let res = staff_router(fx.state.clone())
+                .oneshot(staff_request(
+                    "POST",
+                    &format!("/apostille/api/v1/admin/calls/{call_id}/quote"),
+                    true,
+                    true,
+                    Some(body.clone()),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+            let err = json_body(res).await;
+            assert!(!err["error"].as_str().unwrap().is_empty());
+        }
+        // Foreign segment → 404 (bad sub-resource index, the mark_asked
+        // convention), not 422.
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/c-q/quote",
+                true,
+                true,
+                Some(quote_body(vec![0, 9], "fees", "Counter fee is $8.")),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let conn = db::open(&store).unwrap();
+        let facts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fact", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(facts, 0);
+    }
+
+    /// Guards: unknown call 404s; mutations without CSRF/Origin 403
+    /// (the CSRF layer runs before auth, so session-less POSTs 403
+    /// too — 401-on-GET is covered by `staff_gates_hold`). All before
+    /// any write.
+    #[tokio::test]
+    async fn quote_to_draft_guards() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let body = quote_body(vec![0], "fees", "Counter fee is $8.");
+        // Unknown call → 404.
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/nope/quote",
+                true,
+                true,
+                Some(body.clone()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        // No session and no CSRF/Origin → 403 (CSRF layer first).
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/nope/quote",
+                false,
+                false,
+                Some(body.clone()),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        // Session but no CSRF/Origin → 403.
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/nope/quote",
+                true,
+                false,
+                Some(body),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        let facts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fact", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(facts, 0);
     }
 }
