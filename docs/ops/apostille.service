@@ -17,11 +17,14 @@ After=network-online.target
 Wants=network-online.target
 # Crash-loop guard (2026-10-27 ACME incident: a boot-time issuance
 # failure restarted into Google ~60x before anyone stopped it,
-# burning failed-validation rate limits): after 5 failures in 10
-# minutes the unit stays down for operator eyes instead of
+# burning failed-validation rate limits): after Burst failures in
+# 10 minutes the unit stays down for operator eyes instead of
 # hammering the CA. Reset with `systemctl reset-failed apostille`.
+# Burst raised 5→12 (2026-10-29 drill-2: 6 deliberate restarts in
+# one drill tripped 5 even with clean stops; 12 covers a full
+# drill day of 9 with margin, still far below a ~60x crash loop).
 StartLimitIntervalSec=600
-StartLimitBurst=5
+StartLimitBurst=12
 
 [Service]
 Type=simple
@@ -49,6 +52,11 @@ WorkingDirectory=/var/lib/apostille
 UMask=0027
 Restart=on-failure
 RestartSec=5s
+# Stop backstop (2026-10-29 QUIC P0): the drain budget is 10s TCP
+# plus an immediate QUIC close, overlapped — 20s is 2x headroom
+# and bounds any future drain regression (was: 90s default, then
+# SIGKILL). Reinstall the unit + daemon-reload to take effect.
+TimeoutStopSec=20s
 # Panic=abort binary: any Rust panic kills the process; systemd
 # restarts it into a clean state (fail-closed, no unwound half-state).
 

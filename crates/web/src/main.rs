@@ -1017,7 +1017,7 @@ async fn serve_http(public: Router, admin: Router, cfg: &config::RuntimeConfig) 
             });
         }
     }
-    supervise(servers, handles).await;
+    supervise(servers, handles, Vec::new()).await;
 }
 
 /// The single-443 TLS router: Host-dispatched branches plus the
@@ -1112,6 +1112,7 @@ async fn serve_tls(
     let router = tls_router(public, admin, cfg);
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
+    let mut quic_drain = Vec::new();
     let skip_redirect = prebound_redirect.is_some();
     if let Some(extra) = prebound_redirect {
         eprintln!("port-80 redirector already serving (pre-issuance bind); reusing");
@@ -1150,6 +1151,7 @@ async fn serve_tls(
                 // parent, before spawning the serve task.
                 let endpoint = bind_quic_listener(addr, &cert_pem, &key_pem, cfg);
                 quic_reloader.register(&endpoint);
+                quic_drain.push(endpoint.clone());
                 eprintln!("listening on udp://{addr} (quic/h3)");
                 servers.spawn({
                     let router = router.clone();
@@ -1178,7 +1180,7 @@ async fn serve_tls(
             }
         }
     }
-    supervise(servers, handles).await;
+    supervise(servers, handles, quic_drain).await;
 }
 
 /// Bind one QUIC UDP endpoint for [`serve_tls`]: build the h3
@@ -1212,16 +1214,26 @@ fn bind_quic_listener(
 /// fails BEFORE the signal (e.g. bind error) fails the whole
 /// process at once — half-listening on one IP while another errors
 /// out would split the service into halves silently.
+/// Drain every listener: TCP handles get a 10s graceful stop,
+/// QUIC endpoints get an immediate close (their accept loop ends
+/// only on close — without this the serve task never completes
+/// and the process hangs until SIGKILL). Module-level so the
+/// regression test drives the production path directly.
+fn drain(handles: &[axum_server::Handle], quic: &[quinn::Endpoint]) {
+    eprintln!("shutting down");
+    for handle in handles {
+        handle.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
+    }
+    for endpoint in quic {
+        endpoint.close(0u32.into(), b"shutdown");
+    }
+}
+
 async fn supervise(
     mut servers: tokio::task::JoinSet<std::io::Result<()>>,
     handles: Vec<axum_server::Handle>,
+    quic: Vec<quinn::Endpoint>,
 ) -> ! {
-    fn drain(handles: &[axum_server::Handle]) {
-        eprintln!("shutting down");
-        for handle in handles {
-            handle.graceful_shutdown(Some(std::time::Duration::from_secs(10)));
-        }
-    }
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
@@ -1231,11 +1243,11 @@ async fn supervise(
     loop {
         tokio::select! {
             _ = &mut ctrl_c, if !draining => {
-                drain(&handles);
+                drain(&handles, &quic);
                 draining = true;
             }
             _ = sigterm.recv(), if !draining => {
-                drain(&handles);
+                drain(&handles, &quic);
                 draining = true;
             }
             outcome = servers.join_next() => {
@@ -1246,7 +1258,7 @@ async fn supervise(
                         eprintln!("listener failed: {e}");
                         failed = true;
                         if !draining {
-                            drain(&handles);
+                            drain(&handles, &quic);
                             draining = true;
                         }
                     }
@@ -1254,7 +1266,7 @@ async fn supervise(
                         eprintln!("listener task failed: {e}");
                         failed = true;
                         if !draining {
-                            drain(&handles);
+                            drain(&handles, &quic);
                             draining = true;
                         }
                     }
@@ -3868,6 +3880,37 @@ mod tests {
         }
         endpoint.close(0u32.into(), b"done");
         (status, body)
+    }
+
+    #[tokio::test]
+    async fn quic_drain_ends_serve_loop() {
+        // P0 (prompt-076): SIGINT/SIGTERM drained only the TCP
+        // handles, so the QUIC accept loop never ended and every
+        // prod stop hung 90s into SIGKILL. The production drain
+        // must end the serve task promptly — process exit waits
+        // on it, and SIGKILL is what happens when it doesn't.
+        // Manual bind+spawn (not serve_quic_for_test) is
+        // deliberate: the test needs the serve JoinHandle.
+        let router = Router::new().route("/ping", get(|| async { "pong" }));
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let config = quic::server_config(&cert_pem, &key_pem, None).unwrap();
+        let endpoint = quic::bind_endpoint("127.0.0.1:0".parse().unwrap(), &config).unwrap();
+        let serve = tokio::spawn(quic::serve(endpoint.clone(), router));
+        let addr = endpoint.local_addr().unwrap();
+        let (status, _) = h3_get(
+            addr,
+            quic_test_client_config(None),
+            "andrii.ai",
+            "/ping",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        drain(&[], &[endpoint]);
+        tokio::time::timeout(std::time::Duration::from_secs(5), serve)
+            .await
+            .expect("quic serve exits within 5s of drain")
+            .unwrap();
     }
 
     #[tokio::test]
