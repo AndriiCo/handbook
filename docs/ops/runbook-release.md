@@ -48,6 +48,12 @@ printf '\n' | sudo -n /usr/local/sbin/apostille-journal >/dev/null && echo JOURN
 ```sh
 export PATH="/tmp/zig-aarch64-macos-0.17.0:$PATH"   # + cargo-zigbuild: cargo install cargo-zigbuild
 cargo zigbuild --release -p web -p xtask --target x86_64-unknown-linux-gnu
+# `--target` is NOT optional: without it zigbuild emits a macOS
+# binary into target/release/ and the stale x86_64 binary gets
+# staged (seen 2026-10-29: prod kept reporting the old SHA).
+# Verify before staging:
+file target/x86_64-unknown-linux-gnu/release/web  # must say ELF x86-64
+grep -a BUILD_SHA target/x86_64-unknown-linux-gnu/release/build/web-*/output  # must name HEAD
 (cd web && npm run build && npm run build:admin)
 cargo xtask web-budget   # advisory size report (no gate since 2026-10-28)
 VERSION=$(git rev-parse --short HEAD)
