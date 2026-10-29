@@ -122,3 +122,37 @@ fixtures). Voice $0.18/audio-hour; SAM $2.50/1k images.
 - Transcription file endpoint `POST /v1/asr/transcribe`
   (multipart, header auth); live `wss://.../asr/realtime` with
   auth in the handshake frame, NOT the header.
+
+## Responses API (pinned 2026-10-29, prompt 078)
+
+- `POST https://api.meta.ai/v1/responses` with `model` +
+  `input`; returns `id` + `status`. Retrieve `GET
+  /v1/responses/{id}`; cancel `POST .../cancel`; stream a
+  background job `GET ...?stream=true`.
+- `background: true` runs async: ack `{background: true,
+  status: queued}` (600 submissions/min/team); cannot combine
+  with `stream: true` (400); creation body capped at 1 MiB
+  (413 `payload_too_large` — upload media via Files first).
+- `input`: `{role, content[]}` with typed blocks `input_text`,
+  `input_image`, `input_file` (`file_data` base64 / `file_url`
+  https / `file_id`), `input_video`; replay assistant turns
+  with `output_text`. `instructions` is developer-level but
+  per-request only (resend each turn); `previous_response_id`
+  chains server-managed history; `reasoning: {effort}`.
+- Structured output: `text.format = {type: json_schema,
+  json_schema: {name, schema, strict}}` (NOT `response_format`
+  — a Chat param; each endpoint ignores the other's).
+- Token counting: `POST /v1/responses/input_tokens` with the
+  trimmed input — measure before sending.
+- Files API: `POST /v1/files` upload (1 GiB, purpose field;
+  `purpose=batch` JSONL datasets exist but NO batch-execution
+  endpoint is documented — no `/docs/batch`, no `/v1/batches`
+  shape found); `DELETE /v1/files/{id}`; inline `file_data` /
+  `file_url` capped at 50 MB. Uploaded files never expire.
+- PDF handling (server-side): text + per-page images together;
+  ≤50 pages fully covered; longer PDFs give text to page 100
+  and images to page 50.
+- Output text: `output[]` items carrying `output_text` blocks
+  (defensive walk in `atlas::model`; re-verify item shape at
+  first live use). `image_url` block field and upload
+  `purpose` value are conventional, same caveat.

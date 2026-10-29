@@ -10,6 +10,7 @@ use handbook_store::store::Store;
 mod accept;
 mod admin_cert;
 mod admin_staff;
+mod atlas;
 mod build_handbook;
 mod config;
 mod demo_vietnam;
@@ -38,6 +39,7 @@ fn main() {
         Some("analyze") => run_analyze(&args[1..]),
         Some("fetch-url") => run_fetch_url(&args[1..]),
         Some("fetch-slug") => fetch_slug::run(&args[1..]),
+        Some("atlas") => atlas::run(&args[1..]),
         Some("watch-sweep") => watch::run_sweep(&args[1..]),
         Some("hcch-poll") => watch::run_hcch(&args[1..]),
         Some("mail-poll") => watch::run_mail(&args[1..]),
@@ -90,6 +92,7 @@ Tasks:
   analyze     draft proposed facts for an authority (stub default, --live for Meta API)
   fetch-url   fetch one URL into a warc capture (thin watch)
   fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
+  atlas  run an Atlas task pack: --config <pack> --task <name> [--effort --model --protocol --out --refresh --limit --live --dry-run --run-id --pdf-tool]; --batch-poll <job>; --check
   watch-sweep poll due watch URLs across authorities (timer runs this)
   hcch-poll   poll the HCCH status table, task on change (timer runs this)
   mail-poll   poll Gmail into email captures (timer runs this)

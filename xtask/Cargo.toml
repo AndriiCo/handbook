@@ -9,6 +9,7 @@ name = "xtask"
 path = "src/main.rs"
 
 [dependencies]
+atlas = { path = "../crates/atlas" }
 auth = { path = "../crates/auth" }
 contracts = { path = "../crates/contracts" }
 forms = { path = "../crates/forms" }

@@ -1,0 +1,52 @@
+# EXAMPLE pack (mechanism demo — prompts marked [EXAMPLE] are
+# placeholders, not jurisdiction content). Rerunnable offline:
+#   cargo xtask atlas --config crates/atlas/packs/example-membership.toml \
+#     --task membership-scan --dry-run
+# Live (key required):
+#   ... --live   (stub port is replaced by the Meta Model API)
+
+[run]
+out = "out/atlas-example"
+effort = "standard"
+
+[[models]]
+name = "spark"
+id = "muse-spark-1.3"
+mode = "standard"
+context_window = 1048576
+max_output_tokens = 4096
+rpm = 3000
+tpm = 4000000
+# Fill from https://dev.meta.ai/docs/pricing-rate-limits before costing runs.
+input_per_1m = 0.0
+output_per_1m = 0.0
+
+[[models]]
+name = "spark-cheap"
+id = "muse-spark-1.3-contributor"
+mode = "contributor"
+context_window = 1048576
+max_output_tokens = 4096
+rpm = 150
+tpm = 3000000
+input_per_1m = 0.0
+output_per_1m = 0.0
+
+[[sources]]
+name = "status-sample"
+url = "fixtures/status-sample.html"
+kind = "html"
+refresh = "never"
+
+[[tasks]]
+name = "membership-scan"
+model = "spark"
+protocol = "auto"
+instructions = """[EXAMPLE] Extract one JSON object per contracting-state
+row in the brief: {country, member, effective}. Keep the table's
+own spelling of names and dates; record footnote markers verbatim
+in a footnotes array. Return JSON only, matching the schema."""
+schema = "schemas/membership.json"
+verify = "none"
+allow_contributor = false
+inputs = ["status-sample"]

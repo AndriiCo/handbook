@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MembershipScan",
+  "type": "object",
+  "required": ["columns", "rows"],
+  "properties": {
+    "columns": {"type": "array", "items": {"type": "string"}},
+    "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
+    "status": {"type": "array", "items": {"type": "string"}},
+    "footnotes": {"type": "array", "items": {"type": "string"}}
+  }
+}
