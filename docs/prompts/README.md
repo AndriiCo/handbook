@@ -102,3 +102,8 @@ to change history — append a correction section instead.
   single-writer implementation (spec §5, backend, UI,
   guide); committed df4bc6f, deployed 1c6856c as hal,
   verified live.
+- [2026-10-29-077-agree-all-risc-devicecap.md](2026-10-29-077-agree-all-risc-devicecap.md) —
+  agree-all execution: RISC receiver (OPEN-7) + device cap 5
+  with tests; 16 outcomes recorded as decisions 49–60 with
+  re-keys; committed 17dcf56, 1efa5e1, d83f177; `cargo xtask
+  ci` green; not deployed.
