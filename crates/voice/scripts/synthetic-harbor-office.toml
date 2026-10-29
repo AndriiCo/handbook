@@ -1,0 +1,11 @@
+# Synthetic example pack (§11.1): per-authority shape with an
+# invented office. Fixture only — never a real office or number.
+id = "synthetic-harbor-office"
+authority = "Synthetic Harbor Licensing Office"
+topics = ["hours", "fees", "forms"]
+questions = [
+  "What are your walk-in hours for license renewals?",
+  "What is the fee for a certified copy?",
+  "Which form revision should applicants bring this month?",
+  "Do you accept card payments at the counter?",
+]

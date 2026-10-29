@@ -26,6 +26,10 @@ pub struct VoiceConfig {
     pub connection_id: String,
     /// Webhook signing public key, base64 (`telnyx.webhook_public_key`).
     pub webhook_public_key: String,
+    /// Script-pack directory override; empty reads as the default
+    /// (`crates/voice/scripts`, repo-relative). Tests point this at
+    /// a temp dir of fixture packs.
+    pub scripts_dir: String,
 }
 
 impl VoiceConfig {
@@ -45,6 +49,7 @@ impl VoiceConfig {
             from_number: from_number.to_string(),
             connection_id: connection_id.to_string(),
             webhook_public_key: webhook_public_key.to_string(),
+            scripts_dir: crate::scripts::DEFAULT_SCRIPTS_DIR.to_string(),
         }
     }
 }

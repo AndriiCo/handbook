@@ -25,6 +25,8 @@ pub struct NewCall<'a> {
     pub to_hash: &'a str,
     pub authority: Option<&'a str>,
     pub questions_json: &'a str,
+    /// Resolved pack id (`"inline"` when dial carried its own list).
+    pub script_id: &'a str,
     pub created_by: &'a str,
     pub now: i64,
 }
@@ -44,6 +46,7 @@ pub struct VoiceCall {
     pub status_detail: Option<String>,
     pub questions_json: String,
     pub recording_sha: Option<String>,
+    pub script_id: String,
     pub recording_status: String,
     pub created_by: String,
     pub created_at: i64,
@@ -82,7 +85,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
            created_by TEXT NOT NULL,
            created_at INTEGER NOT NULL,
            updated_at INTEGER NOT NULL,
-           ended_at INTEGER
+           ended_at INTEGER,
+           script_id TEXT NOT NULL DEFAULT 'inline'
          );
          CREATE INDEX IF NOT EXISTS idx_voice_call_control
            ON voice_call(call_control_id);
@@ -100,7 +104,23 @@ pub fn migrate(conn: &Connection) -> Result<()> {
            event_type TEXT NOT NULL,
            at INTEGER NOT NULL
          );",
-    )
+    )?;
+    // `script_id` arrived after the first voice slice: backfill
+    // pre-existing DBs (the default marks their inline lists).
+    let has_script_id: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('voice_call')
+         WHERE name = 'script_id'",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_script_id == 0 {
+        conn.execute(
+            "ALTER TABLE voice_call
+             ADD COLUMN script_id TEXT NOT NULL DEFAULT 'inline'",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 /// Insert a queued call row.
@@ -112,9 +132,9 @@ pub fn insert_call(conn: &Connection, call: &NewCall<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO voice_call(id, call_control_id, call_leg_id,
                                  call_session_id, to_hash, authority,
-                                 status, questions_json, created_by,
-                                 created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'queued', ?7, ?8, ?9, ?9)",
+                                 status, questions_json, script_id,
+                                 created_by, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'queued', ?7, ?8, ?9, ?10, ?10)",
         params![
             call.id,
             call.call_control_id,
@@ -123,6 +143,7 @@ pub fn insert_call(conn: &Connection, call: &NewCall<'_>) -> Result<()> {
             call.to_hash,
             call.authority,
             call.questions_json,
+            call.script_id,
             call.created_by,
             call.now,
         ],
@@ -140,7 +161,8 @@ pub fn get_call(conn: &Connection, id: &str) -> Result<Option<VoiceCall>> {
         "SELECT id, call_control_id, call_leg_id, call_session_id,
                 to_hash, authority, status, status_detail,
                 questions_json, recording_sha, recording_status,
-                created_by, created_at, updated_at, ended_at
+                created_by, created_at, updated_at, ended_at,
+                script_id
          FROM voice_call WHERE id = ?1",
         [id],
         row_to_call,
@@ -158,7 +180,8 @@ pub fn get_call_by_leg(conn: &Connection, leg: &str) -> Result<Option<VoiceCall>
         "SELECT id, call_control_id, call_leg_id, call_session_id,
                 to_hash, authority, status, status_detail,
                 questions_json, recording_sha, recording_status,
-                created_by, created_at, updated_at, ended_at
+                created_by, created_at, updated_at, ended_at,
+                script_id
          FROM voice_call WHERE call_control_id = ?1",
         [leg],
         row_to_call,
@@ -176,7 +199,8 @@ pub fn list_calls(conn: &Connection, limit: i64) -> Result<Vec<VoiceCall>> {
         "SELECT id, call_control_id, call_leg_id, call_session_id,
                 to_hash, authority, status, status_detail,
                 questions_json, recording_sha, recording_status,
-                created_by, created_at, updated_at, ended_at
+                created_by, created_at, updated_at, ended_at,
+                script_id
          FROM voice_call ORDER BY created_at DESC, id DESC LIMIT ?1",
     )?;
     stmt.query_map([limit], row_to_call)?.collect()
@@ -331,6 +355,7 @@ fn row_to_call(row: &rusqlite::Row<'_>) -> Result<VoiceCall> {
         created_at: row.get(12)?,
         updated_at: row.get(13)?,
         ended_at: row.get(14)?,
+        script_id: row.get(15)?,
     })
 }
 
@@ -353,6 +378,7 @@ mod tests {
             to_hash: "abc",
             authority: Some("usa-wa-sos"),
             questions_json: r#"[{"text":"fee?","asked":false}]"#,
+            script_id: "inline",
             created_by: "staff-1",
             now,
         }
@@ -365,6 +391,7 @@ mod tests {
         insert_call(&conn, &new_call("c-1", 100)).unwrap();
         let call = get_call(&conn, "c-1").unwrap().unwrap();
         assert_eq!(call.status, "queued");
+        assert_eq!(call.script_id, "inline");
         assert_eq!(call.authority.as_deref(), Some("usa-wa-sos"));
         assert_eq!(get_call_by_leg(&conn, "leg-1").unwrap().unwrap().id, "c-1");
         assert!(get_call(&conn, "missing").unwrap().is_none());
@@ -374,6 +401,42 @@ mod tests {
         assert_eq!(call.ended_at, Some(200));
         let listed = list_calls(&conn, 10).unwrap();
         assert_eq!(listed.len(), 1);
+    }
+
+    #[test]
+    fn migrate_backfills_script_id_on_old_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE voice_call(
+               id TEXT PRIMARY KEY,
+               call_control_id TEXT NOT NULL,
+               call_leg_id TEXT NOT NULL DEFAULT '',
+               call_session_id TEXT NOT NULL DEFAULT '',
+               to_hash TEXT NOT NULL,
+               authority TEXT,
+               status TEXT NOT NULL DEFAULT 'queued',
+               status_detail TEXT,
+               questions_json TEXT NOT NULL DEFAULT '[]',
+               recording_sha TEXT,
+               recording_status TEXT NOT NULL DEFAULT 'none',
+               created_by TEXT NOT NULL,
+               created_at INTEGER NOT NULL,
+               updated_at INTEGER NOT NULL,
+               ended_at INTEGER
+             );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO voice_call(id, call_control_id, to_hash, created_by,
+                                    created_at, updated_at)
+             VALUES ('c-0', 'leg-0', 'h', 's', 1, 1)",
+            [],
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        let call = get_call(&conn, "c-0").unwrap().unwrap();
+        assert_eq!(call.script_id, "inline");
     }
 
     #[test]

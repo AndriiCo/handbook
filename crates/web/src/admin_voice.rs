@@ -17,6 +17,9 @@ use axum::{
 };
 use handbook_store::{db, store::Store};
 use serde_json::json;
+// Question bounds live in the voice pack rules, so inline lists and
+// packs share them (§11.1).
+use voice::scripts::{MAX_QUESTION_CHARS, MAX_QUESTIONS};
 
 use crate::{
     AppState,
@@ -26,12 +29,6 @@ use crate::{
 
 /// Telnyx signature replay window (seconds).
 const WEBHOOK_WINDOW_SECS: i64 = 300;
-
-/// Cap on prepared questions per call.
-const MAX_QUESTIONS: usize = 20;
-
-/// Cap on one question's length (chars).
-const MAX_QUESTION_CHARS: usize = 280;
 
 /// Staff routes: dial, list, detail, hangup, record, questions.
 /// Host guard + CSRF layers are applied here (not inherited from
@@ -95,6 +92,10 @@ struct DialBody {
     authority: Option<String>,
     #[serde(default)]
     questions: Vec<String>,
+    /// Script-pack id (§11.1); inline `questions` win over it, and
+    /// an empty/missing value reads as the `default` pack.
+    #[serde(default)]
+    script: Option<String>,
     consent_confirmed: bool,
 }
 
@@ -133,18 +134,56 @@ async fn dial(
         )
             .into_response();
     }
-    if body.questions.len() > MAX_QUESTIONS
-        || body
-            .questions
-            .iter()
-            .any(|q| q.trim().is_empty() || q.chars().count() > MAX_QUESTION_CHARS)
-    {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"error": "1-20 questions, each 1-280 chars"})),
+    // Question resolution (§11.1): inline questions win over any
+    // pack; otherwise the named pack (or `default` when none is
+    // named) fills in. A missing/broken pack refuses the dial here,
+    // before anything leaves the box.
+    let (script_id, resolved): (String, Vec<String>) = if !body.questions.is_empty() {
+        if body.questions.len() > MAX_QUESTIONS
+            || body
+                .questions
+                .iter()
+                .any(|q| q.trim().is_empty() || q.chars().count() > MAX_QUESTION_CHARS)
+        {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({"error": "1-20 questions, each 1-280 chars"})),
+            )
+                .into_response();
+        }
+        (
+            voice::scripts::INLINE_SCRIPT_ID.to_string(),
+            body.questions
+                .iter()
+                .map(|q| q.trim().to_string())
+                .collect(),
         )
-            .into_response();
-    }
+    } else {
+        let stem = body
+            .script
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(voice::scripts::DEFAULT_PACK_ID);
+        match voice::scripts::load_pack(&voice::scripts::resolve_dir(&state.voice_cfg), stem) {
+            Ok(pack) => (pack.id, pack.questions),
+            Err(_) => {
+                audit(
+                    &conn,
+                    now,
+                    &auth.user.user_id,
+                    "voice_dial_refused",
+                    "",
+                    &format!("script pack refused: {stem}"),
+                );
+                return (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    Json(json!({"error": "unknown or invalid script pack"})),
+                )
+                    .into_response();
+            }
+        }
+    };
     let client = match voice_client(&state) {
         Some(client) => client,
         None => return voice_unconfigured(),
@@ -165,11 +204,10 @@ async fn dial(
         Err(_) => return store_unavailable(),
     };
     let call_id = new_call_id();
-    let questions: Vec<voice::store::Question> = body
-        .questions
+    let questions: Vec<voice::store::Question> = resolved
         .iter()
         .map(|text| voice::store::Question {
-            text: text.trim().to_string(),
+            text: text.clone(),
             asked: false,
         })
         .collect();
@@ -182,6 +220,7 @@ async fn dial(
         to_hash: &sha256_hex(body.to.as_bytes()),
         authority: body.authority.as_deref(),
         questions_json: &questions_json,
+        script_id: &script_id,
         created_by: &auth.user.user_id,
         now,
     };
@@ -260,6 +299,7 @@ async fn get_call(
             "status": call.status,
             "status_detail": call.status_detail,
             "authority": call.authority,
+            "script_id": call.script_id,
             "questions": questions,
             "transcript": segments.iter().map(|s| json!({
                 "seq": s.seq, "speaker": s.speaker, "text": s.text, "at": s.at,
@@ -882,6 +922,12 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = Store::new(tmp.path());
         store.init().unwrap();
+        // Script packs resolve to this temp dir (empty unless a test
+        // writes fixture packs into it).
+        let scripts_dir = tmp.path().join("scripts");
+        std::fs::create_dir_all(&scripts_dir).unwrap();
+        let mut voice_cfg = voice_cfg;
+        voice_cfg.scripts_dir = scripts_dir.display().to_string();
         let conn = db::open(&store).unwrap();
         db::migrate(&conn).unwrap();
         auth::migrate_auth_tables(&conn).unwrap();
@@ -1042,6 +1088,329 @@ mod tests {
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
+    /// Port-0 stub Telnyx: answers `POST /v2/calls` with a
+    /// synthetic leg and counts dials, so refusal tests prove "no
+    /// dial" and fallback tests prove "dialed once".
+    struct StubTelnyx {
+        url: String,
+        hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl StubTelnyx {
+        fn start() -> Self {
+            use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+            let hits = std::sync::Arc::new(AtomicUsize::new(0));
+            let stop = std::sync::Arc::new(AtomicBool::new(false));
+            let thread = std::thread::spawn({
+                let hits = hits.clone();
+                let stop = stop.clone();
+                move || {
+                    while !stop.load(Ordering::SeqCst) {
+                        let (stream, _) = match listener.accept() {
+                            Ok(pair) => pair,
+                            Err(_) => {
+                                std::thread::sleep(std::time::Duration::from_millis(5));
+                                continue;
+                            }
+                        };
+                        Self::answer(stream);
+                        hits.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            });
+            StubTelnyx {
+                url,
+                hits,
+                stop,
+                thread: Some(thread),
+            }
+        }
+
+        fn hits(&self) -> usize {
+            self.hits.load(std::sync::atomic::Ordering::SeqCst)
+        }
+
+        /// Drain one request, then answer with a synthetic leg.
+        fn answer(mut stream: std::net::TcpStream) {
+            use std::io::{BufRead, BufReader, Read, Write};
+            stream.set_nonblocking(false).ok();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .ok();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut content_len = 0usize;
+            let mut chunked = false;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    break;
+                }
+                if line.trim_end().is_empty() {
+                    break;
+                }
+                let lower = line.trim_end().to_ascii_lowercase();
+                if let Some(n) = lower
+                    .strip_prefix("content-length:")
+                    .and_then(|v| v.trim().parse().ok())
+                {
+                    content_len = n;
+                }
+                if lower == "transfer-encoding: chunked" {
+                    chunked = true;
+                }
+            }
+            if chunked {
+                loop {
+                    let mut size_line = String::new();
+                    if reader.read_line(&mut size_line).unwrap_or(0) == 0 {
+                        break;
+                    }
+                    let size = usize::from_str_radix(size_line.trim(), 16).unwrap_or(0);
+                    if size == 0 {
+                        reader.read_line(&mut String::new()).ok();
+                        break;
+                    }
+                    let mut chunk = vec![0u8; size];
+                    if reader.read_exact(&mut chunk).is_err() {
+                        break;
+                    }
+                    reader.read_line(&mut String::new()).ok();
+                }
+            } else {
+                let mut body = vec![0u8; content_len];
+                reader.read_exact(&mut body).ok();
+            }
+            let reply = r#"{"data":{"call_control_id":"stub-leg-1","call_leg_id":"stub-leg-1","call_session_id":"stub-sess-1"}}"#;
+            let text = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                reply.len()
+            );
+            stream.write_all(text.as_bytes()).ok();
+        }
+    }
+
+    impl Drop for StubTelnyx {
+        fn drop(&mut self) {
+            self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            if let Some(thread) = self.thread.take() {
+                thread.join().ok();
+            }
+        }
+    }
+
+    /// Fixture with voice configured against the stub (synthetic
+    /// `+1555…` numbers only).
+    fn configured_fixture(stub: &StubTelnyx) -> Fixture {
+        let mut fx = fixture(voice::VoiceConfig {
+            base_url: stub.url.clone(),
+            from_number: "+15550000000".to_string(),
+            connection_id: "conn-test".to_string(),
+            ..voice::VoiceConfig::default()
+        });
+        fx.state.voice_api_key = Some(config::SecretText::from("test-key".to_string()));
+        fx
+    }
+
+    fn write_pack(fx: &Fixture, stem: &str, body: &str) {
+        std::fs::write(
+            fx.state
+                .store_root
+                .join("scripts")
+                .join(format!("{stem}.toml")),
+            body,
+        )
+        .unwrap();
+    }
+
+    fn audit_count(fx: &Fixture, action: &str) -> i64 {
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM audit WHERE action = ?1",
+            [action],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn call_count(fx: &Fixture) -> i64 {
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        conn.query_row("SELECT COUNT(*) FROM voice_call", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn dial_missing_pack_is_refused_with_no_dial() {
+        let stub = StubTelnyx::start();
+        let fx = configured_fixture(&stub);
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/dial",
+                true,
+                true,
+                Some(json!({
+                    "to": "+15550001111",
+                    "authority": "usa-wa-sos",
+                    "script": "no-such-pack",
+                    "consent_confirmed": true,
+                })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = json_body(res).await;
+        assert_eq!(body["error"], "unknown or invalid script pack");
+        assert_eq!(audit_count(&fx, "voice_dial_refused"), 1);
+        assert_eq!(call_count(&fx), 0);
+        assert_eq!(stub.hits(), 0);
+    }
+
+    #[tokio::test]
+    async fn dial_broken_pack_is_refused_with_no_dial() {
+        let stub = StubTelnyx::start();
+        let fx = configured_fixture(&stub);
+        write_pack(
+            &fx,
+            "broken-id",
+            "id = \"other\"\nauthority = \"O\"\ntopics = [\"hours\"]\nquestions = [\"Q?\"]\n",
+        );
+        let many = (0..21)
+            .map(|i| format!("\"Q{i}?\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        write_pack(
+            &fx,
+            "too-many",
+            &format!(
+                "id = \"too-many\"\nauthority = \"O\"\ntopics = [\"hours\"]\nquestions = [{many}]\n"
+            ),
+        );
+        let long = "Q".repeat(281);
+        write_pack(
+            &fx,
+            "too-long",
+            &format!(
+                "id = \"too-long\"\nauthority = \"O\"\ntopics = [\"hours\"]\nquestions = [\"{long}\"]\n"
+            ),
+        );
+        for stem in ["broken-id", "too-many", "too-long"] {
+            let res = staff_router(fx.state.clone())
+                .oneshot(staff_request(
+                    "POST",
+                    "/apostille/api/v1/admin/calls/dial",
+                    true,
+                    true,
+                    Some(json!({
+                        "to": "+15550001111",
+                        "script": stem,
+                        "consent_confirmed": true,
+                    })),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY, "{stem}");
+        }
+        assert_eq!(audit_count(&fx, "voice_dial_refused"), 3);
+        assert_eq!(call_count(&fx), 0);
+        assert_eq!(stub.hits(), 0);
+    }
+
+    #[tokio::test]
+    async fn dial_falls_back_to_default_pack() {
+        let stub = StubTelnyx::start();
+        let fx = configured_fixture(&stub);
+        write_pack(
+            &fx,
+            "default",
+            "id = \"default\"\nauthority = \"Fictional Harbor Records Office\"\n\
+             topics = [\"hours\", \"fees\"]\n\
+             questions = [\"Walk-in hours?\", \"Per-document fee?\", \"Payment methods?\"]\n",
+        );
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/dial",
+                true,
+                true,
+                Some(json!({
+                    "to": "+15550001111",
+                    "authority": "usa-wa-sos",
+                    "consent_confirmed": true,
+                })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(stub.hits(), 1);
+        let dialed = json_body(res).await;
+        let call_id = dialed["call_id"].as_str().unwrap().to_string();
+
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "GET",
+                &format!("/apostille/api/v1/admin/calls/{call_id}"),
+                true,
+                false,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let detail = json_body(res).await;
+        assert_eq!(detail["script_id"], "default");
+        assert_eq!(detail["questions"].as_array().unwrap().len(), 3);
+        assert_eq!(detail["questions"][0]["text"], "Walk-in hours?");
+        assert_eq!(detail["questions"][0]["asked"], false);
+    }
+
+    #[tokio::test]
+    async fn dial_inline_questions_win_over_pack() {
+        let stub = StubTelnyx::start();
+        let fx = configured_fixture(&stub);
+        // No packs on disk and a bogus id: the inline list still wins.
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/dial",
+                true,
+                true,
+                Some(json!({
+                    "to": "+15550001111",
+                    "questions": ["Inline?"],
+                    "script": "no-such-pack",
+                    "consent_confirmed": true,
+                })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(stub.hits(), 1);
+        let dialed = json_body(res).await;
+        let call_id = dialed["call_id"].as_str().unwrap().to_string();
+
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "GET",
+                &format!("/apostille/api/v1/admin/calls/{call_id}"),
+                true,
+                false,
+                None,
+            ))
+            .await
+            .unwrap();
+        let detail = json_body(res).await;
+        assert_eq!(detail["script_id"], "inline");
+        assert_eq!(detail["questions"].as_array().unwrap().len(), 1);
+        assert_eq!(detail["questions"][0]["text"], "Inline?");
+    }
+
     #[tokio::test]
     async fn staff_gates_hold() {
         let fx = fixture(voice::VoiceConfig::default());
@@ -1095,6 +1464,7 @@ mod tests {
                 to_hash: "abc",
                 authority: Some("usa-wa-sos"),
                 questions_json: r#"[{"text":"fee?","asked":false}]"#,
+                script_id: "inline",
                 created_by: "staff-1",
                 now: 1,
             },
@@ -1219,6 +1589,7 @@ mod tests {
                 to_hash: "abc",
                 authority: None,
                 questions_json: "[]",
+                script_id: "inline",
                 created_by: "staff-1",
                 now: 1,
             },
@@ -1575,6 +1946,7 @@ mod tests {
                 to_hash: "abc",
                 authority,
                 questions_json: r#"[{"text":"fee?","asked":true}]"#,
+                script_id: "inline",
                 created_by: "staff-1",
                 now: 1,
             },

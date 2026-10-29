@@ -65,6 +65,7 @@ fn memory_call() -> Connection {
             to_hash: "abc",
             authority: Some("usa-wa-sos"),
             questions_json: "[]",
+            script_id: "inline",
             created_by: "staff-1",
             now: 1,
         },

@@ -1,0 +1,11 @@
+# Fallback script pack (§11.1): loaded when dial passes neither
+# inline questions nor a pack id. Synthetic content only — the
+# office below is invented.
+id = "default"
+authority = "Fictional Harbor Records Office"
+topics = ["hours", "fees"]
+questions = [
+  "What are your walk-in hours for apostille requests?",
+  "What is the per-document fee this quarter?",
+  "Which payment methods do you accept at the counter?",
+]

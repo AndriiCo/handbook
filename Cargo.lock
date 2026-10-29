@@ -3758,10 +3758,12 @@ name = "voice"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "contracts",
  "ed25519-dalek",
  "rusqlite",
  "serde",
  "serde_json",
+ "toml",
  "ureq",
 ]
 

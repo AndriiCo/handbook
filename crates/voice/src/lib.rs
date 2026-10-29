@@ -7,6 +7,7 @@
 
 pub mod calls;
 pub mod client;
+pub mod scripts;
 pub mod store;
 pub mod webhook;
 
