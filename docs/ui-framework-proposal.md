@@ -224,6 +224,6 @@ the single raised shadow reserved for `CountrySelect` dropdown + mobile sheets.
 
 | ID | Question | Owner | Blocks |
 |----|----------|-------|--------|
-| OPEN-29 | Confirm Option A (consolidate CSS vars, no Tailwind)? Recommended: yes — gate headroom, zero deps, and the spec'd-but-unbuilt system layer all point there. (Fallback if no: Tailwind v4 + a documented ~10KB bump, not UnoCSS — ecosystem + hiring pool beat UnoCSS's byte edge.) | Author | UI Phases 0–3 |
-| OPEN-30 | May Phase 0 fix the login error-color bug (`.notice.err` uses `warning-bg`; should be `error-bg`) and add the print-stylesheet stub as drive-bys? Recommended: yes — both are one-line-class changes inside touched files, and the error color is user-facing misinformation. | Author | Phase 0 scope |
-| OPEN-31 | Scope of the pilot: home-only, or home + dossier together? Recommended: home-only first — one page proves the shared-class pattern and the gate math; dossier's `FactRow` work is Phase 2's natural companion. | Author | Phase 1 scope |
+| OPEN-29 | ~~Confirm Option A (consolidate CSS vars, no Tailwind)?~~ RESOLVED by D38 (2026-10-28): Tailwind v4 | Author | UI Phases 0–3 |
+| OPEN-30 | ~~Phase-0 drive-bys (error color + print stub)?~~ RESOLVED by D38: drive-bys approved | Author | Phase 0 scope |
+| OPEN-31 | ~~Pilot scope home-only vs home+dossier?~~ RESOLVED by D38: pilot = home + dossier | Author | Phase 1 scope |

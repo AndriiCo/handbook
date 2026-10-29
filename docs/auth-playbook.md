@@ -22,8 +22,8 @@
 ## 1. Passkeys (primary)
 
 - Relying Party ID: `andrii.ai` (apex — covers `andrii.ai` and
-  subdomains per WebAuthn rules; confirm exact RP-ID scoping for the
-  admin host at scaffolding, since admin is a separate origin).
+  subdomains per WebAuthn rules; cross-origin admin proof is
+  [customer-auth.md](specs/customer-auth.md) §5/OPEN-1).
 - Registration: after choosing passkey, `navigator.credentials.create`
   with resident key (`preferred`), user verification (`preferred`,
   `required` for admin-linking step-up). Login:
@@ -84,11 +84,20 @@ rejects anything else with 403 + audit):
    verification if required by scope (profile+email only keeps this
    minimal).
 2. Credentials → **OAuth client ID (Web)**: authorized JavaScript
-   origins `https://andrii.ai`; authorized redirect URIs for the
-   code flow (`https://andrii.ai/auth/google/callback`).
-3. SPA uses Google Identity Services button (FedCM-aware); server
-   validates the ID token against Google's certs (issuer, audience
-   = client ID, expiry, nonce).
+   origins `https://andrii.ai` (no Google JS is loaded — the entry
+   satisfies console validation); authorized redirect URIs
+   `https://andrii.ai/auth/google/callback` for prod, plus one URI
+   per staging/dev environment. Use a separate OAuth client per
+   environment (preferred) or extra redirect URIs on one client;
+   add test users until verification completes.
+3. Implementation (Phase 2, spec §9): **server-side
+   authorization-code flow, no Google Identity Services JS** — the
+   SPA calls our `POST /auth/google/start`, which returns
+   `auth_url`; Google redirects to our
+   `GET /auth/google/callback`; the server exchanges the code and
+   verifies via `tokeninfo` (`aud`/`iss`/`exp`/`sub`). No ID token
+   ever touches the browser; no FedCM dependency. Unset keys →
+   start returns 503 and boot stays green.
 4. Cross-Account Protection (RISC) — same Cloud project: enable the
    **RISC API**, create a **service account**, build the event
    receiver endpoint

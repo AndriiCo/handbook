@@ -265,19 +265,19 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 | OPEN-3 | Staff enrolment if passkey stalls: fallback scope | Author | §5 enrolment |
 | OPEN-4 | Admin-branch Google OAuth: needed at all, or staff stays passkey+mTLS (§5)? Phase 2 ships apex-only either way | Author | admin login scope |
 | OPEN-5 | tokeninfo→JWKS migration trigger (quota/latency at scale); ID-token local validation design | CODE | post-Phase-2 scale |
-| OPEN-6 | Playbook §3 touch-up: no-GIS-JS decision (server-side code flow + tokeninfo), dev/staging Google-console story | CODE | portal setup |
+| OPEN-6 | ~~Playbook §3 touch-up~~ RESOLVED: playbook §3 rewritten (server-side code flow + tokeninfo, per-env clients) | CODE | portal setup |
 | OPEN-7 | Google RISC receiver phase + synthetic-SET fixtures (§3 table; `signal_action` rows already exist) | SEC | revocation handling |
 | OPEN-8 | Profile display for Google links (method-only vs masked email; raw email never stored) | Author | profile UI |
 | OPEN-9 | Apple `response_mode=query` + `email_verified`/`is_private_email` wire types confirmed at first real login | CODE (staging) | §10.1/§10.3 |
 | OPEN-10 | Apple JWKS TTL-cache trigger (latency/rate at scale); cache design (in-memory, never a table) | CODE | post-Phase-3a scale |
 | OPEN-11 | Apple `/auth/apple/events` receiver phase + signed-JWT fixtures (§10 scope cut; `signal_action` rows ready) | SEC | revocation handling |
-| OPEN-12 | Meta Graph API version pin recorded (v26.0) + sunset watch (versions expire ~2yr) | CODE | §11.1, ongoing |
+| OPEN-12 | ~~Meta Graph API version pin (v26.0)~~ RECORDED in §11.1 + code; sunset watch (~2yr terms) is standing ops hygiene, no further spec action | CODE | §11.1, ongoing |
 | OPEN-13 | Meta deauthorize + data-deletion phase; deletion-receipt `{url, confirmation_code}` tracker table design | SEC | §11.8 gap |
 | OPEN-14 | Profile display for `apple`/`meta` links (extends OPEN-8; raw email never stored) | Author | profile UI |
 | OPEN-15 | CN→user_id mapping for offboarding: `user_id` column on `admin_cert`, or CN convention + `--cn` flag? | Author | §5.6 automation |
 | OPEN-16 | Schedule conditional-ui build (claim corrected in §2.5, API verified; build deferred past Phase 4) | Author | autofill scope |
 | OPEN-17 | Destructive-action list for §5.5 step-up (config writes? cert revoke? fact accept/reject?) | SEC | §5.5 enforcement |
-| OPEN-18 | Playbook §1 + header touch-up: staff method "still open" is stale (decided: passkey+mTLS) | CODE | doc consistency |
+| OPEN-18 | ~~Playbook §1 + header touch-up~~ RESOLVED: header + §1 point at §5; live proof stays OPEN-1 | CODE | doc consistency |
 | OPEN-19 | Prod CA custody: who holds `ca-key.pem`, where (HSM / offline backup)? | Author | prod enrolment |
 | OPEN-20 | Delivery channel for invite URLs + client key pairs (same channel or split)? | Author | enrol ceremony |
 | OPEN-21 | Server-side client-key copies: keep 0600 or delete-after-confirmed-delivery? | Author | runbook wording |
