@@ -22,7 +22,7 @@
 	const api = (path: string) => `/apostille/api/v1${path}`;
 
 	let linkState = $state<'checking' | 'invalid' | 'setup' | 'closed' | 'ready'>('checking');
-	let grant = $state<{ role: string; cn: string } | null>(null);
+	let grant = $state<{ role: string; cn: string; userId: string } | null>(null);
 	let displayName = $state('');
 	let error = $state<string | null>(null);
 	let busy = $state(false);
@@ -86,13 +86,8 @@
 				error = enrolErrorCopy(res.status, res.body?.error ?? '', setupMode);
 				return;
 			}
-			grant = { role: res.body.role, cn: res.body.cn };
+			grant = { role: res.body.role, cn: res.body.cn, userId: res.body.user_id ?? '' };
 			done = true;
-			// Setup mode lands back on config (now the full
-			// staff list) to finish any remaining keys.
-			window.location.href = setupMode
-				? resolve('/(admin)/admin/config')
-				: resolve('/(admin)/admin');
 		} catch (err) {
 			if (err instanceof DOMException && err.name === 'NotAllowedError') {
 				error = CANCELLED_COPY;
@@ -132,7 +127,15 @@
 	</Notice>
 {:else if done && grant}
 	<Notice variant="success" heading="Enrolled.">
-		<p>Continuing to the {setupMode ? 'config' : 'dashboard'}…</p>
+		<p>
+			Save this account ID — passkey login asks for it and it is not shown again:
+			<code>{grant.userId}</code>
+		</p>
+		<p>
+			<a href={setupMode ? resolve('/(admin)/admin/config') : resolve('/(admin)/admin')}>
+				Continue to the {setupMode ? 'config' : 'dashboard'} →
+			</a>
+		</p>
 	</Notice>
 {:else}
 	<p class="mt-4">

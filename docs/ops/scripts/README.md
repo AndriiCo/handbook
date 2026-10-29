@@ -31,3 +31,6 @@ Scripts:
 - `ops-acme-add-www.sh` — guard on fixed binary + ACME mode +
   www DNS, set the 3-name `acme.domains`, drop the persisted
   pair (account kept), restart, verify 3 SANs + www serving.
+- `ops-staff-access.sh <cn>` — root: verify the newest live
+  client cert for a CN, export it as PKCS#12 for browser
+  install, print staff user_ids for passkey login.
