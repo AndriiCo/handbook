@@ -349,3 +349,17 @@ G6. Postgres declined for the slice (decided 2026-10-27):
 45. Setup window needs no mTLS cert (author, 2026-10-28): the
     setup key alone gates the wizard + first enrol; the window
     closes permanently at burn.
+46. Admin paths carry no `/admin` segment (author, 2026-10-29):
+    the host differentiates the console — API
+    `/apostille/api/v1/*`, pages `/console`-style, staff login
+    `/staff-login`, root redirects to `/console`. Hard cut, no
+    redirects or dual-serve for the old paths.
+47. `admin.require_cert` gates the whole admin host (author,
+    2026-10-29): API + HTML + JS all require a CA-verified
+    client cert; only the setup surface and the Telnyx webhook
+    are exempt. Presence-only at the edge; registration stays
+    per-route in `AdminAuth`.
+48. `admin.require_cert` defaults off (parent, 2026-10-29):
+    first boot has no certs, so the operator opts in after the
+    CA exists; on without `tls.client_ca_file` refuses boot
+    everywhere (explicit misconfiguration, fail closed).

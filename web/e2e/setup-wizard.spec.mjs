@@ -19,16 +19,16 @@ const STEPS = {
 test('wizard save posts the edited value with the setup key', async ({ page }) => {
 	const srv = await serveDir(join(HERE, '..', 'build-admin'));
 	try {
-		await page.route('**/apostille/api/v1/admin/setup/status', (route) =>
+		await page.route('**/apostille/api/v1/setup/status', (route) =>
 			route.fulfill({ json: { setup_required: true } })
 		);
 		let stepsKey = null;
-		await page.route('**/apostille/api/v1/admin/setup/steps', async (route) => {
+		await page.route('**/apostille/api/v1/setup/steps', async (route) => {
 			stepsKey = await route.request().headerValue('x-setup-key');
 			return route.fulfill({ json: STEPS });
 		});
 		let saved = null;
-		await page.route('**/apostille/api/v1/admin/setup/keys/*', async (route) => {
+		await page.route('**/apostille/api/v1/setup/keys/*', async (route) => {
 			saved = {
 				url: route.request().url(),
 				key: await route.request().headerValue('x-setup-key'),
@@ -37,7 +37,7 @@ test('wizard save posts the edited value with the setup key', async ({ page }) =
 			return route.fulfill({ json: { key: 'net.public_host', type: 'text', set: false } });
 		});
 
-		await page.goto(`${srv.url}/admin/config`);
+		await page.goto(`${srv.url}/config`);
 		await expect(page.getByRole('heading', { name: 'First-time setup' })).toBeVisible();
 
 		await page.locator('#setup-key').fill(KEY);
@@ -53,7 +53,7 @@ test('wizard save posts the edited value with the setup key', async ({ page }) =
 		await expect
 			.poll(() => saved, { message: 'expected one setup-key save POST' })
 			.not.toBeNull();
-		expect(saved.url).toMatch(/\/apostille\/api\/v1\/admin\/setup\/keys\/net\.public_host$/);
+		expect(saved.url).toMatch(/\/apostille\/api\/v1\/setup\/keys\/net\.public_host$/);
 		expect(saved.key).toBe(KEY);
 		expect(saved.body).toEqual({ type: 'text', value: 'andrii.ai' });
 		await expect(card.getByText('“net.public_host” updated and audited.')).toBeVisible();

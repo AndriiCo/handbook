@@ -914,6 +914,7 @@ pub mod keys {
     pub const TLS_KEY_FILE: &str = "tls.key_file";
     pub const TLS_CLIENT_CA_FILE: &str = "tls.client_ca_file";
     pub const ADMIN_MTLS_OFF: &str = "admin.mtls_off";
+    pub const ADMIN_REQUIRE_CERT: &str = "admin.require_cert";
     pub const MEDIA_TERMS_READ: &str = "media.terms_read";
     pub const ACME_ENABLED: &str = "acme.enabled";
     pub const ACME_DIRECTORY: &str = "acme.directory";
@@ -984,6 +985,7 @@ pub mod keys {
         (TLS_KEY_FILE, super::ConfigType::Text),
         (TLS_CLIENT_CA_FILE, super::ConfigType::Text),
         (ADMIN_MTLS_OFF, super::ConfigType::Bool),
+        (ADMIN_REQUIRE_CERT, super::ConfigType::Bool),
         (MEDIA_TERMS_READ, super::ConfigType::Bool),
         (ACME_ENABLED, super::ConfigType::Bool),
         (ACME_DIRECTORY, super::ConfigType::Text),
@@ -1119,6 +1121,7 @@ pub struct RuntimeConfig {
     pub tls_key: Option<String>,
     pub tls_client_ca: Option<String>,
     pub admin_mtls_off: bool,
+    pub admin_require_cert: bool,
     pub media_terms_read: bool,
     pub acme_enabled: bool,
     pub acme_directory: String,
@@ -1181,6 +1184,7 @@ impl Default for RuntimeConfig {
             tls_key: None,
             tls_client_ca: None,
             admin_mtls_off: false,
+            admin_require_cert: false,
             media_terms_read: false,
             acme_enabled: false,
             acme_directory: "prod".to_string(),
@@ -1615,6 +1619,13 @@ impl RuntimeConfig {
         overlay_bool(
             conn,
             kek,
+            keys::ADMIN_REQUIRE_CERT,
+            &mut warnings,
+            &mut cfg.admin_require_cert,
+        )?;
+        overlay_bool(
+            conn,
+            kek,
             keys::MEDIA_TERMS_READ,
             &mut warnings,
             &mut cfg.media_terms_read,
@@ -1806,6 +1817,13 @@ impl RuntimeConfig {
                 "admin.mtls_off is dev-only; refusing release boot",
             ));
         }
+        // A required cert cannot be verified without a CA: refuse
+        // everywhere (first boot keeps the key off until certs exist).
+        if cfg.admin_require_cert && cfg.tls_client_ca.is_none() {
+            return Err(ConfigError::BadValue(
+                "admin.require_cert needs tls.client_ca_file; refusing boot",
+            ));
+        }
         Ok((cfg, warnings))
     }
 
@@ -1846,17 +1864,17 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_57_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 57);
+    fn registry_holds_58_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 58);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
         // Ten secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
         // client secrets, Meta Model API key, Gmail client secret +
-        // refresh token, mailer password, setup key hash); five bools
-        // (quic.enabled is the fifth); rest text (auth.* adds three,
-        // google/apple/meta ids six, mailer.* six, meta.* one, mail.*
-        // three).
+        // refresh token, mailer password, setup key hash); six bools
+        // (admin.require_cert is the sixth); rest text (auth.* adds
+        // three, google/apple/meta ids six, mailer.* six, meta.* one,
+        // mail.* three).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1865,7 +1883,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (5, 42, 10));
+        assert_eq!(counts, (6, 42, 10));
     }
 
     #[test]
@@ -1891,6 +1909,7 @@ mod runtime_tests {
         assert_eq!(cfg.tls_key, None);
         assert_eq!(cfg.tls_client_ca, None);
         assert!(!cfg.admin_mtls_off);
+        assert!(!cfg.admin_require_cert);
         assert!(!cfg.media_terms_read);
         assert!(!cfg.acme_enabled);
         assert_eq!(cfg.acme_directory, "prod");
@@ -1959,6 +1978,7 @@ mod runtime_tests {
             (keys::TLS_KEY_FILE, ConfigType::Text, "/x/key.pem"),
             (keys::TLS_CLIENT_CA_FILE, ConfigType::Text, "/x/ca.pem"),
             (keys::ADMIN_MTLS_OFF, ConfigType::Bool, "1"),
+            (keys::ADMIN_REQUIRE_CERT, ConfigType::Bool, "1"),
             (keys::MEDIA_TERMS_READ, ConfigType::Bool, "1"),
             (keys::ACME_ENABLED, ConfigType::Bool, "1"),
             (keys::ACME_DIRECTORY, ConfigType::Text, "staging"),
@@ -2060,6 +2080,7 @@ mod runtime_tests {
         assert_eq!(cfg.tls_key.as_deref(), Some("/x/key.pem"));
         assert_eq!(cfg.tls_client_ca.as_deref(), Some("/x/ca.pem"));
         assert!(cfg.admin_mtls_off); // debug build allows the dev seam
+        assert!(cfg.admin_require_cert);
         assert!(cfg.media_terms_read);
         assert!(cfg.acme_enabled);
         assert_eq!(cfg.acme_directory, "staging");
@@ -2247,6 +2268,21 @@ mod runtime_tests {
         put(&conn, &kek, keys::NET_PORT, ConfigType::Text, b"3000");
         let err = RuntimeConfig::load(&conn, &wrong).expect_err("wrong KEK must refuse");
         assert!(matches!(err, ConfigError::Crypto), "got: {err}");
+    }
+
+    #[test]
+    fn require_cert_without_ca_refuses_the_boot() {
+        let conn = memory();
+        let kek = Kek::generate();
+        put(
+            &conn,
+            &kek,
+            keys::ADMIN_REQUIRE_CERT,
+            ConfigType::Bool,
+            b"1",
+        );
+        let err = RuntimeConfig::load(&conn, &kek).expect_err("no CA must refuse");
+        assert!(matches!(err, ConfigError::BadValue(_)), "got: {err}");
     }
 
     #[test]

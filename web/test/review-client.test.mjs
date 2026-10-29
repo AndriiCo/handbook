@@ -169,32 +169,32 @@ test('review round-trips against a stub admin API', async () => {
 		req.on('end', () => {
 			seen.push(`${req.method} ${req.url}`);
 			res.writeHead(200, { 'content-type': 'application/json' });
-			if (req.method === 'GET' && req.url === '/api/v1/admin/queue?limit=50') {
+			if (req.method === 'GET' && req.url === '/api/v1/queue?limit=50') {
 				res.end(JSON.stringify({ items: [ITEM], count: 1 }));
-			} else if (req.url === '/api/v1/admin/queue/7') {
+			} else if (req.url === '/api/v1/queue/7') {
 				res.end(JSON.stringify(ITEM));
-			} else if (req.method === 'POST' && req.url === '/api/v1/admin/facts/7/accept') {
+			} else if (req.method === 'POST' && req.url === '/api/v1/facts/7/accept') {
 				const parsed = JSON.parse(body);
 				assert.equal(parsed.reason, 'looks right');
 				assert.ok(req.headers['x-csrf'], 'mutation sends x-csrf');
 				res.end(JSON.stringify({ status: 'accepted' }));
-			} else if (req.method === 'POST' && req.url === '/api/v1/admin/facts/7/reject') {
+			} else if (req.method === 'POST' && req.url === '/api/v1/facts/7/reject') {
 				const parsed = JSON.parse(body);
 				assert.equal(parsed.suppress.scope, 'authority');
 				res.end(JSON.stringify({ status: 'rejected' }));
-			} else if (req.method === 'GET' && req.url === '/api/v1/admin/suppress-rules') {
+			} else if (req.method === 'GET' && req.url === '/api/v1/suppress-rules') {
 				res.end(JSON.stringify({ rules: [], count: 0 }));
-			} else if (req.method === 'POST' && req.url === '/api/v1/admin/suppress-rules') {
+			} else if (req.method === 'POST' && req.url === '/api/v1/suppress-rules') {
 				const parsed = JSON.parse(body);
 				assert.equal(parsed.statement, 'Fee is $99.');
 				assert.ok(req.headers['x-csrf'], 'mutation sends x-csrf');
 				res.end(JSON.stringify({ id: 2 }));
 			} else if (
 				req.method === 'POST' &&
-				req.url === '/api/v1/admin/suppress-rules/2/revoke'
+				req.url === '/api/v1/suppress-rules/2/revoke'
 			) {
 				res.end(JSON.stringify({ status: 'revoked' }));
-			} else if (req.method === 'GET' && req.url === '/api/v1/admin/suppressions?limit=50') {
+			} else if (req.method === 'GET' && req.url === '/api/v1/suppressions?limit=50') {
 				res.end(
 					JSON.stringify({
 						suppressions: [
@@ -237,14 +237,14 @@ test('review round-trips against a stub admin API', async () => {
 		const log = await fetchSuppressions(base, { limit: 50 });
 		assert.equal(log.suppressions[0]?.path, 'B');
 		assert.deepEqual(seen, [
-			'GET /api/v1/admin/queue?limit=50',
-			'GET /api/v1/admin/queue/7',
-			'POST /api/v1/admin/facts/7/accept',
-			'POST /api/v1/admin/facts/7/reject',
-			'GET /api/v1/admin/suppress-rules',
-			'POST /api/v1/admin/suppress-rules',
-			'POST /api/v1/admin/suppress-rules/2/revoke',
-			'GET /api/v1/admin/suppressions?limit=50'
+			'GET /api/v1/queue?limit=50',
+			'GET /api/v1/queue/7',
+			'POST /api/v1/facts/7/accept',
+			'POST /api/v1/facts/7/reject',
+			'GET /api/v1/suppress-rules',
+			'POST /api/v1/suppress-rules',
+			'POST /api/v1/suppress-rules/2/revoke',
+			'GET /api/v1/suppressions?limit=50'
 		]);
 	} finally {
 		server.close();

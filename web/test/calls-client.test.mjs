@@ -131,14 +131,14 @@ test('calls round-trip against a stub admin API', async () => {
 		req.on('end', () => {
 			seen.push(`${req.method} ${req.url}`);
 			res.writeHead(200, { 'content-type': 'application/json' });
-			if (req.method === 'GET' && req.url === '/api/v1/admin/calls') {
+			if (req.method === 'GET' && req.url === '/api/v1/calls') {
 				res.end(JSON.stringify({ calls: [{ call_id: 'c-1', status: 'queued', started_at: 1 }] }));
-			} else if (req.method === 'POST' && req.url === '/api/v1/admin/calls/dial') {
+			} else if (req.method === 'POST' && req.url === '/api/v1/calls/dial') {
 				const parsed = JSON.parse(body);
 				assert.equal(parsed.consent_confirmed, true);
 				assert.ok(req.headers['x-csrf'], 'mutation sends x-csrf');
 				res.end(JSON.stringify({ call_id: 'c-2', status: 'queued' }));
-			} else if (req.method === 'POST' && req.url === '/api/v1/admin/calls/c-1/quote') {
+			} else if (req.method === 'POST' && req.url === '/api/v1/calls/c-1/quote') {
 			const parsed = JSON.parse(body);
 			assert.deepEqual(parsed.segment_ids, [0]);
 			assert.equal(parsed.topic, 'fees');
@@ -146,7 +146,7 @@ test('calls round-trip against a stub admin API', async () => {
 			res.end(
 				JSON.stringify({ fact_id: 7, call_id: 'c-1', topic: 'fees', status: 'proposed' })
 			);
-		} else if (req.url === '/api/v1/admin/calls/c-1') {
+		} else if (req.url === '/api/v1/calls/c-1') {
 				res.end(
 					JSON.stringify({
 						call_id: 'c-1',
@@ -178,14 +178,14 @@ test('calls round-trip against a stub admin API', async () => {
 		assert.equal(quoted.fact_id, 7);
 		assert.equal(quoted.topic, 'fees');
 		assert.deepEqual(seen, [
-			'GET /api/v1/admin/calls',
-			'GET /api/v1/admin/calls/c-1',
-			'POST /api/v1/admin/calls/dial',
-			'POST /api/v1/admin/calls/c-1/hangup',
-			'POST /api/v1/admin/calls/c-1/record/start',
-			'POST /api/v1/admin/calls/c-1/record/stop',
-			'POST /api/v1/admin/calls/c-1/questions/0/asked',
-			'POST /api/v1/admin/calls/c-1/quote'
+			'GET /api/v1/calls',
+			'GET /api/v1/calls/c-1',
+			'POST /api/v1/calls/dial',
+			'POST /api/v1/calls/c-1/hangup',
+			'POST /api/v1/calls/c-1/record/start',
+			'POST /api/v1/calls/c-1/record/stop',
+			'POST /api/v1/calls/c-1/questions/0/asked',
+			'POST /api/v1/calls/c-1/quote'
 		]);
 	} finally {
 		server.close();

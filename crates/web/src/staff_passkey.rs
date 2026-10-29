@@ -49,7 +49,7 @@ pub(crate) struct EnrolStartBody {
     label: Option<String>,
 }
 
-/// `POST /admin/auth/passkey/enrol/start` — validate invite +
+/// `POST /auth/passkey/enrol/start` — validate invite +
 /// cert, mint user, begin the UV ceremony.
 pub async fn enrol_start(
     State(state): State<AppState>,
@@ -244,7 +244,7 @@ pub(crate) struct EnrolFinishBody {
     label: Option<String>,
 }
 
-/// `POST /admin/auth/passkey/enrol/finish` — verify the UV
+/// `POST /auth/passkey/enrol/finish` — verify the UV
 /// ceremony, consume the invite, create the staff account +
 /// credential, and log the staffer in.
 pub async fn enrol_finish(
@@ -517,7 +517,7 @@ pub(crate) struct LoginStartBody {
     account: String,
 }
 
-/// `POST /admin/auth/passkey/login/start` — `user_id` hex only
+/// `POST /auth/passkey/login/start` — `user_id` hex only
 /// (no emails on the admin branch); no role oracle.
 pub async fn login_start(
     State(state): State<AppState>,
@@ -605,7 +605,7 @@ pub(crate) struct LoginFinishBody {
     credential: PublicKeyCredential,
 }
 
-/// `POST /admin/auth/passkey/login/finish` — verify the UV
+/// `POST /auth/passkey/login/finish` — verify the UV
 /// ceremony against a presented live cert, mint a staff session.
 pub async fn login_finish(
     State(state): State<AppState>,
@@ -807,6 +807,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: Some(std::sync::Arc::new(config::Kek::generate())),
             admin_mtls_off: true,
+            admin_require_cert: false,
             admin_spa_dir: std::path::PathBuf::from("test-admin-spa"),
             media_terms_read: false,
             label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -928,7 +929,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/apostille/api/v1/admin/auth/passkey/enrol/start")
+                    .uri("/apostille/api/v1/auth/passkey/enrol/start")
                     .header(header::HOST, "localhost")
                     .header(header::ORIGIN, "https://evil.test")
                     .header(header::CONTENT_TYPE, "application/json")
@@ -945,7 +946,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/apostille/api/v1/admin/auth/passkey/enrol/start")
+                    .uri("/apostille/api/v1/auth/passkey/enrol/start")
                     .header(header::HOST, "andrii.ai")
                     .header(header::ORIGIN, "https://andrii.ai")
                     .header(header::CONTENT_TYPE, "application/json")
@@ -960,7 +961,7 @@ mod tests {
         let (status, body, _) = json_of(
             app.clone()
                 .oneshot(post(
-                    "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                    "/apostille/api/v1/auth/passkey/enrol/start",
                     r#"{"invite":"short","display_name":"J"}"#,
                 ))
                 .await
@@ -973,7 +974,7 @@ mod tests {
         let (status, _, _) = json_of(
             app.clone()
                 .oneshot(post(
-                    "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                    "/apostille/api/v1/auth/passkey/enrol/start",
                     &format!(r#"{{"invite":"{INVITE}","display_name":"J"}}"#),
                 ))
                 .await
@@ -985,7 +986,7 @@ mod tests {
         let (status, _, _) = json_of(
             app.clone()
                 .oneshot(post(
-                    "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                    "/apostille/api/v1/auth/passkey/enrol/start",
                     &format!(r#"{{"invite":"{INVITE}","display_name":"J","role":"admin"}}"#),
                 ))
                 .await
@@ -1007,7 +1008,7 @@ mod tests {
         drop(conn);
         let app = crate::admin::router(state.clone());
         let body = format!(r#"{{"invite":"{INVITE}","display_name":"J"}}"#);
-        let uri = "/apostille/api/v1/admin/auth/passkey/enrol/start";
+        let uri = "/apostille/api/v1/auth/passkey/enrol/start";
         // No cert → 403.
         let (status, json, _) = json_of(app.clone().oneshot(post(uri, &body)).await.unwrap()).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
@@ -1046,7 +1047,7 @@ mod tests {
         seed_invite(&conn, INVITE, "staff", "jdoe", now);
         drop(conn);
         let app = crate::admin::router(state.clone());
-        let uri = "/apostille/api/v1/admin/auth/passkey/enrol/start";
+        let uri = "/apostille/api/v1/auth/passkey/enrol/start";
         // Empty display_name / long label → 400.
         for body in [
             format!(r#"{{"invite":"{INVITE}","display_name":""}}"#),
@@ -1114,8 +1115,8 @@ mod tests {
         seed_invite(&conn, INVITE_B, "staff", "jdoe", now);
         drop(conn);
         let app = crate::admin::router(state.clone());
-        let start_uri = "/apostille/api/v1/admin/auth/passkey/enrol/start";
-        let finish_uri = "/apostille/api/v1/admin/auth/passkey/enrol/finish";
+        let start_uri = "/apostille/api/v1/auth/passkey/enrol/start";
+        let finish_uri = "/apostille/api/v1/auth/passkey/enrol/finish";
         // Fresh ceremony per leg (each finish consumes its row).
         let start = || {
             let app = app.clone();
@@ -1244,7 +1245,7 @@ mod tests {
             app.clone()
                 .oneshot(with_cert(
                     post(
-                        "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                        "/apostille/api/v1/auth/passkey/enrol/start",
                         &format!(r#"{{"invite":"{INVITE}","display_name":"J"}}"#),
                     ),
                     FP_JDOE,
@@ -1264,7 +1265,7 @@ mod tests {
                 .oneshot(with_csrf(
                     with_cert(
                         post(
-                            "/apostille/api/v1/admin/auth/passkey/enrol/finish",
+                            "/apostille/api/v1/auth/passkey/enrol/finish",
                             &format!(
                                 r#"{{"challenge_id":"{challenge_id}","credential":{BOGUS_REGISTER},"invite":"{INVITE}"}}"#
                             ),
@@ -1297,8 +1298,8 @@ mod tests {
         seed_invite(&conn, INVITE, "staff", "jdoe", now);
         drop(conn);
         let app = crate::admin::router(state.clone());
-        let start_uri = "/apostille/api/v1/admin/auth/passkey/enrol/start";
-        let finish_uri = "/apostille/api/v1/admin/auth/passkey/enrol/finish";
+        let start_uri = "/apostille/api/v1/auth/passkey/enrol/start";
+        let finish_uri = "/apostille/api/v1/auth/passkey/enrol/finish";
         let mut challenges = Vec::new();
         let mut csrf = String::new();
         for _ in 0..2 {
@@ -1382,7 +1383,7 @@ mod tests {
                 .clone()
                 .oneshot(with_cert(
                     post(
-                        "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                        "/apostille/api/v1/auth/passkey/enrol/start",
                         &format!(r#"{{"invite":"{INVITE}","display_name":"J"}}"#),
                     ),
                     FP_JDOE,
@@ -1456,7 +1457,7 @@ mod tests {
                 .oneshot(with_csrf(
                     with_cert(
                         post(
-                            "/apostille/api/v1/admin/auth/passkey/enrol/finish",
+                            "/apostille/api/v1/auth/passkey/enrol/finish",
                             &format!(
                                 r#"{{"challenge_id":"{customer_challenge}","credential":{BOGUS_REGISTER},"invite":"{INVITE}"}}"#
                             ),
@@ -1500,7 +1501,7 @@ mod tests {
         store::lock_account(&conn, "u-locked", now).unwrap();
         drop(conn);
         let app = crate::admin::router(state.clone());
-        let uri = "/apostille/api/v1/admin/auth/passkey/login/start";
+        let uri = "/apostille/api/v1/auth/passkey/login/start";
         // Unknown id, email arm, locked, cred-less: one shape, no
         // oracle (all 401 with the same body).
         for account in [
@@ -1545,7 +1546,7 @@ mod tests {
         .unwrap();
         drop(conn);
         let app = crate::admin::router(state.clone());
-        let uri = "/apostille/api/v1/admin/auth/passkey/login/finish";
+        let uri = "/apostille/api/v1/auth/passkey/login/finish";
         // Unknown challenge → 410.
         let (status, _, _) = json_of(
             app.clone()
@@ -1662,7 +1663,7 @@ mod tests {
         let put = |session: &str| {
             Request::builder()
                 .method("PUT")
-                .uri("/apostille/api/v1/admin/config/net.bind")
+                .uri("/apostille/api/v1/config/net.bind")
                 .header(header::HOST, "localhost")
                 .header(header::ORIGIN, "http://localhost")
                 .header(header::CONTENT_TYPE, "application/json")

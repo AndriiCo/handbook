@@ -1,8 +1,8 @@
 // Admin config API client (secure-config.md §1.5). Admin-only: never
 // imported from (public) or (customer) routes.
 //
-// GET  {apiBase}/admin/config        → [{ key, type, value?|set? }]
-// PUT  {apiBase}/admin/config/{key}  → { set: true } (secrets) or saved row
+// GET  {apiBase}/config        → [{ key, type, value?|set? }]
+// PUT  {apiBase}/config/{key}  → { set: true } (secrets) or saved row
 // SECRET values are write-only: the server never returns them and this
 // module never renders or stores one — set-new-only.
 
@@ -103,7 +103,7 @@ export function csrfHeaders(jar = undefined) {
  * @returns {Promise<ConfigRow[]>}
  */
 export async function fetchConfig(apiBase, fetchFn = fetch) {
-	const res = await fetchFn(`${apiBase}/admin/config`, { credentials: 'same-origin' });
+	const res = await fetchFn(`${apiBase}/config`, { credentials: 'same-origin' });
 	if (res.status === 401 || res.status === 403) {
 		throw new Error('Staff session required — log in on the admin host first.');
 	}
@@ -129,7 +129,7 @@ export async function fetchConfig(apiBase, fetchFn = fetch) {
  * @returns {Promise<true>}
  */
 export async function saveConfigKey(apiBase, row, fetchFn = fetch) {
-	const res = await fetchFn(`${apiBase}/admin/config/${encodeURIComponent(row.key)}`, {
+	const res = await fetchFn(`${apiBase}/config/${encodeURIComponent(row.key)}`, {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json', ...csrfHeaders() },
 		credentials: 'same-origin',

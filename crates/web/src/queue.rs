@@ -817,6 +817,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
+            admin_require_cert: false,
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -836,28 +837,25 @@ mod tests {
 
     fn router(state: AppState) -> Router {
         Router::new()
-            .route("/apostille/api/v1/admin/queue", get(queue_items))
-            .route("/apostille/api/v1/admin/queue/{id}", get(queue_item))
+            .route("/apostille/api/v1/queue", get(queue_items))
+            .route("/apostille/api/v1/queue/{id}", get(queue_item))
             .route(
-                "/apostille/api/v1/admin/facts/{id}/accept",
+                "/apostille/api/v1/facts/{id}/accept",
                 post(crate::approval::accept_fact),
             )
             .route(
-                "/apostille/api/v1/admin/facts/{id}/reject",
+                "/apostille/api/v1/facts/{id}/reject",
                 post(crate::approval::reject_fact),
             )
             .route(
-                "/apostille/api/v1/admin/suppress-rules",
+                "/apostille/api/v1/suppress-rules",
                 get(list_rules).post(create_rule),
             )
             .route(
-                "/apostille/api/v1/admin/suppress-rules/{id}/revoke",
+                "/apostille/api/v1/suppress-rules/{id}/revoke",
                 post(revoke_rule),
             )
-            .route(
-                "/apostille/api/v1/admin/suppressions",
-                get(list_suppressions),
-            )
+            .route("/apostille/api/v1/suppressions", get(list_suppressions))
             .layer(axum::middleware::from_fn_with_state(
                 state.clone(),
                 crate::admin::csrf_guard,
@@ -901,7 +899,7 @@ mod tests {
     async fn queue_lists_enriched_item() {
         let fx = fixture();
         let res = router(fx.state.clone())
-            .oneshot(request("GET", "/apostille/api/v1/admin/queue", None))
+            .oneshot(request("GET", "/apostille/api/v1/queue", None))
             .await
             .unwrap();
         let (status, v) = json(res).await;
@@ -935,7 +933,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "GET",
-                "/apostille/api/v1/admin/queue?authority=nope",
+                "/apostille/api/v1/queue?authority=nope",
                 None,
             ))
             .await
@@ -945,11 +943,7 @@ mod tests {
         assert_eq!(v["error"], "unknown authority");
 
         let res = router(fx.state.clone())
-            .oneshot(request(
-                "GET",
-                "/apostille/api/v1/admin/queue?topic=bogus",
-                None,
-            ))
+            .oneshot(request("GET", "/apostille/api/v1/queue?topic=bogus", None))
             .await
             .unwrap();
         let (status, v) = json(res).await;
@@ -960,7 +954,7 @@ mod tests {
         let res = router(fx.state.clone())
             .oneshot(request(
                 "GET",
-                "/apostille/api/v1/admin/queue?after_id=9999",
+                "/apostille/api/v1/queue?after_id=9999",
                 None,
             ))
             .await
@@ -977,21 +971,21 @@ mod tests {
         let res = router(fx.state.clone())
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/facts/1/accept",
+                "/apostille/api/v1/facts/1/accept",
                 Some(json!({"reason": "ok"})),
             ))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         let res = router(fx.state.clone())
-            .oneshot(request("GET", "/apostille/api/v1/admin/queue/1", None))
+            .oneshot(request("GET", "/apostille/api/v1/queue/1", None))
             .await
             .unwrap();
         let (status, v) = json(res).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(v["status"], "accepted");
         let res = router(fx.state.clone())
-            .oneshot(request("GET", "/apostille/api/v1/admin/queue/9999", None))
+            .oneshot(request("GET", "/apostille/api/v1/queue/9999", None))
             .await
             .unwrap();
         let (status, v) = json(res).await;
@@ -1005,7 +999,7 @@ mod tests {
         let res = router(fx.state.clone())
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/facts/1/accept",
+                "/apostille/api/v1/facts/1/accept",
                 Some(json!({"reason": "fix", "statement": "po_box: PO Box 40234, Olympia"})),
             ))
             .await
@@ -1032,7 +1026,7 @@ mod tests {
     #[tokio::test]
     async fn double_decide_is_409() {
         let fx = fixture();
-        let uri = "/apostille/api/v1/admin/facts/1/accept";
+        let uri = "/apostille/api/v1/facts/1/accept";
         let res = router(fx.state.clone())
             .oneshot(request("POST", uri, Some(json!({"reason": "a"}))))
             .await
@@ -1055,7 +1049,7 @@ mod tests {
         let res = router(fx.state.clone())
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/facts/1/reject",
+                "/apostille/api/v1/facts/1/reject",
                 Some(body.clone()),
             ))
             .await
@@ -1077,7 +1071,7 @@ mod tests {
         let res = router(fx.state.clone())
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/facts/3/reject",
+                "/apostille/api/v1/facts/3/reject",
                 Some(body),
             ))
             .await
@@ -1105,17 +1099,17 @@ mod tests {
         let fx = fixture();
         for (uri, body, error) in [
             (
-                "/apostille/api/v1/admin/facts/1/accept",
+                "/apostille/api/v1/facts/1/accept",
                 json!({"reason": "x", "suppress": {"scope": "global"}}),
                 "suppress is reject-only",
             ),
             (
-                "/apostille/api/v1/admin/facts/1/reject",
+                "/apostille/api/v1/facts/1/reject",
                 json!({"reason": "x", "statement": "y"}),
                 "statement is accept-only",
             ),
             (
-                "/apostille/api/v1/admin/facts/1/reject",
+                "/apostille/api/v1/facts/1/reject",
                 json!({"reason": "x", "suppress": {"scope": "bogus"}}),
                 "suppress.scope must be authority|global",
             ),
@@ -1133,7 +1127,7 @@ mod tests {
     #[tokio::test]
     async fn rules_crud_with_409s() {
         let fx = fixture();
-        let uri = "/apostille/api/v1/admin/suppress-rules";
+        let uri = "/apostille/api/v1/suppress-rules";
         let body = json!({"statement": "Fee $9", "authority": "t-sos", "topic": "fees", "reason": "stale"});
         let res = router(fx.state.clone())
             .oneshot(request("POST", uri, Some(body.clone())))
@@ -1207,7 +1201,7 @@ mod tests {
         .unwrap();
         drop(conn);
         let res = router(fx.state.clone())
-            .oneshot(request("GET", "/apostille/api/v1/admin/suppressions", None))
+            .oneshot(request("GET", "/apostille/api/v1/suppressions", None))
             .await
             .unwrap();
         let (status, v) = json(res).await;

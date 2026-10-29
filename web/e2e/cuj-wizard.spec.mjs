@@ -16,12 +16,12 @@ test('wizard step costs fills plus one Next, never per-field Saves', async ({ pa
 	const srv = await serveDir(join(HERE, '..', 'build-admin'));
 	const journey = cuj(page);
 	try {
-		await page.route('**/apostille/api/v1/admin/setup/status', (route) =>
+		await page.route('**/apostille/api/v1/setup/status', (route) =>
 			route.fulfill({ json: { setup_required: true } })
 		);
 		// net.bind is deliberately absent (never set): the wizard
 		// must track edits to unset keys, not just server rows.
-		await page.route('**/apostille/api/v1/admin/setup/steps', (route) =>
+		await page.route('**/apostille/api/v1/setup/steps', (route) =>
 			route.fulfill({
 				json: {
 					keys: [{ key: 'net.public_host', type: 'text', value: '' }]
@@ -29,7 +29,7 @@ test('wizard step costs fills plus one Next, never per-field Saves', async ({ pa
 			})
 		);
 		const posts = [];
-		await page.route('**/apostille/api/v1/admin/setup/keys/*', async (route) => {
+		await page.route('**/apostille/api/v1/setup/keys/*', async (route) => {
 			posts.push({
 				key: route.request().url().split('/').pop(),
 				body: route.request().postDataJSON()
@@ -37,7 +37,7 @@ test('wizard step costs fills plus one Next, never per-field Saves', async ({ pa
 			return route.fulfill({ json: { key: 'k', type: 'text', set: false } });
 		});
 
-		await journey.goto(`${srv.url}/admin/config`);
+		await journey.goto(`${srv.url}/config`);
 		await journey.fill(page.locator('#setup-key'), KEY);
 		await journey.click(page.getByRole('button', { name: 'Start / resume setup' }));
 		await expect(page.getByRole('button', { name: /Site & network/ })).toBeVisible();

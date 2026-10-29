@@ -9,7 +9,11 @@ import { defineConfig } from 'vite';
 // - public: WEB_BUILD unset → routes-public/ ((public)+(customer)
 //   only, symlinked), base /apostille, output build/.
 // - admin:  WEB_BUILD=admin → full src/routes, base '' (admin host
-//   serves from /), output build-admin/.
+//   serves from /), output build-admin/. Page paths carry no
+//   /admin segment (the host differentiates the console);
+//   (public)/+page still owns `/` in-bundle (server redirects
+//   to /console) and staff login is /staff-login (no clash
+//   with the customer /login).
 const isAdmin = process.env.WEB_BUILD === 'admin';
 
 export default defineConfig({

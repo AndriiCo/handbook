@@ -446,7 +446,7 @@
 						<article aria-label={`Proposed fact ${item.id}`}>
 							<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
 								<h3 class="m-0 text-lg">
-									<a href={`${api()}/admin/queue/${item.id}`}>Fact #{item.id}</a>
+									<a href={`${api()}/queue/${item.id}`}>Fact #{item.id}</a>
 								</h3>
 								<span class="font-mono text-sm">{item.authority_slug}</span>
 								<span class="inline-block rounded border border-line bg-surface-2 px-2 py-0.5 text-sm font-bold">
@@ -534,7 +534,7 @@
 									<p class="text-sm text-ink-muted">No conflicting siblings.</p>
 								{/if}
 								<p class="text-sm">
-									<a href={resolve('/(admin)/admin/triage')}>
+									<a href={resolve('/(admin)/triage')}>
 										{item.blast_radius.open_tasks} open task{item.blast_radius.open_tasks === 1 ? '' : 's'}
 									</a>
 								</p>

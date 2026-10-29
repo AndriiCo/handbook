@@ -132,14 +132,14 @@ Base `/apostille/api/v1`, admin listener + admin origin only
 (`admin.andrii.ai`): all routes below require the admin session,
 mTLS cert, and staff/admin role.
 
-- `GET /apostille/api/v1/admin/config` returns all keys with: `bool` →
+- `GET /apostille/api/v1/config` returns all keys with: `bool` →
   decrypted `true/false`; `text` → decrypted string; `secret` →
   `{ "set": true|false }` **only**. The admin handler has **no
   code path** that decrypts a `secret` for output — decryption for
   display is a function that takes only `&BoolOrTextRow` types, so
   returning a secret is a compile error, not a policy.
   (Type-level enforcement, reviewable in one file.)
-- `PUT /apostille/api/v1/admin/config/{key}` sets a value (any type). For
+- `PUT /apostille/api/v1/config/{key}` sets a value (any type). For
   `secret`: set-new-only — overwrites ciphertext, never echoes;
   response is `{ "set": true }`. No `DELETE` for secrets (disable
   via a paired `bool` key instead, e.g.
@@ -269,7 +269,7 @@ mTLS cert, and staff/admin role.
    cat` on `.cred` and on `$CREDENTIALS_DIRECTORY` must fail; DB
    copy to a second VM must not decrypt (documents the machine
    boundary).
-5. `xtask setup-key-mint`, then open `/admin/config` in a
+5. `xtask setup-key-mint`, then open  `/config` in a
    browser and follow the wizard (§9) — no further shell
    config needed.
 
@@ -344,7 +344,7 @@ mTLS cert, and staff/admin role.
 
 Status: APPROVED (prompt 056, D43–D45) — implementation underway.
 
-Goal: `/admin/config` takes a fresh server from zero to
+Goal:  `/config` takes a fresh server from zero to
 fully-configured with one hand-provisioned secret (the setup
 key) and per-provider step-by-step guides. No server shell
 beyond KEK enrol + setup-key mint; no mTLS cert or staff
@@ -392,15 +392,15 @@ enrol-start budget) via the shared `auth_limits` buckets →
 429. SetupAuth NEVER grants AdminAuth powers: no queue, no
 facts, no sessions.
 
-- `GET /apostille/api/v1/admin/setup/status` →
+- `GET /apostille/api/v1/setup/status` →
   `{setup_required: bool}`. Public on the admin host: a bare
   boolean leaks nothing beyond "fresh server".
-- `GET /apostille/api/v1/admin/setup/steps` (SetupAuth) →
+- `GET /apostille/api/v1/setup/steps` (SetupAuth) →
   `{keys: [{key, type, set}]}` — same row shape as the config
   list, wizard-subset only (all registry keys except
   `setup.*`). The SPA owns step grouping + guides; the
   server stays dumb.
-- `POST /apostille/api/v1/admin/setup/keys/{key}`
+- `POST /apostille/api/v1/setup/keys/{key}`
   (SetupAuth, `{type, value}`, deny-unknown-fields) → sealed
   put + audit (actor `setup`). Same validation as admin
   PUT, minus step-up (no session exists — the key IS the
@@ -447,7 +447,7 @@ only closes the wizard — the new full-admin session keeps
 the complete config page. Required-set gating is guidance,
 not a lock.
 
-### 9.4 Frontend contract (`(admin)/admin/config`)
+### 9.4 Frontend contract (`(admin)/config`)
 
 - On mount: `GET setup/status`. `setup_required=true` →
   setup mode (key entry, then steps with per-provider guide

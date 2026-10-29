@@ -1,7 +1,7 @@
 # Admin CUJs 1–6
 
 Admin SPA (`web/build-admin`, base `/`). Mock API at
-`**/apostille/api/v1/admin/**`. Staff pages gate on session:
+`**/apostille/api/v1/**`. Staff pages gate on session:
 specs mock `GET .../admin/me` + the page endpoints (the
 passkey ceremony itself is covered by handler tests; full
 ceremony E2E waits on a virtual authenticator — see gaps).
@@ -25,7 +25,7 @@ enrol E2E stays manual until virtual-authenticator support.
 ## CUJ-2 — Proposed → accepted fact (queued)
 
 Goal: one reviewed fact reaching customers.
-Pages: `/review` (primary), `/admin/triage` (legacy).
+Pages: `/review` (primary),  `/triage` (legacy).
 
 Plan: queue list (mock enriched item: diff, citations,
 `reasoning_untrusted`, blast radius, provenance) → accept /
@@ -72,7 +72,7 @@ over-broad rule → claim re-triageable. Smallest CUJ: target
 ## CUJ-6 — Secret rotation (queued)
 
 Goal: re-key a provider without breaking its lane.
-Page: `/admin/config` normal mode.
+Page:  `/config` normal mode.
 
 Plan: locate key → step-up-expired re-login redirect →
 set-new secret (write-only: Set flips, value never echoes)

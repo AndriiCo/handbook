@@ -227,6 +227,46 @@ pub async fn admin_host_guard(
     next.run(req).await
 }
 
+/// Whole-host client-cert gate (`admin.require_cert`): every
+/// admin-branch request (API, HTML, JS) must carry a CA-verified
+/// client cert ([`VerifiedClientCert`], stamped outside these
+/// routers), except the setup surface (first boot has no certs:
+/// the setup API, the `/config` wizard page, and the hashed
+/// `/_app/` assets it needs) and the Telnyx webhook
+/// (server-to-server, signature-authenticated — its router
+/// carries no such layer by construction). Presence only:
+/// registration/revocation stay enforced per API route by
+/// [`AdminAuth`]. Denials are plain 403s (the access log keeps
+/// the ID/route; no audit row per asset fetch).
+pub async fn require_client_cert(
+    State(state): State<AppState>,
+    req: axum::http::Request<axum::body::Body>,
+    next: Next,
+) -> impl IntoResponse {
+    if !state.admin_require_cert || state.admin_mtls_off {
+        return next.run(req).await;
+    }
+    let path = req.uri().path();
+    if path.starts_with("/apostille/api/v1/setup/")
+        || path == "/config"
+        || path.starts_with("/_app/")
+    {
+        return next.run(req).await;
+    }
+    let presented = req
+        .extensions()
+        .get::<VerifiedClientCert>()
+        .is_some_and(|cert| !cert.0.is_empty());
+    if !presented {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "client cert required"})),
+        )
+            .into_response();
+    }
+    next.run(req).await
+}
+
 /// CSRF guard for admin mutations: allowed `Origin` plus the
 /// double-submit token (`hb_csrf` cookie echoed in `x-csrf`).
 /// Safe methods pass through. The ceremony routes below pass
@@ -242,11 +282,7 @@ pub async fn csrf_guard(
     if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
         return next.run(req).await;
     }
-    if req
-        .uri()
-        .path()
-        .starts_with("/apostille/api/v1/admin/auth/")
-    {
+    if req.uri().path().starts_with("/apostille/api/v1/auth/") {
         return next.run(req).await;
     }
     // Setup wizard (§9): no cookies exist before the first enrol, so
@@ -254,11 +290,7 @@ pub async fn csrf_guard(
     // does its own Origin check; the setup GETs are safe methods and
     // the custom `x-setup-key` header is CSRF-safe by construction
     // (no CORS allowlist to forge it).
-    if req
-        .uri()
-        .path()
-        .starts_with("/apostille/api/v1/admin/setup/")
-    {
+    if req.uri().path().starts_with("/apostille/api/v1/setup/") {
         return next.run(req).await;
     }
     let fail = || {
@@ -296,79 +328,81 @@ pub async fn csrf_guard(
 /// on the public branch). Serves the admin SPA shell
 /// (`ADMIN_SPA_DIR`) at every non-API path with SPA fallback;
 /// unknown API paths stay JSON 404s (never the shell), so API
-/// clients cannot mistake HTML for data.
+/// clients cannot mistake HTML for data. The host
+/// differentiates the console: page paths carry no `/admin`
+/// segment.
 pub fn router(state: AppState) -> Router {
     let spa_index = state.admin_spa_dir.join("index.html");
     Router::new()
         // Domain root is staff-only: the admin build also registers the
         // (public) homepage at `/`, so serve no shell here — send
-        // browsers to the dashboard (its layout gate forwards to
-        // /admin/login when unauthenticated).
-        .route("/", get(root_to_dashboard))
+        // browsers to the console (its layout gate forwards to
+        // /staff-login when unauthenticated).
+        .route("/", get(root_to_console))
         // Demo routes never serve on the staff origin: (mock) ships in
         // the admin JS bundle (client-routable) but must 404 server-side.
         .route("/mock/{*rest}", get(admin_not_found))
-        .route("/apostille/api/v1/admin/me", get(admin_me))
-        .route("/apostille/api/v1/admin/facts", get(approval::list_facts))
+        .route("/apostille/api/v1/me", get(admin_me))
+        .route("/apostille/api/v1/facts", get(approval::list_facts))
         .route(
-            "/apostille/api/v1/admin/facts/{id}/accept",
+            "/apostille/api/v1/facts/{id}/accept",
             post(approval::accept_fact),
         )
         .route(
-            "/apostille/api/v1/admin/facts/{id}/reject",
+            "/apostille/api/v1/facts/{id}/reject",
             post(approval::reject_fact),
         )
-        .route("/apostille/api/v1/admin/queue", get(queue::queue_items))
-        .route("/apostille/api/v1/admin/queue/{id}", get(queue::queue_item))
+        .route("/apostille/api/v1/queue", get(queue::queue_items))
+        .route("/apostille/api/v1/queue/{id}", get(queue::queue_item))
         .route(
-            "/apostille/api/v1/admin/suppress-rules",
+            "/apostille/api/v1/suppress-rules",
             get(queue::list_rules).post(queue::create_rule),
         )
         .route(
-            "/apostille/api/v1/admin/suppress-rules/{id}/revoke",
+            "/apostille/api/v1/suppress-rules/{id}/revoke",
             post(queue::revoke_rule),
         )
         .route(
-            "/apostille/api/v1/admin/suppressions",
+            "/apostille/api/v1/suppressions",
             get(queue::list_suppressions),
         )
-        .route("/apostille/api/v1/admin/config", get(get_config))
-        .route("/apostille/api/v1/admin/config/{key}", put(set_config))
+        .route("/apostille/api/v1/config", get(get_config))
+        .route("/apostille/api/v1/config/{key}", put(set_config))
         .route(
-            "/apostille/api/v1/admin/setup/status",
+            "/apostille/api/v1/setup/status",
             get(crate::setup::setup_status),
         )
         .route(
-            "/apostille/api/v1/admin/setup/steps",
+            "/apostille/api/v1/setup/steps",
             get(crate::setup::setup_steps),
         )
         .route(
-            "/apostille/api/v1/admin/setup/keys/{key}",
+            "/apostille/api/v1/setup/keys/{key}",
             post(crate::setup::setup_set_key),
         )
         .route(
-            "/apostille/api/v1/admin/auth/passkey/enrol/start",
+            "/apostille/api/v1/auth/passkey/enrol/start",
             post(crate::staff_passkey::enrol_start),
         )
         .route(
-            "/apostille/api/v1/admin/auth/passkey/enrol/finish",
+            "/apostille/api/v1/auth/passkey/enrol/finish",
             post(crate::staff_passkey::enrol_finish),
         )
         .route(
-            "/apostille/api/v1/admin/auth/passkey/login/start",
+            "/apostille/api/v1/auth/passkey/login/start",
             post(crate::staff_passkey::login_start),
         )
         .route(
-            "/apostille/api/v1/admin/auth/passkey/login/finish",
+            "/apostille/api/v1/auth/passkey/login/finish",
             post(crate::staff_passkey::login_finish),
         )
-        .route("/apostille/api/v1/admin/bus/publish", post(publish))
+        .route("/apostille/api/v1/bus/publish", post(publish))
         .route(
-            "/apostille/api/v1/admin/media/upload",
+            "/apostille/api/v1/media/upload",
             post(upload_media).layer(DefaultBodyLimit::disable()),
         )
         .route(
-            "/apostille/api/v1/admin/{*path}",
+            "/apostille/api/v1/{*path}",
             get(admin_not_found)
                 .post(admin_not_found)
                 .put(admin_not_found),
@@ -377,6 +411,10 @@ pub fn router(state: AppState) -> Router {
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf_guard,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_client_cert,
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -405,11 +443,11 @@ async fn admin_not_found() -> impl IntoResponse {
 
 /// `GET /` on the admin host is never the public homepage (the admin
 /// build registers `(public)/+page` at `/` too): redirect to the
-/// staff dashboard. Static target — no open redirect.
-async fn root_to_dashboard() -> impl IntoResponse {
+/// staff console. Static target — no open redirect.
+async fn root_to_console() -> impl IntoResponse {
     (
         StatusCode::SEE_OTHER,
-        [(header::LOCATION, HeaderValue::from_static("/admin"))],
+        [(header::LOCATION, HeaderValue::from_static("/console"))],
     )
 }
 
@@ -780,6 +818,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
+            admin_require_cert: false,
             admin_spa_dir: tmp.path().to_path_buf(),
             media_terms_read: false,
             label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -797,7 +836,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn root_redirects_to_dashboard_not_public_shell() {
+    async fn root_redirects_to_console_not_public_shell() {
         let tmp = tempfile::tempdir().unwrap();
         let app = router(state_with_spa(&tmp));
         let res = app
@@ -811,7 +850,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::SEE_OTHER);
-        assert_eq!(res.headers().get(header::LOCATION).unwrap(), "/admin");
+        assert_eq!(res.headers().get(header::LOCATION).unwrap(), "/console");
     }
 
     #[tokio::test]
@@ -840,7 +879,7 @@ mod tests {
         let res = app
             .oneshot(
                 Request::builder()
-                    .uri("/admin")
+                    .uri("/console")
                     .header("host", "admin.andrii.ai")
                     .body(Body::empty())
                     .unwrap(),
@@ -867,5 +906,71 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
+    fn strict_cert_state(tmp: &tempfile::TempDir) -> AppState {
+        let mut state = state_with_spa(tmp);
+        state.admin_mtls_off = false;
+        state.admin_require_cert = true;
+        state
+    }
+
+    fn cert_request(uri: &str, cert: Option<&str>) -> Request<Body> {
+        let mut req = Request::builder()
+            .uri(uri)
+            .header("host", "admin.andrii.ai")
+            .body(Body::empty())
+            .unwrap();
+        if let Some(fingerprint) = cert {
+            req.extensions_mut()
+                .insert(VerifiedClientCert(fingerprint.to_string()));
+        }
+        req
+    }
+
+    #[tokio::test]
+    async fn require_cert_denies_uncertified_page_and_api() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = router(strict_cert_state(&tmp));
+        for uri in ["/console", "/apostille/api/v1/me"] {
+            let res = app.clone().oneshot(cert_request(uri, None)).await.unwrap();
+            assert_eq!(res.status(), StatusCode::FORBIDDEN, "uri: {uri}");
+            let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(v["error"], "client cert required");
+        }
+    }
+
+    #[tokio::test]
+    async fn require_cert_allows_verified_client() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = router(strict_cert_state(&tmp));
+        // Page serves the shell once a cert is presented.
+        let res = app
+            .clone()
+            .oneshot(cert_request("/console", Some("fingerprint")))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        // API passes the gate too (then AdminAuth 401s the missing session).
+        let res = app
+            .oneshot(cert_request("/apostille/api/v1/me", Some("fingerprint")))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn require_cert_exempts_setup_and_assets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = router(strict_cert_state(&tmp));
+        for uri in [
+            "/apostille/api/v1/setup/status",
+            "/config",
+            "/_app/immutable/x.js",
+        ] {
+            let res = app.clone().oneshot(cert_request(uri, None)).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "uri: {uri}");
+        }
     }
 }

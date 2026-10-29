@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Notice from '../../../../lib/public-ui/Notice.svelte';
-	import { csrfHeaders } from '../../../../lib/admin/config-client.js';
+	import Notice from '../../../lib/public-ui/Notice.svelte';
+	import { csrfHeaders } from '../../../lib/admin/config-client.js';
 
 	// Proposed-fact triage against the approval API: list proposed
 	// facts with conflict banners, accept (banner policy: conflicts do
@@ -56,7 +56,7 @@
 		loadState = 'loading';
 		loadError = null;
 		try {
-			const res = await fetch(api('/admin/facts?status=proposed&limit=100'), {
+			const res = await fetch(api('/facts?status=proposed&limit=100'), {
 				credentials: 'same-origin'
 			});
 			if (res.status === 401 || res.status === 403) {
@@ -85,7 +85,7 @@
 		item.busy = true;
 		item.note = null;
 		try {
-			const res = await fetch(api(`/admin/facts/${item.id}/${decision}`), {
+			const res = await fetch(api(`/facts/${item.id}/${decision}`), {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', ...csrfHeaders() },
 				credentials: 'same-origin',

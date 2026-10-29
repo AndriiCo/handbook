@@ -346,10 +346,10 @@ writes. The ship-run quote-to-draft surface (voice §7) is unaffected.
 
 ### Proposed resolution (pending author review — do NOT implement before approval)
 
-**Route:** `GET /apostille/api/v1/admin/shipments` — NOT the
+**Route:** `GET /apostille/api/v1/shipments` — NOT the
 `/staff/shipments` sketch from the OPEN-32 note: no `/staff/...`
 prefix exists anywhere in the tree; every staff handler lives under
-`/apostille/api/v1/admin/...` on the admin listener.
+`/apostille/api/v1/...` on the admin listener.
 
 **Purpose:** staff work queue for manually-bought labels, defaulting
 to shipments awaiting staff action (`labels_pending`). Admin listener
@@ -377,7 +377,7 @@ labels have none yet — they ride the per-shipment GET once issued);
 list. Reads write no audit row.
 
 **Counts:** sibling route `GET
-/apostille/api/v1/admin/shipments/counts` →
+/apostille/api/v1/shipments/counts` →
 `{"counts": {"draft": n, "labels_pending": n, "ready": n, "voided":
 n}}` (the `admin_workers` precedent: lists return page-local `count`,
 aggregate depths live on `workers/status`; the badge polls counts
@@ -397,7 +397,7 @@ precedent); 503 either DB fails to open.
 second cross-DB lookup per row (shipments live in `p2.sqlite`, slugs in
 `handbook.sqlite`, no FK) — draft emits `authority_id` only; U3 the
 queue UI is blocked on TWO more missing pieces, not just this route —
-a staff `GET .../admin/shipments/:id` (full addresses/payloads) and a
+a staff `GET .../shipments/:id` (full addresses/payloads) and a
 staff paste-back (`paste_back` takes the customer DEMO caller, not
 `AdminAuth`); U4 `customer_ref` + address-bearing `payload_json` on a
 staff list assumes mTLS-listener PII visibility is allowed (OQ-1/OQ-7
@@ -420,7 +420,7 @@ API concern: the endpoints below are location-agnostic, so any staff
 host (or a future satellite location with DB access) can serve them.
 
 **Staff label print:**
-`GET /apostille/api/v1/admin/shipments/{id}/labels/{label_id}/download`
+`GET /apostille/api/v1/shipments/{id}/labels/{label_id}/download`
 — same bytes as the customer download (one shared loader; the customer
 route at `p2_labels.rs:1083` stays the reference behavior), but
 `AdminAuth` + admin host guard, deliberately unscoped (staff see all
@@ -432,13 +432,13 @@ bytes; the admin banner promises every action is audited). Idempotent
 GET; no state change besides the audit row.
 
 **Staff form print:**
-`GET /apostille/api/v1/admin/submissions/{id}/pdf` — staff twin of the
+`GET /apostille/api/v1/submissions/{id}/pdf` — staff twin of the
 customer submission PDF (`p2.rs:1086`, same scoping problem, same fix).
 Same auth, same 404 vocabulary (`unknown submission`), same audit rule
 (`submission_print`).
 
 **Full-service packet:**
-`GET /apostille/api/v1/admin/shipments/{id}/packet` → manifest JSON,
+`GET /apostille/api/v1/shipments/{id}/packet` → manifest JSON,
 not a merged PDF (composition over new render work):
 `{"shipment_id", "service_tier", "pieces": [{"kind":
 "label|form|packing_slip", "label_id?", "submission_id?", "url",

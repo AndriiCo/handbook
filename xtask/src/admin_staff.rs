@@ -73,7 +73,7 @@ pub fn run_invite(args: &[String]) {
     })
     .unwrap_or_else(|e| fail(&e.to_string()));
     println!(
-        "invite for {cn} ({role})\n  url: {}/admin/enrol?invite={token}\n  expires in {days}d; single-use; token is NOT stored",
+        "invite for {cn} ({role})\n  url: {}/enrol?invite={token}\n  expires in {days}d; single-use; token is NOT stored",
         origin.trim_end_matches('/')
     );
 }

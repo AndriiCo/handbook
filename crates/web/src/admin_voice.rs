@@ -23,7 +23,7 @@ use voice::scripts::{MAX_QUESTION_CHARS, MAX_QUESTIONS};
 
 use crate::{
     AppState,
-    admin::{AdminAuth, admin_host_guard, csrf_guard},
+    admin::{AdminAuth, admin_host_guard, csrf_guard, require_client_cert},
     store_unavailable, unix_now,
 };
 
@@ -36,37 +36,38 @@ const WEBHOOK_WINDOW_SECS: i64 = 300;
 /// the merge-layer semantics are.
 pub fn staff_router(state: AppState) -> Router {
     Router::new()
-        .route("/apostille/api/v1/admin/calls/dial", post(dial))
-        .route("/apostille/api/v1/admin/calls", get(list_calls))
-        .route("/apostille/api/v1/admin/calls/{id}", get(get_call))
-        .route("/apostille/api/v1/admin/calls/{id}/hangup", post(hangup))
+        .route("/apostille/api/v1/calls/dial", post(dial))
+        .route("/apostille/api/v1/calls", get(list_calls))
+        .route("/apostille/api/v1/calls/{id}", get(get_call))
+        .route("/apostille/api/v1/calls/{id}/hangup", post(hangup))
         .route(
-            "/apostille/api/v1/admin/calls/{id}/record/start",
+            "/apostille/api/v1/calls/{id}/record/start",
             post(record_start),
         )
         .route(
-            "/apostille/api/v1/admin/calls/{id}/record/stop",
+            "/apostille/api/v1/calls/{id}/record/stop",
             post(record_stop),
         )
         .route(
-            "/apostille/api/v1/admin/calls/{id}/questions/{idx}/asked",
+            "/apostille/api/v1/calls/{id}/questions/{idx}/asked",
             post(mark_asked),
         )
+        .route("/apostille/api/v1/calls/{id}/quote", post(quote_to_draft))
         .route(
-            "/apostille/api/v1/admin/calls/{id}/quote",
-            post(quote_to_draft),
-        )
-        .route(
-            "/apostille/api/v1/admin/calls/{id}/segments/{seq}/fix",
+            "/apostille/api/v1/calls/{id}/segments/{seq}/fix",
             post(fix_segment),
         )
         .route(
-            "/apostille/api/v1/admin/calls/{id}/segments/{seq}/annotate",
+            "/apostille/api/v1/calls/{id}/segments/{seq}/annotate",
             post(annotate_segment),
         )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf_guard,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_client_cert,
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -80,14 +81,12 @@ pub fn staff_router(state: AppState) -> Router {
 }
 
 /// Telnyx webhook receiver: host guard only (no staff session —
-/// Telnyx authenticates by signature) and NO CSRF layer (the
-/// server-to-server POST carries no Origin or session cookies).
+/// Telnyx authenticates by signature), NO CSRF layer (the
+/// server-to-server POST carries no Origin or session cookies),
+/// and NO client-cert layer (Telnyx presents no cert).
 pub fn webhook_router(state: AppState) -> Router {
     Router::new()
-        .route(
-            "/apostille/api/v1/admin/calls/webhook",
-            post(telnyx_webhook),
-        )
+        .route("/apostille/api/v1/calls/webhook", post(telnyx_webhook))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             admin_host_guard,
@@ -1147,6 +1146,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
+            admin_require_cert: false,
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -1222,7 +1222,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/dial",
+                "/apostille/api/v1/calls/dial",
                 true,
                 true,
                 Some(dial_body(false)),
@@ -1255,7 +1255,7 @@ mod tests {
             let res = staff_router(fx.state.clone())
                 .oneshot(staff_request(
                     "POST",
-                    "/apostille/api/v1/admin/calls/dial",
+                    "/apostille/api/v1/calls/dial",
                     true,
                     true,
                     Some(body),
@@ -1272,7 +1272,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/dial",
+                "/apostille/api/v1/calls/dial",
                 true,
                 true,
                 Some(dial_body(true)),
@@ -1446,7 +1446,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/dial",
+                "/apostille/api/v1/calls/dial",
                 true,
                 true,
                 Some(json!({
@@ -1498,7 +1498,7 @@ mod tests {
             let res = staff_router(fx.state.clone())
                 .oneshot(staff_request(
                     "POST",
-                    "/apostille/api/v1/admin/calls/dial",
+                    "/apostille/api/v1/calls/dial",
                     true,
                     true,
                     Some(json!({
@@ -1530,7 +1530,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/dial",
+                "/apostille/api/v1/calls/dial",
                 true,
                 true,
                 Some(json!({
@@ -1549,7 +1549,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "GET",
-                &format!("/apostille/api/v1/admin/calls/{call_id}"),
+                &format!("/apostille/api/v1/calls/{call_id}"),
                 true,
                 false,
                 None,
@@ -1572,7 +1572,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/dial",
+                "/apostille/api/v1/calls/dial",
                 true,
                 true,
                 Some(json!({
@@ -1592,7 +1592,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "GET",
-                &format!("/apostille/api/v1/admin/calls/{call_id}"),
+                &format!("/apostille/api/v1/calls/{call_id}"),
                 true,
                 false,
                 None,
@@ -1612,7 +1612,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "GET",
-                "/apostille/api/v1/admin/calls",
+                "/apostille/api/v1/calls",
                 false,
                 false,
                 None,
@@ -1624,7 +1624,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/dial",
+                "/apostille/api/v1/calls/dial",
                 true,
                 false,
                 Some(dial_body(true)),
@@ -1634,7 +1634,7 @@ mod tests {
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
         // Wrong host → 403.
         let req = Request::builder()
-            .uri("/apostille/api/v1/admin/calls")
+            .uri("/apostille/api/v1/calls")
             .header("host", "evil.test")
             .header("cookie", format!("{}=staff-1", auth::ADM_COOKIE))
             .body(Body::empty())
@@ -1670,7 +1670,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "GET",
-                "/apostille/api/v1/admin/calls",
+                "/apostille/api/v1/calls",
                 true,
                 false,
                 None,
@@ -1685,7 +1685,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/c-1/questions/0/asked",
+                "/apostille/api/v1/calls/c-1/questions/0/asked",
                 true,
                 true,
                 None,
@@ -1697,7 +1697,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "GET",
-                "/apostille/api/v1/admin/calls/c-1",
+                "/apostille/api/v1/calls/c-1",
                 true,
                 false,
                 None,
@@ -1712,7 +1712,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/c-1/questions/9/asked",
+                "/apostille/api/v1/calls/c-1/questions/9/asked",
                 true,
                 true,
                 None,
@@ -1741,7 +1741,7 @@ mod tests {
         let signature: String =
             base64::engine::general_purpose::STANDARD.encode(key.sign(&message).to_bytes());
         Request::builder()
-            .uri("/apostille/api/v1/admin/calls/webhook")
+            .uri("/apostille/api/v1/calls/webhook")
             .method("POST")
             .header("host", "admin.andrii.ai")
             .header("content-type", "application/json")
@@ -1814,6 +1814,23 @@ mod tests {
         let conn = db::open(&store).unwrap();
         let call = voice::store::get_call(&conn, "c-9").unwrap().unwrap();
         assert_eq!(call.status, "queued");
+    }
+
+    #[tokio::test]
+    async fn webhook_has_no_client_cert_layer() {
+        let mut fx = fixture(webhook_config());
+        fx.state.admin_mtls_off = false;
+        fx.state.admin_require_cert = true;
+        seed_call(&fx);
+        let body = event_body("wh-1", "call.answered", json!({"call_control_id": "leg-9"}));
+        // Wrong key signs → 401 from the signature check, not 403
+        // from a cert gate (the webhook router carries no such layer).
+        let wrong = ed25519_dalek::SigningKey::from_bytes(&[12u8; 32]);
+        let res = webhook_router(fx.state.clone())
+            .oneshot(webhook_request(&wrong, &unix_now().to_string(), &body))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -2059,7 +2076,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/dial",
+                "/apostille/api/v1/calls/dial",
                 true,
                 true,
                 Some(dial_body(false)),
@@ -2077,7 +2094,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/dial",
+                "/apostille/api/v1/calls/dial",
                 true,
                 true,
                 Some(dial_body(true)),
@@ -2172,7 +2189,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/c-q/quote",
+                "/apostille/api/v1/calls/c-q/quote",
                 true,
                 true,
                 Some(quote_body(vec![0, 1], "fees", "Counter fee is $8.")),
@@ -2258,7 +2275,7 @@ mod tests {
             let res = staff_router(fx.state.clone())
                 .oneshot(staff_request(
                     "POST",
-                    &format!("/apostille/api/v1/admin/calls/{call_id}/quote"),
+                    &format!("/apostille/api/v1/calls/{call_id}/quote"),
                     true,
                     true,
                     Some(body.clone()),
@@ -2274,7 +2291,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/c-q/quote",
+                "/apostille/api/v1/calls/c-q/quote",
                 true,
                 true,
                 Some(quote_body(vec![0, 9], "fees", "Counter fee is $8.")),
@@ -2301,7 +2318,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/nope/quote",
+                "/apostille/api/v1/calls/nope/quote",
                 true,
                 true,
                 Some(body.clone()),
@@ -2313,7 +2330,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/nope/quote",
+                "/apostille/api/v1/calls/nope/quote",
                 false,
                 false,
                 Some(body.clone()),
@@ -2325,7 +2342,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/nope/quote",
+                "/apostille/api/v1/calls/nope/quote",
                 true,
                 false,
                 Some(body),
@@ -2355,7 +2372,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/c-f/segments/1/fix",
+                "/apostille/api/v1/calls/c-f/segments/1/fix",
                 true,
                 true,
                 Some(json!({"text": "  Eight dollars flat.  "})),
@@ -2424,7 +2441,7 @@ mod tests {
             let res = staff_router(fx.state.clone())
                 .oneshot(staff_request(
                     "POST",
-                    &format!("/apostille/api/v1/admin/calls/c-a/segments/{seq}/annotate"),
+                    &format!("/apostille/api/v1/calls/c-a/segments/{seq}/annotate"),
                     true,
                     true,
                     Some(body),
@@ -2461,27 +2478,27 @@ mod tests {
         let overlong = "x".repeat(1025);
         let bad_requests: Vec<(&str, serde_json::Value)> = vec![
             (
-                "/apostille/api/v1/admin/calls/c-v/segments/0/fix",
+                "/apostille/api/v1/calls/c-v/segments/0/fix",
                 json!({"text": "   "}),
             ),
             (
-                "/apostille/api/v1/admin/calls/c-v/segments/0/fix",
+                "/apostille/api/v1/calls/c-v/segments/0/fix",
                 json!({"text": "fine", "author": "  "}),
             ),
             (
-                "/apostille/api/v1/admin/calls/c-v/segments/0/annotate",
+                "/apostille/api/v1/calls/c-v/segments/0/annotate",
                 json!({"kind": "shout", "note": "nope"}),
             ),
             (
-                "/apostille/api/v1/admin/calls/c-v/segments/0/annotate",
+                "/apostille/api/v1/calls/c-v/segments/0/annotate",
                 json!({"kind": "flag", "note": "  "}),
             ),
             (
-                "/apostille/api/v1/admin/calls/c-v/segments/0/annotate",
+                "/apostille/api/v1/calls/c-v/segments/0/annotate",
                 json!({"kind": "note", "note": overlong}),
             ),
             (
-                "/apostille/api/v1/admin/calls/c-v/segments/0/annotate",
+                "/apostille/api/v1/calls/c-v/segments/0/annotate",
                 json!({"kind": "note", "note": "fine", "author": ""}),
             ),
         ];
@@ -2496,19 +2513,19 @@ mod tests {
         }
         let not_founds: Vec<(&str, serde_json::Value)> = vec![
             (
-                "/apostille/api/v1/admin/calls/c-v/segments/9/fix",
+                "/apostille/api/v1/calls/c-v/segments/9/fix",
                 json!({"text": "fine"}),
             ),
             (
-                "/apostille/api/v1/admin/calls/nope/segments/0/fix",
+                "/apostille/api/v1/calls/nope/segments/0/fix",
                 json!({"text": "fine"}),
             ),
             (
-                "/apostille/api/v1/admin/calls/c-v/segments/9/annotate",
+                "/apostille/api/v1/calls/c-v/segments/9/annotate",
                 json!({"kind": "flag", "note": "fine"}),
             ),
             (
-                "/apostille/api/v1/admin/calls/nope/segments/0/annotate",
+                "/apostille/api/v1/calls/nope/segments/0/annotate",
                 json!({"kind": "flag", "note": "fine"}),
             ),
         ];
@@ -2552,7 +2569,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/c-g/segments/0/fix",
+                "/apostille/api/v1/calls/c-g/segments/0/fix",
                 true,
                 true,
                 Some(json!({"text": "What is the walk-in fee?"})),
@@ -2563,7 +2580,7 @@ mod tests {
         let res = staff_router(fx.state.clone())
             .oneshot(staff_request(
                 "POST",
-                "/apostille/api/v1/admin/calls/c-g/segments/0/annotate",
+                "/apostille/api/v1/calls/c-g/segments/0/annotate",
                 true,
                 true,
                 Some(json!({"kind": "flag", "note": "verify against the fee schedule"})),
@@ -2612,11 +2629,11 @@ mod tests {
 
         for (uri, body) in [
             (
-                "/apostille/api/v1/admin/calls/c-csrf/segments/0/fix",
+                "/apostille/api/v1/calls/c-csrf/segments/0/fix",
                 json!({"text": "fine"}),
             ),
             (
-                "/apostille/api/v1/admin/calls/c-csrf/segments/0/annotate",
+                "/apostille/api/v1/calls/c-csrf/segments/0/annotate",
                 json!({"kind": "note", "note": "fine"}),
             ),
         ] {

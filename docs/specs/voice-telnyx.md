@@ -107,7 +107,7 @@ queued → ringing → in_progress → completed
 
 ## 3. Webhook handlers (ours)
 
-Receiver: `POST /apostille/api/v1/admin/calls/webhook` on the
+Receiver: `POST /apostille/api/v1/calls/webhook` on the
 ADMIN listener (admin host guard applies; no staff session —
 Telnyx authenticates by Ed25519 signature, verified in-handler).
 CSRF does not apply (server-to-server, no session); signature
@@ -169,19 +169,19 @@ the recording itself; post-call full-text webhook per OQ-2.
 ## 7. Our API (admin listener, staff + CSRF except webhook)
 
 ```
-POST /apostille/api/v1/admin/calls/dial
+POST /apostille/api/v1/calls/dial
   {to, connection_id?, from?, authority?, questions[], consent_confirmed}
   → 200 {call_id, status} | 422 consent missing / bad number | 503 voice not configured
-GET  /apostille/api/v1/admin/calls?limit=
+GET  /apostille/api/v1/calls?limit=
   → {calls: [{call_id, status, authority, started_at, ended_at, recording, questions_asked, questions_total}]}
-GET  /apostille/api/v1/admin/calls/{id}
+GET  /apostille/api/v1/calls/{id}
   → {call_id, status, authority, questions, transcript, recording_status, created_at, ended_at}
-POST /apostille/api/v1/admin/calls/{id}/hangup            → {status}
-POST /apostille/api/v1/admin/calls/{id}/record/start      → {recording: true}
-POST /apostille/api/v1/admin/calls/{id}/record/stop       → {recording: false}
-POST /apostille/api/v1/admin/calls/{id}/questions/{idx}/asked  → {asked: true}
-POST /apostille/api/v1/admin/calls/webhook (Telnyx → us; signature, no session)
-POST /apostille/api/v1/admin/calls/{id}/quote (Slice E, "quote to draft")
+POST /apostille/api/v1/calls/{id}/hangup            → {status}
+POST /apostille/api/v1/calls/{id}/record/start      → {recording: true}
+POST /apostille/api/v1/calls/{id}/record/stop       → {recording: false}
+POST /apostille/api/v1/calls/{id}/questions/{idx}/asked  → {asked: true}
+POST /apostille/api/v1/calls/webhook (Telnyx → us; signature, no session)
+POST /apostille/api/v1/calls/{id}/quote (Slice E, "quote to draft")
   {segment_ids: [int...], topic, statement}
   → 200 {fact_id, call_id, topic, status} | 400 malformed | 404 unknown call/segment | 422 bad topic/statement
 ```
@@ -228,7 +228,7 @@ closed); the webhook answers 401 (no key to verify with).
 2. One voice number on the account (`telnyx.from_number`, E.164).
 3. Voice API application (Call Control connection) with
    `webhook_event_url =
-   https://admin.andrii.ai/apostille/api/v1/admin/calls/webhook`
+   https://admin.andrii.ai/apostille/api/v1/calls/webhook`
    (single-443, no port — the old `:444` form is dead) (+
    failover URL), `webhook_timeout_secs` ~10; its id is
    `telnyx.connection_id`.
@@ -416,10 +416,10 @@ API deltas (§7 block grows two routes; same guard stack —
 staff + CSRF, admin listener only):
 
 ```
-POST /apostille/api/v1/admin/calls/{id}/segments/{seq}/fix
+POST /apostille/api/v1/calls/{id}/segments/{seq}/fix
   {text, author?}                      # author defaults to staff:<user> from session
   → 200 {seq, text} | 400 blank text | 404 unknown call/segment
-POST /apostille/api/v1/admin/calls/{id}/segments/{seq}/annotate
+POST /apostille/api/v1/calls/{id}/segments/{seq}/annotate
   {kind: flag|note, note, author?}     # note 1..1024 chars
   → 200 {seq, kind} | 400 bad kind/blank note | 404 unknown call/segment
 ```
@@ -468,7 +468,7 @@ Playback serves the stored blob (§4), never the Telnyx URL
 (which we never persist):
 
 ```
-GET /apostille/api/v1/admin/calls/{id}/recording
+GET /apostille/api/v1/calls/{id}/recording
   → 200 audio/mpeg (Range supported) | 404 no recording yet | 410 swept | 403 non-staff
 ```
 

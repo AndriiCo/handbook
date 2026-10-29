@@ -28,10 +28,10 @@ test('setup round-trips against a stub admin API', async () => {
 		req.on('end', () => {
 			seen.push(`${req.method} ${req.url}`);
 			res.writeHead(200, { 'content-type': 'application/json' });
-			if (req.url === '/api/v1/admin/setup/status') {
+			if (req.url === '/api/v1/setup/status') {
 				assert.ok(!('x-setup-key' in req.headers), 'status needs no key');
 				res.end(JSON.stringify({ setup_required: true }));
-			} else if (req.url === '/api/v1/admin/setup/steps') {
+			} else if (req.url === '/api/v1/setup/steps') {
 				assert.equal(req.headers['x-setup-key'], KEY);
 				res.end(
 					JSON.stringify({
@@ -46,7 +46,7 @@ test('setup round-trips against a stub admin API', async () => {
 				);
 			} else if (
 				req.method === 'POST' &&
-				req.url === '/api/v1/admin/setup/keys/net.public_host'
+				req.url === '/api/v1/setup/keys/net.public_host'
 			) {
 				assert.equal(req.headers['x-setup-key'], KEY);
 				const parsed = JSON.parse(body);
@@ -72,9 +72,9 @@ test('setup round-trips against a stub admin API', async () => {
 		const saved = await saveSetupKey(base, KEY, rows[0]);
 		assert.equal(saved, true);
 		assert.deepEqual(seen, [
-			'GET /api/v1/admin/setup/status',
-			'GET /api/v1/admin/setup/steps',
-			'POST /api/v1/admin/setup/keys/net.public_host'
+			'GET /api/v1/setup/status',
+			'GET /api/v1/setup/steps',
+			'POST /api/v1/setup/keys/net.public_host'
 		]);
 	} finally {
 		server.close();

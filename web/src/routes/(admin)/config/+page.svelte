@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import Notice from '../../../../lib/public-ui/Notice.svelte';
-	import { fetchConfig, saveConfigKey } from '../../../../lib/admin/config-client.js';
+	import Notice from '../../../lib/public-ui/Notice.svelte';
+	import { fetchConfig, saveConfigKey } from '../../../lib/admin/config-client.js';
 	import {
 		fetchSetupStatus,
 		fetchSetupSteps,
 		saveSetupKey,
 		setupKeyHeaders
-	} from '../../../../lib/admin/setup-client.js';
-	import { STEPS, REQUIRED_KEYS } from '../../../../lib/admin/setup-guides.js';
+	} from '../../../lib/admin/setup-client.js';
+	import { STEPS, REQUIRED_KEYS } from '../../../lib/admin/setup-guides.js';
 
 	// Typed config keys per secure-config.md §1.5. SECRET rows are
 	// write-only: the page shows Set/Unset and a new-value box only —
@@ -509,7 +509,7 @@
 			<p class="flex flex-wrap gap-2 pb-8">
 				<a
 					class="inline-flex min-h-11 items-center rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink"
-					href={`${resolve('/(admin)/admin/enrol')}?setup=1`}
+					href={`${resolve('/(admin)/enrol')}?setup=1`}
 					>Enrol the first passkey (burns the setup key)</a
 				>
 			</p>

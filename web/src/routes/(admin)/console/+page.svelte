@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Notice from '../../../../lib/public-ui/Notice.svelte';
+	import Notice from '../../../lib/public-ui/Notice.svelte';
 
 	// Call console shell: three-pane per site-theme §1.2 (script /
 	// transcript / fact-draft). Live realtime is a Week 4 cut — this

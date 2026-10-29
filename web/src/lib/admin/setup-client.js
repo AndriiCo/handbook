@@ -1,9 +1,9 @@
 // Admin setup-wizard API client (secure-config.md §9). Admin-only:
 // never imported from (public) or (customer) routes.
 //
-// GET  {apiBase}/admin/setup/status          → { setup_required }
-// GET  {apiBase}/admin/setup/steps           → { keys: [...] } (x-setup-key)
-// POST {apiBase}/admin/setup/keys/{key}      → { key, type, set } (x-setup-key)
+// GET  {apiBase}/setup/status          → { setup_required }
+// GET  {apiBase}/setup/steps           → { keys: [...] } (x-setup-key)
+// POST {apiBase}/setup/keys/{key}      → { key, type, set } (x-setup-key)
 //
 // The setup key rides a custom header per request (memory only,
 // never stored): no cookies or session exist before enrolment.
@@ -92,7 +92,7 @@ async function throwForSetupStatus(res, what) {
  * @returns {Promise<{ setup_required: boolean }>}
  */
 export async function fetchSetupStatus(apiBase, fetchFn = fetch) {
-	const res = await fetchFn(`${apiBase}/admin/setup/status`, { credentials: 'same-origin' });
+	const res = await fetchFn(`${apiBase}/setup/status`, { credentials: 'same-origin' });
 	if (res.status === 503) throw new Error('The store is unavailable on this server (503).');
 	if (!res.ok) throw new Error(`Setup status failed: HTTP ${res.status}.`);
 	const data = await readJson(res, 'Setup status');
@@ -111,7 +111,7 @@ export async function fetchSetupStatus(apiBase, fetchFn = fetch) {
 export async function fetchSetupSteps(apiBase, key, fetchFn = fetch) {
 	const headers = setupKeyHeaders(key);
 	if (!headers) throw new Error('That setup key is malformed — check `setup_` + 64 hex chars.');
-	const res = await fetchFn(`${apiBase}/admin/setup/steps`, {
+	const res = await fetchFn(`${apiBase}/setup/steps`, {
 		headers,
 		credentials: 'same-origin'
 	});
@@ -132,7 +132,7 @@ export async function fetchSetupSteps(apiBase, key, fetchFn = fetch) {
 export async function saveSetupKey(apiBase, key, row, fetchFn = fetch) {
 	const headers = setupKeyHeaders(key);
 	if (!headers) throw new Error('That setup key is malformed — check `setup_` + 64 hex chars.');
-	const res = await fetchFn(`${apiBase}/admin/setup/keys/${encodeURIComponent(row.key)}`, {
+	const res = await fetchFn(`${apiBase}/setup/keys/${encodeURIComponent(row.key)}`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', ...headers },
 		credentials: 'same-origin',

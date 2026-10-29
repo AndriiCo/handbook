@@ -51,8 +51,14 @@ no admin access.
 TCP → MtlsAcceptor (handshake, capture peer chain)
     → PeerCertService (insert PeerCertificates ext)
     → inject_verified_cert (leaf → sha256_hex → VerifiedClientCert)
-    → host guard → AdminAuth (session + registry check) → handler
+    → host guard → require_client_cert → AdminAuth (session + registry check) → handler
 ```
+
+(`require_client_cert` runs only when `admin.require_cert` is
+on: the whole admin host — API, HTML, JS — needs a presented
+cert except the setup surface and the Telnyx webhook. It
+checks presence only; `AdminAuth` still enforces
+registration/revocation per API route.)
 
 - `MtlsAcceptor` implements `axum_server::accept::Accept`: it runs
   the stock rustls handshake, then wraps the per-connection tower
@@ -70,6 +76,7 @@ TCP → MtlsAcceptor (handshake, capture peer chain)
 | Key | Type | Meaning |
 |---|---|---|
 | `tls.client_ca_file` | text, optional | PEM CA bundle path for admin client-cert verification |
+| `admin.require_cert` | bool, default off | whole admin host (API/HTML/JS) requires a presented cert; setup surface + Telnyx webhook exempt |
 
 - Missing/empty ≡ unset (silent, like the other optional paths).
 - Set but unreadable/invalid (no `CERTIFICATE` blocks, unparsable)
@@ -166,7 +173,7 @@ Promote to prod only after the Day-8 demo gate (strict admin API
 ## 4. Acceptance
 
 - [ ] Strict admin API 200 with a known-good (CA-chained +
-      enrolled) client cert; `/admin/me` echoes its fingerprint.
+      enrolled) client cert;  `/me` echoes its fingerprint.
 - [ ] 403 with a CA-chained but unknown cert; 403 with a revoked
       cert; 403 with no cert (handshake still succeeds).
 - [ ] Wrong-CA cert fails the TLS handshake (no HTTP response).

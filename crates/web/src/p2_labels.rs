@@ -1619,6 +1619,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
+            admin_require_cert: false,
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg,

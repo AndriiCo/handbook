@@ -373,7 +373,7 @@ CREATE INDEX idx_rule_match ON suppress_rule(authority_id, topic, statement_norm
   WHERE revoked_at IS NULL;
 
 -- Observable log of every analyzer skip (paths A+B). Not a queue:
--- staff never decide these; GET .../admin/suppressions exposes them.
+-- staff never decide these; GET .../suppressions exposes them.
 CREATE TABLE suppression(
   id INTEGER PRIMARY KEY,
   capture_id INTEGER NOT NULL,    -- capture.id being analyzed
@@ -411,7 +411,7 @@ columns stay unread-optional (readers treat -1/'' as absent).
 No data migration at upgrade: path A reads live `rejected`
 rows; path B starts empty.
 
-### 11.2 API deltas (all under `/apostille/api/v1/admin/`)
+### 11.2 API deltas (all under `/apostille/api/v1/`)
 
 Guards (unchanged from existing admin routes): `AdminAuth`
 extractor; mutations additionally pass the Origin + double-submit
@@ -420,10 +420,10 @@ CSRF layers. Error baseline: `401 {"error":"unauthorized"}`
 unavailable"}` (DB). Bodies use
 `#[serde(deny_unknown_fields)]` like `DecisionBody`.
 
-#### 11.2.1 `GET .../admin/queue` — enriched review items
+#### 11.2.1 `GET .../queue` — enriched review items
 
 Staff list of proposed facts with everything needed to decide
-inline. The existing `GET .../admin/facts?status=proposed` stays
+inline. The existing `GET .../facts?status=proposed` stays
 untouched (compat); the queue is a superset view, not a
 replacement.
 
@@ -483,13 +483,13 @@ so the UI quarantines it; never merged into a trusted field.
 for the authority. (No `in_last_build`: the `build` table keeps
 a hash, not a fact set — unimplementable without a set; cut.)
 
-#### 11.2.2 `GET .../admin/queue/{id}` — single enriched item
+#### 11.2.2 `GET .../queue/{id}` — single enriched item
 
 Same item shape for deep-linking. `404 {"error":"fact not
 found"}` when missing; returns any status (inspect decided rows
 too) with its current `status`.
 
-#### 11.2.3 `POST .../admin/facts/{id}/accept` — extended with edit
+#### 11.2.3 `POST .../facts/{id}/accept` — extended with edit
 
 Same route, extended body (existing clients keep working):
 
@@ -512,7 +512,7 @@ Same route, extended body (existing clients keep working):
   UI treats this as "someone else decided; refresh"), `422`,
   `401/403/503`.
 
-#### 11.2.4 `POST .../admin/facts/{id}/reject` — with optional rule
+#### 11.2.4 `POST .../facts/{id}/reject` — with optional rule
 
 ```json
 {"reason": "PO box belongs to DOL, not SOS",
@@ -535,7 +535,7 @@ Same route, extended body (existing clients keep working):
   `"rule": {"id": N, "deduped": true}` — the decision is the
   primary effect; rule creation is idempotent.
 
-#### 11.2.5 `GET/POST .../admin/suppress-rules` + revoke
+#### 11.2.5 `GET/POST .../suppress-rules` + revoke
 
 Standalone rule management (rules not tied to one rejection):
 
@@ -557,7 +557,7 @@ Standalone rule management (rules not tied to one rejection):
   write one `audit` row (`suppress_rule.create` /
   `suppress_rule.revoke`, entity `suppress_rule`).
 
-#### 11.2.6 `GET .../admin/suppressions` — skip log
+#### 11.2.6 `GET .../suppressions` — skip log
 
 `200 {"suppressions": [{"id","capture_id","authority_slug",
 "topic","statement","path","rule_id","created_at"}], "count":
@@ -624,7 +624,7 @@ evaluated on model output *before* suppression filtering.
 
 Route `/review`: `web/src/routes/(admin)/review/+page.svelte`
 (sibling to `calls/`, `workers/`) + client
-`web/src/lib/admin/review-client.js` (sibling to
+`web/src/lib/review-client.js` (sibling to
 `calls-client.js`). Data sources are exactly the §11.2
 endpoints; the page never invents unreturned state.
 
@@ -706,7 +706,7 @@ row's `reason` echoes the reject reason).
 Resolved while writing (parent-verified, author can reopen):
 OQ-5-orig (citation home) → 011 columns + sidecar slicing;
 OQ-7 (admin route homes) → `(admin)/review/` +
-`lib/admin/review-client.js`; gmail/kv proposals → superseded
+`lib/review-client.js`; gmail/kv proposals → superseded
 by Phase B (`authenticity` JSON + `mail_poll`);
 `in_last_build` → cut (no fact set in `build`).
 

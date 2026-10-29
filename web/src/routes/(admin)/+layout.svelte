@@ -8,16 +8,16 @@
 	let { children }: LayoutProps = $props();
 
 	// Client-side session gate (onMount only — never runs during
-	// prerender, so the static build stays green). /admin/login
-	// and /admin/enrol are exempt (redirect loop otherwise), and
-	// /admin/config is exempt while the setup window is open (no
+	// prerender, so the static build stays green). /staff-login
+	// and /enrol are exempt (redirect loop otherwise), and
+	// /config is exempt while the setup window is open (no
 	// session can exist yet — the page runs the wizard instead).
 	onMount(async () => {
 		const path = window.location.pathname;
-		if (path === '/admin/login' || path === '/admin/enrol') return;
-		if (path === '/admin/config') {
+		if (path === '/staff-login' || path === '/enrol') return;
+		if (path === '/config') {
 			try {
-				const setup = await fetch('/apostille/api/v1/admin/setup/status', {
+				const setup = await fetch('/apostille/api/v1/setup/status', {
 					credentials: 'same-origin'
 				});
 				if (setup.ok && (await setup.json().catch(() => ({})))?.setup_required) return;
@@ -26,9 +26,9 @@
 			}
 		}
 		try {
-			const res = await fetch('/apostille/api/v1/admin/me', { credentials: 'same-origin' });
+			const res = await fetch('/apostille/api/v1/me', { credentials: 'same-origin' });
 			if (res.status === 401 || res.status === 403) {
-				window.location.href = resolve('/(admin)/admin/login');
+				window.location.href = resolve('/(admin)/staff-login');
 			}
 		} catch {
 			// Offline or cert-less: pages surface their own errors;
@@ -45,14 +45,13 @@
 	class="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line bg-surface px-4 py-2"
 	aria-label="Admin"
 >
-	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin')}>Dashboard</a>
-	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin/triage')}>Triage</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/triage')}>Triage</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/review')}>Review</a>
-	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin/console')}
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/console')}
 		>Call console</a
 	>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/calls')}>Voice calls</a>
-	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/admin/config')}>Config</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/config')}>Config</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/workers')}>Workers</a>
 </nav>
 

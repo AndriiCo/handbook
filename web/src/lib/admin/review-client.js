@@ -1,14 +1,14 @@
 // Admin review-queue API client (analysis-agent.md §11). Admin-only:
 // never imported from (public) or (customer) routes.
 //
-// GET  {apiBase}/admin/queue[?authority&topic&limit&after_id] → { items, count }
-// GET  {apiBase}/admin/queue/{id}                               → QueueItem
-// POST {apiBase}/admin/facts/{id}/accept  {reason?, statement?} → { status }
-// POST {apiBase}/admin/facts/{id}/reject  {reason, suppress?}   → { status }
-// GET  {apiBase}/admin/suppress-rules[?authority&include_revoked] → { rules, count }
-// POST {apiBase}/admin/suppress-rules      {statement, ...}      → { id }
-// POST {apiBase}/admin/suppress-rules/{id}/revoke               → { status }
-// GET  {apiBase}/admin/suppressions[?authority&limit&after_id]  → { suppressions, count }
+// GET  {apiBase}/queue[?authority&topic&limit&after_id] → { items, count }
+// GET  {apiBase}/queue/{id}                               → QueueItem
+// POST {apiBase}/facts/{id}/accept  {reason?, statement?} → { status }
+// POST {apiBase}/facts/{id}/reject  {reason, suppress?}   → { status }
+// GET  {apiBase}/suppress-rules[?authority&include_revoked] → { rules, count }
+// POST {apiBase}/suppress-rules      {statement, ...}      → { id }
+// POST {apiBase}/suppress-rules/{id}/revoke               → { status }
+// GET  {apiBase}/suppressions[?authority&limit&after_id]  → { suppressions, count }
 //
 // The agent's `reasoning` field renders only under an explicit
 // do-not-trust label: it is untrusted model output, never evidence.
@@ -349,7 +349,7 @@ function queryString(params) {
  * @returns {Promise<{ items: QueueItem[], count: number }>}
  */
 export async function fetchQueue(apiBase, params = {}, fetchFn = fetch) {
-	const res = await fetchFn(`${apiBase}/admin/queue${queryString(params)}`, {
+	const res = await fetchFn(`${apiBase}/queue${queryString(params)}`, {
 		credentials: 'same-origin'
 	});
 	await throwForStatus(res, 'Review queue');
@@ -369,7 +369,7 @@ export async function fetchQueue(apiBase, params = {}, fetchFn = fetch) {
  * @returns {Promise<QueueItem>}
  */
 export async function fetchQueueItem(apiBase, id, fetchFn = fetch) {
-	const res = await fetchFn(`${apiBase}/admin/queue/${id}`, { credentials: 'same-origin' });
+	const res = await fetchFn(`${apiBase}/queue/${id}`, { credentials: 'same-origin' });
 	await throwForStatus(res, 'Queue item');
 	const item = normalizeQueueItem(await readJson(res, 'Queue item'));
 	if (!item) throw new Error('Queue item returned an unexpected shape.');
@@ -403,7 +403,7 @@ async function postReview(apiBase, path, body, what, fetchFn) {
  * @returns {Promise<{ status: string }>}
  */
 export async function acceptFact(apiBase, id, body, fetchFn = fetch) {
-	const data = await postReview(apiBase, `/admin/facts/${id}/accept`, body, 'Accept', fetchFn);
+	const data = await postReview(apiBase, `/facts/${id}/accept`, body, 'Accept', fetchFn);
 	if (!data || typeof data.status !== 'string') throw new Error('Accept returned an unexpected shape.');
 	return { status: data.status };
 }
@@ -416,7 +416,7 @@ export async function acceptFact(apiBase, id, body, fetchFn = fetch) {
  * @returns {Promise<{ status: string }>}
  */
 export async function rejectFact(apiBase, id, body, fetchFn = fetch) {
-	const data = await postReview(apiBase, `/admin/facts/${id}/reject`, body, 'Reject', fetchFn);
+	const data = await postReview(apiBase, `/facts/${id}/reject`, body, 'Reject', fetchFn);
 	if (!data || typeof data.status !== 'string') throw new Error('Reject returned an unexpected shape.');
 	return { status: data.status };
 }
@@ -428,7 +428,7 @@ export async function rejectFact(apiBase, id, body, fetchFn = fetch) {
  * @returns {Promise<{ rules: SuppressRule[], count: number }>}
  */
 export async function fetchRules(apiBase, params = {}, fetchFn = fetch) {
-	const res = await fetchFn(`${apiBase}/admin/suppress-rules${queryString(params)}`, {
+	const res = await fetchFn(`${apiBase}/suppress-rules${queryString(params)}`, {
 		credentials: 'same-origin'
 	});
 	await throwForStatus(res, 'Suppress rules');
@@ -448,7 +448,7 @@ export async function fetchRules(apiBase, params = {}, fetchFn = fetch) {
  * @returns {Promise<{ id: number }>}
  */
 export async function createRule(apiBase, body, fetchFn = fetch) {
-	const data = await postReview(apiBase, '/admin/suppress-rules', body, 'Create rule', fetchFn);
+	const data = await postReview(apiBase, '/suppress-rules', body, 'Create rule', fetchFn);
 	if (!data || typeof data.id !== 'number') {
 		throw new Error('Create rule returned an unexpected shape.');
 	}
@@ -462,7 +462,7 @@ export async function createRule(apiBase, body, fetchFn = fetch) {
  * @returns {Promise<unknown>}
  */
 export function revokeRule(apiBase, id, fetchFn = fetch) {
-	return postReview(apiBase, `/admin/suppress-rules/${id}/revoke`, {}, 'Revoke rule', fetchFn);
+	return postReview(apiBase, `/suppress-rules/${id}/revoke`, {}, 'Revoke rule', fetchFn);
 }
 
 /**
@@ -472,7 +472,7 @@ export function revokeRule(apiBase, id, fetchFn = fetch) {
  * @returns {Promise<{ suppressions: Suppression[], count: number }>}
  */
 export async function fetchSuppressions(apiBase, params = {}, fetchFn = fetch) {
-	const res = await fetchFn(`${apiBase}/admin/suppressions${queryString(params)}`, {
+	const res = await fetchFn(`${apiBase}/suppressions${queryString(params)}`, {
 		credentials: 'same-origin'
 	});
 	await throwForStatus(res, 'Suppression log');

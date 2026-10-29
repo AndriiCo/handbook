@@ -346,7 +346,7 @@ pub fn run_setup_key_mint(args: &[String]) {
     let at = crate::unix_now();
     let actor = crate::flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
     let key = mint_setup_key(&conn, &kek, version, &actor, at).unwrap_or_else(|e| fail(&e));
-    println!("setup key (prints ONCE — paste into /admin/config to start setup):\n  {key}");
+    println!("setup key (prints ONCE — paste into /config to start setup):\n  {key}");
 }
 
 /// `config-get --key <k>`: decrypt and print. `secret` keys refuse.

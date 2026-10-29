@@ -1,12 +1,12 @@
 // Admin calls API client (voice-telnyx.md §7). Admin-only: never
 // imported from (public) or (customer) routes.
 //
-// GET  {apiBase}/admin/calls          → { calls: [...] }
-// POST {apiBase}/admin/calls/dial     → { call_id, status }
-// GET  {apiBase}/admin/calls/{id}     → detail + transcript
-// POST {apiBase}/admin/calls/{id}/hangup | /record/start | /record/stop
-// POST {apiBase}/admin/calls/{id}/questions/{idx}/asked
-// POST {apiBase}/admin/calls/{id}/quote → { fact_id, call_id, topic, status }
+// GET  {apiBase}/calls          → { calls: [...] }
+// POST {apiBase}/calls/dial     → { call_id, status }
+// GET  {apiBase}/calls/{id}     → detail + transcript
+// POST {apiBase}/calls/{id}/hangup | /record/start | /record/stop
+// POST {apiBase}/calls/{id}/questions/{idx}/asked
+// POST {apiBase}/calls/{id}/quote → { fact_id, call_id, topic, status }
 //
 // Phone numbers never render here: the server stores only a hash,
 // and list/detail payloads carry no dial target.
@@ -186,7 +186,7 @@ function throwForStatus(res, what) {
  * @returns {Promise<CallSummary[]>}
  */
 export async function fetchCalls(apiBase, fetchFn = fetch) {
-	const res = await fetchFn(`${apiBase}/admin/calls`, { credentials: 'same-origin' });
+	const res = await fetchFn(`${apiBase}/calls`, { credentials: 'same-origin' });
 	throwForStatus(res, 'Call list');
 	const data = await readJson(res, 'Call list');
 	const calls = data?.calls;
@@ -201,7 +201,7 @@ export async function fetchCalls(apiBase, fetchFn = fetch) {
  * @returns {Promise<ReturnType<typeof normalizeCallDetail>>}
  */
 export async function fetchCall(apiBase, id, fetchFn = fetch) {
-	const res = await fetchFn(`${apiBase}/admin/calls/${encodeURIComponent(id)}`, {
+	const res = await fetchFn(`${apiBase}/calls/${encodeURIComponent(id)}`, {
 		credentials: 'same-origin'
 	});
 	throwForStatus(res, 'Call detail');
@@ -236,7 +236,7 @@ async function postCall(apiBase, path, body, what, fetchFn) {
  * @returns {Promise<{ call_id: string, status: string }>}
  */
 export async function dialCall(apiBase, body, fetchFn = fetch) {
-	const data = await postCall(apiBase, '/admin/calls/dial', body, 'Dial', fetchFn);
+	const data = await postCall(apiBase, '/calls/dial', body, 'Dial', fetchFn);
 	if (!data || typeof data.call_id !== 'string') throw new Error('Dial returned an unexpected shape.');
 	return { call_id: data.call_id, status: data.status };
 }
@@ -248,7 +248,7 @@ export async function dialCall(apiBase, body, fetchFn = fetch) {
  * @returns {Promise<unknown>}
  */
 export function hangupCall(apiBase, id, fetchFn = fetch) {
-	return postCall(apiBase, `/admin/calls/${encodeURIComponent(id)}/hangup`, undefined, 'Hangup', fetchFn);
+	return postCall(apiBase, `/calls/${encodeURIComponent(id)}/hangup`, undefined, 'Hangup', fetchFn);
 }
 
 /**
@@ -262,7 +262,7 @@ export function recordCall(apiBase, id, start, fetchFn = fetch) {
 	const action = start ? 'start' : 'stop';
 	return postCall(
 		apiBase,
-		`/admin/calls/${encodeURIComponent(id)}/record/${action}`,
+		`/calls/${encodeURIComponent(id)}/record/${action}`,
 		undefined,
 		start ? 'Record start' : 'Record stop',
 		fetchFn
@@ -279,7 +279,7 @@ export function recordCall(apiBase, id, start, fetchFn = fetch) {
 export function markQuestionAsked(apiBase, id, idx, fetchFn = fetch) {
 	return postCall(
 		apiBase,
-		`/admin/calls/${encodeURIComponent(id)}/questions/${idx}/asked`,
+		`/calls/${encodeURIComponent(id)}/questions/${idx}/asked`,
 		undefined,
 		'Mark asked',
 		fetchFn
@@ -319,7 +319,7 @@ export function quoteBody(segmentIds, topic, statement) {
 export async function quoteToDraft(apiBase, id, body, fetchFn = fetch) {
 	const data = await postCall(
 		apiBase,
-		`/admin/calls/${encodeURIComponent(id)}/quote`,
+		`/calls/${encodeURIComponent(id)}/quote`,
 		body,
 		'Quote to draft',
 		fetchFn

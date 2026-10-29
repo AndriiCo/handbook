@@ -153,9 +153,9 @@
 			params.set('limit', '100');
 			const query = params.size > 0 ? `?${params}` : '';
 			const [statusRes, authRes, capRes] = await Promise.all([
-				fetch(api('/admin/workers/status'), { credentials: 'same-origin' }),
-				fetch(api('/admin/workers/authorities'), { credentials: 'same-origin' }),
-				fetch(api(`/admin/workers/captures${query}`), { credentials: 'same-origin' })
+				fetch(api('/workers/status'), { credentials: 'same-origin' }),
+				fetch(api('/workers/authorities'), { credentials: 'same-origin' }),
+				fetch(api(`/workers/captures${query}`), { credentials: 'same-origin' })
 			]);
 			if ([statusRes, authRes, capRes].some(authFailed)) {
 				loadError = 'Staff session required — log in on the admin host first.';
@@ -186,7 +186,7 @@
 		item.busy = true;
 		item.note = null;
 		try {
-			const res = await fetch(api(`/admin/workers/captures/${item.id}/retry`), {
+			const res = await fetch(api(`/workers/captures/${item.id}/retry`), {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', ...csrfHeaders() },
 				credentials: 'same-origin',
@@ -220,7 +220,7 @@
 		fetchBusy = true;
 		fetchNote = null;
 		try {
-			const res = await fetch(api('/admin/workers/fetch'), {
+			const res = await fetch(api('/workers/fetch'), {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', ...csrfHeaders() },
 				credentials: 'same-origin',
@@ -281,7 +281,7 @@
 			return;
 		}
 		try {
-			const res = await fetch(api('/admin/workers/sweep'), {
+			const res = await fetch(api('/workers/sweep'), {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', ...csrfHeaders() },
 				credentials: 'same-origin',

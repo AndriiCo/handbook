@@ -71,7 +71,7 @@ hold several CNs (per-device certs: `jdoe-laptop`,
 #    is hashed at rest and never retrievable).
 cargo xtask admin-invite --role staff --cn jdoe --actor andrii
 #   invite for jdoe (staff)
-#     url: https://admin.andrii.ai/admin/enrol?invite=<64-hex>
+#     url: https://admin.andrii.ai/enrol?invite=<64-hex>
 #     expires in 7d; single-use; token is NOT stored
 #    Flags: --days 1..30 (default 7), --origin <url> for staging
 #    (default https://admin.andrii.ai; must be https:// or
@@ -109,7 +109,7 @@ bytes.
 
 ## 3. Staff login
 
-URL: `https://admin.andrii.ai/admin/login`. User ID (32-hex,
+URL: `https://admin.andrii.ai/login`. User ID (32-hex,
 given at enrol time) + passkey ceremony, with the client
 cert present. Login refreshes step-up unconditionally, so a
 fresh login satisfies the destructive-action window (§5).
@@ -141,13 +141,13 @@ summary. `--cn` stays mandatory until OPEN-15 (CN→user
 mapping) lands.
 
 Verify after (read-only): `admin-cert-verify --fp …` fails
-(revoked); the staffer's `/admin/me` 401s/403s; a fresh
+(revoked); the staffer's  `/me` 401s/403s; a fresh
 invite for the same CN enrols a NEW account (offboarding is
 not reversible — by design).
 
 ## 5. Destructive-action step-up (pilot)
 
-`PUT /admin/config/{key}` requires fresh step-up (UV within
+`PUT /config/{key}` requires fresh step-up (UV within
 10 min, or a session minted within 10 min); otherwise `403
 step-up required: log in again first`. Staff login always
 steps up, so the common case needs no extra ceremony. The
@@ -162,7 +162,7 @@ test CNs only (never real staff names); fixtures
 synthetic-only.
 
 1. Issue cert → mint invite → enrol green: session on
-   `hb_admin`, `GET /admin/me` shows role + fingerprint,
+   `hb_admin`, `GET /me` shows role + fingerprint,
    step-up fresh (config write succeeds).
 2. Invite replay (second finish, same token) → `410`.
 3. Wrong-CN cert at start and finish → `403 mismatch`; the

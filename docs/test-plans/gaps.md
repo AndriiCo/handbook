@@ -7,7 +7,7 @@
    create/get responses via init script). Unlocks J2 +
    staff-login-prefixed admin specs.
 2. CUJ-2 review decide — needs staff session mock
-   (`GET .../admin/me`) + queue fixtures.
+   (`GET .../me`) + queue fixtures.
 3. J3 form submit + J4 label purchase — page-mock specs,
    no new helpers.
 4. CUJ-4 call→quote + CUJ-3 workers sweep — stub-transport

@@ -6,7 +6,7 @@ any runs long. Stretch only: Egypt NY, if DC defers to the post.
 
 ## Tonight (prereqs — all required)
 
-Config (setup wizard step 6 "Voice (Telnyx)" or `/admin/config`):
+Config (setup wizard step 6 "Voice (Telnyx)" or  `/config`):
 
 - `telnyx.api_key` — Mission Control → API Keys (Call Control scope)
 - `telnyx.from_number` — E.164 voice number on the account
@@ -15,12 +15,12 @@ Config (setup wizard step 6 "Voice (Telnyx)" or `/admin/config`):
 - `telnyx.base_url` — leave default unless private interconnect
 
 **Restart the service after setting rows** — config is read
-once at boot (no hot-reload); then confirm `/admin/calls`
+once at boot (no hot-reload); then confirm  `/calls`
 loads (a misconfigured box answers dial with 503).
 
 Portal: voice number with voice capability; Call Control
 connection with `webhook_event_url =
-https://admin.andrii.ai/apostille/api/v1/admin/calls/webhook`
+https://admin.andrii.ai/apostille/api/v1/calls/webhook`
 (no `:444`), failover URL set, timeout ~10s; **Outbound Voice
 Profile attached** (dials fail without it); budget check
 (Call Control + recording + transcription rates).

@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import Notice from '../../../../lib/public-ui/Notice.svelte';
+	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import {
 		CANCELLED_COPY,
 		cookieValue,
 		isTransportFailure,
 		loginErrorCopy,
 		loginPasskey
-	} from '../../../../lib/admin/staff-auth.js';
+	} from '../../../lib/admin/staff-auth.js';
 
 	// Staff login (spec customer-auth.md §5.3): user_id + UV
 	// passkey ceremony, on a browser holding the staff client
-	// cert. The /admin/me check doubles as the cert probe: a
+	// cert. The /me check doubles as the cert probe: a
 	// transport failure means the handshake never completed.
 	const api = (path: string) => `/apostille/api/v1${path}`;
 
@@ -47,13 +47,13 @@
 				error = loginErrorCopy(res.status, res.body?.error ?? '');
 				return;
 			}
-			const check = await fetch(api('/admin/me'), { credentials: 'same-origin' });
+			const check = await fetch(api('/me'), { credentials: 'same-origin' });
 			if (!check.ok) {
 				error = loginErrorCopy(check.status, '');
 				return;
 			}
 			me = await check.json();
-			window.location.href = resolve('/(admin)/admin');
+			window.location.href = resolve('/(admin)/console');
 		} catch (err) {
 			if (err instanceof DOMException && err.name === 'NotAllowedError') {
 				error = CANCELLED_COPY;

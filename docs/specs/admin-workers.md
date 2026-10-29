@@ -35,19 +35,19 @@ mutations. Error shape is `{"error": "..."}`; auth failures are
 
 | Method + path | Auth | Purpose |
 |---|---|---|
-| `GET /admin/workers/status` | staff | §2 worker status |
-| `GET /admin/workers/captures` | staff | §3 capture list |
-| `POST /admin/workers/captures/{id}/retry` | staff + CSRF | §3 re-fetch one capture's source URL |
-| `POST /admin/workers/fetch` | staff + CSRF | §4 one-off fetch of an explicit URL |
-| `GET /admin/workers/authorities` | staff | §5 per-authority ingest state |
-| `POST /admin/workers/sweep` | staff + CSRF | §6 manual watch-sweep (≤ 10 URLs) |
+| `GET /workers/status` | staff | §2 worker status |
+| `GET /workers/captures` | staff | §3 capture list |
+| `POST /workers/captures/{id}/retry` | staff + CSRF | §3 re-fetch one capture's source URL |
+| `POST /workers/fetch` | staff + CSRF | §4 one-off fetch of an explicit URL |
+| `GET /workers/authorities` | staff | §5 per-authority ingest state |
+| `POST /workers/sweep` | staff + CSRF | §6 manual watch-sweep (≤ 10 URLs) |
 
 `{id}` is the integer capture id. Unknown ids → 404; a capture
 with no source row → 409 (nothing to re-fetch).
 
 ## 2. Worker status
 
-`GET /admin/workers/status` → 200:
+`GET /workers/status` → 200:
 
 ```json
 {
@@ -68,7 +68,7 @@ with no source row → 409 (nothing to re-fetch).
 
 ## 3. Captures: list + retry
 
-`GET /admin/workers/captures?authority=&kind=&trust=&limit=&before_id=`
+`GET /workers/captures?authority=&kind=&trust=&limit=&before_id=`
 → 200 `{"captures": […], "count": n}`. Newest first (`id DESC`);
 `before_id` pages (`id < before_id`); `limit` defaults 50, max
 200. Row shape:
@@ -85,7 +85,7 @@ with no source row → 409 (nothing to re-fetch).
 `authority` must be a known slug (unknown → 404), `kind`/`trust`
 filter verbatim.
 
-`POST /admin/workers/captures/{id}/retry` re-drives the existing
+`POST /workers/captures/{id}/retry` re-drives the existing
 fetch path for the capture's source URL: robots re-check for
 `website_thirdparty` sources (verdict persisted on the source row,
 F1 rule), `fetch_url` (20 s timeout), `ingest_bytes` with the
@@ -103,7 +103,7 @@ capture's kind/trust, actor = staff user id. Audited as
 
 ## 4. One-off fetch
 
-`POST /admin/workers/fetch`, body (unknown fields rejected):
+`POST /workers/fetch`, body (unknown fields rejected):
 
 ```json
 {"slug": "usa-wa-sos", "url": "https://…",
@@ -120,7 +120,7 @@ Same 200/502/skipped shapes as retry (§3).
 
 ## 5. Per-authority ingest state
 
-`GET /admin/workers/authorities` → 200
+`GET /workers/authorities` → 200
 `{"authorities": […], "count": n}`, ordered by slug:
 
 ```json
@@ -136,7 +136,7 @@ Same 200/502/skipped shapes as retry (§3).
 
 ## 6. Manual watch-sweep
 
-`POST /admin/workers/sweep`, body (unknown fields rejected):
+`POST /workers/sweep`, body (unknown fields rejected):
 
 ```json
 {"items": [{"slug": "usa-wa-sos",
@@ -189,7 +189,7 @@ the staff nav as “Workers”. Sections, top to bottom:
    per-item outcomes listed after the run.
 
 All mutations send `credentials: same-origin` + the
-double-submit CSRF headers (`lib/admin/config-client.js`
+double-submit CSRF headers (`lib/config-client.js`
 `csrfHeaders()`), and surface 401/403 as “staff session
 expired — log in again”. No secrets or raw bytes rendered;
 sha256 shown in full (public dedup key, not sensitive).

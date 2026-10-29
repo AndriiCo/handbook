@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use crate::{
     AppState,
-    admin::{AdminAuth, admin_host_guard, csrf_guard},
+    admin::{AdminAuth, admin_host_guard, csrf_guard, require_client_cert},
     store_unavailable, unix_now,
 };
 
@@ -54,24 +54,25 @@ const LIVE_TASK_STATUSES: &str = "('open', 'batched', 'in_progress')";
 /// set a fallback, and the admin SPA fallback must win.
 pub fn router(state: AppState) -> Router {
     Router::new()
-        .route("/apostille/api/v1/admin/workers/status", get(status))
+        .route("/apostille/api/v1/workers/status", get(status))
+        .route("/apostille/api/v1/workers/captures", get(list_captures))
         .route(
-            "/apostille/api/v1/admin/workers/captures",
-            get(list_captures),
-        )
-        .route(
-            "/apostille/api/v1/admin/workers/captures/{id}/retry",
+            "/apostille/api/v1/workers/captures/{id}/retry",
             post(retry_capture),
         )
-        .route("/apostille/api/v1/admin/workers/fetch", post(fetch_one_url))
+        .route("/apostille/api/v1/workers/fetch", post(fetch_one_url))
         .route(
-            "/apostille/api/v1/admin/workers/authorities",
+            "/apostille/api/v1/workers/authorities",
             get(list_authorities),
         )
-        .route("/apostille/api/v1/admin/workers/sweep", post(sweep))
+        .route("/apostille/api/v1/workers/sweep", post(sweep))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf_guard,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_client_cert,
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -976,6 +977,7 @@ mod tests {
                 bus: crate::ws_bus::Bus::new(),
                 kek: None,
                 admin_mtls_off: true,
+                admin_require_cert: false,
                 admin_spa_dir: dir.path().to_path_buf(),
                 media_terms_read: false,
                 label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -1117,7 +1119,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "GET",
-                    "/apostille/api/v1/admin/workers/status",
+                    "/apostille/api/v1/workers/status",
                     STAFF_TOKEN,
                     None,
                 ))
@@ -1136,9 +1138,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn require_cert_gate_applies_to_merged_workers_routes() {
+        let mut fx = Fixture::new();
+        fx.state.admin_mtls_off = false;
+        fx.state.admin_require_cert = true;
+        let (status, body) = json_body(
+            fx.app()
+                .oneshot(authed_host(
+                    "GET",
+                    "/apostille/api/v1/workers/status",
+                    STAFF_TOKEN,
+                    None,
+                    "admin.andrii.ai",
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["error"], "client cert required");
+    }
+
+    #[tokio::test]
     async fn guards_reject_anonymous_nonstaff_wronghost_and_csrf() {
         let fx = Fixture::new();
-        let status_url = "/apostille/api/v1/admin/workers/status";
+        let status_url = "/apostille/api/v1/workers/status";
         // No session cookie → 401.
         let req = Request::builder()
             .uri(status_url)
@@ -1173,7 +1197,7 @@ mod tests {
         assert_eq!(status, StatusCode::FORBIDDEN);
         // Mutation without Origin/CSRF pair → 403.
         let req = Request::builder()
-            .uri("/apostille/api/v1/admin/workers/fetch")
+            .uri("/apostille/api/v1/workers/fetch")
             .method("POST")
             .header("host", "localhost")
             .header("cookie", format!("{}={STAFF_TOKEN}", auth::ADM_COOKIE))
@@ -1192,12 +1216,7 @@ mod tests {
         // Staff self-view still answers through the merged router.
         let (status, body) = json_body(
             fx.app()
-                .oneshot(authed(
-                    "GET",
-                    "/apostille/api/v1/admin/me",
-                    STAFF_TOKEN,
-                    None,
-                ))
+                .oneshot(authed("GET", "/apostille/api/v1/me", STAFF_TOKEN, None))
                 .await
                 .unwrap(),
         )
@@ -1207,12 +1226,7 @@ mod tests {
         // Unknown admin API paths stay JSON 404s (wildcard intact).
         let (status, body) = json_body(
             fx.app()
-                .oneshot(authed(
-                    "GET",
-                    "/apostille/api/v1/admin/nope",
-                    STAFF_TOKEN,
-                    None,
-                ))
+                .oneshot(authed("GET", "/apostille/api/v1/nope", STAFF_TOKEN, None))
                 .await
                 .unwrap(),
         )
@@ -1234,7 +1248,7 @@ mod tests {
             Some("https://example.com/synthetic/2"),
             "warc",
         );
-        let base = "/apostille/api/v1/admin/workers/captures";
+        let base = "/apostille/api/v1/workers/captures";
         let (status, body) = json_body(
             fx.app()
                 .oneshot(authed("GET", base, STAFF_TOKEN, None))
@@ -1308,7 +1322,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "GET",
-                    "/apostille/api/v1/admin/workers/authorities",
+                    "/apostille/api/v1/workers/authorities",
                     STAFF_TOKEN,
                     None,
                 ))
@@ -1344,7 +1358,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "POST",
-                    "/apostille/api/v1/admin/workers/fetch",
+                    "/apostille/api/v1/workers/fetch",
                     STAFF_TOKEN,
                     payload(),
                 ))
@@ -1359,7 +1373,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "POST",
-                    "/apostille/api/v1/admin/workers/fetch",
+                    "/apostille/api/v1/workers/fetch",
                     STAFF_TOKEN,
                     payload(),
                 ))
@@ -1394,7 +1408,7 @@ mod tests {
         let post = |body: serde_json::Value| {
             authed(
                 "POST",
-                "/apostille/api/v1/admin/workers/fetch",
+                "/apostille/api/v1/workers/fetch",
                 STAFF_TOKEN,
                 Some(body),
             )
@@ -1456,7 +1470,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "GET",
-                    "/apostille/api/v1/admin/workers/status",
+                    "/apostille/api/v1/workers/status",
                     STAFF_TOKEN,
                     None,
                 ))
@@ -1477,7 +1491,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "POST",
-                    &format!("/apostille/api/v1/admin/workers/captures/{id}/retry"),
+                    &format!("/apostille/api/v1/workers/captures/{id}/retry"),
                     STAFF_TOKEN,
                     Some(json!({})),
                 ))
@@ -1504,7 +1518,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "POST",
-                    "/apostille/api/v1/admin/workers/captures/9999/retry",
+                    "/apostille/api/v1/workers/captures/9999/retry",
                     STAFF_TOKEN,
                     Some(json!({})),
                 ))
@@ -1519,7 +1533,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "POST",
-                    &format!("/apostille/api/v1/admin/workers/captures/{orphan}/retry"),
+                    &format!("/apostille/api/v1/workers/captures/{orphan}/retry"),
                     STAFF_TOKEN,
                     Some(json!({})),
                 ))
@@ -1547,7 +1561,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "POST",
-                    "/apostille/api/v1/admin/workers/fetch",
+                    "/apostille/api/v1/workers/fetch",
                     STAFF_TOKEN,
                     Some(body),
                 ))
@@ -1585,7 +1599,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "POST",
-                    "/apostille/api/v1/admin/workers/sweep",
+                    "/apostille/api/v1/workers/sweep",
                     STAFF_TOKEN,
                     Some(body),
                 ))
@@ -1615,7 +1629,7 @@ mod tests {
             fx.app()
                 .oneshot(authed(
                     "GET",
-                    "/apostille/api/v1/admin/workers/status",
+                    "/apostille/api/v1/workers/status",
                     STAFF_TOKEN,
                     None,
                 ))
@@ -1633,7 +1647,7 @@ mod tests {
         let post = |body: serde_json::Value| {
             authed(
                 "POST",
-                "/apostille/api/v1/admin/workers/sweep",
+                "/apostille/api/v1/workers/sweep",
                 STAFF_TOKEN,
                 Some(body),
             )

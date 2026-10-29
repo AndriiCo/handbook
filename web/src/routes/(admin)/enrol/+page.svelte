@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import Notice from '../../../../lib/public-ui/Notice.svelte';
+	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import {
 		CANCELLED_COPY,
 		cookieValue,
@@ -10,8 +10,8 @@
 		isTransportFailure,
 		validInviteShape,
 		validSetupKeyShape
-	} from '../../../../lib/admin/staff-auth.js';
-	import { fetchSetupStatus } from '../../../../lib/admin/setup-client.js';
+	} from '../../../lib/admin/staff-auth.js';
+	import { fetchSetupStatus } from '../../../lib/admin/setup-client.js';
 
 	// Staff enrolment (spec customer-auth.md §5.2): single-use
 	// invite URL + live client cert + UV ceremony. The invite
@@ -132,7 +132,7 @@
 			<code>{grant.userId}</code>
 		</p>
 		<p>
-			<a href={setupMode ? resolve('/(admin)/admin/config') : resolve('/(admin)/admin')}>
+			<a href={setupMode ? resolve('/(admin)/config') : resolve('/(admin)/console')}>
 				Continue to the {setupMode ? 'config' : 'dashboard'} →
 			</a>
 		</p>

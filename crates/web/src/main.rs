@@ -156,6 +156,10 @@ struct AppState {
     /// client-cert requirement and allows loopback origins. Prod
     /// runs strict (false); true refuses release boot.
     admin_mtls_off: bool,
+    /// `admin.require_cert` (DB config): every admin-host request
+    /// (API, HTML, JS) must present a CA-verified client cert,
+    /// except the setup surface and the Telnyx webhook.
+    admin_require_cert: bool,
     /// Admin SPA build dir (`paths.admin_spa_dir` DB key, default
     /// `web/build-admin`), served from the admin listener root with
     /// SPA fallback.
@@ -222,6 +226,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             bus: ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
+            admin_require_cert: false,
             admin_spa_dir: PathBuf::from("test-admin-spa"),
             media_terms_read: false,
             label_cfg: p2_labels::LabelCfg::default(),
@@ -692,6 +697,7 @@ async fn main() {
         bus: ws_bus::Bus::new(),
         kek: Some(kek),
         admin_mtls_off: cfg.admin_mtls_off,
+        admin_require_cert: cfg.admin_require_cert,
         admin_spa_dir: PathBuf::from(&cfg.admin_spa_dir),
         media_terms_read: cfg.media_terms_read,
         label_cfg: p2_labels::LabelCfg::from_values(&cfg.usps_base_url, cfg.usps_certified),
@@ -2002,6 +2008,7 @@ mod tests {
             bus: ws_bus::Bus::new(),
             kek: Some(std::sync::Arc::new(config::Kek::generate())),
             admin_mtls_off: true,
+            admin_require_cert: false,
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg: p2_labels::LabelCfg::default(),
@@ -2135,7 +2142,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/facts",
+                "/apostille/api/v1/facts",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -2154,7 +2161,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "POST",
-                &format!("/apostille/api/v1/admin/facts/{fact_a}/accept"),
+                &format!("/apostille/api/v1/facts/{fact_a}/accept"),
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 Some("csrf-token"),
@@ -2172,7 +2179,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "POST",
-                &format!("/apostille/api/v1/admin/facts/{fact_a}/accept"),
+                &format!("/apostille/api/v1/facts/{fact_a}/accept"),
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 Some("csrf-token"),
@@ -2187,7 +2194,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "POST",
-                &format!("/apostille/api/v1/admin/facts/{fact_b}/reject"),
+                &format!("/apostille/api/v1/facts/{fact_b}/reject"),
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 Some("csrf-token"),
@@ -2200,7 +2207,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "POST",
-                &format!("/apostille/api/v1/admin/facts/{fact_b}/reject"),
+                &format!("/apostille/api/v1/facts/{fact_b}/reject"),
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 Some("csrf-token"),
@@ -2366,7 +2373,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/me",
                 Some("admin.andrii.ai"),
                 None,
                 None,
@@ -2381,7 +2388,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/me",
                 Some("admin.andrii.ai"),
                 Some("cust-1"),
                 None,
@@ -2397,7 +2404,7 @@ mod tests {
             let res = admin_router_for(&fx.state)
                 .oneshot(admin_request(
                     "GET",
-                    "/apostille/api/v1/admin/me",
+                    "/apostille/api/v1/me",
                     host,
                     Some("staff-1"),
                     None,
@@ -2413,7 +2420,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/me",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -2433,7 +2440,7 @@ mod tests {
         drop(conn);
         let req = admin_request(
             "GET",
-            "/apostille/api/v1/admin/me",
+            "/apostille/api/v1/me",
             Some("admin.andrii.ai"),
             Some("staff-1"),
             None,
@@ -2457,7 +2464,7 @@ mod tests {
         let res = admin::router(strict)
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/me",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -2492,7 +2499,7 @@ mod tests {
         let res = app
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/me",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -2509,7 +2516,7 @@ mod tests {
     async fn csrf_matrix() {
         let fx = fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
-        let uri = "/apostille/api/v1/admin/bus/publish";
+        let uri = "/apostille/api/v1/bus/publish";
         let body = Some(serde_json::json!({"topic": "call:1", "kind": "note", "body": {}}));
 
         // Mutation without Origin → 403.
@@ -2616,7 +2623,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "PUT",
-                "/apostille/api/v1/admin/config/mailer.key",
+                "/apostille/api/v1/config/mailer.key",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 Some("csrf-token"),
@@ -2642,7 +2649,7 @@ mod tests {
             let res = admin_router_for(&fx.state)
                 .oneshot(admin_request(
                     "PUT",
-                    &format!("/apostille/api/v1/admin/config/{key}"),
+                    &format!("/apostille/api/v1/config/{key}"),
                     Some("admin.andrii.ai"),
                     Some("staff-1"),
                     Some("csrf-token"),
@@ -2658,7 +2665,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/config",
+                "/apostille/api/v1/config",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -2689,7 +2696,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "PUT",
-                "/apostille/api/v1/admin/config/x",
+                "/apostille/api/v1/config/x",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 Some("csrf-token"),
@@ -2706,7 +2713,7 @@ mod tests {
         let res = admin::router(no_kek)
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/config",
+                "/apostille/api/v1/config",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -2730,7 +2737,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "GET",
-                "/admin/config",
+                "/config",
                 Some("admin.andrii.ai"),
                 None,
                 None,
@@ -2747,7 +2754,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/nope",
+                "/apostille/api/v1/nope",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -2763,7 +2770,7 @@ mod tests {
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/config",
+                "/apostille/api/v1/config",
                 Some("admin.andrii.ai"),
                 None,
                 None,
@@ -2813,7 +2820,7 @@ mod tests {
         // With grant: quarantined capture + audit.
         let (content_type, body) = multipart(&slug, true);
         let req = Request::builder()
-            .uri("/apostille/api/v1/admin/media/upload")
+            .uri("/apostille/api/v1/media/upload")
             .method("POST")
             .header("host", "admin.andrii.ai")
             .header(
@@ -2848,7 +2855,7 @@ mod tests {
         // Without grant: 422, nothing stored.
         let (content_type, body) = multipart(&slug, false);
         let req = Request::builder()
-            .uri("/apostille/api/v1/admin/media/upload")
+            .uri("/apostille/api/v1/media/upload")
             .method("POST")
             .header("host", "admin.andrii.ai")
             .header(
@@ -2894,11 +2901,12 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
         assert!(body.starts_with(b"User-agent:"));
 
-        // Admin paths are JSON 404 on the public listener, never mounted.
+        // Admin paths are JSON 404 on the public listener, never mounted
+        // (the host differentiates the branches; /queue exists only there).
         let res = public_router_for(&fx.state)
             .oneshot(
                 Request::builder()
-                    .uri("/apostille/api/v1/admin/me")
+                    .uri("/apostille/api/v1/queue")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -3221,7 +3229,7 @@ mod tests {
             "admin.andrii.ai",
             Some(&staff_cookie()),
             None,
-            "/apostille/api/v1/admin/me",
+            "/apostille/api/v1/me",
         )
         .await
         .unwrap();
@@ -3249,7 +3257,7 @@ mod tests {
             "admin.andrii.ai",
             Some(&staff_cookie()),
             None,
-            "/apostille/api/v1/admin/me",
+            "/apostille/api/v1/me",
         )
         .await
         .unwrap();
@@ -3277,7 +3285,7 @@ mod tests {
             "admin.andrii.ai",
             Some(&staff_cookie()),
             None,
-            "/apostille/api/v1/admin/me",
+            "/apostille/api/v1/me",
         )
         .await
         .unwrap();
@@ -3305,7 +3313,7 @@ mod tests {
             "admin.andrii.ai",
             Some(&staff_cookie()),
             None,
-            "/apostille/api/v1/admin/me",
+            "/apostille/api/v1/me",
         )
         .await
         .unwrap();
@@ -3336,7 +3344,7 @@ mod tests {
             "admin.andrii.ai",
             Some(&staff_cookie()),
             None,
-            "/apostille/api/v1/admin/me",
+            "/apostille/api/v1/me",
         )
         .await
         .expect_err("wrong-CA cert must fail the handshake");
@@ -3368,7 +3376,7 @@ mod tests {
             "admin.andrii.ai",
             Some(&staff_cookie()),
             Some(("x-admin-cert-sha256", &client.fingerprint)),
-            "/apostille/api/v1/admin/me",
+            "/apostille/api/v1/me",
         )
         .await
         .unwrap();
@@ -3399,7 +3407,7 @@ mod tests {
                 "admin.andrii.ai",
                 Some(&staff_cookie()),
                 None,
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/me",
             )
             .await
             .unwrap();
@@ -3517,7 +3525,7 @@ mod tests {
             .clone()
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/me",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -3534,7 +3542,7 @@ mod tests {
             .clone()
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/me",
                 Some("admin.andrii.ai"),
                 None,
                 None,
@@ -3564,7 +3572,7 @@ mod tests {
         let res = router
             .oneshot(admin_request(
                 "GET",
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/queue",
                 Some("andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -3587,7 +3595,7 @@ mod tests {
         let admin_me = || {
             admin_request(
                 "GET",
-                "/apostille/api/v1/admin/me",
+                "/apostille/api/v1/me",
                 Some("admin.andrii.ai"),
                 Some("staff-1"),
                 None,
@@ -3893,7 +3901,7 @@ mod tests {
         )
         .await;
         let session_cookie = format!("{}=staff-1", auth::ADM_COOKIE);
-        let admin_me = "/apostille/api/v1/admin/me";
+        let admin_me = "/apostille/api/v1/me";
 
         // DENY: staff session but no client cert → 403.
         let (status, _) = h3_get(

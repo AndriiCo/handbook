@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS staff_invite(
 
 ## 2. HTTP endpoints
 
-Base paths: public branch `/apostille/api/v1/auth/…`; admin branch `/apostille/api/v1/admin/auth/…` (staff passkey enrolment/login only — Phase 4). All mutating endpoints require Origin check + double-submit CSRF. All DTOs use `#[serde(deny_unknown_fields)]` (SECURITY.md input-validation rule).
+Base paths: public branch `/apostille/api/v1/auth/…`; admin branch `/apostille/api/v1/auth/…` (staff passkey enrolment/login only — Phase 4). All mutating endpoints require Origin check + double-submit CSRF. All DTOs use `#[serde(deny_unknown_fields)]` (SECURITY.md input-validation rule).
 
 Wire note: challenge responses (`CreationChallengeResponse`, `RequestChallengeResponse`) and credential payloads (`RegisterPublicKeyCredential`, `PublicKeyCredential`) serialise per the crate's serde impls and pass through verbatim inside our envelopes.
 
@@ -193,14 +193,14 @@ All staff ceremony routes live on the **admin router only**, behind the admin ho
 
 ### 5.2 Enrolment endpoints
 
-`POST /apostille/api/v1/admin/auth/passkey/enrol/start` — mirrors `register_start` mode (a), plus invite + cert.
+`POST /apostille/api/v1/auth/passkey/enrol/start` — mirrors `register_start` mode (a), plus invite + cert.
 
 - Request (`deny_unknown_fields`): `{"invite": "<64-hex>", "display_name": "…", "label?": "…"}`. No session required (logged-out by construction). Guards: Origin + `hb_csrf` mint (no echo on start, same as §2.1).
 - Server: hash invite → live row? (`410` if missing/expired/consumed); presented cert live + CN matches? (`403`); `mint_user_id`; `start_passkey_registration` (the crate already requests UV for every ceremony — no option differs from customer; the staff delta is the finish-time assert below); persist state with `kind='staff_register'` (separate kinds make customer/admin states non-interchangeable — the branch confused-deputy boundary, cf. OAuth D2); `sweep_challenges` first.
 - Success `200`: `{"challenge_id": "…", "options": {…}, "role": "staff"|"admin", "cn": "…", "fp_suffix": "…"}` (echoes what the invite grants so the UI can show which device cert it binds; no token echo).
 - Errors: `400` bad display_name/label/invite shape; `403` CSRF/Origin/cert-mismatch/cert-missing; `410` invite invalid/consumed/expired; `429`; `500`/`503` store unavailable.
 
-`POST /apostille/api/v1/admin/auth/passkey/enrol/finish` — mirrors `register_finish` mode (a).
+`POST /apostille/api/v1/auth/passkey/enrol/finish` — mirrors `register_finish` mode (a).
 
 - Request: `{"challenge_id": "…", "credential": {…}, "invite": "…", "label?": "…"}` (invite echoed so finish re-validates + consumes).
 - Server, in order: Origin + CSRF echo; `take_challenge(id, 'staff_register')` → `410` on miss; invite hash matches the stashed one; re-validate invite still live + cert still live + CN still matches (`403`); consume invite (`consumed_by=user_id`, `410` on race-loss) BEFORE persisting — a burned invite on later failure fails closed (fresh invite is the recovery), while persisting first would orphan credentials; `finish_passkey_registration` (UV enforced inside — the crate requests UV Required at every start, so a non-UV ceremony fails closed as `422` like any verification failure, identically for customer and staff); assert credential ID globally unregistered (`409`); `ensure_staff_account(user_id, invite.role)` + `store_credential` (+ companion `identity_link` row — staff passkeys participate in rules 1/6/7 like any method); `set_step_up(user_id, now)` (enrolment UV doubles as the first step-up); mint session with `role=invite.role`, `customer_ref=None` (staff sessions carry no customer ref); rotate CSRF; audit `staff_enrolled` (reason = `role:cn:fingerprint` — ids/hashes only).
@@ -209,9 +209,9 @@ All staff ceremony routes live on the **admin router only**, behind the admin ho
 
 ### 5.3 Staff/admin login endpoints
 
-`POST /apostille/api/v1/admin/auth/passkey/login/start` — mirrors `login_start`, minus email resolution: request `{"account": "<user_id hex>"}` only (staff accounts have no email links; emails on the admin branch aid enumeration). Unknown/locked/cred-less accounts → identical `401 {"error": "unknown account or no passkeys"}` (no enumeration, no role oracle — the role gate lives at finish). Cert presence is NOT required at start (challenge issuance is harmless; enforcement is at finish + every subsequent request). State kind `'staff_login'`. Rate keys `sl:{ip}` 30/min.
+`POST /apostille/api/v1/auth/passkey/login/start` — mirrors `login_start`, minus email resolution: request `{"account": "<user_id hex>"}` only (staff accounts have no email links; emails on the admin branch aid enumeration). Unknown/locked/cred-less accounts → identical `401 {"error": "unknown account or no passkeys"}` (no enumeration, no role oracle — the role gate lives at finish). Cert presence is NOT required at start (challenge issuance is harmless; enforcement is at finish + every subsequent request). State kind `'staff_login'`. Rate keys `sl:{ip}` 30/min.
 
-`POST /apostille/api/v1/admin/auth/passkey/login/finish` — mirrors `login_finish` with five deltas:
+`POST /apostille/api/v1/auth/passkey/login/finish` — mirrors `login_finish` with five deltas:
 
 1. `take_challenge(id, 'staff_login')`; unknown credential ID → `404 {"error": "credential unknown", "action": "re-register"}` (staff re-register = a fresh invite from an admin, never self-service — the admin SPA routes to an "ask your admin" page, never a dead end).
 2. Finish requires a presented LIVE cert (any CN — user binding awaits OPEN-15), else `403 {"error": "client cert required"}` + audit; the fingerprint is recorded in the `staff_login` audit. (A session minted without a cert would grant nothing anyway via `AdminAuth`; refusing at finish gives the clear error instead of a useless session.)

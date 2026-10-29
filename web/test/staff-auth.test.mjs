@@ -165,8 +165,8 @@ describe('staff-auth ceremonies with fakes', () => {
 		assert.equal(res.body.role, 'staff');
 		assert.equal(res.body.user_id, 'u');
 		assert.deepEqual(seen, [
-			'/admin/auth/passkey/enrol/start',
-			'/admin/auth/passkey/enrol/finish'
+			'/auth/passkey/enrol/start',
+			'/auth/passkey/enrol/finish'
 		]);
 	});
 
@@ -201,8 +201,8 @@ describe('staff-auth ceremonies with fakes', () => {
 		assert.equal(res.body.role, 'admin');
 		assert.equal(res.body.user_id, 'u');
 		assert.deepEqual(seen, [
-			'/admin/auth/passkey/enrol/start',
-			'/admin/auth/passkey/enrol/finish'
+			'/auth/passkey/enrol/start',
+			'/auth/passkey/enrol/finish'
 		]);
 	});
 
@@ -247,8 +247,8 @@ describe('staff-auth ceremonies with fakes', () => {
 		const res = await loginPasskey('u'.repeat(32), io);
 		assert.equal(res.ok, true);
 		assert.deepEqual(seen, [
-			'/admin/auth/passkey/login/start',
-			'/admin/auth/passkey/login/finish'
+			'/auth/passkey/login/start',
+			'/auth/passkey/login/finish'
 		]);
 	});
 });

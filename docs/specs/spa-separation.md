@@ -61,7 +61,7 @@
   - Root decision (run-100): because the admin build registers the
     `(public)` homepage at `/` too, the admin router answers `GET /`
     with `303 → /admin` (dashboard; its layout gate forwards to
-    `/admin/login` when unauthenticated) instead of serving the
+     `/login` when unauthenticated) instead of serving the
     shell. `/mock/*` is a server 404 on the staff origin (demo
     routes must never render on prod admin, even client-side).
   - Simpler interim (hackathon): one build, but Caddy/axum on public

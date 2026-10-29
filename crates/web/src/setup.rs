@@ -125,7 +125,7 @@ pub fn burn_setup_key(conn: &rusqlite::Connection, actor: &str, now: i64) -> boo
     burned
 }
 
-/// `GET .../admin/setup/status` → `{setup_required}`. Public on the
+/// `GET .../setup/status` → `{setup_required}`. Public on the
 /// admin host: a bare boolean leaks nothing beyond "fresh server".
 pub async fn setup_status(State(state): State<AppState>) -> impl IntoResponse {
     let Some(conn) = passkey::open_conn(&state) else {
@@ -138,7 +138,7 @@ pub async fn setup_status(State(state): State<AppState>) -> impl IntoResponse {
         .into_response()
 }
 
-/// `GET .../admin/setup/steps` (SetupAuth) → wizard progress: the
+/// `GET .../setup/steps` (SetupAuth) → wizard progress: the
 /// admin-list row shape, registry keys except `setup.*`. Unset keys
 /// are absent — the SPA marks them missing. No Origin check: safe
 /// method + key-gated, and browsers omit `Origin` on GET — the
@@ -185,7 +185,7 @@ pub struct SetupSetBody {
     value: serde_json::Value,
 }
 
-/// `POST .../admin/setup/keys/{key}` (SetupAuth) → sealed put +
+/// `POST .../setup/keys/{key}` (SetupAuth) → sealed put +
 /// audit (actor `setup`). Same validation as admin PUT minus
 /// step-up (no session exists — the key IS the auth), restricted
 /// to registered wizard keys (`setup.*` and unknown keys 422).
@@ -356,6 +356,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: Some(std::sync::Arc::new(kek)),
             admin_mtls_off: true,
+            admin_require_cert: false,
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -375,18 +376,18 @@ mod tests {
 
     fn router(state: AppState) -> Router {
         Router::new()
-            .route("/apostille/api/v1/admin/setup/status", get(setup_status))
-            .route("/apostille/api/v1/admin/setup/steps", get(setup_steps))
+            .route("/apostille/api/v1/setup/status", get(setup_status))
+            .route("/apostille/api/v1/setup/steps", get(setup_steps))
             .route(
-                "/apostille/api/v1/admin/setup/keys/{key}",
+                "/apostille/api/v1/setup/keys/{key}",
                 axum::routing::post(setup_set_key),
             )
             .route(
-                "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                "/apostille/api/v1/auth/passkey/enrol/start",
                 axum::routing::post(crate::staff_passkey::enrol_start),
             )
             .route(
-                "/apostille/api/v1/admin/auth/passkey/enrol/finish",
+                "/apostille/api/v1/auth/passkey/enrol/finish",
                 axum::routing::post(crate::staff_passkey::enrol_finish),
             )
             .layer(axum::middleware::from_fn_with_state(
@@ -464,12 +465,7 @@ mod tests {
         let fix = fixture();
         let app = router(fix.state.clone());
         let res = app
-            .oneshot(request(
-                "GET",
-                "/apostille/api/v1/admin/setup/status",
-                None,
-                None,
-            ))
+            .oneshot(request("GET", "/apostille/api/v1/setup/status", None, None))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
@@ -482,12 +478,7 @@ mod tests {
         drop(conn);
         let app = router(fix.state.clone());
         let res = app
-            .oneshot(request(
-                "GET",
-                "/apostille/api/v1/admin/setup/status",
-                None,
-                None,
-            ))
+            .oneshot(request("GET", "/apostille/api/v1/setup/status", None, None))
             .await
             .unwrap();
         assert_eq!(json_body(res).await["setup_required"], false);
@@ -499,12 +490,7 @@ mod tests {
         let app = router(fix.state.clone());
         // Missing key → 401.
         let res = app
-            .oneshot(request(
-                "GET",
-                "/apostille/api/v1/admin/setup/steps",
-                None,
-                None,
-            ))
+            .oneshot(request("GET", "/apostille/api/v1/setup/steps", None, None))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -513,7 +499,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "GET",
-                "/apostille/api/v1/admin/setup/steps",
+                "/apostille/api/v1/setup/steps",
                 Some("setup_wrong"),
                 None,
             ))
@@ -526,7 +512,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "GET",
-                "/apostille/api/v1/admin/setup/steps",
+                "/apostille/api/v1/setup/steps",
                 Some(KEY),
                 None,
             ))
@@ -545,10 +531,7 @@ mod tests {
         let fix = fixture();
         let app = router(fix.state.clone());
         let res = app
-            .oneshot(browser_get(
-                "/apostille/api/v1/admin/setup/steps",
-                Some(KEY),
-            ))
+            .oneshot(browser_get("/apostille/api/v1/setup/steps", Some(KEY)))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
@@ -569,7 +552,7 @@ mod tests {
             let res = app
                 .oneshot(request(
                     "POST",
-                    &format!("/apostille/api/v1/admin/setup/keys/{key}"),
+                    &format!("/apostille/api/v1/setup/keys/{key}"),
                     Some(KEY),
                     Some(json!({"type": key_type, "value": value})),
                 ))
@@ -582,7 +565,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/setup/keys/setup.key_hash",
+                "/apostille/api/v1/setup/keys/setup.key_hash",
                 Some(KEY),
                 Some(json!({"type": "secret", "value": "evil"})),
             ))
@@ -594,7 +577,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/setup/keys/made.up",
+                "/apostille/api/v1/setup/keys/made.up",
                 Some(KEY),
                 Some(json!({"type": "text", "value": "x"})),
             ))
@@ -606,7 +589,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/setup/keys/acme.enabled",
+                "/apostille/api/v1/setup/keys/acme.enabled",
                 Some(KEY),
                 Some(json!({"type": "bool", "value": "yes-please"})),
             ))
@@ -618,7 +601,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/setup/keys/acme.enabled",
+                "/apostille/api/v1/setup/keys/acme.enabled",
                 Some(KEY),
                 Some(json!({"type": "text", "value": "true"})),
             ))
@@ -634,7 +617,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "GET",
-                "/apostille/api/v1/admin/setup/steps",
+                "/apostille/api/v1/setup/steps",
                 Some(KEY),
                 None,
             ))
@@ -661,7 +644,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                "/apostille/api/v1/auth/passkey/enrol/start",
                 None,
                 Some(json!({"invite": "i", "setup_key": KEY, "display_name": "Op"})),
             ))
@@ -673,7 +656,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                "/apostille/api/v1/auth/passkey/enrol/start",
                 None,
                 Some(json!({"display_name": "Op"})),
             ))
@@ -685,7 +668,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                "/apostille/api/v1/auth/passkey/enrol/start",
                 None,
                 Some(json!({"setup_key": "setup_wrong", "display_name": "Op"})),
             ))
@@ -698,7 +681,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                "/apostille/api/v1/auth/passkey/enrol/start",
                 None,
                 Some(json!({"setup_key": KEY, "display_name": "Op"})),
             ))
@@ -718,7 +701,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/auth/passkey/enrol/finish",
+                "/apostille/api/v1/auth/passkey/enrol/finish",
                 None,
                 Some(json!({
                     "challenge_id": "nope",
@@ -747,7 +730,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                "/apostille/api/v1/auth/passkey/enrol/start",
                 None,
                 Some(json!({"setup_key": KEY, "display_name": "Op"})),
             ))
@@ -762,7 +745,7 @@ mod tests {
         let res = app
             .oneshot(request(
                 "POST",
-                "/apostille/api/v1/admin/auth/passkey/enrol/finish",
+                "/apostille/api/v1/auth/passkey/enrol/finish",
                 None,
                 Some(json!({
                     "challenge_id": challenge_id,

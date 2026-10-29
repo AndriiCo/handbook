@@ -137,7 +137,7 @@ export const CANCELLED_COPY = 'Cancelled — no changes were made.';
  */
 export async function enrolPasskey(input, io) {
 	const gate = input.setupKey ? { setup_key: input.setupKey } : { invite: input.invite };
-	const started = await io.post('/admin/auth/passkey/enrol/start', {
+	const started = await io.post('/auth/passkey/enrol/start', {
 		...gate,
 		display_name: input.displayName,
 		...(input.label ? { label: input.label } : {})
@@ -146,7 +146,7 @@ export async function enrolPasskey(input, io) {
 	const args = credentialRequestArgs(started.body.options);
 	const cred = await io.credentials.create(args);
 	const credential = serializeRegistration(cred);
-	const done = await io.post('/admin/auth/passkey/enrol/finish', {
+	const done = await io.post('/auth/passkey/enrol/finish', {
 		challenge_id: started.body.challenge_id,
 		credential,
 		...gate,
@@ -164,12 +164,12 @@ export async function enrolPasskey(input, io) {
  * @param {any} io
  */
 export async function loginPasskey(account, io) {
-	const started = await io.post('/admin/auth/passkey/login/start', { account });
+	const started = await io.post('/auth/passkey/login/start', { account });
 	if (!started.ok) return started;
 	const args = credentialRequestArgs(started.body.options);
 	const cred = await io.credentials.get(args);
 	const credential = serializeAuthentication(cred);
-	return io.post('/admin/auth/passkey/login/finish', {
+	return io.post('/auth/passkey/login/finish', {
 		challenge_id: started.body.challenge_id,
 		credential
 	});

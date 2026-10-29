@@ -36,12 +36,12 @@ test('fetch + save round-trips against a stub admin API', async () => {
 	]);
 	const seen = [];
 	const server = createServer((req, res) => {
-		if (req.method === 'GET' && req.url === '/api/v1/admin/config') {
+		if (req.method === 'GET' && req.url === '/api/v1/config') {
 			res.writeHead(200, { 'content-type': 'application/json' });
 			res.end(JSON.stringify([...store.values(), { key: 'meta.key', type: 'secret', set: false }]));
 			return;
 		}
-		const put = req.method === 'PUT' && req.url?.startsWith('/api/v1/admin/config/');
+		const put = req.method === 'PUT' && req.url?.startsWith('/api/v1/config/');
 		if (put) {
 			let body = '';
 			req.on('data', (chunk) => (body += chunk));

@@ -10,7 +10,7 @@ const PUBLIC = join(ROOT, 'build');
 const ADMIN = join(ROOT, 'build-admin');
 
 // Strings that exist ONLY in (admin) route code.
-const ADMIN_ONLY = ['admin/config', 'Staff only'];
+const ADMIN_ONLY = ['/(admin)/config', 'Staff only'];
 // Strings that exist in shared/public route code (both builds).
 const SHARED = ['Start with your destination'];
 // Route ids registered in the client manifest (entry chunk).
@@ -22,15 +22,14 @@ const PUBLIC_ROUTES = [
 	'/(customer)/precheck'
 ];
 const ADMIN_ROUTES = [
-	'/(admin)/admin',
-	'/(admin)/admin/config',
-	'/(admin)/admin/triage',
-	'/(admin)/admin/console',
+	'/(admin)/console',
+	'/(admin)/config',
+	'/(admin)/triage',
+	'/(admin)/staff-login',
+	'/(admin)/enrol',
 	'/(admin)/workers',
 	'/(admin)/calls',
-	'/(admin)/calls/[id]',
-	'/(admin)/admin/login',
-	'/(admin)/admin/enrol'
+	'/(admin)/calls/[id]'
 ];
 
 function* files(dir) {
@@ -89,12 +88,12 @@ for (const id of ADMIN_ROUTES) {
 	check(!publicEntry.includes(id), `public manifest has no ${id}`);
 	check(adminEntry.includes(`"${id}"`), `admin manifest registers ${id}`);
 }
-// Admin domain-root contract (server redirects `/` → `/admin`, see
+// Admin domain-root contract (server redirects `/` → `/console`, see
 // crates/web/src/admin.rs): the admin build must register the redirect
 // target, and must not contain a second root page (SvelteKit would refuse
 // to build two `/` routes — this pins that the admin build's `/` is still
 // exactly the (public) homepage the redirect exists to bypass).
-check(adminEntry.includes('"/(admin)/admin"'), 'admin manifest registers redirect target /(admin)/admin');
+check(adminEntry.includes('"/(admin)/console"'), 'admin manifest registers redirect target /(admin)/console');
 const adminRootPages = (adminEntry.match(/"\/\((public|admin|mock|customer)\)"/g) || []).length;
 check(adminRootPages === 1, `admin manifest has exactly one root route (found ${adminRootPages})`);
 
