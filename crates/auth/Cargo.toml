@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 aws-lc-rs = "1"
+base64 = "0.22"
 rand = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
@@ -17,5 +18,4 @@ sha2 = "0.10"
 jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
 
 [dev-dependencies]
-base64 = "0.22"
 tempfile = "3"

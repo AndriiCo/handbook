@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Apostille Handbook</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;line-height:1.6;max-width:44rem;margin:0 auto;padding:1.5rem;color:#1a1a1a}
+h1{font-size:1.6rem}h2{font-size:1.15rem;margin-top:2rem}table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{border:1px solid #ccc;padding:.4rem .6rem;text-align:left;vertical-align:top}
+code{font-size:.85em;background:#f4f4f4;padding:.1em .3em;border-radius:3px}
+.draft{background:#fff8e1;border:1px solid #e0c36a;padding:.75rem 1rem;border-radius:4px}
+</style>
+</head>
+<body>
+<main>
+<h1>Privacy Policy</h1>
+<p><strong>Apostille Handbook</strong> (the “Service”), operated by
+<strong>[OPERATOR LEGAL NAME, ADDRESS]</strong> (“we”, “us”).
+Contact for privacy matters: <strong>[PRIVACY CONTACT EMAIL]</strong>.</p>
+<p>Effective date: <strong>[EFFECTIVE DATE]</strong>.
+This page is the single, authoritative privacy policy for the Service.</p>
+<p class="draft"><strong>Draft notice:</strong> this policy is under review
+with our legal partners and may be revised before it takes effect. Bracketed
+items are operator inputs to be finalized.</p>
+
+<h2>1. What we collect</h2>
+<p>We collect the minimum needed to run the Service. We operate no
+advertising, no third-party analytics, and no cross-site trackers.</p>
+<table>
+<tr><th>Category</th><th>What, precisely</th><th>Why</th></tr>
+<tr><td>Account identifiers</td><td>A random account ID we generate; your chosen
+display name. No government ID numbers, ever.</td><td>To operate your account.</td></tr>
+<tr><td>Login credentials</td><td>Passkey <em>public</em> keys (private keys never
+leave your device); OAuth provider identifiers. Meta login is identifier-only —
+we never fetch your Meta email address. For Google, Apple, and magic-link login
+we keep only a hash of your email address, never the address itself.</td>
+<td>To authenticate you.</td></tr>
+<tr><td>Documents you submit</td><td>Form answers, uploaded files, drawn
+signatures, shipping names, addresses, and tracking numbers.</td>
+<td>To prepare and ship your apostille paperwork.</td></tr>
+<tr><td>Technical records</td><td>Hashed network identifiers in active sessions,
+rate-limit counters (forgotten within about an hour), and a tamper-evident
+security log keyed by your opaque account ID.</td>
+<td>Security, abuse prevention, and debugging.</td></tr>
+<tr><td>Verification calls</td><td>We do <em>not</em> record you. Our staff place
+outbound verification calls to public offices; call recordings are kept one
+year, transcripts indefinitely as verification records.</td>
+<td>To verify authority requirements before publication.</td></tr>
+</table>
+
+<h2>2. Cookies</h2>
+<table>
+<tr><th>Name</th><th>Purpose</th><th>Expiry</th></tr>
+<tr><td><code>__Host-hb_pub</code></td><td>Your login session.</td>
+<td>24 h idle / 12 h absolute.</td></tr>
+<tr><td><code>hb_csrf</code></td><td>Cross-site-request-forgery protection.</td>
+<td>Session.</td></tr>
+<tr><td><code>hb_oauth*</code></td><td>OAuth login handshake binding.</td>
+<td>5 minutes.</td></tr>
+<tr><td>Demo cookie</td><td>Anonymous demo session, if you use the demo.</td>
+<td>24 hours.</td></tr>
+</table>
+<p>All session cookies are <code>HttpOnly</code> and <code>SameSite=Lax</code>.
+There are no advertising or analytics cookies.</p>
+
+<h2>3. How we share data</h2>
+<p>We share personal data only to provide the Service, and only what each
+recipient needs:</p>
+<ul>
+<li><strong>Login providers</strong> (Google, Apple, Meta): the standard
+authentication handshake when you choose that sign-in method.</li>
+<li><strong>Shipping carriers</strong> (USPS, FedEx): names, addresses, and
+package details for labels you ask us to buy or print.</li>
+<li><strong>Telephony provider</strong> (Telnyx): staff-initiated verification
+calls to public offices; your personal data is not part of those calls.</li>
+<li><strong>Legal compliance:</strong> where disclosure is required by law.</li>
+</ul>
+<p>We do not sell personal data. We do not share it with data brokers.</p>
+
+<h2>4. Retention</h2>
+<table>
+<tr><th>Data</th><th>Kept for</th></tr>
+<tr><td>Login challenges, OAuth handshakes</td><td>Minutes, then purged.</td></tr>
+<tr><td>Magic-link tokens</td><td>15 minutes, then purged.</td></tr>
+<tr><td>Sessions</td><td>Until the timeouts in §2, then purged.</td></tr>
+<tr><td>Forms, documents, shipments, labels</td><td>Until you ask us to delete
+them (see §6).</td></tr>
+<tr><td>Call recordings / transcripts</td><td>One year / indefinitely (see §1).</td></tr>
+<tr><td>Security-audit log</td><td>Indefinitely, append-only, under opaque
+account IDs that cannot be linked back to you once your account is
+deleted.</td></tr>
+<tr><td>Payment / invoicing records</td><td>We hold none today. When billing
+ships, invoices are retained for <strong>[N]</strong> years as tax law
+requires, and are exempt from deletion requests to that extent.</td></tr>
+</table>
+
+<h2>5. Security</h2>
+<p>Stored secrets are encrypted with keys held outside the database;
+staff access requires passkeys plus mutual-TLS client certificates;
+administrative changes are step-up authenticated and audited. No system
+is perfectly secure; we will notify affected users of breaches as the
+law requires.</p>
+
+<h2>6. Your rights — access, correction, deletion</h2>
+<p>You may ask what we hold about you, ask us to correct it, or ask us to
+delete it:</p>
+<ul>
+<li><strong>Meta login users:</strong> open Facebook → Settings → Apps and
+Websites, select this app, and choose removal with data deletion. Meta
+forwards the request to us automatically and we delete your data, then
+give you a confirmation page and code.</li>
+<li><strong>Everyone:</strong> email <strong>[PRIVACY CONTACT EMAIL]</strong>
+from your login address (or prove account ownership another reasonable
+way). We respond within <strong>[N]</strong> days.</li>
+</ul>
+<p>Deletion removes your account, login methods, sessions, submitted forms
+and documents, shipments and labels, and stored files. Two narrow
+exceptions: (a) the append-only security-audit log keeps opaque entries
+that can no longer be linked to any person; (b) payment/invoicing records
+are kept as §4 requires.</p>
+
+<h2>7. Children</h2>
+<p>The Service is not directed at children under 13, and we do not knowingly
+collect their data. If you believe a child has provided data, contact us
+and we will delete it.</p>
+
+<h2>8. Changes to this policy</h2>
+<p>We will post revisions on this page with a new effective date. Material
+changes take effect <strong>[N]</strong> days after posting; continued use
+after that date constitutes acceptance. Prior versions are available on
+request.</p>
+
+<h2>9. Contact</h2>
+<p><strong>[OPERATOR LEGAL NAME]</strong><br>
+<strong>[ADDRESS]</strong><br>
+Privacy: <strong>[PRIVACY CONTACT EMAIL]</strong></p>
+</main>
+</body>
+</html>

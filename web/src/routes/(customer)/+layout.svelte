@@ -68,3 +68,7 @@
 </nav>
 
 {@render children()}
+
+<footer class="mt-8 border-t border-line px-4 py-3 text-sm text-ink-muted">
+	<a class="inline-flex min-h-11 items-center underline" href="/privacy">Privacy Policy</a>
+</footer>

@@ -141,6 +141,9 @@ struct AppState {
     /// Magic-link landing base (origin-derived, never
     /// configured): `{auth.origin}/apostille/login`.
     magic_link_base: String,
+    /// Meta deletion-status base (origin-derived, never
+    /// configured): `{auth.origin}/auth/meta/delete-status`.
+    meta_delete_status_base: String,
 }
 
 /// Build the full PUBLIC app router. `static_dir` roots
@@ -177,6 +180,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             meta_cfg: None,
             mailer: None,
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         },
         static_dir,
         spa_dir,
@@ -250,9 +254,15 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/apostille", get(serve_spa_index))
         .route("/apostille/", get(serve_spa_index))
         .route("/robots.txt", get(serve_robots))
+        .route("/privacy", get(serve_privacy))
         .route("/auth/google/callback", get(oauth::callback))
         .route("/auth/apple/callback", get(oauth_apple::callback))
         .route("/auth/meta/callback", get(oauth_meta::callback))
+        .route(
+            "/auth/meta/delete-request",
+            post(oauth_meta::delete_request),
+        )
+        .route("/auth/meta/delete-status", get(oauth_meta::delete_status))
         .nest("/apostille", api)
         .nest_service("/.well-known/acme-challenge", ServeDir::new(acme_dir))
         .layer(axum::middleware::from_fn(request_id_and_log))
@@ -281,6 +291,19 @@ async fn serve_robots(State(state): State<AppState>) -> impl IntoResponse {
                 axum::http::header::CONTENT_TYPE,
                 "text/plain; charset=utf-8",
             )],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// The binding privacy policy (Meta/Google/Apple dashboard URL):
+/// server-rendered static HTML so crawlers read it with no JS.
+async fn serve_privacy(State(state): State<AppState>) -> impl IntoResponse {
+    match tokio::fs::read(state.static_dir.join("privacy.html")).await {
+        Ok(bytes) => (
+            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
             bytes,
         )
             .into_response(),
@@ -692,6 +715,10 @@ async fn main() {
         },
         mailer: magic::mailer_from_config(&cfg, std::path::Path::new(store_dir.as_str())),
         magic_link_base: format!("{}/apostille/login", cfg.auth_origin.trim_end_matches('/')),
+        meta_delete_status_base: format!(
+            "{}/auth/meta/delete-status",
+            cfg.auth_origin.trim_end_matches('/')
+        ),
     };
     let public = public_router(
         state.clone(),
@@ -1467,6 +1494,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn privacy_route_serves_static_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_str().unwrap().to_string();
+        std::fs::write(tmp.path().join("privacy.html"), "<h1>TEST-POLICY</h1>").unwrap();
+        let res = app(&dir, &dir, tmp.path().to_path_buf(), &dir)
+            .oneshot(
+                Request::builder()
+                    .uri("/privacy")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get(axum::http::header::CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        assert_eq!(body.as_ref(), b"<h1>TEST-POLICY</h1>");
+    }
+
+    #[test]
+    fn privacy_policy_covers_required_elements() {
+        // Compile-time read of the shipped draft: Meta requires what
+        // is collected, the purposes, and how users request deletion.
+        let policy = include_str!("../static/privacy.html");
+        for needle in [
+            "Privacy Policy",
+            "What we collect",
+            "Cookies",
+            "Your rights",
+            "Meta",
+            "delete",
+            "Children",
+            "Contact",
+        ] {
+            assert!(policy.contains(needle), "missing {needle}");
+        }
+    }
+
+    #[tokio::test]
     async fn https_redirect_points_at_public_host() {
         let res = redirect_router("example.test".to_string(), "test-acme")
             .oneshot(
@@ -1747,6 +1816,7 @@ mod tests {
             meta_cfg: None,
             mailer: None,
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         };
         Fixture { _tmp: tmp, state }
     }

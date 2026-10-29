@@ -266,7 +266,16 @@ pub fn migrate_auth_tables(conn: &Connection) -> rusqlite::Result<()> {
            consumed_at INTEGER
          ) STRICT;
          CREATE INDEX IF NOT EXISTS idx_magic_email ON magic_token(email_hash);
-         CREATE INDEX IF NOT EXISTS idx_magic_exp ON magic_token(expires_at);",
+         CREATE INDEX IF NOT EXISTS idx_magic_exp ON magic_token(expires_at);
+         -- Meta data-deletion requests (customer-auth.md §11.9):
+         -- confirmation code → human-readable status. No user id
+         -- or Meta sub is kept: post-purge there is nothing to link.
+         CREATE TABLE IF NOT EXISTS meta_deletion(
+           code TEXT PRIMARY KEY,
+           status TEXT NOT NULL,
+           created_at INTEGER NOT NULL,
+           completed_at INTEGER
+         ) STRICT;",
     )?;
     Ok(())
 }

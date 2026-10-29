@@ -172,6 +172,35 @@ pub fn resolve_meta(
     Ok(ResolveOutcome::Register { user_id })
 }
 
+/// Parse a Meta data-deletion `signed_request` (dashboard "Data
+/// Deletion Request Callback"): `sig_b64url.payload_b64url` where
+/// sig = HMAC-SHA256 over the payload *segment* under the app
+/// secret. Returns the app-scoped `user_id`; None on any
+/// malformation or bad signature (single failure shape, no
+/// oracle). `algorithm` must read exactly `HMAC-SHA256`.
+pub fn parse_deletion_request(signed_request: &str, app_secret: &str) -> Option<String> {
+    use aws_lc_rs::hmac;
+    use base64::Engine as _;
+    let (sig_b64, payload_b64) = signed_request.split_once('.')?;
+    if sig_b64.is_empty() || payload_b64.is_empty() {
+        return None;
+    }
+    let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let sig = engine.decode(sig_b64).ok()?;
+    let payload_bytes = engine.decode(payload_b64).ok()?;
+    let key = hmac::Key::new(hmac::HMAC_SHA256, app_secret.as_bytes());
+    hmac::verify(&key, payload_b64.as_bytes(), &sig).ok()?;
+    let payload: serde_json::Value = serde_json::from_slice(&payload_bytes).ok()?;
+    if payload.get("algorithm")?.as_str()? != "HMAC-SHA256" {
+        return None;
+    }
+    let sub = payload.get("user_id")?.as_str()?;
+    if sub.is_empty() {
+        return None;
+    }
+    Some(sub.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,5 +472,47 @@ mod tests {
             resolve_meta(&conn, "scoped-1", 1000).unwrap(),
             ResolveOutcome::Login { user_id: user }
         );
+    }
+
+    fn signed(payload: &str, secret: &str) -> String {
+        use aws_lc_rs::hmac;
+        use base64::Engine as _;
+        let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let body = engine.encode(payload.as_bytes());
+        let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
+        let sig = engine.encode(hmac::sign(&key, body.as_bytes()).as_ref());
+        format!("{sig}.{body}")
+    }
+
+    #[test]
+    fn deletion_request_roundtrip_and_rejects() {
+        let good = signed(
+            r#"{"algorithm":"HMAC-SHA256","user_id":"218471"}"#,
+            "appsecret",
+        );
+        assert_eq!(
+            parse_deletion_request(&good, "appsecret"),
+            Some("218471".to_string())
+        );
+        // Wrong secret.
+        assert_eq!(parse_deletion_request(&good, "nope"), None);
+        // Tampered payload (re-signed check fails).
+        let mut bad = good.clone();
+        bad.replace_range(good.len() - 4.., "9999");
+        assert_eq!(parse_deletion_request(&bad, "appsecret"), None);
+        // Wrong algorithm.
+        let other = signed(r#"{"algorithm":"none","user_id":"218471"}"#, "appsecret");
+        assert_eq!(parse_deletion_request(&other, "appsecret"), None);
+        // Missing/empty user_id.
+        let no_user = signed(r#"{"algorithm":"HMAC-SHA256"}"#, "appsecret");
+        assert_eq!(parse_deletion_request(&no_user, "appsecret"), None);
+        // Malformed envelopes.
+        for broken in ["", "nodot", ".", "a.", ".b", "a.b.c"] {
+            assert_eq!(
+                parse_deletion_request(broken, "appsecret"),
+                None,
+                "{broken}"
+            );
+        }
     }
 }

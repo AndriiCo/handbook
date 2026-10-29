@@ -6,11 +6,12 @@
 //! handler-for-handler; Meta tokens are never stored.
 
 use axum::{
-    Json,
+    Form, Json,
     extract::{ConnectInfo, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
 };
+use rusqlite::OptionalExtension as _;
 use serde_json::json;
 use std::net::SocketAddr;
 
@@ -556,6 +557,172 @@ fn link_callback(
     redirect("/apostille/security", std::slice::from_ref(clear))
 }
 
+#[derive(serde::Deserialize)]
+pub(crate) struct DeleteForm {
+    signed_request: String,
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct DeleteStatusQuery {
+    code: String,
+}
+
+/// `POST /auth/meta/delete-request` — Meta's Data Deletion Request
+/// Callback (spec §11.9): form-encoded `signed_request`, HMAC'd
+/// under the app secret. A verified request purges the linked
+/// user's PII (identity rows, submissions, shipments, labels,
+/// files) and mints a confirmation code; unknown subs get the
+/// same success shape with status `unknown` (Meta: disregard —
+/// nothing to delete). No session, no CSRF: server-to-server,
+/// the signature IS the auth. The response is exactly Meta's
+/// shape: `{url, confirmation_code}`.
+pub async fn delete_request(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Form(form): Form<DeleteForm>,
+) -> Response {
+    let now = unix_now();
+    let ip = passkey::client_ip(addr);
+    if !state.auth_limits.check(&format!("md:{ip}"), now, 10, 60) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error": "rate limited"})),
+        )
+            .into_response();
+    }
+    let Some(meta) = state.meta_cfg.as_ref().filter(|cfg| cfg.configured()) else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "meta login unavailable"})),
+        )
+            .into_response();
+    };
+    let Some(conn) = passkey::open_conn(&state) else {
+        return store_unavailable();
+    };
+    let Some(sub) = flow::parse_deletion_request(&form.signed_request, meta.client_secret.as_str())
+    else {
+        passkey::audit_auth(
+            &conn,
+            now,
+            "anonymous",
+            "meta_delete.rejected",
+            "bad signature",
+        );
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "invalid signed request"})),
+        )
+            .into_response();
+    };
+    // 128-bit hex — the confirmation code (Meta: alphanumeric).
+    let code = auth::passkey::mint_user_id();
+    let status = match flow::find_meta_owner(&conn, &sub).unwrap_or(None) {
+        Some(user_id) => {
+            let store = handbook_store::store::Store::new(&state.store_root);
+            let p2 = match handbook_store::db::open_p2(&store) {
+                Ok(conn) => conn,
+                Err(_) => return store_unavailable(),
+            };
+            if store::erase_identity(&conn, &user_id).is_err() {
+                return store_unavailable();
+            }
+            if handbook_store::db::erase_customer_data(&conn, &p2, &store, &user_id, now).is_err() {
+                return store_unavailable();
+            }
+            passkey::audit_auth(&conn, now, "system", "meta_data_deleted", &code);
+            "completed"
+        }
+        None => {
+            passkey::audit_auth(&conn, now, "system", "meta_delete.unknown", &code);
+            "unknown"
+        }
+    };
+    if conn
+        .execute(
+            "INSERT INTO meta_deletion(code, status, created_at, completed_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![code, status, now, now],
+        )
+        .is_err()
+    {
+        return store_unavailable();
+    }
+    Json(json!({
+        "url": format!("{}?code={code}", state.meta_delete_status_base),
+        "confirmation_code": code,
+    }))
+    .into_response()
+}
+
+/// `GET /auth/meta/delete-status?code=` — the human-readable
+/// deletion receipt Meta requires the confirmation `url` to
+/// serve: status in prose plus what was deleted and what the
+/// law keeps. The code is an unguessable bearer; no login.
+/// Unknown codes 404 with the same explanatory shape.
+pub async fn delete_status(
+    State(state): State<AppState>,
+    Query(query): Query<DeleteStatusQuery>,
+) -> Response {
+    let shaped = query.code.len() == 32 && query.code.bytes().all(|b| b.is_ascii_hexdigit());
+    let row: Option<(String, i64)> = if !shaped {
+        None
+    } else {
+        passkey::open_conn(&state).and_then(|conn| {
+            conn.query_row(
+                "SELECT status, completed_at FROM meta_deletion WHERE code = ?1",
+                [&query.code],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .unwrap_or(None)
+        })
+    };
+    // Never echo an unshaped code (reflected XSS); shaped but
+    // unknown codes are safe hex by construction.
+    let shown = if shaped {
+        query.code.as_str()
+    } else {
+        "(malformed)"
+    };
+    match row {
+        Some((status, at)) => Html(delete_status_page(shown, &status, at)).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Html(delete_status_page(shown, "unknown code", -1)),
+        )
+            .into_response(),
+    }
+}
+
+/// Server-rendered receipt (no JS, crawler-safe): status first,
+/// then the deletion/retention account in plain language.
+fn delete_status_page(code: &str, status: &str, completed_at: i64) -> String {
+    let body = match status {
+        "completed" => format!(
+            "<p>Completed (unix time {completed_at}). All personal data held for this request \
+             has been deleted: the account, login methods (passkeys and linked OAuth \
+             identities), sessions, submitted forms and documents, shipments and shipping \
+             labels, and stored files.</p><p>What remains: append-only security-audit entries \
+             under an opaque identifier that can no longer be linked to any person, and \
+             payment records where tax law requires retention (none are held today).</p>"
+        ),
+        "unknown" => "<p>No data is held for this request — either it was already deleted or \
+             the identifier was never linked to an account. Nothing further is required.</p>"
+            .to_string(),
+        _ => "<p>This code matches no deletion request. Codes are issued by the Meta data \
+             deletion callback; check the link and try again.</p>"
+            .to_string(),
+    };
+    format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <title>Data deletion status</title></head><body><main>\
+         <h1>Data deletion status</h1>\
+         <p>Request <code>{code}</code>: <strong>{status}</strong>.</p>{body}\
+         </main></body></html>"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -592,6 +759,7 @@ mod tests {
             meta_cfg: meta,
             mailer: None,
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
         (tmp, app)
@@ -1124,5 +1292,158 @@ mod tests {
         );
         let res = app.clone().oneshot(get(&uri, &cookies)).await.unwrap();
         assert!(location_of(&res).contains("oauth_failed"));
+    }
+
+    fn post_form(uri: &str, body: &str) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .extension(addr())
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    fn deletion_signed(sub: &str, secret: &str) -> String {
+        use aws_lc_rs::hmac;
+        use base64::Engine as _;
+        let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let payload = engine.encode(format!(
+            r#"{{"algorithm":"HMAC-SHA256","user_id":"{sub}"}}"#
+        ));
+        let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
+        let sig = engine.encode(hmac::sign(&key, payload.as_bytes()).as_ref());
+        format!("signed_request={sig}.{payload}")
+    }
+
+    fn seed_meta_user(tmp: &tempfile::TempDir, sub: &str) {
+        use handbook_store::store::Store;
+        let store = Store::new(tmp.path());
+        let conn = handbook_store::db::open(&store).unwrap();
+        auth::passkey::ensure_account(&conn, "u-9", 1000).unwrap();
+        auth::meta::insert_meta_link(&conn, "u-9", sub).unwrap();
+        let p2 = handbook_store::db::open_p2(&store).unwrap();
+        handbook_store::db::migrate_p2(&p2).unwrap();
+        p2.execute(
+            "INSERT INTO form_submission(form_template_id, authority_id, customer_ref,
+                 values_json, status, created_at)
+             VALUES (1, 0, 'u-9', '{\"name\":\"Meta\"}', 'draft', 1000)",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_request_purges_and_mints_receipt() {
+        let stub = StubMeta::run((200, String::new()), (200, String::new()));
+        let (tmp, app) = test_app_with_meta(Some(stub_cfg(&stub.base, "cid-x")));
+        seed_meta_user(&tmp, "asid-1");
+        let res = app
+            .clone()
+            .oneshot(post_form(
+                "/auth/meta/delete-request",
+                &deletion_signed("asid-1", "secret-stub"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let code = json["confirmation_code"].as_str().unwrap();
+        assert_eq!(code.len(), 32);
+        assert_eq!(
+            json["url"],
+            format!("https://example.test/auth/meta/delete-status?code={code}")
+        );
+        // Status page renders the completed receipt as HTML.
+        let res = app
+            .clone()
+            .oneshot(get(&format!("/auth/meta/delete-status?code={code}"), ""))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 8192).await.unwrap();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+        assert!(html.contains("completed"), "{html}");
+        assert!(html.contains("security-audit"), "{html}");
+        // Identity + PII rows are gone.
+        let store = handbook_store::store::Store::new(tmp.path());
+        let conn = handbook_store::db::open(&store).unwrap();
+        let left: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM account WHERE user_id = 'u-9'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0);
+        let p2 = handbook_store::db::open_p2(&store).unwrap();
+        let subs: i64 = p2
+            .query_row(
+                "SELECT COUNT(*) FROM form_submission WHERE customer_ref = 'u-9'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(subs, 0);
+    }
+
+    #[tokio::test]
+    async fn delete_request_unknown_and_guards() {
+        let stub = StubMeta::run((200, String::new()), (200, String::new()));
+        let (tmp, app) = test_app_with_meta(Some(stub_cfg(&stub.base, "cid-x")));
+        // Unknown sub: success shape, status unknown (Meta: disregard).
+        let res = app
+            .clone()
+            .oneshot(post_form(
+                "/auth/meta/delete-request",
+                &deletion_signed("asid-ghost", "secret-stub"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let code = json["confirmation_code"].as_str().unwrap();
+        let store = handbook_store::store::Store::new(tmp.path());
+        let conn = handbook_store::db::open(&store).unwrap();
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM meta_deletion WHERE code = ?1",
+                [code],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "unknown");
+        // Bad signature: 400, no row.
+        let res = app
+            .clone()
+            .oneshot(post_form(
+                "/auth/meta/delete-request",
+                &deletion_signed("asid-ghost", "wrong-secret"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        // Unknown code: 404 HTML, no echo of malicious input.
+        let res = app
+            .clone()
+            .oneshot(get("/auth/meta/delete-status?code=%3Cscript%3E", ""))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(res.into_body(), 8192).await.unwrap();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+        assert!(!html.contains("<script>"), "{html}");
+        // Unconfigured Meta: 503.
+        let (_tmp2, bare) = test_app_with_meta(None);
+        let res = bare
+            .oneshot(post_form(
+                "/auth/meta/delete-request",
+                &deletion_signed("asid-1", "secret-stub"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }

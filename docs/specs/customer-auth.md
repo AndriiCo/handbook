@@ -463,6 +463,49 @@ Meta login green (sub-only path: account + session, NULL email hash, no crash); 
 
 Fits today — no DDL: `kind='meta'`/`method='meta'` free text, NULL email hash + `verified_email=0` + `usable_email_owner`'s `method != 'meta'` clause give the never-match rule with zero new branches, `proof_fresh`/`disable_link`/counts generic. Deliberately unexpressed: user + app access tokens (verified and dropped), `appsecret_proof` values (per-call, never stored). **Not expressible yet (later slice):** Meta data-deletion receipts — the `{url, confirmation_code}` status tracker playbook §4 requires has no table; OPEN-13 designs it with the deauthorize/deletion endpoints.
 
+### 11.9 Data-deletion callback (closes §11.8's deletion half; deauthorize stays in OPEN-13)
+
+Dashboard "Data Deletion Request Callback" URL:
+`https://andrii.ai/auth/meta/delete-request` (flat, like the
+login callbacks). Meta POSTs form-encoded `signed_request`
+(`sig_b64url.payload_b64url`, HMAC-SHA256 over the payload
+segment under the app secret); `algorithm` must read exactly
+`HMAC-SHA256`. One failure shape (400) for every malformed or
+badly-signed request — no oracle. Rate budget `md:{ip}`
+10/60; unconfigured Meta 503s; boot never refuses.
+
+On verify, the app-scoped `user_id` resolves via
+`identity_link(method='meta', provider_sub)`. Known users are
+purged synchronously and the response is exactly Meta's shape:
+`{url, confirmation_code}` with a 128-bit hex code and
+`url = {auth.origin}/auth/meta/delete-status?code=…`. Unknown
+subs get the same success shape with status `unknown` (Meta:
+disregard — nothing to delete).
+
+Purge (synchronous, in-request): identity rows first
+(sessions, identity links, passkey credentials, account —
+`auth::passkey::erase_identity`), then handbook data
+(submissions incl. `values_json`, shipments, labels,
+label defaults, and the captures + blob files those rows
+point at — `handbook_store::erase_customer_data`, id-0
+sentinel never touched). Kept by design, stated on the
+receipt and in the privacy policy: append-only security
+audit rows (opaque actor ids, unlinked once the account
+dies) and payment/invoicing records (none held today;
+retained per tax schedule when billing ships).
+
+Receipts live in `meta_deletion(code, status, created_at,
+completed_at)` — no user id or Meta sub is kept. `GET
+/auth/meta/delete-status?code=` renders the status as
+server-side HTML (no JS, crawler-safe); unknown codes 404
+with the same explanatory shape and never echo input.
+
+Acceptance: valid signed request → 200 shape + rows gone +
+receipt `completed`; unknown sub → 200/`unknown`;
+tampered payload or wrong secret → 400; unconfigured → 503;
+status page renders prose for completed/unknown/404;
+`cargo xtask ci` green.
+
 ## Link/unlink generalization (all OAuth methods)
 
 - `POST /auth/profile/unlink` method gate extends from `{passkey, google}` to `{passkey, apple, google, meta}`; OAuth methods all take the `disable_link` path (no credential row). `{"method": "apple"|"meta", "id": "<sub>", "reauth_proof": …}` shapes mirror Google's.

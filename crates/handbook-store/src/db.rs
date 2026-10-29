@@ -8,7 +8,7 @@
 //! (`migrations/p2_schema_baseline.sql`, = P2 v2) and its own
 //! [`migrate_p2`].
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use contracts::{HandbookError, Result};
 
@@ -247,6 +247,147 @@ pub fn retention_sweep(conn: &Connection, store: &Store, now: i64, actor: &str) 
         }
         Ok(deleted)
     })
+}
+
+/// Per-table counts from [`erase_customer_data`] (audit reason).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct EraseReport {
+    pub submissions: usize,
+    pub shipments: usize,
+    pub labels: usize,
+    pub label_defaults: usize,
+    pub captures: usize,
+    pub blobs: usize,
+}
+
+/// Hard-erase one customer's handbook data (data-deletion
+/// requests, spec §11.9): form submissions (incl. values_json
+/// PII), shipments + labels (addresses, tracking, payloads),
+/// label defaults, and the captures + blob files those rows
+/// point at (signature PNGs, form PDFs, label PDFs). `hb` is the
+/// metadata DB (captures, audit), `p2` the customer-PII DB;
+/// children die before parents (shipment FK) and blob files get
+/// the same traversal guard as [`retention_sweep`]. Voice rows are NOT
+/// customer data (staff-initiated, third-party callees) and
+/// audit rows are append-only — both stay, documented in the
+/// privacy policy. One `customer_erased` audit row records the
+/// counts under the (now-dangling, opaque) customer ref.
+pub fn erase_customer_data(
+    hb: &Connection,
+    p2: &Connection,
+    store: &Store,
+    customer_ref: &str,
+    now: i64,
+) -> Result<EraseReport> {
+    // PII rows first (P2 DB): a crash between the two transactions
+    // leaves orphan captures, never orphaned PII rows pointing at
+    // missing blobs the readers cannot handle.
+    let report = in_transaction(p2, || {
+        let mut report = EraseReport::default();
+        let submission_ids: Vec<i64> = p2
+            .prepare("SELECT id FROM form_submission WHERE customer_ref = ?1")?
+            .query_map([customer_ref], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut capture_ids: Vec<i64> = Vec::new();
+        for id in &submission_ids {
+            let (sig, pdf): (Option<i64>, Option<i64>) = p2.query_row(
+                "SELECT signature_capture_id, pdf_capture_id FROM form_submission WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            capture_ids.extend(sig);
+            capture_ids.extend(pdf);
+        }
+        if !submission_ids.is_empty() {
+            let placeholders = submission_ids
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
+            let shipment_ids: Vec<i64> = p2
+                .prepare(&format!(
+                    "SELECT id FROM shipment WHERE submission_id IN ({placeholders})"
+                ))?
+                .query_map(rusqlite::params_from_iter(submission_ids.iter()), |row| {
+                    row.get(0)
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            for id in &shipment_ids {
+                let mut stmt = p2.prepare(
+                    "SELECT label_capture_id FROM shipping_label WHERE shipment_id = ?1",
+                )?;
+                let rows = stmt.query_map([id], |row| row.get::<_, Option<i64>>(0))?;
+                for row in rows {
+                    capture_ids.extend(row?);
+                }
+                report.labels +=
+                    p2.execute("DELETE FROM shipping_label WHERE shipment_id = ?1", [id])?;
+                report.shipments += p2.execute("DELETE FROM shipment WHERE id = ?1", [id])?;
+            }
+            for id in &submission_ids {
+                report.submissions +=
+                    p2.execute("DELETE FROM form_submission WHERE id = ?1", [id])?;
+            }
+        }
+        report.label_defaults += p2.execute(
+            "DELETE FROM profile_label_defaults WHERE customer_ref = ?1",
+            [customer_ref],
+        )?;
+        capture_ids.sort_unstable();
+        capture_ids.dedup();
+        let mut paths: Vec<(i64, String)> = Vec::new();
+        for id in &capture_ids {
+            let path: Option<String> = hb
+                .query_row("SELECT path FROM capture WHERE id = ?1", [id], |row| {
+                    row.get(0)
+                })
+                .optional()?;
+            if let Some(path) = path {
+                paths.push((*id, path));
+            }
+        }
+        let canonical_root = store
+            .root()
+            .canonicalize()
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+        for (id, path) in &paths {
+            // Never touch the id-0 sentinel (squashed 005): shared
+            // infrastructure backing unattributed references.
+            if *id <= 0 {
+                continue;
+            }
+            let full = store.root().join(path);
+            if !parent_inside_root(&canonical_root, &full) {
+                continue;
+            }
+            if full.exists() {
+                std::fs::remove_file(&full)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                report.blobs += 1;
+            }
+            report.captures += hb.execute("DELETE FROM capture WHERE id = ?1", [id])?;
+        }
+        Ok(report)
+    })?;
+    // One audit row (metadata DB) under the now-dangling ref.
+    hb.execute(
+        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+         VALUES (?1, ?2, 'customer_erased', 'customer', 0, ?3)",
+        rusqlite::params![
+            now,
+            customer_ref,
+            format!(
+                "submissions={} shipments={} labels={} defaults={} captures={} blobs={}",
+                report.submissions,
+                report.shipments,
+                report.labels,
+                report.label_defaults,
+                report.captures,
+                report.blobs
+            ),
+        ],
+    )?;
+    Ok(report)
 }
 
 /// True when `candidate`'s parent directory resolves (via the
@@ -979,6 +1120,160 @@ mod tests {
             )
             .unwrap();
         assert_eq!(audits, 1);
+    }
+
+    #[test]
+    fn erase_customer_data_removes_pii_and_blobs() {
+        let (_dir, store, hb) = migrated();
+        let p2 = open_p2(&store).unwrap();
+        migrate_p2(&p2).unwrap();
+        let authority = add_authority(
+            &hb,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa",
+                actor: "test",
+                at: 1000,
+            },
+        )
+        .unwrap();
+        // Two captures with real blob files (signature PNG + form PDF).
+        let mut cap_ids: Vec<(i64, String)> = Vec::new();
+        for (kind, bytes) in [
+            ("photo", b"sig-png".as_slice()),
+            ("file", b"form-pdf".as_slice()),
+        ] {
+            let sha = store.write_blob(bytes).unwrap();
+            let rel = store
+                .blob_path(&sha)
+                .unwrap()
+                .strip_prefix(store.root())
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string();
+            hb.execute(
+                "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                     bytes_raw, bytes_stored, sha256, trust)
+                 VALUES (?1, 1000, ?2, ?3, 0, 0, ?4, 'official')",
+                rusqlite::params![authority, kind, rel, sha],
+            )
+            .unwrap();
+            cap_ids.push((hb.last_insert_rowid(), sha));
+        }
+        let seeded: Vec<(i64, String)> = hb
+            .prepare("SELECT id, path FROM capture")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        // Two seeded rows plus the id-0 sentinel every DB ships.
+        assert_eq!(seeded.len(), 3, "seeded rows: {seeded:?}");
+        // One submission (u-1, both captures) + one stranger's (u-2).
+        p2.execute(
+            "INSERT INTO form_submission(form_template_id, authority_id, customer_ref,
+                 values_json, signature_capture_id, pdf_capture_id, status, created_at)
+             VALUES (1, ?1, 'u-1', '{\"name\":\"Ann\"}', ?2, ?3, 'submitted', 1000)",
+            rusqlite::params![authority, cap_ids[0].0, cap_ids[1].0],
+        )
+        .unwrap();
+        let sub1 = p2.last_insert_rowid();
+        p2.execute(
+            "INSERT INTO form_submission(form_template_id, authority_id, customer_ref,
+                 values_json, status, created_at)
+             VALUES (1, ?1, 'u-2', '{}', 'draft', 1000)",
+            [authority],
+        )
+        .unwrap();
+        p2.execute(
+            "INSERT INTO shipment(submission_id, authority_id, status, from_json, to_json,
+                 created_at, updated_at)
+             VALUES (?1, ?2, 'ready', '{\"name\":\"Ann\"}', '{}', 1000, 1000)",
+            rusqlite::params![sub1, authority],
+        )
+        .unwrap();
+        let ship1 = p2.last_insert_rowid();
+        p2.execute(
+            "INSERT INTO shipping_label(shipment_id, direction, carrier, service, tracking_no,
+                 created_at)
+             VALUES (?1, 'outbound', 'usps', 'priority', '9400', 1000)",
+            [ship1],
+        )
+        .unwrap();
+        p2.execute(
+            "INSERT INTO profile_label_defaults(customer_ref, updated_at) VALUES ('u-1', 1000)",
+            [],
+        )
+        .unwrap();
+        p2.execute(
+            "INSERT INTO profile_label_defaults(customer_ref, updated_at) VALUES ('u-2', 1000)",
+            [],
+        )
+        .unwrap();
+
+        let report = erase_customer_data(&hb, &p2, &store, "u-1", 2000).unwrap();
+        assert_eq!(
+            report,
+            EraseReport {
+                submissions: 1,
+                shipments: 1,
+                labels: 1,
+                label_defaults: 1,
+                captures: 2,
+                blobs: 2,
+            }
+        );
+        // PII rows gone; the stranger's rows survive.
+        for (table, col) in [
+            ("form_submission", "customer_ref"),
+            ("profile_label_defaults", "customer_ref"),
+        ] {
+            let gone: i64 = p2
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE {col} = 'u-1'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(gone, 0, "{table}");
+            let kept: i64 = p2
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE {col} = 'u-2'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(kept, 1, "{table}");
+        }
+        let labels: i64 = p2
+            .query_row("SELECT COUNT(*) FROM shipping_label", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(labels, 0);
+        let remaining: Vec<(i64, String, String)> = hb
+            .prepare("SELECT id, kind, path FROM capture")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        // Only the id-0 sentinel survives.
+        assert_eq!(remaining, vec![(0, "file".to_string(), String::new())]);
+        for (_, sha) in &cap_ids {
+            assert!(!store.blob_path(sha).unwrap().exists());
+        }
+        // One audit row explains the erasure.
+        let reason: String = hb
+            .query_row(
+                "SELECT reason FROM audit WHERE action = 'customer_erased'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(reason.contains("submissions=1"), "{reason}");
     }
 
     fn audit_trigger_count(conn: &Connection) -> i64 {

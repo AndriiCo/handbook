@@ -351,6 +351,23 @@ pub fn live_staff_passkey_count(conn: &Connection) -> rusqlite::Result<i64> {
     )
 }
 
+/// Hard-erase one user's identity rows (data-deletion requests,
+/// spec §11.9): sessions first (live access dies immediately),
+/// then identity links, passkey credentials, then the account row
+/// itself. Returns rows removed. Audit rows are append-only by
+/// trigger and stay — but their actor is the opaque `user_id`,
+/// and the mapping that linked it to a person dies here.
+pub fn erase_identity(conn: &Connection, user_id: &str) -> rusqlite::Result<usize> {
+    let mut removed = crate::revoke_user_sessions(conn, user_id)?;
+    removed += conn.execute("DELETE FROM identity_link WHERE user_id = ?1", [user_id])?;
+    removed += conn.execute(
+        "DELETE FROM webauthn_credential WHERE user_id = ?1",
+        [user_id],
+    )?;
+    removed += conn.execute("DELETE FROM account WHERE user_id = ?1", [user_id])?;
+    Ok(removed)
+}
+
 /// True when this credential id exists on ANY account.
 pub fn credential_known(conn: &Connection, credential_id: &str) -> rusqlite::Result<bool> {
     Ok(conn
@@ -608,6 +625,49 @@ mod tests {
             credential_owner(&conn, "cred-1").unwrap(),
             Some(("u-1".to_string(), "{}".to_string()))
         );
+    }
+
+    #[test]
+    fn erase_identity_removes_user_rows_only() {
+        let conn = memory();
+        for user in ["u-1", "u-2"] {
+            ensure_account(&conn, user, 1000).unwrap();
+            store_credential(&conn, user, &format!("cred-{user}"), "{}", "", 1000).unwrap();
+            crate::meta::insert_meta_link(&conn, user, &format!("sub-{user}")).unwrap();
+            crate::create_session(
+                &conn,
+                &format!("sess-{user}"),
+                &crate::NewSession {
+                    user_id: user,
+                    role: crate::Role::Customer,
+                    customer_ref: Some(user),
+                    now: 1000,
+                    ip: "127.0.0.1",
+                    user_agent: "t",
+                },
+            )
+            .unwrap();
+        }
+        let removed = erase_identity(&conn, "u-1").unwrap();
+        assert_eq!(removed, 5); // session + 2 links + credential + account
+        for table in ["session", "identity_link", "webauthn_credential", "account"] {
+            let left: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE user_id = 'u-1'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(left, 0, "{table}");
+            let kept: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE user_id = 'u-2'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(kept > 0, "{table}");
+        }
     }
 
     #[test]

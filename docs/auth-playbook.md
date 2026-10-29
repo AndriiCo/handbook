@@ -135,7 +135,12 @@ inspected 2026-10-26).
    Facebook Login > Settings — exact field locations per
    current dashboard, verify in portal):
    `https://andrii.ai/auth/meta/deauthorize`
-   and `…/meta/delete-request`.
+   and `https://andrii.ai/auth/meta/delete-request`
+   (live: verifies `signed_request`, purges, returns
+   `{url, confirmation_code}` per spec §11.9).
+   Also register the **Privacy Policy URL**
+   `https://andrii.ai/privacy` (App Settings; same URL
+   serves the Google/Apple consoles).
 5. Server: exchange the code server-side, keep the App Secret in
    secrets storage only, and validate tokens/calls per the
    current Graph API docs at implementation (debug_token /
