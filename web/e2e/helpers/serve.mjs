@@ -21,13 +21,23 @@ const TYPES = {
 
 /**
  * @param {string} dir build dir to serve (e.g. build-admin)
+ * @param {{ base?: string }} [opts] mount point (public build: '/apostille')
  * @returns {Promise<{ url: string, close: () => Promise<void> }>}
  */
-export function serveDir(dir) {
+export function serveDir(dir, opts = {}) {
 	const root = normalize(dir);
+	const base = (opts.base ?? '').replace(/\/$/, '');
 	const server = createServer(async (req, res) => {
 		try {
-			const path = new URL(req.url ?? '/', 'http://x').pathname;
+			let path = new URL(req.url ?? '/', 'http://x').pathname;
+			if (base) {
+				if (path !== base && !path.startsWith(`${base}/`)) {
+					res.writeHead(404, { 'content-type': 'text/plain' });
+					res.end('not found');
+					return;
+				}
+				path = path.slice(base.length) || '/';
+			}
 			const rel = normalize(path).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]/, '');
 			let file = join(root, rel);
 			if (!file.startsWith(root + sep) && file !== root) file = join(root, 'index.html');
