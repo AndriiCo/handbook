@@ -48,7 +48,11 @@ handwritten notes only. Tick `consent_confirmed` in the
 console (dial refuses without it). Never log or speak numbers
 or transcript text outside the console.
 
-## Question packs (paste inline in the call console)
+## Question packs (checked in — dial by pack id, inline paste as fallback)
+
+Pack ids in `crates/voice/scripts/` (validated by the
+`checked_in_packs` test): `wa-sos`, `usdos-authentications`,
+`egypt-embassy-dc` — same six questions per pack as below.
 
 **WA SOS** — PO box? conflicting older addresses, want current.
 Courier street address + prepaid USPS return? Per-document fee
