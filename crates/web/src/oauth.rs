@@ -5,6 +5,7 @@
 
 use axum::{
     Json,
+    body::Bytes,
     extract::{ConnectInfo, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
@@ -29,6 +30,7 @@ pub struct GoogleCfg {
     pub auth_base: String,
     pub token_url: String,
     pub tokeninfo_url: String,
+    pub risc_certs_url: String,
 }
 
 impl GoogleCfg {
@@ -40,6 +42,7 @@ impl GoogleCfg {
             auth_base: flow::GOOGLE_AUTH_URL.to_string(),
             token_url: flow::GOOGLE_TOKEN_URL.to_string(),
             tokeninfo_url: flow::GOOGLE_TOKENINFO_URL.to_string(),
+            risc_certs_url: auth::risc::RISC_CERTS_URL.to_string(),
         }
     }
 
@@ -430,20 +433,28 @@ pub async fn callback(
             now,
         );
     }
-    let outcome = match flow::resolve_google(
-        &conn,
-        &verified.sub,
-        &verified.email,
-        verified.email_verified,
-        now,
-    ) {
-        Ok(outcome) => outcome,
-        Err(_) => {
-            return redirect(
-                "/apostille/login?error=oauth_failed",
-                std::slice::from_ref(&clear),
-            );
+    // RISC-disabled link + fresh verified login: revive instead of
+    // forking a second account (disabled *until the user re-auths*).
+    let outcome = match flow::revive_disabled_google_link(&conn, &verified.sub) {
+        Ok(Some(user_id)) => {
+            passkey::audit_auth(&conn, now, &user_id, "google_link_revived", "");
+            flow::ResolveOutcome::Login { user_id }
         }
+        _ => match flow::resolve_google(
+            &conn,
+            &verified.sub,
+            &verified.email,
+            verified.email_verified,
+            now,
+        ) {
+            Ok(outcome) => outcome,
+            Err(_) => {
+                return redirect(
+                    "/apostille/login?error=oauth_failed",
+                    std::slice::from_ref(&clear),
+                );
+            }
+        },
     };
     let (user_id, fresh_account) = match outcome {
         flow::ResolveOutcome::PromptExplicitLink => {
@@ -585,6 +596,26 @@ fn link_callback(
         }
         None => {}
     }
+    // A RISC-disabled row for this sub: revive when it is ours,
+    // conflict when it belongs to someone else (never a merge).
+    if let Ok(Some(owner)) = flow::find_disabled_google_owner(conn, &verified.sub) {
+        if owner != user_id {
+            passkey::audit_auth(conn, now, user_id, "google_failed", "already linked");
+            return redirect(
+                "/apostille/login?error=already_linked",
+                std::slice::from_ref(clear),
+            );
+        }
+        let _ = flow::revive_google_link(conn, &verified.sub, user_id);
+        passkey::audit_auth(
+            conn,
+            now,
+            user_id,
+            "method_linked",
+            &auth::hash_str(&verified.sub),
+        );
+        return redirect("/apostille/security", std::slice::from_ref(clear));
+    }
     if flow::insert_google_link(
         conn,
         user_id,
@@ -616,6 +647,171 @@ fn link_callback(
         &auth::hash_str(&verified.sub),
     );
     redirect("/apostille/security", std::slice::from_ref(clear))
+}
+
+fn risc_accepted() -> Response {
+    (StatusCode::ACCEPTED, Json(json!({"status": "accepted"}))).into_response()
+}
+
+/// `POST /auth/google/risc` — Google RISC Security Event Token push
+/// (spec §9.9, OPEN-7): raw SET body, signature-verified against
+/// Google's certs. No session, no CSRF: server-to-server, the
+/// signature IS the auth (Meta `delete_request` precedent).
+/// Verified-but-unknown subjects/events 202 + audit (Google
+/// disables streams on repeated errors — R6).
+pub async fn risc(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    body: Bytes,
+) -> Response {
+    let now = unix_now();
+    let ip = passkey::client_ip(addr);
+    if !state.auth_limits.check(&format!("gr:{ip}"), now, 30, 60) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error": "rate limited"})),
+        )
+            .into_response();
+    }
+    let Some(google) = state.google_cfg.as_ref().filter(|cfg| cfg.configured()) else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "google login unavailable"})),
+        )
+            .into_response();
+    };
+    let Some(conn) = passkey::open_conn(&state) else {
+        return store_unavailable();
+    };
+    let set = String::from_utf8_lossy(&body).into_owned();
+    let call = google.clone();
+    // Blocking ureq on `spawn_blocking` (callback precedent).
+    let outcome = tokio::task::spawn_blocking(move || {
+        let transport = UreqTransport::new();
+        auth::risc::verify_set(
+            &transport,
+            &call.risc_certs_url,
+            set.trim(),
+            &call.client_id,
+            now,
+        )
+    })
+    .await;
+    let Ok(result) = outcome else {
+        return store_unavailable();
+    };
+    let verified = match result {
+        Ok(verified) => verified,
+        Err(flow::OAuthError::Transport(_)) | Err(flow::OAuthError::InvalidToken("keys")) => {
+            passkey::audit_auth(
+                &conn,
+                now,
+                "anonymous",
+                "google_risc.rejected",
+                "certs unreachable",
+            );
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error": "verification unavailable"})),
+            )
+                .into_response();
+        }
+        Err(flow::OAuthError::InvalidToken(tag)) => {
+            passkey::audit_auth(&conn, now, "anonymous", "google_risc.rejected", tag);
+            let status = match tag {
+                "bad token" | "no kid" | "no events" | "bad subject" | "bad iat" => {
+                    StatusCode::BAD_REQUEST
+                }
+                _ => StatusCode::FORBIDDEN,
+            };
+            return (status, Json(json!({"error": "invalid security event"}))).into_response();
+        }
+        // `NotConfigured`/`Exchange` are unreachable here (the cfg
+        // gate above passed; no code exchange runs on this path).
+        Err(_) => return store_unavailable(),
+    };
+    // Non-actionable subjects audit + 202, never act.
+    if verified.email_subject {
+        passkey::audit_auth(&conn, now, "system", "google_risc.email_subject", "email");
+        return risc_accepted();
+    }
+    let Some(sub) = verified.sub.as_deref() else {
+        // Unknown subject format (forward-compat): audit-only.
+        passkey::audit_auth(
+            &conn,
+            now,
+            "system",
+            "google_risc.unknown_subject",
+            "format",
+        );
+        return risc_accepted();
+    };
+    let signal = match verified.event {
+        auth::risc::RiscEvent::SessionsRevoked => {
+            Some(auth::login::ProviderSignal::GoogleSessionsRevoked)
+        }
+        auth::risc::RiscEvent::CredentialChangeRequired => {
+            Some(auth::login::ProviderSignal::GoogleCredentialChangeRequired)
+        }
+        auth::risc::RiscEvent::AccountDisabled => {
+            Some(auth::login::ProviderSignal::GoogleAccountDisabled)
+        }
+        auth::risc::RiscEvent::AccountEnabled => {
+            Some(auth::login::ProviderSignal::GoogleAccountEnabled)
+        }
+        auth::risc::RiscEvent::Verification => {
+            Some(auth::login::ProviderSignal::GoogleVerification)
+        }
+        auth::risc::RiscEvent::Unknown(_) => None,
+    };
+    let Some(signal) = signal else {
+        passkey::audit_auth(
+            &conn,
+            now,
+            "system",
+            "google_risc.unknown",
+            &auth::hash_str(sub),
+        );
+        return risc_accepted();
+    };
+    if signal == auth::login::ProviderSignal::GoogleVerification {
+        // Stream handshake echo: any signed state verifies (the
+        // signature is the trust root); no user action.
+        let reason = verified
+            .state
+            .as_deref()
+            .map(auth::hash_str)
+            .unwrap_or_default();
+        passkey::audit_auth(&conn, now, "system", "google_risc_verification", &reason);
+        return risc_accepted();
+    }
+    let Some(user_id) = flow::find_google_owner(&conn, sub).unwrap_or(None) else {
+        passkey::audit_auth(
+            &conn,
+            now,
+            "system",
+            "google_risc.unknown_subject",
+            &auth::hash_str(sub),
+        );
+        return risc_accepted();
+    };
+    let action = auth::login::signal_action(signal);
+    if action.disable_link {
+        let _ = store::disable_link(&conn, &user_id, "google", sub, now);
+    }
+    if action.kill_sessions {
+        let _ = auth::revoke_user_sessions(&conn, &user_id);
+    }
+    if action.force_step_up {
+        let _ = store::clear_step_up(&conn, &user_id);
+    }
+    // No Google row sets `start_retention` (Meta-only): nothing to do.
+    if action.disable_link && store::live_method_count(&conn, &user_id).unwrap_or(1) == 0 {
+        let _ = store::lock_account(&conn, &user_id, now);
+        passkey::audit_auth(&conn, now, &user_id, "account_locked", "last link revoked");
+    }
+    passkey::audit_auth(&conn, now, &user_id, action.audit, &auth::hash_str(sub));
+    risc_accepted()
 }
 
 #[cfg(test)]
@@ -1218,5 +1414,397 @@ mod tests {
             .to_str()
             .unwrap();
         assert!(location.contains("oauth_failed"), "{location}");
+    }
+
+    // ---- RISC receiver tests (spec §9.9, OPEN-7) ----
+
+    /// Synthetic RSA-2048 test vector (duplicated from the auth
+    /// crate per the Apple `generated_p8` precedent — web tests
+    /// cannot see auth's `#[cfg(test)]` helpers).
+    const RISC_RSA_N: &str = "2elao6eOjvvb9zPc1Eb22YC5lIAC8bCH70k-YTZUoeH-1fhkBIMlzUxE9hSl2HWDAw7u1PL2hXVl3afWPkHFb5TWVdREcsoI2fi94VakouBufNYXBCsat_9r1iCE9O9ZQhxaXPUYPGpLNk9TFyGETmVqizegSOahHtyHR4uhq5PcVzkXukK8TLwXvgcKENZ4JnmNAyEhW_u3cUkQSCagnzwV-3FaV5391gxJvfHPGvtQrdsZmVqKuSFdl7HN7s5c-t9YGbNpIgi6SIskA8AbRT36qYtZJFqTzrAt2bULB5eZHwO_tleeX9er4vUwWjyAs4TzKW1glKvkChrHbH7MFQ";
+    const RISC_RSA_E: &str = "AQAB";
+    const RISC_RSA_D: &str = "FZZxFMpqLI8V7Qj1xQ_cr5J5kBUYdZIb_WAfrmi__KOTZ-YqHmpRqeN253wHLAkEOB7YGT-SnYkSVOGmL1e7tACmNS2ItGiAdPuX8AVx3PLn7zUUZaTRik3jBH0HPu6hRJPjfdcIFiAfoFs-a4m1_kA8zFrv5Zj3eEO3oSZbl1ApU8WWgrl2C1xK8NNUUXj5fcMJvR7WXBQdvldP5w9JG0sP1UTXwLI_uvd18pOKQXGLPJGBRO1iLOLXvwsadyIy5-Ft9SYxbHEbvorIhdClSR7KrtDF2i2qf5Fh7vlI0YUo2h2fc9uHhErJpW-Z-NU6BAAu2vchaz7wr02rUHPHxw";
+    const RISC_RSA_P: &str = "8AZmTr1aZumIUQD1k_-h11DNaQNDDSzYaWf8WkV2CSeEMkztwYT0D1l_HulcIWNFS-hAnxvLmkrhDWXh5j_6TzxtYJyFj_tXirb7cI9HEBVWKFLMbVtAsEsxBeaKjqvXdQiCPJ142h0FQdZUI7CQMF2Esd_zhurA8a3A-QkOzbs";
+    const RISC_RSA_Q: &str = "6GouJzu4iJ0_8sb-c0F56Ix4Id0vitAcvym6jbzaBrJnRQB7eTfXZbwBtNWXNAl1IRkWUK1wsTasfAucO0PyUJMoTEfD23PV_IpEAyi4j8e1W93p-NvKT9Gm4cAOUjce752D_lY0Vb7WXBUOsELKx5BKY6oKdvmcj_kXXKC1SG8";
+    const RISC_RSA_DP: &str = "Kjw2DGztV2aIghh1HhHBXK3vNydHyS229vVBRnEqj_nQHTnELGVEvN62q63MdGOPcgfwNw8hCIlciIsA8Q8Y8JBlfraMGgXUJaiFHg1YJ9BZVMcdCbEg9OSGP8-NWgWK6CETKa9b8KVio28fZxhOhvQtwU7y_y6XvO8iIbAiVrk";
+    const RISC_RSA_DQ: &str = "GRRcJp-rKhLN88TFcGqAXTfLPtw_ZRtP_tDh8KmQXWii_C8xI8OC2teO15S03Eio-wlZ_xq4LmdX9YrLMRoD6-31S0XzPJsjXD0PWcfrIpjKWT95IAGXs0VMXM_8u6J3FCRLOgbTXu1Y9FbRXvPWLfLEFD0lI_GLk32tp7Ev3sE";
+    const RISC_RSA_QI: &str = "tAFrmAsQbcGIM_scizNNbmJaWy2B-KZFOrQV46vK8N9gEm4cxSb_ainHDMrLRGxrSWZjTkobDkAPyGnd9Zvqg0H5OnFtg2V19unjHnwJcETlnvwIeNWqGG64h5lk8mohNJS_vRo34mBSmYo3SydhalgOWcH3iTrZnboDktI401E";
+    const RISC_KID: &str = "risc-test-kid";
+
+    /// Minimal port-0 certs stub: every GET answers the fixed JWKS.
+    struct StubCerts {
+        base: String,
+        addr: SocketAddr,
+        handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl StubCerts {
+        fn run() -> Self {
+            let body = serde_json::json!({
+                "keys": [{
+                    "kty": "RSA",
+                    "kid": RISC_KID,
+                    "use": "sig",
+                    "alg": "RS256",
+                    "n": RISC_RSA_N,
+                    "e": RISC_RSA_E,
+                }]
+            })
+            .to_string();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            let base = format!("http://{addr}");
+            let handle = std::thread::spawn(move || {
+                for _ in 0..64 {
+                    let Ok((mut stream, _)) = listener.accept() else {
+                        break;
+                    };
+                    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                    let mut head = Vec::new();
+                    let mut chunk = [0u8; 4096];
+                    while let Ok(n) = stream.read(&mut chunk) {
+                        if n == 0 {
+                            break;
+                        }
+                        head.extend_from_slice(&chunk[..n]);
+                        if head.windows(4).any(|w| w == b"\r\n\r\n") || head.len() > 16384 {
+                            break;
+                        }
+                    }
+                    if String::from_utf8_lossy(&head).starts_with("QUIT") {
+                        break;
+                    }
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 200 Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = stream.flush();
+                }
+            });
+            Self {
+                base,
+                addr,
+                handle: Some(handle),
+            }
+        }
+    }
+
+    impl Drop for StubCerts {
+        fn drop(&mut self) {
+            if let Some(handle) = self.handle.take() {
+                if let Ok(mut quit) = std::net::TcpStream::connect(self.addr) {
+                    let _ = quit.write_all(b"QUIT / HTTP/1.1\r\n\r\n");
+                }
+                let _ = handle.join();
+            }
+        }
+    }
+
+    /// Sign a compact RS256 SET with the test vector.
+    fn sign_risc(claims: &serde_json::Value) -> String {
+        use aws_lc_rs::rsa::{KeyPair, KeyPairComponents, PublicKeyComponents};
+        use aws_lc_rs::signature::RSA_PKCS1_SHA256;
+        use base64::Engine as _;
+        let b64u = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let part = |raw: &str| b64u.decode(raw).unwrap();
+        let components = KeyPairComponents {
+            public_key: PublicKeyComponents {
+                n: part(RISC_RSA_N),
+                e: part(RISC_RSA_E),
+            },
+            d: part(RISC_RSA_D),
+            p: part(RISC_RSA_P),
+            q: part(RISC_RSA_Q),
+            dP: part(RISC_RSA_DP),
+            dQ: part(RISC_RSA_DQ),
+            qInv: part(RISC_RSA_QI),
+        };
+        let key = KeyPair::from_components(&components).unwrap();
+        let header = serde_json::json!({"alg": "RS256", "kid": RISC_KID, "typ": "secevent+jwt"});
+        let input = format!(
+            "{}.{}",
+            b64u.encode(serde_json::to_vec(&header).unwrap()),
+            b64u.encode(serde_json::to_vec(claims).unwrap())
+        );
+        let rng = aws_lc_rs::rand::SystemRandom::new();
+        let mut sig = vec![0u8; key.public_modulus_len()];
+        key.sign(&RSA_PKCS1_SHA256, &rng, input.as_bytes(), &mut sig)
+            .unwrap();
+        format!("{input}.{}", b64u.encode(&sig))
+    }
+
+    fn risc_claims(event: &str, sub: &str, now: i64) -> serde_json::Value {
+        serde_json::json!({
+            "iss": "https://accounts.google.com/",
+            "aud": "cid-stub",
+            "iat": now,
+            "jti": "evt-1",
+            "events": { event: {} },
+            "subject": {"format": "iss_sub", "sub": sub},
+        })
+    }
+
+    const RISC_SESSIONS_REVOKED: &str =
+        "https://schemas.openid.net/secevent/risc/event-type/sessions-revoked";
+    const RISC_CREDENTIAL_CHANGE: &str =
+        "https://schemas.openid.net/secevent/risc/event-type/credential-change-required";
+    const RISC_ACCOUNT_DISABLED: &str =
+        "https://schemas.openid.net/secevent/risc/event-type/account-disabled";
+    const RISC_ACCOUNT_ENABLED: &str =
+        "https://schemas.openid.net/secevent/risc/event-type/account-enabled";
+    const RISC_VERIFICATION: &str =
+        "https://schemas.openid.net/secevent/risc/event-type/verification";
+
+    fn risc_cfg(certs: &StubCerts) -> GoogleCfg {
+        let mut cfg = stub_cfg("http://127.0.0.1:9", "cid-stub");
+        cfg.risc_certs_url = format!("{}/certs", certs.base);
+        cfg
+    }
+
+    fn post_risc(set: &str) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/auth/google/risc")
+            .header(header::CONTENT_TYPE, "application/secevent+jwt")
+            .extension(addr())
+            .body(Body::from(set.to_string()))
+            .unwrap()
+    }
+
+    fn open_store(tmp: &tempfile::TempDir) -> rusqlite::Connection {
+        let store = handbook_store::store::Store::new(tmp.path());
+        handbook_store::db::open(&store).unwrap()
+    }
+
+    /// Seed one customer: account + live google link + session +
+    /// fresh step-up. Returns the user id.
+    fn seed_google_user(conn: &rusqlite::Connection, sub: &str, now: i64) -> String {
+        let user_id = auth::passkey::mint_user_id();
+        auth::passkey::ensure_account(conn, &user_id, now).unwrap();
+        flow::insert_google_link(conn, &user_id, sub, "u@example.test", true).unwrap();
+        auth::create_session(
+            conn,
+            &format!("sess-{sub}"),
+            &auth::NewSession {
+                user_id: &user_id,
+                role: auth::Role::Customer,
+                customer_ref: Some(&user_id),
+                now,
+                ip: "127.0.0.1",
+                user_agent: "t",
+            },
+        )
+        .unwrap();
+        auth::passkey::set_step_up(conn, &user_id, now).unwrap();
+        user_id
+    }
+
+    fn session_count(conn: &rusqlite::Connection, user_id: &str) -> usize {
+        conn.query_row(
+            "SELECT COUNT(*) FROM session WHERE user_id = ?1",
+            [user_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn audit_count(conn: &rusqlite::Connection, action: &str) -> usize {
+        conn.query_row(
+            "SELECT COUNT(*) FROM audit WHERE action = ?1",
+            [action],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn risc_503_when_unconfigured() {
+        let (_tmp, app) = test_app_with_google(None);
+        let res = app.clone().oneshot(post_risc("x.y.z")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn risc_400_on_garbage() {
+        let certs = StubCerts::run();
+        let (_tmp, app) = test_app_with_google(Some(risc_cfg(&certs)));
+        for bad in ["", "not-a-jwt", "a.b.c.d"] {
+            let res = app.clone().oneshot(post_risc(bad)).await.unwrap();
+            assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{bad:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn risc_rate_limited() {
+        let (_tmp, app) = test_app_with_google(None);
+        let mut last = StatusCode::OK;
+        for _ in 0..31 {
+            let res = app.clone().oneshot(post_risc("garbage")).await.unwrap();
+            last = res.status();
+        }
+        assert_eq!(last, StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn risc_sessions_revoked_kills_sessions_and_step_up() {
+        let certs = StubCerts::run();
+        let (tmp, app) = test_app_with_google(Some(risc_cfg(&certs)));
+        let now = crate::unix_now();
+        let user_id = {
+            let conn = open_store(&tmp);
+            seed_google_user(&conn, "sub-revoke", now)
+        };
+        let set = sign_risc(&risc_claims(RISC_SESSIONS_REVOKED, "sub-revoke", now));
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let conn = open_store(&tmp);
+        assert_eq!(session_count(&conn, &user_id), 0);
+        assert!(
+            auth::passkey::get_account(&conn, &user_id)
+                .unwrap()
+                .unwrap()
+                .step_up_at
+                .is_none()
+        );
+        assert_eq!(audit_count(&conn, "google_sessions_revoked"), 1);
+        // Replay re-applies harmlessly (idempotent, still 202).
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+    }
+
+    #[tokio::test]
+    async fn risc_credential_change_clears_step_up_only() {
+        let certs = StubCerts::run();
+        let (tmp, app) = test_app_with_google(Some(risc_cfg(&certs)));
+        let now = crate::unix_now();
+        let user_id = {
+            let conn = open_store(&tmp);
+            seed_google_user(&conn, "sub-cred", now)
+        };
+        let set = sign_risc(&risc_claims(RISC_CREDENTIAL_CHANGE, "sub-cred", now));
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let conn = open_store(&tmp);
+        assert_eq!(session_count(&conn, &user_id), 1);
+        assert!(
+            auth::passkey::get_account(&conn, &user_id)
+                .unwrap()
+                .unwrap()
+                .step_up_at
+                .is_none()
+        );
+        assert_eq!(audit_count(&conn, "google_credential_change_required"), 1);
+    }
+
+    #[tokio::test]
+    async fn risc_account_disabled_disables_and_locks_last_link() {
+        let certs = StubCerts::run();
+        let (tmp, app) = test_app_with_google(Some(risc_cfg(&certs)));
+        let now = crate::unix_now();
+        let user_id = {
+            let conn = open_store(&tmp);
+            seed_google_user(&conn, "sub-disable", now)
+        };
+        let set = sign_risc(&risc_claims(RISC_ACCOUNT_DISABLED, "sub-disable", now));
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let conn = open_store(&tmp);
+        assert_eq!(flow::find_google_owner(&conn, "sub-disable").unwrap(), None);
+        assert_eq!(session_count(&conn, &user_id), 0);
+        assert!(
+            auth::passkey::get_account(&conn, &user_id)
+                .unwrap()
+                .unwrap()
+                .locked_at
+                .is_some()
+        );
+        assert_eq!(audit_count(&conn, "google_account_disabled"), 1);
+        assert_eq!(audit_count(&conn, "account_locked"), 1);
+    }
+
+    #[tokio::test]
+    async fn risc_account_enabled_audits_only() {
+        let certs = StubCerts::run();
+        let (tmp, app) = test_app_with_google(Some(risc_cfg(&certs)));
+        let now = crate::unix_now();
+        let user_id = {
+            let conn = open_store(&tmp);
+            seed_google_user(&conn, "sub-enable", now)
+        };
+        let set = sign_risc(&risc_claims(RISC_ACCOUNT_ENABLED, "sub-enable", now));
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let conn = open_store(&tmp);
+        assert_eq!(
+            flow::find_google_owner(&conn, "sub-enable")
+                .unwrap()
+                .as_deref(),
+            Some(user_id.as_str())
+        );
+        assert_eq!(session_count(&conn, &user_id), 1);
+        assert_eq!(audit_count(&conn, "google_account_enabled"), 1);
+    }
+
+    #[tokio::test]
+    async fn risc_verification_audits_state() {
+        let certs = StubCerts::run();
+        let (tmp, app) = test_app_with_google(Some(risc_cfg(&certs)));
+        let now = crate::unix_now();
+        let mut claims = risc_claims(RISC_VERIFICATION, "sub-verify", now);
+        claims["events"] = serde_json::json!({ RISC_VERIFICATION: {"state": "stream-1"} });
+        let set = sign_risc(&claims);
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let conn = open_store(&tmp);
+        assert_eq!(audit_count(&conn, "google_risc_verification"), 1);
+    }
+
+    #[tokio::test]
+    async fn risc_unknown_subject_and_event_accept() {
+        let certs = StubCerts::run();
+        let (tmp, app) = test_app_with_google(Some(risc_cfg(&certs)));
+        let now = crate::unix_now();
+        // Unknown subject: nobody owns this sub.
+        let set = sign_risc(&risc_claims(RISC_SESSIONS_REVOKED, "sub-ghost", now));
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        // Unknown event URI: forward-compat accept.
+        let set = sign_risc(&risc_claims("https://example.com/future", "sub-ghost", now));
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let conn = open_store(&tmp);
+        assert_eq!(audit_count(&conn, "google_risc.unknown_subject"), 1);
+        assert_eq!(audit_count(&conn, "google_risc.unknown"), 1);
+    }
+
+    #[tokio::test]
+    async fn risc_email_subject_audit_only() {
+        let certs = StubCerts::run();
+        let (tmp, app) = test_app_with_google(Some(risc_cfg(&certs)));
+        let now = crate::unix_now();
+        let mut claims = risc_claims(RISC_ACCOUNT_DISABLED, "sub-x", now);
+        claims["subject"] = serde_json::json!({"format": "email", "email": "u@example.test"});
+        let set = sign_risc(&claims);
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let conn = open_store(&tmp);
+        assert_eq!(audit_count(&conn, "google_risc.email_subject"), 1);
+    }
+
+    #[tokio::test]
+    async fn risc_forged_set_403() {
+        let certs = StubCerts::run();
+        let (tmp, app) = test_app_with_google(Some(risc_cfg(&certs)));
+        let now = crate::unix_now();
+        let set = sign_risc(&risc_claims(RISC_SESSIONS_REVOKED, "sub-1", now));
+        let mut tampered = set.clone();
+        tampered.pop();
+        tampered.push(if set.ends_with('A') { 'B' } else { 'A' });
+        let set = tampered;
+        let res = app.clone().oneshot(post_risc(&set)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let conn = open_store(&tmp);
+        assert_eq!(audit_count(&conn, "google_risc.rejected"), 1);
     }
 }

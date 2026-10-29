@@ -11,6 +11,7 @@ pub mod magic;
 pub mod meta;
 pub mod oauth;
 pub mod passkey;
+pub mod risc;
 pub mod ws;
 
 use rusqlite::{Connection, OptionalExtension};

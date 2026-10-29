@@ -325,6 +325,7 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/robots.txt", get(serve_robots))
         .route("/privacy", get(serve_privacy))
         .route("/auth/google/callback", get(oauth::callback))
+        .route("/auth/google/risc", post(oauth::risc))
         .route("/auth/apple/callback", get(oauth_apple::callback))
         .route("/auth/meta/callback", get(oauth_meta::callback))
         .route(

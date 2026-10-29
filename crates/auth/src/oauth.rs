@@ -289,6 +289,46 @@ pub fn find_google_owner(conn: &Connection, sub: &str) -> rusqlite::Result<Optio
     .optional()
 }
 
+/// Owner of a RISC-disabled google link for `sub`, if any.
+pub fn find_disabled_google_owner(
+    conn: &Connection,
+    sub: &str,
+) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT user_id FROM identity_link
+         WHERE method = 'google' AND provider_sub = ?1 AND disabled_at IS NOT NULL
+         LIMIT 1",
+        [sub],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Clear `disabled_at` on one google link (revive on re-auth).
+pub fn revive_google_link(conn: &Connection, sub: &str, user_id: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE identity_link SET disabled_at = NULL
+         WHERE method = 'google' AND provider_sub = ?1 AND user_id = ?2",
+        rusqlite::params![sub, user_id],
+    )?;
+    Ok(())
+}
+
+/// Revive a RISC-disabled google link on fresh verified login
+/// (spec: a disabled link stays disabled *until the user re-auths*;
+/// without this the login would fork a second account for the same
+/// `sub`). Returns the owner when a disabled row was revived.
+pub fn revive_disabled_google_link(
+    conn: &Connection,
+    sub: &str,
+) -> rusqlite::Result<Option<String>> {
+    let owner = find_disabled_google_owner(conn, sub)?;
+    if let Some(ref user_id) = owner {
+        revive_google_link(conn, sub, user_id)?;
+    }
+    Ok(owner)
+}
+
 /// Insert the google identity link (fresh account or explicit
 /// link). Emails hash lowercase like every other link writer.
 pub fn insert_google_link(
@@ -616,6 +656,27 @@ mod tests {
                 user_id: "u-1".to_string()
             }
         );
+    }
+
+    #[test]
+    fn revive_disabled_link_returns_owner() {
+        let conn = memory();
+        crate::passkey::ensure_account(&conn, "u-1", 1000).unwrap();
+        insert_google_link(&conn, "u-1", "sub-1", "a@example.test", true).unwrap();
+        // Live links are untouched.
+        assert_eq!(revive_disabled_google_link(&conn, "sub-1").unwrap(), None);
+        crate::passkey::disable_link(&conn, "u-1", "google", "sub-1", 1100).unwrap();
+        assert_eq!(find_google_owner(&conn, "sub-1").unwrap(), None);
+        assert_eq!(
+            revive_disabled_google_link(&conn, "sub-1").unwrap(),
+            Some("u-1".to_string())
+        );
+        assert_eq!(
+            find_google_owner(&conn, "sub-1").unwrap(),
+            Some("u-1".to_string())
+        );
+        // Unknown subs revive nothing.
+        assert_eq!(revive_disabled_google_link(&conn, "sub-9").unwrap(), None);
     }
 
     #[test]
