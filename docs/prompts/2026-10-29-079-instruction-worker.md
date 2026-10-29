@@ -60,8 +60,9 @@ Live API never touched in tests (StubPort scripts).
 
 ## Commits
 
-- (work commit hash — filled after commit)
-- (this log entry, committed alongside)
+- `a413e97` Instruction worker: triggers to reviewed fact updates
+  (this log rode along)
+- (this hash fill-in, committed immediately after)
 
 ## Follow-ups
 
