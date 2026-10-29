@@ -64,6 +64,10 @@ async function throwForSetupStatus(res, what) {
 		throw new Error('Setup key required — paste the key minted by `xtask setup-key-mint`.');
 	}
 	if (res.status === 403) {
+		const detail = await errorDetail(res);
+		// Non-key 403s (admin host guard) surface verbatim instead of
+		// masquerading as a bad key.
+		if (detail && detail !== 'setup key invalid or window closed') throw new Error(detail);
 		throw new Error(
 			'Setup key invalid, or the window already closed (a passkey was enrolled).'
 		);

@@ -113,7 +113,10 @@ test('setup maps 401/403/429/422 from the gate', async () => {
 		codes.status = 401;
 		await assert.rejects(fetchSetupSteps(base, KEY), /Setup key required/);
 		codes.status = 403;
+		codes.error = 'setup key invalid or window closed';
 		await assert.rejects(fetchSetupSteps(base, KEY), /window already closed/);
+		codes.error = 'admin host required';
+		await assert.rejects(fetchSetupSteps(base, KEY), /admin host required/);
 		codes.status = 429;
 		await assert.rejects(fetchSetupSteps(base, KEY), /Too many attempts/);
 		codes.status = 422;
