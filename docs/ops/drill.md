@@ -7,14 +7,15 @@ that drill (fix, then restart its ×3).
 
 ## Drill 1 — ship + smoke (prod-direct while G5 is relaxed)
 
+Per `runbook-release.md` (zigbuild → stage → `xtask deploy`,
+which smokes itself), then:
+
 ```sh
-VERSION=$(git rev-parse --short HEAD)
-sudo /usr/local/sbin/apostille-ship $VERSION   # smokes itself; see deploy.md
-curl -fsS https://andrii.ai/apostille/healthz
+curl -fsS https://andrii.ai/apostille/healthz   # {"status":"ok","version":"0.1.0+<sha>"}
 curl -fsS https://andrii.ai/apostille/ | head -c 120
 ```
 
-Green: ship script exits 0, healthz `{"status":"ok"}`, shell 200.
+Green: deploy exits 0, healthz stamp matches, shell 200.
 When the staging box lands (G5), prepend: deploy to staging → `xtask
 accept` green → stamp → then prod.
 
@@ -22,16 +23,21 @@ accept` green → stamp → then prod.
 
 ```sh
 PREV=<previous good short-sha>
-ssh andrii.ai "ln -sfn /srv/apostille/releases/$PREV \
-  /srv/apostille/current && sudo systemctl restart apostille"
+ssh andrii.ai "cd ~/apostille/staging/<live> && ./xtask rollback --to $PREV"
 curl -fsS https://andrii.ai/apostille/healthz
 curl -fsS https://andrii.ai/apostille/version
 ```
 
-Green: healthz 200 < 30s after the flip, version reports `$PREV`,
-plus a revert commit with reason per repo policy. Rollback across a
-migration needs the author's explicit call (SQLite: forward-only, no
-down-migrations). Keep the last 3 releases; delete older.
+Green: rollback exits 0, healthz 200 < 30s after the flip,
+version reports `$PREV`, plus a revert commit with reason per
+repo policy. `xtask rollback` flips the symlink, restarts, and
+smokes (auto-reverting on smoke failure). Rollback across a
+migration needs the author's explicit call (SQLite:
+forward-only, no down-migrations). Redeploy forward afterwards
+to restore the live release. Space restarts: systemd allows 5
+per 10 min, and every stop currently SIGKILLs after the drain
+hangs (P0: QUIC serve has no shutdown path — see prompt-076
+log); never run the ×3 back-to-back without watching.
 
 ## Drill 3 — backup + restore
 
@@ -59,4 +65,6 @@ envelope is without printing it.
 
 | Date (UTC) | Drill | Operator | Build | Result + notes |
 |---|---|---|---|---|
-| (none yet) | — | — | — | — |
+| 2026-10-29 | 1 ship+smoke ×3 | agent | b5b1c3f, b82c458, b577c10 | green ×3 (deploy 0, stamp, shell 200) |
+| 2026-10-29 | 2 rollback ×3 | agent | b577c10↔b82c458 | rollback legs green ×3; run-3 restore hit restart-timeout outage (~4 min, recovered via rate-limit wait + restart) — every stop SIGKILLs (QUIC has no shutdown path, P0 in prompt-076 log) |
+| 2026-10-29 | 3 backup+restore | agent | b577c10 | BLOCKED (0/3): no nightly backups exist; mechanism proven once (`.backup` → hal-readable copy → `integrity_check` ok → packs clean); scratch boot needs a KEK-holding operator for port rows; nightly automation + offsite + retention still unwired |
