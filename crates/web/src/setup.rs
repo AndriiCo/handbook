@@ -82,7 +82,7 @@ impl FromRequestParts<AppState> for SetupAuth {
             return Err(store_unavailable());
         };
         let hash = handbook_store::store::sha256_hex(candidate.as_bytes());
-        match config::verify_setup_key(&conn, kek, &hash) {
+        match config::verify_setup_key(&conn, kek, &hash, now) {
             Ok(true) => Ok(SetupAuth),
             Ok(false) => {
                 passkey::audit_auth(&conn, now, "anonymous", "setup.denied", &ip);
@@ -206,13 +206,13 @@ pub async fn setup_set_key(
         )
             .into_response();
     }
-    if !config::keys::ALL.iter().any(|(name, _)| *name == key) {
+    let Some((_, declared)) = config::keys::ALL.iter().find(|(name, _)| *name == key) else {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(json!({"error": "unknown wizard key"})),
         )
             .into_response();
-    }
+    };
     let Some(kek) = state.kek.as_ref() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -227,6 +227,15 @@ pub async fn setup_set_key(
         )
             .into_response();
     };
+    // The registry owns each key's type — a client-supplied flip
+    // (bool→text) would corrupt job reads, so it 422s.
+    if key_type != *declared {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "type does not match registered key type"})),
+        )
+            .into_response();
+    }
     let plaintext: Vec<u8> = match (key_type, &body.value) {
         (config::ConfigType::Bool, serde_json::Value::Bool(true)) => vec![b'1'],
         (config::ConfigType::Bool, serde_json::Value::Bool(false)) => vec![b'0'],
@@ -323,6 +332,9 @@ mod tests {
         let kek = config::Kek::generate();
         config::record_kek(&conn, 1, "test", 1).unwrap();
         let hash = handbook_store::store::sha256_hex(KEY.as_bytes());
+        // Fresh stamp: requests verify with real time, and keys
+        // older than 72h stop verifying.
+        let now = unix_now();
         config::set_value(
             &conn,
             &kek,
@@ -331,7 +343,7 @@ mod tests {
                 key: config::keys::SETUP_KEY_HASH,
                 key_type: config::ConfigType::Secret,
                 plaintext: hash.as_bytes(),
-                now: 1,
+                now,
                 actor: "test",
             },
         )
@@ -600,6 +612,22 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        // Registry-type flip 422s (acme.enabled is bool, not text).
+        let app = router(fix.state.clone());
+        let res = app
+            .oneshot(request(
+                "POST",
+                "/apostille/api/v1/admin/setup/keys/acme.enabled",
+                Some(KEY),
+                Some(json!({"type": "text", "value": "true"})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            json_body(res).await["error"],
+            "type does not match registered key type"
+        );
         // The sealed rows read back (bool + text decrypt; secret hidden).
         let app = router(fix.state.clone());
         let res = app

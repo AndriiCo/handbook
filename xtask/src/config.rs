@@ -522,7 +522,7 @@ mod tests {
         bytes.copy_from_slice(&raw);
         let ckek = sealed_config::Kek::from_bytes(bytes);
         let hash = handbook_store::store::sha256_hex(key.as_bytes());
-        assert!(sealed_config::verify_setup_key(&conn, &ckek, &hash).unwrap());
+        assert!(sealed_config::verify_setup_key(&conn, &ckek, &hash, 100).unwrap());
         let leak: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM config WHERE value_enc = ?1",
@@ -542,9 +542,9 @@ mod tests {
         // Re-mint overwrites: the old key dies with its row.
         let key2 = mint_setup_key(&conn, &kek, 1, "tester", 101).unwrap();
         assert_ne!(key, key2);
-        assert!(!sealed_config::verify_setup_key(&conn, &ckek, &hash).unwrap());
+        assert!(!sealed_config::verify_setup_key(&conn, &ckek, &hash, 101).unwrap());
         let hash2 = handbook_store::store::sha256_hex(key2.as_bytes());
-        assert!(sealed_config::verify_setup_key(&conn, &ckek, &hash2).unwrap());
+        assert!(sealed_config::verify_setup_key(&conn, &ckek, &hash2, 101).unwrap());
     }
 
     #[test]

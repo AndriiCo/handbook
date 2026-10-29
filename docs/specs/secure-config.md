@@ -363,15 +363,20 @@ live credential validation (format checks only).
   unless `--force` (break-glass re-mint). Audits
   `setup_key.minted` (never the key).
 - Resume: the same key re-opens the wizard any time before
-  the burn. No sessions, no expiry: the key rides an
-  `x-setup-key` header on every setup request (a custom
-  header is CSRF-safe by construction — no CORS allowlist
-  exists to forge it cross-origin).
+  the burn and within 72h of mint (keys older than that stop
+  verifying — re-mint is the recovery). No sessions: the key
+  rides an `x-setup-key` header on every setup request (a
+  custom header is CSRF-safe by construction — no CORS
+  allowlist exists to forge it cross-origin).
 - Burn: the first successful staff passkey enrol deletes the
   `setup.key_hash` row (idempotent; audits `setup.burned`
-  only when a row actually died). After the burn the setup
-  window is closed permanently — old keys 403, and enrolment
-  returns to invite + mTLS-cert only.
+  only when a row actually died) — in BOTH enrol modes, and
+  only after the ceremony verifies, so a failed ceremony
+  never bricks a fresh server. Invite-mode enrols after the
+  first leave the row alone (a break-glass re-mint survives
+  routine enrols). After the burn the setup window is closed
+  permanently — old keys 403, and enrolment returns to
+  invite + mTLS-cert only.
 - `setup_required` = the `setup.key_hash` row exists. Admin
   PUT on `setup.*` is refused (422) — mint/burn are the only
   writers. The key appears in the admin list as presence-only
@@ -399,8 +404,10 @@ facts, no sessions.
   (SetupAuth, `{type, value}`, deny-unknown-fields) → sealed
   put + audit (actor `setup`). Same validation as admin
   PUT, minus step-up (no session exists — the key IS the
-  auth). Unknown key or `setup.*` → 422/404 mirroring admin
-  PUT exactly.
+  auth), plus registry-type enforcement: the client `type`
+  must match the key's registered type or the write 422s.
+  Unknown key or `setup.*` → 422/404 mirroring admin PUT
+  exactly.
 - Enrol setup-mode: while `setup_required`,
   `POST .../auth/passkey/enrol/start` also accepts
   `{setup_key}` INSTEAD of invite + client cert (handshake

@@ -100,7 +100,7 @@ pub async fn enrol_start(
         let ok = match state.kek.as_ref() {
             Some(kek) => {
                 let hash = handbook_store::store::sha256_hex(key.as_bytes());
-                config::verify_setup_key(&conn, kek, &hash).unwrap_or(false)
+                config::verify_setup_key(&conn, kek, &hash, now).unwrap_or(false)
             }
             None => false,
         };
@@ -292,7 +292,7 @@ pub async fn enrol_finish(
         let ok = match state.kek.as_ref() {
             Some(kek) => {
                 let hash = handbook_store::store::sha256_hex(key.as_bytes());
-                config::verify_setup_key(&conn, kek, &hash).unwrap_or(false)
+                config::verify_setup_key(&conn, kek, &hash, now).unwrap_or(false)
             }
             None => false,
         };

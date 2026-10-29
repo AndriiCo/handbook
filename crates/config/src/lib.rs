@@ -448,18 +448,31 @@ pub fn delete_value(conn: &Connection, key: &str) -> Result<bool> {
 /// the candidate (SHA-256 hex) — this function only compares, so
 /// secret bytes never cross into the web layer. False when no row
 /// exists (window closed) or the row is not a secret.
-pub fn verify_setup_key(conn: &Connection, kek: &Kek, candidate_hash_hex: &str) -> Result<bool> {
-    let row: Option<(String, Vec<u8>, i64)> = conn
+/// Setup keys older than this stop verifying (M2): a minted
+/// window must not linger in scrollback forever. Re-mint is the
+/// recovery; no schema change (the row's `updated_at` carries it).
+pub const SETUP_KEY_MAX_AGE_SECS: i64 = 72 * 3600;
+
+pub fn verify_setup_key(
+    conn: &Connection,
+    kek: &Kek,
+    candidate_hash_hex: &str,
+    now: i64,
+) -> Result<bool> {
+    let row: Option<(String, Vec<u8>, i64, i64)> = conn
         .query_row(
-            "SELECT type, value_enc, enc_version FROM config WHERE key = ?1",
+            "SELECT type, value_enc, enc_version, updated_at FROM config WHERE key = ?1",
             [keys::SETUP_KEY_HASH],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let Some((type_text, value_enc, enc_version)) = row else {
+    let Some((type_text, value_enc, enc_version, updated_at)) = row else {
         return Ok(false);
     };
     if type_text != ConfigType::Secret.as_str() {
+        return Ok(false);
+    }
+    if now.saturating_sub(updated_at) > SETUP_KEY_MAX_AGE_SECS {
         return Ok(false);
     }
     let stored = decrypt_value(kek, keys::SETUP_KEY_HASH, enc_version, &value_enc)?;
@@ -765,7 +778,7 @@ mod tests {
         let conn = memory();
         let kek = Kek::generate();
         // No row: window closed.
-        assert!(!verify_setup_key(&conn, &kek, &"a".repeat(64)).expect("verify"));
+        assert!(!verify_setup_key(&conn, &kek, &"a".repeat(64), 100).expect("verify"));
         assert!(!delete_value(&conn, keys::SETUP_KEY_HASH).expect("delete"));
         let hash = "b".repeat(64);
         put(
@@ -776,13 +789,37 @@ mod tests {
             hash.as_bytes(),
         )
         .expect("set");
-        assert!(verify_setup_key(&conn, &kek, &hash).expect("verify"));
-        assert!(!verify_setup_key(&conn, &kek, &"c".repeat(64)).expect("verify"));
-        assert!(!verify_setup_key(&conn, &kek, "short").expect("verify"));
+        assert!(verify_setup_key(&conn, &kek, &hash, 100).expect("verify"));
+        assert!(!verify_setup_key(&conn, &kek, &"c".repeat(64), 100).expect("verify"));
+        assert!(!verify_setup_key(&conn, &kek, "short", 100).expect("verify"));
         // Burn removes the row; a second burn is a no-op false.
         assert!(delete_value(&conn, keys::SETUP_KEY_HASH).expect("delete"));
         assert!(!delete_value(&conn, keys::SETUP_KEY_HASH).expect("delete"));
-        assert!(!verify_setup_key(&conn, &kek, &hash).expect("verify"));
+        assert!(!verify_setup_key(&conn, &kek, &hash, 100).expect("verify"));
+    }
+
+    #[test]
+    fn setup_key_verify_expires_after_72h() {
+        let conn = memory();
+        let kek = Kek::generate();
+        let hash = "b".repeat(64);
+        put(
+            &conn,
+            &kek,
+            keys::SETUP_KEY_HASH,
+            ConfigType::Secret,
+            hash.as_bytes(),
+        )
+        .expect("set");
+        // Test rows stamp updated_at = 100.
+        assert!(verify_setup_key(&conn, &kek, &hash, 100).expect("verify"));
+        assert!(
+            verify_setup_key(&conn, &kek, &hash, 100 + SETUP_KEY_MAX_AGE_SECS).expect("verify")
+        );
+        assert!(
+            !verify_setup_key(&conn, &kek, &hash, 100 + SETUP_KEY_MAX_AGE_SECS + 1)
+                .expect("verify")
+        );
     }
 
     #[test]
@@ -797,7 +834,7 @@ mod tests {
             b"not-a-hash-row",
         )
         .expect("set");
-        assert!(!verify_setup_key(&conn, &kek, "not-a-hash-row").expect("verify"));
+        assert!(!verify_setup_key(&conn, &kek, "not-a-hash-row", 100).expect("verify"));
     }
 
     #[test]
