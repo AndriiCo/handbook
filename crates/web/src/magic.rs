@@ -511,6 +511,7 @@ mod tests {
             meta_cfg: None,
             mailer,
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
         (tmp, app)
@@ -547,6 +548,7 @@ mod tests {
                 dir: mail_dir.clone(),
             })),
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
         (tmp, app, mail_dir)

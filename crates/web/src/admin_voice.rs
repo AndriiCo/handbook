@@ -919,6 +919,7 @@ mod tests {
             meta_cfg: None,
             mailer: None,
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         };
         Fixture { _tmp: tmp, state }
     }
