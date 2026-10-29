@@ -40,3 +40,6 @@ Scripts:
 - `ops-units-reinstall.sh` — root: validate + install the 8
   watch/mail/instruct/backup unit files from
   `units-staging/` (F1/F2 gates), enable watch + mail only.
+- `ops-backup-enable.sh` — root: first backup run + daily
+  verify + `backup-verify` restore proof, then enable the
+  backup timer (the enable decision, executed with proof).

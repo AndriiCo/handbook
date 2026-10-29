@@ -91,5 +91,6 @@ quarterly with the restore drill afterwards.
 | Date (UTC) | Drill | Operator | Build | Result + notes |
 |---|---|---|---|---|
 | 2026-10-29 | 1 ship+smoke ×3 | agent | b5b1c3f, b82c458, b577c10 | green ×3 (deploy 0, stamp, shell 200) |
+| 2026-10-29 | 1 ship+smoke (4th leg) | agent | 72ae915 | green (deploy 0, stamp 72ae915, shell 200; unit Burst 12 + TimeoutStopSec 20s installed; pruned 49775a6; accept skipped, announced — no prod build row) |
 | 2026-10-29 | 2 rollback ×3 | agent | b577c10↔b82c458 | rollback legs green ×3; run-3 restore hit restart-timeout outage (~4 min, recovered via rate-limit wait + restart) — every stop SIGKILLs (QUIC has no shutdown path, P0 in prompt-076 log) |
 | 2026-10-29 | 3 backup+restore | agent | b577c10 | BLOCKED (0/3): no nightly backups exist; mechanism proven once (`.backup` → hal-readable copy → `integrity_check` ok → packs clean); scratch boot needs a KEK-holding operator for port rows; nightly automation + offsite + retention still unwired |
