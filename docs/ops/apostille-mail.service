@@ -1,5 +1,7 @@
 # apostille-mail.service — APPROVED (prompt 054, D41: enable on prod
 # once Gmail credentials are sealed + the deploy train ships).
+# F1 re-check (prompt 083): --store added (xtask never reads
+# STORE_DIR); flags re-verified against xtask usage. Still APPROVED.
 #
 # One-shot Gmail poll: new mailbox mail becomes immutable `email`
 # captures with auth evidence. Triggered by apostille-mail.timer
@@ -22,8 +24,8 @@ Wants=network-online.target
 Type=oneshot
 User=andrii-ai
 Group=andrii-ai
-ExecStart=/srv/apostille/current/xtask mail-poll --actor timer
-Environment=STORE_DIR=/var/lib/apostille
+ExecStart=/srv/apostille/current/xtask mail-poll --store /var/lib/apostille --actor timer
+# No Environment=STORE_DIR: xtask takes --store explicitly (F1).
 LoadCredential=handbook-kek:/etc/apostille/handbook-kek
 StateDirectory=apostille
 WorkingDirectory=/var/lib/apostille

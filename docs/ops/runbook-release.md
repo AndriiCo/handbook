@@ -73,6 +73,11 @@ scp target/x86_64-unknown-linux-gnu/release/web \
 scp -r web/build/. andrii.ai:apostille/staging/$VERSION/spa/
 scp -r web/build-admin/. andrii.ai:apostille/staging/$VERSION/spa-admin/
 scp -r packs/. andrii.ai:apostille/staging/$VERSION/packs/
+# F2 (prompt 083): the instruct worker's pack ships with packs/
+# (the unit points at current/packs/general.toml; packs-validate
+# and packs-load only read *.json, so the .toml is inert to them).
+scp crates/instruct/packs/general.toml \
+  andrii.ai:apostille/staging/$VERSION/packs/
 scp -r crates/web/static/. andrii.ai:apostille/staging/$VERSION/static/
 scp target/x86_64-unknown-linux-gnu/release/xtask \
   andrii.ai:apostille/staging/$VERSION/xtask

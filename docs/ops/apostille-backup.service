@@ -1,0 +1,50 @@
+# apostille-backup.service — PROPOSED (prompt 083: install with the
+# F1/F2 unit reinstall; enable once the first nightly + backup-verify
+# are reviewed and the offsite pull is decided).
+#
+# One-shot nightly backup: both SQLite DBs via the backup API (never
+# raw-copy a WAL-mode DB) + tar of the file dirs into
+# /var/lib/apostille-backups/daily/YYYY-MM-DD/, 7 daily + 4 weekly.
+# Triggered by apostille-backup.timer at 02:30. Spec: docs/ops/prod.md.
+#
+# Install (as root, once): copy this file + apostille-backup.timer to
+# /etc/systemd/system/, `systemctl daemon-reload && systemctl enable
+# --now apostille-backup.timer`.
+#
+# Privilege summary: runs as andrii-ai:andrii-ai, no capabilities,
+# no network, no KEK (config rows are ciphertext; the job reads the
+# live store only and writes nothing to it), two writable dirs.
+# Owner-only perms throughout (P2 PII + TLS key copies inside).
+[Unit]
+Description=Apostille Handbook nightly backup (DBs + file dirs)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=andrii-ai
+Group=andrii-ai
+# xtask takes --store/--dest explicitly (it never reads STORE_DIR).
+ExecStart=/srv/apostille/current/xtask backup --store /var/lib/apostille --dest /var/lib/apostille-backups
+StateDirectory=apostille-backups
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/apostille-backups
+UMask=0077
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ReadWritePaths=/var/lib/apostille /var/lib/apostille-backups
+# No network: the job only reads the live store and writes the
+# backup tree (AF_NETLINK kept for NSS/tmpfiles).
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

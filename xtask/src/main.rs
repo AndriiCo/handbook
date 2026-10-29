@@ -11,6 +11,7 @@ mod accept;
 mod admin_cert;
 mod admin_staff;
 mod atlas;
+mod backup;
 mod build_handbook;
 mod config;
 mod demo_vietnam;
@@ -54,6 +55,8 @@ fn main() {
         Some("form-scaffold") => form_scaffold::run(&args[1..]),
         Some("quic-probe") => quic_probe::run(&args[1..]),
         Some("demo-vietnam") => demo_vietnam::run(&args[1..]),
+        Some("backup") => backup::run(&args[1..]),
+        Some("backup-verify") => backup::run_verify(&args[1..]),
         Some("packs-validate") => run_packs_validate(&args[1..]),
         Some("packs-load") => run_packs_load(&args[1..]),
         Some("config-enroll") => config::run_enroll(&args[1..]),
@@ -109,6 +112,8 @@ Tasks:
   form-scaffold  per-form skeleton: --authority --code --title [--out] [--force]; --check compares
   quic-probe  HTTP/3 GET probe: --addr <ip:port> --server-name <sni> [--cacert <pem>] [--path <p>] [--host <h>]
   demo-vietnam  frozen VN drill on a temp store (never prod)
+  backup   nightly backup: SQLite backup API + tar (see flags below)
+  backup-verify  restore-to-scratch + checks (drill-3 engine)
   packs-validate  validate packs/*.json (F13; needs_review invariants)
   packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)
@@ -185,6 +190,14 @@ hcch-poll flags:
 mail-poll flags:
   --store <path>  store root (default: store)
   --actor <a>     audit actor (default: xtask)
+
+backup flags:
+  --store <path>  store root (default: store)
+  --dest <path>   backups root (default: /var/lib/apostille-backups)
+
+backup-verify flags:
+  --backup <dir>  daily backup dir (required)
+  --scratch <dir> missing-or-empty scratch dir for the restore (required)
 
 add-authority flags:
   --store <path>  store root (default: store)

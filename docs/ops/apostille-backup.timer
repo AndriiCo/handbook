@@ -1,0 +1,18 @@
+# apostille-backup.timer — PROPOSED (prompt 083: enable with
+# apostille-backup.service once the first nightly + backup-verify
+# are reviewed).
+#
+# Nightly at 02:30 with a random delay. Persistent: a missed run
+# (downtime) fires once at the next boot instead of silently
+# skipping a day.
+[Unit]
+Description=Nightly Apostille Handbook backup
+
+[Timer]
+OnCalendar=02:30
+RandomizedDelaySec=300
+Persistent=true
+Unit=apostille-backup.service
+
+[Install]
+WantedBy=timers.target

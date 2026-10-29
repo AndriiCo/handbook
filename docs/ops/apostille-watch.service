@@ -1,5 +1,7 @@
 # apostille-watch.service — APPROVED (prompt 054, D41: enable on prod
 # once the deploy train ships the matching xtask).
+# F1 re-check (prompt 083): --store added (xtask never reads
+# STORE_DIR); flags re-verified against xtask usage. Still APPROVED.
 #
 # One-shot watch sweep: poll due watch URLs (conditional GET, ingest
 # only changes), then poll the HCCH status table (task on change).
@@ -23,9 +25,9 @@ User=andrii-ai
 Group=andrii-ai
 # Sequential: the HCCH poll runs only if the sweep exits 0 (a failed
 # sweep usually means DB trouble the poll would hit too).
-ExecStart=/srv/apostille/current/xtask watch-sweep --actor timer
-ExecStart=/srv/apostille/current/xtask hcch-poll --actor timer
-Environment=STORE_DIR=/var/lib/apostille
+ExecStart=/srv/apostille/current/xtask watch-sweep --store /var/lib/apostille --actor timer
+ExecStart=/srv/apostille/current/xtask hcch-poll --store /var/lib/apostille --actor timer
+# No Environment=STORE_DIR: xtask takes --store explicitly (F1).
 StateDirectory=apostille
 WorkingDirectory=/var/lib/apostille
 UMask=0027
