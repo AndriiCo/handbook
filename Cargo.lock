@@ -1757,6 +1757,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "instruct"
+version = "0.1.0"
+dependencies = [
+ "atlas",
+ "contracts",
+ "handbook-store",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4243,6 +4257,7 @@ dependencies = [
  "handbook-store",
  "http",
  "ingest",
+ "instruct",
  "labels",
  "mail",
  "mcp",

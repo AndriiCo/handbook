@@ -113,7 +113,8 @@ fn pdf_tool(args: &[String]) -> Option<Vec<String>> {
 }
 
 /// Live client: sealed `meta.api_key` first, `$META_API_KEY` fallback.
-fn live_client(args: &[String]) -> MetaClient<UreqTransport> {
+/// Shared with the instruct worker (same key, same rules).
+pub(crate) fn live_client(args: &[String]) -> MetaClient<UreqTransport> {
     if let Ok(key) = std::env::var("META_API_KEY")
         && !key.is_empty()
     {

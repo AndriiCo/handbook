@@ -1,0 +1,17 @@
+# apostille-instruct.timer — PROPOSED (prompt 079: enable on prod
+# with apostille-instruct.service once the worker's first live
+# sweeps are reviewed).
+#
+# Instruction updates should land within minutes of the evidence:
+# poll every 5 minutes. Persistent: a missed run fires once at
+# the next boot.
+[Unit]
+Description=5-minute Apostille instruction-worker sweep
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=apostille-instruct.service
+
+[Install]
+WantedBy=timers.target

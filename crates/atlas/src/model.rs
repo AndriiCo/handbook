@@ -836,6 +836,7 @@ impl Transport for StubTransport {
 pub struct StubPort {
     pub chat_text: String,
     pub response_text: String,
+    script: std::cell::RefCell<std::collections::VecDeque<String>>,
 }
 
 impl StubPort {
@@ -843,14 +844,31 @@ impl StubPort {
         Self {
             chat_text: chat_text.to_string(),
             response_text: response_text.to_string(),
+            script: std::cell::RefCell::new(std::collections::VecDeque::new()),
+        }
+    }
+
+    /// Scripted replies: each `complete_chat` pops the front;
+    /// exhausted scripts fall back to `chat_text`. Multi-step
+    /// workers (draft → refine) script one entry per call.
+    pub fn with_script(responses: Vec<String>) -> Self {
+        Self {
+            chat_text: "{}".to_string(),
+            response_text: "{}".to_string(),
+            script: std::cell::RefCell::new(responses.into()),
         }
     }
 }
 
 impl ModelPort for StubPort {
     fn complete_chat(&self, _req: &ChatRequest) -> Result<Completion> {
+        let text = self
+            .script
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_else(|| self.chat_text.clone());
         Ok(Completion {
-            text: self.chat_text.clone(),
+            text,
             input_tokens: 10,
             output_tokens: 5,
             cached_tokens: 0,

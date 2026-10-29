@@ -1,0 +1,47 @@
+# apostille-instruct.service — PROPOSED (prompt 079: enable on prod
+# once the worker's first live sweeps are reviewed).
+#
+# One-shot instruction sweep: new email / comment / transcript
+# captures become instruction drafts + proposed fact updates with
+# before/after reasons. Proposals only — humans decide via the
+# review queue. Triggered by apostille-instruct.timer every
+# 5 minutes.
+#
+# Install (as root, once): copy this file + apostille-instruct.timer
+# to /etc/systemd/system/, `systemctl daemon-reload && systemctl
+# enable --now apostille-instruct.timer`. Requires the Meta API key
+# in sealed config first, or every live run exits 2.
+#
+# Privilege summary: runs as andrii-ai:andrii-ai, no capabilities,
+# reads the KEK credential (sealed Meta key), one writable dir.
+[Unit]
+Description=Apostille instruction worker sweep (triggers to proposals)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=andrii-ai
+Group=andrii-ai
+ExecStart=/srv/apostille/current/xtask instruct-sweep --live --pack /srv/apostille/current/crates/instruct/packs/general.toml --actor timer
+Environment=STORE_DIR=/var/lib/apostille
+LoadCredential=handbook-kek:/etc/apostille/handbook-kek
+StateDirectory=apostille
+WorkingDirectory=/var/lib/apostille
+UMask=0027
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/apostille
+# Outbound HTTPS (Meta Model API) + loopback only.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

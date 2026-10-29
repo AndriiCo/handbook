@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 atlas = { path = "../crates/atlas" }
 auth = { path = "../crates/auth" }
+instruct = { path = "../crates/instruct" }
 contracts = { path = "../crates/contracts" }
 forms = { path = "../crates/forms" }
 handbook-agent = { path = "../crates/handbook-agent" }

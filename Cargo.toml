@@ -4,6 +4,7 @@ members = [
     "crates/acme",
     "crates/atlas",
     "crates/auth",
+    "crates/instruct",
     "crates/config",
     "crates/contracts",
     "crates/forms",

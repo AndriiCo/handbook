@@ -1,0 +1,44 @@
+# General instruction template (pack data, versioned).
+# States GENERAL requirements; per-authority findings supply the
+# particular via triggers. Section topics must stay in the frozen
+# fact-topic enum (validated at load).
+
+version = "general-v1"
+
+[[sections]]
+id = "fees"
+title = "Fees"
+topic = "fees"
+guidance = "Every office lists the per-document apostille fee and its effective date. Never carry a fee without its date."
+
+[[sections]]
+id = "walkin"
+title = "Walk-in hours"
+topic = "walkin"
+guidance = "List walk-in counter days and hours, or state explicitly that there is no walk-in service. Day-level exceptions (early Friday close, holidays) override the weekly pattern."
+
+[[sections]]
+id = "mailing"
+title = "Mailing"
+topic = "mailing"
+guidance = "Give the exact mailing address for apostille requests, including PO box / department lines."
+
+[[sections]]
+id = "appointment"
+title = "Appointments"
+topic = "appointment"
+guidance = "State whether in-person visits need an appointment and how to book one. Silence means unknown, never walk-in."
+
+[worker]
+model = "spark"
+summarize_at_tokens = 12000
+max_triggers = 10
+
+[[worker.models]]
+name = "spark"
+id = "muse-spark-1.3"
+mode = "standard"
+context_window = 1048576
+max_output_tokens = 4096
+rpm = 3000
+tpm = 4000000
