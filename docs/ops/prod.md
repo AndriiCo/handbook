@@ -12,8 +12,13 @@ on purpose; every item below is checkable by one command.
   (`journalctl -u apostille`). Request ids are random hex,
   not customer data.
 - Access log: the app's own `request` spans on stdout
-  (collected by journald): `id method uri` in, `status
-  latency_ms` out, same ID echoed in `x-request-id`. No query
+  (collected by journald): `id method uri transport branch
+  route` in, `status latency_ms` out (`route` is the matched
+  template, `unmatched` for fallback/404; `transport` is
+  `tcp`/`quic`, `unknown` only off the serve paths), same ID
+  echoed in `x-request-id`. 5xx responses log at ERROR with a
+  stable `error_kind` (`store_unavailable`, else
+  `unclassified`); everything else logs at INFO. No query
   strings with tokens are ever logged: the app never puts
   secrets in URLs.
 - **PII rule (hard):** no secrets, tokens, document contents,

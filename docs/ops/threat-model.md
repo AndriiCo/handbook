@@ -106,9 +106,11 @@ is trusted); customers attacking each other's browsers outside our pages.
   Gaps: binary files SKIPPED (`secrets.rs`); untracked files never
   scanned until staged; `--staged` covers ACMR only.
 - Logs: request-ID access log SHIPPED (one span per request:
-  id/method/uri/status/latency, `x-request-id` echo,
-  `request_id_and_log` in `crates/web/src/main.rs`). PII-free by
-  construction (fixed fields; URLs never carry secrets).
+  id/method/uri/transport/branch/route in, status/latency out
+  plus `error_kind` on 5xx (ERROR level),
+  `x-request-id` echo, `request_id_and_log` in
+  `crates/web/src/main.rs`). PII-free by construction (fixed
+  fields; URLs never carry secrets).
 
 ## 5. Mitigations mapped to IMPLEMENTED controls
 

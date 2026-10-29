@@ -36,7 +36,7 @@ mod ws_bus;
 use axum::{
     Router,
     extract::{
-        State,
+        MatchedPath, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, HeaderValue, StatusCode, header},
@@ -54,11 +54,28 @@ use tower_http::services::{ServeDir, ServeFile};
 /// Every deploy rebuilds, so `/healthz` always names the release.
 const FULL_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "+", env!("BUILD_SHA"));
 
-/// Request access log, one span per request: `id method uri` in,
-/// `status latency_ms` out. Logged fields are fixed and PII-free by
+/// Transport that delivered the request (`"tcp"` or `"quic"`).
+/// TCP listeners stamp it via [`insert_tcp_transport`]; the QUIC
+/// bridge stamps it when building the bridged request. Absent in
+/// direct-`oneshot` tests, which log `"unknown"`.
+#[derive(Clone)]
+pub(crate) struct RequestTransport(pub(crate) &'static str);
+
+/// Stable 5xx cause attached to error responses (read by
+/// [`request_id_and_log`], never sent to clients). Grow the
+/// taxonomy at the failure site; unmarked 5xx log `unclassified`.
+#[derive(Clone)]
+struct ErrorKind(&'static str);
+
+/// Request access log, one span per request: `id method uri
+/// transport branch route` in, `status latency_ms` (+ `error_kind`
+/// on 5xx) out. Logged fields are fixed and PII-free by
 /// construction (our URLs never carry tokens or customer data).
-/// The same opaque ID goes back in `x-request-id` for correlation.
+/// 5xx logs at ERROR so the journald error budget (`-p err`)
+/// counts app failures; everything else logs at INFO. The same
+/// opaque ID goes back in `x-request-id` for correlation.
 async fn request_id_and_log(
+    State(branch): State<&'static str>,
     req: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> impl IntoResponse {
@@ -67,11 +84,24 @@ async fn request_id_and_log(
         rand::random::<u64>(),
         rand::random::<u64>()
     );
+    let transport = req
+        .extensions()
+        .get::<RequestTransport>()
+        .map(|marked| marked.0)
+        .unwrap_or("unknown");
+    let route = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|matched| matched.as_str().to_owned())
+        .unwrap_or_else(|| "unmatched".to_string());
     let span = tracing::info_span!(
         "request",
         id = %id,
         method = %req.method(),
         uri = %req.uri(),
+        transport = %transport,
+        branch = %branch,
+        route = %route,
     );
     let _guard = span.enter();
     let started = std::time::Instant::now();
@@ -79,12 +109,36 @@ async fn request_id_and_log(
     if let Ok(value) = HeaderValue::from_str(&id) {
         res.headers_mut().insert("x-request-id", value);
     }
-    tracing::info!(
-        status = %res.status(),
-        latency_ms = started.elapsed().as_millis(),
-        "response"
-    );
+    if res.status().is_server_error() {
+        tracing::error!(
+            status = %res.status(),
+            latency_ms = started.elapsed().as_millis(),
+            error_kind = %res
+                .extensions()
+                .get::<ErrorKind>()
+                .map(|kind| kind.0)
+                .unwrap_or("unclassified"),
+            "response"
+        );
+    } else {
+        tracing::info!(
+            status = %res.status(),
+            latency_ms = started.elapsed().as_millis(),
+            "response"
+        );
+    }
     res
+}
+
+/// Stamp TCP-delivered requests with their transport (the QUIC
+/// bridge stamps `"quic"` itself). Applied once, outside the
+/// served routers in [`serve_http`] and [`serve_tls`].
+async fn insert_tcp_transport(
+    mut req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    req.extensions_mut().insert(RequestTransport("tcp"));
+    next.run(req).await
 }
 
 /// Shared router state: SPA shell path plus the store root. Handlers
@@ -265,7 +319,10 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/auth/meta/delete-status", get(oauth_meta::delete_status))
         .nest("/apostille", api)
         .nest_service("/.well-known/acme-challenge", ServeDir::new(acme_dir))
-        .layer(axum::middleware::from_fn(request_id_and_log))
+        .layer(axum::middleware::from_fn_with_state(
+            "public",
+            request_id_and_log,
+        ))
         .with_state(state)
 }
 
@@ -426,11 +483,13 @@ fn unix_now() -> i64 {
 }
 
 fn store_unavailable() -> axum::response::Response {
-    (
+    let mut res = (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(json!({"error": "store unavailable"})),
     )
-        .into_response()
+        .into_response();
+    res.extensions_mut().insert(ErrorKind("store_unavailable"));
+    res
 }
 
 async fn ws_echo(mut socket: WebSocket) {
@@ -929,7 +988,9 @@ async fn serve_http(public: Router, admin: Router, cfg: &config::RuntimeConfig) 
             handles.push(handle.clone());
             eprintln!("listening on http://{addr}/apostille ({name})");
             servers.spawn({
-                let router = router.clone();
+                let router = router
+                    .clone()
+                    .layer(axum::middleware::from_fn(insert_tcp_transport));
                 async move {
                     axum_server::bind(addr)
                         .handle(handle)
@@ -1052,7 +1113,9 @@ async fn serve_tls(
                 };
                 eprintln!("listening on https://{addr}/apostille (single-443 {mtls})");
                 servers.spawn({
-                    let router = router.clone();
+                    let router = router
+                        .clone()
+                        .layer(axum::middleware::from_fn(insert_tcp_transport));
                     let tls = admin_tls.clone();
                     async move {
                         axum_server::bind(addr)
@@ -1754,6 +1817,141 @@ mod tests {
             .to_string();
         assert_eq!(id.len(), 32);
         assert!(id.bytes().all(|b| b.is_ascii_hexdigit()), "got: {id}");
+    }
+
+    #[test]
+    fn store_unavailable_carries_error_kind() {
+        let res = store_unavailable();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            res.extensions().get::<ErrorKind>().unwrap().0,
+            "store_unavailable"
+        );
+    }
+
+    /// Log-capture writer: appends every formatted line to a buffer.
+    #[derive(Clone)]
+    struct BufWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for BufWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .expect("log buffer poisoned")
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn response_event_carries_transport_branch_route_and_error_kind() {
+        async fn mark_quic(
+            mut req: Request<Body>,
+            next: axum::middleware::Next,
+        ) -> axum::response::Response {
+            req.extensions_mut().insert(RequestTransport("quic"));
+            next.run(req).await
+        }
+
+        let app = Router::new()
+            .route("/boom", get(|| async { store_unavailable() }))
+            .route("/ok", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn_with_state(
+                "public",
+                request_id_and_log,
+            ))
+            .layer(axum::middleware::from_fn(mark_quic));
+        let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_writer({
+                let logs = logs.clone();
+                move || BufWriter(logs.clone())
+            })
+            .finish();
+        // Thread-local default (this test stays on the
+        // current-thread runtime, so every event lands here).
+        let _guard = tracing::subscriber::set_default(subscriber);
+        for (uri, status) in [
+            ("/boom", StatusCode::INTERNAL_SERVER_ERROR),
+            ("/ok", StatusCode::OK),
+            ("/nope", StatusCode::NOT_FOUND),
+        ] {
+            let res = app
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(res.status(), status, "uri: {uri}");
+        }
+        drop(_guard);
+        let text = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+        let events: Vec<serde_json::Value> = text
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .filter(|event| event["fields"]["message"] == "response")
+            .collect();
+        assert_eq!(events.len(), 3, "got: {text}");
+        let by_route = |route: &str| {
+            events
+                .iter()
+                .find(|event| event["span"]["route"] == route)
+                .unwrap_or_else(|| panic!("no event for {route}: {text}"))
+        };
+        let boom = by_route("/boom");
+        assert_eq!(boom["level"], "ERROR");
+        assert_eq!(boom["span"]["transport"], "quic");
+        assert_eq!(boom["span"]["branch"], "public");
+        assert_eq!(boom["fields"]["error_kind"], "store_unavailable");
+        assert!(
+            boom["fields"]["status"]
+                .as_str()
+                .unwrap()
+                .starts_with("500"),
+            "got: {boom}"
+        );
+        let ok = by_route("/ok");
+        assert_eq!(ok["level"], "INFO");
+        assert!(ok["fields"].get("error_kind").is_none(), "got: {ok}");
+        let nope = by_route("unmatched");
+        assert!(
+            nope["fields"]["status"]
+                .as_str()
+                .unwrap()
+                .starts_with("404"),
+            "got: {nope}"
+        );
+    }
+
+    #[tokio::test]
+    async fn tcp_transport_layer_marks_requests() {
+        let app = Router::new()
+            .route(
+                "/probe",
+                get(|req: Request<Body>| async move {
+                    req.extensions()
+                        .get::<RequestTransport>()
+                        .map(|marked| marked.0)
+                        .unwrap_or("missing")
+                        .to_string()
+                }),
+            )
+            .layer(axum::middleware::from_fn(insert_tcp_transport));
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .uri("/probe")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(res.into_body(), 64).await.unwrap();
+        assert_eq!(body.as_ref(), b"tcp");
     }
 
     #[tokio::test]
@@ -3649,6 +3847,33 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(String::from_utf8(body).unwrap(), "127.0.0.1");
+        endpoint.close(0u32.into(), b"done");
+    }
+
+    #[tokio::test]
+    async fn quic_bridge_marks_transport_quic() {
+        let router = Router::new().route(
+            "/echo-transport",
+            get(|req: Request<Body>| async move {
+                req.extensions()
+                    .get::<RequestTransport>()
+                    .map(|marked| marked.0)
+                    .unwrap_or("missing")
+                    .to_string()
+            }),
+        );
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let (endpoint, addr) = serve_quic_for_test(router, &cert_pem, &key_pem, None).await;
+        let (status, body) = h3_get(
+            addr,
+            quic_test_client_config(None),
+            "andrii.ai",
+            "/echo-transport",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(String::from_utf8(body).unwrap(), "quic");
         endpoint.close(0u32.into(), b"done");
     }
 

@@ -30,6 +30,8 @@ use bytes::Buf as _;
 use std::net::SocketAddr;
 use tower::ServiceExt as _;
 
+use crate::RequestTransport;
+
 /// ALPN the h3 handshake requires (RFC 9114 §3): without it no
 /// client completes a QUIC handshake against this endpoint.
 const H3_ALPN: &[u8] = b"h3";
@@ -239,6 +241,9 @@ async fn serve_request(
     // Rate-limit buckets read the peer IP from here (same value TCP
     // injects via `into_make_service_with_connect_info`).
     axum_req.extensions_mut().insert(ConnectInfo(remote));
+    // Access logs read the transport from here (TCP stamps its own
+    // in `insert_tcp_transport`, outside the served routers).
+    axum_req.extensions_mut().insert(RequestTransport("quic"));
     let res = match router.clone().oneshot(axum_req).await {
         Ok(res) => res,
         Err(never) => match never {},

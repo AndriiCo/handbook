@@ -72,7 +72,10 @@ pub fn staff_router(state: AppState) -> Router {
             state.clone(),
             admin_host_guard,
         ))
-        .layer(axum::middleware::from_fn(crate::request_id_and_log))
+        .layer(axum::middleware::from_fn_with_state(
+            "admin",
+            crate::request_id_and_log,
+        ))
         .with_state(state)
 }
 
@@ -89,7 +92,10 @@ pub fn webhook_router(state: AppState) -> Router {
             state.clone(),
             admin_host_guard,
         ))
-        .layer(axum::middleware::from_fn(crate::request_id_and_log))
+        .layer(axum::middleware::from_fn_with_state(
+            "admin",
+            crate::request_id_and_log,
+        ))
         .with_state(state)
 }
 
