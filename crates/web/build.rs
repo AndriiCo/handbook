@@ -8,18 +8,34 @@
 use std::process::Command;
 
 fn main() {
-    let git = std::path::Path::new(".git");
-    println!("cargo:rerun-if-changed={}", git.join("HEAD").display());
-    if let Ok(head) = std::fs::read_to_string(git.join("HEAD")) {
+    // Build scripts run with CWD = package dir, where `.git`
+    // does NOT exist — resolve the workspace `.git` via
+    // CARGO_MANIFEST_DIR or the stamp never re-runs (every
+    // deploy reports the same stale SHA).
+    let manifest_dir =
+        std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let workspace = manifest_dir
+        .parent()
+        .expect("crate has a parent dir")
+        .to_path_buf();
+    let mut git_dir = workspace.join(".git");
+    // Worktrees (like our isolated builders) keep a `.git` FILE
+    // pointing at the real dir.
+    if git_dir.is_file()
+        && let Ok(content) = std::fs::read_to_string(&git_dir)
+        && let Some(gitdir) = content.trim().strip_prefix("gitdir: ")
+    {
+        git_dir = workspace.join(gitdir);
+    }
+    println!("cargo:rerun-if-changed={}", git_dir.join("HEAD").display());
+    if let Ok(head) = std::fs::read_to_string(git_dir.join("HEAD")) {
         // `ref: refs/heads/main` → also watch that ref file.
         if let Some(refpath) = head.trim().strip_prefix("ref: ") {
-            println!("cargo:rerun-if-changed={}", git.join(refpath).display());
+            println!("cargo:rerun-if-changed={}", git_dir.join(refpath).display());
         }
     }
-    // Worktrees (like our isolated builders) keep a `.git` FILE
-    // pointing at the real dir; `git` itself resolves it, so only
-    // the command's success matters, not the layout above.
     let sha = Command::new("git")
+        .current_dir(&workspace)
         .args(["rev-parse", "--short", "HEAD"])
         .output()
         .ok()

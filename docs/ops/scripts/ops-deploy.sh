@@ -105,5 +105,12 @@ fi
 }
 
 echo "=== 3. verify stamp"
-curl -s -m 10 https://andrii.ai/apostille/healthz; echo
+STAMP="$(curl -s -m 10 https://andrii.ai/apostille/healthz)"; echo "$STAMP"
+case "$STAMP" in
+    *"\"version\":\"0.1.0+$VERSION\""*)
+        echo "stamp OK: serving $VERSION" ;;
+    *)  echo "ABORT: serving stamp does not name $VERSION (stale binary or stale process?)"
+        echo "remedy: check for orphan web procs: ps -o pid,user,lstart,cmd -C web"
+        exit 1 ;;
+esac
 echo "DONE deploy $VERSION — paste this whole output back to the agent"
