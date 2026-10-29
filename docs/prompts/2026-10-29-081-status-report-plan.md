@@ -75,9 +75,7 @@ Verification performed (all read-only):
 
 ## Commits
 
-None this turn. Planning turn: no commit per plan-turn rules (implementation
-and publication start on `go`). This entry is left uncommitted; commit it
-with the next work commit and fill the hash here.
+6bedb43 (committed alongside the QUIC P0 work commit 2e2ac16).
 
 ## Follow-ups
 
