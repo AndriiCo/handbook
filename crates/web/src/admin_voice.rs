@@ -1306,6 +1306,251 @@ mod tests {
         assert_eq!(segments[0].text, "the fee is eight dollars");
     }
 
+    #[tokio::test]
+    async fn webhook_out_of_order_and_hangup_audit() {
+        let fx = fixture(webhook_config());
+        seed_call(&fx);
+        let key = test_signing_key();
+        let now = unix_now().to_string();
+        let leg = json!({"call_control_id": "leg-9"});
+
+        // Answered lands first; the late initiated acks as a no-op.
+        for (id, event, want) in [
+            ("wh-o1", "call.answered", "in_progress"),
+            ("wh-o2", "call.initiated", "in_progress"),
+        ] {
+            let body = event_body(id, event, leg.clone());
+            let res = webhook_router(fx.state.clone())
+                .oneshot(webhook_request(&key, &now, &body))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "{event}");
+            let store = Store::new(&fx.state.store_root);
+            let conn = db::open(&store).unwrap();
+            let call = voice::store::get_call(&conn, "c-9").unwrap().unwrap();
+            assert_eq!(call.status, want, "{event}");
+        }
+        // Hangup completes and audits once; a retried delivery adds
+        // no second audit row.
+        let hangup = json!({
+            "call_control_id": "leg-9",
+            "hangup_cause": "normal",
+            "hangup_source": "caller",
+        });
+        for id in ["wh-o3", "wh-o3"] {
+            let body = event_body(id, "call.hangup", hangup.clone());
+            let res = webhook_router(fx.state.clone())
+                .oneshot(webhook_request(&key, &now, &body))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+        }
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        let call = voice::store::get_call(&conn, "c-9").unwrap().unwrap();
+        assert_eq!(call.status, "completed");
+        let audits: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit
+                 WHERE action = 'voice_hangup' AND after_ref = 'c-9'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audits, 1);
+        let reason: String = conn
+            .query_row(
+                "SELECT reason FROM audit
+                 WHERE action = 'voice_hangup' AND after_ref = 'c-9'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(reason.contains("normal"), "{reason}");
+    }
+
+    fn voice_cfg_with_stub(base_url: &str) -> voice::VoiceConfig {
+        voice::VoiceConfig {
+            base_url: base_url.to_string(),
+            from_number: "+13605550000".to_string(),
+            connection_id: "conn-1".to_string(),
+            ..webhook_config()
+        }
+    }
+
+    /// Port-0 Telnyx stub for the dial tests: counts connections in
+    /// two windows (refusal → 0 hits, consent → 1 hit) and answers
+    /// every `POST /v2/calls` with a canned dial outcome. Hermetic:
+    /// binds 127.0.0.1:0, no network leaves the box.
+    fn dial_stub() -> (
+        String,
+        std::sync::mpsc::Receiver<usize>,
+        std::thread::JoinHandle<()>,
+    ) {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::net::TcpListener;
+        use std::time::{Duration, Instant};
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let serve_until = |mut deadline: Instant,
+                               tx: &std::sync::mpsc::Sender<usize>,
+                               settle: Option<Duration>| {
+                let mut hits = 0usize;
+                let mut settled = false;
+                while Instant::now() < deadline {
+                    match listener.accept() {
+                        Ok((stream, _)) => {
+                            hits += 1;
+                            // First hit starts the settle window: any
+                            // dial-caused connection completes before
+                            // the handler answers, so strays after the
+                            // settle still count as failures.
+                            if !settled && let Some(window) = settle {
+                                deadline = Instant::now() + window;
+                                settled = true;
+                            }
+                            // Drain one request, answer canned dial-OK.
+                            let mut reader = BufReader::new(stream.try_clone().unwrap());
+                            let mut head = String::new();
+                            reader.read_line(&mut head).unwrap();
+                            let mut len = 0usize;
+                            let mut chunked = false;
+                            loop {
+                                let mut line = String::new();
+                                reader.read_line(&mut line).unwrap();
+                                if line.trim_end().is_empty() {
+                                    break;
+                                }
+                                let lower = line.trim_end().to_ascii_lowercase();
+                                if let Some(n) = lower
+                                    .strip_prefix("content-length:")
+                                    .and_then(|v| v.trim().parse().ok())
+                                {
+                                    len = n;
+                                }
+                                if lower == "transfer-encoding: chunked" {
+                                    chunked = true;
+                                }
+                            }
+                            if chunked {
+                                loop {
+                                    let mut size_line = String::new();
+                                    reader.read_line(&mut size_line).unwrap();
+                                    let size = usize::from_str_radix(size_line.trim(), 16).unwrap();
+                                    if size == 0 {
+                                        reader.read_line(&mut String::new()).unwrap();
+                                        break;
+                                    }
+                                    let mut chunk = vec![0u8; size];
+                                    reader.read_exact(&mut chunk).unwrap();
+                                    reader.read_line(&mut String::new()).unwrap();
+                                }
+                            } else {
+                                let mut body = vec![0u8; len];
+                                reader.read_exact(&mut body).unwrap();
+                            }
+                            let reply = r#"{"data":{"call_control_id":"leg-7","call_leg_id":"leg-7","call_session_id":"sess-7"}}"#;
+                            let mut stream = reader.into_inner();
+                            let text = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                                reply.len()
+                            );
+                            stream.write_all(text.as_bytes()).unwrap();
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                        Err(_) => break,
+                    }
+                }
+                tx.send(hits).unwrap();
+            };
+            // Phase 1: the refused dial must make no request.
+            serve_until(Instant::now() + Duration::from_millis(300), &tx, None);
+            // Phase 2: the consented dial must make exactly one.
+            serve_until(
+                Instant::now() + Duration::from_secs(10),
+                &tx,
+                Some(Duration::from_millis(500)),
+            );
+        });
+        (base, rx, handle)
+    }
+
+    /// Refusal makes no Telnyx call (spec §8.3): the stub sees zero
+    /// hits for the unconsented dial and exactly one for the
+    /// consented control, which also queues the row and audits.
+    #[tokio::test]
+    async fn dial_refusal_makes_no_telnyx_call() {
+        let (base, hits, handle) = dial_stub();
+        let mut fx = fixture(voice_cfg_with_stub(&base));
+        fx.state.voice_api_key = Some("stub-key".to_string().into());
+
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/dial",
+                true,
+                true,
+                Some(dial_body(false)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            hits.recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap(),
+            0
+        );
+
+        // Positive control: consent dials once against the same stub.
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/dial",
+                true,
+                true,
+                Some(dial_body(true)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let dialed = json_body(res).await;
+        assert_eq!(dialed["status"], "queued");
+        assert_eq!(
+            hits.recv_timeout(std::time::Duration::from_secs(15))
+                .unwrap(),
+            1
+        );
+        handle.join().unwrap();
+
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        let call_id = dialed["call_id"].as_str().unwrap();
+        let (status, leg): (String, String) = conn
+            .query_row(
+                "SELECT status, call_control_id FROM voice_call WHERE id = ?1",
+                [call_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "queued");
+        assert_eq!(leg, "leg-7");
+        let reason: String = conn
+            .query_row(
+                "SELECT reason FROM audit WHERE action = 'voice_dial' AND after_ref = ?1",
+                [call_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        // The dialed number never lands in the audit row.
+        assert!(!reason.contains("3605550100"), "{reason}");
+    }
+
     fn seed_call_with_transcripts(
         conn: &rusqlite::Connection,
         call_id: &str,
