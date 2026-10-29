@@ -140,15 +140,10 @@ pub async fn setup_status(State(state): State<AppState>) -> impl IntoResponse {
 
 /// `GET .../admin/setup/steps` (SetupAuth) → wizard progress: the
 /// admin-list row shape, registry keys except `setup.*`. Unset keys
-/// are absent — the SPA marks them missing.
-pub async fn setup_steps(
-    _auth: SetupAuth,
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    if !passkey::origin_ok(&headers, state.admin_mtls_off) {
-        return passkey::csrf_fail();
-    }
+/// are absent — the SPA marks them missing. No Origin check: safe
+/// method + key-gated, and browsers omit `Origin` on GET — the
+/// `x-setup-key` header is the CSRF protection (§9.1).
+pub async fn setup_steps(_auth: SetupAuth, State(state): State<AppState>) -> impl IntoResponse {
     let Some(kek) = state.kek.as_ref() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -419,6 +414,20 @@ mod tests {
             .unwrap()
     }
 
+    /// Browser-faithful GET: same-origin fetches send no `Origin`
+    /// and the wizard mints no CSRF cookie — only Host + key.
+    fn browser_get(uri: &str, key: Option<&str>) -> Request<Body> {
+        let mut builder = Request::builder()
+            .uri(uri)
+            .method("GET")
+            .header("host", "admin.andrii.ai");
+        if let Some(key) = key {
+            builder = builder.header(SETUP_KEY_HEADER, key);
+        }
+        builder = builder.extension(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 9))));
+        builder.body(Body::empty()).unwrap()
+    }
+
     async fn json_body(res: Response) -> serde_json::Value {
         let bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
             .await
@@ -516,6 +525,21 @@ mod tests {
         for row in body["keys"].as_array().unwrap() {
             assert!(!row["key"].as_str().unwrap().starts_with("setup."));
         }
+    }
+
+    #[tokio::test]
+    async fn steps_load_without_origin_like_a_browser() {
+        let fix = fixture();
+        let app = router(fix.state.clone());
+        let res = app
+            .oneshot(browser_get(
+                "/apostille/api/v1/admin/setup/steps",
+                Some(KEY),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(json_body(res).await["keys"].is_array());
     }
 
     #[tokio::test]

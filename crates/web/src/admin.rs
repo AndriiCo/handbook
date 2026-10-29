@@ -250,9 +250,10 @@ pub async fn csrf_guard(
         return next.run(req).await;
     }
     // Setup wizard (§9): no cookies exist before the first enrol, so
-    // the double-submit check cannot apply. The setup handlers do
-    // their own Origin check, and the custom `x-setup-key` header is
-    // CSRF-safe by construction (no CORS allowlist to forge it).
+    // the double-submit check cannot apply. The setup POST handler
+    // does its own Origin check; the setup GETs are safe methods and
+    // the custom `x-setup-key` header is CSRF-safe by construction
+    // (no CORS allowlist to forge it).
     if req
         .uri()
         .path()
