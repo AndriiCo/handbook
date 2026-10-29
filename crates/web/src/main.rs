@@ -3629,6 +3629,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn quic_bridge_injects_connect_info() {
+        use axum::extract::ConnectInfo;
+        // Every auth handler extracts `ConnectInfo` for rate-limit
+        // buckets; without it the bridge 500s (staff login/start).
+        let router = Router::new().route(
+            "/echo-ip",
+            get(|ConnectInfo(addr): ConnectInfo<SocketAddr>| async move { addr.ip().to_string() }),
+        );
+        let (cert_pem, key_pem) = self_signed_localhost();
+        let (endpoint, addr) = serve_quic_for_test(router, &cert_pem, &key_pem, None).await;
+        let (status, body) = h3_get(
+            addr,
+            quic_test_client_config(None),
+            "andrii.ai",
+            "/echo-ip",
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(String::from_utf8(body).unwrap(), "127.0.0.1");
+        endpoint.close(0u32.into(), b"done");
+    }
+
+    #[tokio::test]
     async fn quic_admin_branch_enforces_mtls_allow_and_deny() {
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);

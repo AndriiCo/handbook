@@ -23,9 +23,11 @@
 use axum::{
     Router,
     body::Body,
+    extract::ConnectInfo,
     http::{Request, Response, StatusCode, header},
 };
 use bytes::Buf as _;
+use std::net::SocketAddr;
 use tower::ServiceExt as _;
 
 /// ALPN the h3 handshake requires (RFC 9114 §3): without it no
@@ -144,6 +146,9 @@ pub(crate) fn is_ws_path(path: &str) -> bool {
 /// stay concrete (inferred `Bytes` buffers) — no generics needed.
 async fn serve_connection(conn: quinn::Connection, router: Router) {
     let peer = peer_certificates(&conn);
+    // TCP listeners inject this via `into_make_service_with_connect_info`;
+    // the oneshot bridge must provide it or `ConnectInfo` extractors 500.
+    let remote = conn.remote_address();
     let mut h3_conn = match h3::server::Connection::new(h3_quinn::Connection::new(conn)).await {
         Ok(conn) => conn,
         Err(e) => {
@@ -157,7 +162,7 @@ async fn serve_connection(conn: quinn::Connection, router: Router) {
                 let router = router.clone();
                 let peer = peer.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = serve_request(resolver, &router, peer).await {
+                    if let Err(e) = serve_request(resolver, &router, remote, peer).await {
                         tracing::debug!(error = %e, "h3 request failed");
                     }
                 });
@@ -177,6 +182,7 @@ async fn serve_connection(conn: quinn::Connection, router: Router) {
 async fn serve_request(
     resolver: h3::server::RequestResolver<h3_quinn::Connection, bytes::Bytes>,
     router: &Router,
+    remote: SocketAddr,
     peer: Option<crate::mtls::PeerCertificates>,
 ) -> Result<(), String> {
     let (head, mut stream) = resolver
@@ -230,6 +236,9 @@ async fn serve_request(
     if let Some(peer) = peer {
         axum_req.extensions_mut().insert(peer);
     }
+    // Rate-limit buckets read the peer IP from here (same value TCP
+    // injects via `into_make_service_with_connect_info`).
+    axum_req.extensions_mut().insert(ConnectInfo(remote));
     let res = match router.clone().oneshot(axum_req).await {
         Ok(res) => res,
         Err(never) => match never {},
