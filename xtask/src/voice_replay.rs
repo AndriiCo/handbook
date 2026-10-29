@@ -719,6 +719,7 @@ fn run_inner(args: &[String]) -> Result<(), String> {
             to_hash: "synthetic-no-pii",
             authority: Some("Harborview Permits Office"),
             questions_json: "[]",
+            script_id: "inline",
             created_by: "voice-replay",
             now,
         },

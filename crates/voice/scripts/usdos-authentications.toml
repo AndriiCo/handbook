@@ -1,0 +1,13 @@
+# Morning-1 validation pack: US Dept of State, Authentications.
+# Operational content (public office + our questions) — not a fixture.
+id = "usdos-authentications"
+authority = "US Dept of State Authentications"
+topics = ["fees", "mailing", "hours", "walkin", "appointment", "processing_time"]
+questions = [
+  "What is the current per-document authentication fee, and is Form DS-4194 still the required request form?",
+  "What is the current mail-to address for authentication requests, and must we include a prepaid return envelope?",
+  "What are the public counter hours at 600 19th Street NW, and is Friday counter service available?",
+  "Are walk-ins accepted without an appointment, and what time window applies Monday through Thursday?",
+  "How are appointments booked, and how far out are slots currently scheduling?",
+  "What are the current posted turnarounds for mail, walk-in, and any same-day emergency service?",
+]

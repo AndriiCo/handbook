@@ -1,0 +1,13 @@
+# Morning-1 validation pack: Embassy of Egypt, Washington DC.
+# Operational content (public office + our questions) — not a fixture.
+id = "egypt-embassy-dc"
+authority = "Embassy of Egypt Washington DC"
+topics = ["fees", "payment", "jurisdiction", "mailing", "processing_time", "legalization_chain"]
+questions = [
+  "What are the current per-document legalization fees for personal, commercial, and pet documents?",
+  "Which payment methods do you accept by mail and in person — is it still cashier's check only by mail?",
+  "Which states does the DC consular section serve, and must applicants use their home-state post?",
+  "What envelope and return postage do you require for mailed applications?",
+  "What is the current turnaround for mailed personal versus commercial documents?",
+  "For a US document used in Egypt, what is the full step order — notary, Secretary of State, State Department, then consulate?",
+]

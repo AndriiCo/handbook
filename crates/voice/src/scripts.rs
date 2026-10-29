@@ -403,6 +403,16 @@ mod tests {
         let example = load_pack(&dir, "synthetic-harbor-office").unwrap();
         assert_eq!(example.id, "synthetic-harbor-office");
         assert!(!example.questions.is_empty());
+        // Morning-1 operational packs (real offices, our questions).
+        for (stem, questions) in [
+            ("wa-sos", 6),
+            ("usdos-authentications", 6),
+            ("egypt-embassy-dc", 6),
+        ] {
+            let pack = load_pack(&dir, stem).unwrap();
+            assert_eq!(pack.id, stem);
+            assert_eq!(pack.questions.len(), questions, "{stem}");
+        }
     }
 
     #[test]

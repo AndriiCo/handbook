@@ -1,0 +1,13 @@
+# Morning-1 validation pack: WA Secretary of State (pilot).
+# Operational content (public office + our questions) — not a fixture.
+id = "wa-sos"
+authority = "WA Secretary of State"
+topics = ["po_box", "mailing", "fees", "walkin", "processing_time", "appointment"]
+questions = [
+  "What PO box should mail-in apostille requests go to today? We have conflicting older addresses and want the current one.",
+  "What is the courier street address for overnight packets, and must the return envelope be prepaid USPS?",
+  "What is the current per-document fee, and is there an expedite option with its exact surcharge?",
+  "Are walk-ins still accepted at Town Center 3 in Tumwater, and what are today's counter hours?",
+  "What is the current mail turnaround in business days, and is same-day counter service offered?",
+  "Do walk-ins need an appointment or is there a daily cutoff time?",
+]
