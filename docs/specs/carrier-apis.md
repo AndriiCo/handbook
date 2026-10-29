@@ -96,8 +96,14 @@ notice](https://postalpro.sequirly.co/mnt/glusterfs/2025-07/INFORMATIONAL%20USPS
   ID](https://community.postman.com/t/usps-tracking-api-v3/58593),
   spec hub
   [trackingv3r2](https://postalpro.sequirly.co/mnt/glusterfs/2026-05/PTR%20Tracking%20API%20Specifications%20and%20Integration.pdf));
-  exact REST path **unverifiable — open question**. Labels API also
-  returns a tracking-URL link ([Aug 2025 release
+  exact REST path **resolved prompt 080** against the official
+  [USPS/api-examples
+  README](https://github.com/USPS/api-examples): `GET
+  https://apis.usps.com/tracking/v3/tracking/{trackingNumber}?expand=DETAIL`
+  (single; `?expand=SUMMARY` for list views), batch variant `GET
+  .../tracking/v3r2/tracking/` with trackingNumber body; TEM base
+  swap for test. Labels API also returns a tracking-URL link ([Aug
+  2025 release
   notes](https://github.com/USPS/api-examples/releases/download/4.9.20/USPS.APIs.2025.August.Release.Notes_v2.pdf)).
 - Void/reissue/refund: cancel via `DELETE
   /labels/v3/label/{trackingNumber}` ([migration
@@ -309,8 +315,10 @@ differs only in who clicks buy.
    Express and Ground with PDF-only.
 3. Exact FedEx cancel method and Address Validation REST path —
    confirm in spec before coding.
-4. Exact USPS Tracking v3 REST path and webhook/polling story for
-   `label.*` WS parity.
+4. USPS Tracking v3 REST path — resolved prompt 080 (§1; see
+   also shipping-design §8.2). Remaining: webhook/polling story for
+   `label.*` WS parity (push = Subscriptions-Tracking API 3.2;
+   receiver IP-whitelist steps still to confirm in portal).
 5. USPS void→EPA refund semantics (auto-refund on DELETE? window?)
    and EPA funding mechanics.
 6. FedEx billing-account/invoicing setup for API volume vs
