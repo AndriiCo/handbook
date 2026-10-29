@@ -15,9 +15,11 @@
 		"check:imports": "node scripts/check-imports.mjs",
 		"check:tailwind": "node scripts/check-tailwind.mjs",
 		"smoke": "node scripts/smoke.mjs",
-		"test": "node --test test/"
+		"test": "node --test test/",
+		"test:e2e": "playwright test"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.64.1",
 		"@sveltejs/adapter-static": "^4.0.0",
 		"@sveltejs/kit": "^3.0.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",

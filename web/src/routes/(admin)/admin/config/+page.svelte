@@ -85,7 +85,11 @@
 		setupError = null;
 		try {
 			const list = await fetchSetupSteps(api(), setupKey);
-			setupRows = list.map((row) => ({ ...row, saved: false }));
+			// Carry `saved` across the refetch: saveSetup reloads
+			// progress right after each save, which must not wipe
+			// the "Saved." notice it just earned.
+			const was = new Map(setupRows.map((row) => [row.key, row.saved]));
+			setupRows = list.map((row) => ({ ...row, saved: was.get(row.key) ?? false }));
 			setupState = 'ready';
 		} catch (err) {
 			setupError = err instanceof Error ? err.message : 'Setup steps failed.';

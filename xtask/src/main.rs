@@ -247,6 +247,9 @@ fn run_ci() {
     run_or_exit("npm", &["run", "build", "--prefix", "web"]);
     run_or_exit("npm", &["run", "build:admin", "--prefix", "web"]);
     run_or_exit("npm", &["run", "smoke", "--prefix", "web"]);
+    // Browser suite (needs build-admin fresh from this run; needs
+    // `npx playwright install chromium` once per machine).
+    run_or_exit("npm", &["run", "test:e2e", "--prefix", "web"]);
     // Fail-closed Tailwind audit (unknown utilities emit no CSS):
     // needs both builds fresh from this run.
     run_or_exit("npm", &["run", "check:tailwind", "--prefix", "web"]);
