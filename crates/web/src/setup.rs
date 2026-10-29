@@ -710,4 +710,52 @@ mod tests {
         // Challenge lookup fails before any key handling: no leak.
         assert_eq!(res.status(), StatusCode::GONE);
     }
+
+    #[tokio::test]
+    async fn enrol_finish_failed_ceremony_keeps_the_window() {
+        let fix = fixture();
+        let app = router(fix.state.clone());
+        let res = app
+            .oneshot(request(
+                "POST",
+                "/apostille/api/v1/admin/auth/passkey/enrol/start",
+                None,
+                Some(json!({"setup_key": KEY, "display_name": "Op"})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let challenge_id = json_body(res).await["challenge_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let app = router(fix.state.clone());
+        let res = app
+            .oneshot(request(
+                "POST",
+                "/apostille/api/v1/admin/auth/passkey/enrol/finish",
+                None,
+                Some(json!({
+                    "challenge_id": challenge_id,
+                    "credential": {
+                        "id": "AA",
+                        "rawId": "AA",
+                        "type": "public-key",
+                        "response": {
+                            "clientDataJSON": "AA",
+                            "attestationObject": "AA",
+                        },
+                    },
+                    "setup_key": KEY,
+                })),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        // The burn runs only after a verified ceremony: the hash
+        // row survives, so the operator can retry without re-mint.
+        let store = Store::new(&fix.state.store_root);
+        let conn = db::open(&store).unwrap();
+        assert!(setup_required(&conn));
+    }
 }

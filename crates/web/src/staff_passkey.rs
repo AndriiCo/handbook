@@ -282,11 +282,11 @@ pub async fn enrol_finish(
     let Ok(enrol) = serde_json::from_str::<EnrolState>(&state_json) else {
         return store_unavailable();
     };
-    // Setup-mode finish (§9.2): the key is re-presented and the
-    // window burns BEFORE the ceremony verifies (consume-before-
-    // persist discipline — a burn lost to a concurrent enrol
-    // fails closed; re-mint is the recovery). Invite-mode keeps
-    // the cert recheck + consume below, untouched.
+    // Setup-mode finish (§9.2): the key is re-presented here.
+    // The burn happens only after the ceremony verifies (verify →
+    // burn → persist): a failed ceremony must not brick a fresh
+    // server. Invite-mode keeps the cert recheck + consume below,
+    // untouched.
     let (role, cn, fingerprint) = if enrol.setup {
         let key = body.setup_key.as_deref().unwrap_or("");
         let ok = match state.kek.as_ref() {
@@ -304,13 +304,6 @@ pub async fn enrol_finish(
             )
                 .into_response();
         }
-        if !crate::setup::burn_setup_key(&conn, &user_id, now) {
-            return (
-                StatusCode::GONE,
-                Json(json!({"error": "invite invalid or expired"})),
-            )
-                .into_response();
-        }
         (
             "admin".to_string(),
             "setup".to_string(),
@@ -319,7 +312,7 @@ pub async fn enrol_finish(
     } else {
         let invite = body.invite.as_deref().unwrap_or("");
         let invite_hash = auth::login::token_hash(invite);
-        if invite_hash != enrol.invite_hash {
+        if !auth::csrf::tokens_match(&invite_hash, &enrol.invite_hash) {
             return (
                 StatusCode::GONE,
                 Json(json!({"error": "invite invalid or expired"})),
@@ -441,6 +434,26 @@ pub async fn enrol_finish(
         Some(role) if role.meets(auth::Role::Staff) => role,
         _ => return store_unavailable(),
     };
+    // First verified enrol closes the setup window in BOTH modes
+    // (spec §9.1) — after the ceremony verifies AND the credential
+    // is fresh, so failures never brick a fresh server. Setup mode
+    // always burns; a lost burn fails closed (410) so concurrent
+    // ceremonies yield a single winner. Invite mode burns only
+    // when no staff credentials exist yet, so a break-glass
+    // re-mint survives routine later enrols; best-effort (no 410
+    // — the enrol won its race at consume_invite). The helper
+    // no-ops when no row exists.
+    if enrol.setup {
+        if !crate::setup::burn_setup_key(&conn, &user_id, now) {
+            return (
+                StatusCode::GONE,
+                Json(json!({"error": "invite invalid or expired"})),
+            )
+                .into_response();
+        }
+    } else if store::live_staff_passkey_count(&conn).unwrap_or(1) == 0 {
+        crate::setup::burn_setup_key(&conn, &user_id, now);
+    }
     if store::ensure_staff_account(&conn, &user_id, &role, now).is_err() {
         return store_unavailable();
     }

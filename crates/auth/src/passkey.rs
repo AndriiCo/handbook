@@ -339,6 +339,18 @@ pub fn store_credential(
     }
 }
 
+/// Live, unrevoked staff/admin passkeys. Zero means no staff
+/// enrolment has completed yet (setup-window + mint-gate rule).
+pub fn live_staff_passkey_count(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM webauthn_credential c
+         JOIN account a ON a.user_id = c.user_id
+         WHERE c.revoked_at IS NULL AND a.role IN ('staff', 'admin')",
+        [],
+        |row| row.get(0),
+    )
+}
+
 /// True when this credential id exists on ANY account.
 pub fn credential_known(conn: &Connection, credential_id: &str) -> rusqlite::Result<bool> {
     Ok(conn

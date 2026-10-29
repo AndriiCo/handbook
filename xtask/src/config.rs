@@ -268,15 +268,10 @@ pub fn run_set(args: &[String]) {
 
 /// Live, unrevoked staff/admin passkeys. The mint gate (§9.1):
 /// nonzero without `--force` refuses (the window already closed).
+/// Shared with the web enrol path (`auth::passkey`) so the two
+/// can never disagree on what "staff exists" means.
 fn staff_passkey_count(conn: &rusqlite::Connection) -> Result<i64, String> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM webauthn_credential c
-         JOIN account a ON a.user_id = c.user_id
-         WHERE c.revoked_at IS NULL AND a.role IN ('staff', 'admin')",
-        [],
-        |row| row.get(0),
-    )
-    .map_err(|e| e.to_string())
+    auth::passkey::live_staff_passkey_count(conn).map_err(|e| e.to_string())
 }
 
 /// Mint + seal + store one setup key, auditing the mint. Returns
