@@ -1,5 +1,5 @@
 //! Voice-owned SQLite tables (`voice_call`, `voice_transcript`,
-//! `voice_webhook`) plus row helpers.
+//! `voice_webhook`, `voice_annotation`) plus row helpers.
 //!
 //! The migration lives here — not in the shared `db::migrate` — so
 //! this lane never edits the shared schema file. `main` runs
@@ -63,6 +63,18 @@ pub struct TranscriptSegment {
     pub at: i64,
 }
 
+/// One staff annotation pinned to a transcript segment (`correction`
+/// rows are written by segment fixes and quote before → after; `flag`
+/// and `note` rows come from the annotate route).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoiceAnnotation {
+    pub seq: i64,
+    pub kind: String,
+    pub note: String,
+    pub author: String,
+    pub created_at: i64,
+}
+
 /// Create the voice tables (idempotent; safe to run every boot).
 ///
 /// # Errors
@@ -103,6 +115,15 @@ pub fn migrate(conn: &Connection) -> Result<()> {
            call_id TEXT,
            event_type TEXT NOT NULL,
            at INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS voice_annotation(
+           call_id TEXT NOT NULL REFERENCES voice_call(id),
+           seq INTEGER NOT NULL,
+           kind TEXT NOT NULL,
+           note TEXT NOT NULL,
+           author TEXT NOT NULL,
+           created_at INTEGER NOT NULL,
+           PRIMARY KEY (call_id, seq, created_at)
          );",
     )?;
     // `script_id` arrived after the first voice slice: backfill
@@ -294,6 +315,108 @@ pub fn list_transcripts(conn: &Connection, call_id: &str) -> Result<Vec<Transcri
     .collect()
 }
 
+/// One segment by (call, seq) (`None` when unknown).
+///
+/// # Errors
+///
+/// Returns rusqlite errors.
+pub fn get_segment(
+    conn: &Connection,
+    call_id: &str,
+    seq: i64,
+) -> Result<Option<TranscriptSegment>> {
+    conn.query_row(
+        "SELECT seq, speaker, text, at FROM voice_transcript
+         WHERE call_id = ?1 AND seq = ?2",
+        params![call_id, seq],
+        |row| {
+            Ok(TranscriptSegment {
+                seq: row.get(0)?,
+                speaker: row.get(1)?,
+                text: row.get(2)?,
+                at: row.get(3)?,
+            })
+        },
+    )
+    .optional()
+}
+
+/// Rewrite a segment's text in place (seq/speaker/timing untouched).
+///
+/// # Errors
+///
+/// Returns rusqlite errors.
+pub fn set_segment_text(conn: &Connection, call_id: &str, seq: i64, text: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE voice_transcript SET text = ?3 WHERE call_id = ?1 AND seq = ?2",
+        params![call_id, seq, text],
+    )?;
+    Ok(())
+}
+
+/// Pin an annotation to a segment. `created_at` starts at `now` and
+/// bumps forward while the `(call_id, seq, created_at)` key collides,
+/// so two annotations in the same second never clobber each other.
+///
+/// # Errors
+///
+/// Returns rusqlite errors.
+pub fn insert_annotation(
+    conn: &Connection,
+    call_id: &str,
+    seq: i64,
+    kind: &str,
+    note: &str,
+    author: &str,
+    now: i64,
+) -> Result<()> {
+    let mut created_at = now;
+    loop {
+        let attempt = conn.execute(
+            "INSERT INTO voice_annotation(call_id, seq, kind, note, author, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![call_id, seq, kind, note, author, created_at],
+        );
+        match attempt {
+            Ok(_) => return Ok(()),
+            Err(e) if is_key_collision(&e) => {
+                if created_at == i64::MAX {
+                    return Err(e);
+                }
+                created_at += 1;
+            }
+            Err(other) => return Err(other),
+        }
+    }
+}
+
+fn is_key_collision(e: &rusqlite::Error) -> bool {
+    matches!(e, rusqlite::Error::SqliteFailure(err, _)
+        if err.code == rusqlite::ErrorCode::ConstraintViolation)
+}
+
+/// Annotations for one call, oldest first.
+///
+/// # Errors
+///
+/// Returns rusqlite errors.
+pub fn list_annotations(conn: &Connection, call_id: &str) -> Result<Vec<VoiceAnnotation>> {
+    let mut stmt = conn.prepare(
+        "SELECT seq, kind, note, author, created_at FROM voice_annotation
+         WHERE call_id = ?1 ORDER BY created_at, seq",
+    )?;
+    stmt.query_map([call_id], |row| {
+        Ok(VoiceAnnotation {
+            seq: row.get(0)?,
+            kind: row.get(1)?,
+            note: row.get(2)?,
+            author: row.get(3)?,
+            created_at: row.get(4)?,
+        })
+    })?
+    .collect()
+}
+
 /// Link a downloaded recording blob to the call.
 ///
 /// # Errors
@@ -456,6 +579,49 @@ mod tests {
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].seq, 0);
         assert_eq!(segments[1].text, "two");
+    }
+
+    #[test]
+    fn segment_text_rewrite_keeps_speaker_and_timing() {
+        let conn = memory();
+        insert_call(&conn, &new_call("c-1", 100)).unwrap();
+        append_transcript(&conn, "c-1", Some("them"), "Eight dollers.", 42).unwrap();
+        let segment = get_segment(&conn, "c-1", 0).unwrap().unwrap();
+        assert_eq!(segment.text, "Eight dollers.");
+        assert!(get_segment(&conn, "c-1", 7).unwrap().is_none());
+        assert!(get_segment(&conn, "missing", 0).unwrap().is_none());
+        set_segment_text(&conn, "c-1", 0, "Eight dollars.").unwrap();
+        let fixed = get_segment(&conn, "c-1", 0).unwrap().unwrap();
+        assert_eq!(fixed.text, "Eight dollars.");
+        assert_eq!(fixed.speaker.as_deref(), Some("them"));
+        assert_eq!(fixed.at, 42);
+    }
+
+    #[test]
+    fn annotations_round_trip_and_same_second_inserts_both_land() {
+        let conn = memory();
+        insert_call(&conn, &new_call("c-1", 100)).unwrap();
+        append_transcript(&conn, "c-1", None, "hello", 1).unwrap();
+        insert_annotation(
+            &conn,
+            "c-1",
+            0,
+            "correction",
+            "helo → hello",
+            "staff-1",
+            900,
+        )
+        .unwrap();
+        // Same (call, seq, created_at) key: the second insert bumps
+        // forward instead of clobbering the first.
+        insert_annotation(&conn, "c-1", 0, "flag", "check fee", "staff-1", 900).unwrap();
+        let annotations = list_annotations(&conn, "c-1").unwrap();
+        assert_eq!(annotations.len(), 2);
+        assert_eq!(annotations[0].kind, "correction");
+        assert_eq!(annotations[0].created_at, 900);
+        assert_eq!(annotations[1].kind, "flag");
+        assert_eq!(annotations[1].created_at, 901);
+        assert!(list_annotations(&conn, "missing").unwrap().is_empty());
     }
 
     #[test]

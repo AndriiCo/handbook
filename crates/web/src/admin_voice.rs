@@ -56,6 +56,14 @@ pub fn staff_router(state: AppState) -> Router {
             "/apostille/api/v1/admin/calls/{id}/quote",
             post(quote_to_draft),
         )
+        .route(
+            "/apostille/api/v1/admin/calls/{id}/segments/{seq}/fix",
+            post(fix_segment),
+        )
+        .route(
+            "/apostille/api/v1/admin/calls/{id}/segments/{seq}/annotate",
+            post(annotate_segment),
+        )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf_guard,
@@ -903,6 +911,186 @@ async fn quote_to_draft(
         })),
     )
         .into_response()
+}
+
+/// Max annotation note length, in chars (spec §11.4 contract).
+const MAX_NOTE_CHARS: usize = 1024;
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)] // m3: mass-assignment hygiene on mutating DTOs
+struct FixBody {
+    text: String,
+    author: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)] // m3: mass-assignment hygiene on mutating DTOs
+struct AnnotateBody {
+    kind: String,
+    note: String,
+    author: Option<String>,
+}
+
+/// Fix one transcript segment's text (spec §11.4).
+///
+/// Semantics are literally `media::transcript::apply_fix`: the segment
+/// keeps its seq/speaker/timing, only `text` changes (trimmed, blank
+/// rejected), and a `Correction` annotation quoting before → after is
+/// pinned to the segment. The corrected text lands in place in
+/// `voice_transcript`; the text rewrite and the annotation commit
+/// atomically (the annotation preserves the before-text, so neither
+/// may land alone). The audit row carries ids only.
+async fn fix_segment(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    Path((id, seq)): Path<(String, i64)>,
+    Json(body): Json<FixBody>,
+) -> impl IntoResponse {
+    let conn = match db::open(&Store::new(&state.store_root)) {
+        Ok(conn) => conn,
+        Err(_) => return store_unavailable(),
+    };
+    if voice::store::get_call(&conn, &id).unwrap_or(None).is_none() {
+        return not_found();
+    }
+    let Some(segment) = voice::store::get_segment(&conn, &id, seq).unwrap_or(None) else {
+        return not_found();
+    };
+    let now = unix_now();
+    let author = body
+        .author
+        .unwrap_or_else(|| format!("staff:{}", auth.user.user_id));
+    let mut transcript = media::Transcript {
+        turns: vec![media::TranscriptTurn {
+            index: usize::try_from(segment.seq).unwrap_or(usize::MAX),
+            speaker: segment.speaker.clone(),
+            text: segment.text.clone(),
+            start_ms: 0,
+            end_ms: 0,
+        }],
+    };
+    let mut annotations = Vec::new();
+    let turn_index = transcript.turns[0].index;
+    if let Err(fix_err) = media::apply_fix(
+        &mut transcript,
+        &mut annotations,
+        turn_index,
+        &body.text,
+        &author,
+        now,
+    ) {
+        return fix_error(fix_err);
+    }
+    let corrected = transcript.turns[0].text.clone();
+    let correction = annotations[0].clone();
+    debug_assert_eq!(correction.kind, media::AnnotationKind::Correction);
+    let wrote = db::in_transaction(&conn, || {
+        voice::store::set_segment_text(&conn, &id, seq, &corrected)?;
+        voice::store::insert_annotation(
+            &conn,
+            &id,
+            seq,
+            "correction",
+            &correction.note,
+            &correction.author,
+            now,
+        )?;
+        Ok(())
+    });
+    if wrote.is_err() {
+        return store_unavailable();
+    }
+    audit(
+        &conn,
+        now,
+        &auth.user.user_id,
+        "voice_segment_fix",
+        &id,
+        &format!("seq={seq} kind=correction"),
+    );
+    (StatusCode::OK, Json(json!({"seq": seq, "text": corrected}))).into_response()
+}
+
+fn fix_error(err: media::TranscriptError) -> axum::response::Response {
+    match err {
+        media::TranscriptError::EmptyCorrection => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "text must not be blank"})),
+        )
+            .into_response(),
+        media::TranscriptError::EmptyAuthor => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "author must not be blank"})),
+        )
+            .into_response(),
+        // Unreachable: the segment row was just loaded above.
+        media::TranscriptError::UnknownTurn { .. } => not_found(),
+        _ => store_unavailable(),
+    }
+}
+
+/// Pin a flag/note annotation to one transcript segment (spec §11.4).
+/// The audit row carries ids only — never the note text.
+async fn annotate_segment(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    Path((id, seq)): Path<(String, i64)>,
+    Json(body): Json<AnnotateBody>,
+) -> impl IntoResponse {
+    let conn = match db::open(&Store::new(&state.store_root)) {
+        Ok(conn) => conn,
+        Err(_) => return store_unavailable(),
+    };
+    if voice::store::get_call(&conn, &id).unwrap_or(None).is_none() {
+        return not_found();
+    }
+    if voice::store::get_segment(&conn, &id, seq)
+        .unwrap_or(None)
+        .is_none()
+    {
+        return not_found();
+    }
+    let kind = body.kind.as_str();
+    if !matches!(kind, "flag" | "note") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "kind must be flag or note"})),
+        )
+            .into_response();
+    }
+    let note = body.note.trim();
+    let chars = note.chars().count();
+    if chars == 0 || chars > MAX_NOTE_CHARS {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "note must be 1-1024 chars"})),
+        )
+            .into_response();
+    }
+    let author = body
+        .author
+        .unwrap_or_else(|| format!("staff:{}", auth.user.user_id));
+    let author = author.trim();
+    if author.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "author must not be blank"})),
+        )
+            .into_response();
+    }
+    let now = unix_now();
+    if voice::store::insert_annotation(&conn, &id, seq, kind, note, author, now).is_err() {
+        return store_unavailable();
+    }
+    audit(
+        &conn,
+        now,
+        &auth.user.user_id,
+        "voice_segment_annotate",
+        &id,
+        &format!("seq={seq} kind={kind}"),
+    );
+    (StatusCode::OK, Json(json!({"seq": seq, "kind": kind}))).into_response()
 }
 
 #[cfg(test)]
@@ -2145,5 +2333,297 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM fact", [], |row| row.get(0))
             .unwrap();
         assert_eq!(facts, 0);
+    }
+
+    /// Fix happy path: text rewrites in place (speaker/timing kept), a
+    /// `Correction` quoting before → after lands in `voice_annotation`,
+    /// and the audit row carries ids only.
+    #[tokio::test]
+    async fn fix_rewrites_text_and_appends_correction() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        seed_call_with_transcripts(&conn, "c-f", Some("usa-wa-sos"));
+        drop(conn);
+
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/c-f/segments/1/fix",
+                true,
+                true,
+                Some(json!({"text": "  Eight dollars flat.  "})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let fixed = json_body(res).await;
+        assert_eq!(fixed["seq"], 1);
+        assert_eq!(fixed["text"], "Eight dollars flat.");
+
+        let conn = db::open(&store).unwrap();
+        let segment = voice::store::get_segment(&conn, "c-f", 1).unwrap().unwrap();
+        assert_eq!(segment.text, "Eight dollars flat.");
+        assert_eq!(segment.speaker.as_deref(), Some("them"));
+        assert_eq!(segment.at, 3);
+        let annotations = voice::store::list_annotations(&conn, "c-f").unwrap();
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].seq, 1);
+        assert_eq!(annotations[0].kind, "correction");
+        assert_eq!(annotations[0].author, "staff:staff-1");
+        assert!(
+            annotations[0].note.contains("Eight dollars."),
+            "{}",
+            annotations[0].note
+        );
+        assert!(
+            annotations[0].note.contains("Eight dollars flat."),
+            "{}",
+            annotations[0].note
+        );
+        let reason: String = conn
+            .query_row(
+                "SELECT reason FROM audit
+                 WHERE action = 'voice_segment_fix' AND after_ref = 'c-f'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(reason.contains("seq=1"), "{reason}");
+        assert!(reason.contains("kind=correction"), "{reason}");
+    }
+
+    /// Annotate happy path: flag/note rows land with the session author
+    /// by default; explicit authors are honored.
+    #[tokio::test]
+    async fn annotate_stores_flag_and_note() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        seed_call_with_transcripts(&conn, "c-a", Some("usa-wa-sos"));
+        drop(conn);
+
+        for (seq, kind, body) in [
+            (
+                0,
+                "flag",
+                json!({"kind": "flag", "note": "jargon — verify"}),
+            ),
+            (
+                1,
+                "note",
+                json!({"kind": "note", "note": "  called back  ", "author": "staff-anna"}),
+            ),
+        ] {
+            let res = staff_router(fx.state.clone())
+                .oneshot(staff_request(
+                    "POST",
+                    &format!("/apostille/api/v1/admin/calls/c-a/segments/{seq}/annotate"),
+                    true,
+                    true,
+                    Some(body),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "{kind}");
+            let annotated = json_body(res).await;
+            assert_eq!(annotated["seq"], seq);
+            assert_eq!(annotated["kind"], kind);
+        }
+
+        let conn = db::open(&store).unwrap();
+        let annotations = voice::store::list_annotations(&conn, "c-a").unwrap();
+        assert_eq!(annotations.len(), 2);
+        assert_eq!(annotations[0].kind, "flag");
+        assert_eq!(annotations[0].note, "jargon — verify");
+        assert_eq!(annotations[0].author, "staff:staff-1");
+        assert_eq!(annotations[1].kind, "note");
+        assert_eq!(annotations[1].note, "called back");
+        assert_eq!(annotations[1].author, "staff-anna");
+    }
+
+    /// The §11.4 code matrix: blank inputs are 400, unknown
+    /// call/segment is 404, and nothing lands on any error.
+    #[tokio::test]
+    async fn fix_and_annotate_validation_matrix() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        seed_call_with_transcripts(&conn, "c-v", Some("usa-wa-sos"));
+        drop(conn);
+
+        let overlong = "x".repeat(1025);
+        let bad_requests: Vec<(&str, serde_json::Value)> = vec![
+            (
+                "/apostille/api/v1/admin/calls/c-v/segments/0/fix",
+                json!({"text": "   "}),
+            ),
+            (
+                "/apostille/api/v1/admin/calls/c-v/segments/0/fix",
+                json!({"text": "fine", "author": "  "}),
+            ),
+            (
+                "/apostille/api/v1/admin/calls/c-v/segments/0/annotate",
+                json!({"kind": "shout", "note": "nope"}),
+            ),
+            (
+                "/apostille/api/v1/admin/calls/c-v/segments/0/annotate",
+                json!({"kind": "flag", "note": "  "}),
+            ),
+            (
+                "/apostille/api/v1/admin/calls/c-v/segments/0/annotate",
+                json!({"kind": "note", "note": overlong}),
+            ),
+            (
+                "/apostille/api/v1/admin/calls/c-v/segments/0/annotate",
+                json!({"kind": "note", "note": "fine", "author": ""}),
+            ),
+        ];
+        for (uri, body) in bad_requests {
+            let res = staff_router(fx.state.clone())
+                .oneshot(staff_request("POST", uri, true, true, Some(body.clone())))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::BAD_REQUEST, "{uri} {body}");
+            let err = json_body(res).await;
+            assert!(!err["error"].as_str().unwrap().is_empty());
+        }
+        let not_founds: Vec<(&str, serde_json::Value)> = vec![
+            (
+                "/apostille/api/v1/admin/calls/c-v/segments/9/fix",
+                json!({"text": "fine"}),
+            ),
+            (
+                "/apostille/api/v1/admin/calls/nope/segments/0/fix",
+                json!({"text": "fine"}),
+            ),
+            (
+                "/apostille/api/v1/admin/calls/c-v/segments/9/annotate",
+                json!({"kind": "flag", "note": "fine"}),
+            ),
+            (
+                "/apostille/api/v1/admin/calls/nope/segments/0/annotate",
+                json!({"kind": "flag", "note": "fine"}),
+            ),
+        ];
+        for (uri, body) in not_founds {
+            let res = staff_router(fx.state.clone())
+                .oneshot(staff_request("POST", uri, true, true, Some(body.clone())))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::NOT_FOUND, "{uri} {body}");
+        }
+        // Error paths write nothing: original text intact, no
+        // annotations, no segment audit rows.
+        let conn = db::open(&store).unwrap();
+        let segment = voice::store::get_segment(&conn, "c-v", 0).unwrap().unwrap();
+        assert_eq!(segment.text, "The fee?");
+        assert!(
+            voice::store::list_annotations(&conn, "c-v")
+                .unwrap()
+                .is_empty()
+        );
+        let audits: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE after_ref = 'c-v'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(audits, 0);
+    }
+
+    /// Grep gate: no audit row for a fixed/annotated call may contain
+    /// the before-text, the after-text, or the note text (ids only).
+    #[tokio::test]
+    async fn segment_audit_rows_carry_no_transcript_text() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        seed_call_with_transcripts(&conn, "c-g", Some("usa-wa-sos"));
+        drop(conn);
+
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/c-g/segments/0/fix",
+                true,
+                true,
+                Some(json!({"text": "What is the walk-in fee?"})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/admin/calls/c-g/segments/0/annotate",
+                true,
+                true,
+                Some(json!({"kind": "flag", "note": "verify against the fee schedule"})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let conn = db::open(&store).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT action, actor, after_ref, reason FROM audit WHERE after_ref = 'c-g'")
+            .unwrap();
+        let rows: Vec<(String, String, String, String)> = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        for secret in [
+            "The fee?",
+            "What is the walk-in fee?",
+            "verify against the fee schedule",
+        ] {
+            for (action, actor, after_ref, reason) in &rows {
+                for field in [action, actor, after_ref, reason] {
+                    assert!(!field.contains(secret), "{action}: {field}");
+                }
+            }
+        }
+        let actions: Vec<&str> = rows.iter().map(|r| r.0.as_str()).collect();
+        assert!(actions.contains(&"voice_segment_fix"), "{actions:?}");
+        assert!(actions.contains(&"voice_segment_annotate"), "{actions:?}");
+    }
+
+    /// Both routes sit behind the staff-router guard stack: mutations
+    /// without CSRF/Origin 403 before any write.
+    #[tokio::test]
+    async fn fix_and_annotate_require_csrf() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        seed_call_with_transcripts(&conn, "c-csrf", Some("usa-wa-sos"));
+        drop(conn);
+
+        for (uri, body) in [
+            (
+                "/apostille/api/v1/admin/calls/c-csrf/segments/0/fix",
+                json!({"text": "fine"}),
+            ),
+            (
+                "/apostille/api/v1/admin/calls/c-csrf/segments/0/annotate",
+                json!({"kind": "note", "note": "fine"}),
+            ),
+        ] {
+            let res = staff_router(fx.state.clone())
+                .oneshot(staff_request("POST", uri, true, false, Some(body)))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::FORBIDDEN, "{uri}");
+        }
+        let conn = db::open(&store).unwrap();
+        let segment = voice::store::get_segment(&conn, "c-csrf", 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(segment.text, "The fee?");
     }
 }
