@@ -363,3 +363,61 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     first boot has no certs, so the operator opts in after the
     CA exists; on without `tls.client_ca_file` refuses boot
     everywhere (explicit misconfiguration, fail closed).
+49. Cross-origin live proof (OPEN-1, author, 2026-10-29):
+    dedicated live-proof sprint immediately after staff
+    enrolment unblocks; apex ↔ admin ceremony both directions
+    green before admin-login sign-off — see
+    [customer-auth.md](customer-auth.md) §5.
+50. Staff recovery scope (OPEN-3, author, 2026-10-29):
+    admin-assisted only (fresh invite, never self-service);
+    TOTP/backup codes rejected; break-glass via the sealed
+    envelope only (decision 59). Customer magic-link fallback
+    is permanent, apex-only per §12. Folds the author outcome
+    keyed "OPEN-13" (same question as OPEN-3).
+51. Profile v1 is method-only (OPEN-8, author, 2026-10-29):
+    linked-methods list with no masked-email display; raw
+    email never stored.
+52. Prod CA custody (OPEN-19, author, 2026-10-29): one offline
+    encrypted copy of `ca-key.pem` held by the designated
+    custodian (name TBD); live key stays root-only on the
+    server; HSM deferred — see the [staff-enrolment
+    runbook](../ops/staff-enrolment.md) §1.
+53. Google RISC receiver now (OPEN-7, author, 2026-10-29):
+    `POST /auth/google/risc` + `auth::risc` per §9.9 (author
+    outcome keyed "OPEN-24", re-keyed — true OPEN-24 is
+    CRL/OCSP and stays open).
+54. Device cap 5 (author, 2026-10-29): at most 5 live passkeys
+    per account (live `webauthn_credential` rows); 409 +
+    remove-a-device copy at cap; self-service remove stays
+    customer-only, staff device changes stay admin-assisted
+    per decision 50. New scope (no OPEN row); true OPEN-17
+    (step-up list) stays open.
+55. Self-serve delete + 30-day purge (author, 2026-10-29):
+    recorded scope, not built yet. New scope (no OPEN row);
+    true OPEN-14 (apple/meta profile display) stays open.
+56. Second staffer within 30 days of first-staffer enrol
+    (author, 2026-10-29): cert + invite + UV passkey per the
+    runbook; the clock starts at the first `staff_enrolled`
+    audit row, dates TBD from prod. New scope; true OPEN-21
+    (server-side key copies) stays open.
+57. Suspend = revoke-all + re-enrol (author, 2026-10-29):
+    per-CN `admin-cert-revoke` loop (or `admin-offboard` per
+    staffer) until a single-command wrapper lands. New scope;
+    no suspend flow exists in code yet.
+58. Prod invites are 24h (author, 2026-10-29): runbook
+    mandates `--days 1` on prod; code default stays 7d
+    (range 1..30). Amends §5.1; true OPEN-20 (delivery
+    channel) stays open, split-channel default stands.
+59. Break-glass envelope + ordered drill (OPEN-23, author,
+    2026-10-29): sealed offline envelope holding the
+    re-mint authority; Drill 4 in [drill.md](../ops/drill.md)
+    is the ordered drill (author outcome keyed "OPEN-22",
+    re-keyed — true OPEN-22, who may mint invites, stays
+    open; quorum size for `--role admin` also stays open).
+60. Already-normative confirmations (author, 2026-10-29):
+    15-min single-use magic links (code `MAGIC_LINK_TTL_SECS`
+    + §12); passkey UV required (spec §5 — code gap: the
+    webauthn builder sets no explicit policy, enforcement
+    flagged for the enrolment pass); no avatar surface and
+    no `family_uid` semantic exist anywhere, so nothing to
+    drop. True OPEN-4/15/28/32 stay open as written.

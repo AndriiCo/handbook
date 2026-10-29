@@ -1,5 +1,11 @@
 # Staff enrolment runbook (Phase 4)
 
+Commitment (decision 56, due TBD): second staffer enrolled
+within 30 days of first enrol (clock starts at the first
+`staff_enrolled` audit row; fill both dates from prod, close
+by deleting this line and logging the enrol date in
+`drill.md`).
+
 How staff accounts come to life, log in, and leave. Spec:
 [customer-auth.md](../specs/customer-auth.md) §5. Staff method
 (decided): **passkey (UV required) + mTLS client cert** — both
@@ -21,11 +27,13 @@ audit names a human). Timestamps below are the operator's
 local time; the server stores epoch seconds.
 
 Open questions for the author (spec §8): OPEN-15 (CN→user
-mapping), OPEN-19 (CA custody), OPEN-20 (delivery channel),
-OPEN-21 (key copies), OPEN-22 (who mints), OPEN-23 (admin
-quorum), OPEN-24 (CRL/OCSP). Until answered, the defaults
-below apply (single admin mints; split-channel delivery;
-keys kept 0600 until confirmed delivery).
+mapping), OPEN-20 (delivery channel), OPEN-21 (key copies),
+OPEN-22 (who mints), OPEN-23 (admin quorum size —
+break-glass is decided, decision 59), OPEN-24 (CRL/OCSP).
+Until answered, the defaults below apply (single admin
+mints; split-channel delivery; keys kept 0600 until
+confirmed delivery). OPEN-19 (CA custody) is resolved —
+see §1.
 
 ## 1. Client certificates
 
@@ -37,6 +45,15 @@ are lowercase SHA-256 hex of the DER bytes (see
 
  Mint order matters: **cert first, invite second** —
  `admin-invite` refuses a CN with no live cert row.
+
+Prod custody (OPEN-19, decided 2026-10-29): the live
+`ca-key.pem` stays root-only on the server; one offline
+encrypted copy is held by the designated custodian (name
+TBD). Server-side auto-created CA keys are staging/dev-only
+— gap: no offline-issue/import path exists yet
+(`issue()` signs with the local key), so prod issuance
+without a standing server key needs a witnessed key
+ceremony, not automation.
 
 ```sh
 # Issue (operator delivers the .pem + .key.pem out-of-band).
@@ -68,16 +85,18 @@ hold several CNs (per-device certs: `jdoe-laptop`,
 
 ```sh
 # 1. Operator mints (prints the single-use URL ONCE — the token
-#    is hashed at rest and never retrievable).
-cargo xtask admin-invite --role staff --cn jdoe --actor andrii
+#    is hashed at rest and never retrievable). Prod mandates
+#    --days 1 (24h invites, decision 58); the code default
+#    stays 7d.
+cargo xtask admin-invite --role staff --cn jdoe --days 1 --actor andrii
 #   invite for jdoe (staff)
 #     url: https://admin.andrii.ai/enrol?invite=<64-hex>
-#     expires in 7d; single-use; token is NOT stored
+#     expires in 1d; single-use; token is NOT stored
 #    Flags: --days 1..30 (default 7), --origin <url> for staging
 #    (default https://admin.andrii.ai; must be https:// or
 #    http://localhost), --store, --actor.
 # Root-free path (prod): 4 stdin lines (role, cn, days, origin-or-empty).
-printf 'staff\njdoe\n7\n\n' | sudo -n -u andrii-ai /usr/local/sbin/apostille-invite
+printf 'staff\njdoe\n1\n\n' | sudo -n -u andrii-ai /usr/local/sbin/apostille-invite
 ```
 
 2. Operator delivers the URL out-of-band (default: a different
@@ -145,6 +164,13 @@ Verify after (read-only): `admin-cert-verify --fp …` fails
 invite for the same CN enrols a NEW account (offboarding is
 not reversible — by design).
 
+Suspend (decision 57) = revoke-all + re-enrol:
+`admin-cert-revoke --cn <cn>` for every live CN (or
+`admin-offboard --user <id> --cn <cn>` per staffer for the
+full suspend: certs + sessions + creds + lock). No
+single-command wrapper exists yet — per-CN loop until one
+is added.
+
 ## 5. Destructive-action step-up (pilot)
 
 `PUT /config/{key}` requires fresh step-up (UV within
@@ -181,8 +207,9 @@ synthetic-only.
 8. Stale session (>10 min, no step-up) on config write →
    `403 step-up required`; fresh login → write succeeds.
 9. Cross-origin ceremony (admin host page, apex RP):
-   enrol + login both green (closes OPEN-1 either way —
-   record the outcome).
+   enrol + login both green — the OPEN-1 live-proof sprint
+   (decided 2026-10-29), run immediately after enrolment
+   unblocks; record the outcome.
 10. Audit rows carry hashes/fingerprints only — no raw
     invite tokens, session IDs, challenges, or key bytes.
 11. `cargo xtask ci` green; `check`/`check:imports`/

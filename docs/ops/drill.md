@@ -1,6 +1,6 @@
 # Deploy drill ×3 (roadmap item 11)
 
-Three drills, each run to green THREE times before the Day-7
+Four drills, each run to green THREE times before the Day-7
 signoff. Every run is logged in the table at the bottom with date,
 operator, build sha, and result. A failed run stops the count for
 that drill (fix, then restart its ×3).
@@ -60,6 +60,31 @@ the run is recorded with the backup's date. Secrets restore stays a
 separate, author-only step (EAB/keys/KEK escrow per
 `secure-config.md`); the drill asserts the operator KNOWS where that
 envelope is without printing it.
+
+## Drill 4 — break-glass envelope + setup-key re-mint
+
+Decision 59 (ordered drill): a sealed envelope exists offline
+holding the break-glass materials (setup-key re-mint authority:
+`--kek-file` path + store location; CA custody location; never
+the live keys themselves in the log).
+
+1. Operator states the envelope location without opening it.
+2. On a scratch store (never prod):
+   `cargo xtask setup-key-mint --store <scratch> --kek-file <scratch-kek>`,
+   verify the `setup_key.minted` audit row, confirm the key is
+   `setup_`+64hex printed once.
+3. Assert the guard: re-mint on a store with live staff passkeys
+   refuses without `--force` (`xtask/src/config.rs`: "staff
+   passkeys already exist … use --force to break glass").
+4. `--force` re-mint invalidates the old key by overwrite.
+
+Green: envelope located unopened, scratch mint green, guard
+refuses, force re-mint invalidates, run recorded below. The
+real re-mint-against-prod step (opening the envelope) stays a
+stated-but-unexecuted step — executing it would invalidate the
+live setup window/keys. Only a KEK-holding human can do the
+prod-located steps (same constraint as Drill 3's scratch boot);
+quarterly with the restore drill afterwards.
 
 ## Drill log
 

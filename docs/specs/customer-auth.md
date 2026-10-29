@@ -108,19 +108,21 @@ Two modes: (a) logged-out first passkey (creates the account at finish), (b) log
 
 Request: `{"display_name": "Andrii", "label": "MacBook Pro"}` — `display_name` required in (a), ignored in (b); `label` optional, ≤64 chars. Mode (b) requires session cookie.
 
+Device cap (decision 54): 5 live passkeys per account (counts live `webauthn_credential` rows only — never `identity_link`); self-service remove frees a slot. Staff has no add-key path, so the cap binds on the customer branch only (staff device changes stay admin-assisted per decision 50).
+
 Success `200`: `{"challenge_id": "<opaque>", "options": { "<CreationChallengeResponse>" }}`. Server: `start_passkey_registration(user_uuid, name, display, exclude)` where `exclude` = existing non-revoked credential IDs (mode b) or `None` (mode a); persist state (`kind='register'`).
 
-Errors: `400` bad display_name/label; `401` mode-(b) without session; `403` CSRF/Origin fail; `429` rate-limited; `500` store unavailable.
+Errors: `400` bad display_name/label; `401` mode-(b) without session; `403` CSRF/Origin fail; `409` device cap reached in mode (b) — remove a passkey first; `429` rate-limited; `500` store unavailable.
 
 ### 2.2 `POST /auth/passkey/register/finish`
 
 Request: `{"challenge_id": "<opaque>", "credential": { "<RegisterPublicKeyCredential>" }, "email?": "…", "label?": "…"}` (client echoes the optional email + label from start; mode (a) stores the email as an unverified `identity_link` row for login resolution + Phase-3 recovery).
 
-Server: load + consume challenge (missing/expired/consumed → `410`); `finish_passkey_registration(&cred, &state)`; assert credential ID globally unregistered (crate docs MUST — conflict → `409`); insert `account` (mode a) + `webauthn_credential` + `identity_link` in one transaction; mint session (mode a) or audit (mode b); audit row (`passkey_registered`, no PII).
+Server: load + consume challenge (missing/expired/consumed → `410`); `finish_passkey_registration(&cred, &state)`; assert credential ID globally unregistered (crate docs MUST — conflict → `409`); insert `account` (mode a) + `webauthn_credential` + `identity_link` in one transaction (mode-(b) inserts run capped — the live-count check sits inside the same transaction, so racing finishes cannot both pass); mint session (mode a) or audit (mode b); audit row (`passkey_registered`, no PII).
 
 Success `200` (mode a): `{"user_id": "…", "methods": ["passkey"]}` + `Set-Cookie`. Mode (b): `{"linked": true, "credential_id": "…", "methods": […]}`.
 
-Errors: `410` challenge invalid/consumed; `409` credential already registered; `422` verification failed (log variant, return generic `{"error": "verification failed"}` — never leak crate internals).
+Errors: `410` challenge invalid/consumed; `409` credential already registered; `409` device cap reached in mode (b) (`passkey_cap_refused` audit); `422` verification failed (log variant, return generic `{"error": "verification failed"}` — never leak crate internals).
 
 ### 2.3 `POST /auth/passkey/login/start`
 
@@ -183,7 +185,7 @@ All staff ceremony routes live on the **admin router only**, behind the admin ho
 
 ### 5.1 Invitation lifecycle
 
-1. **Mint (offline, admin-only).** `xtask admin-invite --role <staff|admin> --cn <name> [--days 7] [--actor …] [--store …]` (flags, matching every other xtask task — supersedes the positional sketch).
+1. **Mint (offline, admin-only).** `xtask admin-invite --role <staff|admin> --cn <name> [--days 7] [--actor …] [--store …]` (flags, matching every other xtask task — supersedes the positional sketch). Prod invites are 24h (`--days 1`, decision 58); the code default stays 7d.
    - `role` ∈ {`staff`, `admin`}; anything else → usage error. `cn` = the staff member's client-cert CN, which MUST already exist as a live `admin_cert` row (invite binds to an issued cert, never to a future one — mint order is `admin-cert-issue` first, then `admin-invite`). CN rule reused from `admin-cert-issue`.
    - Token: 256-bit CSPRNG hex via `login::mint_magic_token` (64 hex chars). Store `token_hash = login::token_hash(token)` (SHA-256 hex) only — the DB never holds the bearer token. Row: `(token_hash, role, cn, created_by=actor, created_at, expires_at=created_at+days, consumed_at=NULL, consumed_by=NULL)`.
    - Output: single-use URL `https://admin.andrii.ai/admin/enrol?invite=<token>` printed once to stdout (operator delivers out-of-band). Audit `staff_invite_issued` with actor + role + cn (cn is an internal identifier, not PII).
@@ -260,14 +262,14 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 
 | ID | Question | Owner | Blocks |
 |---|---|---|---|
-| OPEN-1 | Live-ceremony proof that RP ID `andrii.ai` + `allow_subdomains(true)` + `append_allowed_origin(admin)` serves both origins end-to-end | CODE (staging) | §5 admin login, Day-6 gate |
+| OPEN-1 | ~~Live-ceremony proof that RP ID `andrii.ai` + `allow_subdomains(true)` + `append_allowed_origin(admin)` serves both origins end-to-end~~ RESOLVED: live-proof sprint runs immediately after enrolment unblocks; both-origin ceremony green required before admin-login sign-off (author, 2026-10-29) | CODE (staging) | §5 admin login, Day-6 gate |
 | OPEN-2 | ~~Magic-link `fallback_until` window length + tighter idle value~~ RESOLVED by §12.6: 7d window + 1h idle (author-confirmed 2026-10-28) | Author | Phase 5 |
-| OPEN-3 | Staff enrolment if passkey stalls: fallback scope | Author | §5 enrolment |
+| OPEN-3 | ~~Staff enrolment if passkey stalls: fallback scope~~ RESOLVED: staff recovery stays admin-assisted only (fresh invite, never self-service); TOTP/backup codes rejected; break-glass via the sealed envelope only (decision 59); customer magic-link fallback is permanent, apex-only per §12 (author, 2026-10-29) | Author | §5 enrolment |
 | OPEN-4 | Admin-branch Google OAuth: needed at all, or staff stays passkey+mTLS (§5)? Phase 2 ships apex-only either way | Author | admin login scope |
 | OPEN-5 | tokeninfo→JWKS migration trigger (quota/latency at scale); ID-token local validation design | CODE | post-Phase-2 scale |
 | OPEN-6 | ~~Playbook §3 touch-up~~ RESOLVED: playbook §3 rewritten (server-side code flow + tokeninfo, per-env clients) | CODE | portal setup |
-| OPEN-7 | Google RISC receiver phase + synthetic-SET fixtures (§3 table; `signal_action` rows already exist) | SEC | revocation handling |
-| OPEN-8 | Profile display for Google links (method-only vs masked email; raw email never stored) | Author | profile UI |
+| OPEN-7 | ~~Google RISC receiver phase + synthetic-SET fixtures (§3 table; `signal_action` rows already exist)~~ RESOLVED: built now — `POST /auth/google/risc` + `auth::risc` (§9.9), synthetic-RSA fixtures in-tree (author outcome keyed "OPEN-24", re-keyed 2026-10-29) | SEC | revocation handling |
+| OPEN-8 | ~~Profile display for Google links (method-only vs masked email; raw email never stored)~~ RESOLVED: minimal profile now — method-only list, no masked email in v1; raw email never stored (author, 2026-10-29) | Author | profile UI |
 | OPEN-9 | Apple `response_mode=query` + `email_verified`/`is_private_email` wire types confirmed at first real login | CODE (staging) | §10.1/§10.3 |
 | OPEN-10 | Apple JWKS TTL-cache trigger (latency/rate at scale); cache design (in-memory, never a table) | CODE | post-Phase-3a scale |
 | OPEN-11 | Apple `/auth/apple/events` receiver phase + signed-JWT fixtures (§10 scope cut; `signal_action` rows ready) | SEC | revocation handling |
@@ -278,11 +280,11 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 | OPEN-16 | Schedule conditional-ui build (claim corrected in §2.5, API verified; build deferred past Phase 4) | Author | autofill scope |
 | OPEN-17 | Destructive-action list for §5.5 step-up (config writes? cert revoke? fact accept/reject?) | SEC | §5.5 enforcement |
 | OPEN-18 | ~~Playbook §1 + header touch-up~~ RESOLVED: header + §1 point at §5; live proof stays OPEN-1 | CODE | doc consistency |
-| OPEN-19 | Prod CA custody: who holds `ca-key.pem`, where (HSM / offline backup)? | Author | prod enrolment |
+| OPEN-19 | ~~Prod CA custody: who holds `ca-key.pem`, where (HSM / offline backup)?~~ RESOLVED: offline encrypted copy held by the designated custodian (name TBD); live key stays root-only on the server; HSM deferred (author, 2026-10-29) | Author | prod enrolment |
 | OPEN-20 | Delivery channel for invite URLs + client key pairs (same channel or split)? | Author | enrol ceremony |
 | OPEN-21 | Server-side client-key copies: keep 0600 or delete-after-confirmed-delivery? | Author | runbook wording |
 | OPEN-22 | Who may mint invites (any admin via xtask, or narrower set)? | Author | invite authz |
-| OPEN-23 | Admin-role enrolment quorum: single admin or two-person/break-glass? | Author | `--role admin` path |
+| OPEN-23 | ~~Admin-role enrolment quorum: single admin or two-person/break-glass?~~ PARTLY RESOLVED: break-glass is the sealed envelope + ordered Drill 4 (decision 59); quorum size for `--role admin` stays open (author outcome keyed "OPEN-22", re-keyed 2026-10-29) | Author | `--role admin` path |
 | OPEN-24 | CRL/OCSP needed, or registry-only revocation stands for Phase 4? | SEC | cert lifecycle |
 | OPEN-25 | ~~Mail provider choice~~ RESOLVED: Gmail SMTP for andrii.ai initially; host/port/creds/From stay configurable for a future own-sender swap (author, 2026-10-28, §12.8) | Author | Phase 5 send path |
 | OPEN-26 | Bounce/complaint handling phase + webhook receiver design (out of v1 scope per §12.8) | SEC | post-Phase-5 deliverability |
@@ -341,6 +343,40 @@ Google login green (new account → session + cookie rotation); known-sub login 
 ### 9.8 Table-expressiveness note
 
 Everything above fits the current schema — no DDL: `kind`/`method` are unconstrained text, `usable_email_owner`/`live_method_count`/`links_for_user` are method-generic, `proof_fresh` covers oauth rows once `user_id` is stamped. Deliberately unexpressed: Google access/refresh tokens (never stored — `access_type=online`, our sessions are the credential) and raw emails (hashes only, per §6 logging rules).
+
+### 9.9 RISC receiver (OPEN-7, decided 2026-10-29)
+
+`POST /auth/google/risc` (public router, flat path): Google pushes
+Security Event Tokens as the raw POST body
+(`application/secevent+jwt`). No session, no CSRF/Origin — the SET
+signature is the auth (Meta `delete_request` precedent, §11.9).
+Boot stays green when Google is unconfigured; the handler 503s.
+
+Verification (`auth::risc::verify_set`, mirrors §10.3): `kid` →
+GET `risc_certs_url` (Google default; test-override only) → JWK →
+RS256-only decode → manual claims with injected `now` (`iss`
+slash or bare; `aud` string or single-entry array; `|now-iat| ≤
+300s`; `exp` when present). `events` takes the first key (unknown
+URIs verify fine — forward-compat); `subject` `iss_sub` is
+actionable, `email` and unknown formats are audit-only (acting on
+an unverified email match is a takeover vector).
+
+Event→action reuses `signal_action` verbatim: sessions-revoked
+kills sessions + clears step-up; credential-change clears step-up
+only; account-disabled disables the link + kills sessions + the
+rule-6 tail (last link → lock); account-enabled audits only;
+verification audits the hashed `state` echo. Unknown event /
+unknown subject → `202 {"status":"accepted"}` + audit (Google
+backs off on repeated errors — never non-2xx a verified SET).
+Malformed → `400`; bad signature/claims → `403`; certs
+unreachable → `503`. Rate limit `gr:{ip}` 30/min. No DDL: every
+action is idempotent, so no replay table — a replayed SET
+re-applies and still 202s.
+
+Re-auth revives: a fresh verified Google login whose sub has only
+a disabled link revives it (`google_link_revived` audit) instead
+of forking a second account; link-mode re-add of one's own
+disabled sub revives, of another user's 302s `already_linked`.
 
 ## Shared chassis decisions (Apple + Meta)
 
