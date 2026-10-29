@@ -74,11 +74,18 @@ struct ErrorKind(&'static str);
 /// 5xx logs at ERROR so the journald error budget (`-p err`)
 /// counts app failures; everything else logs at INFO. The same
 /// opaque ID goes back in `x-request-id` for correlation.
+///
+/// The whole tail runs under [`tracing::Instrument`], never a
+/// bare `enter()` guard: an entered guard held across `await`
+/// leaks the span onto whatever task the worker polls next and
+/// loses it when this task migrates, so concurrent bursts log
+/// spanless or cross-attributed response events.
 async fn request_id_and_log(
     State(branch): State<&'static str>,
     req: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> impl IntoResponse {
+    use tracing::Instrument as _;
     let id = format!(
         "{:016x}{:016x}",
         rand::random::<u64>(),
@@ -103,31 +110,34 @@ async fn request_id_and_log(
         branch = %branch,
         route = %route,
     );
-    let _guard = span.enter();
-    let started = std::time::Instant::now();
-    let mut res = next.run(req).await;
-    if let Ok(value) = HeaderValue::from_str(&id) {
-        res.headers_mut().insert("x-request-id", value);
+    async move {
+        let started = std::time::Instant::now();
+        let mut res = next.run(req).await;
+        if let Ok(value) = HeaderValue::from_str(&id) {
+            res.headers_mut().insert("x-request-id", value);
+        }
+        if res.status().is_server_error() {
+            tracing::error!(
+                status = %res.status(),
+                latency_ms = started.elapsed().as_millis(),
+                error_kind = %res
+                    .extensions()
+                    .get::<ErrorKind>()
+                    .map(|kind| kind.0)
+                    .unwrap_or("unclassified"),
+                "response"
+            );
+        } else {
+            tracing::info!(
+                status = %res.status(),
+                latency_ms = started.elapsed().as_millis(),
+                "response"
+            );
+        }
+        res
     }
-    if res.status().is_server_error() {
-        tracing::error!(
-            status = %res.status(),
-            latency_ms = started.elapsed().as_millis(),
-            error_kind = %res
-                .extensions()
-                .get::<ErrorKind>()
-                .map(|kind| kind.0)
-                .unwrap_or("unclassified"),
-            "response"
-        );
-    } else {
-        tracing::info!(
-            status = %res.status(),
-            latency_ms = started.elapsed().as_millis(),
-            "response"
-        );
-    }
-    res
+    .instrument(span)
+    .await
 }
 
 /// Stamp TCP-delivered requests with their transport (the QUIC
@@ -1931,6 +1941,71 @@ mod tests {
                 .starts_with("404"),
             "got: {nope}"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn concurrent_requests_log_exactly_once_with_span_context() {
+        // The response event must keep its span (id/route/transport)
+        // even when the runtime migrates the task across threads
+        // mid-request: `enter()` + await loses the span, so the
+        // middleware must `instrument()` the whole tail instead.
+        // Uses the global default: thread-local capture would drop
+        // events emitted on other workers.
+        let app = Router::new()
+            .route(
+                "/burst",
+                get(|| async {
+                    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                    tokio::task::yield_now().await;
+                    "ok"
+                }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                "public",
+                request_id_and_log,
+            ));
+        let logs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_writer({
+                let logs = logs.clone();
+                move || BufWriter(logs.clone())
+            })
+            .finish();
+        tracing::subscriber::set_global_default(subscriber).expect("global default already set");
+        // Independent tasks (not one join_all): the work-stealer
+        // spreads them across workers, migrating futures mid-await
+        // the way a real connection burst does.
+        let mut handles = Vec::new();
+        for _ in 0..128 {
+            let app = app.clone();
+            handles.push(tokio::spawn(async move {
+                app.oneshot(
+                    Request::builder()
+                        .uri("/burst")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+            }));
+        }
+        for handle in handles {
+            assert_eq!(handle.await.unwrap().status(), StatusCode::OK);
+        }
+        let text = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+        // Only this test serves /burst; a response event that lost
+        // its span has no route and drops out of the count.
+        let contextual = text
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .filter(|event| {
+                event["fields"]["message"] == "response" && event["span"]["route"] == "/burst"
+            })
+            .count();
+        // Exactly one contextual event per request: fewer means the
+        // span was lost to thread migration, more means double-logging.
+        assert_eq!(contextual, 128, "got: {text}");
     }
 
     #[tokio::test]
