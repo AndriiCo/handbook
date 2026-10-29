@@ -14,9 +14,12 @@ fn main() {
     // deploy reports the same stale SHA).
     let manifest_dir =
         std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    // Walk up to the dir holding `.git` (workspace root; the
+    // crate may sit several levels down, e.g. `crates/web`).
     let workspace = manifest_dir
-        .parent()
-        .expect("crate has a parent dir")
+        .ancestors()
+        .find(|a| a.join(".git").exists())
+        .expect("workspace root with .git")
         .to_path_buf();
     let mut git_dir = workspace.join(".git");
     // Worktrees (like our isolated builders) keep a `.git` FILE
