@@ -4201,10 +4201,12 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "auth",
+ "base64 0.22.1",
  "bytes",
  "chacha20poly1305",
  "config",
  "contracts",
+ "ed25519-dalek",
  "forms",
  "futures-util",
  "h3",
@@ -4229,6 +4231,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
+ "voice",
  "webpki-roots",
  "zeroize",
 ]

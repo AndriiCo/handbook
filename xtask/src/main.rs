@@ -22,6 +22,7 @@ mod quic_probe;
 mod release;
 mod review_conflicts;
 mod secrets;
+mod voice_replay;
 mod watch;
 
 fn main() {
@@ -62,6 +63,7 @@ fn main() {
         Some("admin-invite") => admin_staff::run_invite(&args[1..]),
         Some("admin-offboard") => admin_staff::run_offboard(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
+        Some("voice-replay") => voice_replay::run(&args[1..]),
         Some("deploy") => release::run_deploy(&args[1..]),
         Some("rollback") => release::run_rollback(&args[1..]),
         Some("install-hooks") => run_install_hooks(),
@@ -107,6 +109,7 @@ Tasks:
   admin-invite  staff enrolment invite (spec customer-auth.md §5.1)
   admin-offboard  staff offboard: certs, sessions, creds, lock (§5.6)
   secrets-scan scan tracked files for secrets [--staged for the index]
+  voice-replay  replay webhook fixtures at the stub (see --corpus/--scenario)
   install-hooks point git at .githooks/ (pre-commit secret scan)
   audit       cargo-audit over Cargo.lock (needs network; not in ci)
   deploy      ship a release (see flags below; runbook: docs/ops/runbook-release.md)

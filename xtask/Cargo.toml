@@ -19,6 +19,9 @@ labels = { path = "../crates/labels" }
 mail = { path = "../crates/mail" }
 mcp = { path = "../crates/mcp" }
 publish = { path = "../crates/publish" }
+voice = { path = "../crates/voice" }
+ed25519-dalek = "2"
+base64 = "0.22"
 # Aliased: `mod config` in src/main.rs is the config-* CLI commands.
 sealed_config = { path = "../crates/config", package = "config" }
 rusqlite = { version = "0.32", features = ["bundled"] }
