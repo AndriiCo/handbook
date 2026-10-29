@@ -1077,7 +1077,11 @@ mod tests {
 
     #[test]
     fn key_is_redacted_in_debug() {
-        let client = MetaClient::new(StubTransport::default(), BASE_URL, "test-secret-9".to_string());
+        let client = MetaClient::new(
+            StubTransport::default(),
+            BASE_URL,
+            "test-secret-9".to_string(),
+        );
         let debug = format!("{client:?}");
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains("secret"));
