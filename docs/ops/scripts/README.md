@@ -34,3 +34,9 @@ Scripts:
 - `ops-staff-access.sh <cn>` — root: verify the newest live
   client cert for a CN, export it as PKCS#12 for browser
   install, print staff user_ids for passkey login.
+- `ops-loop-first-run.sh` — root: step-3 unpark (pinned
+  `apostille-loop` wrapper + grant, sweep pair, KEK-gated
+  `analyze --check` via the hal path, residue checks).
+- `ops-units-reinstall.sh` — root: validate + install the 8
+  watch/mail/instruct/backup unit files from
+  `units-staging/` (F1/F2 gates), enable watch + mail only.
