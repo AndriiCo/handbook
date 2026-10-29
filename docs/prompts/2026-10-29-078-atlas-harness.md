@@ -82,8 +82,9 @@ tailwind). No live API calls made (no key in this env).
 
 ## Commits
 
-- (this turn's commit(s) — filled after commit)
-- (this log entry, committed alongside)
+- `5c103d9` Atlas harness: rerunnable convention-source research worker
+  (crate, xtask, spec, shape pins; this log rode along)
+- (this hash fill-in, committed immediately after)
 
 ## Follow-ups
 
