@@ -44,12 +44,12 @@
    enable **Sign in with Apple** on the App ID.
 2. Register a **Services ID** for web; verify `andrii.ai` domain
    ownership; register return URLs
-   (`https://andrii.ai/apostille/api/v1/auth/apple/callback`).
+   (`https://andrii.ai/auth/apple/callback`).
 3. Create a Sign-in-with-Apple **private key** (download once,
    store with secrets, never in repo).
 4. Register the **notifications endpoint** URL in the portal
    (single endpoint receives all event types as Apple-signed JWTs):
-   `https://andrii.ai/apostille/api/v1/auth/apple/events`.
+   `https://andrii.ai/auth/apple/events`.
    (Endpoint registration + JWT event shape per WWDC22 "Enhance
    your Sign in with Apple experience"; event types below per
    Apple's server-to-server notification spec and ecosystem
@@ -85,14 +85,14 @@ rejects anything else with 403 + audit):
    minimal).
 2. Credentials → **OAuth client ID (Web)**: authorized JavaScript
    origins `https://andrii.ai`; authorized redirect URIs for the
-   code flow (`https://andrii.ai/apostille/api/v1/auth/google/callback`).
+   code flow (`https://andrii.ai/auth/google/callback`).
 3. SPA uses Google Identity Services button (FedCM-aware); server
    validates the ID token against Google's certs (issuer, audience
    = client ID, expiry, nonce).
 4. Cross-Account Protection (RISC) — same Cloud project: enable the
    **RISC API**, create a **service account**, build the event
    receiver endpoint
-   (`https://andrii.ai/apostille/api/v1/auth/google/risc`), and
+   (`https://andrii.ai/auth/google/risc`), and
    register it via `POST https://risc.googleapis.com/v1beta/stream:update`
    with push delivery to that URL (per
    https://developers.google.com/identity/protocols/risc).
@@ -117,7 +117,7 @@ inspected 2026-10-26).
 1. Meta App Dashboard → create App ID (website) → **Add a Product
    → Facebook Login → Settings → Client OAuth Settings** → enter
    redirect URIs, including
-   `https://andrii.ai/apostille/api/v1/auth/meta/callback`.
+   `https://andrii.ai/auth/meta/callback`.
 2. Set **Login with JavaScript SDK** to yes; add `andrii.ai` to
    **Allowed Domains for JavaScript SDK** (tokens only return to
    authorized domains; HTTPS only). Implementation (Phase 3b,
@@ -134,7 +134,7 @@ inspected 2026-10-26).
    Deletion Request Callback URL** (both HTTPS, both in
    Facebook Login > Settings — exact field locations per
    current dashboard, verify in portal):
-   `https://andrii.ai/apostille/api/v1/auth/meta/deauthorize`
+   `https://andrii.ai/auth/meta/deauthorize`
    and `…/meta/delete-request`.
 5. Server: exchange the code server-side, keep the App Secret in
    secrets storage only, and validate tokens/calls per the

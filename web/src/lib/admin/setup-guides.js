@@ -118,11 +118,11 @@ export const STEPS = [
 		guide: {
 			intro: 'Each provider needs an app registration with the login callback. Register only the providers you will offer.',
 			steps: [
-				'Google: console → APIs & Services → Credentials → Create OAuth client (Web). Add the callback https://<public host>/apostille/auth/google/callback as an authorized redirect URI, then paste the client ID + secret.',
+				'Google: console → APIs & Services → Credentials → Create OAuth client (Web). Add the callback https://<public host>/auth/google/callback as an authorized redirect URI, then paste the client ID + secret.',
 				'Google consent screen: publish the app (Testing mode expires grants weekly) and request only profile + email.',
-				'Apple: developer portal → Certificates, Identifiers & Profiles → Identifiers → register a Services ID; enable Sign in with Apple with the callback https://<public host>/apostille/auth/apple/callback as a return URL.',
+				'Apple: developer portal → Certificates, Identifiers & Profiles → Identifiers → register a Services ID; enable Sign in with Apple with the callback https://<public host>/auth/apple/callback as a return URL.',
 				'Apple: Membership → copy the Team ID; Keys → create a Sign in with Apple key → note the Key ID and download the .p8 once — paste its full contents (it cannot be re-downloaded).',
-				'Meta: developers.facebook.com → My Apps → create an app → add Facebook Login → set the callback https://<public host>/apostille/auth/meta/callback as a valid OAuth redirect URI; paste the App ID + App Secret.'
+				'Meta: developers.facebook.com → My Apps → create an app → add Facebook Login → set the callback https://<public host>/auth/meta/callback as a valid OAuth redirect URI; paste the App ID + App Secret.'
 			]
 		}
 	},

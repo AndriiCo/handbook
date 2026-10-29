@@ -216,11 +216,8 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/logout", post(passkey::logout))
         .route("/api/v1/auth/me", get(passkey::me))
         .route("/api/v1/auth/google/start", post(oauth::start))
-        .route("/api/v1/auth/google/callback", get(oauth::callback))
         .route("/api/v1/auth/apple/start", post(oauth_apple::start))
-        .route("/api/v1/auth/apple/callback", get(oauth_apple::callback))
         .route("/api/v1/auth/meta/start", post(oauth_meta::start))
-        .route("/api/v1/auth/meta/callback", get(oauth_meta::callback))
         .route("/api/v1/auth/magic/start", post(magic::start))
         .route("/api/v1/auth/magic/consume", post(magic::consume))
         .route("/api/v1/authorities", get(approval::public_authorities))
@@ -245,10 +242,17 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
     // The ACME challenge path lives at the domain root (not under
     // /apostille): port 80 serves it directly for http-01, and this
     // HTTPS route covers CAs that follow the 308 here instead.
+    // Server-level OAuth return URLs: the login is to andrii.ai
+    // itself, not the /apostille sub-service — providers register
+    // https://andrii.ai/auth/<provider>/callback. (Start stays a
+    // nested API call; only the provider-facing URL is flat.)
     Router::new()
         .route("/apostille", get(serve_spa_index))
         .route("/apostille/", get(serve_spa_index))
         .route("/robots.txt", get(serve_robots))
+        .route("/auth/google/callback", get(oauth::callback))
+        .route("/auth/apple/callback", get(oauth_apple::callback))
+        .route("/auth/meta/callback", get(oauth_meta::callback))
         .nest("/apostille", api)
         .nest_service("/.well-known/acme-challenge", ServeDir::new(acme_dir))
         .layer(axum::middleware::from_fn(request_id_and_log))
@@ -634,7 +638,7 @@ async fn main() {
                 id,
                 secret.clone(),
                 &format!(
-                    "{}/apostille/api/v1/auth/google/callback",
+                    "{}/auth/google/callback",
                     cfg.auth_origin.trim_end_matches('/')
                 ),
             )),
@@ -658,7 +662,7 @@ async fn main() {
                     kid,
                     key.clone(),
                     &format!(
-                        "{}/apostille/api/v1/auth/apple/callback",
+                        "{}/auth/apple/callback",
                         cfg.auth_origin.trim_end_matches('/')
                     ),
                 ))
@@ -675,7 +679,7 @@ async fn main() {
                 id,
                 secret.clone(),
                 &format!(
-                    "{}/apostille/api/v1/auth/meta/callback",
+                    "{}/auth/meta/callback",
                     cfg.auth_origin.trim_end_matches('/')
                 ),
             )),

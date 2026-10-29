@@ -696,7 +696,7 @@ mod tests {
         let mut google = GoogleCfg::from_values(
             cfg.google_client_id.as_deref().unwrap(),
             cfg.google_client_secret.unwrap(),
-            "https://example.test/apostille/api/v1/auth/google/callback",
+            "https://example.test/auth/google/callback",
         );
         google.auth_base = format!("{base}/auth");
         google.token_url = format!("{base}/token");
@@ -921,10 +921,7 @@ mod tests {
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
         let res = app
             .clone()
-            .oneshot(get(
-                "/apostille/api/v1/auth/google/callback?code=x&state=y",
-                "",
-            ))
+            .oneshot(get("/auth/google/callback?code=x&state=y", ""))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::FOUND);
@@ -1000,7 +997,7 @@ mod tests {
         let res = app
             .clone()
             .oneshot(get(
-                "/apostille/api/v1/auth/google/callback?error=access_denied&state=nope",
+                "/auth/google/callback?error=access_denied&state=nope",
                 "",
             ))
             .await
@@ -1016,10 +1013,7 @@ mod tests {
         // Unknown state → expired.
         let res = app
             .clone()
-            .oneshot(get(
-                "/apostille/api/v1/auth/google/callback?code=x&state=missing",
-                "",
-            ))
+            .oneshot(get("/auth/google/callback?code=x&state=missing", ""))
             .await
             .unwrap();
         let location = res
@@ -1033,7 +1027,7 @@ mod tests {
         let (status, body, _) = start_login(&app).await;
         assert_eq!(status, StatusCode::OK);
         let uri = format!(
-            "/apostille/api/v1/auth/google/callback?code=x&state={}",
+            "/auth/google/callback?code=x&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app.clone().oneshot(get(&uri, "")).await.unwrap();
@@ -1067,7 +1061,7 @@ mod tests {
         let (status, body, cookies) = start_login(&app).await;
         assert_eq!(status, StatusCode::OK);
         let uri = format!(
-            "/apostille/api/v1/auth/google/callback?code=code-1&state={}",
+            "/auth/google/callback?code=code-1&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app.clone().oneshot(get(&uri, &cookies)).await.unwrap();
@@ -1114,7 +1108,7 @@ mod tests {
         let (status, body, cookies) = start_login(&app).await;
         assert_eq!(status, StatusCode::OK);
         let uri = format!(
-            "/apostille/api/v1/auth/google/callback?code=code-1&state={}",
+            "/auth/google/callback?code=code-1&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app.clone().oneshot(get(&uri, &cookies)).await.unwrap();
@@ -1179,7 +1173,7 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let uri = format!(
-            "/apostille/api/v1/auth/google/callback?code=code-1&state={}",
+            "/auth/google/callback?code=code-1&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app
@@ -1211,7 +1205,7 @@ mod tests {
         let (status, body, cookies) = start_login(&app).await;
         assert_eq!(status, StatusCode::OK);
         let uri = format!(
-            "/apostille/api/v1/auth/google/callback?code=code-1&state={}",
+            "/auth/google/callback?code=code-1&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app.clone().oneshot(get(&uri, &cookies)).await.unwrap();

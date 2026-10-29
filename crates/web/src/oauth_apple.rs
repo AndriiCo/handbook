@@ -750,7 +750,7 @@ mod tests {
             cfg.apple_team_id.as_deref().unwrap(),
             cfg.apple_key_id.as_deref().unwrap(),
             cfg.apple_private_key.unwrap(),
-            "https://example.test/apostille/api/v1/auth/apple/callback",
+            "https://example.test/auth/apple/callback",
         );
         apple.auth_base = format!("{base}/auth");
         apple.token_url = format!("{base}/token");
@@ -979,10 +979,7 @@ mod tests {
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
         let res = app
             .clone()
-            .oneshot(get(
-                "/apostille/api/v1/auth/apple/callback?code=x&state=y",
-                "",
-            ))
+            .oneshot(get("/auth/apple/callback?code=x&state=y", ""))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::FOUND);
@@ -1056,7 +1053,7 @@ mod tests {
         let res = app
             .clone()
             .oneshot(get(
-                "/apostille/api/v1/auth/apple/callback?error=access_denied&state=nope",
+                "/auth/apple/callback?error=access_denied&state=nope",
                 "",
             ))
             .await
@@ -1066,10 +1063,7 @@ mod tests {
         // Unknown state → expired.
         let res = app
             .clone()
-            .oneshot(get(
-                "/apostille/api/v1/auth/apple/callback?code=c&state=nope",
-                "",
-            ))
+            .oneshot(get("/auth/apple/callback?code=c&state=nope", ""))
             .await
             .unwrap();
         assert!(location_of(&res).contains("oauth_expired"));
@@ -1077,7 +1071,7 @@ mod tests {
         let (status, body, _) = start_login(&app).await;
         assert_eq!(status, StatusCode::OK);
         let uri = format!(
-            "/apostille/api/v1/auth/apple/callback?code=c&state={}",
+            "/auth/apple/callback?code=c&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app.clone().oneshot(get(&uri, "")).await.unwrap();
@@ -1093,7 +1087,7 @@ mod tests {
         let (status, body, cookies) = start_login(&app).await;
         assert_eq!(status, StatusCode::OK);
         let uri = format!(
-            "/apostille/api/v1/auth/apple/callback?code=code-1&state={}",
+            "/auth/apple/callback?code=code-1&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app.clone().oneshot(get(&uri, &cookies)).await.unwrap();
@@ -1146,7 +1140,7 @@ mod tests {
         let (status, body, cookies) = start_login(&app).await;
         assert_eq!(status, StatusCode::OK);
         let uri = format!(
-            "/apostille/api/v1/auth/apple/callback?code=code-1&state={}",
+            "/auth/apple/callback?code=code-1&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app.clone().oneshot(get(&uri, &cookies)).await.unwrap();
@@ -1181,7 +1175,7 @@ mod tests {
         let (status, body, cookies) = start_login(&app).await;
         assert_eq!(status, StatusCode::OK);
         let uri = format!(
-            "/apostille/api/v1/auth/apple/callback?code=code-1&state={}",
+            "/auth/apple/callback?code=code-1&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app.clone().oneshot(get(&uri, &cookies)).await.unwrap();
@@ -1245,7 +1239,7 @@ mod tests {
         let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let uri = format!(
-            "/apostille/api/v1/auth/apple/callback?code=code-1&state={}",
+            "/auth/apple/callback?code=code-1&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app
@@ -1277,7 +1271,7 @@ mod tests {
         let (status, body, cookies) = start_login(&app).await;
         assert_eq!(status, StatusCode::OK);
         let uri = format!(
-            "/apostille/api/v1/auth/apple/callback?code=code-1&state={}",
+            "/auth/apple/callback?code=code-1&state={}",
             state_of(body["auth_url"].as_str().unwrap())
         );
         let res = app.clone().oneshot(get(&uri, &cookies)).await.unwrap();
