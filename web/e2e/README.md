@@ -22,4 +22,9 @@ cd web && PW_CHANNEL=chrome npm run test:e2e   # system Chrome (local iteration)
 
 Conventions for later suites: one spec file per flow, API
 mocked at `**/apostille/api/v1/**`, synthetic fixture values
-only, no fixed ports, no real network.
+only, no fixed ports, no real network. `cuj-*.spec.mjs` files
+drive Critical User Journeys through `helpers/cuj.mjs` and
+assert interaction budgets (see `docs/test-plans/README.md`):
+actions (clicks, submits, navigations) plus inputs (fills),
+ratcheting down — a UI change that adds steps fails until
+its budget line is consciously raised with a reason.

@@ -33,6 +33,9 @@
 		saving: boolean;
 		error: string | null;
 		saved: boolean;
+		// False for wizard fields the server list omits (never set):
+		// completion counts only server-present rows.
+		present?: boolean;
 	}
 
 	interface GuideField {
@@ -85,11 +88,24 @@
 		setupError = null;
 		try {
 			const list = await fetchSetupSteps(api(), setupKey);
-			// Carry `saved` across the refetch: saveSetup reloads
-			// progress right after each save, which must not wipe
-			// the "Saved." notice it just earned.
-			const was = new Map(setupRows.map((row) => [row.key, row.saved]));
-			setupRows = list.map((row) => ({ ...row, saved: was.get(row.key) ?? false }));
+			// Left-join every wizard field with the server list so
+			// ALL rows live in $state: previously unset keys got
+			// fresh plain objects per render, whose edits Svelte
+			// never tracked — their Save buttons stayed disabled
+			// forever. In-flight edits survive the refetch; the
+			// "Saved." flag carries across it.
+			const prev = new Map(setupRows.map((row) => [row.key, row]));
+			const server = new Map(list.map((row) => [row.key, row]));
+			setupRows = steps.flatMap((step) => step.keys).map((field) => {
+				const old = prev.get(field.key);
+				if (old && (old.dirty || old.saving)) return old;
+				const row = server.get(field.key);
+				const fresh: Row = row
+					? { ...row, saved: false, present: true }
+					: { ...synthRow(field), present: false };
+				fresh.saved = old?.saved ?? false;
+				return fresh;
+			});
 			setupState = 'ready';
 		} catch (err) {
 			setupError = err instanceof Error ? err.message : 'Setup steps failed.';
@@ -157,7 +173,7 @@
 		}
 	}
 
-	async function saveSetup(row: Row) {
+	async function saveSetup(row: Row): Promise<boolean> {
 		row.saving = true;
 		row.error = null;
 		try {
@@ -169,22 +185,43 @@
 				row.draft = '';
 			}
 			await loadSteps();
+			return true;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : 'Save failed.';
 			if (/window already closed/.test(message)) {
 				setupError = message;
 				setupState = 'failed';
-				return;
+				return false;
 			}
 			row.error = message;
+			return false;
 		} finally {
 			row.saving = false;
 		}
 	}
 
-	function setupRowFor(field: GuideField): Row {
-		const found = setupRows.find((row) => row.key === field.key);
-		if (found) return found;
+	// Step change with auto-save: dirty fields on the current step
+	// save first (sequentially, showing row errors); a failure
+	// keeps the operator on the step instead of losing edits.
+	let navSaving = $state(false);
+
+	async function goStep(i: number) {
+		if (i === stepIdx || navSaving) return;
+		const dirty = steps[stepIdx].keys.map(setupRowFor).filter((row) => row.dirty);
+		if (dirty.length > 0) {
+			navSaving = true;
+			try {
+				for (const row of dirty) {
+					if (!(await saveSetup(row))) return;
+				}
+			} finally {
+				navSaving = false;
+			}
+		}
+		stepIdx = i;
+	}
+
+	function synthRow(field: GuideField): Row {
 		if (field.type === 'bool') {
 			return { key: field.key, type: 'bool', value: false, dirty: false, saving: false, error: null, saved: false };
 		}
@@ -192,6 +229,12 @@
 			return { key: field.key, type: 'secret', set: false, draft: '', dirty: false, saving: false, error: null, saved: false };
 		}
 		return { key: field.key, type: 'text', value: '', dirty: false, saving: false, error: null, saved: false };
+	}
+
+	function setupRowFor(field: GuideField): Row {
+		// loadSteps left-joins every field, so the find always hits;
+		// the synth fallback only guards a future divergence.
+		return setupRows.find((row) => row.key === field.key) ?? synthRow(field);
 	}
 
 	function textValue(row: Row): string {
@@ -212,7 +255,7 @@
 		return step.keys.filter((field) => {
 			const row = setupRows.find((r) => r.key === field.key);
 			if (!row) return false;
-			if (row.type === 'bool') return true;
+			if (row.type === 'bool') return row.present === true;
 			if (row.type === 'secret') return row.set === true;
 			return textValue(row).trim().length > 0;
 		}).length;
@@ -305,8 +348,8 @@
 						<button
 							class={stepBtnCls(i === stepIdx)}
 							type="button"
-							disabled={i === stepIdx}
-							onclick={() => (stepIdx = i)}
+							disabled={i === stepIdx || navSaving}
+							onclick={() => goStep(i)}
 							aria-current={i === stepIdx ? 'step' : undefined}
 						>
 							{i + 1}. {step.title} ({stepDoneCount(step)}/{step.keys.length})
@@ -417,16 +460,18 @@
 			<div class="flex gap-2 pb-8">
 				{#if stepIdx > 0}
 					<button
-						class="min-h-11 cursor-pointer rounded-sm border border-line bg-bg px-5 font-bold [font:inherit]"
+						class="min-h-11 cursor-pointer rounded-sm border border-line bg-bg px-5 font-bold [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
 						type="button"
-						onclick={() => (stepIdx -= 1)}>← {steps[stepIdx - 1].title}</button
+						disabled={navSaving}
+						onclick={() => goStep(stepIdx - 1)}>← {steps[stepIdx - 1].title}</button
 					>
 				{/if}
 				{#if stepIdx < steps.length - 1}
 					<button
 						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
 						type="button"
-						onclick={() => (stepIdx += 1)}>{steps[stepIdx + 1].title} →</button
+						disabled={navSaving}
+						onclick={() => goStep(stepIdx + 1)}>{navSaving ? 'Saving…' : `${steps[stepIdx + 1].title} →`}</button
 					>
 				{/if}
 			</div>
@@ -450,9 +495,10 @@
 					{#each missingRequired as key (key)}
 						<li>
 							<button
-								class="min-h-11 cursor-pointer font-mono [font:inherit]"
+								class="min-h-11 cursor-pointer font-mono [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
 								type="button"
-								onclick={() => (stepIdx = stepFor(key))}
+								disabled={navSaving}
+								onclick={() => goStep(stepFor(key))}
 							>
 								{key}
 							</button>
