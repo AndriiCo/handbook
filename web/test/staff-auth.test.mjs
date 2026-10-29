@@ -12,7 +12,8 @@ import {
 	loginPasskey,
 	serializeAuthentication,
 	serializeRegistration,
-	validInviteShape
+	validInviteShape,
+	validSetupKeyShape
 } from '../src/lib/admin/staff-auth.js';
 
 describe('staff-auth buffers', () => {
@@ -72,6 +73,15 @@ describe('staff-auth shapes', () => {
 		assert.equal(validInviteShape(null), false);
 	});
 
+	it('validates setup-key shape without logging the value', () => {
+		assert.equal(validSetupKeyShape(`setup_${'a'.repeat(64)}`), true);
+		assert.equal(validSetupKeyShape(`setup_${'a'.repeat(63)}`), false);
+		assert.equal(validSetupKeyShape('a'.repeat(64)), false);
+		assert.equal(validSetupKeyShape(`setup_${'A'.repeat(64)}`), false);
+		assert.equal(validSetupKeyShape('setup_short'), false);
+		assert.equal(validSetupKeyShape(null), false);
+	});
+
 	it('detects transport failures only', () => {
 		assert.equal(isTransportFailure(new TypeError('fetch failed')), true);
 		assert.equal(isTransportFailure(new Error('HTTP 500')), false);
@@ -87,6 +97,15 @@ describe('staff-auth shapes', () => {
 		assert.match(enrolErrorCopy(409, 'credential already registered'), /already registered/);
 		assert.match(enrolErrorCopy(422, 'verification failed'), /Verification failed/);
 		assert.match(enrolErrorCopy(500, '<script>'), /Enrolment failed/);
+	});
+
+	it('maps setup-mode enrol failures to the window', () => {
+		assert.match(
+			enrolErrorCopy(410, 'invite invalid or expired', true),
+			/window already closed/
+		);
+		assert.match(enrolErrorCopy(400, 'x', true), /setup page/);
+		assert.match(enrolErrorCopy(429, 'rate limited', true), /wait a minute/);
 	});
 
 	it('maps login failures without leaking raw text', () => {
@@ -144,6 +163,41 @@ describe('staff-auth ceremonies with fakes', () => {
 		);
 		assert.equal(res.ok, true);
 		assert.equal(res.body.role, 'staff');
+		assert.deepEqual(seen, [
+			'/admin/auth/passkey/enrol/start',
+			'/admin/auth/passkey/enrol/finish'
+		]);
+	});
+
+	it('enrols in setup mode with the key instead of an invite', async () => {
+		const seen = [];
+		const io = {
+			post: async (path, body) => {
+				seen.push(path);
+				assert.ok(!('invite' in body), 'no invite in setup mode');
+				assert.equal(body.setup_key, `setup_${'b'.repeat(64)}`);
+				if (path.endsWith('/enrol/start')) {
+					return {
+						ok: true,
+						body: {
+							challenge_id: 'c9',
+							options: { challenge: b64urlEncode(new Uint8Array([9])) },
+							role: 'admin',
+							cn: 'setup'
+						}
+					};
+				}
+				assert.equal(body.challenge_id, 'c9');
+				return { ok: true, body: { user_id: 'u', methods: ['passkey'] } };
+			},
+			credentials: { create: async () => credential(), get: async () => credential() }
+		};
+		const res = await enrolPasskey(
+			{ setupKey: `setup_${'b'.repeat(64)}`, displayName: 'Op' },
+			io
+		);
+		assert.equal(res.ok, true);
+		assert.equal(res.body.role, 'admin');
 		assert.deepEqual(seen, [
 			'/admin/auth/passkey/enrol/start',
 			'/admin/auth/passkey/enrol/finish'

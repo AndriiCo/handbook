@@ -9,10 +9,22 @@
 
 	// Client-side session gate (onMount only — never runs during
 	// prerender, so the static build stays green). /admin/login
-	// and /admin/enrol are exempt (redirect loop otherwise).
+	// and /admin/enrol are exempt (redirect loop otherwise), and
+	// /admin/config is exempt while the setup window is open (no
+	// session can exist yet — the page runs the wizard instead).
 	onMount(async () => {
 		const path = window.location.pathname;
 		if (path === '/admin/login' || path === '/admin/enrol') return;
+		if (path === '/admin/config') {
+			try {
+				const setup = await fetch('/apostille/api/v1/admin/setup/status', {
+					credentials: 'same-origin'
+				});
+				if (setup.ok && (await setup.json().catch(() => ({})))?.setup_required) return;
+			} catch {
+				// Fall through to the session check below.
+			}
+		}
 		try {
 			const res = await fetch('/apostille/api/v1/admin/me', { credentials: 'same-origin' });
 			if (res.status === 401 || res.status === 403) {

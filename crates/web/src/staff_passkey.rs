@@ -28,17 +28,23 @@ use auth::passkey as store;
 
 /// Enrol-start challenge payload: the ceremony state plus the
 /// invite hash the flow started with (finish compares — binds the
-/// ceremony to its invite).
+/// ceremony to its invite). Setup-mode ceremonies (§9.2) carry an
+/// empty hash with `setup = true` instead.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct EnrolState {
     reg: PasskeyRegistration,
     invite_hash: String,
+    #[serde(default)]
+    setup: bool,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EnrolStartBody {
-    invite: String,
+    invite: Option<String>,
+    /// First-boot path (§9.2): the CLI-minted setup key, accepted
+    /// INSTEAD of invite + client cert while the window is open.
+    setup_key: Option<String>,
     display_name: String,
     label: Option<String>,
 }
@@ -67,49 +73,98 @@ pub async fn enrol_start(
     let Some(conn) = passkey::open_conn(&state) else {
         return store_unavailable();
     };
-    if body.invite.len() != 64 || !body.invite.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "invite malformed"})),
-        )
-            .into_response();
-    }
-    let invite_hash = auth::login::token_hash(&body.invite);
-    let Some((role, cn)) = store::get_invite(&conn, &invite_hash, now).unwrap_or(None) else {
-        return (
-            StatusCode::GONE,
-            Json(json!({"error": "invite invalid or expired"})),
-        )
-            .into_response();
+    let setup_mode = match (body.invite.as_deref(), body.setup_key.as_deref()) {
+        (Some(_), Some(_)) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "invite or setup_key, not both"})),
+            )
+                .into_response();
+        }
+        (None, None) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "invite or setup_key required"})),
+            )
+                .into_response();
+        }
+        (Some(_), None) => false,
+        (None, Some(_)) => true,
     };
-    let Some((fingerprint, presented_cn)) = super::admin::presented_cert_cn(
-        &headers,
-        verified.as_ref().map(|ext| &ext.0),
-        &state,
-        &conn,
-        now,
-    ) else {
-        passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "no cert");
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "client cert required"})),
+    // Setup-mode: the key alone replaces invite + cert (§9.2, D45).
+    // The first staffer is always an admin (they own the server they
+    // just configured). Refusals reuse the invite-gone shape exactly
+    // — no oracle for whether the window is open.
+    let (role, cn, fingerprint, invite_hash) = if setup_mode {
+        let key = body.setup_key.as_deref().unwrap_or("");
+        let ok = match state.kek.as_ref() {
+            Some(kek) => {
+                let hash = handbook_store::store::sha256_hex(key.as_bytes());
+                config::verify_setup_key(&conn, kek, &hash).unwrap_or(false)
+            }
+            None => false,
+        };
+        if !ok {
+            passkey::audit_auth(&conn, now, "anonymous", "setup.denied", &ip);
+            return (
+                StatusCode::GONE,
+                Json(json!({"error": "invite invalid or expired"})),
+            )
+                .into_response();
+        }
+        (
+            "admin".to_string(),
+            "setup".to_string(),
+            String::new(),
+            String::new(),
         )
-            .into_response();
-    };
-    if presented_cn != cn {
-        passkey::audit_auth(
+    } else {
+        let invite = body.invite.as_deref().unwrap_or("");
+        if invite.len() != 64 || !invite.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "invite malformed"})),
+            )
+                .into_response();
+        }
+        let invite_hash = auth::login::token_hash(invite);
+        let Some((role, cn)) = store::get_invite(&conn, &invite_hash, now).unwrap_or(None) else {
+            return (
+                StatusCode::GONE,
+                Json(json!({"error": "invite invalid or expired"})),
+            )
+                .into_response();
+        };
+        let Some((fingerprint, presented_cn)) = super::admin::presented_cert_cn(
+            &headers,
+            verified.as_ref().map(|ext| &ext.0),
+            &state,
             &conn,
             now,
-            "anonymous",
-            "staff_enrol_refused",
-            "cn mismatch",
-        );
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "certificate does not match invitation"})),
-        )
-            .into_response();
-    }
+        ) else {
+            passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "no cert");
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"error": "client cert required"})),
+            )
+                .into_response();
+        };
+        if presented_cn != cn {
+            passkey::audit_auth(
+                &conn,
+                now,
+                "anonymous",
+                "staff_enrol_refused",
+                "cn mismatch",
+            );
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"error": "certificate does not match invitation"})),
+            )
+                .into_response();
+        }
+        (role, cn, fingerprint, invite_hash)
+    };
     if body.display_name.is_empty() || body.display_name.len() > 128 {
         return (
             StatusCode::BAD_REQUEST,
@@ -140,6 +195,7 @@ pub async fn enrol_start(
     let enrol = EnrolState {
         reg: reg_state,
         invite_hash,
+        setup: setup_mode,
     };
     let Ok(state_json) = serde_json::to_string(&enrol) else {
         return store_unavailable();
@@ -181,7 +237,10 @@ pub async fn enrol_start(
 pub(crate) struct EnrolFinishBody {
     challenge_id: String,
     credential: RegisterPublicKeyCredential,
-    invite: String,
+    invite: Option<String>,
+    /// Setup-mode ceremonies re-present the key (burn-before-persist
+    /// races fail closed here).
+    setup_key: Option<String>,
     label: Option<String>,
 }
 
@@ -223,84 +282,122 @@ pub async fn enrol_finish(
     let Ok(enrol) = serde_json::from_str::<EnrolState>(&state_json) else {
         return store_unavailable();
     };
-    let invite_hash = auth::login::token_hash(&body.invite);
-    if invite_hash != enrol.invite_hash {
-        return (
-            StatusCode::GONE,
-            Json(json!({"error": "invite invalid or expired"})),
+    // Setup-mode finish (§9.2): the key is re-presented and the
+    // window burns BEFORE the ceremony verifies (consume-before-
+    // persist discipline — a burn lost to a concurrent enrol
+    // fails closed; re-mint is the recovery). Invite-mode keeps
+    // the cert recheck + consume below, untouched.
+    let (role, cn, fingerprint) = if enrol.setup {
+        let key = body.setup_key.as_deref().unwrap_or("");
+        let ok = match state.kek.as_ref() {
+            Some(kek) => {
+                let hash = handbook_store::store::sha256_hex(key.as_bytes());
+                config::verify_setup_key(&conn, kek, &hash).unwrap_or(false)
+            }
+            None => false,
+        };
+        if !ok {
+            passkey::audit_auth(&conn, now, "anonymous", "setup.denied", &ip);
+            return (
+                StatusCode::GONE,
+                Json(json!({"error": "invite invalid or expired"})),
+            )
+                .into_response();
+        }
+        if !crate::setup::burn_setup_key(&conn, &user_id, now) {
+            return (
+                StatusCode::GONE,
+                Json(json!({"error": "invite invalid or expired"})),
+            )
+                .into_response();
+        }
+        (
+            "admin".to_string(),
+            "setup".to_string(),
+            "setup-key".to_string(),
         )
-            .into_response();
-    }
-    if !state.auth_limits.check(
-        &format!("ef:{}", &invite_hash[..16.min(invite_hash.len())]),
-        now,
-        10,
-        60,
-    ) {
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(json!({"error": "rate limited"})),
-        )
-            .into_response();
-    }
-    // Cert recheck BEFORE consume (TOCTOU guard): a cert revoked
-    // between start and finish fails here without burning the
-    // invite.
-    let Some((fingerprint, presented_cn)) = super::admin::presented_cert_cn(
-        &headers,
-        verified.as_ref().map(|ext| &ext.0),
-        &state,
-        &conn,
-        now,
-    ) else {
-        passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "no cert");
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "client cert required"})),
-        )
-            .into_response();
-    };
-    // CN match BEFORE consume: a mismatch must not burn the
-    // invite (an attacker holding another staffer's cert could
-    // otherwise DoS the enrolment by burning it; without the
-    // burn their retries can never succeed).
-    let Some((role, cn)) = store::get_invite(&conn, &invite_hash, now).unwrap_or(None) else {
-        passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "invite");
-        return (
-            StatusCode::GONE,
-            Json(json!({"error": "invite invalid or expired"})),
-        )
-            .into_response();
-    };
-    if cn != presented_cn {
-        passkey::audit_auth(
+    } else {
+        let invite = body.invite.as_deref().unwrap_or("");
+        let invite_hash = auth::login::token_hash(invite);
+        if invite_hash != enrol.invite_hash {
+            return (
+                StatusCode::GONE,
+                Json(json!({"error": "invite invalid or expired"})),
+            )
+                .into_response();
+        }
+        if !state.auth_limits.check(
+            &format!("ef:{}", &invite_hash[..16.min(invite_hash.len())]),
+            now,
+            10,
+            60,
+        ) {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({"error": "rate limited"})),
+            )
+                .into_response();
+        }
+        // Cert recheck BEFORE consume (TOCTOU guard): a cert revoked
+        // between start and finish fails here without burning the
+        // invite.
+        let Some((fingerprint, presented_cn)) = super::admin::presented_cert_cn(
+            &headers,
+            verified.as_ref().map(|ext| &ext.0),
+            &state,
             &conn,
             now,
-            "anonymous",
-            "staff_enrol_refused",
-            "cn mismatch",
-        );
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "certificate does not match invitation"})),
-        )
-            .into_response();
-    }
-    // Consume BEFORE persisting (race-loss → 410): a burned
-    // invite on later ceremony failure fails closed (fresh
-    // invite is the recovery), while persisting first would
-    // orphan credentials.
-    if store::consume_invite(&conn, &invite_hash, &user_id, now)
-        .unwrap_or(None)
-        .is_none()
-    {
-        passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "invite");
-        return (
-            StatusCode::GONE,
-            Json(json!({"error": "invite invalid or expired"})),
-        )
-            .into_response();
-    }
+        ) else {
+            passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "no cert");
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"error": "client cert required"})),
+            )
+                .into_response();
+        };
+        // CN match BEFORE consume: a mismatch must not burn the
+        // invite (an attacker holding another staffer's cert could
+        // otherwise DoS the enrolment by burning it; without the
+        // burn their retries can never succeed).
+        let Some((role, cn)) = store::get_invite(&conn, &invite_hash, now).unwrap_or(None) else {
+            passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "invite");
+            return (
+                StatusCode::GONE,
+                Json(json!({"error": "invite invalid or expired"})),
+            )
+                .into_response();
+        };
+        if cn != presented_cn {
+            passkey::audit_auth(
+                &conn,
+                now,
+                "anonymous",
+                "staff_enrol_refused",
+                "cn mismatch",
+            );
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"error": "certificate does not match invitation"})),
+            )
+                .into_response();
+        }
+        // Consume BEFORE persisting (race-loss → 410): a burned
+        // invite on later ceremony failure fails closed (fresh
+        // invite is the recovery), while persisting first would
+        // orphan credentials.
+        if store::consume_invite(&conn, &invite_hash, &user_id, now)
+            .unwrap_or(None)
+            .is_none()
+        {
+            passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "invite");
+            return (
+                StatusCode::GONE,
+                Json(json!({"error": "invite invalid or expired"})),
+            )
+                .into_response();
+        }
+        (role, cn, fingerprint)
+    };
     // UV is enforced inside `finish_passkey_registration` (the
     // crate requests UV Required at every start — a non-UV
     // ceremony fails closed here, identically for customer and

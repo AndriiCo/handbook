@@ -29,6 +29,7 @@ mod p2_labels;
 mod passkey;
 mod queue;
 mod quic;
+mod setup;
 mod staff_passkey;
 mod ws_bus;
 

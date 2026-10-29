@@ -55,6 +55,7 @@ fn main() {
         Some("config-get") => config::run_get(&args[1..]),
         Some("config-verify") => config::run_verify(&args[1..]),
         Some("config-rotate") => config::run_rotate(&args[1..]),
+        Some("setup-key-mint") => config::run_setup_key_mint(&args[1..]),
         Some("admin-cert-issue") => admin_cert::run_issue(&args[1..]),
         Some("admin-cert-verify") => admin_cert::run_verify(&args[1..]),
         Some("admin-cert-revoke") => admin_cert::run_revoke(&args[1..]),
@@ -101,6 +102,7 @@ Tasks:
   packs-validate  validate packs/*.json (F13; needs_review invariants)
   packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)
+  setup-key-mint  mint the first-boot setup key (§9; prints once)
   admin-cert-issue|verify|revoke  admin mTLS client certs
   admin-invite  staff enrolment invite (spec customer-auth.md §5.1)
   admin-offboard  staff offboard: certs, sessions, creds, lock (§5.6)

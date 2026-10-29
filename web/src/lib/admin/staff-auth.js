@@ -107,6 +107,15 @@ export function validInviteShape(value) {
 }
 
 /**
+ * Setup-key shape (`setup_` + 64 lowercase hex). The server
+ * re-validates; this only decides render-vs-error. Never logs it.
+ * @param {string | null} value
+ */
+export function validSetupKeyShape(value) {
+	return typeof value === 'string' && /^setup_[0-9a-f]{64}$/.test(value);
+}
+
+/**
  * True when a fetch threw at the network layer (TLS handshake
  * failure — the missing-client-cert case — surfaces as a
  * TypeError, same as the machine being offline).
@@ -122,12 +131,14 @@ export const CANCELLED_COPY = 'Cancelled — no changes were made.';
 
 /**
  * Run staff enrolment: start → navigator.create → finish.
- * @param {any} input {invite, displayName, label?}
+ * @param {any} input {invite?, setupKey?, displayName, label?} —
+ * exactly one of invite/setupKey (setup mode burns the key).
  * @param {any} io injectable browser surface ({credentials, post})
  */
 export async function enrolPasskey(input, io) {
+	const gate = input.setupKey ? { setup_key: input.setupKey } : { invite: input.invite };
 	const started = await io.post('/admin/auth/passkey/enrol/start', {
-		invite: input.invite,
+		...gate,
 		display_name: input.displayName,
 		...(input.label ? { label: input.label } : {})
 	});
@@ -138,7 +149,7 @@ export async function enrolPasskey(input, io) {
 	const done = await io.post('/admin/auth/passkey/enrol/finish', {
 		challenge_id: started.body.challenge_id,
 		credential,
-		invite: input.invite,
+		...gate,
 		...(input.label ? { label: input.label } : {})
 	});
 	// Carry the grant echo forward so the page can confirm the
@@ -170,15 +181,23 @@ export async function loginPasskey(account, io) {
  * @param {number} status
  * @param {string} serverError
  */
-export function enrolErrorCopy(status, serverError) {
-	if (status === 400) return 'This invite link is malformed — ask your admin for a new one.';
+export function enrolErrorCopy(status, serverError, setupMode = false) {
+	if (status === 400) {
+		return setupMode
+			? 'Start over from the setup page — the request was malformed.'
+			: 'This invite link is malformed — ask your admin for a new one.';
+	}
 	if (status === 403 && serverError === 'client cert required') return CERT_MISSING_COPY;
 	if (status === 403 && serverError === 'certificate does not match invitation') {
 		return 'This device certificate does not match the invite — enrol on the device holding the invited certificate.';
 	}
 	if (status === 403) return 'Session expired — reload and try again.';
 	if (status === 409) return 'This security key is already registered — use a different key or ask your admin.';
-	if (status === 410) return 'Invite invalid, expired, or already used — ask your admin for a new one.';
+	if (status === 410) {
+		return setupMode
+			? 'Setup key invalid, or the window already closed (a passkey was enrolled).'
+			: 'Invite invalid, expired, or already used — ask your admin for a new one.';
+	}
 	if (status === 422) return 'Verification failed — try again.';
 	if (status === 429) return 'Too many attempts — wait a minute and try again.';
 	return 'Enrolment failed — try again.';

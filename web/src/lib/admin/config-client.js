@@ -17,6 +17,7 @@
  * @property {boolean} dirty
  * @property {boolean} saving
  * @property {string | null} error
+ * @property {boolean} [saved]
  */
 
 /**

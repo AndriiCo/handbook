@@ -336,3 +336,133 @@ mTLS cert, and staff/admin role.
 8. `xtask` running as root for enroll/rotate vs a dedicated
    `handbook-admin` group with sudo rules — which fits the deploy
    story?
+
+## 9. Setup wizard — first-boot configuration
+
+Status: APPROVED (prompt 056, D43–D45) — implementation underway.
+
+Goal: `/admin/config` takes a fresh server from zero to
+fully-configured with one hand-provisioned secret (the setup
+key) and per-provider step-by-step guides. No server shell
+beyond KEK enrol + setup-key mint; no mTLS cert or staff
+invite for the first admin. Non-goals (v1): provider-OAuth
+login-to-configure (D43 — Gmail OAuth stays a future step);
+live credential validation (format checks only).
+
+### 9.1 Setup key lifecycle
+
+- Mint (server shell, store-writer — root or `andrii-ai`):
+  `xtask setup-key-mint --store <dir> [--force]` prints one
+  `setup_` + 64-hex-char key (256-bit CSPRNG) ONCE and
+  stores its SHA-256 hex in the sealed config row
+  `setup.key_hash` (new registry key, `Secret` — registry
+  grows 56→57). Refuses when staff credentials already exist
+  unless `--force` (break-glass re-mint). Audits
+  `setup_key.minted` (never the key).
+- Resume: the same key re-opens the wizard any time before
+  the burn. No sessions, no expiry: the key rides an
+  `x-setup-key` header on every setup request (a custom
+  header is CSRF-safe by construction — no CORS allowlist
+  exists to forge it cross-origin).
+- Burn: the first successful staff passkey enrol deletes the
+  `setup.key_hash` row (idempotent; audits `setup.burned`
+  only when a row actually died). After the burn the setup
+  window is closed permanently — old keys 403, and enrolment
+  returns to invite + mTLS-cert only.
+- `setup_required` = the `setup.key_hash` row exists. Admin
+  PUT on `setup.*` is refused (422) — mint/burn are the only
+  writers. The key appears in the admin list as presence-only
+  `Secret` (Set = window open), like every other secret.
+
+### 9.2 SetupAuth + endpoint contract (admin router only)
+
+`SetupAuth` extractor: read `x-setup-key`, SHA-256 it,
+constant-time compare against the decrypted
+`setup.key_hash`. Failures audit `setup.denied` (no key
+material); attempts are per-IP budgeted (30/60s, the
+enrol-start budget) via the shared `auth_limits` buckets →
+429. SetupAuth NEVER grants AdminAuth powers: no queue, no
+facts, no sessions.
+
+- `GET /apostille/api/v1/admin/setup/status` →
+  `{setup_required: bool}`. Public on the admin host: a bare
+  boolean leaks nothing beyond "fresh server".
+- `GET /apostille/api/v1/admin/setup/steps` (SetupAuth) →
+  `{keys: [{key, type, set}]}` — same row shape as the config
+  list, wizard-subset only (all registry keys except
+  `setup.*`). The SPA owns step grouping + guides; the
+  server stays dumb.
+- `POST /apostille/api/v1/admin/setup/keys/{key}`
+  (SetupAuth, `{type, value}`, deny-unknown-fields) → sealed
+  put + audit (actor `setup`). Same validation as admin
+  PUT, minus step-up (no session exists — the key IS the
+  auth). Unknown key or `setup.*` → 422/404 mirroring admin
+  PUT exactly.
+- Enrol setup-mode: while `setup_required`,
+  `POST .../auth/passkey/enrol/start` also accepts
+  `{setup_key}` INSTEAD of invite + client cert (handshake
+  already allows certless — `allow_unauthenticated`, app
+  layer enforces). `EnrolState` records setup-mode;
+  `enrol/finish` creates the staff account, burns the key,
+  and returns the normal staff session. After the burn the
+  setup-key path returns the same error shape as a bad
+  invite (no oracle).
+
+### 9.3 Wizard steps (SPA-owned) + required set
+
+0. Key entry → 1. Site & network → 2. Certificates (ACME) →
+3. Staff identity (passkey RP) → 4. Customer login (Google /
+Apple / Meta) → 5. AI models (Meta API + terms) →
+6. Voice (Telnyx) → 7. Mail (SMTP + Gmail poll) →
+8. Postage (USPS) → 9. Review → passkey enrol (burns key).
+
+Required to finish (no usable prod default — compiled
+fallbacks are loopback/dev; subsystem dead without):
+`net.public_host`, `net.bind`, `paths.static_dir`,
+`paths.spa_dir`, `paths.admin_spa_dir`,
+`paths.acme_challenge_dir`, `tls.cert_file`, `tls.key_file`,
+`tls.client_ca_file`, `acme.email`, `acme.domains`,
+`auth.rp_id`, `auth.rp_name`, `auth.origin`,
+`meta.api_key`, `media.terms_read=true`, `telnyx.api_key`,
+`telnyx.from_number`, `telnyx.connection_id`,
+`telnyx.webhook_public_key`, `mailer.host`,
+`mailer.username`, `mailer.password`, `mailer.from`,
+`mail.client_id`, `mail.client_secret`,
+`mail.refresh_token`. Everything else is optional in v1
+(defaults OK, or a later feature: customer login, USPS,
+QUIC, mTLS-off).
+
+Enrol may run before the wizard finishes: burning the key
+only closes the wizard — the new full-admin session keeps
+the complete config page. Required-set gating is guidance,
+not a lock.
+
+### 9.4 Frontend contract (`(admin)/admin/config`)
+
+- On mount: `GET setup/status`. `setup_required=true` →
+  setup mode (key entry, then steps with per-provider guide
+  beside each field group, progress + review). Otherwise →
+  the existing flat key list, unchanged.
+- Setup key lives in page memory only (never localStorage);
+  every setup request carries it as `x-setup-key`.
+- Guides ship as `web/src/lib/admin/setup-guides.js`
+  (reviewed content, versioned with the SPA). Secrets stay
+  write-only in both modes; `setup.*` never renders an
+  input.
+- `bundled:taste` preflight applies (new user-visible
+  surface).
+
+### 9.5 Audit vocabulary
+
+`setup_key.minted` (xtask), `setup.denied`,
+`setup.rate_limited`, per-key puts (actor `setup`, existing
+config-audit shape), `staff_enrolled` (existing, setup-mode
+noted in detail), `setup.burned`.
+
+### 9.6 Rollout + drill
+
+Backend → guides → UI → fresh-DB drill: KEK enrol → mint →
+wizard through all 9 steps → enrol → assert burn (old key
+403s, status false, normal invite+cert enrol for a second
+staffer still works) → ship. No schema migration: the hash
+lives in `config`, denials in `audit`.

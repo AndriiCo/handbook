@@ -11,9 +11,10 @@
 //! loud DEV-CRYPTO banner (file KEK, synthetic data only) and the
 //! `.cred` step stays a provisioning-time operation.
 //!
-//! Tables come from the shared migration (`006_config.sql`): every task
-//! runs [`handbook_store::db::migrate`] on open, so there is exactly one
-//! schema path and no ad-hoc `CREATE TABLE` to collide with upgrades.
+//! Tables come from the shared baseline (`schema_baseline.sql`): every
+//! task runs [`handbook_store::db::migrate`] on open, so there is
+//! exactly one schema path and no ad-hoc `CREATE TABLE` to collide
+//! with upgrades.
 
 use chacha20poly1305::{
     KeyInit, XChaCha20Poly1305, XNonce,
@@ -265,6 +266,94 @@ pub fn run_set(args: &[String]) {
     println!("set {key} ({kind})");
 }
 
+/// Live, unrevoked staff/admin passkeys. The mint gate (§9.1):
+/// nonzero without `--force` refuses (the window already closed).
+fn staff_passkey_count(conn: &rusqlite::Connection) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM webauthn_credential c
+         JOIN account a ON a.user_id = c.user_id
+         WHERE c.revoked_at IS NULL AND a.role IN ('staff', 'admin')",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Mint + seal + store one setup key, auditing the mint. Returns
+/// the key (the caller prints it once). Overwrites any prior row,
+/// so re-mint invalidates the old key.
+fn mint_setup_key(
+    conn: &rusqlite::Connection,
+    kek: &Kek,
+    version: i64,
+    actor: &str,
+    now: i64,
+) -> Result<String, String> {
+    let raw: [u8; 32] = rand::random();
+    let key = format!(
+        "setup_{}",
+        raw.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    );
+    let hash = handbook_store::store::sha256_hex(key.as_bytes());
+    let blob = seal(
+        hash.as_bytes(),
+        sealed_config::keys::SETUP_KEY_HASH,
+        version,
+        kek,
+    )?;
+    handbook_store::db::in_transaction(conn, || {
+        conn.execute(
+            "INSERT INTO config(key, type, value_enc, enc_version, updated_at, updated_by)
+             VALUES (?1, 'secret', ?2, ?3, ?4, ?5)
+             ON CONFLICT(key) DO UPDATE SET
+               type = excluded.type, value_enc = excluded.value_enc,
+               enc_version = excluded.enc_version, updated_at = excluded.updated_at,
+               updated_by = excluded.updated_by",
+            rusqlite::params![
+                sealed_config::keys::SETUP_KEY_HASH,
+                blob,
+                version,
+                now,
+                actor
+            ],
+        )?;
+        conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+             VALUES (?1, ?2, 'setup_key.minted', 'config', 0, ?3)",
+            rusqlite::params![now, actor, sealed_config::keys::SETUP_KEY_HASH],
+        )?;
+        Ok(())
+    })
+    .map_err(|e| e.to_string())?;
+    Ok(key)
+}
+
+/// `setup-key-mint --store <dir> --kek-file <path> [--actor <a>]
+/// [--force]`: mint the first-boot setup key (secure-config.md
+/// §9.1). Prints the key ONCE. Refuses when live staff passkeys
+/// exist unless `--force` (break-glass re-mint invalidates the old
+/// key by overwrite).
+pub fn run_setup_key_mint(args: &[String]) {
+    let store = crate::open_store(args);
+    let conn = open_conn(&store).unwrap_or_else(|e| fail(&e));
+    auth::migrate_auth_tables(&conn).unwrap_or_else(|e| fail(&e.to_string()));
+    let staff = staff_passkey_count(&conn).unwrap_or_else(|e| fail(&e));
+    let force = args.iter().any(|a| a == "--force");
+    if staff > 0 && !force {
+        fail(
+            "staff passkeys already exist: the setup window is closed (use --force to break glass)",
+        );
+    }
+    let kek = read_kek(args).unwrap_or_else(|e| fail(&e));
+    let version = active_version(&conn)
+        .unwrap_or_else(|e| fail(&e))
+        .unwrap_or_else(|| fail("no active KEK: run `cargo xtask config-enroll` first"));
+    let at = crate::unix_now();
+    let actor = crate::flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
+    let key = mint_setup_key(&conn, &kek, version, &actor, at).unwrap_or_else(|e| fail(&e));
+    println!("setup key (prints ONCE — paste into /admin/config to start setup):\n  {key}");
+}
+
 /// `config-get --key <k>`: decrypt and print. `secret` keys refuse.
 pub fn run_get(args: &[String]) {
     let store = crate::open_store(args);
@@ -419,6 +508,86 @@ mod tests {
             [],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn setup_key_mint_stores_hash_only() {
+        let (_dir, _store, conn, kek_path) = setup();
+        enroll_v1(&conn);
+        auth::migrate_auth_tables(&conn).unwrap();
+        assert_eq!(staff_passkey_count(&conn).unwrap(), 0);
+        let kek = read_kek_file(&kek_path).unwrap();
+        let key = mint_setup_key(&conn, &kek, 1, "tester", 100).unwrap();
+        assert!(key.starts_with("setup_"));
+        assert_eq!(key.len(), 70);
+        // The sealed row verifies through the config-crate path,
+        // and the raw key appears nowhere in the table.
+        let raw = std::fs::read(&kek_path).unwrap();
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&raw);
+        let ckek = sealed_config::Kek::from_bytes(bytes);
+        let hash = handbook_store::store::sha256_hex(key.as_bytes());
+        assert!(sealed_config::verify_setup_key(&conn, &ckek, &hash).unwrap());
+        let leak: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM config WHERE value_enc = ?1",
+                [key.as_bytes()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(leak, 0);
+        let minted: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'setup_key.minted'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(minted, 1);
+        // Re-mint overwrites: the old key dies with its row.
+        let key2 = mint_setup_key(&conn, &kek, 1, "tester", 101).unwrap();
+        assert_ne!(key, key2);
+        assert!(!sealed_config::verify_setup_key(&conn, &ckek, &hash).unwrap());
+        let hash2 = handbook_store::store::sha256_hex(key2.as_bytes());
+        assert!(sealed_config::verify_setup_key(&conn, &ckek, &hash2).unwrap());
+    }
+
+    #[test]
+    fn setup_key_gate_counts_live_staff_passkeys() {
+        let (_dir, _store, conn, _kek_path) = setup();
+        auth::migrate_auth_tables(&conn).unwrap();
+        assert_eq!(staff_passkey_count(&conn).unwrap(), 0);
+        conn.execute(
+            "INSERT INTO account(user_id, role, created_at) VALUES ('u1', 'admin', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO webauthn_credential(credential_id, user_id, passkey_json, created_at)
+             VALUES ('c1', 'u1', '{}', 1)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(staff_passkey_count(&conn).unwrap(), 1);
+        // Customer passkeys and revoked staff rows do not trip it.
+        conn.execute(
+            "INSERT INTO account(user_id, role, created_at) VALUES ('u2', 'customer', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO webauthn_credential(credential_id, user_id, passkey_json, created_at)
+             VALUES ('c2', 'u2', '{}', 1)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(staff_passkey_count(&conn).unwrap(), 1);
+        conn.execute(
+            "UPDATE webauthn_credential SET revoked_at = 2 WHERE credential_id = 'c1'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(staff_passkey_count(&conn).unwrap(), 0);
     }
 
     #[test]

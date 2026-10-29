@@ -436,6 +436,48 @@ pub fn get_secret_for_job(conn: &Connection, kek: &Kek, key: &str) -> Result<Opt
     decrypt_value(kek, key, enc_version, &value_enc).map(Some)
 }
 
+/// Delete one config row (the setup-key burn). Returns false when
+/// no row existed. The caller writes the audit row.
+pub fn delete_value(conn: &Connection, key: &str) -> Result<bool> {
+    let removed = conn.execute("DELETE FROM config WHERE key = ?1", [key])?;
+    Ok(removed > 0)
+}
+
+/// Verify a setup-key candidate against the sealed
+/// `setup.key_hash` row (secure-config.md §9). The caller hashes
+/// the candidate (SHA-256 hex) — this function only compares, so
+/// secret bytes never cross into the web layer. False when no row
+/// exists (window closed) or the row is not a secret.
+pub fn verify_setup_key(conn: &Connection, kek: &Kek, candidate_hash_hex: &str) -> Result<bool> {
+    let row: Option<(String, Vec<u8>, i64)> = conn
+        .query_row(
+            "SELECT type, value_enc, enc_version FROM config WHERE key = ?1",
+            [keys::SETUP_KEY_HASH],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((type_text, value_enc, enc_version)) = row else {
+        return Ok(false);
+    };
+    if type_text != ConfigType::Secret.as_str() {
+        return Ok(false);
+    }
+    let stored = decrypt_value(kek, keys::SETUP_KEY_HASH, enc_version, &value_enc)?;
+    Ok(ct_eq(&stored, candidate_hash_hex.as_bytes()))
+}
+
+/// Branchless fixed-shape compare (length + XOR accumulation):
+/// no early exit on first mismatch.
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
+}
+
 /// Re-encrypt every row from `old_kek` to `new_kek` under
 /// `new_version`, inside one transaction. Returns rows rotated.
 pub fn rotate(
@@ -719,6 +761,46 @@ mod tests {
     }
 
     #[test]
+    fn setup_key_verify_and_burn() {
+        let conn = memory();
+        let kek = Kek::generate();
+        // No row: window closed.
+        assert!(!verify_setup_key(&conn, &kek, &"a".repeat(64)).expect("verify"));
+        assert!(!delete_value(&conn, keys::SETUP_KEY_HASH).expect("delete"));
+        let hash = "b".repeat(64);
+        put(
+            &conn,
+            &kek,
+            keys::SETUP_KEY_HASH,
+            ConfigType::Secret,
+            hash.as_bytes(),
+        )
+        .expect("set");
+        assert!(verify_setup_key(&conn, &kek, &hash).expect("verify"));
+        assert!(!verify_setup_key(&conn, &kek, &"c".repeat(64)).expect("verify"));
+        assert!(!verify_setup_key(&conn, &kek, "short").expect("verify"));
+        // Burn removes the row; a second burn is a no-op false.
+        assert!(delete_value(&conn, keys::SETUP_KEY_HASH).expect("delete"));
+        assert!(!delete_value(&conn, keys::SETUP_KEY_HASH).expect("delete"));
+        assert!(!verify_setup_key(&conn, &kek, &hash).expect("verify"));
+    }
+
+    #[test]
+    fn setup_key_verify_refuses_non_secret_row() {
+        let conn = memory();
+        let kek = Kek::generate();
+        put(
+            &conn,
+            &kek,
+            keys::SETUP_KEY_HASH,
+            ConfigType::Text,
+            b"not-a-hash-row",
+        )
+        .expect("set");
+        assert!(!verify_setup_key(&conn, &kek, "not-a-hash-row").expect("verify"));
+    }
+
+    #[test]
     fn values_are_validated() {
         let conn = memory();
         let kek = Kek::generate();
@@ -842,6 +924,10 @@ pub mod keys {
     pub const MAILER_PASSWORD: &str = "mailer.password";
     pub const MAILER_FROM: &str = "mailer.from";
     pub const MAILER_DIR: &str = "mailer.dir";
+    /// Setup-wizard gate (secure-config.md §9): SHA-256 hex of the
+    /// CLI-minted setup key. Writers are mint/burn only — admin
+    /// PUT and setup PUT both refuse `setup.*`.
+    pub const SETUP_KEY_HASH: &str = "setup.key_hash";
 
     /// Every registered key with its type (admin UI + roundtrip tests).
     pub const ALL: &[(&str, super::ConfigType)] = &[
@@ -901,6 +987,7 @@ pub mod keys {
         (MAILER_PASSWORD, super::ConfigType::Secret),
         (MAILER_FROM, super::ConfigType::Text),
         (MAILER_DIR, super::ConfigType::Text),
+        (SETUP_KEY_HASH, super::ConfigType::Secret),
     ];
 }
 
@@ -1722,16 +1809,17 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_56_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 56);
+    fn registry_holds_57_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 57);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
-        // Nine secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
+        // Ten secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
         // client secrets, Meta Model API key, Gmail client secret +
-        // refresh token, mailer password); five bools (quic.enabled is
-        // the fifth); rest text (auth.* adds three, google/apple/meta
-        // ids six, mailer.* six, meta.* one, mail.* three).
+        // refresh token, mailer password, setup key hash); five bools
+        // (quic.enabled is the fifth); rest text (auth.* adds three,
+        // google/apple/meta ids six, mailer.* six, meta.* one, mail.*
+        // three).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1740,7 +1828,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (5, 42, 9));
+        assert_eq!(counts, (5, 42, 10));
     }
 
     #[test]

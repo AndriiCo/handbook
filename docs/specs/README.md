@@ -331,3 +331,21 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     stub (OPEN-30). Themes stay CSS-var-driven (no `dark:` variants
     until a page needs non-var colors). See
     [../ui-framework-proposal.md](../ui-framework-proposal.md).
+39. D4 live-model plan approved as-is (author, 2026-10-28): no new
+    binaries; pinned Meta/Gmail shapes; queue-not-pause; suppression
+    A+B; Gmail historyId watermark; embedding vectors deferred.
+40. §11 review-queue spec approved as-is (author, 2026-10-28);
+    OQ-1..5 stay open.
+41. Both prod timers enabled (author, 2026-10-28): watch (daily)
+    + mail-poll (15 min) via the deploy train (root install).
+42. Gmail consent: publish + verify once (author, 2026-10-28) —
+    no Testing-mode weekly re-consent.
+43. Setup wizard v1 is all-manual with guides (author,
+    2026-10-28): no provider-OAuth login-to-configure; Gmail
+    OAuth stays a future step. See [secure-config.md §9](secure-config.md).
+44. Setup key is CLI-minted + sealed in DB, hash-only (author,
+    2026-10-28): the one hand-configured server secret; same key
+    resumes until the first staff passkey enrol burns it.
+45. Setup window needs no mTLS cert (author, 2026-10-28): the
+    setup key alone gates the wizard + first enrol; the window
+    closes permanently at burn.

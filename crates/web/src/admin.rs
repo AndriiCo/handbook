@@ -249,6 +249,17 @@ pub async fn csrf_guard(
     {
         return next.run(req).await;
     }
+    // Setup wizard (§9): no cookies exist before the first enrol, so
+    // the double-submit check cannot apply. The setup handlers do
+    // their own Origin check, and the custom `x-setup-key` header is
+    // CSRF-safe by construction (no CORS allowlist to forge it).
+    if req
+        .uri()
+        .path()
+        .starts_with("/apostille/api/v1/admin/setup/")
+    {
+        return next.run(req).await;
+    }
     let fail = || {
         (
             StatusCode::FORBIDDEN,
@@ -322,6 +333,18 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/apostille/api/v1/admin/config", get(get_config))
         .route("/apostille/api/v1/admin/config/{key}", put(set_config))
+        .route(
+            "/apostille/api/v1/admin/setup/status",
+            get(crate::setup::setup_status),
+        )
+        .route(
+            "/apostille/api/v1/admin/setup/steps",
+            get(crate::setup::setup_steps),
+        )
+        .route(
+            "/apostille/api/v1/admin/setup/keys/{key}",
+            post(crate::setup::setup_set_key),
+        )
         .route(
             "/apostille/api/v1/admin/auth/passkey/enrol/start",
             post(crate::staff_passkey::enrol_start),
@@ -446,6 +469,15 @@ async fn set_config(
         )
             .into_response();
     };
+    // The setup gate is mint/burn only (§9.1): an admin PUT must
+    // never reopen or clobber the setup window.
+    if key.starts_with("setup.") {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "setup keys are mint/burn only"})),
+        )
+            .into_response();
+    }
     let Some(key_type) = config::ConfigType::parse(&body.key_type) else {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
