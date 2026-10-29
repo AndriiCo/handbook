@@ -279,6 +279,20 @@ pub async fn register_start(
                 )
                     .into_response();
             }
+            // Device cap (decision 54): refuse before minting a
+            // doomed challenge. The finish-side check is
+            // authoritative (closes the two-tab race).
+            if store::live_credential_count(&conn, &s.user_id).unwrap_or(0)
+                >= store::MAX_CREDENTIALS_PER_ACCOUNT
+            {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(
+                        json!({"error": "device limit reached: remove a passkey to add a new one"}),
+                    ),
+                )
+                    .into_response();
+            }
             let ids = store::credentials_for_user(&conn, &s.user_id).unwrap_or_default();
             let exclude: Vec<CredentialID> =
                 ids.iter().filter_map(|(id, _)| parse_cred_id(id)).collect();
@@ -446,11 +460,28 @@ pub async fn register_finish(
         )
             .into_response();
     }
-    if store::ensure_account(&conn, &user_id, now).is_err()
-        || store::store_credential(&conn, &user_id, &credential_id, &passkey_json, label, now)
-            .is_err()
-    {
+    if store::ensure_account(&conn, &user_id, now).is_err() {
         return store_unavailable();
+    }
+    match store::store_credential_capped(
+        &conn,
+        &user_id,
+        &credential_id,
+        &passkey_json,
+        label,
+        now,
+        store::MAX_CREDENTIALS_PER_ACCOUNT,
+    ) {
+        Ok(()) => {}
+        Err(store::StoreCredentialError::CapReached) => {
+            audit_auth(&conn, now, &user_id, "passkey_cap_refused", "");
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({"error": "device limit reached: remove a passkey to add a new one"})),
+            )
+                .into_response();
+        }
+        Err(store::StoreCredentialError::Db(_)) => return store_unavailable(),
     }
     if session.is_none()
         && let Some(email) = body.email.as_deref().and_then(valid_email)
@@ -1561,5 +1592,58 @@ mod tests {
             call(&app, &cookies, &token, "meta", "sub-m").await,
             StatusCode::CONFLICT
         );
+    }
+
+    #[tokio::test]
+    async fn register_start_mode_b_enforces_device_cap() {
+        let (tmp, app) = test_app();
+        let store = handbook_store::store::Store::new(tmp.path());
+        let conn = handbook_store::db::open(&store).unwrap();
+        let now = unix_now();
+        let user_id = auth::passkey::mint_user_id();
+        auth::passkey::ensure_account(&conn, &user_id, now).unwrap();
+        auth::create_session(
+            &conn,
+            "sess-cap",
+            &auth::NewSession {
+                user_id: &user_id,
+                role: auth::Role::Customer,
+                customer_ref: Some(&user_id),
+                now,
+                ip: "127.0.0.1",
+                user_agent: "test",
+            },
+        )
+        .unwrap();
+        for n in 0..store::MAX_CREDENTIALS_PER_ACCOUNT {
+            auth::passkey::store_credential(&conn, &user_id, &format!("cred-{n}"), "{}", "", now)
+                .unwrap();
+        }
+        drop(conn);
+        let cookies = format!("{}=sess-cap", auth::PUB_COOKIE);
+        // At cap: 409 with the remove-a-device copy (fresh session
+        // passes the step-up gate, so the cap is what fires).
+        let res = app
+            .clone()
+            .oneshot(post_json(
+                "/apostille/api/v1/auth/passkey/register/start",
+                &cookies,
+                r#"{"label":"extra"}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        let denied: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            denied["error"],
+            "device limit reached: remove a passkey to add a new one"
+        );
+        // Remove one → a slot frees and start succeeds.
+        let conn = handbook_store::db::open(&store).unwrap();
+        auth::passkey::revoke_credential(&conn, &user_id, "cred-0", unix_now()).unwrap();
+        drop(conn);
+        let (status, _, _) = start_register(&app, "", &cookies).await;
+        assert_eq!(status, StatusCode::OK);
     }
 }

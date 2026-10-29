@@ -284,6 +284,44 @@ pub fn set_step_up(conn: &Connection, user_id: &str, now: i64) -> rusqlite::Resu
     Ok(())
 }
 
+/// Clear step-up (RISC `force_step_up` signals): the next sensitive
+/// action demands a fresh authentication.
+pub fn clear_step_up(conn: &Connection, user_id: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE account SET step_up_at = NULL WHERE user_id = ?1",
+        [user_id],
+    )?;
+    Ok(())
+}
+
+/// Max live passkeys per account (decision 54): 5 devices,
+/// self-service remove frees a slot. Counts live
+/// `webauthn_credential` rows only — never `identity_link`, whose
+/// email/OAuth rows would pollute the count.
+pub const MAX_CREDENTIALS_PER_ACCOUNT: usize = 5;
+
+/// Live (unrevoked) credential count for one account.
+pub fn live_credential_count(conn: &Connection, user_id: &str) -> rusqlite::Result<usize> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM webauthn_credential WHERE user_id = ?1 AND revoked_at IS NULL",
+        [user_id],
+        |row| row.get(0),
+    )
+}
+
+/// Capped-insert failure: the device cap vs a storage error.
+#[derive(Debug)]
+pub enum StoreCredentialError {
+    CapReached,
+    Db(rusqlite::Error),
+}
+
+impl From<rusqlite::Error> for StoreCredentialError {
+    fn from(err: rusqlite::Error) -> Self {
+        StoreCredentialError::Db(err)
+    }
+}
+
 /// Clear the magic-link fallback window (passkey login worked).
 pub fn clear_fallback(conn: &Connection, user_id: &str) -> rusqlite::Result<()> {
     conn.execute(
@@ -302,6 +340,29 @@ pub fn lock_account(conn: &Connection, user_id: &str, now: i64) -> rusqlite::Res
     Ok(())
 }
 
+/// The two rule-1 writes, run inside the caller's immediate
+/// transaction.
+fn insert_credential_rows(
+    conn: &Connection,
+    user_id: &str,
+    credential_id: &str,
+    passkey_json: &str,
+    label: &str,
+    now: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO webauthn_credential(credential_id, user_id, passkey_json, label, created_at, last_used_at, revoked_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL)",
+        rusqlite::params![credential_id, user_id, passkey_json, label, now],
+    )?;
+    conn.execute(
+        "INSERT INTO identity_link(user_id, method, provider_sub, email_hash, verified_email, is_relay, disabled_at)
+         VALUES (?1, 'passkey', ?2, NULL, 0, 0, NULL)",
+        rusqlite::params![user_id, credential_id],
+    )?;
+    Ok(())
+}
+
 /// Insert a credential + its `identity_link` companion row
 /// atomically (rule 1). A globally duplicate credential id is an
 /// `Err` (caller maps to 409 + audit).
@@ -314,18 +375,38 @@ pub fn store_credential(
     now: i64,
 ) -> rusqlite::Result<()> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
+    let done = insert_credential_rows(conn, user_id, credential_id, passkey_json, label, now);
+    match done {
+        Ok(()) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
+}
+
+/// Capped insert (device cap, decision 54): the live-count check
+/// runs inside the same immediate transaction as the writes, so
+/// two racing finishes cannot both pass (SQLite single writer).
+pub fn store_credential_capped(
+    conn: &Connection,
+    user_id: &str,
+    credential_id: &str,
+    passkey_json: &str,
+    label: &str,
+    now: i64,
+    cap: usize,
+) -> Result<(), StoreCredentialError> {
+    conn.execute_batch("BEGIN IMMEDIATE")?;
     let done = (|| {
-        conn.execute(
-            "INSERT INTO webauthn_credential(credential_id, user_id, passkey_json, label, created_at, last_used_at, revoked_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL)",
-            rusqlite::params![credential_id, user_id, passkey_json, label, now],
-        )?;
-        conn.execute(
-            "INSERT INTO identity_link(user_id, method, provider_sub, email_hash, verified_email, is_relay, disabled_at)
-             VALUES (?1, 'passkey', ?2, NULL, 0, 0, NULL)",
-            rusqlite::params![user_id, credential_id],
-        )?;
-        Ok::<_, rusqlite::Error>(())
+        if live_credential_count(conn, user_id)? >= cap {
+            return Err(StoreCredentialError::CapReached);
+        }
+        insert_credential_rows(conn, user_id, credential_id, passkey_json, label, now)?;
+        Ok::<_, StoreCredentialError>(())
     })();
     match done {
         Ok(()) => {
@@ -624,6 +705,95 @@ mod tests {
         assert_eq!(
             credential_owner(&conn, "cred-1").unwrap(),
             Some(("u-1".to_string(), "{}".to_string()))
+        );
+    }
+
+    #[test]
+    fn capped_insert_enforces_device_cap() {
+        let conn = memory();
+        ensure_account(&conn, "u-1", 1000).unwrap();
+        ensure_account(&conn, "u-2", 1000).unwrap();
+        for n in 0..MAX_CREDENTIALS_PER_ACCOUNT {
+            store_credential_capped(
+                &conn,
+                "u-1",
+                &format!("cred-{n}"),
+                "{}",
+                "",
+                1000,
+                MAX_CREDENTIALS_PER_ACCOUNT,
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            live_credential_count(&conn, "u-1").unwrap(),
+            MAX_CREDENTIALS_PER_ACCOUNT
+        );
+        // The 6th fails typed, with no orphan identity row; the
+        // other account is unaffected.
+        assert!(matches!(
+            store_credential_capped(
+                &conn,
+                "u-1",
+                "cred-6",
+                "{}",
+                "",
+                1000,
+                MAX_CREDENTIALS_PER_ACCOUNT
+            ),
+            Err(StoreCredentialError::CapReached)
+        ));
+        assert_eq!(
+            live_method_count(&conn, "u-1").unwrap(),
+            MAX_CREDENTIALS_PER_ACCOUNT
+        );
+        store_credential_capped(
+            &conn,
+            "u-2",
+            "cred-b",
+            "{}",
+            "",
+            1000,
+            MAX_CREDENTIALS_PER_ACCOUNT,
+        )
+        .unwrap();
+        // Revoked rows leave the live count (remove frees a slot).
+        revoke_credential(&conn, "u-1", "cred-0", 1100).unwrap();
+        assert_eq!(
+            live_credential_count(&conn, "u-1").unwrap(),
+            MAX_CREDENTIALS_PER_ACCOUNT - 1
+        );
+        store_credential_capped(
+            &conn,
+            "u-1",
+            "cred-6",
+            "{}",
+            "",
+            1100,
+            MAX_CREDENTIALS_PER_ACCOUNT,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn step_up_clears() {
+        let conn = memory();
+        ensure_account(&conn, "u-1", 1000).unwrap();
+        set_step_up(&conn, "u-1", 1100).unwrap();
+        assert!(
+            get_account(&conn, "u-1")
+                .unwrap()
+                .unwrap()
+                .step_up_at
+                .is_some()
+        );
+        clear_step_up(&conn, "u-1").unwrap();
+        assert!(
+            get_account(&conn, "u-1")
+                .unwrap()
+                .unwrap()
+                .step_up_at
+                .is_none()
         );
     }
 
