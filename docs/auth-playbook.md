@@ -1,5 +1,10 @@
 # Auth Playbook (operator checklist + linking rules)
 
+- Retrieval click-paths (§§2–4) moved into the setup wizard
+  ([secure-config.md](specs/secure-config.md) §9,
+  `web/src/lib/admin/setup-guides.js`) — first boot pastes
+  values there, not from here. The flow, linking, and
+  callback rules below stay normative.
 - Status: decided direction (prompt 008 Q4); verify each portal's
   exact clicks in its current UI before executing.
 - Customer login: **passkey first, Sign in with Apple, Sign in with

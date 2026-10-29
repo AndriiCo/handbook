@@ -269,6 +269,9 @@ mTLS cert, and staff/admin role.
    cat` on `.cred` and on `$CREDENTIALS_DIRECTORY` must fail; DB
    copy to a second VM must not decrypt (documents the machine
    boundary).
+5. `xtask setup-key-mint`, then open `/admin/config` in a
+   browser and follow the wizard (§9) — no further shell
+   config needed.
 
 ## 6. Local-dev fallback (Mac, no TPM) — loud by design
 

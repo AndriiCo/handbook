@@ -7,8 +7,11 @@ factors on every admin request, neither alone grants anything.
 
 This slice adds **no config keys** (certs live as files under
 `<store>/admin-certs/`, invites as rows in `staff_invite`,
-both keyless by design) — see
-[config-values.md](config-values.md#staff-passkeys-phase-4).
+both keyless by design). First-boot exception: the setup
+wizard ([secure-config.md](../specs/secure-config.md) §9) lets
+the first staffer enrol with the setup key instead of cert +
+invite, then burns the key — everything below covers the
+second staffer onward.
 
 Conventions: `--store` defaults to `store` (run from the repo
 root or pass `--store /var/lib/apostille` on the server as
