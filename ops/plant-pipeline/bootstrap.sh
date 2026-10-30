@@ -42,13 +42,20 @@ ssh plant 'set -euo pipefail
   # Playwright browsers (user-level; system libs already present with Chrome).
   # Failure here is non-fatal: the worker falls back to PW_CHANNEL=chrome.
   (npx -y playwright@1.64.1 install chromium 2>&1 | tail -n 3) || echo PW-INSTALL-DEFERRED
-  # Start (or confirm) the worker: systemd user unit first, setsid fallback.
+  # Persistence: plant has Linger=no, so the systemd user manager
+  # stops user units at logout (enabling linger needs root — forbidden).
+  # The cron watchdog below is the real persistence: cron jobs live
+  # under system.slice and survive user-manager teardown. The systemd
+  # unit stays for fast pickup while logged in; flock keeps one worker.
+  ( crontab -l 2>/dev/null | grep -v "apostille-pipeline" | grep -v "^PATH=/usr/local/bin:/usr/bin:/bin$"; cat <<EOF
+PATH=/usr/local/bin:/usr/bin:/bin
+* * * * * $HOME/apostille-pipeline/bin/worker.sh loop >>$HOME/apostille-pipeline/worker.log 2>&1
+EOF
+  ) | crontab - && echo CRON-WATCHDOG-OK
   (systemctl --user daemon-reload && systemctl --user enable --now apostille-pipeline-worker.service 2>&1 | tail -n 2) || true
   sleep 2
   if pgrep -f "worker.sh loop" >/dev/null; then echo WORKER-ALIVE; else
-    cd ~/apostille-pipeline && setsid ./bin/worker.sh loop >>worker.log 2>&1 < /dev/null
-    sleep 2
-    pgrep -f "worker.sh loop" >/dev/null && echo WORKER-ALIVE-FALLBACK || { echo "ABORT: worker did not start; see ~/apostille-pipeline/worker.log"; exit 1; }
+    echo "WORKER-VIA-CRON-WITHIN-60S (logged out soon, cron revives; check: ssh plant pgrep -af worker.sh)"
   fi
   echo ---; cargo --version; rustc --version; node --version
 '

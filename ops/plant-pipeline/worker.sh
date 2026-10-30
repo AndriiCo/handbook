@@ -102,7 +102,11 @@ process_one() { # returns 0 if a job was processed, 1 if queue empty
   local src="$ROOT/runs/$run/src" ok=1
   if [ -f "$ROOT/running/$run.tar.gz" ]; then
     rm -rf "$ROOT/runs/$run"; mkdir -p "$src"
-    if stage "$run" setup bash -c "tar -xzf '$ROOT/running/$run.tar.gz' -C '$src'"; then
+    if stage "$run" setup bash -c "
+      tar -xzf '$ROOT/running/$run.tar.gz' -C '$src' &&
+      cd '$src' && git init -q -b plant && git add -A &&
+      git -c user.email=plant@localhost -c user.name=plant commit -qm 'plant $sha'
+    "; then
       if [ "$type" = probe ]; then run_probe "$run" "$src" && ok=0 || ok=1
       else run_build "$run" "$src" && ok=0 || ok=1; fi
     else ok=1; fi

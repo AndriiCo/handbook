@@ -15,7 +15,7 @@
 		"check:imports": "node scripts/check-imports.mjs",
 		"check:tailwind": "node scripts/check-tailwind.mjs",
 		"smoke": "node scripts/smoke.mjs",
-		"test": "node --test test/",
+		"test": "node --test \"test/**/*.test.mjs\"",
 		"test:e2e": "playwright test",
 		"shots": "node scripts/shots.mjs"
 	},

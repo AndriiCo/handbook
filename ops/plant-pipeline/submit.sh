@@ -18,8 +18,9 @@ done
 cd "$(git rev-parse --show-toplevel)"
 SHA="${SHA:-$(git rev-parse HEAD)}"
 git cat-file -e "$SHA^{commit}" 2>/dev/null || { echo "ABORT: not a commit: $SHA (commit first; plant builds committed SHAs only)"; exit 2; }
-if [ -n "$(git status --porcelain)" ]; then
-  echo "ABORT: dirty tree — commit or stash first (plant builds $SHA exactly, your edits would not ship)" >&2
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "ABORT: tracked edits uncommitted — commit or stash first (plant builds $SHA exactly, your edits would not ship)" >&2
+  git status --porcelain --untracked-files=no >&2
   exit 2
 fi
 
@@ -29,7 +30,7 @@ ACTOR="$(whoami)@$(hostname -s)"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-git archive --format=tar.gz --prefix=src/ "$SHA" >"$TMP/$RUN.tar.gz"
+git archive --format=tar.gz "$SHA" >"$TMP/$RUN.tar.gz"
 jq -n --arg run "$RUN" --arg sha "$SHA" --arg type "$TYPE" --arg actor "$ACTOR" \
   --arg ts "$(date -u +%FT%TZ)" '{run:$run,sha:$sha,type:$type,actor:$actor,created_at:$ts,attempt:1}' \
   >"$TMP/$RUN.json"

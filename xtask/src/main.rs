@@ -265,7 +265,7 @@ fn run_ci() {
     // then both builds (smoke needs them fresh from this run).
     // (`web-budget` is advisory-only since 2026-10-28 — the author
     // removed the size gate; initial-page optimization is deferred.)
-    run_or_exit("node", &["--test", "web/test/"]);
+    run_or_exit("node", &["--test", "web/test/**/*.test.mjs"]);
     run_or_exit("npm", &["run", "check", "--prefix", "web"]);
     run_or_exit("npm", &["run", "check:imports", "--prefix", "web"]);
     run_or_exit("npm", &["run", "build", "--prefix", "web"]);

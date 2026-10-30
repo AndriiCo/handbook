@@ -56,11 +56,15 @@ worker.log    worker loop log
 
 ## Worker
 
-`worker.sh loop` runs as a systemd user service
-(`apostille-pipeline-worker.service`, no root) with a `setsid`
-fallback. Singleton via `flock -n`. One job at a time, 10 s poll.
-After a plant reboot any ssh login re-arms it via `.bashrc` hook
-(the hook is a no-op when the worker already holds the lock).
+`worker.sh loop` persists via a user-crontab watchdog (every
+minute; cron jobs live under `system.slice` and survive logout).
+This is the real persistence because plant has `Linger=no`: the
+systemd user manager stops user units at logout, and enabling
+linger needs root (forbidden). A systemd user unit
+(`apostille-pipeline-worker.service`) also exists for fast pickup
+while logged in. Singleton via `flock -n`: whichever starts
+first holds the lock, the other exits quietly. One job at a
+time, 10 s poll. Worst-case pickup after a reboot is ~60 s.
 
 ## Failure semantics
 
