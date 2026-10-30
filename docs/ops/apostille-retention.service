@@ -1,0 +1,51 @@
+# apostille-retention.service — PROPOSED (no enable decision yet;
+# enable only when the author calls it. Install prerequisite: none
+# beyond the deploy train, which already ships `xtask retention-sweep`).
+#
+# One-shot retention sweep: delete voice audio captures older than
+# 365 days (capture row + file inside the store, session link
+# nulled, one audit row each). Transcripts, annotations, and consent
+# records are never touched. Triggered by apostille-retention.timer,
+# daily.
+#
+# Install (as root, once): copy this file + apostille-retention.timer
+# to /etc/systemd/system/, `systemctl daemon-reload && systemctl
+# enable --now apostille-retention.timer`.
+#
+# Privilege summary: runs as andrii-ai:andrii-ai, no capabilities,
+# no network, no KEK, one writable dir (the live store only — the job
+# writes no second dir, so there is no second StateDirectory).
+[Unit]
+Description=Apostille Handbook retention sweep (voice audio older than 365 days)
+
+[Service]
+Type=oneshot
+User=andrii-ai
+Group=andrii-ai
+ExecStart=/srv/apostille/current/xtask retention-sweep --store /var/lib/apostille --actor timer
+# No Environment=STORE_DIR: xtask takes --store explicitly (F1).
+StateDirectory=apostille
+WorkingDirectory=/var/lib/apostille
+# 0027, not the backup unit's 0077: the job's only new files are
+# SQLite journal/WAL side files in the live store, which is already
+# group-readable (watch-unit precedent); 0077 belongs to the
+# owner-only backup tree this job never touches.
+UMask=0027
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ReadWritePaths=/var/lib/apostille
+# No network: the job only deletes rows/files inside the live store
+# (AF_NETLINK kept for NSS/tmpfiles, backup-unit precedent).
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native

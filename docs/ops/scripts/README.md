@@ -50,3 +50,5 @@ Scripts:
   daily → scratch restore → loopback re-port → scratch boot
   as andrii-ai → healthz + packs + config-verify → envelope
   attestation without disclosure → teardown). Run 3×.
+- `ops-packs-seed.sh` — root: full seed (packs-load of ALL
+  live packs, load-only, never fetch; counts before/after).
