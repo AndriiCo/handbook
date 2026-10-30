@@ -443,14 +443,12 @@ async fn demo_login(
         .into_response()
 }
 
-/// DEMO session check: missing/unknown/expired token → 401.
+/// DEMO session check: a valid token returns the customer ref, while a
+/// missing/unknown/expired token returns 200 `{"user": null}` so the
+/// anonymous probe in the public shell never logs a console error.
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
-    let unauthorized = || {
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "unauthorized"})),
-        )
-            .into_response()
+    let anonymous = || {
+        (StatusCode::OK, Json(json!({"user": null}))).into_response()
     };
     let token = headers
         .get(header::COOKIE)
@@ -462,17 +460,17 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> impl IntoRespo
                 .find_map(|pair| pair.strip_prefix("demo_session="))
         });
     let Some(token) = token.filter(|t| !t.is_empty()) else {
-        return unauthorized();
+        return anonymous();
     };
     let conn = match db::open(&Store::new(&state.store_root)) {
         Ok(conn) => conn,
         Err(_) => return store_unavailable(),
     };
     let Ok(Some((customer_ref, expires_at))) = db::get_demo_session(&conn, token) else {
-        return unauthorized();
+        return anonymous();
     };
     if unix_now() >= expires_at {
-        return unauthorized();
+        return anonymous();
     }
     (
         StatusCode::OK,
@@ -1457,7 +1455,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn me_without_cookie_is_unauthorized() {
+    async fn me_without_cookie_is_anonymous() {
         let tmp = tempfile::tempdir().unwrap();
         let res = session_app(tmp.path())
             .oneshot(
@@ -1468,14 +1466,14 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(res.status(), StatusCode::OK);
         let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["error"], "unauthorized");
+        assert_eq!(v, serde_json::json!({"user": null}));
     }
 
     #[tokio::test]
-    async fn me_with_bogus_cookie_is_unauthorized() {
+    async fn me_with_bogus_cookie_is_anonymous() {
         let tmp = tempfile::tempdir().unwrap();
         let res = session_app(tmp.path())
             .oneshot(
@@ -1487,10 +1485,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(res.status(), StatusCode::OK);
         let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["error"], "unauthorized");
+        assert_eq!(v, serde_json::json!({"user": null}));
     }
 
     #[tokio::test]
@@ -1530,7 +1528,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn me_with_expired_cookie_is_unauthorized() {
+    async fn me_with_expired_cookie_is_anonymous() {
         let tmp = tempfile::tempdir().unwrap();
         let store = Store::new(tmp.path());
         store.init().unwrap();
@@ -1548,10 +1546,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(res.status(), StatusCode::OK);
         let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["error"], "unauthorized");
+        assert_eq!(v, serde_json::json!({"user": null}));
     }
 
     #[tokio::test]
