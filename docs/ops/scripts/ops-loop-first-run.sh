@@ -55,9 +55,15 @@ STORE=/var/lib/apostille
 CREDS=/var/lib/apostille/.loop-creds
 STAGED=$CREDS/handbook-kek
 [ -r "$STAGED" ] || { echo "ABORT: no staged KEK (root stages it per run)" >&2; exit 1; }
+# No `exec`: it replaces the shell, so an EXIT trap would never fire
+# (seen 2026-10-30: staged KEK survived to the §7 fallback). The trap
+# covers signals; the explicit rm covers the normal path.
 trap 'rm -f "$STAGED"' EXIT
 export CREDENTIALS_DIRECTORY="$CREDS"
-exec "$XTASK" analyze --store "$STORE" --check
+"$XTASK" analyze --store "$STORE" --check
+CODE=$?
+rm -f "$STAGED"
+exit $CODE
 WRAPPER
 chmod 0755 "$SBIN/apostille-loop"
 chown root:root "$SBIN/apostille-loop"
@@ -138,8 +144,9 @@ sudo -u hal sudo -n -u andrii-ai /usr/local/sbin/apostille-loop \
 
 echo "=== 7. verify: staged KEK gone, no root-owned residue, counts after"
 if [ -e "$STAGED" ]; then
-    echo "WARNING: staged KEK survived the wrapper trap — deleting now"
+    echo "WARNING: staged KEK survived the wrapper — deleting now"
     rm -f "$STAGED"
+    [ -e "$STAGED" ] && { echo "ABORT: staged KEK undeletable"; exit 1; }
 fi
 rmdir "$CREDS" 2>/dev/null || echo "WARNING: $CREDS not empty, left in place (inspect)"
 ROOT_OWNED="$(find "$STORE" -user root -print || true)"
