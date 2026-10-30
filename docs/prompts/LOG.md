@@ -6,3 +6,4 @@
 | 101 | 2026-10-30 13:20Z | A1 quote-verified citations: validator, drafted_by, public shape | web 240 + agent 40 green, refusal proven |
 | 102 | 2026-10-30 13:45Z | GP1 home: /me 200 null, featured links, skeleton loading | check/builds/imports/tailwind/tests green |
 | 103 | 2026-10-30 14:05Z | GP2-page dossier: name h1, live WS, citation hover | check/builds/imports/tests green, no browser |
+| 104 | 2026-10-30 14:30Z | GP3 login: providers endpoint, webauthn input, passkey button | web 241 + node 95 green, voice flake noted |

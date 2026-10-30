@@ -22,10 +22,22 @@
 	let busy = $state(false);
 	let me = $state<{ user_id: string } | null>(null);
 	let oauthError = $state<string | null>(null);
+	let providers = $state<string[] | null>(null);
 	let magicEmail = $state('');
 	let magicSent = $state(false);
 	let magicBusy = $state(false);
 	let magicStarted = false;
+
+	// Official provider artwork, dropped in by the operator
+	// (see lib/assets/brand/README.md). Missing file → text button.
+	const brandUrls = import.meta.glob(
+		'../../../lib/assets/brand/*.svg',
+		{ eager: true, query: '?url', import: 'default' }
+	) as Record<string, string>;
+	const brandFor = (provider: string): string | null => {
+		const key = Object.keys(brandUrls).find((k) => k.endsWith(`/${provider}.svg`));
+		return key ? brandUrls[key] : null;
+	};
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
@@ -174,6 +186,23 @@
 				if (body?.user_id) me = { user_id: body.user_id };
 			})
 			.catch(() => {});
+		// OAuth buttons render only for providers this deployment
+		// configured (unknown ids are dropped, never rendered).
+		fetch(api('/auth/providers'), { credentials: 'same-origin' })
+			.then((res) => (res.ok ? res.json() : null))
+			.then((body) => {
+				const list = body?.providers;
+				if (Array.isArray(list)) {
+					providers = list.filter(
+						(p) => typeof p === 'string' && OAUTH_PROVIDERS.includes(p)
+					);
+				} else {
+					providers = [];
+				}
+			})
+			.catch(() => {
+				providers = [];
+			});
 		// Callback-failure copy from ?error= (friendly map, never raw
 		// server text); the param is dropped so a retry starts clean.
 		// $effect runs client-side only, so window is safe (and this
@@ -220,12 +249,12 @@
 			type="text"
 			bind:value={account}
 			required
-			autocomplete="username"
+			autocomplete="username webauthn"
 		/>
 		<button
 			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="submit"
-			disabled={busy}>Log in</button
+			disabled={busy}>Sign in with passkey</button
 		>
 	</form>
 
@@ -269,16 +298,24 @@
 		<p class="max-w-[28rem] rounded-sm border border-line bg-error-bg px-4 py-3" role="alert">{error}</p>
 	{/if}
 
-	{#each OAUTH_PROVIDERS as provider (provider)}
-		<button
-			class="mb-2 block min-h-11 w-full max-w-[28rem] cursor-pointer rounded-sm border border-line bg-bg px-4 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
-			type="button"
-			disabled={busy}
-			onclick={() => oauthLogin(provider)}
-		>
-			Continue with {OAUTH_LABELS[provider]}
-		</button>
-	{/each}
+	{#if providers === null}
+		<p class="max-w-[28rem] text-sm text-ink-muted" role="status">Checking sign-in options…</p>
+	{:else}
+		{#each providers as provider (provider)}
+			{@const logo = brandFor(provider)}
+			<button
+				class="mb-2 flex min-h-11 w-full max-w-[28rem] cursor-pointer items-center justify-center gap-2 rounded-sm border border-line bg-bg px-4 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
+				type="button"
+				disabled={busy}
+				onclick={() => oauthLogin(provider)}
+			>
+				{#if logo}
+					<img src={logo} alt="" width="18" height="18" class="size-[18px] flex-none" />
+				{/if}
+				Continue with {OAUTH_LABELS[provider] ?? provider}
+			</button>
+		{/each}
+	{/if}
 
 	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={magicRequest}>
 		<h2 class="m-0 text-[1.1rem]">Or get an email link</h2>

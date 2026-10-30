@@ -288,6 +288,7 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/profile/unlink", post(passkey::unlink))
         .route("/api/v1/auth/logout", post(passkey::logout))
         .route("/api/v1/auth/me", get(passkey::me))
+        .route("/api/v1/auth/providers", get(auth_providers))
         .route("/api/v1/auth/google/start", post(oauth::start))
         .route("/api/v1/auth/apple/start", post(oauth_apple::start))
         .route("/api/v1/auth/meta/start", post(oauth_meta::start))
@@ -443,12 +444,35 @@ async fn demo_login(
         .into_response()
 }
 
-/// DEMO session check: a valid token returns the customer ref, while a
-/// missing/unknown/expired token returns 200 `{"user": null}` so the
-/// anonymous probe in the public shell never logs a console error.
+/// `GET /auth/providers` — OAuth provider ids configured in THIS
+/// deployment (credentials present). The login page renders one button
+/// per entry and nothing for unconfigured providers.
+async fn auth_providers(State(state): State<AppState>) -> impl IntoResponse {
+    let mut providers = Vec::new();
+    if state.google_cfg.is_some() {
+        providers.push("google");
+    }
+    if state.apple_cfg.is_some() {
+        providers.push("apple");
+    }
+    if state.meta_cfg.is_some() {
+        providers.push("meta");
+    }
+    (StatusCode::OK, Json(json!({"providers": providers}))).into_response()
+}
+
+/// DEMO session check: a valid token returns the customer ref. Callers
+/// presenting no credential get 200 `{"user": null}` so the anonymous
+/// probe in the public shell never logs a console error; a
+/// presented-but-unknown/expired token is still 401.
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
-    let anonymous = || {
-        (StatusCode::OK, Json(json!({"user": null}))).into_response()
+    let anonymous = || (StatusCode::OK, Json(json!({"user": null}))).into_response();
+    let unauthorized = || {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "unauthorized"})),
+        )
+            .into_response()
     };
     let token = headers
         .get(header::COOKIE)
@@ -467,10 +491,10 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> impl IntoRespo
         Err(_) => return store_unavailable(),
     };
     let Ok(Some((customer_ref, expires_at))) = db::get_demo_session(&conn, token) else {
-        return anonymous();
+        return unauthorized();
     };
     if unix_now() >= expires_at {
-        return anonymous();
+        return unauthorized();
     }
     (
         StatusCode::OK,
@@ -1473,7 +1497,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn me_with_bogus_cookie_is_anonymous() {
+    async fn me_with_bogus_cookie_is_unauthorized() {
+        // A presented-but-unknown token stays 401; only the absence of
+        // a credential answers 200 {"user": null}.
         let tmp = tempfile::tempdir().unwrap();
         let res = session_app(tmp.path())
             .oneshot(
@@ -1485,10 +1511,28 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
         let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v, serde_json::json!({"user": null}));
+        assert_eq!(v["error"], "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn auth_providers_lists_configured_only() {
+        // Fixture state configures no OAuth provider: the list is empty
+        // (the login page renders no provider buttons then).
+        let fx = fixture();
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/auth/providers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(json_body(res).await, serde_json::json!({"providers": []}));
     }
 
     #[tokio::test]
@@ -1528,7 +1572,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn me_with_expired_cookie_is_anonymous() {
+    async fn me_with_expired_cookie_is_unauthorized() {
         let tmp = tempfile::tempdir().unwrap();
         let store = Store::new(tmp.path());
         store.init().unwrap();
@@ -1546,10 +1590,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
         let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v, serde_json::json!({"user": null}));
+        assert_eq!(v["error"], "unauthorized");
     }
 
     #[tokio::test]

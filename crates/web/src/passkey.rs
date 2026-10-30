@@ -118,6 +118,17 @@ pub(crate) fn user_agent(headers: &HeaderMap) -> &str {
 
 /// Valid session from the public cookie (touches `last_seen`;
 /// honors the magic-link fallback window, spec §12.6).
+/// True when the caller presents a non-empty session cookie (valid or
+/// not). Absence means anonymous; presence with no live session means a
+/// dead credential and stays 401.
+fn presents_credential(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|cookies| auth::cookie_value(cookies, auth::PUB_COOKIE))
+        .is_some_and(|v| !v.is_empty())
+}
+
 pub(crate) fn session_of(
     conn: &rusqlite::Connection,
     headers: &HeaderMap,
@@ -956,12 +967,18 @@ pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Respon
         .into_response()
 }
 
-/// `GET /auth/me` — session check + method list.
+/// `GET /auth/me` — session check + method list. Callers presenting no
+/// credential get 200 `{"user": null}` so the login page's anonymous
+/// probe never logs a console error; a presented-but-invalid session is
+/// still 401, and only logged-in callers see `user_id`/`methods`.
 pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let now = unix_now();
     let Some(conn) = open_conn(&state) else {
         return store_unavailable();
     };
+    if !presents_credential(&headers) {
+        return (StatusCode::OK, Json(json!({"user": null}))).into_response();
+    }
     let Some(session) = session_of(&conn, &headers, now) else {
         return (
             StatusCode::UNAUTHORIZED,
@@ -1261,25 +1278,37 @@ mod tests {
     #[tokio::test]
     async fn me_logout_methods_roundtrip() {
         let (tmp, app) = test_app();
-        // 401 without a session everywhere.
-        for (method, uri) in [
-            ("GET", "/apostille/api/v1/auth/me"),
-            ("GET", "/apostille/api/v1/auth/profile/methods"),
-        ] {
-            let res = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .method(method)
-                        .uri(uri)
-                        .extension(addr())
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
-        }
+        // Anonymous /auth/me answers 200 {"user": null} (no console
+        // error for the login probe); methods stays 401.
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/apostille/api/v1/auth/me")
+                    .extension(addr())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        let anon: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(anon, serde_json::json!({"user": null}));
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/apostille/api/v1/auth/profile/methods")
+                    .extension(addr())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
         // Seed session + one passkey row directly.
         let store = handbook_store::store::Store::new(tmp.path());
         let conn = handbook_store::db::open(&store).unwrap();
