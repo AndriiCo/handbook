@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# worker.sh — async gated build worker (runs on plant as chandra, no root).
+# worker.sh — async gated build worker (runs on plant as an unprivileged user, no root).
 # Usage: worker.sh loop   — poll queue/ forever (systemd user unit / setsid)
 #        worker.sh once   — process a single queued job, then exit
 set -euo pipefail

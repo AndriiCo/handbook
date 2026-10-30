@@ -1,14 +1,14 @@
 # Plant build pipeline (async, gated, rootless)
 
-Builds and full test suites run on the `plant` box (`ssh plant`,
-user `chandra`, Ubuntu x86_64), never blocking local work. Every
+Builds and full test suites run on the `plant` box (reached as
+`ssh plant` over LAN/VPN, Ubuntu x86_64), never blocking local work. Every
 deploy candidate is validated by the full suite on plant; a red
 gate stops the job before anything is staged for production.
 
 ## Rules (mirrored in AGENTS.md §8)
 
 - Never root on plant. Never ask for root. Everything runs as
-  `chandra` in `~/apostille-pipeline/`.
+  the unprivileged plant user in `~/apostille-pipeline/`.
 - Unprivileged ports only (reserved range `18080-18999`).
 - Reproducible inputs: jobs ship a `git archive` tarball of a
   committed SHA (`Cargo.lock` + `package-lock.json` inside).
@@ -76,4 +76,6 @@ time, 10 s poll. Worst-case pickup after a reboot is ~60 s.
 - Deploy eligibility: `acceptance/<sha12>.json` exists with
   `ci_green: true` AND `done/<run>.json` has `result: "passed"`.
   The deploy step (a later slice) must re-check both before
-  shipping. No stamp, no ship — no `--skip-*` flags, ever.
+  shipping. No stamp, no ship — no flag ever skips this gate.
+  (`ops-deploy.sh --skip-accept` is a different gate — the prod DB
+  `build` row — scoped by AGENTS.md §8, not this pipeline.)

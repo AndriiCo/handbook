@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bootstrap.sh — one-time (idempotent) plant setup. Runs from the Mac,
-# executes the plant side over ssh as chandra. No root, ever.
+# executes the plant side over `ssh plant` as an unprivileged user. No root, ever.
 # Usage: ./ops/plant-pipeline/bootstrap.sh
 set -euo pipefail
 
