@@ -3,6 +3,7 @@
 // (unknown paths → index.html, mirroring the axum shell).
 // API traffic never reaches it: specs intercept API routes.
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
@@ -53,12 +54,63 @@ export function serveDir(dir, opts = {}) {
 			res.end('not found');
 		}
 	});
+	// Minimal WS acceptor for the live-bus topics (e.g. /ws/bus):
+	// completes the handshake then a clean close, so subscribing pages
+	// log no console error under screenshots. It speaks no application
+	// frames; the real server owns those. Upgraded sockets detach from
+	// the server's connection tracking, so they are tracked here and
+	// destroyed on close — otherwise close() waits them out.
+	const hijacked = new Set();
+	server.on('upgrade', (req, socket) => {
+		hijacked.add(socket);
+		socket.on('close', () => hijacked.delete(socket));
+		try {
+			const path = new URL(req.url ?? '/', 'http://x').pathname;
+			const key = req.headers['sec-websocket-key'];
+			if (!path.includes('/ws/') || !key) {
+				socket.destroy();
+				return;
+			}
+			const accept = createHash('sha1')
+				.update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
+				.digest('base64');
+			socket.write(
+				'HTTP/1.1 101 Switching Protocols\r\n' +
+					'Upgrade: websocket\r\n' +
+					'Connection: Upgrade\r\n' +
+					`Sec-WebSocket-Accept: ${accept}\r\n\r\n`
+			);
+			socket.write(Buffer.from([0x88, 0x00])); // clean close, no payload
+			socket.end();
+		} catch {
+			try {
+				socket.destroy();
+			} catch {}
+		}
+	});
+	function dropHijacked() {
+		for (const s of hijacked) {
+			try {
+				s.destroy();
+			} catch {}
+		}
+		hijacked.clear();
+	}
 	return new Promise((resolve) => {
 		server.listen(0, '127.0.0.1', () => {
 			const { port } = server.address();
 			resolve({
 				url: `http://127.0.0.1:${port}`,
-				close: () => new Promise((done) => server.close(() => done()))
+				close: () =>
+					new Promise((done) => {
+						// Specs close with live pages open: drop every
+						// socket first (upgraded WS detaches from server
+						// tracking; keep-alive HTTP lingers) so close()
+						// never waits out the browser.
+						dropHijacked();
+						server.closeAllConnections();
+						server.close(() => done());
+					})
 			});
 		});
 	});

@@ -21,7 +21,9 @@ const BASE = '/apostille';
 const ROUTES = {
 	'/': { name: 'gp1-home', ready: 'AUTHORITY INDEX' },
 	'/authority/vietnam': { name: 'gp2-dossier', ready: 'Authority dossier' },
-	'/login': { name: 'gp3-login', ready: 'Log in' }
+	'/login': { name: 'gp3-login', ready: 'Log in' },
+	'/order': { name: 'gp4-order', ready: 'Destination' },
+	'/precheck': { name: 'a2-precheck', ready: 'Document precheck' }
 };
 const SIZES = [
 	{ w: 390, h: 844 },
@@ -39,6 +41,11 @@ if (routes.length === 0) {
 
 const authorities = JSON.parse(readFileSync(join(root, 'e2e/fixtures/authorities.json'), 'utf8'));
 const factsVietnam = JSON.parse(readFileSync(join(root, 'e2e/fixtures/facts-vietnam.json'), 'utf8'));
+const quality = JSON.parse(readFileSync(join(root, 'e2e/fixtures/quality.json'), 'utf8'));
+const providers = JSON.parse(readFileSync(join(root, 'e2e/fixtures/providers.json'), 'utf8'));
+const precheckSamples = JSON.parse(
+	readFileSync(join(root, 'e2e/fixtures/precheck-samples.json'), 'utf8')
+);
 
 const failures = [];
 const shots = [];
@@ -57,24 +64,11 @@ try {
 				});
 				const page = await context.newPage();
 				const errors = [];
-				// Expected logged-out noise: /me + /auth/me genuinely 401
-				// (see me_without_cookie_is_unauthorized + passkey::me),
-				// and Chromium logs each failed resource as a console
-				// error. Discount exactly those; all else is fatal.
-				let expected401 = 0;
-				page.on('response', (r) => {
-					const u = new URL(r.request().url());
-					if (
-						r.status() === 401 &&
-						(u.pathname.endsWith('/api/v1/me') || u.pathname.endsWith('/api/v1/auth/me'))
-					) {
-						expected401 += 1;
-					}
-				});
+				// Any console error is fatal: the anonymous session
+				// probes answer 200, so nothing expected remains.
 				page.on('console', (m) => {
 					if (m.type() !== 'error') return;
-					if (expected401 > 0 && m.text().includes('401')) expected401 -= 1;
-					else errors.push(m.text());
+					errors.push(m.text());
 				});
 				page.on('pageerror', (e) => errors.push(String(e)));
 				await page.addInitScript((t) => {
@@ -94,9 +88,26 @@ try {
 							json: m[1] === 'vietnam' ? factsVietnam : { error: 'unknown authority' }
 						});
 					}
-					// Logged-out shell: /me + /auth/me 401, everything else 404.
+					if (path.endsWith('/api/v1/quality')) {
+						return r.fulfill({ json: quality });
+					}
+					if (path.endsWith('/api/v1/auth/providers')) {
+						return r.fulfill({ json: providers });
+					}
+					if (path.endsWith('/api/v1/demo/precheck/samples')) {
+						return r.fulfill({ json: precheckSamples });
+					}
+					// Logged-out shell: anonymous session probes answer
+					// 200 {"user": null}, like the real API — no console
+					// error. Everything else unmocked is 404.
+					if (
+						path.endsWith('/api/v1/me') ||
+						path.endsWith('/api/v1/auth/me')
+					) {
+						return r.fulfill({ json: { user: null } });
+					}
 					return r.fulfill({
-						status: path.endsWith('/me') ? 401 : 404,
+						status: 404,
 						json: { error: 'mock' }
 					});
 				});

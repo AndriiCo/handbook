@@ -12,3 +12,4 @@
 | 107 | 2026-10-30 15:40Z | A2 precheck: replay endpoints, SAM demo UI, live recorder | web 245 + node 95 green, thumbs ship |
 | 108 | 2026-10-30 16:05Z | A5 quality: 26-case gold, eval harness, endpoint, home pct | gates green, stub baseline zeros |
 | 109 | 2026-10-30 16:20Z | quality 200-when-pending (GP1 clean), S1 operator line | tests green |
+| 110 | 2026-10-30 16:40Z | shots gate green (20 PNGs, WS acceptor, new fixtures) | harness fixed, PNGs not viewed |
