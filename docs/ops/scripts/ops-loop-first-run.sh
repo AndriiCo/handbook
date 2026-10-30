@@ -110,8 +110,19 @@ echo "sealed rows present: meta.api_key + media.terms_read"
 echo "=== 4. mutating-path proof: watch-sweep + hcch-poll as andrii-ai"
 sudo -u andrii-ai "$XTASK" watch-sweep --store "$STORE" --actor loop-first-run \
     || { echo "ABORT: watch-sweep failed"; exit 1; }
-sudo -u andrii-ai "$XTASK" hcch-poll --store "$STORE" --actor loop-first-run \
-    || { echo "ABORT: hcch-poll failed"; exit 1; }
+# hcch-poll exit 2 is NoSource by construction (fixed flags, no
+# other exit-2 path in run_hcch): the ONE status-table URI is not
+# seeded yet (A2 follow-up: packs-load, then fetch-url). Announced
+# skip — any other failure still aborts.
+HCCH_OUT="$(sudo -u andrii-ai "$XTASK" hcch-poll --store "$STORE" --actor loop-first-run 2>&1)"
+HCCH_CODE=$?
+echo "$HCCH_OUT"
+if [ "$HCCH_CODE" = 2 ]; then
+    echo "(note: hcch unseeded — continuing; seed it via packs-load + fetch-url afterwards)"
+elif [ "$HCCH_CODE" != 0 ]; then
+    echo "ABORT: hcch-poll failed (exit $HCCH_CODE)"
+    exit 1
+fi
 
 echo "=== 5. stage andrii-ai-readable KEK copy (deleted after the run)"
 install -d -o andrii-ai -g andrii-ai -m 0700 "$CREDS"
