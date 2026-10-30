@@ -43,3 +43,6 @@ Scripts:
 - `ops-backup-enable.sh` — root: first backup run + daily
   verify + `backup-verify` restore proof, then enable the
   backup timer (the enable decision, executed with proof).
+- `ops-hcch-seed.sh` — root: A2 HCCH seed (dir-scoped
+  packs-load of hcch.json, staff fetch-url of the ONE URI
+  derived from the source row, hcch-poll unblock proof).
