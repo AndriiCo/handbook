@@ -5,3 +5,4 @@
 | 100 | 2026-10-30 12:56Z | GP2-data slice: queue vietnam + usa-wa-sos proposals, operator approves | local 8+8 proof green, ops script staged |
 | 101 | 2026-10-30 13:20Z | A1 quote-verified citations: validator, drafted_by, public shape | web 240 + agent 40 green, refusal proven |
 | 102 | 2026-10-30 13:45Z | GP1 home: /me 200 null, featured links, skeleton loading | check/builds/imports/tailwind/tests green |
+| 103 | 2026-10-30 14:05Z | GP2-page dossier: name h1, live WS, citation hover | check/builds/imports/tests green, no browser |

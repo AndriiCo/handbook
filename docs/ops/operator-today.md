@@ -1,6 +1,11 @@
 # Operator — today (2026-10-30, GP2-data slice)
 
-One root script (paste the whole output back to the builder session):
+Order matters (P101 changed the draft attribution; the proposals must be
+queued by the NEW binary):
+
+1. Deploy main (P100/P101/P102: proposals script support, `drafted_by`,
+   quote-verified citations, `/me` 200) via `docs/ops/scripts/ops-deploy.sh`.
+2. One root script (paste the whole output back to the builder session):
 
 ```sh
 bash /home/hal/apostille/scripts/ops-gp2-proposals.sh

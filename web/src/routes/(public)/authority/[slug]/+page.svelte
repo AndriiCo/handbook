@@ -2,6 +2,9 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
+	import { Skeleton } from '../../../../lib/components/ui/skeleton/index.js';
+	import * as HoverCard from '../../../../lib/components/ui/hover-card/index.js';
+	import { subscribe } from '../../../../lib/live.svelte.js';
 	import {
 		factCount,
 		groupFactsByTopic,
@@ -29,6 +32,7 @@
 	let loadError = $state<string | null>(null);
 	let notFound = $state(false);
 	let tab = $state('');
+	let authorityName = $state<string | null>(null);
 
 	const groups = $derived(groupFactsByTopic(facts ?? []));
 	const active = $derived(groups.find((g) => g.topic === tab) ?? groups[0] ?? null);
@@ -41,34 +45,55 @@
 			isActive ? 'border-accent-fill font-bold text-ink' : 'border-transparent text-ink-muted'
 		}`;
 
+	async function reload(current: string) {
+		const res = await readDossier(current, { get });
+		if (current !== slug) return; // stale slug, ignore
+		if (!res.ok) {
+			if (res.status === 404) notFound = true;
+			else loadError = publicError(res.status, 'dossier');
+			return;
+		}
+		const rows = res.body?.facts;
+		const list = Array.isArray(rows) ? rows : [];
+		facts = list;
+		tab = groupFactsByTopic(list)[0]?.topic ?? tab;
+	}
+
+	async function resolveName(current: string) {
+		try {
+			const res = await get('/authorities');
+			if (current !== slug || !res.ok) return;
+			const rows = res.body?.authorities;
+			const found = Array.isArray(rows) ? rows.find((a) => a?.slug === current) : null;
+			if (found && typeof found.name === 'string' && found.name) authorityName = found.name;
+		} catch {
+			// The slug stays the heading; the index is a nicety, not a gate.
+		}
+	}
+
 	$effect(() => {
 		const current = slug;
 		facts = null;
 		loadError = null;
 		notFound = false;
 		tab = '';
-		readDossier(current, { get })
-			.then((res) => {
-				if (current !== slug) return; // stale slug, ignore
-				if (!res.ok) {
-					if (res.status === 404) notFound = true;
-					else loadError = publicError(res.status, 'dossier');
-					return;
-				}
-				const rows = res.body?.facts;
-				const list = Array.isArray(rows) ? rows : [];
-				facts = list;
-				tab = groupFactsByTopic(list)[0]?.topic ?? '';
-			})
-			.catch(() => {
-				if (current !== slug) return;
-				loadError = publicError(500, 'dossier');
-			});
+		authorityName = null;
+		reload(current).catch(() => {
+			if (current !== slug) return;
+			loadError = publicError(500, 'dossier');
+		});
+		void resolveName(current);
+		// Live ledger: an approval in /review re-renders this dossier
+		// over WS `authority:{slug}` — no polling.
+		return subscribe(`authority:${current}`, (msg) => {
+			if (current !== slug) return;
+			if (msg?.type === 'fact_accepted') void reload(current).catch(() => {});
+		});
 	});
 </script>
 
 <svelte:head>
-	<title>{slug} — Apostille Handbook</title>
+	<title>{authorityName ?? slug} — Apostille Handbook</title>
 </svelte:head>
 
 {#if notFound}
@@ -81,11 +106,16 @@
 {:else if loadError}
 	<Notice variant="error" heading="This dossier is unavailable."><p>{loadError}</p></Notice>
 {:else if facts === null}
-	<p role="status">Loading dossier for “{slug}”…</p>
+	<div role="status" aria-label="Loading dossier" class="flex flex-col gap-2 pt-6">
+		<span class="sr-only">Loading dossier</span>
+		<Skeleton class="h-9 w-2/3" />
+		<Skeleton class="h-4 w-1/3" />
+		<Skeleton class="h-24 w-full" />
+	</div>
 {:else}
 	<header class="mb-4 border-b border-line pt-6 pb-4">
 		<p class="m-0 text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase">Authority dossier</p>
-		<h1 class="mt-1 mb-2 font-sans text-3xl md:text-4xl">{slug}</h1>
+		<h1 class="mt-1 mb-2 font-sans text-3xl md:text-4xl">{authorityName ?? slug}</h1>
 	</header>
 
 	{#if facts.length === 0}
@@ -116,6 +146,30 @@
 							{#each active.facts as fact (fact.id)}
 								<li class="border-b border-line py-3">
 									<p class="m-0 mb-2">{fact.statement}</p>
+									{#if Array.isArray(fact.citations) && fact.citations.length > 0}
+										{@const cite = fact.citations[0]}
+										<HoverCard.Root>
+											<HoverCard.Trigger
+												class="cursor-help text-sm text-ink-muted underline decoration-dotted underline-offset-4"
+											>
+												Verified source
+											</HoverCard.Trigger>
+											<HoverCard.Content class="max-w-80" align="start">
+												<blockquote class="m-0 border-l-2 border-verified pl-3 font-quote italic">
+													{cite.quote}
+												</blockquote>
+												<p class="mt-2 mb-0 text-xs text-ink-muted">
+													<a
+														href={cite.source_url}
+														target="_blank"
+														rel="noopener noreferrer">Source</a
+													>
+													· captured {String(cite.captured_at ?? '').split('T')[0]}
+													· drafted by {fact.drafted_by ?? fact.created_by ?? 'unknown'}
+												</p>
+											</HoverCard.Content>
+										</HoverCard.Root>
+									{/if}
 									{#if fact.conflict}
 										<Notice variant="warning" heading="Conflicting reports for this item.">
 											{#each fact.conflicts ?? [] as sib (sib.id)}
