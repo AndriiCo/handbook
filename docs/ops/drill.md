@@ -97,3 +97,4 @@ quarterly with the restore drill afterwards.
 | 2026-10-30 | 3 backup+restore (leg 1) | agent+operator | 72ae915 | backup+verify leg green (nightly 2026-10-30, exact file set, sums OK, `backup-verify` green, timer live, next 02:31 UTC); full-drill ×3 (scratch boot, healthz, packs, envelope) still 0/3 |
 | 2026-10-30 | 3 backup+restore | root | 72ae915 | run 1/3 green (backup 2026-10-30, scratch boot 18080/18443 loopback, healthz 200 + stamp, packs clean, config-verify 37 rows gen 1, envelope located) |
 | 2026-10-30 | 3 backup+restore | root | 72ae915 | run 2/3 green (same shape as run 1; pid 237363; teardown verified silent) |
+| 2026-10-30 | 3 backup+restore | root | 72ae915 | run 3/3 green (pid 238760; teardown verified silent) — DRILL 3 CLOSED ×3 |

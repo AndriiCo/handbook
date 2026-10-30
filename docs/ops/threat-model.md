@@ -161,8 +161,9 @@ upload allowlist/magic-bytes/EXIF/redaction pipeline (F8/F9,
   access (`SECURITY.md` Q9); no offsite audit ship yet.
 - RESIDUAL: Meta API data-handling terms unread — no real media to Meta
   until SEC reads them (`roadmap.md` §5).
-- RESIDUAL: single box, no reboot survival (Linger=no), no backup proven
-  by restore drill yet.
+- RESIDUAL: single box, no reboot survival (Linger=no). Restore-drill
+  proof CLOSED 2026-10-30 (drill 3 green ×3 at 72ae915; offsite leg
+  still open — see Q8).
 
 ## 7. Out of scope
 
