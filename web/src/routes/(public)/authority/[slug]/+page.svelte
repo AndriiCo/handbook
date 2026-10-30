@@ -113,8 +113,8 @@
 		<Skeleton class="h-24 w-full" />
 	</div>
 {:else}
-	<header class="mb-4 border-b border-line pt-6 pb-4">
-		<p class="m-0 text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase">Authority dossier</p>
+	<header class="mb-4 pt-6 pb-4">
+		<p class="kicker">Authority dossier</p>
 		<h1 class="mt-1 mb-2 font-sans text-3xl md:text-4xl">{authorityName ?? slug}</h1>
 	</header>
 

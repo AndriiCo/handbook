@@ -85,7 +85,7 @@
 			bind:value={query}
 			placeholder="Country, state, or authority…"
 			autocomplete="off"
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink md:flex-1"
+			class="field md:flex-1"
 		/>
 		<button
 			type="submit"
@@ -97,25 +97,13 @@
 </section>
 
 <section class="pb-2" aria-labelledby="featured">
-	<h2
-		id="featured"
-		class="border-b border-line pb-[0.4rem] font-sans text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase"
-	>
-		Featured destinations
-	</h2>
-	<ul class="m-0 mt-4 list-none p-0" aria-label="Featured destinations">
+	<h2 id="featured" class="kicker">Featured destinations</h2>
+	<ul class="m-0 mt-4 flex list-none flex-wrap gap-2 p-0" aria-label="Featured destinations">
 		{#each featured as authority (authority.slug)}
-			<li
-				class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line py-[0.7rem]"
-			>
-				<a
-					class="inline-flex min-h-11 items-center font-bold"
-					href={authorityHref(authority.slug)}>{authority.name}</a
-				>
-				<span class="mr-auto text-sm text-ink-muted"
-					>{authority.country ? `${authority.country} · ` : ''}{factCount(
-						authority.fact_count ?? 0
-					)}</span
+			<li class="m-0 p-0">
+				<a class="chip" href={authorityHref(authority.slug)}
+					>{authority.name}
+					<span>{factCount(authority.fact_count ?? 0)}</span></a
 				>
 			</li>
 		{/each}
@@ -123,12 +111,7 @@
 </section>
 
 <section class="pb-8" aria-labelledby="index">
-	<h2
-		id="index"
-		class="border-b border-line pb-[0.4rem] font-sans text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase"
-	>
-		Authority index
-	</h2>
+	<h2 id="index" class="kicker">Authority index</h2>
 	{#if loadError}
 		<Notice variant="error" heading="Search is unavailable."><p>{loadError}</p></Notice>
 	{:else if results === null}
@@ -149,17 +132,11 @@
 	{:else}
 		<ul class="m-0 mt-4 list-none p-0" aria-label={blank ? 'Authority index' : 'Search results'}>
 			{#each results as authority (authority.slug)}
-				<li
-					class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line py-[0.7rem]"
-				>
-					<a
-						class="inline-flex min-h-11 items-center font-bold"
-						href={resolve('/(public)/authority/[slug]', { slug: authority.slug })}
+				<li class="list-row">
+					<a href={resolve('/(public)/authority/[slug]', { slug: authority.slug })}
 						>{authority.name}</a
 					>
-					<span class="mr-auto text-sm text-ink-muted"
-						>{authority.country} · {factCount(authority.fact_count ?? 0)}</span
-					>
+					<span>{authority.country} · {factCount(authority.fact_count ?? 0)}</span>
 				</li>
 			{/each}
 		</ul>

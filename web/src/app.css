@@ -248,6 +248,89 @@
 /* Quoted source text uses `font-quote` (serif, from --font-quote).
    Serif is reserved for that utility — never for UI chrome or headings. */
 
+@layer components {
+	/* Small-caps section heading with a rule. Type scale + 4px grid only. */
+	.kicker {
+		border-bottom: 1px solid var(--border);
+		color: var(--text-muted);
+		font-family: var(--font-sans);
+		font-size: 0.8rem;
+		letter-spacing: 0.08em;
+		margin: 0;
+		padding-bottom: 0.4rem;
+		text-transform: uppercase;
+	}
+
+	/* Authority index row: name link + muted meta, wrapping on 360px. */
+	.list-row {
+		align-items: baseline;
+		border-bottom: 1px solid var(--border);
+		display: flex;
+		flex-wrap: wrap;
+		column-gap: 0.75rem;
+		row-gap: 0.25rem;
+		list-style: none;
+		padding: 0.7rem 0;
+	}
+
+	.list-row > a {
+		align-items: center;
+		display: inline-flex;
+		font-weight: 700;
+		min-height: 2.75rem;
+	}
+
+	.list-row > span {
+		color: var(--text-muted);
+		font-size: 0.875rem;
+	}
+
+	/* Form section heading (auth pages). */
+	.form-title {
+		font-size: 1.1rem;
+		margin: 0;
+	}
+
+	/* Text input shared by search + auth forms. */
+	.field {
+		background: var(--bg);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-xs);
+		color: var(--text);
+		min-height: 2.75rem;
+		padding: 0.6rem 0.8rem;
+		width: 100%;
+	}
+
+	/* Featured-destination quick link: compact chip, not a second list. */
+	.chip {
+		align-items: center;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		color: var(--text);
+		display: inline-flex;
+		font-weight: 700;
+		gap: 0.5rem;
+		min-height: 2.75rem;
+		padding: 0.5rem 1rem;
+		text-decoration: none;
+		transition:
+			border-color 150ms,
+			background 150ms;
+	}
+
+	.chip:hover {
+		border-color: var(--focus);
+	}
+
+	.chip > span {
+		color: var(--text-muted);
+		font-size: 0.875rem;
+		font-weight: 400;
+	}
+}
+
 /* shadcn hook classes (not Tailwind utilities): toasts inherit the UI
    typeface, and submenu chevrons mirror in RTL locales. */
 .toaster {

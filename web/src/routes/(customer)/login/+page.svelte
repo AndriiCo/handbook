@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
 	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
 	import { cookieValue, loginPasskey, registerPasskey } from '../../../lib/customer/passkey.js';
 	import {
@@ -240,10 +241,10 @@
 		<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3" role="status">Signing you in…</p>
 	{/if}
 	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={login}>
-		<h2 class="m-0 text-[1.1rem]">Log in with a passkey</h2>
+		<h2 class="form-title">Log in with a passkey</h2>
 		<label class="font-bold" for="account">User ID or email</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
+			class="field"
 			id="account"
 			name="account"
 			type="text"
@@ -259,10 +260,10 @@
 	</form>
 
 	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={register}>
-		<h2 class="m-0 text-[1.1rem]">New here? Register a passkey</h2>
+		<h2 class="form-title">New here? Register a passkey</h2>
 		<label class="font-bold" for="display-name">Display name</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
+			class="field"
 			id="display-name"
 			name="display_name"
 			type="text"
@@ -271,7 +272,7 @@
 		/>
 		<label class="font-bold" for="key-label">Key label (optional)</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
+			class="field"
 			id="key-label"
 			name="label"
 			type="text"
@@ -280,7 +281,7 @@
 		/>
 		<label class="font-bold" for="reg-email">Email (optional, for account recovery)</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
+			class="field"
 			id="reg-email"
 			name="email"
 			type="email"
@@ -299,7 +300,10 @@
 	{/if}
 
 	{#if providers === null}
-		<p class="max-w-[28rem] text-sm text-ink-muted" role="status">Checking sign-in options…</p>
+		<div role="status" aria-label="Checking sign-in options" class="mb-2 max-w-[28rem]">
+			<span class="sr-only">Checking sign-in options</span>
+			<Skeleton class="h-11 w-full" />
+		</div>
 	{:else}
 		{#each providers as provider (provider)}
 			{@const logo = brandFor(provider)}
@@ -318,10 +322,10 @@
 	{/if}
 
 	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={magicRequest}>
-		<h2 class="m-0 text-[1.1rem]">Or get an email link</h2>
+		<h2 class="form-title">Or get an email link</h2>
 		<label class="font-bold" for="magic-email">Email</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
+			class="field"
 			id="magic-email"
 			name="magic_email"
 			type="email"
