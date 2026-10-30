@@ -16,9 +16,11 @@
 		"check:tailwind": "node scripts/check-tailwind.mjs",
 		"smoke": "node scripts/smoke.mjs",
 		"test": "node --test test/",
-		"test:e2e": "playwright test"
+		"test:e2e": "playwright test",
+		"shots": "node scripts/shots.mjs"
 	},
 	"devDependencies": {
+		"@axe-core/playwright": "^4.14.0",
 		"@internationalized/date": "^3.12.4",
 		"@playwright/test": "^1.64.1",
 		"@sveltejs/adapter-static": "^4.0.0",

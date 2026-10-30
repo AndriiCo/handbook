@@ -271,7 +271,7 @@
 
 	{#each OAUTH_PROVIDERS as provider (provider)}
 		<button
-			class="mb-2 min-h-11 max-w-[28rem] cursor-pointer rounded-sm border border-line bg-bg font-bold text-ink disabled:cursor-wait disabled:opacity-60"
+			class="mb-2 block min-h-11 w-full max-w-[28rem] cursor-pointer rounded-sm border border-line bg-bg px-4 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
 			type="button"
 			disabled={busy}
 			onclick={() => oauthLogin(provider)}

@@ -156,7 +156,7 @@
 		class="masthead sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/70"
 	>
 		<div class="mx-auto flex h-14 max-w-[1080px] items-center gap-2 px-4">
-			<a href={home} class="flex min-w-0 items-center gap-2 no-underline">
+			<a href={home} class="flex min-w-0 items-center gap-2 no-underline" aria-label="Apostille Handbook — home">
 				<img src={asset('favicon.svg')} alt="" width="28" height="28" class="size-7 flex-none" />
 				<span class="hidden truncate font-semibold tracking-tight text-ink min-[400px]:inline">
 					Apostille Handbook
@@ -342,14 +342,15 @@
 			title="Andrii℠ — service mark of Andrii Co. USPTO Serial No. 50060860, Ukraine No. m202617219, Australia No. 2696315 (all pending)"
 		>
 			<span class="text-ink-muted">by</span>
-			<img
-				src={asset('service-mark.svg')}
-				alt=""
-				width="56"
-				height="56"
-				class="h-14 w-auto flex-none"
-				aria-hidden="true"
-			/>
+			<span class="inline-flex flex-none items-center rounded-sm bg-white p-1" aria-hidden="true">
+				<img
+					src={asset('service-mark.svg')}
+					alt=""
+					width="48"
+					height="48"
+					class="h-12 w-auto"
+				/>
+			</span>
 			<span class="font-semibold text-ink">Andrii℠</span>
 		</a>
 	</div>
