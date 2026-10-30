@@ -68,7 +68,9 @@ for u in $UNITS; do
     BAD="$(grep '^ExecStart=/srv/apostille/current/xtask ' "$f" | grep -v -F -- '--store /var/lib/apostille' || true)"
     [ -z "$BAD" ] || { echo "ABORT: $f: xtask ExecStart without --store /var/lib/apostille (F1):"; echo "$BAD"; exit 1; }
     if [ "$u" = instruct ]; then
-        PACK="$(grep -o -E -- '--pack [^ ]+' "$f" | head -n 1 | cut -d' ' -f2 || true)"
+        # ExecStart lines only: header comments may mention --pack
+        # (seen 2026-10-30: "# ... --pack repointed ..." ABORTed the gate).
+        PACK="$(grep '^ExecStart=' "$f" | grep -o -E -- '--pack [^ ]+' | head -n 1 | cut -d' ' -f2 || true)"
         if [ -z "$PACK" ]; then
             echo "(note: $f has no --pack flag; xtask default applies)"
         else
