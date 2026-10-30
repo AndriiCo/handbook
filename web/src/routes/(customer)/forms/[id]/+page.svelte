@@ -180,7 +180,7 @@
 	{#if submission.pdf_url}
 		<p>
 			<a
-				class="inline-block min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 py-[0.6rem] font-bold text-accent-ink no-underline [font:inherit]"
+				class="inline-block min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-4 py-[0.6rem] font-bold text-accent-ink no-underline"
 				href={submission.pdf_url}
 				download
 			>
@@ -198,14 +198,14 @@
 	<h2>Something looks wrong?</h2>
 	<label for="correction">Report it and staff will re-check the prefilled values.</label>
 	<textarea
-		class="my-2 block w-full max-w-[36rem] rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
+		class="my-2 block w-full max-w-[36rem] rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink"
 		id="correction"
 		rows="3"
 		maxlength="2000"
 		bind:value={correctionNote}
 	></textarea>
 	<button
-		class="inline-block min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 py-[0.6rem] font-bold text-accent-ink no-underline [font:inherit] disabled:cursor-wait disabled:opacity-60"
+		class="inline-block min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-4 py-[0.6rem] font-bold text-accent-ink no-underline disabled:cursor-wait disabled:opacity-60"
 		type="button"
 		onclick={reportCorrection}
 		disabled={busy}

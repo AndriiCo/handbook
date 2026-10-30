@@ -340,7 +340,7 @@
 		<label for="code">Form code</label>
 		<input id="code" name="code" type="text" bind:value={code} required />
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-4 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="submit"
 			disabled={busy}>{busy ? 'Loading…' : 'Load form'}</button
 		>
@@ -371,7 +371,7 @@
 			{#if stale.removed.length > 0}<p>Removed: {stale.removed.join(', ')}</p>{/if}
 			{#if stale.changed.length > 0}<p>Changed: {stale.changed.join(', ')}</p>{/if}
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-4 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 				type="button"
 				onclick={() => loadForm(values)}
 				disabled={busy}
@@ -406,7 +406,7 @@
 						{withheldByKey[field.key].reason}. Type it manually, or
 						<button
 							type="button"
-							class="inline cursor-pointer border-0 bg-transparent p-0 text-inherit underline [font:inherit]"
+							class="inline cursor-pointer border-0 bg-transparent p-0 text-inherit underline"
 							onclick={() => {
 								correctionFor = field.key;
 								correctionNote = '';
@@ -418,14 +418,14 @@
 					{#if correctionFor === field.key}
 						<label class="font-bold" for={fid(field, '-note')}>What looks wrong?</label>
 						<textarea
-							class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
+							class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink"
 							id={fid(field, '-note')}
 							rows="2"
 							maxlength="2000"
 							bind:value={correctionNote}
 						></textarea>
 						<button
-							class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+							class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-4 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 							type="button"
 							onclick={() => reportCorrection(field)}
 							disabled={busy}
@@ -437,7 +437,7 @@
 
 				{#if field.type === 'textarea'}
 					<textarea
-						class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
+						class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink"
 						id={fid(field)}
 						rows="4"
 						maxlength={field.max_len}
@@ -447,7 +447,7 @@
 					></textarea>
 				{:else if field.type === 'select'}
 					<select
-						class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
+						class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink"
 						id={fid(field)}
 						value={strVal(field.key)}
 						onchange={(e) => setValue(field.key, e.currentTarget.value)}
@@ -490,7 +490,7 @@
 						{#each ['name', 'street', 'city', 'state', 'zip'] as part (part)}
 							<label class="font-bold" for={fid(field, `-${part}`)}>{part}</label>
 							<input
-								class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
+								class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink"
 								id={fid(field, `-${part}`)}
 								type="text"
 								value={addrVal(field.key)[part] ?? ''}
@@ -501,7 +501,7 @@
 					</fieldset>
 				{:else}
 					<input
-						class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink [font:inherit]"
+						class="min-h-11 rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink"
 						id={fid(field)}
 						type={field.type === 'date'
 							? 'date'
@@ -532,13 +532,13 @@
 		{/if}
 		<div class="mt-2 flex gap-3">
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-4 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 				type="button"
 				onclick={saveDraft}
 				disabled={busy}>Save draft</button
 			>
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-4 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 				type="submit"
 				disabled={busy}>Review</button
 			>
@@ -573,13 +573,13 @@
 	{/if}
 	<div class="mt-2 flex gap-3">
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-4 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="button"
 			onclick={() => (step = 'fill')}
 			disabled={busy}>Back to edit</button
 		>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-4 font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-4 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="button"
 			onclick={submit}
 			disabled={busy}

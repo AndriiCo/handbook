@@ -68,12 +68,16 @@ for (const file of walk(join(root, 'src'), '.svelte')) {
 const esc = (t) =>
 	t.replaceAll(':', '\\:').replaceAll('[', '\\[').replaceAll(']', '\\]').replaceAll('#', '\\#')
 		.replaceAll('.', '\\.').replaceAll('/', '\\/').replaceAll('%', '\\%').replaceAll('(', '\\(')
-		.replaceAll(')', '\\)').replaceAll(',', '\\,');
+		.replaceAll(')', '\\)').replaceAll(',', '\\,').replaceAll('=', '\\=').replaceAll('!', '\\!')
+		.replaceAll('*', '\\*');
 
 const missing = [];
 for (const t of [...tokens].sort()) {
 	if (defined.has(t)) continue;
-	if (['{', ':', ','].some((c) => css.includes('.' + esc(t) + c))) continue;
+	// A class also resolves when followed by `.` (compound selector,
+	// e.g. `.toaster.group` from the Sonner root) or `>` (the `*:`
+	// child variant emits `.cls>*`).
+	if (['{', ':', ',', '.', '>'].some((c) => css.includes('.' + esc(t) + c))) continue;
 	missing.push(t);
 }
 

@@ -49,7 +49,7 @@
 		<label class="col-span-full flex flex-col gap-1 text-sm" for={fieldId('name')}>
 			{labels.name}
 			<input
-				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 				id={fieldId('name')}
 				type="text"
 				bind:value={value.name}
@@ -60,7 +60,7 @@
 		<label class="col-span-full flex flex-col gap-1 text-sm" for={fieldId('street')}>
 			{labels.street}
 			<input
-				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 				id={fieldId('street')}
 				type="text"
 				bind:value={value.street}
@@ -71,7 +71,7 @@
 		<label class="col-span-full flex flex-col gap-1 text-sm" for={`${idPrefix}-line2`}>
 			Apartment, suite, etc. (optional)
 			<input
-				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 				id={`${idPrefix}-line2`}
 				type="text"
 				bind:value={value.line2}
@@ -81,7 +81,7 @@
 		<label class="flex flex-col gap-1 text-sm" for={fieldId('city')}>
 			{labels.city}
 			<input
-				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 				id={fieldId('city')}
 				type="text"
 				bind:value={value.city}
@@ -92,7 +92,7 @@
 		<label class="flex flex-col gap-1 text-sm" for={fieldId('state')}>
 			{labels.state}
 			<select
-				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 				id={fieldId('state')}
 				bind:value={value.state}
 				autocomplete="address-level1"
@@ -107,7 +107,7 @@
 		<label class="flex flex-col gap-1 text-sm" for={fieldId('zip')}>
 			{labels.zip}
 			<input
-				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+				class="rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 				id={fieldId('zip')}
 				type="text"
 				inputmode="numeric"

@@ -77,7 +77,7 @@
 					<label class="grid gap-[0.3rem] text-sm text-ink-muted">
 						Reason (required to reject, optional to accept)
 						<input
-							class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+							class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 							type="text"
 							bind:value={item.reason}
 							maxlength="1024"
@@ -87,11 +87,11 @@
 				</p>
 				<p class="mb-0 flex gap-3">
 					<button
-						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit]"
+						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink"
 						onclick={() => decide(fact.id, 'accept')}>Accept</button
 					>
 					<button
-						class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink [font:inherit]"
+						class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink"
 						onclick={() => decide(fact.id, 'reject')}>Reject</button
 					>
 				</p>

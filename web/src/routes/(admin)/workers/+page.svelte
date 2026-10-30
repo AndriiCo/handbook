@@ -342,7 +342,7 @@
 	<Notice variant="warning" heading="Workers unavailable."><p>{loadError}</p></Notice>
 	<p>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 			onclick={load}>Retry</button
 		>
 	</p>
@@ -430,7 +430,7 @@
 			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
 				>Authority
 				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 					type="text"
 					bind:value={filterAuthority}
 					placeholder="slug"
@@ -439,7 +439,7 @@
 			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
 				>Kind
 				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 					type="text"
 					bind:value={filterKind}
 					placeholder="warc"
@@ -448,14 +448,14 @@
 			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
 				>Trust
 				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 					type="text"
 					bind:value={filterTrust}
 					placeholder="official"
 				/></label
 			>
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 				type="submit">Apply</button
 			>
 		</form>
@@ -484,7 +484,7 @@
 						{/if}
 						<p class="mb-0 flex gap-3">
 							<button
-								class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+								class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 								onclick={() => retry(item)}
 								disabled={item.busy || !item.uri}
 							>
@@ -509,7 +509,7 @@
 			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
 				>Authority slug
 				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 					type="text"
 					bind:value={fetchSlug}
 					placeholder="usa-wa-sos"
@@ -519,7 +519,7 @@
 			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
 				>URL
 				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 					type="url"
 					bind:value={fetchUrl}
 					placeholder="https://…"
@@ -530,7 +530,7 @@
 				<label class="grid flex-1 basis-48 gap-[0.3rem] text-sm text-ink-muted">
 					Source kind
 					<select
-						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 						bind:value={fetchKind}
 					>
 						<option value="website_official">website_official</option>
@@ -540,7 +540,7 @@
 				<label class="grid flex-1 basis-48 gap-[0.3rem] text-sm text-ink-muted">
 					Trust
 					<select
-						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 						bind:value={fetchTrust}
 					>
 						<option value="official">official</option>
@@ -551,7 +551,7 @@
 			</div>
 			<p class="mb-0 flex gap-3">
 				<button
-					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 					type="submit"
 					disabled={fetchBusy}>{fetchBusy ? 'Fetching…' : 'Fetch now'}</button
 				>
@@ -578,7 +578,7 @@
 			<label class="grid gap-[0.3rem] text-sm text-ink-muted">
 				Sweep items
 				<textarea
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 font-mono text-sm text-ink [font:inherit]"
+					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 font-mono text-sm text-ink"
 					bind:value={sweepText}
 					rows="6"
 					placeholder="slug | https://…"
@@ -586,7 +586,7 @@
 			</label>
 			<p class="mb-0 flex gap-3">
 				<button
-					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 					type="submit"
 					disabled={sweepBusy}>{sweepBusy ? 'Sweeping…' : 'Run sweep'}</button
 				>

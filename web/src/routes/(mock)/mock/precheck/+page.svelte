@@ -38,7 +38,7 @@
 <p class="flex flex-wrap items-center gap-x-3 gap-y-1" role="status">
 	Connection: <strong>{live}</strong>
 	<button
-		class="min-h-11 cursor-pointer border-0 bg-transparent p-0 text-accent underline [font:inherit]"
+		class="min-h-11 cursor-pointer border-0 bg-transparent p-0 text-accent-strong underline"
 		onclick={cycle}>Simulate next state</button
 	>
 </p>

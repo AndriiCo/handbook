@@ -202,7 +202,7 @@
 		· <a href={resolve('/(customer)/security')}>Manage sign-in methods</a>
 		· <button
 			type="button"
-			class="min-h-0 cursor-pointer border-0 bg-transparent p-0 font-normal text-accent underline [font:inherit]"
+			class="min-h-0 cursor-pointer border-0 bg-transparent p-0 font-normal text-accent-strong underline"
 			onclick={logout}>{t.logoutLabel}</button
 		>
 	</p>
@@ -214,7 +214,7 @@
 		<h2 class="m-0 text-[1.1rem]">Log in with a passkey</h2>
 		<label class="font-bold" for="account">User ID or email</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="account"
 			name="account"
 			type="text"
@@ -223,7 +223,7 @@
 			autocomplete="username"
 		/>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="submit"
 			disabled={busy}>Log in</button
 		>
@@ -233,7 +233,7 @@
 		<h2 class="m-0 text-[1.1rem]">New here? Register a passkey</h2>
 		<label class="font-bold" for="display-name">Display name</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="display-name"
 			name="display_name"
 			type="text"
@@ -242,7 +242,7 @@
 		/>
 		<label class="font-bold" for="key-label">Key label (optional)</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="key-label"
 			name="label"
 			type="text"
@@ -251,7 +251,7 @@
 		/>
 		<label class="font-bold" for="reg-email">Email (optional, for account recovery)</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="reg-email"
 			name="email"
 			type="email"
@@ -259,7 +259,7 @@
 			autocomplete="email"
 		/>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="submit"
 			disabled={busy}>Register passkey</button
 		>
@@ -271,7 +271,7 @@
 
 	{#each OAUTH_PROVIDERS as provider (provider)}
 		<button
-			class="mb-2 min-h-11 max-w-[28rem] cursor-pointer rounded-sm border border-line bg-bg font-bold text-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			class="mb-2 min-h-11 max-w-[28rem] cursor-pointer rounded-sm border border-line bg-bg font-bold text-ink disabled:cursor-wait disabled:opacity-60"
 			type="button"
 			disabled={busy}
 			onclick={() => oauthLogin(provider)}
@@ -284,7 +284,7 @@
 		<h2 class="m-0 text-[1.1rem]">Or get an email link</h2>
 		<label class="font-bold" for="magic-email">Email</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="magic-email"
 			name="magic_email"
 			type="email"
@@ -294,7 +294,7 @@
 			disabled={busy}
 		/>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="submit"
 			disabled={busy}>Send sign-in link</button
 		>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Apostille Handbook — verified apostille guidance">
+  <title>Apostille Handbook — open graph image</title>
+  <rect width="1200" height="630" fill="#0b141b"/>
+  <rect x="72" y="72" width="96" height="96" rx="22" fill="#0b4a75"/>
+  <circle cx="120" cy="120" r="32" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="4"/>
+  <path d="M106 122.5 116.5 133 136 110.5" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="200" y="118" font-family="Verdana, sans-serif" font-size="40" font-weight="bold" fill="#edf3f7" letter-spacing="-1">Apostille Handbook</text>
+  <text x="200" y="162" font-family="Verdana, sans-serif" font-size="24" fill="#b9cbd8">Verified apostille guidance, quote by quote.</text>
+  <rect x="72" y="470" width="220" height="64" rx="12" fill="#123324"/>
+  <circle cx="112" cy="502" r="12" fill="none" stroke="#5fd08a" stroke-width="4"/>
+  <path d="M106 502.5 110.5 507 119 497.5" fill="none" stroke="#5fd08a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="134" y="511" font-family="Verdana, sans-serif" font-size="24" fill="#5fd08a">Verified</text>
+  <text x="72" y="586" font-family="Verdana, sans-serif" font-size="20" fill="#7c93a5">andrii.ai/apostille</text>
+</svg>

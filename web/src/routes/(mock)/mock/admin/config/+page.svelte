@@ -65,7 +65,7 @@
 				<label class="grid max-w-[28rem] gap-[0.3rem] text-sm">
 					Value
 					<input
-						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 						type="text"
 						bind:value={row.draft}
 					/>
@@ -75,7 +75,7 @@
 				<label class="grid max-w-[28rem] gap-[0.3rem] text-sm">
 					New secret value (write-only)
 					<input
-						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 						type="password"
 						bind:value={row.draft}
 						placeholder="enter a new value to replace"
@@ -85,7 +85,7 @@
 			{/if}
 			<p>
 				<button
-					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 					onclick={() => save(row)}
 					disabled={row.type === 'secret' && !row.draft}
 				>

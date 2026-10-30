@@ -200,7 +200,7 @@
 						{OAUTH_LABELS[method.method] ? method.label || 'linked account' : method.method}
 					</span>
 					<button
-						class="ml-auto min-h-9 cursor-pointer rounded-sm border border-line bg-bg font-normal text-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+						class="ml-auto min-h-9 cursor-pointer rounded-sm border border-line bg-bg font-normal text-ink disabled:cursor-wait disabled:opacity-60"
 						type="button"
 						disabled={busy}
 						onclick={() =>
@@ -219,7 +219,7 @@
 		<h2 class="m-0 text-[1.1rem]">Add another passkey</h2>
 		<label class="font-bold" for="new-label">Key label</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="new-label"
 			name="label"
 			type="text"
@@ -227,7 +227,7 @@
 			placeholder="YubiKey"
 		/>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="submit"
 			disabled={busy}>Add passkey</button
 		>
@@ -243,7 +243,7 @@
 		>
 			<h2 class="m-0 text-[1.1rem]">Or link {OAUTH_LABELS[provider]}</h2>
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 				type="submit"
 				disabled={busy}
 			>

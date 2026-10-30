@@ -56,7 +56,7 @@
 	</Notice>
 	<p>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-55"
 			onclick={() => (done = false)}>Back to review</button
 		>
 	</p>
@@ -70,7 +70,7 @@
 	>
 		<label class="mt-2 font-bold" for="authority">Destination authority</label>
 		<select
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="authority"
 			bind:value={authority}
 			required
@@ -82,7 +82,7 @@
 		</select>
 		<p>
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 				type="submit"
 				disabled={!canNext1}>Continue</button
 			>
@@ -114,12 +114,12 @@
 		</fieldset>
 		<p class="flex gap-3">
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+				class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-55"
 				type="button"
 				onclick={() => (step = 1)}>Back</button
 			>
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 				type="submit"
 				disabled={!canNext2}>Continue</button
 			>
@@ -135,7 +135,7 @@
 	>
 		<label class="mt-2 font-bold" for="name">Full name</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="name"
 			type="text"
 			bind:value={name}
@@ -144,7 +144,7 @@
 		/>
 		<label class="mt-2 font-bold" for="email">Email</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="email"
 			type="email"
 			bind:value={email}
@@ -153,7 +153,7 @@
 		/>
 		<label class="mt-2 font-bold" for="street">Street address</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="street"
 			type="text"
 			bind:value={street}
@@ -164,7 +164,7 @@
 			<p class="flex flex-col gap-2">
 				<label for="city">City</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="city"
 					type="text"
 					bind:value={city}
@@ -174,7 +174,7 @@
 			<p class="flex flex-col gap-2">
 				<label for="postal">Postal code</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="postal"
 					type="text"
 					bind:value={postal}
@@ -184,12 +184,12 @@
 		</div>
 		<p class="flex gap-3">
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+				class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-55"
 				type="button"
 				onclick={() => (step = 2)}>Back</button
 			>
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 				type="submit"
 				disabled={!canNext3}>Review order</button
 			>
@@ -210,11 +210,11 @@
 	</dl>
 	<p class="flex gap-3">
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-55"
 			onclick={() => (step = 3)}>Back</button
 		>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 			onclick={() => (done = true)}>Submit order (mock)</button
 		>
 	</p>

@@ -1,0 +1,14 @@
+{
+	"name": "Apostille Handbook",
+	"short_name": "Apostille",
+	"description": "Verified apostille guidance, quote by quote.",
+	"start_url": ".",
+	"scope": ".",
+	"display": "standalone",
+	"background_color": "#0b141b",
+	"theme_color": "#0b4a75",
+	"icons": [
+		{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+		{ "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+	]
+}

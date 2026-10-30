@@ -96,7 +96,7 @@
 
 <p>
 	<button
-		class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit]"
+		class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink"
 		onclick={refresh}>Refresh snapshot</button
 	>
 </p>

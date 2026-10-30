@@ -1,34 +1,64 @@
-/* Design tokens per docs/site-theme.md §3. System font stacks for now;
-   webfonts (Source Serif 4 / Public Sans / IBM Plex Mono) come later. */
+/* Apostille Handbook design tokens (single source of truth).
+   Reference: GOV.UK Design System (MIT, D&AD/Design-of-the-Year recognition)
+   + IBM Carbon (Apache-2.0) filtered through shadcn/new-york density:
+   evidence-first, cool neutrals, one brand blue, strict type scale.
+   Fonts: Public Sans Variable (UI) + JetBrains Mono Variable (IDs/fees/
+   dates); Source Serif 4 Variable ONLY for quoted source text. */
 
-/* Tailwind v4 (D38): theme + utilities WITHOUT preflight — preflight's
-   reset would restyle the 33 unmigrated pages, so each page migrates
-   explicitly (form controls need `[font:inherit]` until preflight
-   lands). No cascade layers either: utilities stay unlayered, so a
-   utility class beats these element selectors by specificity.
-   Content scanning is automatic per build; when an admin page first
-   uses utilities, scope the scan — today admin uses zero, so nothing
-   leaks into the public entry. */
-@import 'tailwindcss/theme.css';
-@import 'tailwindcss/utilities.css';
+@import 'tailwindcss';
 
-/* Civic palette as utilities, mapped onto the vars above — the
-   three-state theme (OS default + data-theme override + snippet)
-   keeps working untouched. Discipline: pages use THESE tokens
-   (bg-surface, text-ink-muted, border-line, …), never the default
-   palette — the taste law (no purple, no gradients) is enforced
-   by review, not by the build. */
+/* `dark:` follows the repo theme attr (always set by the boot snippet:
+   explicit choice, or OS-resolved when 'auto'). */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
 @theme {
+	/* Repo breakpoints (720 / 1080 / 1440), not Tailwind's 768/1024/1280. */
+	--breakpoint-md: 720px;
+	--breakpoint-lg: 1080px;
+	--breakpoint-xl: 1440px;
+
+	/* Type: variable, self-hosted. Type scale xs–4xl is Tailwind's
+	   default scale (0.75rem–2.25rem); headings tighten via tracking. */
+	--font-sans: 'Public Sans Variable', 'Public Sans', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
+	--font-quote: 'Source Serif 4 Variable', 'Source Serif 4', serif;
+
+	/* Radius scale: 4 / 8 / 12 / 16 / 24. */
+	--radius-xs: 4px;
+	--radius-sm: 8px;
+	--radius-md: 12px;
+	--radius-lg: 16px;
+	--radius-xl: 24px;
+
+	/* Elevation: neutral-ink shadows, stronger with size. */
+	--shadow-sm: 0 1px 2px rgb(15 31 43 / 0.06);
+	--shadow-md: 0 4px 12px -2px rgb(15 31 43 / 0.12);
+	--shadow-lg: 0 12px 32px -8px rgb(15 31 43 / 0.18);
+
+	/* Brand blue scale, anchored at #0b4a75 (700). */
+	--color-brand-50: #eef6fb;
+	--color-brand-100: #d8e9f4;
+	--color-brand-200: #b0d1e8;
+	--color-brand-300: #7fb3d9;
+	--color-brand-400: #4a90c2;
+	--color-brand-500: #1f6ea3;
+	--color-brand-600: #0f5686;
+	--color-brand-700: #0b4a75;
+	--color-brand-800: #0d3d61;
+	--color-brand-900: #0e334f;
+	--color-brand-950: #081f31;
+
+	/* Civic surface tokens (cool neutrals), theme-aware via :root vars. */
 	--color-bg: var(--bg);
 	--color-surface: var(--surface);
 	--color-surface-2: var(--surface-2);
 	--color-line: var(--border);
 	--color-ink: var(--text);
 	--color-ink-muted: var(--text-muted);
-	--color-accent: var(--accent);
 	--color-accent-fill: var(--accent-fill);
 	--color-accent-ink: var(--accent-ink);
 	--color-accent-hover: var(--accent-hover);
+	--color-accent-strong: var(--accent);
 	--color-success: var(--success);
 	--color-success-bg: var(--success-bg);
 	--color-warning: var(--warning);
@@ -36,20 +66,34 @@
 	--color-error: var(--error);
 	--color-error-bg: var(--error-bg);
 	--color-focus: var(--focus);
+	--color-verified: var(--verified);
+	--color-verified-bg: var(--verified-bg);
+	--color-changed: var(--changed);
+	--color-changed-bg: var(--changed-bg);
+}
 
-	--font-display: var(--font-display);
-	--font-body: var(--font-body);
-	--font-mono: var(--font-mono);
-
-	--radius-xs: var(--radius-xs);
-	--radius-sm: var(--radius-sm);
-	--radius-md: var(--radius-md);
-
-	/* Repo breakpoints (720 / 1080 / 1440), not Tailwind's
-	   768 / 1024 / 1280 — md:/lg:/xl: keep their repo meaning. */
-	--breakpoint-md: 720px;
-	--breakpoint-lg: 1080px;
-	--breakpoint-xl: 1440px;
+/* shadcn/new-york compat: primitives reference these; they resolve to
+   the civic vars above so light/dark follow data-theme at runtime. */
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent-soft);
+	--color-accent-foreground: var(--accent-soft-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
 }
 
 :root {
@@ -70,16 +114,34 @@
 	--error: #a6192e;
 	--error-bg: #fbe7ea;
 	--focus: #0b4a75;
+	--verified: #176b3a;
+	--verified-bg: #e3f2e8;
+	--changed: #8a4b00;
+	--changed-bg: #fdf0d7;
 
-	--font-display: Georgia, 'Times New Roman', serif; /* stand-in for Source Serif 4 */
-	--font-body: system-ui, -apple-system, 'Segoe UI', sans-serif; /* stand-in for Public Sans */
-	--font-mono: ui-monospace, SFMono-Regular, Menlo, monospace; /* stand-in for IBM Plex Mono */
-
-	--radius-xs: 4px;
-	--radius-sm: 8px;
-	--radius-md: 14px;
+	--background: var(--bg);
+	--foreground: var(--text);
+	--card: var(--bg);
+	--card-foreground: var(--text);
+	--popover: var(--bg);
+	--popover-foreground: var(--text);
+	--primary: var(--accent-fill);
+	--primary-foreground: #ffffff;
+	--secondary: var(--surface);
+	--secondary-foreground: var(--text);
+	--muted: var(--surface);
+	--muted-foreground: var(--text-muted);
+	--accent-soft: var(--surface-2);
+	--accent-soft-foreground: var(--text);
+	--destructive: var(--error);
+	--destructive-foreground: #ffffff;
+	--input: var(--border);
+	--ring: var(--focus);
 }
 
+/* OS default for the first paint before the boot snippet resolves
+   data-theme (and for no-JS). The snippet always sets data-theme
+   afterwards, so the attribute blocks below are authoritative. */
 @media (prefers-color-scheme: dark) {
 	:root {
 		--bg: #0b141b;
@@ -91,6 +153,7 @@
 		--accent: #7cc0ea;
 		--accent-fill: #164e74;
 		--accent-ink: #ffffff;
+		--accent-hover: #1f6ea3;
 		--success: #5fd08a;
 		--success-bg: #123324;
 		--warning: #f2b84b;
@@ -98,6 +161,12 @@
 		--error: #f07d8e;
 		--error-bg: #3d1420;
 		--focus: #7cc0ea;
+		--verified: #5fd08a;
+		--verified-bg: #123324;
+		--changed: #f2b84b;
+		--changed-bg: #3a2a10;
+		--primary-foreground: #ffffff;
+		--destructive-foreground: #0b141b;
 	}
 }
 
@@ -120,6 +189,12 @@
 	--error: #a6192e;
 	--error-bg: #fbe7ea;
 	--focus: #0b4a75;
+	--verified: #176b3a;
+	--verified-bg: #e3f2e8;
+	--changed: #8a4b00;
+	--changed-bg: #fdf0d7;
+	--primary-foreground: #ffffff;
+	--destructive-foreground: #ffffff;
 }
 
 :root[data-theme='dark'] {
@@ -132,6 +207,7 @@
 	--accent: #7cc0ea;
 	--accent-fill: #164e74;
 	--accent-ink: #ffffff;
+	--accent-hover: #1f6ea3;
 	--success: #5fd08a;
 	--success-bg: #123324;
 	--warning: #f2b84b;
@@ -139,33 +215,49 @@
 	--error: #f07d8e;
 	--error-bg: #3d1420;
 	--focus: #7cc0ea;
+	--verified: #5fd08a;
+	--verified-bg: #123324;
+	--changed: #f2b84b;
+	--changed-bg: #3a2a10;
+	--primary-foreground: #ffffff;
+	--destructive-foreground: #0b141b;
 }
 
-/* Mobile-first base (360px default; breakpoints 720 / 1080 / 1440). */
-*,
-*::before,
-*::after {
-	box-sizing: border-box;
+/* Mobile-first base (360px default; breakpoints 720 / 1080 / 1440).
+   Layered under utilities so `text-*` classes always win on links. */
+@layer base {
+	body {
+		background: var(--bg);
+		color: var(--text);
+		font-family: var(--font-sans);
+		font-size: 16px;
+		line-height: 1.55;
+	}
+
+	a {
+		color: var(--accent);
+	}
+
+	h1,
+	h2 {
+		letter-spacing: -0.01em;
+		line-height: 1.2;
+	}
 }
 
-body {
-	margin: 0;
-	background: var(--bg);
-	color: var(--text);
-	font-family: var(--font-body);
-	font-size: 16px;
-	line-height: 1.55;
-}
+/* Quoted source text uses `font-quote` (serif, from --font-quote).
+   Serif is reserved for that utility — never for UI chrome or headings. */
 
-a {
-	color: var(--accent);
+/* shadcn hook classes (not Tailwind utilities): toasts inherit the UI
+   typeface, and submenu chevrons mirror in RTL locales. */
+.toaster {
+	--border-radius: var(--radius-md);
 }
-
-h1,
-h2 {
-	font-family: var(--font-display);
-	letter-spacing: -0.01em;
-	line-height: 1.2;
+.cn-toast {
+	font-family: var(--font-sans);
+}
+.cn-rtl-flip:where([dir='rtl'], [dir='rtl'] *) {
+	transform: scaleX(-1);
 }
 
 :focus-visible {
@@ -182,9 +274,9 @@ h2 {
 	}
 }
 
-/* Print stub (OPEN-30 drive-by): hide the interactive chrome, keep the
-   wordmark as letterhead; force light ink-on-paper. `!important` beats
-   the layout's scoped display rules — print is the one place it is. */
+/* Print: hide the interactive chrome, keep the wordmark as letterhead;
+   force light ink-on-paper. `!important` beats the layout's scoped
+   display rules — print is the one place it is. */
 @media print {
 	.masthead .menus,
 	footer {

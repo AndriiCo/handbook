@@ -270,7 +270,7 @@
 	// the active fill must never co-occur with the idle border in
 	// the cascade — and the tailwind checker only reads literals.
 	function stepBtnCls(active: boolean): string {
-		const base = 'min-h-11 cursor-pointer rounded-sm border px-3 font-bold [font:inherit] disabled:cursor-default';
+		const base = 'min-h-11 cursor-pointer rounded-sm border px-3 font-bold disabled:cursor-default';
 		return active ? `${base} border-accent-fill bg-accent-fill text-accent-ink` : `${base} border-line bg-bg`;
 	}
 </script>
@@ -305,7 +305,7 @@
 			<label class="flex min-h-11 flex-col gap-[0.35rem] font-bold" for="setup-key">
 				Setup key
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-mono font-normal text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-mono font-normal text-ink"
 					id="setup-key"
 					type="password"
 					bind:value={keyInput}
@@ -319,7 +319,7 @@
 			{/if}
 			<p>
 				<button
-					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 					type="submit">Start / resume setup</button
 				>
 			</p>
@@ -330,12 +330,12 @@
 		<Notice variant="error" heading="Setup unavailable."><p>{setupError}</p></Notice>
 		<p class="flex gap-2">
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 				type="button"
 				onclick={loadSteps}>Retry</button
 			>
 			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-line bg-bg px-5 font-bold [font:inherit]"
+				class="min-h-11 cursor-pointer rounded-sm border border-line bg-bg px-5 font-bold"
 				type="button"
 				onclick={forgetKey}>Use a different key</button
 			>
@@ -404,7 +404,7 @@
 							<label class="flex min-h-11 flex-col gap-[0.35rem] font-bold" for={`setup-${field.key}`}>
 								Value
 								<input
-									class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink [font:inherit]"
+									class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink"
 									id={`setup-${field.key}`}
 									type="text"
 									value={textValue(row)}
@@ -423,7 +423,7 @@
 							<label class="flex min-h-11 flex-col gap-[0.35rem] font-bold" for={`setup-${field.key}`}>
 								New value (write-only — overwrites)
 								<input
-									class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink [font:inherit]"
+									class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink"
 									id={`setup-${field.key}`}
 									type="password"
 									autocomplete="new-password"
@@ -446,7 +446,7 @@
 						{/if}
 						<p>
 							<button
-								class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+								class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 								onclick={() => saveSetup(row)}
 								disabled={!row.dirty || row.saving || (row.type === 'secret' && !row.draft)}
 							>
@@ -460,7 +460,7 @@
 			<div class="flex gap-2 pb-8">
 				{#if stepIdx > 0}
 					<button
-						class="min-h-11 cursor-pointer rounded-sm border border-line bg-bg px-5 font-bold [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+						class="min-h-11 cursor-pointer rounded-sm border border-line bg-bg px-5 font-bold disabled:cursor-not-allowed disabled:opacity-55"
 						type="button"
 						disabled={navSaving}
 						onclick={() => goStep(stepIdx - 1)}>← {steps[stepIdx - 1].title}</button
@@ -468,7 +468,7 @@
 				{/if}
 				{#if stepIdx < steps.length - 1}
 					<button
-						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 						type="button"
 						disabled={navSaving}
 						onclick={() => goStep(stepIdx + 1)}>{navSaving ? 'Saving…' : `${steps[stepIdx + 1].title} →`}</button
@@ -495,7 +495,7 @@
 					{#each missingRequired as key (key)}
 						<li>
 							<button
-								class="min-h-11 cursor-pointer font-mono [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+								class="min-h-11 cursor-pointer font-mono disabled:cursor-not-allowed disabled:opacity-55"
 								type="button"
 								disabled={navSaving}
 								onclick={() => goStep(stepFor(key))}
@@ -532,7 +532,7 @@
 	</Notice>
 	<p>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 			onclick={load}>Retry</button
 		>
 	</p>
@@ -542,7 +542,7 @@
 	</Notice>
 	<p>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 			onclick={load}>Reload</button
 		>
 	</p>
@@ -571,7 +571,7 @@
 					<label class="flex min-h-11 flex-col gap-[0.35rem] font-bold" for={`cfg-${row.key}`}>
 						Value
 						<input
-							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink [font:inherit]"
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink"
 							id={`cfg-${row.key}`}
 							type="text"
 							value={typeof row.value === 'string' ? row.value : ''}
@@ -589,7 +589,7 @@
 					<label class="flex min-h-11 flex-col gap-[0.35rem] font-bold" for={`cfg-${row.key}`}>
 						New value (write-only — overwrites)
 						<input
-							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink [font:inherit]"
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink"
 							id={`cfg-${row.key}`}
 							type="password"
 							autocomplete="new-password"
@@ -612,7 +612,7 @@
 				{/if}
 				<p>
 					<button
-						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 						onclick={() => save(row)}
 						disabled={!row.dirty || row.saving || (row.type === 'secret' && !row.draft)}
 					>

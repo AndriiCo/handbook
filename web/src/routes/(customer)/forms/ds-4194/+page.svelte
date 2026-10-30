@@ -129,7 +129,7 @@
 		<p class="m-0 mb-1 text-[0.8125rem] tracking-[0.04em] uppercase">
 			US Department of State · draft resemblance · not the official form
 		</p>
-		<h1 class="m-0 mb-1 font-display text-2xl leading-[1.2]">{template.title} (DS-4194)</h1>
+		<h1 class="m-0 mb-1 font-sans text-2xl leading-[1.2]">{template.title} (DS-4194)</h1>
 		<p class="m-0 text-sm">{template.authority_revision} · template v{template.version}</p>
 	</header>
 
@@ -180,7 +180,7 @@
 									</label>
 									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
 									<textarea
-										class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+										class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 										id={field.key}
 										rows="2"
 										maxlength={field.max_len}
@@ -195,7 +195,7 @@
 									</label>
 									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
 									<textarea
-										class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+										class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 										id={field.key}
 										rows="3"
 										maxlength={field.max_len}
@@ -231,7 +231,7 @@
 									</label>
 									{#if field.help}<p class="m-0 mb-2 text-sm">{field.help}</p>{/if}
 									<input
-										class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+										class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 										id={field.key}
 										type={field.type === 'number' ? 'number' : field.type === 'email' ? 'email' : 'text'}
 										inputmode={field.type === 'number' ? 'numeric' : undefined}
@@ -266,7 +266,7 @@
 
 			<div class="mt-6 flex gap-3 print:hidden">
 				<button
-					class="cursor-pointer rounded-sm border border-line bg-accent px-5 py-[0.625rem] font-semibold text-accent-ink [font:inherit]"
+					class="cursor-pointer rounded-sm border border-line bg-accent-fill px-5 py-[0.625rem] font-semibold text-accent-ink"
 					type="submit">Review draft</button
 				>
 			</div>
@@ -299,12 +299,12 @@
 
 		<div class="mt-6 flex gap-3 print:hidden">
 			<button
-				class="cursor-pointer rounded-sm border border-line bg-accent px-5 py-[0.625rem] font-semibold text-accent-ink [font:inherit]"
+				class="cursor-pointer rounded-sm border border-line bg-accent-fill px-5 py-[0.625rem] font-semibold text-accent-ink"
 				type="button"
 				onclick={() => (step = 'fill')}>Back to edit</button
 			>
 			<button
-				class="cursor-pointer rounded-sm border border-line bg-accent px-5 py-[0.625rem] font-semibold text-accent-ink [font:inherit]"
+				class="cursor-pointer rounded-sm border border-line bg-accent-fill px-5 py-[0.625rem] font-semibold text-accent-ink"
 				type="button"
 				onclick={printPage}>Print / save PDF</button
 			>

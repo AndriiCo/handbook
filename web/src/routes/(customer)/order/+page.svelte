@@ -28,7 +28,7 @@
 >
 	<label class="mt-2 font-bold" for="authority">Destination authority</label>
 	<select
-		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 		id="authority"
 		name="authority"
 		required
@@ -60,7 +60,7 @@
 
 	<label class="mt-2 font-bold" for="name">Full name</label>
 	<input
-		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 		id="name"
 		name="name"
 		type="text"
@@ -70,7 +70,7 @@
 
 	<label class="mt-2 font-bold" for="email">Email</label>
 	<input
-		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 		id="email"
 		name="email"
 		type="email"
@@ -80,7 +80,7 @@
 
 	<label class="mt-2 font-bold" for="street">Street address</label>
 	<input
-		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 		id="street"
 		name="street"
 		type="text"
@@ -90,7 +90,7 @@
 
 	<label class="mt-2 font-bold" for="city">City</label>
 	<input
-		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 		id="city"
 		name="city"
 		type="text"
@@ -100,7 +100,7 @@
 
 	<label class="mt-2 font-bold" for="postal">Postal code</label>
 	<input
-		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+		class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 		id="postal"
 		name="postal"
 		type="text"
@@ -109,7 +109,7 @@
 	/>
 
 	<button
-		class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit]"
+		class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink"
 		type="submit">Submit order</button
 	>
 </form>

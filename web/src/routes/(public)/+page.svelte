@@ -54,7 +54,7 @@
 </svelte:head>
 
 <section class="py-6" aria-labelledby="start">
-	<h1 id="start" class="m-0 mb-4 font-display text-3xl md:text-4xl">
+	<h1 id="start" class="m-0 mb-4 font-sans text-3xl md:text-4xl">
 		Start with your destination
 	</h1>
 	<form role="search" class="flex flex-col gap-2 md:flex-row" onsubmit={(e) => e.preventDefault()}>
@@ -66,11 +66,11 @@
 			bind:value={query}
 			placeholder="Country, state, or authority…"
 			autocomplete="off"
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit] md:flex-1"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink md:flex-1"
 		/>
 		<button
 			type="submit"
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit]"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink"
 		>
 			Search
 		</button>
@@ -80,7 +80,7 @@
 <section class="pb-8" aria-labelledby="index">
 	<h2
 		id="index"
-		class="border-b border-line pb-[0.4rem] font-body text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase"
+		class="border-b border-line pb-[0.4rem] font-sans text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase"
 	>
 		Authority index
 	</h2>

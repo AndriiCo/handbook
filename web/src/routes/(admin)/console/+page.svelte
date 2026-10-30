@@ -45,7 +45,7 @@
 			<label class="flex flex-col gap-[0.35rem] font-bold" for="draft">
 				Proposed fact (with citation)
 				<textarea
-					class="resize-y rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink [font:inherit]"
+					class="resize-y rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink"
 					id="draft"
 					rows="5"
 					bind:value={draft}
@@ -59,7 +59,7 @@
 			{/if}
 			<p>
 				<button
-					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit]"
+					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink"
 					type="submit">Keep draft</button
 				>
 			</p>

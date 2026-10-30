@@ -1,7 +1,7 @@
 // Synthetic fixtures for the clickable UI mock (route group `(mock)`).
 // NEVER real data: every value below is invented for layout review.
 // Zero backend calls — pages import only this module plus existing
-// display components from $lib/public-ui.
+// display components from #lib/public-ui.
 
 export interface MockAuthority {
 	slug: string;

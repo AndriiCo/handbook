@@ -12,7 +12,7 @@
 <Notice variant="info" heading="Fixture data only.">
 	<p>
 		Every page under <code class="font-mono text-[0.85em]">/mock</code> renders invented data from
-		<code class="font-mono text-[0.85em]">$lib/mock/fixtures.ts</code> and makes zero backend calls.
+		<code class="font-mono text-[0.85em]">#lib/mock/fixtures.ts</code> and makes zero backend calls.
 		Layouts mirror the real routes so reviewers can click the full journey: search → dossier →
 		login → order → uploads → precheck → admin review.
 	</p>

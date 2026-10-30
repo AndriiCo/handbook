@@ -61,7 +61,7 @@
 	td::before {
 		content: attr(data-label) ': ';
 		font-weight: 700;
-		font-family: var(--font-body);
+		font-family: var(--font-sans);
 	}
 	@media (min-width: 720px) {
 		td::before {

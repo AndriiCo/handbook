@@ -10,8 +10,8 @@
 	// Full class strings per state: the active border/weight must
 	// never co-occur with the idle ones in the cascade.
 	const filterCls = (isActive: boolean) =>
-		`min-h-11 cursor-pointer rounded-sm border bg-surface px-[0.9rem] text-ink [font:inherit] ${
-			isActive ? 'border-accent font-bold' : 'border-line'
+		`min-h-11 cursor-pointer rounded-sm border bg-surface px-[0.9rem] text-ink ${
+			isActive ? 'border-accent-fill font-bold' : 'border-line'
 		}`;
 </script>
 
@@ -101,7 +101,7 @@
 	td::before {
 		content: attr(data-label) ': ';
 		font-weight: 700;
-		font-family: var(--font-body);
+		font-family: var(--font-sans);
 	}
 	@media (min-width: 720px) {
 		td::before {

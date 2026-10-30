@@ -1,5 +1,9 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import InfoIcon from '@lucide/svelte/icons/info';
+	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import OctagonXIcon from '@lucide/svelte/icons/octagon-x';
 
 	interface Props {
 		variant: 'info' | 'success' | 'warning' | 'error';
@@ -8,12 +12,13 @@
 	}
 
 	let { variant, heading, children }: Props = $props();
-	const icons: Record<Props['variant'], string> = {
-		info: 'i',
-		success: '✓',
-		warning: '!',
-		error: '×'
+	const icons = {
+		info: InfoIcon,
+		success: CircleCheckIcon,
+		warning: TriangleAlertIcon,
+		error: OctagonXIcon
 	};
+	const Icon = $derived(icons[variant]);
 	// Full class strings per variant (never stacked): exactly one
 	// background wins on each element.
 	const boxCls = (v: Props['variant']) =>
@@ -27,13 +32,13 @@
 						: 'bg-surface'
 		}`;
 	const iconCls = (v: Props['variant']) =>
-		`inline-flex size-6 flex-none items-center justify-center rounded-xs font-mono font-bold text-accent-ink ${
-			v === 'success' ? 'bg-success' : v === 'warning' ? 'bg-warning' : v === 'error' ? 'bg-error' : 'bg-accent'
+		`inline-flex size-6 flex-none items-center justify-center rounded-xs text-accent-ink ${
+			v === 'success' ? 'bg-success' : v === 'warning' ? 'bg-warning' : v === 'error' ? 'bg-error' : 'bg-accent-fill'
 		}`;
 </script>
 
 <div class={boxCls(variant)} role={variant === 'error' ? 'alert' : 'status'}>
-	<span class={iconCls(variant)} aria-hidden="true">{icons[variant]}</span>
+	<span class={iconCls(variant)} aria-hidden="true"><Icon class="size-4" /></span>
 	<div>
 		{#if heading}<p class="m-0 mb-1 font-bold">{heading}</p>{/if}
 		{@render children()}

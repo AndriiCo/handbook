@@ -160,7 +160,7 @@
 	function trustChip(trust: string): string {
 		const base = 'inline-block rounded border px-2 py-0.5 text-sm font-bold';
 		if (trust === 'official') return `${base} border-success bg-success-bg text-success`;
-		if (trust === 'staff_verified') return `${base} border-accent bg-surface text-accent`;
+		if (trust === 'staff_verified') return `${base} border-accent-fill bg-surface text-accent-strong`;
 		return `${base} border-line bg-surface-2 text-ink-muted`;
 	}
 

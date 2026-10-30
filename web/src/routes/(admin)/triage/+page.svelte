@@ -121,7 +121,7 @@
 	<Notice variant="warning" heading="Queue unavailable."><p>{loadError}</p></Notice>
 	<p>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 			onclick={load}>Retry</button
 		>
 	</p>
@@ -165,7 +165,7 @@
 					<label class="grid gap-[0.3rem] text-sm text-ink-muted">
 						Reason (required to reject, optional to accept)
 						<input
-							class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink [font:inherit]"
+							class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
 							type="text"
 							bind:value={item.reason}
 							maxlength="1024"
@@ -176,14 +176,14 @@
 				</p>
 				<p class="mb-0 flex gap-3">
 					<button
-						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
 						onclick={() => decide(item, 'accept')}
 						disabled={item.busy}
 					>
 						{item.busy ? 'Working…' : 'Accept'}
 					</button>
 					<button
-						class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-55"
+						class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-55"
 						onclick={() => decide(item, 'reject')}
 						disabled={item.busy}
 					>

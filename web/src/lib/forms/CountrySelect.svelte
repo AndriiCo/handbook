@@ -36,8 +36,8 @@
 	// Full class strings per state: the active option colors must
 	// never co-occur with the idle ones in the cascade.
 	const optionCls = (isActive: boolean) =>
-		`block w-full cursor-pointer rounded-xs border-0 px-2 py-[0.375rem] text-left [font:inherit] ${
-			isActive ? 'bg-accent text-accent-ink' : 'bg-transparent text-inherit'
+		`block w-full cursor-pointer rounded-xs border-0 px-2 py-[0.375rem] text-left ${
+			isActive ? 'bg-accent-fill text-accent-ink' : 'bg-transparent text-inherit'
 		}`;
 
 	function onKeyDown(event: KeyboardEvent) {
@@ -60,7 +60,7 @@
 
 <div class="relative">
 	<input
-		class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit [font:inherit]"
+		class="w-full rounded-sm border border-line bg-surface px-3 py-2 text-inherit"
 		{id}
 		{name}
 		type="text"

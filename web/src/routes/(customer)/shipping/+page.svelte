@@ -359,7 +359,7 @@
 	>
 		<label class="font-bold" for="authority">Authority ID</label>
 		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="authority"
 			type="number"
 			min="1"
@@ -372,7 +372,7 @@
 				<legend class="px-1 font-bold">From</legend>
 				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-name">Name</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="from-name"
 					type="text"
 					bind:value={from.name}
@@ -381,7 +381,7 @@
 				/>
 				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-street">Street</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="from-street"
 					type="text"
 					bind:value={from.street1}
@@ -392,14 +392,14 @@
 					Street, line 2 (optional)
 				</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="from-street2"
 					type="text"
 					bind:value={from.street2}
 				/>
 				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-city">City</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="from-city"
 					type="text"
 					bind:value={from.city}
@@ -408,7 +408,7 @@
 				/>
 				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-state">State</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="from-state"
 					type="text"
 					bind:value={from.state_province}
@@ -418,7 +418,7 @@
 					Postal code
 				</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="from-postal"
 					type="text"
 					bind:value={from.postal}
@@ -429,7 +429,7 @@
 					Country (ISO-2)
 				</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="from-country"
 					type="text"
 					bind:value={from.country}
@@ -439,7 +439,7 @@
 					Phone (optional)
 				</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="from-phone"
 					type="tel"
 					bind:value={from.phone}
@@ -450,7 +450,7 @@
 				<legend class="px-1 font-bold">To</legend>
 				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-name">Name</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="to-name"
 					type="text"
 					bind:value={to.name}
@@ -458,7 +458,7 @@
 				/>
 				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-street">Street</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="to-street"
 					type="text"
 					bind:value={to.street1}
@@ -468,14 +468,14 @@
 					Street, line 2 (optional)
 				</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="to-street2"
 					type="text"
 					bind:value={to.street2}
 				/>
 				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-city">City</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="to-city"
 					type="text"
 					bind:value={to.city}
@@ -483,7 +483,7 @@
 				/>
 				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-state">State</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="to-state"
 					type="text"
 					bind:value={to.state_province}
@@ -493,7 +493,7 @@
 					Postal code
 				</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="to-postal"
 					type="text"
 					bind:value={to.postal}
@@ -503,7 +503,7 @@
 					Country (ISO-2)
 				</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="to-country"
 					type="text"
 					bind:value={to.country}
@@ -513,7 +513,7 @@
 					Phone (optional)
 				</label>
 				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="to-phone"
 					type="tel"
 					bind:value={to.phone}
@@ -525,7 +525,7 @@
 			<div class="flex flex-col gap-1">
 				<label class="font-bold" for="parcel">Parcel</label>
 				<select
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="parcel"
 					bind:value={parcel}
 				>
@@ -537,7 +537,7 @@
 			<div class="flex flex-col gap-1">
 				<label class="font-bold" for="service">Service</label>
 				<select
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 					id="service"
 					bind:value={service}
 				>
@@ -549,7 +549,7 @@
 		</div>
 
 		<button
-			class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-[1.2rem] py-[0.6rem] font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+			class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-[1.2rem] py-[0.6rem] font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="submit"
 			disabled={busy}>Create shipment</button
 		>
@@ -565,7 +565,7 @@
 			Shipment {shipmentId} · status: <strong>{shipmentStatus || 'draft'}</strong>
 			<button
 				type="button"
-				class="m-0 ml-2 min-h-0 cursor-pointer rounded-sm border border-accent bg-accent px-[0.6rem] py-1 font-bold text-accent-ink [font:inherit]"
+				class="m-0 ml-2 min-h-0 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-[0.6rem] py-1 font-bold text-accent-ink"
 				onclick={refresh}>Refresh</button
 			>
 		</p>
@@ -592,7 +592,7 @@
 				<div class="flex flex-col gap-1">
 					<label class="font-bold" for="direction">Direction</label>
 					<select
-						class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+						class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 						id="direction"
 						bind:value={direction}
 					>
@@ -604,7 +604,7 @@
 					<div class="flex flex-col gap-1">
 						<label class="font-bold" for="carrier">Carrier</label>
 						<select
-							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 							id="carrier"
 							bind:value={carrier}
 						>
@@ -615,7 +615,7 @@
 					<div class="flex flex-col gap-1">
 						<label class="font-bold" for="format">Layout</label>
 						<select
-							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 							id="format"
 							bind:value={format}
 						>
@@ -632,7 +632,7 @@
 					<div class="flex flex-col gap-1">
 						<label class="font-bold" for="paper">Paper size</label>
 						<select
-							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 							id="paper"
 							bind:value={paper}
 						>
@@ -646,12 +646,12 @@
 
 			<div class="flex flex-wrap gap-3">
 				<button
-					class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-[1.2rem] py-[0.6rem] font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+					class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-[1.2rem] py-[0.6rem] font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 					type="submit"
 					disabled={busy}>Purchase label</button
 				>
 				<button
-					class="mt-3 min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-[1.2rem] py-[0.6rem] font-bold text-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+					class="mt-3 min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-[1.2rem] py-[0.6rem] font-bold text-ink disabled:cursor-wait disabled:opacity-60"
 					type="button"
 					disabled={busy}
 					onclick={saveDefaults}
@@ -705,7 +705,7 @@
 						>
 							<label class="font-bold" for="track-{label.id}">Tracking number</label>
 							<input
-								class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+								class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 								id="track-{label.id}"
 								type="text"
 								bind:value={pasteTracking[label.id]}
@@ -713,14 +713,14 @@
 							/>
 							<label class="font-bold" for="file-{label.id}">Label PDF</label>
 							<input
-								class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+								class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 								id="file-{label.id}"
 								type="file"
 								accept="application/pdf"
 								onchange={(e) => pickFile(label.id, e)}
 							/>
 							<button
-								class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent bg-accent px-[1.2rem] py-[0.6rem] font-bold text-accent-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+								class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-[1.2rem] py-[0.6rem] font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 								type="submit"
 								disabled={busy}>Paste back</button
 							>
@@ -729,7 +729,7 @@
 					{#if label.summary.status === 'issued'}
 						<button
 							type="button"
-							class="mt-3 min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-[1.2rem] py-[0.6rem] font-bold text-ink [font:inherit] disabled:cursor-wait disabled:opacity-60"
+							class="mt-3 min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-[1.2rem] py-[0.6rem] font-bold text-ink disabled:cursor-wait disabled:opacity-60"
 							disabled={busy}
 							onclick={() => voidLabel(label.id)}
 						>

@@ -29,8 +29,8 @@
 	// the active border/text colors must never co-occur with the
 	// idle ones in the cascade.
 	const tabCls = (isActive: boolean) =>
-		`min-h-11 cursor-pointer border-0 border-b-[3px] bg-transparent px-[0.9rem] py-2 [font:inherit] ${
-			isActive ? 'border-accent font-bold text-ink' : 'border-transparent text-ink-muted'
+		`min-h-11 cursor-pointer border-0 border-b-[3px] bg-transparent px-[0.9rem] py-2 ${
+			isActive ? 'border-accent-fill font-bold text-ink' : 'border-transparent text-ink-muted'
 		}`;
 </script>
 
@@ -45,7 +45,7 @@
 {:else}
 	<header class="mb-4 border-b border-line pt-6 pb-4">
 		<p class="m-0 text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase">{authority.kind}</p>
-		<h1 class="mt-1 mb-2 font-display text-3xl md:text-4xl">{authority.name}</h1>
+		<h1 class="mt-1 mb-2 font-sans text-3xl md:text-4xl">{authority.name}</h1>
 		<VerifiedChip tier={authority.tier} verified={authority.verified} />
 	</header>
 
@@ -108,7 +108,7 @@
 				<label class="flex items-center justify-between gap-4 text-sm">
 					Certified copies
 					<input
-						class="min-h-11 w-[4.5rem] rounded-xs border border-line bg-bg px-[0.6rem] py-[0.4rem] text-ink [font:inherit]"
+						class="min-h-11 w-[4.5rem] rounded-xs border border-line bg-bg px-[0.6rem] py-[0.4rem] text-ink"
 						type="number"
 						min="1"
 						max="20"

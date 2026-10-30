@@ -67,7 +67,7 @@
 <form class="flex max-w-[32rem] flex-col gap-3" onsubmit={upload}>
 	<label class="font-bold" for="files">Choose files (up to 10, 25 MB each)</label>
 	<input
-		class="min-h-11 py-[0.6rem] [font:inherit]"
+		class="min-h-11 py-[0.6rem]"
 		id="files"
 		name="files"
 		type="file"
@@ -90,7 +90,7 @@
 		<Notice variant="success" heading="Uploaded."><p>{result}</p></Notice>
 	{/if}
 	<button
-		class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink [font:inherit] disabled:cursor-not-allowed disabled:opacity-[0.55]"
+		class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-[0.55]"
 		type="submit"
 		disabled={busy || files.length === 0}
 	>

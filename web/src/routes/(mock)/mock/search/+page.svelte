@@ -26,7 +26,7 @@
 	>
 		<label class="sr-only" for="q">Search the handbook</label>
 		<input
-			class="min-h-11 flex-1 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink [font:inherit]"
+			class="min-h-11 flex-1 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="q"
 			name="q"
 			type="search"
@@ -35,7 +35,7 @@
 			autocomplete="off"
 		/>
 		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink [font:inherit]"
+			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink"
 			type="submit">Search</button
 		>
 	</form>
