@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "sh \"$(git rev-parse --show-toplevel)/.muse/hooks/run.sh\" session-start" }] }
+    ],
+    "PreToolUse": [
+      { "matcher": ".*", "hooks": [{ "type": "command", "command": "sh \"$(git rev-parse --show-toplevel)/.muse/hooks/run.sh\" guard" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command", "command": "sh \"$(git rev-parse --show-toplevel)/.muse/hooks/run.sh\" notify" }] }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"$(git rev-parse --show-toplevel)/.muse/hooks/run.sh\" stop-gate", "timeout": 300 },
+          { "type": "command", "command": "sh \"$(git rev-parse --show-toplevel)/.muse/hooks/run.sh\" session-log --hook" }
+        ]
+      }
+    ]
+  }
+}
