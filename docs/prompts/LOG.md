@@ -16,3 +16,4 @@
 | 111 | 2026-10-30 16:35Z | Plese do. | doc_ids prompt+schema, clippy/tests green |
 | 112 | 2026-10-30 14:05Z | /taste + Plese do. | stepper badges, login h2 cut, shots 20/20 |
 | 113 | 2026-10-30 14:10Z | Continue (goal). | operator line refreshed, scripts bash -n |
+| 114 | 2026-10-30 14:25Z | Continue (goal). | eval doc_ids fix, main builds again |
