@@ -162,3 +162,32 @@ for `web/`; old §5 per-prompt log files; old §6 single-writer checkout,
 child output caps, decision/OPEN ledger and spec-before-surface; the bans
 and JS budgets in `docs/site-theme.md`; the DO-NOTs in
 `docs/ui-framework-proposal.md`.
+
+## 8. Plant box (durable — survives Nov 5; added per author goal)
+
+Builds and full test suites run on `plant` (`ssh plant`, user
+`chandra`, Ubuntu x86_64, unprivileged). Plant builds and tests
+only — it never deploys and never touches prod config, secrets
+or DB. Pipeline code: `ops/plant-pipeline/` (README is the runbook).
+
+- NEVER root on plant, and never ask the author for root. If a
+  step seems to need root, find the rootless way or stop and report.
+- Home dir only: `~/apostille-pipeline/`. Unprivileged ports
+  only (range `18080-18999` reserved for pipeline status).
+- Async: `submit.sh` enqueues and returns in seconds. Never
+  block a workstream waiting for plant; poll with `status.sh`.
+- Gated: every deploy candidate must pass the full suite
+  (`cargo xtask ci`) on plant. A red gate prints `ABORT`, writes
+  no stamp, stages nothing. No stamp
+  (`acceptance/<sha12>.json` with `ci_green: true`), no ship.
+  No `--skip-*` flags, ever.
+- Reproducible: committed SHAs only (dirty tree refused at
+  submit); `Cargo.lock` + `package-lock.json` inside the tarball;
+  toolchain versions recorded in every run log and stamp.
+- Logged: `logs/<run>.log` + per-stage logs; append-only
+  `history.jsonl` (one object per stage/final event).
+- Synthetic fixtures only on plant; no customer data, no prod
+  credentials.
+- Additive during the freeze: this section changes no §7 gate;
+  the existing path (demo gate + `ci` green + ONE operator
+  script + at most one binary deploy/day) stays authoritative.
