@@ -241,7 +241,6 @@
 		<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3" role="status">Signing you in…</p>
 	{/if}
 	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={login}>
-		<h2 class="form-title">Log in with a passkey</h2>
 		<label class="font-bold" for="account">User ID or email</label>
 		<input
 			class="field"

@@ -57,14 +57,15 @@
 		name.trim() !== '' && /.+@.+\..+/.test(email.trim()) && street.trim() !== ''
 	);
 
-	const stepCls = (isCurrent: boolean, isPast: boolean) =>
-		isPast && isCurrent
-			? 'font-bold text-success'
+		const badgeCls = (isCurrent: boolean, isPast: boolean) =>
+		'flex size-7 items-center justify-center rounded-full border text-sm font-bold ' +
+		(isCurrent
+			? 'border-accent-fill bg-accent-fill text-accent-ink'
 			: isPast
-				? 'text-success'
-				: isCurrent
-					? 'font-bold text-ink'
-					: '';
+				? 'border-success text-success'
+				: 'border-line text-ink-muted');
+	const stepLabelCls = (isCurrent: boolean, isPast: boolean) =>
+		isCurrent ? 'font-bold text-ink' : isPast ? 'text-ink' : 'text-ink-muted';
 </script>
 
 <svelte:head>
@@ -90,13 +91,17 @@
 		</p>
 	</Notice>
 {:else}
-	<ol class="flex list-none flex-wrap gap-x-4 gap-y-2 p-0 text-ink-muted" aria-label="Order progress">
+	<ol class="flex list-none flex-wrap items-center gap-y-2 p-0" aria-label="Order progress">
 		{#each ['Destination', 'Document', 'Contact', 'Review'] as label, i (label)}
-			<li
-				class={stepCls(step === i + 1, step > i + 1 || done)}
-				aria-current={step === i + 1 && !done ? 'step' : undefined}
-			>
-				{i + 1}. {label}
+			{@const n = i + 1}
+			{@const isCurrent = step === n && !done}
+			{@const isPast = step > n || done}
+			<li class="flex items-center" aria-current={isCurrent ? 'step' : undefined}>
+				<span aria-hidden="true" class={badgeCls(isCurrent, isPast)}>{n}</span>
+				<span class={'ml-2 ' + stepLabelCls(isCurrent, isPast)}>{label}</span>
+				{#if n < 4}
+					<span aria-hidden="true" class="mx-2 h-px w-6 bg-line sm:w-10"></span>
+				{/if}
 			</li>
 		{/each}
 	</ol>
