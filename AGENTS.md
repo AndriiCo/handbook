@@ -168,3 +168,49 @@ for `web/`; old §5 per-prompt log files; old §6 single-writer checkout,
 child output caps, decision/OPEN ledger and spec-before-surface; the bans
 and JS budgets in `docs/site-theme.md`; the DO-NOTs in
 `docs/ui-framework-proposal.md`.
+
+## 8. Plant: build gate and staging acceptance (`ssh plant`)
+
+`plant` is the operator's build and staging box: the SSH alias from the
+operator's `~/.ssh/config`, reached over LAN/VPN. The repo records only
+the alias — never a username, IP, DNS name, or key. If a public DNS name
+is ever needed, the agent asks the operator instead of inventing one.
+Plant is never customer-facing and never touches production: no prod
+credentials on plant, no SSH from plant to prod, no prod DB copies. §7 is
+unchanged: production deploys stay operator-run.
+
+Build gate (`ops/plant-pipeline/`, whose README is the runbook):
+- Never root on plant, and never ask for root. If a step seems to need
+  root, find the rootless way or stop and report. Home directory only.
+- Async: `ops/plant-pipeline/submit.sh` enqueues a committed SHA and
+  returns in seconds; poll with `status.sh`. Never block a slice waiting
+  for plant.
+- Gated: every deploy candidate passes the full suite (`cargo xtask ci`)
+  on plant. A red gate prints `ABORT`, writes no stamp, stages nothing.
+  No stamp (`acceptance/<sha12>.json` with `ci_green: true`), no ship.
+  No `--skip-*` flags, ever.
+- Reproducible and logged: committed SHAs only (dirty trees are refused
+  at submit); `Cargo.lock` + `package-lock.json` inside the tarball;
+  toolchain versions in every run log and stamp; `logs/<run>.log` plus
+  the append-only `history.jsonl`.
+
+Staging acceptance (agent-exclusive, standing approval):
+- After every green slice the agent runs staging acceptance: sync code
+  delta-only (`git` fetch or `rsync`, spare the VPN), restart the
+  *staging* stack, run the scoreboard and the demo walk against it,
+  report the score. Staging churn is expected and free; production stays
+  at zero-touch.
+- No dedicated IP: everything on staging binds dynamically allocated
+  unprivileged ports (free-port pick at start, from 18080-18999, recorded
+  in the run log). Never fixed prod ports, never an assumed-stable
+  staging URL — `--base` takes the discovered URL each run. Prefer
+  binding `127.0.0.1` on plant and reaching it through
+  `ssh -N -L <free local port>:127.0.0.1:<port> plant`, so the URL is
+  `http://127.0.0.1:<local port>/apostille` and no address is written down.
+- Data: staging may reuse its DB/files, but reset and full delete are
+  always allowed and never block. Every reused dataset has a regeneration
+  recipe in `docs/ops/staging.md`. Important data lives in GCS (project
+  `plant-andrii-ai`), access-locked, never world-readable; bucket
+  credentials live only on plant (operator-installed), never in the
+  repo. Fixtures stay synthetic: no customer data.
+- A red staging run blocks the deploy and nothing else.
