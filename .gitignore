@@ -24,5 +24,6 @@ rustc-ice-*.txt
 #.idea/
 .muse/*
 !.muse/hooks.json
+!.muse/session-log.scrub.example.json
 !.muse/hooks/
 web/shots/

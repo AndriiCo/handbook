@@ -13,9 +13,15 @@
       {
         "hooks": [
           { "type": "command", "command": "sh \"$(git rev-parse --show-toplevel)/.muse/hooks/run.sh\" stop-gate", "timeout": 300 },
-          { "type": "command", "command": "sh \"$(git rev-parse --show-toplevel)/.muse/hooks/run.sh\" session-log --hook" }
+          { "type": "command", "command": "sh \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.muse/hooks/run.sh\" session-log --hook Stop" }
         ]
       }
+    ],
+    "StopFailure": [
+      { "hooks": [{ "type": "command", "command": "sh \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.muse/hooks/run.sh\" session-log --hook StopFailure" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "sh \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/.muse/hooks/run.sh\" session-log --hook SessionEnd" }] }
     ]
   }
 }

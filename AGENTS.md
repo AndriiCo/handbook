@@ -1,10 +1,8 @@
 # AGENTS.md: Apostille Handbook, hackathon speed mode (until 2026-11-04 18:00 PT)
 
-> PROPOSAL, review line by line before adopting. It grants the agent
-> standing approvals and suspends ask-first rules, which is the point,
-> so you, not the agent, decide which lines to keep. Sections 1-6 replace
-> the current §1-§6. Section 7 keeps every rule that protects secrets and
-> production. Suspended rules return on 2026-11-05.
+> Adopted 2026-10-30. It grants the agent standing approvals and suspends
+> ask-first rules until 2026-11-05. Section 7 keeps every rule that
+> protects secrets and production. Only the operator edits this file.
 
 Speed over caution. The product is the judged demo: a stranger opens
 https://andrii.ai/apostille, a Meta model does visible work on real
@@ -99,7 +97,8 @@ fixtures, and shows the eval delta (before → after on the gold set).
 
 Demo gate: `npm --prefix web run demo` walks GP1→GP5, records video to
 `web/shots/demo/`, fails on console errors or banned strings. A red demo
-gate means no deploy that day.
+gate means no deploy that day. It does not exist yet; building it is in
+`.agents/goal.md`, and until it exists its absence blocks nothing.
 
 ## 5. Run shape
 
@@ -108,10 +107,11 @@ gate means no deploy that day.
 - Gates by diff: web-only → §4 only (no cargo). A touched crate → that
   crate's tests + `cargo clippy -p <crate>`. Full `cargo xtask ci` once a
   day, before the deploy.
-- Fast loop: `npm --prefix web run dev` proxies `/apostille/api` and
-  `/apostille/ws` to production's public read endpoints, so HMR runs on
-  real data. Web-only releases go through `ops-web-ship.sh` (copy `spa/`,
-  no zigbuild, no restart).
+- Fast loop: `npm --prefix web run dev` with the fixtures in
+  `web/e2e/fixtures/`. It has no API proxy yet; pointing it at the
+  staging tunnel (`server.proxy` in `web/vite.config.ts`, reading
+  `APOSTILLE_API`) is a short slice worth doing. There is no web-only
+  release path: every release is a binary deploy.
 - Commits small, on main, prefixed with the prompt number (`P096: …`).
   Push after each green slice.
 - Log: append ONE line to `docs/prompts/LOG.md` in the same commit:
@@ -156,9 +156,14 @@ Kept, never relaxed:
   not weaken auth gates on admin.andrii.ai. A public AI surface is
   rate-limited and cost-capped.
 - Production: the agent runs no root actions and never hand-edits prod
-  config, secrets or DB. At most one binary deploy per day via the
-  existing path, after the demo gate and `cargo xtask ci` are green. All
-  root steps for a day go into ONE operator script (zero placeholders,
+  config, secrets or DB. At most one binary deploy per day, run by the
+  operator (`docs/ops/scripts/ops-deploy.sh`), of a SHA that passed the
+  deploy gate: a plant stamp `acceptance/<sha12>.json` with
+  `ci_green: true` (§8), staging acceptance of that SHA with no
+  scoreboard row worse than production's, and the demo gate once it
+  exists. The agent hands over that SHA and the exact lines in
+  `docs/ops/operator-today.md`. All root steps for a day go into ONE
+  operator script (zero placeholders,
   `ABORT: <reason>`, prints evidence, `bash -n` clean).
 - Never rewrite history; roll back with a revert commit.
 
@@ -176,8 +181,8 @@ operator's `~/.ssh/config`, reached over LAN/VPN. The repo records only
 the alias — never a username, IP, DNS name, or key. If a public DNS name
 is ever needed, the agent asks the operator instead of inventing one.
 Plant is never customer-facing and never touches production: no prod
-credentials on plant, no SSH from plant to prod, no prod DB copies. §7 is
-unchanged: production deploys stay operator-run.
+credentials on plant, no SSH from plant to prod, no prod DB copies.
+Production deploys follow §7.
 
 Build gate (`ops/plant-pipeline/`, whose README is the runbook):
 - Never root on plant, and never ask for root. If a step seems to need
@@ -187,8 +192,11 @@ Build gate (`ops/plant-pipeline/`, whose README is the runbook):
   for plant.
 - Gated: every deploy candidate passes the full suite (`cargo xtask ci`)
   on plant. A red gate prints `ABORT`, writes no stamp, stages nothing.
-  No stamp (`acceptance/<sha12>.json` with `ci_green: true`), no ship.
-  No `--skip-*` flags, ever.
+  No stamp (`acceptance/<sha12>.json` with `ci_green: true`), no ship,
+  and no flag ever skips this gate. (`ops-deploy.sh --skip-accept` is a
+  different gate: it compares the prod DB's `build` row, which
+  production has never had. Until it has one, the operator passes the
+  flag on the deploy line and the output prints the WARNING.)
 - Reproducible and logged: committed SHAs only (dirty trees are refused
   at submit); `Cargo.lock` + `package-lock.json` inside the tarball;
   toolchain versions in every run log and stamp; `logs/<run>.log` plus
@@ -212,5 +220,12 @@ Staging acceptance (agent-exclusive, standing approval):
   recipe in `docs/ops/staging.md`. Important data lives in GCS (project
   `plant-andrii-ai`), access-locked, never world-readable; bucket
   credentials live only on plant (operator-installed), never in the
-  repo. Fixtures stay synthetic: no customer data.
+  repo. Fixtures stay synthetic: no customer data. The agent writes and
+  keeps `docs/ops/staging.md` without asking: start and stop, port pick,
+  tunnel, seed and regeneration recipes; the alias only, never a
+  username, IP or key.
+- Live model calls on staging use a staging-only Meta key that the
+  operator installs on plant (a 0600 file; `staging.md` records its
+  path, never its value), on synthetic documents or public pages only.
+  Until it exists, AI rows run on replays and say so.
 - A red staging run blocks the deploy and nothing else.

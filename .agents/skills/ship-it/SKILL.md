@@ -1,16 +1,24 @@
 ---
 name: ship-it
-description: Hackathon submission work for the Apostille Handbook - the scripted 3-minute demo recording, the judge-facing README, licence and public-repo preparation (scoreboard row S1). Use from 2026-11-03 or when the operator asks for the demo or the submission package.
+description: Hackathon submission work for the Apostille Handbook - the scripted 3-minute demo recording, the judge-facing README, licence and public-repo preparation (scoreboard row S1). Use now for the demo script and the demo gate (goal.md, while rows wait on the operator), from 2026-11-02 for the submission package, or when the operator asks.
 ---
 
 # ship-it
 
-Submissions close 2026-11-04 21:00 ET (18:00 PT). Judges see a 3-minute
-video and the live URL. Never make the repo public, change the licence or
+Submissions close 2026-11-04 18:00 PST (02:00 UTC 11-05; DST ends 11-01);
+the operator submits by 12:00 PST. Judges see a 3-minute video and the
+live URL. Never make the repo public, change the licence or
 upload anything yourself: prepare it, then list the operator's steps in
 `docs/ops/operator-today.md`.
 
 ## Demo recording
+
+Write `docs/demo-script.md` first: one row per scene with its URL, the
+production data it needs (e.g. two proposals per slug left unapproved for
+the approve scene), its seconds and its caption, 175 s in total. Then build
+the spec below, dry-run it against production the day after the data
+lands, and record the public segments yourself. The operator records the
+production admin segment and uploads the video.
 
 `web/e2e/demo.spec.mjs` + `npm --prefix web run demo`: 1440x900 with
 `recordVideo` into `web/shots/demo/`, `slowMo` 250, scripted from
@@ -43,5 +51,8 @@ and durations reported.
    in the generator's output, not by hand: hand edits are overwritten on
    the next turn.
 3. A one-paragraph MIT vs Apache-2.0 recommendation. Do not switch it.
-4. `node .agents/scoreboard/scoreboard.mjs --only S1` and list what is
-   still the operator's.
+4. `docs/ops/security-review-*.md` still lists unfixed findings (H1, H4,
+   M1, M2): before the repo goes public, each is fixed or the review moves
+   out of the public tree. Say which.
+5. `node .agents/scoreboard/scoreboard.mjs --only S1` and list what is
+   still the operator's, including the Cerebral Valley form itself.

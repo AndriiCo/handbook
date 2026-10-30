@@ -1,7 +1,8 @@
 // SessionStart: every new, resumed or compacted session starts knowing the
 // scoreboard, the next red row and what waits on the operator, so nobody
 // pastes status back in.
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { emit, git, readInput } from './lib.mjs';
 
 readInput();
@@ -29,5 +30,23 @@ try {
   // not a git checkout
 }
 if (existsSync('docs/ops/operator-today.md')) lines.push('Open operator steps: docs/ops/operator-today.md');
+
+// The prompt-and-response log lives in the MAIN checkout (this may be the
+// judge's worktree). Its last error matters only while no digest is newer.
+try {
+  const main = dirname(git('rev-parse', '--path-format=absolute', '--git-common-dir').trim());
+  const log = join(main, '.muse/session-log/errors.log');
+  if (existsSync(log)) {
+    const dir = join(main, 'docs/prompts/sessions');
+    const digests = existsSync(dir) ? readdirSync(dir).filter((f) => /^\d{4}-\d\d-\d\d-.+\.md$/.test(f)) : [];
+    const newest = Math.max(0, ...digests.map((f) => statSync(join(dir, f)).mtimeMs));
+    if (statSync(log).mtimeMs > newest) {
+      const last = readFileSync(log, 'utf8').trim().split('\n').at(-1) ?? '';
+      lines.push(`Session log (docs/prompts/sessions): .muse/session-log/errors.log has an entry newer than the newest digest, so the log may be behind: ${last.slice(0, 400)}. Tell the operator; do not edit .muse/.`);
+    }
+  }
+} catch {
+  // not a git checkout, or nothing to report
+}
 
 emit({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: lines.join('\n') } });

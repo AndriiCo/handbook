@@ -26,6 +26,7 @@ const OUT = resolve(ROOT, args.out || 'web/shots/scoreboard.json');
 
 const SLUGS = ['vietnam', 'usa-wa-sos'];
 const MIN_FACTS = 8;
+const MAX_QUOTE = 400; // a whole-page range is not a quote
 const MIN_GOLD = 25;
 const QUALITY_MAX_AGE_H = 72;
 const BANNED = /\b(placeholder|not wired|skeleton|lorem ipsum|todo|coming soon)\b/i;
@@ -115,12 +116,12 @@ async function a1() {
     let bad = 0;
     for (const f of facts) {
       const c = Array.isArray(f.citations) ? f.citations[0] : null;
-      const ok = c && typeof c.quote === 'string' && c.quote.trim().length >= 8
+      const ok = c && typeof c.quote === 'string' && c.quote.trim().length >= 8 && c.quote.trim().length <= MAX_QUOTE
         && /^https:\/\//.test(c.source_url ?? '') && !Number.isNaN(Date.parse(c.captured_at ?? ''));
       if (!ok) bad += 1;
       if (/muse-spark/i.test(f.drafted_by ?? f.created_by ?? '')) spark += 1;
     }
-    if (bad) problems.push(`${slug}: ${bad} fact(s) without citations[0].{quote>=8, https source_url, captured_at}`);
+    if (bad) problems.push(`${slug}: ${bad} fact(s) without citations[0].{quote 8-${MAX_QUOTE} chars, https source_url, captured_at}`);
   }
   if (total && !spark) problems.push('no fact has drafted_by matching muse-spark');
   return { problems, note: `${total} facts, ${spark} drafted by Spark` };
@@ -233,7 +234,8 @@ async function a5() {
   if (!(age <= QUALITY_MAX_AGE_H)) problems.push(`run_at "${q.run_at}" older than ${QUALITY_MAX_AGE_H} h`);
   if (!((q.gold_count ?? 0) >= MIN_GOLD)) problems.push(`gold_count ${q.gold_count ?? 0}/${MIN_GOLD}`);
   const rate = q.quote_found_rate;
-  if (!(typeof rate === 'number' && rate >= 0 && rate <= 1)) problems.push('quote_found_rate missing');
+  if (!/muse-spark/i.test(q.model ?? '')) problems.push(`model "${q.model ?? '?'}" (want a live muse-spark eval)`);
+  if (!(typeof rate === 'number' && rate > 0 && rate <= 1)) problems.push(`quote_found_rate ${rate ?? 'missing'} (want 0 < rate <= 1)`);
   else {
     const v = await visit('/', 1440, 900);
     if (!v.text.includes(`${Math.round(rate * 100)}%`)) problems.push(`home does not show ${Math.round(rate * 100)}%`);
