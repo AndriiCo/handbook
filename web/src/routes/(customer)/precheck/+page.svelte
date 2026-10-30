@@ -30,6 +30,12 @@
 
 	const chosenSample = $derived(samples?.find((s) => s.id === chosen) ?? null);
 
+	const sampleBtnCls = (active: boolean) =>
+		`flex min-h-11 w-full max-w-[36rem] cursor-pointer items-center gap-3 rounded-md border bg-bg px-3 py-2 text-left text-ink transition-colors ${active ? `border-accent-fill` : `border-line hover:border-focus`}`;
+
+	const verdictPillCls = (pass: boolean) =>
+		`inline-block rounded-xs border px-3 py-1 text-sm font-bold ${pass ? `border-verified bg-verified-bg text-verified` : `border-changed bg-changed-bg text-changed`}`;
+
 	$effect(() => {
 		fetch(api('/demo/precheck/samples'), { credentials: 'same-origin' })
 			.then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
@@ -111,10 +117,7 @@
 						runError = null;
 					}}
 					aria-pressed={chosen === s.id}
-					class="flex min-h-11 w-full max-w-[36rem] cursor-pointer items-center gap-3 rounded-md border bg-bg px-3 py-2 text-left text-ink transition-colors {chosen ===
-					s.id
-						? 'border-accent-fill'
-						: 'border-line hover:border-focus'}"
+					class={sampleBtnCls(chosen === s.id)}
 				>
 					<img
 						src={s.thumb_url}
@@ -145,12 +148,7 @@
 
 	{#if result && chosenSample}
 		<section aria-label="Precheck result" class="max-w-[36rem] pb-8">
-			<p
-				class="inline-block rounded-xs border px-3 py-1 text-sm font-bold {result.verdict === 'pass'
-					? 'border-verified bg-verified-bg text-verified'
-					: 'border-changed bg-changed-bg text-changed'}"
-				aria-live="polite"
-			>
+			<p class={verdictPillCls(result.verdict === 'pass')} aria-live="polite">
 				{result.verdict === 'pass' ? 'Pass — good to submit' : 'Retake — fix the issues below'}
 			</p>
 			<div class="relative mt-2 overflow-hidden rounded-md border border-line">

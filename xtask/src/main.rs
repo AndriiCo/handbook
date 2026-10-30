@@ -15,6 +15,7 @@ mod backup;
 mod build_handbook;
 mod config;
 mod demo_vietnam;
+mod eval;
 mod fetch_slug;
 mod form_scaffold;
 mod instruct;
@@ -55,6 +56,7 @@ fn main() {
         Some("form-scaffold") => form_scaffold::run(&args[1..]),
         Some("quic-probe") => quic_probe::run(&args[1..]),
         Some("demo-vietnam") => demo_vietnam::run(&args[1..]),
+        Some("eval") => eval::run(&args[1..]),
         Some("backup") => backup::run(&args[1..]),
         Some("backup-verify") => backup::run_verify(&args[1..]),
         Some("packs-validate") => run_packs_validate(&args[1..]),
@@ -96,6 +98,7 @@ Tasks:
   web-budget  report web/build JS+CSS size (advisory, no gate)
   serve       run the dev API server (cargo run -p web)
   analyze     draft proposed facts for an authority (stub default, --live for Meta API)
+  eval        grade drafts on evals/authorities/*.json [--live] [--store <path>] [--evals <dir>] (writes quality.json)
   fetch-url   fetch one URL into a warc capture (thin watch)
   fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
   atlas  run an Atlas task pack: --config <pack> --task <name> [--effort --model --protocol --out --refresh --limit --live --dry-run --run-id --pdf-tool]; --batch-poll <job>; --check
@@ -487,7 +490,7 @@ fn run_analyze(args: &[String]) {
 /// Missing KEK / missing key / unreadable config all fail closed here —
 /// `--live` never silently falls back to the stub (a stub run billed
 /// as live would draft fixture records into real captures).
-fn live_client(conn: &rusqlite::Connection) -> handbook_agent::model::MetaRestClient {
+pub(crate) fn live_client(conn: &rusqlite::Connection) -> handbook_agent::model::MetaRestClient {
     let (kek, _source) = sealed_config::load_kek().unwrap_or_else(|e| {
         eprintln!("analyze: {e}");
         std::process::exit(1);

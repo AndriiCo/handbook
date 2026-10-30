@@ -10,3 +10,4 @@
 | 105 | 2026-10-30 14:50Z | /taste fixes: chips, skeleton, app.css tokens | check/builds/tailwind/tests green |
 | 106 | 2026-10-30 15:10Z | GP4 order stepper promoted from mock, mock page deleted | check/builds/imports/tests green |
 | 107 | 2026-10-30 15:40Z | A2 precheck: replay endpoints, SAM demo UI, live recorder | web 245 + node 95 green, thumbs ship |
+| 108 | 2026-10-30 16:05Z | A5 quality: 26-case gold, eval harness, endpoint, home pct | gates green, stub baseline zeros |

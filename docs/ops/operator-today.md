@@ -21,3 +21,6 @@ Then: approve N proposals for vietnam and usa-wa-sos in `/review`
 A2 (needs META_API_KEY in the shell, deploy first so the endpoint exists):
 `META_API_KEY=... bash /home/hal/apostille/scripts/ops-a2-record.sh`
 — one live SAM + Spark call per synthetic sample, verdicts installed as replay.
+
+A5 (deploy first so `eval` exists): `bash /home/hal/apostille/scripts/ops-a5-eval.sh`
+— one live draft per gold case, writes quality.json the endpoint serves.

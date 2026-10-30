@@ -40,10 +40,22 @@
 			.catch(() => {
 				loadError = publicError(500, 'index');
 			});
+		// Draft-quality signal (A5): whole percent of drafted records
+		// with a verified quote, when an eval has run. Absence is
+		// silence, never an error.
+		get('/quality')
+			.then((res) => {
+				const rate = res.body?.quote_found_rate;
+				if (res.ok && typeof rate === 'number' && rate >= 0 && rate <= 1) {
+					qualityPct = Math.round(rate * 100);
+				}
+			})
+			.catch(() => {});
 	});
 
 	const blank = $derived(query.trim() === '');
 	const results = $derived(index === null ? null : filterAuthorities(index, query));
+	let qualityPct = $state<number | null>(null);
 
 	// Featured destinations: the golden-path authorities, resolved
 	// against the live index so names stay fresh; static fallback
@@ -94,6 +106,11 @@
 			Search
 		</button>
 	</form>
+	{#if qualityPct !== null}
+		<p class="mt-3 mb-0 font-mono text-xs text-ink-muted">
+			{qualityPct}% of drafted records carry a verified quote (latest eval)
+		</p>
+	{/if}
 </section>
 
 <section class="pb-2" aria-labelledby="featured">

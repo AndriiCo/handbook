@@ -292,6 +292,7 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/logout", post(passkey::logout))
         .route("/api/v1/auth/me", get(passkey::me))
         .route("/api/v1/auth/providers", get(auth_providers))
+        .route("/api/v1/quality", get(quality))
         .route("/api/v1/auth/google/start", post(oauth::start))
         .route("/api/v1/auth/apple/start", post(oauth_apple::start))
         .route("/api/v1/auth/meta/start", post(oauth_meta::start))
@@ -445,6 +446,35 @@ async fn demo_login(
         Json(json!({"customer_ref": body.customer_ref})),
     )
         .into_response()
+}
+
+/// `GET /api/v1/quality` — latest eval summary written by
+/// `cargo xtask eval` to `<store>/quality.json`. Missing or unparsable
+/// means no eval has run yet (the operator runs it; see
+/// docs/ops/scripts/ops-a5-eval.sh).
+async fn quality(State(state): State<AppState>) -> impl IntoResponse {
+    let path = state.store_root.join("quality.json");
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error": "no quality run yet"})),
+            )
+                .into_response();
+        }
+    };
+    let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(value) => value,
+        Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error": "no quality run yet"})),
+            )
+                .into_response();
+        }
+    };
+    (StatusCode::OK, Json(value)).into_response()
 }
 
 /// `GET /auth/providers` — OAuth provider ids configured in THIS
@@ -1645,6 +1675,54 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn quality_missing_is_unavailable() {
+        let fx = fixture();
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/quality")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn quality_serves_eval_summary() {
+        let fx = fixture();
+        std::fs::write(
+            fx.state.store_root.join("quality.json"),
+            serde_json::json!({
+                "run_at": "2026-10-30T13:00:00Z",
+                "gold_count": 26,
+                "quote_found_rate": 0.875,
+                "value_in_quote_rate": 0.75,
+                "topic_accuracy": 0.9,
+                "model": "muse-spark-1.3",
+                "drafted_total": 40,
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/quality")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = json_body(res).await;
+        assert_eq!(body["gold_count"], 26);
+        assert_eq!(body["quote_found_rate"], 0.875);
+        assert_eq!(body["model"], "muse-spark-1.3");
     }
 
     #[tokio::test]
