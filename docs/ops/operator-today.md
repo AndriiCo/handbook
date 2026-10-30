@@ -24,3 +24,6 @@ A2 (needs META_API_KEY in the shell, deploy first so the endpoint exists):
 
 A5 (deploy first so `eval` exists): `bash /home/hal/apostille/scripts/ops-a5-eval.sh`
 — one live draft per gold case, writes quality.json the endpoint serves.
+
+S1: switch LICENSE to MIT (text ready at opensource.org/licenses/MIT),
+make the repo public, and link the demo video in README (video lands 11-03).

@@ -449,30 +449,34 @@ async fn demo_login(
 }
 
 /// `GET /api/v1/quality` — latest eval summary written by
-/// `cargo xtask eval` to `<store>/quality.json`. Missing or unparsable
-/// means no eval has run yet (the operator runs it; see
-/// docs/ops/scripts/ops-a5-eval.sh).
+/// `cargo xtask eval` to `<store>/quality.json`. Always 200: before the
+/// first run the body says so explicitly (`run_at: null`), because the
+/// home page probes this endpoint on every load and a 4xx/5xx there
+/// would log a console error on GP1. The A5 row still fails on the
+/// pending body (no `run_at`, `gold_count` 0) until the operator runs
+/// docs/ops/scripts/ops-a5-eval.sh.
 async fn quality(State(state): State<AppState>) -> impl IntoResponse {
-    let path = state.store_root.join("quality.json");
-    let bytes = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"error": "no quality run yet"})),
-            )
-                .into_response();
-        }
+    let pending = || {
+        (
+            StatusCode::OK,
+            Json(json!({
+                "status": "no-quality-run",
+                "run_at": null,
+                "gold_count": 0,
+                "quote_found_rate": null,
+                "value_in_quote_rate": null,
+                "topic_accuracy": null,
+                "model": null,
+            })),
+        )
+            .into_response()
     };
-    let value: serde_json::Value = match serde_json::from_slice(&bytes) {
-        Ok(value) => value,
-        Err(_) => {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"error": "no quality run yet"})),
-            )
-                .into_response();
-        }
+    let path = state.store_root.join("quality.json");
+    let Ok(bytes) = std::fs::read(&path) else {
+        return pending();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return pending();
     };
     (StatusCode::OK, Json(value)).into_response()
 }
@@ -1678,7 +1682,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn quality_missing_is_unavailable() {
+    async fn quality_missing_is_pending_not_error() {
+        // Always 200: the home page probes this on every load, so a
+        // missing run must not log a console error. The pending body
+        // still fails the A5 contract (no run_at, gold_count 0).
         let fx = fixture();
         let res = public_router_for(&fx.state)
             .oneshot(
@@ -1689,7 +1696,11 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = json_body(res).await;
+        assert_eq!(body["status"], "no-quality-run");
+        assert!(body["run_at"].is_null());
+        assert_eq!(body["gold_count"], 0);
     }
 
     #[tokio::test]
