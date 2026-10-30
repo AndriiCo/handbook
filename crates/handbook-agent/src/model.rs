@@ -236,11 +236,19 @@ struct RawResponse {
 /// lists all properties). The topic is the frozen [`Topic`](contracts::topics::Topic)
 /// enum, not a free string, so off-vocabulary topics are refused by the
 /// API before our byte-exact citation validator enforces grounding.
-fn response_format() -> serde_json::Value {
+/// Schema-constrained decoding with the admissible citation doc ids
+/// as an enum. Empty `doc_ids` keeps the free-string shape (used by
+/// tests); live calls always pass the request's doc ids.
+fn response_format_for(doc_ids: &[String]) -> serde_json::Value {
     let topics: Vec<&str> = contracts::topics::Topic::ALL
         .iter()
         .map(|t| t.as_str())
         .collect();
+    let doc_id = if doc_ids.is_empty() {
+        json!({"type": "string"})
+    } else {
+        json!({"type": "string", "enum": doc_ids})
+    };
     json!({
         "type": "json_schema",
         "json_schema": {
@@ -260,7 +268,7 @@ fn response_format() -> serde_json::Value {
                                 "citation": {
                                     "type": "object",
                                     "properties": {
-                                        "doc_id": {"type": "string"},
+                                        "doc_id": doc_id,
                                         "byte_start": {"type": "integer"},
                                         "byte_end": {"type": "integer"}
                                     },
@@ -296,7 +304,7 @@ impl ModelClient for MetaRestClient {
             "messages": [{"role": "developer", "content": prompt}],
             "temperature": 0,
             "max_completion_tokens": 2000,
-            "response_format": response_format(),
+            "response_format": response_format_for(&req.doc_ids),
             "prompt_cache_key": format!("analysis-agent-{}", req.prompt_version),
         });
         let response = self.post_chat(&body)?;
@@ -420,6 +428,7 @@ mod tests {
             input_text: "PO Box 40220".to_string(),
             max_records: 4,
             capture_id: 0,
+            doc_ids: vec!["fixture".to_string()],
         }
     }
 
@@ -498,6 +507,12 @@ mod tests {
             let prompt = v["messages"][0]["content"].as_str().unwrap();
             assert!(prompt.contains("wa-sos"), "slug substituted");
             assert!(prompt.contains("PO Box 40220"), "evidence inline");
+            assert!(prompt.contains("fixture"), "doc ids named");
+            assert_eq!(
+                v["response_format"]["json_schema"]["schema"]["properties"]["records"]["items"]["properties"]
+                    ["citation"]["properties"]["doc_id"],
+                serde_json::json!({"type": "string", "enum": ["fixture"]})
+            );
             assert_eq!(v["temperature"], 0);
             assert_eq!(v["response_format"]["type"], "json_schema");
             assert_eq!(

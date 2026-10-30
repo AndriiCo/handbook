@@ -13,6 +13,10 @@ pub struct DraftRequest {
     pub max_records: u32,
     /// Provenance id; `UNATTRIBUTED_CAPTURE_ID` when hand-fed.
     pub capture_id: i64,
+    /// Admissible citation doc ids (the sources-map keys). The prompt
+    /// names them and the response schema enums them, so drafts cite
+    /// documents that exist instead of guessing ids.
+    pub doc_ids: Vec<String>,
 }
 
 /// Byte-exact citation into a source document.

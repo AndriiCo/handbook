@@ -6,6 +6,7 @@ or rank facts.
 
 AUTHORITY: {{slug}}
 MAX RECORDS: {{max_records}}
+CITE DOC IDS: {{doc_ids}}
 
 EVIDENCE:
 
@@ -20,8 +21,9 @@ Rules:
 2. Cite byte offsets (`byte_start`, `byte_end`) into the evidence for
    every record. Quote spans exactly, character-for-character; never
    paraphrase inside a citation.
-3. Never invent topics, values, or citations. If nothing draftable is
-   present, reply with no records.
+3. Never invent topics, values, or document ids: every citation's
+   `doc_id` must be one of the CITE DOC IDS above. If nothing
+   draftable is present, reply with no records.
 4. Flag contradictions: when the evidence disagrees with itself or is
    internally inconsistent, say so in the record instead of resolving
    the conflict silently.

@@ -85,12 +85,15 @@ pub fn run_analysis(
         return skip_unsupported_lang(conn, req, authority_id);
     }
 
+    let mut doc_ids: Vec<String> = req.sources.keys().cloned().collect();
+    doc_ids.sort();
     let draft = DraftRequest {
         authority_slug: req.slug.to_string(),
         prompt_version: PROMPT_VERSION,
         input_text: req.input_text.to_string(),
         max_records: DEFAULT_MAX_RECORDS,
         capture_id: req.capture_id,
+        doc_ids,
     };
     // Rendered for template validation; the current ModelClient shape carries
     // the evidence via DraftRequest, so no consumer takes this string yet.

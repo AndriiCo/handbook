@@ -7,7 +7,8 @@ use std::collections::HashMap;
 
 use contracts::model::{DraftRequest, DraftResponse};
 
-/// Fill `{{slug}}`, `{{input}}`, `{{max_records}}` in a prompt template.
+/// Fill `{{slug}}`, `{{input}}`, `{{max_records}}`, `{{doc_ids}}` in a
+/// prompt template.
 ///
 /// `input_text` is substituted last so evidence text is inserted
 /// verbatim (a literal `{{slug}}` inside the evidence is not expanded).
@@ -15,6 +16,7 @@ pub fn build_prompt(template: &str, req: &DraftRequest) -> String {
     template
         .replace("{{max_records}}", &req.max_records.to_string())
         .replace("{{slug}}", &req.authority_slug)
+        .replace("{{doc_ids}}", &req.doc_ids.join(", "))
         .replace("{{input}}", &req.input_text)
 }
 
@@ -205,9 +207,24 @@ mod tests {
             input_text: "evidence here".to_string(),
             max_records: 3,
             capture_id: 0,
+            doc_ids: vec!["fixture".to_string()],
         };
         let out = build_prompt("AUTH={{slug}} MAX={{max_records}} IN={{input}}", &req);
         assert_eq!(out, "AUTH=wa-sos MAX=3 IN=evidence here");
+    }
+
+    #[test]
+    fn build_prompt_names_admissible_doc_ids() {
+        let req = DraftRequest {
+            authority_slug: "wa-sos".to_string(),
+            prompt_version: "aa-prompt-v1",
+            input_text: "evidence here".to_string(),
+            max_records: 3,
+            capture_id: 0,
+            doc_ids: vec!["fixture".to_string(), "sidecar".to_string()],
+        };
+        let out = build_prompt("DOCS: {{doc_ids}}", &req);
+        assert_eq!(out, "DOCS: fixture, sidecar");
     }
 
     #[test]
@@ -220,6 +237,7 @@ mod tests {
             input_text: "{{slug}} {{max_records}}".to_string(),
             max_records: 3,
             capture_id: 0,
+            doc_ids: vec![],
         };
         let out = build_prompt("AUTH={{slug}} IN={{input}}", &req);
         assert_eq!(out, "AUTH=wa IN={{slug}} {{max_records}}");
