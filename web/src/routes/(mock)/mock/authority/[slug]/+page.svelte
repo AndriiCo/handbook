@@ -135,7 +135,7 @@
 				</table>
 				<p class="mb-0 text-[0.8rem] text-ink-muted">Fixture amounts for layout review — not real fees.</p>
 			</section>
-			<p><a href={resolve('/(mock)/mock/order')}>Start an order for this authority</a></p>
+			<p><a href={resolve('/(customer)/order')}>Start an order for this authority</a></p>
 			<p><a href={resolve('/(mock)/mock/login')}>Report a change (login required)</a></p>
 		</aside>
 	</div>

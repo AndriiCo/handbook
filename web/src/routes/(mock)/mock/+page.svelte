@@ -50,9 +50,9 @@
 				> — status list
 			</li>
 			<li class="my-[0.3rem]">
-				<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(mock)/mock/order')}
+				<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(customer)/order')}
 					>Forms fill flow</a
-				> — stepped new-order form
+				> — stepped new-order form (promoted to the real route)
 			</li>
 			<li class="my-[0.3rem]">
 				<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(mock)/mock/uploads')}

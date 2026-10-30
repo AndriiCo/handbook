@@ -8,3 +8,4 @@
 | 103 | 2026-10-30 14:05Z | GP2-page dossier: name h1, live WS, citation hover | check/builds/imports/tests green, no browser |
 | 104 | 2026-10-30 14:30Z | GP3 login: providers endpoint, webauthn input, passkey button | web 241 + node 95 green, voice flake noted |
 | 105 | 2026-10-30 14:50Z | /taste fixes: chips, skeleton, app.css tokens | check/builds/tailwind/tests green |
+| 106 | 2026-10-30 15:10Z | GP4 order stepper promoted from mock, mock page deleted | check/builds/imports/tests green |

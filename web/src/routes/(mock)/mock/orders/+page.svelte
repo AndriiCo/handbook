@@ -20,7 +20,7 @@
 </svelte:head>
 
 <h1>Orders</h1>
-<p><a href={resolve('/(mock)/mock/order')}>Start a new order</a></p>
+<p><a href={resolve('/(customer)/order')}>Start a new order</a></p>
 
 <div class="my-4 flex flex-wrap gap-[0.4rem]" role="group" aria-label="Filter by status">
 	{#each filters as f (f)}

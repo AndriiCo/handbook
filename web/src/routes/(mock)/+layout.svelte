@@ -17,7 +17,7 @@
 			links: [
 				{ href: resolve('/(mock)/mock/login'), label: 'Login' },
 				{ href: resolve('/(mock)/mock/orders'), label: 'Orders' },
-				{ href: resolve('/(mock)/mock/order'), label: 'New order' },
+				{ href: resolve('/(customer)/order'), label: 'New order' },
 				{ href: resolve('/(mock)/mock/uploads'), label: 'Uploads' },
 				{ href: resolve('/(mock)/mock/precheck'), label: 'Precheck' },
 				{ href: resolve('/(mock)/mock/billing'), label: 'Billing' }
