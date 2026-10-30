@@ -13,3 +13,4 @@
 | 108 | 2026-10-30 16:05Z | A5 quality: 26-case gold, eval harness, endpoint, home pct | gates green, stub baseline zeros |
 | 109 | 2026-10-30 16:20Z | quality 200-when-pending (GP1 clean), S1 operator line | tests green |
 | 110 | 2026-10-30 16:40Z | shots gate green (20 PNGs, WS acceptor, new fixtures) | harness fixed, PNGs not viewed |
+| 111 | 2026-10-30 16:35Z | Plese do. | doc_ids prompt+schema, clippy/tests green |
