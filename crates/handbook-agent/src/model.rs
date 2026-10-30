@@ -22,27 +22,43 @@ use crate::analyze::build_prompt;
 pub struct StubClient;
 
 impl ModelClient for StubClient {
+    fn model_id(&self) -> &'static str {
+        "stub"
+    }
+
     fn draft_records(&self, req: &DraftRequest) -> Result<DraftResponse, ModelError> {
+        // Citations locate each value inside the request evidence: the
+        // offsets are only valid because the validator checks the value
+        // sits inside the quote. A value absent from the evidence cites
+        // an empty range, which the validator rejects as BadRange.
+        let cite = |value: &str| match req.input_text.find(value) {
+            Some(start) => (start as u32, (start + value.len()) as u32),
+            None => (0, 0),
+        };
+        let address_value = "PO Box 40220".to_string();
+        let hours_value = "Mon-Fri 9-5".to_string();
+        let (address_start, address_end) = cite(&address_value);
+        let (hours_start, hours_end) = cite(&hours_value);
         let records = vec![
             ProposedRecord {
                 topic: "address".to_string(),
                 field: "po_box".to_string(),
-                value: "PO Box 40220".to_string(),
+                value: address_value,
                 citation: CitationRef {
                     doc_id: "fixture".to_string(),
-                    byte_start: 0,
-                    byte_end: 12,
+                    byte_start: address_start,
+                    byte_end: address_end,
                 },
                 confidence: 0.9,
             },
             ProposedRecord {
                 topic: "hours".to_string(),
                 field: "weekday".to_string(),
-                value: "Mon-Fri 9-5".to_string(),
+                value: hours_value,
                 citation: CitationRef {
                     doc_id: "fixture".to_string(),
-                    byte_start: 13,
-                    byte_end: 24,
+                    byte_start: hours_start,
+                    byte_end: hours_end,
                 },
                 confidence: 0.8,
             },
@@ -217,9 +233,14 @@ struct RawResponse {
 /// `json_schema` response format for [`DraftResponse`]: schema-constrained
 /// decoding (not post-processing), strict-subset compliant (root plain
 /// object, every object `additionalProperties: false`, `required`
-/// lists all properties). The API enforces shape; our byte-exact
-/// citation validator still enforces grounding.
+/// lists all properties). The topic is the frozen [`Topic`](contracts::topics::Topic)
+/// enum, not a free string, so off-vocabulary topics are refused by the
+/// API before our byte-exact citation validator enforces grounding.
 fn response_format() -> serde_json::Value {
+    let topics: Vec<&str> = contracts::topics::Topic::ALL
+        .iter()
+        .map(|t| t.as_str())
+        .collect();
     json!({
         "type": "json_schema",
         "json_schema": {
@@ -233,7 +254,7 @@ fn response_format() -> serde_json::Value {
                         "items": {
                             "type": "object",
                             "properties": {
-                                "topic": {"type": "string"},
+                                "topic": {"type": "string", "enum": topics},
                                 "field": {"type": "string"},
                                 "value": {"type": "string"},
                                 "citation": {
@@ -261,6 +282,10 @@ fn response_format() -> serde_json::Value {
 }
 
 impl ModelClient for MetaRestClient {
+    fn model_id(&self) -> &'static str {
+        DRAFT_MODEL
+    }
+
     fn draft_records(&self, req: &DraftRequest) -> Result<DraftResponse, ModelError> {
         if self.api_key.is_empty() {
             return Err(ModelError::Auth("meta api key not configured".to_string()));

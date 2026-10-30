@@ -32,6 +32,23 @@ pub enum ValidationErrorKind {
     MissingDoc,
     BadRange,
     BadConfidence,
+    /// Cited quote is shorter than [`MIN_QUOTE_CHARS`] characters.
+    ShortQuote,
+    /// The record value is not found inside its cited quote.
+    ValueNotInQuote,
+}
+
+/// Minimum cited-quote length in characters: a shorter slice cannot
+/// carry a verifiable claim (A1: `quote.trim().len() >= 8`).
+pub const MIN_QUOTE_CHARS: usize = 8;
+
+/// Normalize evidence text for containment checks: lowercase with all
+/// whitespace runs collapsed to single spaces.
+pub fn normalize(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 /// Validate a draft response against sources and the frozen topic enum.
@@ -70,6 +87,23 @@ pub fn validate_response(
                         record_index,
                         kind: ValidationErrorKind::BadRange,
                     });
+                } else {
+                    // Offsets are server-side evidence: the quote must
+                    // be long enough to verify and must contain the
+                    // record's own value, else the model is paraphrasing
+                    // outside its citation.
+                    let quote = &source[start..end];
+                    if quote.chars().count() < MIN_QUOTE_CHARS {
+                        errors.push(ValidationError {
+                            record_index,
+                            kind: ValidationErrorKind::ShortQuote,
+                        });
+                    } else if !normalize(quote).contains(&normalize(&record.value)) {
+                        errors.push(ValidationError {
+                            record_index,
+                            kind: ValidationErrorKind::ValueNotInQuote,
+                        });
+                    }
                 }
             }
         }
@@ -139,7 +173,10 @@ mod tests {
         ProposedRecord {
             topic: topic.to_string(),
             field: "value".to_string(),
-            value: "v".to_string(),
+            // Matches the "PO Box 40220" source texts below, so these
+            // fixtures exercise their named failure without tripping
+            // the value-in-quote check incidentally.
+            value: "PO Box 40220".to_string(),
             citation: CitationRef {
                 doc_id: doc_id.to_string(),
                 byte_start: start,
@@ -289,6 +326,38 @@ mod tests {
                 &ValidationErrorKind::MissingDoc,
             ]
         );
+    }
+
+    #[test]
+    fn validator_rejects_short_quote() {
+        let mut sources = HashMap::new();
+        sources.insert("d1".to_string(), "Mon-Fri 9-5, PO Box 40220".to_string());
+        let mut rec = record("hours", "d1", 0, 7, 0.9);
+        rec.value = "Mon-Fri".to_string();
+        let resp = response(vec![rec]);
+        let errs = validate_response(&resp, &sources, &["hours"]).expect_err("short quote");
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].kind, ValidationErrorKind::ShortQuote);
+    }
+
+    #[test]
+    fn validator_rejects_value_outside_quote() {
+        let mut sources = HashMap::new();
+        sources.insert(
+            "d1".to_string(),
+            "walk-in Tue-Thu only, no mail stop".to_string(),
+        );
+        let mut rec = record("walkin", "d1", 0, 20, 0.9);
+        rec.value = "PO Box 40220".to_string();
+        let resp = response(vec![rec]);
+        let errs = validate_response(&resp, &sources, &["walkin"]).expect_err("value not in quote");
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].kind, ValidationErrorKind::ValueNotInQuote);
+    }
+
+    #[test]
+    fn normalize_collapses_whitespace_and_case() {
+        assert_eq!(normalize("  PO\tBox\n40220 "), "po box 40220");
     }
 
     #[test]

@@ -2435,6 +2435,95 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn public_facts_carry_quote_verified_citations() {
+        let fx = fixture();
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        let authority = db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa-sos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO source(authority_id, kind, uri)
+             VALUES (?1, 'website_official', 'https://www.sos.wa.gov/about-office/contact-us')",
+            [authority],
+        )
+        .unwrap();
+        let source_id = conn.last_insert_rowid();
+        // 1800000050 -> 2027-01-15T08:00:50Z.
+        conn.execute(
+            "INSERT INTO capture(authority_id, source_id, captured_at, kind, path,
+                                  bytes_raw, bytes_stored, sha256, trust)
+             VALUES (?1, ?2, 1800000050, 'file', 'p', 56, 56, 's', 'official')",
+            rusqlite::params![authority, source_id],
+        )
+        .unwrap();
+        let cap = conn.last_insert_rowid();
+        let text = "Walk-in service moved to Tumwater; mail to PO Box 40228.";
+        std::fs::create_dir_all(fx.state.store_root.join("text")).unwrap();
+        std::fs::write(
+            fx.state.store_root.join("text").join(format!("{cap}.txt")),
+            text,
+        )
+        .unwrap();
+        // Cited accepted fact: quote is bytes [0..33).
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement, status,
+                               created_by, created_at, citation_start, citation_end)
+             VALUES (?1, ?2, 'walkin', 'walkin: Walk-in service moved to Tumwater',
+                     'accepted', 'muse-spark-1.3 via analysis-agent/aa-prompt-v1',
+                     2, 0, 33)",
+            rusqlite::params![authority, cap],
+        )
+        .unwrap();
+        // Uncited accepted fact: honestly carries zero citations.
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement, status,
+                               created_by, created_at, citation_start, citation_end)
+             VALUES (?1, 0, 'hours', 'weekday: Mon-Fri 9-5',
+                     'accepted', 'muse-spark-1.3 via analysis-agent/aa-prompt-v1',
+                     3, -1, -1)",
+            [authority],
+        )
+        .unwrap();
+        drop(conn);
+
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/authorities/usa-wa-sos/facts")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let public = json_body(res).await;
+        let facts = public["facts"].as_array().unwrap();
+        assert_eq!(facts.len(), 2);
+        let cited = &facts[0];
+        assert!(cited["drafted_by"].as_str().unwrap().contains("muse-spark"));
+        let citations = cited["citations"].as_array().unwrap();
+        assert_eq!(citations.len(), 1);
+        assert_eq!(citations[0]["quote"], "Walk-in service moved to Tumwater");
+        assert_eq!(
+            citations[0]["source_url"],
+            "https://www.sos.wa.gov/about-office/contact-us"
+        );
+        assert_eq!(citations[0]["captured_at"], "2027-01-15T08:00:50Z");
+        assert_eq!(facts[1]["citations"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
     async fn public_authority_index_empty_db_is_empty_array() {
         let fx = fixture(); // migrated but unseeded: only the sentinel exists
         let res = public_router_for(&fx.state)

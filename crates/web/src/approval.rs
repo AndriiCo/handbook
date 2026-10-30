@@ -26,6 +26,15 @@ pub struct ConflictView {
     pub status: String,
 }
 
+/// One quote-verified citation on a fact (A1): the exact source quote,
+/// the captured page it came from, and when it was captured.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PublicCitation {
+    pub quote: String,
+    pub source_url: String,
+    pub captured_at: String,
+}
+
 /// One fact with its conflict banner.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FactView {
@@ -35,7 +44,11 @@ pub struct FactView {
     pub statement: String,
     pub status: String,
     pub created_by: String,
+    /// Model that drafted the fact (`created_by` carries it as
+    /// `"<model> via <pipeline>"`; surfaced under its own key for A1).
+    pub drafted_by: String,
     pub created_at: i64,
+    pub citations: Vec<PublicCitation>,
     pub conflict: bool,
     pub conflicts: Vec<ConflictView>,
 }
@@ -81,9 +94,17 @@ struct StoredFact {
     status: String,
     created_by: String,
     created_at: i64,
+    capture_id: i64,
+    citation_start: i64,
+    citation_end: i64,
 }
 
-fn fact_view(conn: &Connection, fact: &StoredFact, public_only: bool) -> FactView {
+fn fact_view(
+    conn: &Connection,
+    store_root: &std::path::Path,
+    fact: &StoredFact,
+    public_only: bool,
+) -> FactView {
     let mut conflicts = sibling_conflicts(
         conn,
         fact.authority_id,
@@ -102,10 +123,103 @@ fn fact_view(conn: &Connection, fact: &StoredFact, public_only: bool) -> FactVie
         statement: fact.statement.clone(),
         status: fact.status.clone(),
         created_by: fact.created_by.clone(),
+        drafted_by: fact.created_by.clone(),
         created_at: fact.created_at,
+        citations: public_citations(conn, store_root, fact),
         conflict,
         conflicts,
     }
+}
+
+/// Quote-verified citations for one fact (A1): at most one entry, only
+/// when the cited sidecar slice exists and is long enough to verify.
+/// The URL is the capture's own source, falling back to the
+/// authority's official website source; unattributed or uncited facts
+/// honestly carry zero citations.
+fn public_citations(
+    conn: &Connection,
+    store_root: &std::path::Path,
+    fact: &StoredFact,
+) -> Vec<PublicCitation> {
+    if fact.capture_id <= 0 || fact.citation_start < 0 || fact.citation_end <= fact.citation_start {
+        return vec![];
+    }
+    let quote = sidecar_slice(
+        store_root,
+        fact.capture_id,
+        fact.citation_start,
+        fact.citation_end,
+    );
+    if quote.chars().count() < 8 {
+        return vec![];
+    }
+    let (source_id, captured_at): (Option<i64>, Option<i64>) = conn
+        .query_row(
+            "SELECT source_id, captured_at FROM capture WHERE id = ?1",
+            [fact.capture_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap_or((None, None));
+    let captured_at = captured_at.unwrap_or(0);
+    let mut source_url: Option<String> = source_id.and_then(|id| {
+        conn.query_row("SELECT uri FROM source WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
+        .ok()
+    });
+    if source_url.is_none() {
+        source_url = conn
+            .query_row(
+                "SELECT uri FROM source WHERE authority_id = ?1 AND kind = 'website_official'
+                 ORDER BY id LIMIT 1",
+                [fact.authority_id],
+                |row| row.get(0),
+            )
+            .ok();
+    }
+    let Some(source_url) = source_url else {
+        return vec![];
+    };
+    vec![PublicCitation {
+        quote,
+        source_url,
+        captured_at: iso8601(captured_at),
+    }]
+}
+
+/// Server-sliced sidecar quote: `""` on missing file or bad bounds.
+fn sidecar_slice(store_root: &std::path::Path, capture_id: i64, start: i64, end: i64) -> String {
+    let bytes = std::fs::read(store_root.join("text").join(format!("{capture_id}.txt")))
+        .unwrap_or_default();
+    if start < 0 || end > bytes.len() as i64 || start >= end {
+        return String::new();
+    }
+    let (start, end) = (start as usize, end as usize);
+    String::from_utf8_lossy(&bytes[start..end]).to_string()
+}
+
+/// Unix seconds → `YYYY-MM-DDTHH:MM:SSZ` (civil-from-days, no date crate).
+fn iso8601(unix: i64) -> String {
+    let days = unix.div_euclid(86_400);
+    let secs = unix.rem_euclid(86_400);
+    // Howard Hinnant's civil-from-days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        m,
+        secs / 3_600,
+        (secs % 3_600) / 60,
+        secs % 60
+    )
 }
 
 fn open(state: &AppState) -> Option<Connection> {
@@ -141,7 +255,8 @@ pub async fn list_facts(
         return store_unavailable();
     };
     let mut sql = "SELECT f.id, f.authority_id, a.slug, f.topic, f.statement,
-                          f.status, f.created_by, f.created_at
+                          f.status, f.created_by, f.created_at,
+                          f.capture_id, f.citation_start, f.citation_end
                    FROM fact f JOIN authority a ON a.id = f.authority_id
                    WHERE f.status = ?1"
         .to_string();
@@ -159,6 +274,9 @@ pub async fn list_facts(
             status: row.get(5)?,
             created_by: row.get(6)?,
             created_at: row.get(7)?,
+            capture_id: row.get(8)?,
+            citation_start: row.get(9)?,
+            citation_end: row.get(10)?,
         })
     }
     let rows: Vec<StoredFact> = (|| {
@@ -175,7 +293,7 @@ pub async fn list_facts(
     .unwrap_or_default();
     let facts: Vec<FactView> = rows
         .iter()
-        .map(|row| fact_view(&conn, row, false))
+        .map(|row| fact_view(&conn, &state.store_root, row, false))
         .collect();
     let count = facts.len();
     (
@@ -361,7 +479,8 @@ fn decide_inner(
         let row: Option<(String, StoredFact)> = conn
             .query_row(
                 "SELECT f.status, f.authority_id, a.slug, f.topic, f.statement,
-                        f.created_by, f.created_at
+                        f.created_by, f.created_at,
+                        f.capture_id, f.citation_start, f.citation_end
                  FROM fact f JOIN authority a ON a.id = f.authority_id
                  WHERE f.id = ?1",
                 [id],
@@ -377,6 +496,9 @@ fn decide_inner(
                             status: decision.to.to_string(),
                             created_by: row.get(5)?,
                             created_at: row.get(6)?,
+                            capture_id: row.get(7)?,
+                            citation_start: row.get(8)?,
+                            citation_end: row.get(9)?,
                         },
                     ))
                 },
@@ -503,7 +625,7 @@ fn decide_inner(
             .to_string(),
         );
     }
-    let view = fact_view(conn, &fact, false);
+    let view = fact_view(conn, &state.store_root, &fact, false);
     if let Some((rule_id, deduped)) = rule {
         let mut body = serde_json::to_value(&view).unwrap_or(json!({}));
         body["rule"] = json!({"id": rule_id, "deduped": deduped});
@@ -552,7 +674,8 @@ pub async fn public_facts(
     };
     let rows: Vec<StoredFact> = conn
         .prepare(
-            "SELECT id, topic, statement, status, created_by, created_at
+            "SELECT id, topic, statement, status, created_by, created_at,
+                    capture_id, citation_start, citation_end
              FROM fact WHERE authority_id = ?1 AND status = 'accepted'
              ORDER BY id LIMIT 200",
         )
@@ -567,12 +690,18 @@ pub async fn public_facts(
                     status: row.get(3)?,
                     created_by: row.get(4)?,
                     created_at: row.get(5)?,
+                    capture_id: row.get(6)?,
+                    citation_start: row.get(7)?,
+                    citation_end: row.get(8)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
         })
         .unwrap_or_default();
-    let facts: Vec<FactView> = rows.iter().map(|row| fact_view(&conn, row, true)).collect();
+    let facts: Vec<FactView> = rows
+        .iter()
+        .map(|row| fact_view(&conn, &state.store_root, row, true))
+        .collect();
     (
         StatusCode::OK,
         Json(json!({"authority": slug, "facts": facts})),

@@ -75,4 +75,11 @@ impl std::error::Error for ModelError {}
 /// Draft structured records from evidence text.
 pub trait ModelClient {
     fn draft_records(&self, req: &DraftRequest) -> Result<DraftResponse, ModelError>;
+
+    /// Model id for `fact.created_by` attribution (e.g. `"muse-spark-1.3"`).
+    /// Test fakes keep the default; it never reaches storage for them
+    /// because their records are rejected or their calls fail.
+    fn model_id(&self) -> &'static str {
+        "unknown"
+    }
 }

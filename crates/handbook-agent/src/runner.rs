@@ -110,8 +110,9 @@ pub fn run_analysis(
     }
 
     // The fact table has no field/confidence columns: field folds
-    // into the statement (see insert_proposed_fact docs).
-    let created_by = format!("analysis-agent/{PROMPT_VERSION}");
+    // into the statement (see insert_proposed_fact docs). The model id
+    // leads so the public `drafted_by` carries it (A1: muse-spark-1.3).
+    let created_by = format!("{} via analysis-agent/{PROMPT_VERSION}", client.model_id());
     let capture_sha = capture_sha256(conn, req.capture_id);
     // B1: facts + watermark + audit commit atomically — a mid-run
     // failure never leaves content rows without their audit row.
@@ -799,9 +800,36 @@ mod tests {
             rows,
             vec![
                 (0, 12, "stub: two fixture records".to_string()),
-                (13, 24, "stub: two fixture records".to_string()),
+                (14, 25, "stub: two fixture records".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn created_by_names_model_and_prompt() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "PO Box 40220, Mon-Fri 9-5!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        let report = run_analysis(&conn, &StubClient, &req).unwrap();
+        assert_eq!(report.proposed, 2);
+        let by: String = conn
+            .query_row(
+                "SELECT created_by FROM fact ORDER BY id LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(by, format!("stub via analysis-agent/{PROMPT_VERSION}"));
     }
 
     #[test]
