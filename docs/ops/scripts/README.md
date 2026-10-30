@@ -46,3 +46,7 @@ Scripts:
 - `ops-hcch-seed.sh` — root: A2 HCCH seed (dir-scoped
   packs-load of hcch.json, staff fetch-url of the ONE URI
   derived from the source row, hcch-poll unblock proof).
+- `ops-drill3-run.sh` — root: drill 3, ONE full run (newest
+  daily → scratch restore → loopback re-port → scratch boot
+  as andrii-ai → healthz + packs + config-verify → envelope
+  attestation without disclosure → teardown). Run 3×.
