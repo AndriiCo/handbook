@@ -18,6 +18,7 @@ mod admin;
 mod admin_voice;
 mod admin_workers;
 mod approval;
+mod demo_precheck;
 mod host;
 mod magic;
 mod mtls;
@@ -267,6 +268,8 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/ws/echo", get(ws_echo_upgrade))
         .route("/ws/bus", get(ws_bus::ws_bus_upgrade))
         .route("/api/v1/demo/login", post(demo_login))
+        .route("/api/v1/demo/precheck/samples", get(demo_precheck::samples))
+        .route("/api/v1/demo/precheck", post(demo_precheck::run))
         .route("/api/v1/me", get(me))
         .route(
             "/api/v1/auth/passkey/register/start",
@@ -1533,6 +1536,115 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(json_body(res).await, serde_json::json!({"providers": []}));
+    }
+
+    fn demo_addr() -> axum::extract::ConnectInfo<std::net::SocketAddr> {
+        axum::extract::ConnectInfo("127.0.0.1:9".parse().unwrap())
+    }
+
+    fn demo_run_request(sample: &str) -> Request<Body> {
+        Request::builder()
+            .uri("/apostille/api/v1/demo/precheck")
+            .method("POST")
+            .header("content-type", "application/json")
+            .extension(demo_addr())
+            .body(Body::from(
+                serde_json::json!({"sample": sample}).to_string(),
+            ))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn demo_precheck_samples_lists_three() {
+        let fx = fixture();
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/demo/precheck/samples")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = json_body(res).await;
+        let samples = body["samples"].as_array().unwrap();
+        assert_eq!(samples.len(), 3);
+        for s in samples {
+            assert!(s["id"].as_str().is_some());
+            assert!(s["label"].as_str().is_some());
+            let thumb = s["thumb_url"].as_str().unwrap();
+            assert!(thumb.starts_with("/apostille/demo/syn-doc-"));
+            assert!(thumb.ends_with(".png"));
+        }
+    }
+
+    #[tokio::test]
+    async fn demo_precheck_rejects_unknown_sample() {
+        let fx = fixture();
+        let res = session_app(&fx.state.store_root)
+            .oneshot(demo_run_request("nope"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn demo_precheck_unrecorded_is_unavailable() {
+        let fx = fixture();
+        let res = session_app(&fx.state.store_root)
+            .oneshot(demo_run_request("syn-doc-clean"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn demo_precheck_serves_recording_and_limits() {
+        let fx = fixture();
+        let dir = fx.state.store_root.join("demo_precheck");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("syn-doc-clean.json"),
+            serde_json::json!({
+                "verdict": "pass",
+                "issues": [],
+                "boxes": [{"label": "document page", "x": 0.08, "y": 0.06, "w": 0.84, "h": 0.88}],
+                "models": ["sam-3.1", "muse-spark-1.3"],
+                "recorded_at": "2026-10-30T00:00:00Z",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let app = session_app(&fx.state.store_root);
+        let res = app
+            .clone()
+            .oneshot(demo_run_request("syn-doc-clean"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = json_body(res).await;
+        assert_eq!(body["verdict"], "pass");
+        assert_eq!(body["sample"], "syn-doc-clean");
+        assert_eq!(
+            body["models"],
+            serde_json::json!(["sam-3.1", "muse-spark-1.3"])
+        );
+        assert_eq!(body["boxes"].as_array().unwrap().len(), 1);
+        // 10 runs/min per IP: nine more pass, the eleventh is limited.
+        for _ in 0..9 {
+            let res = app
+                .clone()
+                .oneshot(demo_run_request("syn-doc-clean"))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+        }
+        let res = app
+            .oneshot(demo_run_request("syn-doc-clean"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]

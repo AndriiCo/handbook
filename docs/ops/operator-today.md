@@ -17,3 +17,7 @@ watch URLs from prod IPs, drafts proposed facts with the live Meta model.)
 
 Then: approve N proposals for vietnam and usa-wa-sos in `/review`
 (GP2-data passes at >= 8 accepted facts each; the accept step is the demo).
+
+A2 (needs META_API_KEY in the shell, deploy first so the endpoint exists):
+`META_API_KEY=... bash /home/hal/apostille/scripts/ops-a2-record.sh`
+— one live SAM + Spark call per synthetic sample, verdicts installed as replay.
