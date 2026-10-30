@@ -121,6 +121,7 @@ pub fn run(args: &[String]) {
             input_text: case.evidence.clone(),
             max_records: handbook_agent::runner::DEFAULT_MAX_RECORDS,
             capture_id: handbook_agent::runner::UNATTRIBUTED_CAPTURE_ID,
+            doc_ids: vec!["gold".to_string()],
         };
         let resp = match client.draft_records(&req) {
             Ok(resp) => resp,
