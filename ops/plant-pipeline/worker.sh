@@ -78,7 +78,7 @@ run_build() { # $1=run $2=srcdir
     jq -n --arg sha \"\$SHAX\" --arg run '$run' --arg out \"\$OUT\" \
       --arg ts \"\$(date -u +%FT%TZ)\" \
       '{sha:\$sha,ci_green:true,run:\$run,finished:\$ts,staged_path:\$out}' \
-      >'$ROOT/acceptance/'\"\$STAMP\"'.json
+      >\"$ROOT/acceptance/\$STAMP.json\"
   " || return 1
 }
 
