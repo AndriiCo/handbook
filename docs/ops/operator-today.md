@@ -26,3 +26,9 @@ A5 (deploy first so `eval` exists): `bash /home/hal/apostille/scripts/ops-a5-eva
 
 S1: switch LICENSE to MIT (text ready at opensource.org/licenses/MIT),
 make the repo public, and link the demo video in README (video lands 11-03).
+
+GP3 (scoreboard demands a logo inside every configured provider's button):
+drop the official google.svg / apple.svg / meta.svg (one per provider prod
+configures, each owner's current artwork per its guidelines) into
+web/src/lib/assets/brand/, then redeploy — the login page bundles them at
+build time via import.meta.glob and renders text-only buttons until they land.
