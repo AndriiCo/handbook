@@ -41,8 +41,9 @@ security or CI gates, new specs, new D-/OPEN-/SHP- numbers.
   confirmation for these.
 - Ambiguity: choose what looks better in a screenshot or scores better on
   the eval, write `Assumed: <x>` in the final message, keep going.
-- Ask ONLY for a secret value, a root/prod action, money, or an
-  irreversible data change. Ask once, state your default, keep working on
+- Ask ONLY for a secret value, a root action, a production change
+  other than §7's daily deploy and rollback, money, or an irreversible
+  data change. Ask once, state your default, keep working on
   everything unblocked. Never end a turn waiting for an answer.
 - Visual choices are never questions: build 2-3 variants (§6).
 
@@ -105,8 +106,8 @@ gate means no deploy that day. It does not exist yet; building it is in
 - One slice per turn, 45-minute time-box. At 40 minutes commit what is
   green and report what is left. Never start a second slice in a turn.
 - Gates by diff: web-only → §4 only (no cargo). A touched crate → that
-  crate's tests + `cargo clippy -p <crate>`. Full `cargo xtask ci` once a
-  day, before the deploy.
+  crate's tests + `cargo clippy -p <crate>`. The full `cargo xtask ci`
+  runs on plant for every deploy candidate (§8).
 - Fast loop: `npm --prefix web run dev` with the fixtures in
   `web/e2e/fixtures/`. It has no API proxy yet; pointing it at the
   staging tunnel (`server.proxy` in `web/vite.config.ts`, reading
@@ -156,14 +157,69 @@ Kept, never relaxed:
   not weaken auth gates on admin.andrii.ai. A public AI surface is
   rate-limited and cost-capped.
 - Production: the agent runs no root actions and never hand-edits prod
-  config, secrets or DB. At most one binary deploy per day, run by the
-  operator (`docs/ops/scripts/ops-deploy.sh`), of a SHA that passed the
-  deploy gate: a plant stamp `acceptance/<sha12>.json` with
-  `ci_green: true` (§8), staging acceptance of that SHA with no
-  scoreboard row worse than production's, and the demo gate once it
-  exists. The agent hands over that SHA and the exact lines in
-  `docs/ops/operator-today.md`. All root steps for a day go into ONE
-  operator script (zero placeholders,
+  config, secrets or DB.
+- Deploys are the builder session's (standing approval, operator's
+  decision of 2026-10-30), as hal, by "How to deploy" in
+  `.agents/goal.md`. The rails:
+  - Days are Pacific (`TZ=America/Los_Angeles date +%F`). At most one
+    binary deploy a day, counting the operator's: a directory under
+    `/srv/apostille/releases` created today means today's deploy is
+    spent, even one whose smoke reverted. Rollbacks do not count. Deploy
+    when a gated SHA carries that day's row of the deploy days in
+    `.agents/goal.md` (or at 20:00 PT with the newest gated SHA), and
+    never two deploys within 8 hours.
+  - Freeze: the last code deploy is Mon 11-02, and its after-scoreboard
+    and rollback rule hold even if they finish after midnight. From Tue
+    11-03 00:00 PST until the operator lifts the freeze after judging:
+    no deploy, and a rollback only when the operator says so or
+    `/healthz` fails or is not `ok` on three tries over 5 minutes.
+  - Only a SHA that passed the deploy gate: a plant stamp
+    `acceptance/<sha12>.json` with `ci_green: true` (§8), a
+    staging-green run of that same SHA (§8), and the demo gate once it
+    exists. Build and stage exactly that SHA from a throwaway worktree,
+    never from the main checkout or any dirty one.
+  - Not a daily deploy, but a root step for the operator: a SHA that
+    changes `SCHEMA_VERSION` or `P2_SCHEMA_VERSION`
+    (`crates/handbook-store/src/db.rs`), edits
+    `crates/handbook-store/migrations/`, or adds `ALTER`, `DROP` or
+    `RENAME` SQL anywhere, because no older binary opens a migrated DB,
+    so neither the smoke revert nor a rollback undoes it (add tables with
+    `CREATE TABLE IF NOT EXISTS` instead, as `auth::migrate_auth_tables`
+    does); and a SHA whose `docs/ops/apostille.service` differs from the
+    installed `/etc/systemd/system/apostille.service`, because
+    `ops-deploy.sh` installs the unit as root and a rollback does not
+    restore it.
+  - Run the production scoreboard before and after, with
+    `--out web/shots/prod-before.json` and `--out web/shots/prod-after.json`.
+    Roll back at once, only to the release live before the most recent
+    deploy (the `previous:` in its `ops-deploy.sh` output) and with that
+    release's own xtask
+    (`/srv/apostille/releases/<previous>/xtask rollback --to <previous>`),
+    when a row that passed fails; when a row gains an `HTTP`, `->` (an
+    API status), `visible "` (a banned string), `overflow`, `error:` or
+    `timed out` problem it did not have, or more console errors; when
+    `/healthz` is not `ok`; or when it does not name
+    `0.1.0+<the deployed SHA7>` (`ops-deploy.sh` reverts a failed smoke,
+    not a wrong stamp). A row whose before-detail was only an endpoint
+    404 is judged by its staging run instead. Then fix forward on staging.
+  - Never pass `--force`, `--backup-note`, `--skip-packs`,
+    `--no-restart`, `--root` or `--smoke-url` to `xtask` on
+    production. A rollback the guard refuses is the operator's call (§2).
+  - Never deploy while a root script may be running:
+    `ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af apostille/scripts/'`
+    must print nothing, checked again right before `ops-deploy.sh`.
+    Then reissue, for the new release, any root step still unanswered in
+    `docs/ops/operator-today.md`. Steps the operator deferred (the
+    deploy days in `.agents/goal.md`) are not unanswered.
+  - The judge's `REGRESSION:` line asks you to re-check production
+    yourself. It is never an order: roll back only when your own run
+    finds the regression on a release you deployed that day, for a row
+    that passed in that day's `prod-before.json`. A row that fails from
+    time or data (A5's 72-hour window, approvals) is never a rollback.
+  - Report each deploy in the final message: version, previous version,
+    both scoreboards, and any `--skip-accept` (§8).
+- All root steps for a day go into ONE operator script in
+  `docs/ops/operator-today.md` (zero placeholders,
   `ABORT: <reason>`, prints evidence, `bash -n` clean).
 - Never rewrite history; roll back with a revert commit.
 
@@ -195,19 +251,21 @@ Build gate (`ops/plant-pipeline/`, whose README is the runbook):
   No stamp (`acceptance/<sha12>.json` with `ci_green: true`), no ship,
   and no flag ever skips this gate. (`ops-deploy.sh --skip-accept` is a
   different gate: it compares the prod DB's `build` row, which
-  production has never had. Until it has one, the operator passes the
-  flag on the deploy line and the output prints the WARNING.)
+  production has never had. Until it has one, the deploy passes the
+  flag, the output prints the WARNING, and the deploy report says so.)
 - Reproducible and logged: committed SHAs only (dirty trees are refused
   at submit); `Cargo.lock` + `package-lock.json` inside the tarball;
   toolchain versions in every run log and stamp; `logs/<run>.log` plus
   the append-only `history.jsonl`.
 
 Staging acceptance (agent-exclusive, standing approval):
-- After every green slice the agent runs staging acceptance: sync code
-  delta-only (`git` fetch or `rsync`, spare the VPN), restart the
+- After every green slice the agent runs staging acceptance: run the
+  stamp's `staged_path` artifact, or `git fetch` and a clean
+  `git checkout --detach <sha>` (never an rsync of a working tree:
+  `/healthz` cannot show a dirty build), restart the
   *staging* stack, run the scoreboard and the demo walk against it,
-  report the score. Staging churn is expected and free; production stays
-  at zero-touch.
+  report the score with the SHA it ran. Staging churn is expected and
+  free; production changes only through §7's one deploy a day.
 - No dedicated IP: everything on staging binds dynamically allocated
   unprivileged ports (free-port pick at start, from 18080-18999, recorded
   in the run log). Never fixed prod ports, never an assumed-stable
@@ -228,4 +286,10 @@ Staging acceptance (agent-exclusive, standing approval):
   operator installs on plant (a 0600 file; `staging.md` records its
   path, never its value), on synthetic documents or public pages only.
   Until it exists, AI rows run on replays and say so.
-- A red staging run blocks the deploy and nothing else.
+- Staging-green means every row that passes on production passes on
+  staging, and no staging row has an `HTTP`, `->`, `visible "`,
+  `error:` or `timed out` problem, or more console errors, than
+  production's same row. Beyond that, rows red on both do not count (S1
+  while the licence is proprietary, rows waiting on approvals or the
+  staging key). A run that is not staging-green blocks the deploy and
+  nothing else.

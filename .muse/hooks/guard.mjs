@@ -3,20 +3,37 @@
 // under --yolo or the Unrestricted profile, so this refuses them in every
 // profile. Reads (cat, grep, running the scoreboard) pass. Subagent
 // worktrees live under .muse/worktrees/ and are ordinary files.
+//
+// It checks a file tool's target fields and a shell tool's raw command,
+// never a file's text: a doc may say how to run the scoreboard. A script
+// that writes .agents/ when run later is outside what a seatbelt can see.
 import { emit, readInput } from './lib.mjs';
 
 const input = readInput();
 const tool = String(input.tool_name ?? '');
-const blob = JSON.stringify(input.tool_input ?? {}).replace(/\.muse\/worktrees\/[^/"'\s]+\//g, '');
+const toolInput = input.tool_input ?? {};
+// `.muse/worktrees/<id>/` prefixes are ordinary files; `..` is not an id.
+const strip = (s) => s.replace(/\.muse\/worktrees\/(?!\.\.?[/"'\s])[^/"'\s]+\//g, '');
 
-const PROTECTED = /(^|[\s"'=/:])\.(agents|muse)\//;
+const P = String.raw`\.(agents|muse)(?![\w.-])`;
+const PROTECTED = new RegExp(String.raw`(^|[^\w.-])` + P);
 const WRITE_TOOL = /edit|write|patch|create|delete|move|rename/i;
+const SHELL_TOOL = /bash|shell|exec|command|terminal|run/i;
 const SHELL_WRITES = [
-  /(>>?|\btee\b(\s+-a)?)\s*["']?[^\s"'|;&]*\.(agents|muse)\//,
-  /\b(sed\s+-i|perl\s+-\w*i|rm|mv|cp|truncate|chmod|ln|touch|git\s+(checkout|restore|rm|mv|stash))\b[^;&|\n]*\.(agents|muse)\//,
+  new RegExp(String.raw`(>>?|\btee\b(\s+-a)?)\s*["']?[^\s"'|;&]*` + P),
+  new RegExp(String.raw`\b(sed\s+-i|perl\s+-\w*i|rm|mv|cp|rsync|install|truncate|chmod|ln|touch|unlink|git\s+(checkout|restore|rm|mv|stash|clean))\b[^;&|\n]*` + P),
 ];
+// A file tool's text fields; every other field, known or not, is a target.
+const CONTENT = /^(content|find|replace|old_string|new_string|old_str|new_str|text|body)$/i;
+const targets = strip(JSON.stringify(Object.fromEntries(Object.entries(toolInput).filter(([k]) => !CONTENT.test(k)))));
+// Raw strings keep real newlines, which end a command for SHELL_WRITES.
+const command = SHELL_TOOL.test(tool)
+  ? strip(Object.values(toolInput).filter((v) => typeof v === 'string').join('\n'))
+  : '';
 
-if (PROTECTED.test(blob) && (WRITE_TOOL.test(tool) || SHELL_WRITES.some((re) => re.test(blob)))) {
+const fileWrite = WRITE_TOOL.test(tool) && PROTECTED.test(targets);
+const shellWrite = PROTECTED.test(command) && SHELL_WRITES.some((re) => re.test(command));
+if (fileWrite || shellWrite) {
   emit({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',

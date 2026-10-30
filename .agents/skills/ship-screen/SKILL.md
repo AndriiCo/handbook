@@ -24,9 +24,10 @@ screen:
   directly (no mode-watcher; keep the repo's data-theme boot script).
 - Shell: sticky translucent top bar, ⌘K command dialog over authorities,
   one footer, real favicon/manifest/OG image.
-- Fast loop: `web/vite.config.ts` `server.proxy` sends `/apostille/api` and
-  `/apostille/ws` (`ws: true`) to `https://andrii.ai`, so `npm run dev`
-  shows real data with HMR and the scoreboard can run against it.
+- Fast loop: `npm run dev` with fixtures. Add a `server.proxy` in
+  `web/vite.config.ts` that sends `/apostille/api` and `/apostille/ws`
+  (`ws: true`) to `APOSTILLE_API` (the staging tunnel URL, AGENTS.md §5,
+  §8), so HMR shows staging data and the scoreboard can run against it.
 
 ## 1. Set up (in a subagent worktree)
 

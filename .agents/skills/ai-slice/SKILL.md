@@ -39,15 +39,16 @@ ends with a live run, replay fixtures and a number.
 ## Done means
 
 1. The contract in `.agents/goal.md` for the row holds (field names exact).
-2. A live run on production inputs: model, p50/p95 latency, input/output
-   tokens, refusal-then-fixed count. Spark vision goes through the atlas
+2. A live run on real public inputs, on staging with the staging key
+   (AGENTS.md §8; until it exists, say so and use replays): model, p50/p95
+   latency, input/output tokens, refusal-then-fixed count. Spark vision goes through the atlas
    Responses client, not the text-only chat client.
 3. The recorded responses are committed as replay fixtures, and the
    crate's tests replay them (`cargo test -p <crate>`; the crate's clippy).
 4. For a quality change: the eval before → after.
-5. `node .agents/scoreboard/scoreboard.mjs --only <row>` against
-   production after the deploy, or against local with the reason it is not
-   deployed yet.
+5. `node .agents/scoreboard/scoreboard.mjs --only <row>` against staging
+   (AGENTS.md §8, `--base` the tunnel URL), then against production after
+   the day's deploy.
 
 Synthetic documents only: Contributor-tier keys may train on inputs. No key
 values in fixtures, logs or messages. A public AI endpoint is rate-limited

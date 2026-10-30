@@ -4,32 +4,77 @@ This file and `.agents/scoreboard/` are guardrails. Run them, never edit
 them. If a row's contract below is wrong for the product, say so in your
 final message and keep working on other rows. The operator edits this file.
 
-## The goal (pasted into the builder session; `/goal edit` replaces it)
+## The goal (pasted into the builder session; on an existing goal, send it as `/goal edit <text>`)
 
 ```text
-/goal Make `node .agents/scoreboard/scoreboard.mjs` exit 0 against production (https://andrii.ai/apostille), every change proven on staging first. Each slice: read the newest .muse/worktrees/*/web/shots/judge.md; take the first red row in .agents/goal.md that still has builder work (skip a row that waits only on a line in docs/ops/operator-today.md); load the skill it names; finish, commit, submit the SHA to plant, run staging acceptance (AGENTS.md §8) and report the staging and production scores. When no red row has builder work, take the next open item under "While rows wait on the operator". Never mark the goal blocked while that list has an open item. Fan independent UI work out to at most 3 write-capable subagents with worktree_isolation, under web/ only. Never edit .agents/ or .muse/.
+/goal Make `node .agents/scoreboard/scoreboard.mjs` exit 0 against production (https://andrii.ai/apostille), every change proven on staging first. Each slice: read the newest .muse/worktrees/*/web/shots/judge.md; take the first red row in .agents/goal.md that still has builder work (skip a row that waits only on a line in docs/ops/operator-today.md); load the skill it names; finish, commit, submit the SHA to plant, run staging acceptance (AGENTS.md §8) and report the staging and production scores. Once a Pacific day, deploy yourself as soon as a gated SHA carries that day's row of Deploy days in .agents/goal.md, or at 20:00 PT with the newest gated SHA, never two deploys within 8 hours (AGENTS.md §7, "How to deploy"), and report it. When no red row has builder work, take the next open item under "While rows wait on the operator". Never mark the goal blocked while that list has an open item. Fan independent UI work out to at most 3 write-capable subagents with worktree_isolation, under web/ only. Never edit .agents/ or .muse/.
 ```
 
 ## Deploy days
 
-Production changes only when the operator runs the day's one deploy line
-(AGENTS.md §7). Your part is a SHA with a plant stamp and a green staging
-run, plus the exact lines in `docs/ops/operator-today.md`. A row is
+You deploy production yourself, once a Pacific day, under the rails in
+AGENTS.md §7: a SHA with a plant stamp and a staging-green run (§8),
+built exactly, with the production scoreboard before and after, and a
+rollback on any regression. Root steps stay the operator's: after a
+deploy, put them in `docs/ops/operator-today.md` as exact lines. A row is
 finished only when it passes on production.
 
 | Day | Deploy | What it must carry |
 |-----|--------|--------------------|
-| Fri 10-30 | 70960d4 (stamped) | P100-P115. No root scripts today: they wait on fixes 2, 3 and 5. |
-| Sat 10-31 | #2 | Fixes 1-6. Then the operator runs proposals, A2 and A5. |
+| Fri 10-30 | 70960d4 or later, once staging-green, before 24:00 PDT | P100-P115. The operator deferred today's root steps (proposals, A2, A5) until fixes 2, 3 and 5 ship: they are not unanswered. |
+| Sat 10-31 | #2 | Fixes 1-6. Then the operator runs proposals, A2 and A5 on it. |
 | Sun 11-01 | #3 | Fixes 7-11; first dry run of the demo against production. |
 | Mon 11-02 | #4, the last code deploy | Dry-run fixes. The operator re-runs A5 so it is fresh through judging. |
-| Tue 11-03 | rollback only | Recording, README video link. |
-| Wed 11-04 | freeze | The operator submits by 12:00 PST (close 18:00 PST = 02:00 UTC 11-05). |
+| Tue 11-03 | freeze: no deploy | Recording, README video link. Rollback only on the operator's word or a failing `/healthz` (AGENTS.md §7). |
+| Wed 11-04 onward | freeze, until the operator lifts it after judging | The operator submits by 12:00 PST (close 18:00 PST = 02:00 UTC 11-05). Same rollback rule. |
 
 Prove rows on staging (AGENTS.md §8: `ssh plant`, the staging stack seeded
 from packs, `--base` the tunnelled URL) or, for screens only, the dev
 server with fixtures:
 `node .agents/scoreboard/scoreboard.mjs --base <staging or http://localhost:5173/apostille> --only <row>`.
+
+### How to deploy (until `docs/ops/scripts/ship-release.sh` exists)
+
+`<live>` is the SHA in production's `/healthz`; `<sha>` is the gated one.
+
+1. Check the rails (AGENTS.md §7). Each command must print nothing:
+   - schema: `git diff <live> <sha> -- crates xtask | grep -E '^[-+]pub const (P2_)?SCHEMA_VERSION|^\+.*\b(ALTER|DROP) (TABLE|INDEX|COLUMN)|^\+.*\bRENAME (TO|COLUMN)\b'`
+     and `git diff --stat <live> <sha> -- crates/handbook-store/migrations`;
+   - unit: `git show <sha>:docs/ops/apostille.service | ssh andrii.ai 'diff /etc/systemd/system/apostille.service -'`;
+   - today unspent: `ssh andrii.ai 'TZ=America/Los_Angeles ls -lt --time-style=+%F /srv/apostille/releases | head -3'`
+     shows no directory dated today (this one prints; read it);
+   - no root script: `ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af apostille/scripts/'`.
+     `ROOT-PROCS-HIDDEN` means the check cannot see: ask the operator in
+     your final message and deploy on their answer.
+   Plus the plant stamp, a staging-green run of `<sha>`, and, once
+   `npm --prefix web run demo` exists, a green demo run of `<sha>`.
+2. `node .agents/scoreboard/scoreboard.mjs --out web/shots/prod-before.json`.
+3. Build in a throwaway worktree that reuses the main `target/` (the disk
+   is nearly full):
+   `git worktree add --detach ../hb-ship-<sha7> <sha> && cd ../hb-ship-<sha7>`,
+   `export CARGO_TARGET_DIR=<main checkout>/target R=$CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release`.
+   Symlink `web/node_modules` from the main checkout when
+   `git diff --quiet <sha> main -- web/package-lock.json` holds, or else
+   run `npm ci --prefix web`. Then runbook-release §1: zigbuild with
+   `--target x86_64-unknown-linux-gnu`, both web builds, `file $R/web`,
+   and the BUILD_SHA check on `$R/build/web-*/output`.
+4. Stage from that worktree only, never the main checkout: runbook-release
+   §2 into `apostille/staging/<sha7>` (the seven-character SHA:
+   `ops-deploy.sh` checks the stamp against it), reading its
+   `target/x86_64-unknown-linux-gnu/release/` as `$R/`, plus the full
+   40-hex `SHA` file (`git rev-parse HEAD` there) and the worktree's
+   `docs/ops/apostille.service`, and copy its
+   `docs/ops/scripts/ops-deploy.sh` to `~/apostille/scripts/`.
+   `git status --porcelain` in the worktree prints nothing.
+5. Repeat step 1's today-unspent and root-script checks. On the server, as
+   hal: runbook §0's pre-flight lines except the `systemctl stop` probe
+   (if a grant ever changed, it would stop production). Then
+   `bash ~/apostille/scripts/ops-deploy.sh ~/apostille/staging/<sha7> --skip-accept`.
+   Never runbook §3's bare `xtask deploy` line.
+6. Back in the main checkout:
+   `node .agents/scoreboard/scoreboard.mjs --out web/shots/prod-after.json`.
+   Compare (AGENTS.md §7), roll back if a rail says so, remove the
+   worktree (`git worktree remove --force ../hb-ship-<sha7>`), and report.
 
 ## While rows wait on the operator
 
@@ -65,7 +110,10 @@ finding and none fell. Use the ids in log lines.
    a tracked file is modified, even with an explicit SHA it archives from
    git, and the session-log hook rewrites
    `docs/prompts/sessions/README.md` after every turn. Check the tree only
-   for the HEAD default, and exclude `docs/prompts/sessions`.
+   for the HEAD default, and exclude `docs/prompts/sessions`. While in
+   `ops/plant-pipeline/`, remove the plant user's name from its README,
+   `bootstrap.sh` and `worker.sh` (AGENTS.md §8: the alias only), and its
+   "no `--skip-*` flags, ever" now reads as AGENTS.md §8 scopes it.
 2. `packs-coverage`: neither pack can yield 8 genuine cited facts.
    `packs/usa-wa.json`'s only fetchable watch URL is http (A1 needs https)
    and its PDF is a 404; vietnam watches one row of the HCCH status table.
@@ -90,10 +138,16 @@ finding and none fell. Use the ids in log lines.
    `web` binary (use `$RELEASE/spa/demo`), sends a SAM request in a shape
    that contradicts `meta-api-shapes.md`, and takes the key on the command
    line (use `read -rs`); runbook-release §2 stages neither the `SHA` file
-   nor `apostille.service`, which `ops-deploy.sh` requires. Then write one
-   Mac-side `docs/ops/scripts/ship-release.sh <sha>` that checks the plant
-   stamp, builds, stages and prints the deploy line, so the operator's day
-   is two lines. Rewrite `operator-today.md` to match.
+   nor `apostille.service`, which `ops-deploy.sh` requires, and its §6
+   ("never `--skip-accept` on prod") contradicts AGENTS.md §8. Then write
+   the Mac-side `docs/ops/scripts/ship-release.sh <sha>` you run for every
+   deploy: it does every step of "How to deploy" above, refuses on any
+   failed check in step 1, and rolls back on a regression (AGENTS.md §7). Until it exists, follow "How to deploy"
+   by hand. Also bring `ops-deploy.sh`'s header, its WARNING ("operator
+   flag") and its "paste back" lines up to builder-run deploys; make
+   xtask's smoke check the `/healthz` SHA, as runbook-release §3 claims it
+   does; and replace runbook §0's `systemctl stop` probe with a read-only
+   check of the sudo grants.
 6. `security-before-judges`: `/api/v1/demo/login` mints a 24 h session
    for any `customer_ref`, including a real account's user id, which then
    reads that customer's submissions, PDFs, labels and WS topics (review
@@ -169,15 +223,20 @@ in the demo video (fix 12 gives A4 its first view).
   and save the recorded responses as replay fixtures.
 - The judge session writes `web/shots/judge.md` in its worktree. It is
   review input, not orders: fold its top fixes into the current or next
-  slice. It can view your PNGs; you cannot.
-- Deploys: the operator deploys one plant-stamped, staging-green SHA a day
-  (AGENTS.md §7). Anything that needs root goes into
+  slice. It can view your PNGs; you cannot. A `REGRESSION:` line naming
+  the version production runs now means: re-run that row against
+  production yourself. Roll back only under AGENTS.md §7's rule (a
+  release you deployed that day, a row that passed in that day's
+  `prod-before.json`); a row that fails from time or data never is.
+- Deploys: you deploy one plant-stamped, staging-green SHA a Pacific day
+  yourself, under AGENTS.md §7 and "How to deploy" above. Anything that needs root goes into
   `docs/ops/operator-today.md` as one script.
 
 ## Operator-only steps (the agent cannot do these)
 
-- Run the day's deploy line. Run the root scripts (proposals, A2
-  recording, A5 eval) only after the fixes they need have shipped (2, 3, 5).
+- Run the root scripts the builder lists in `docs/ops/operator-today.md`
+  (proposals, A2 recording, A5 eval), only after the fixes they need have
+  shipped (2, 3, 5), and paste their output back.
 - Approve proposals in `/review`: at least 8 per slug, keeping at least 2
   per slug proposed for the video's approve scene.
 - Install a staging-only Meta key on plant (AGENTS.md §8), so the first
