@@ -1,28 +1,19 @@
-# Operator — today (2026-10-30, GP2-data slice)
+# Operator — today (2026-10-30, fixes 2-6 slice)
 
-Order matters (P101 changed the draft attribution; the proposals must be
-queued by the NEW binary):
+Deploys are the builder's now (one a Pacific day, behind plant + staging,
+AGENTS.md §7). Nothing below needs root, and you run no root scripts today.
 
-1. Deploy the stamped SHA 70960d4 (plant gate `ci_green: true`; P100–P115: proposals support, `drafted_by`, quote-verified citations, `/me` 200, `/auth/providers`, `/quality`, precheck replay, doc_ids schema, taste fixes, §8 pipeline) via `docs/ops/scripts/ops-deploy.sh`.
-2. One root script (paste the whole output back to the builder session):
-
-```sh
-bash /home/hal/apostille/scripts/ops-gp2-proposals.sh
-```
-
-(`docs/ops/scripts/ops-gp2-proposals.sh` in the repo; sync it to the server
-first. Seeds vietnam + usa-wa-sos authorities if missing, fetches their
-watch URLs from prod IPs, drafts proposed facts with the live Meta model.)
+Deferred until fixes 2, 3 and 5 ship (Deploy days, `.agents/goal.md`):
+- Proposals: `ops-gp2-proposals.sh` (needs fix 2's pack coverage + fix 3's
+  live-draft path) — do not run yet.
+- A2 recording: `ops-a2-record.sh` (needs fix 5's script repairs) — do not
+  run yet.
+- A5 eval: `ops-a5-eval.sh` (needs fix 5's staged-`SHA` support) — do not
+  run yet.
 
 Then: approve N proposals for vietnam and usa-wa-sos in `/review`
-(GP2-data passes at >= 8 accepted facts each; the accept step is the demo).
-
-A2 (needs META_API_KEY in the shell, deploy first so the endpoint exists):
-`META_API_KEY=... bash /home/hal/apostille/scripts/ops-a2-record.sh`
-— one live SAM + Spark call per synthetic sample, verdicts installed as replay.
-
-A5 (deploy first so `eval` exists): `bash /home/hal/apostille/scripts/ops-a5-eval.sh`
-— one live draft per gold case, writes quality.json the endpoint serves.
+(GP2-data passes at >= 8 accepted facts each; keep at least 2 per slug
+proposed for the video's approve scene).
 
 S1: switch LICENSE to MIT (text ready at opensource.org/licenses/MIT),
 make the repo public, and link the demo video in README (video lands 11-03).

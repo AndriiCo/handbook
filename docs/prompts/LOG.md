@@ -20,3 +20,4 @@
 | 115 | 2026-10-30 14:35Z | Continue (goal). | GP3 brand-SVG operator line |
 | 116 | 2026-10-30 15:25Z | Advance the production scoreboard to 10/10 | deploy pinned to stamped SHA |
 | 117 | 2026-10-30 20:15Z | Operator review fix 1 plant-submit-guard | guard scoped, username scrubbed, probe queued |
+| 118 | 2026-10-30 20:20Z | Rewrite operator-today, digests, drop dbg7 | deploys mine, root steps deferred |
