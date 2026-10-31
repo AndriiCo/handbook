@@ -36,3 +36,4 @@
 | 130 | 2026-10-31 08:10Z | Staging-proven live-path fixes + all-sections dossier | 8/10 staging, GP2-page fix |
 | 130 | 2026-10-31 09:10Z | Staging-proof batch: live draft, A2, dossier, README, ops | 9/10 staging |
 | 131 | 2026-10-31 09:15Z | Security H4 + honest A5 tallies | web+xtask green |
+| 132 | 2026-10-31 09:40Z | Two missed demo_limits initializers | gate rerun |
