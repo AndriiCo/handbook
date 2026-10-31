@@ -17,6 +17,7 @@
 		"smoke": "node scripts/smoke.mjs",
 		"test": "node --test \"test/**/*.test.mjs\"",
 		"test:e2e": "playwright test",
+		"demo": "playwright test e2e/demo.spec.mjs",
 		"shots": "node scripts/shots.mjs"
 	},
 	"devDependencies": {

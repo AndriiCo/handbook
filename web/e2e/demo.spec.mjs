@@ -1,0 +1,309 @@
+// Demo gate (AGENTS.md §4): walks GP1→GP4 public scenes, records
+// `web/shots/demo/`, fails on console errors or banned strings.
+// Fixture mode is the default (`npm run demo`): the local `build`
+// output plus route mocks, so the gate is data-independent.
+// Live mode: DEMO_BASE_URL=https://andrii.ai/apostille replays the
+// same public scenes against real data (the recorded take).
+// Recording: DEMO_HEADED=1 shows the browser; PW_SLOWMO sets the
+// pacing between steps (default 250ms); DEMO_CAPTIONS=0 hides the
+// scene captions.
+import { chromium, expect, test } from '@playwright/test';
+import { serveDir } from './helpers/serve.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SHOTS = join(HERE, '..', 'shots', 'demo');
+const LIVE = process.env.DEMO_BASE_URL || null;
+const HEADED = process.env.DEMO_HEADED === '1';
+const SLOWMO = Number(process.env.PW_SLOWMO ?? 250);
+const CAPTIONS = process.env.DEMO_CAPTIONS === '1';
+const BANNED = ['placeholder', 'not wired', 'skeleton', 'lorem', 'TODO'];
+
+const authorities = JSON.parse(
+	readFileSync(join(HERE, 'fixtures', 'authorities.json'), 'utf8')
+);
+const factsVietnam = JSON.parse(
+	readFileSync(join(HERE, 'fixtures', 'facts-vietnam.json'), 'utf8')
+);
+const samples = JSON.parse(
+	readFileSync(join(HERE, 'fixtures', 'precheck-samples.json'), 'utf8')
+);
+const providers = JSON.parse(
+	readFileSync(join(HERE, 'fixtures', 'providers.json'), 'utf8')
+);
+// 1x1 transparent PNG so synthetic sample thumbs never 404.
+const PIXEL = Buffer.from(
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+	'base64'
+);
+
+// Captions render through an init script (present before any page
+// script, one evaluate per scene) and only when DEMO_CAPTIONS=1,
+// the recording take. The plain gate run stays caption-free.
+async function caption(page, text) {
+	if (!CAPTIONS) return;
+	await page.evaluate((label) => window.__demoCaption(label), text);
+	await page.waitForTimeout(900);
+}
+
+async function mockApi(page) {
+	await page.route('**/apostille/api/v1/authorities', (route) =>
+		route.fulfill({ json: authorities })
+	);
+	await page.route('**/apostille/api/v1/authorities/vietnam/facts', (route) =>
+		route.fulfill({ json: factsVietnam })
+	);
+	await page.route('**/apostille/api/v1/auth/providers', (route) =>
+		route.fulfill({ json: providers })
+	);
+	await page.route('**/apostille/api/v1/demo/precheck/samples', (route) =>
+		route.fulfill({ json: samples })
+	);
+	await page.route('**/apostille/api/v1/demo/precheck', (route) =>
+		route.fulfill({
+			json: {
+				sample: 'syn-doc-clean',
+				verdict: 'pass',
+				issues: [],
+				boxes: [],
+				models: 'muse-spark-1.3 + sam-3.1 (fixture)',
+				recorded_at: '2026-10-31T00:00:00Z'
+			}
+		})
+	);
+	await page.route('**/apostille/api/v1/quality', (route) =>
+		route.fulfill({
+			json: { drafted_records: 25, ready_records: 18, quote_found_rate: 0.72 }
+		})
+	);
+	await page.route('**/apostille/demo/*', (route) =>
+		route.fulfill({ contentType: 'image/png', body: PIXEL })
+	);
+}
+
+async function checkClean(page, problems, where) {
+	const text = await page.evaluate(() => document.body?.innerText ?? '');
+	for (const word of BANNED) {
+		if (text.includes(word)) problems.push(`${where}: banned string "${word}"`);
+	}
+	const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+	const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+	if (scrollWidth > clientWidth + 1) problems.push(`${where}: horizontal scroll`);
+}
+
+async function launch(outDir, size) {
+	const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
+	const context = await browser.newContext({
+		viewport: { width: size.width, height: size.height },
+		recordVideo: { dir: outDir, size }
+	});
+	await context.addInitScript(() => {
+		window.__demoCaption = (label) => {
+			document.querySelector('#demo-caption')?.remove();
+			const bar = document.createElement('div');
+			bar.id = 'demo-caption';
+			bar.setAttribute('aria-hidden', 'true');
+			bar.textContent = label;
+			bar.style.cssText =
+				'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);' +
+				'z-index:9999;max-width:min(90vw,64ch);padding:10px 18px;' +
+				'border-radius:12px;background:rgba(11,74,117,.92);color:#fff;' +
+				'font:600 15px/1.4 system-ui,sans-serif;text-align:center;';
+			document.body.appendChild(bar);
+		};
+	});
+	const problems = [];
+	context.on('console', (msg) => {
+		if (msg.type() === 'error') problems.push(`console: ${msg.text()}`);
+	});
+	context.on('pageerror', (err) => problems.push(`pageerror: ${err.message}`));
+	return { browser, context, problems };
+}
+
+test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
+	test.setTimeout(180_000);
+	let srv = null;
+	const base = LIVE ?? (srv = await serveDir(join(HERE, '..', 'build'), { base: '/apostille' })).url;
+	const { browser, context, problems } = await launch(SHOTS, { width: 1440, height: 900 });
+	try {
+		const page = await context.newPage();
+		if (!LIVE) await mockApi(page);
+
+		const scene = async (name, url) => {
+			console.log(`demo scene: ${name}`);
+			await page.goto(url);
+		};
+
+		await scene('home', `${base}/apostille`);
+		await caption(page, 'Find your apostille authority in seconds');
+		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+		await checkClean(page, problems, 'home');
+
+		await scene('dossier', `${base}/apostille/authority/vietnam`);
+		await caption(page, 'Every fact shows its quote, source and date');
+		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+		await checkClean(page, problems, 'dossier');
+
+		await scene('login', `${base}/apostille/login`);
+		await caption(page, 'Passkey-first sign-in');
+		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+		await checkClean(page, problems, 'login');
+
+		await scene('precheck', `${base}/apostille/precheck`);
+		await caption(page, 'Photo precheck before you order');
+		await expect(page.getByRole('button', { name: 'Run precheck' })).toBeVisible();
+		if (!LIVE) {
+			await page.getByRole('button', { name: /Clean scan/ }).click();
+			await page.getByRole('button', { name: 'Run precheck' }).click();
+			await expect(page.getByText('Pass — good to submit')).toBeVisible({
+				timeout: 15_000
+			});
+		}
+		await checkClean(page, problems, 'precheck');
+
+		await scene('order', `${base}/apostille/order`);
+		await caption(page, 'Order in minutes, watch it live');
+		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+		await checkClean(page, problems, 'order');
+
+		await context.close();
+		expect(problems).toEqual([]);
+	} finally {
+		await browser.close();
+		await srv?.close();
+	}
+});
+
+const queueItem = {
+	id: 7,
+	authority_slug: 'vietnam',
+	topic: 'fees',
+	statement: 'Legalization at the Consular Department costs 300,000 VND per document.',
+	status: 'proposed',
+	created_by: 'muse-spark-1.3 via analysis-agent/aa-prompt-v1',
+	created_at: 1792012800,
+	diff: null,
+	citations: [
+		{
+			capture_id: 3,
+			start_byte: 120,
+			end_byte: 220,
+			quote:
+				'The Consular Department charges 300,000 VND for each legalized document copy presented at the counter.'
+		}
+	],
+	reasoning_untrusted: null,
+	blast_radius: { conflict: false, conflicts: [], open_tasks: 0 },
+	provenance: {
+		capture_id: 3,
+		capture_kind: 'fetch',
+		trust: 'verified-source',
+		authenticity: 'tls-fetch',
+		sidecar: 'vietnam-consular-fees.sidecar.json'
+	}
+};
+
+async function mockAdmin(page) {
+	await page.route('**/apostille/api/v1/queue*', (route) => {
+		if (route.request().method() !== 'GET') return route.continue();
+		return route.fulfill({ json: { items: [queueItem], count: 1 } });
+	});
+	await page.route('**/apostille/api/v1/facts/*/accept', (route) =>
+		route.fulfill({ json: { status: 'accepted' } })
+	);
+	await page.route('**/apostille/api/v1/suppress-rules*', (route) =>
+		route.fulfill({ json: { rules: [], count: 0 } })
+	);
+	await page.route('**/apostille/api/v1/suppressions*', (route) =>
+		route.fulfill({ json: { suppressions: [], count: 0 } })
+	);
+	await page.route('**/apostille/api/v1/workers/captures*', (route) =>
+		route.fulfill({
+			json: {
+				captures: [
+					{
+						id: 3,
+						authority_slug: 'vietnam',
+						source_uri: 'https://www.hcch.net/en/instruments/conventions/status-table/?cid=41',
+						captured_at: 1792012800,
+						kind: 'fetch',
+						bytes_raw: 48210,
+						sha256: '9f2c4a1bd6e07f3a8c5d2e190a4b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f',
+						trust: 'verified-source',
+						excerpt: 'Viet Nam deposited its instrument of accession…'
+					}
+				]
+			}
+		})
+	);
+}
+
+test('demo admin pass approves a fact and opens trace', async () => {
+	test.setTimeout(120_000);
+	const srv = await serveDir(join(HERE, '..', 'build-admin'));
+	const { browser, context, problems } = await launch(join(SHOTS, 'admin'), {
+		width: 1440,
+		height: 900
+	});
+	try {
+		const page = await context.newPage();
+		await mockAdmin(page);
+		const scene = async (name, url) => {
+			console.log(`demo scene: ${name}`);
+			await page.goto(url);
+		};
+
+		await scene('review', `${srv.url}/review`);
+		await caption(page, 'A human approves every fact');
+		await expect(page.getByRole('heading', { name: 'Review queue' })).toBeVisible();
+		await page.getByRole('button', { name: 'Accept', exact: true }).click();
+		await expect(page.getByText('Fact #7 decided: accepted.')).toBeVisible({
+			timeout: 15_000
+		});
+		await checkClean(page, problems, 'review');
+
+		await scene('trace', `${srv.url}/trace`);
+		await caption(page, 'Every quote traced to its capture');
+		await expect(page.getByRole('heading', { name: 'Trace console' })).toBeVisible();
+		await expect(page.getByText('9f2c4a1b', { exact: false }).first()).toBeVisible();
+		await checkClean(page, problems, 'trace');
+
+		await context.close();
+		expect(problems).toEqual([]);
+	} finally {
+		await browser.close();
+		await srv.close();
+	}
+});
+
+test('demo mobile pass records home and dossier', async () => {
+	test.setTimeout(120_000);
+	let srv = null;
+	const base = LIVE ?? (srv = await serveDir(join(HERE, '..', 'build'), { base: '/apostille' })).url;
+	const { browser, context, problems } = await launch(join(SHOTS, 'mobile'), {
+		width: 390,
+		height: 844
+	});
+	try {
+		const page = await context.newPage();
+		if (!LIVE) await mockApi(page);
+
+		await page.goto(`${base}/apostille`);
+		await caption(page, 'Find your apostille authority');
+		await page.screenshot({ path: join(SHOTS, 'mobile-home.png') });
+		await checkClean(page, problems, 'mobile home');
+
+		await page.goto(`${base}/apostille/authority/vietnam`);
+		await caption(page, 'Verified facts, one hover away');
+		await page.screenshot({ path: join(SHOTS, 'mobile-dossier.png') });
+		await checkClean(page, problems, 'mobile dossier');
+
+		await context.close();
+		expect(problems).toEqual([]);
+	} finally {
+		await browser.close();
+		await srv?.close();
+	}
+});

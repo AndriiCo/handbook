@@ -187,6 +187,10 @@
 				limit,
 				after_id: afterId
 			});
+			// Card UI state is created here (event/task context), never
+			// during render: assigning ui[id] inside the template
+			// throws state_unsafe_mutation on the first non-empty queue.
+			for (const row of out.items) cardUi(row.id);
 			items = append ? [...items, ...out.items] : out.items;
 			queueCount = out.count;
 			loadState = 'ready';
@@ -435,7 +439,7 @@
 		<p class="text-sm text-ink-muted">{queueCount} proposed</p>
 		<ol class="m-0 mt-4 list-none p-0 pb-8">
 			{#each items as item (item.id)}
-				{@const card = cardUi(item.id)}
+				{@const card = ui[item.id]}
 				{@const decision = decided[item.id]}
 				<li class="border-b border-line py-4">
 					{#if decision}
