@@ -21,9 +21,12 @@
 # manifest (and echoed below for the audit trail).
 set -u
 
-STAGE="${1:?usage: $0 <staging-dir> [--skip-accept] (e.g. /home/hal/apostille/staging/69480d3)}"
+STAGE="${1:?usage: $0 <staging-dir> [--skip-accept] [--allow-today-overlap] (e.g. /home/hal/apostille/staging/69480d3)}"
 SKIP_ACCEPT=""
 [ "${2:-}" = "--skip-accept" ] && SKIP_ACCEPT="--skip-accept"
+OVERLAP=""
+[ "${2:-}" = "--allow-today-overlap" ] || [ "${3:-}" = "--allow-today-overlap" ] && OVERLAP="--allow-today-overlap"
+[ -n "$OVERLAP" ] && echo "WARNING: day gate OVERRIDDEN by explicit flag (operator-ordered same-day deploy)"
 # sudo -n fails fast when a grant is missing (never hangs on a
 # prompt); root passes everything through.
 SUDO="sudo -n"
@@ -92,6 +95,8 @@ cd "$STAGE" || { echo "ABORT: cannot cd $STAGE"; exit 1; }
 # schema migration (rollback-safe or not — the manifest is the audit
 # trail; absent file keeps the old empty-notes behavior).
 ARGS=(--version "$VERSION" --sha "$SHA" --src . --store /var/lib/apostille)
+# shellcheck disable=SC2086
+ARGS+=($OVERLAP)
 # shellcheck disable=SC2086
 ARGS+=($GATE_ARGS)
 if [ -f "$STAGE/MIGRATION_NOTES" ]; then
