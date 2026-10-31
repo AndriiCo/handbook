@@ -206,8 +206,9 @@ Kept, never relaxed:
     `--no-restart`, `--root` or `--smoke-url` to `xtask` on
     production. A rollback the guard refuses is the operator's call (§2).
   - Never deploy while a root script may be running:
-    `ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af apostille/scripts/'`
-    must print nothing, checked again right before `ops-deploy.sh`.
+    `ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "[a]postille/scripts/"'`
+    must print nothing, checked again right before `ops-deploy.sh`
+    (the `[a]` keeps `pgrep` from matching the remote shell running it).
     Then reissue, for the new release, any root step still unanswered in
     `docs/ops/operator-today.md`. Steps the operator deferred (the
     deploy days in `.agents/goal.md`) are not unanswered.

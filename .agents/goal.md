@@ -43,7 +43,8 @@ server with fixtures:
    - unit: `git show <sha>:docs/ops/apostille.service | ssh andrii.ai 'diff /etc/systemd/system/apostille.service -'`;
    - today unspent: `ssh andrii.ai 'TZ=America/Los_Angeles ls -lt --time-style=+%F /srv/apostille/releases | head -3'`
      shows no directory dated today (this one prints; read it);
-   - no root script: `ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af apostille/scripts/'`.
+   - no root script: `ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "[a]postille/scripts/"'`.
+     The `[a]` keeps `pgrep` from matching the remote shell running it.
      `ROOT-PROCS-HIDDEN` means the check cannot see: ask the operator in
      your final message and deploy on their answer.
    Plus the plant stamp, a staging-green run of `<sha>`, and, once
