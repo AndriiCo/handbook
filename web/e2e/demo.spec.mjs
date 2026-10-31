@@ -262,12 +262,14 @@ test('demo admin pass approves a fact and opens trace', async () => {
 		await expect(page.getByText('Fact #7 decided: accepted.')).toBeVisible({
 			timeout: 15_000
 		});
+		await page.screenshot({ path: join(SHOTS, '..', 'gp5-review-1440x900-light.png') });
 		await checkClean(page, problems, 'review');
 
 		await scene('trace', `${srv.url}/trace`);
 		await caption(page, 'Every quote traced to its capture');
 		await expect(page.getByRole('heading', { name: 'Trace console' })).toBeVisible();
 		await expect(page.getByText('9f2c4a1b', { exact: false }).first()).toBeVisible();
+		await page.screenshot({ path: join(SHOTS, '..', 'gp5-trace-1440x900-light.png') });
 		await checkClean(page, problems, 'trace');
 
 		await context.close();
