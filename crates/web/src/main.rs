@@ -191,6 +191,9 @@ struct AppState {
     webauthn: std::sync::Arc<webauthn_rs::Webauthn>,
     /// Auth rate-limit buckets (spec decision 0.6).
     auth_limits: std::sync::Arc<passkey::RateBuckets>,
+    /// Demo-precheck buckets (separate map: a flood of distinct demo
+    /// IPs must never fill auth's 8192-key map and fail sign-in closed).
+    demo_limits: std::sync::Arc<passkey::RateBuckets>,
     /// Google OAuth client (spec `customer-auth.md` §9): `None`
     /// until `google.client_id` + `google.client_secret` rows are
     /// set — the endpoints 503, the boot never refuses.
@@ -245,6 +248,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             voice_api_key: None,
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+            demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,
@@ -412,7 +416,13 @@ async fn demo_login(
     State(state): State<AppState>,
     Json(body): Json<LoginBody>,
 ) -> impl IntoResponse {
-    if body.customer_ref.is_empty() || body.customer_ref.len() > 64 {
+    // H4: demo sessions read that ref's submissions, so only `demo-`
+    // refs (which no real account can have) may mint one. A real
+    // account id here would read a stranger's data.
+    if body.customer_ref.is_empty()
+        || body.customer_ref.len() > 64
+        || !body.customer_ref.starts_with("demo-")
+    {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(json!({"error": "invalid customer_ref"})),
@@ -791,6 +801,7 @@ async fn main() {
                 }),
         ),
         auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+        demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
         google_cfg: match (&cfg.google_client_id, &cfg.google_client_secret) {
             (Some(id), Some(secret)) => Some(oauth::GoogleCfg::from_values(
                 id,
@@ -1739,7 +1750,7 @@ mod tests {
     #[tokio::test]
     async fn demo_login_rejects_bad_ref() {
         let tmp = tempfile::tempdir().unwrap();
-        for customer_ref in [String::new(), "x".repeat(65)] {
+        for customer_ref in [String::new(), "x".repeat(65), "real-acct-7".to_string()] {
             let res = session_app(tmp.path())
                 .oneshot(login_request(&customer_ref))
                 .await
@@ -2347,6 +2358,7 @@ mod tests {
             voice_api_key: None,
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+            demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,
@@ -3360,6 +3372,24 @@ mod tests {
         let fx = fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         make_session(&fx.state.store_root, "cust-1", auth::Role::Customer);
+        // Anonymous authority subscribe requires a known slug.
+        {
+            let store = Store::new(&fx.state.store_root);
+            let conn = db::open(&store).unwrap();
+            db::add_authority(
+                &conn,
+                &db::NewAuthority {
+                    kind: "state",
+                    country: "USA",
+                    region: "WA",
+                    name: "WA",
+                    slug: "usa-wa-sos",
+                    actor: "t",
+                    at: 1,
+                },
+            )
+            .unwrap();
+        }
 
         // Real server on an ephemeral port (never a fixed one).
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -3429,6 +3459,15 @@ mod tests {
                 assert_eq!(res.status(), 403);
             }
             other => panic!("expected HTTP 403, got {other:?}"),
+        }
+
+        // Unknown authority slug: 422, no channel even anonymously.
+        let denied = ws_connect(&addr, "authority:no-such-slug", None).await;
+        match denied {
+            Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
+                assert_eq!(res.status(), 422);
+            }
+            other => panic!("expected HTTP 422, got {other:?}"),
         }
 
         // Customer submission subscribe: 403 (fail-closed ownership seam).

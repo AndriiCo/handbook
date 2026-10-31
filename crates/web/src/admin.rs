@@ -826,6 +826,7 @@ mod tests {
             voice_api_key: None,
             webauthn: std::sync::Arc::new(crate::passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            demo_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,

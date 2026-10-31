@@ -71,7 +71,7 @@ pub async fn run(
     }
     let ip = passkey::client_ip(addr);
     if !state
-        .auth_limits
+        .demo_limits
         .check(&format!("dp:{ip}"), unix_now(), 10, 60)
     {
         return (

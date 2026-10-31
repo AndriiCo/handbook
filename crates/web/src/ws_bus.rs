@@ -79,6 +79,29 @@ pub async fn ws_bus_upgrade(
         )
             .into_response();
     };
+    // H4: `authority:{slug}` subscribes anonymously, so a well-formed
+    // slug for an authority that does not exist must not open a channel
+    // (broadcast enumeration + dangling subs). Other nouns name rows
+    // the authorizer already checks.
+    if let auth::ws::WsTopic::Authority { slug } = &topic {
+        let Ok(conn) = db::open(&handbook_store::store::Store::new(&state.store_root)) else {
+            return store_unavailable();
+        };
+        let known: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM authority WHERE slug = ?1)",
+                [slug],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if !known {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({"error": "unknown topic"})),
+            )
+                .into_response();
+        }
+    }
     let (role, customer_ref) = match resolve_caller(&state, &headers) {
         Ok(caller) => caller,
         Err(()) => return store_unavailable(),

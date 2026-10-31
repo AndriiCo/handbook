@@ -615,6 +615,7 @@ mod tests {
             voice_api_key: None,
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+            demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             google_cfg: None,
             apple_cfg: apple,
             meta_cfg: None,

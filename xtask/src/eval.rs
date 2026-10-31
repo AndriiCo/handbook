@@ -3,9 +3,9 @@
 //! `xtask eval [--live] [--store <path>]`: for every case in
 //! `evals/authorities/*.json`, draft records from the case evidence and
 //! score the deterministic tier — quote found (sliceable, >= 8 chars),
-//! value inside quote, topic match. No database writes: grading calls
-//! [`ModelClient::draft_records`](contracts::model::ModelClient) directly
-//! and runs [`validate_response`](handbook_agent::analyze::validate_response).
+//! value inside quote, topic match — each computed on its own, never
+//! gated on the others. No database writes: grading calls
+//! [`ModelClient::draft_records`](contracts::model::ModelClient) directly.
 //! The summary lands in `<store>/quality.json` for `GET /api/v1/quality`.
 //!
 //! Stub default (offline-safe); `--live` drafts via the Meta Model API
@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use contracts::model::{DraftRequest, ModelClient};
-use handbook_agent::analyze::{MIN_QUOTE_CHARS, normalize, validate_response};
+use handbook_agent::analyze::{MIN_QUOTE_CHARS, normalize};
 use handbook_agent::model::StubClient;
 
 use crate::{flag, open_store, unix_now};
@@ -182,37 +182,32 @@ fn score_records(
     gold_topic: &str,
     tallies: &mut Tallies,
 ) {
+    // a5-honest: each check stands alone. A right topic with a broken
+    // citation still counts for topic_match; a long quote that omits the
+    // value still counts for quote_found. Gating every tally on full
+    // validation made the three rates identical by construction.
     let mut sources = HashMap::new();
     sources.insert("gold".to_string(), evidence.to_string());
-    let allowed = [gold_topic];
     for record in records {
         tallies.drafted += 1;
-        let single = contracts::model::DraftResponse {
-            records: vec![record.clone()],
-            usage: contracts::model::Usage {
-                input_tokens: 0,
-                output_tokens: 0,
-            },
-            summary: String::new(),
-        };
-        if validate_response(&single, &sources, &allowed).is_err()
-            || !allowed.contains(&record.topic.as_str())
-        {
-            continue;
+        if record.topic == gold_topic {
+            tallies.topic_match += 1;
         }
+        let Some(source) = sources.get(&record.citation.doc_id) else {
+            continue;
+        };
         let (start, end) = (
             record.citation.byte_start as usize,
             record.citation.byte_end as usize,
         );
-        let quote = &sources["gold"][start..end];
+        let Some(quote) = source.get(start..end) else {
+            continue;
+        };
         if quote.chars().count() >= MIN_QUOTE_CHARS {
             tallies.quote_found += 1;
             if normalize(quote).contains(&normalize(&record.value)) {
                 tallies.value_in_quote += 1;
             }
-        }
-        if record.topic == gold_topic {
-            tallies.topic_match += 1;
         }
     }
 }
@@ -299,13 +294,16 @@ mod tests {
             "hours",
             &mut tallies,
         );
+        // a5-honest: independent checks. Right topic counts even with a
+        // broken citation (3/4); a long quote counts even for the wrong
+        // topic or a missing value (2/4 found, 1/4 with value).
         assert_eq!(
             tallies,
             Tallies {
                 drafted: 4,
-                quote_found: 0,
-                value_in_quote: 0,
-                topic_match: 0,
+                quote_found: 2,
+                value_in_quote: 1,
+                topic_match: 3,
             }
         );
     }
