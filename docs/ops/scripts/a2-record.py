@@ -8,12 +8,11 @@ boxes (text-only chat shape, pinned in docs/meta-api-shapes.md). Writes
 one <sample>.json per sample to --out-dir; the web tier serves those
 files verbatim as replay (zero marginal model cost).
 
-SAM request shape: POST <base>/v1/responses with model sam-3.1 and an
-input_text + input_image data URL (legal-agent-workshop pattern); boxes
-parsed from <|box;...|> tokens in output_text. If that path 404s
-(unknown paths return empty-body 404), falls back to the
-model+imageBase64+prompts segment shape pinned in
-crates/media/src/redact.rs. Anything else aborts loudly.
+SAM request shape: POST <base>/v1/responses with model sam-3.1 and
+`input` blocks (pinned in docs/meta-api-shapes.md); boxes parsed from
+`output[]` items' `output_text`, plus `<|box;...|>` tokens and
+boxes/masks arrays when present. Non-2xx aborts loudly (no fallback
+shape: undocumented endpoints stay unsent).
 
 Usage:
   META_API_KEY=... python3 a2-record.py --png-dir web/static/demo --out-dir /tmp/a2-out
@@ -92,19 +91,27 @@ def normalize_boxes(boxes, w, h):
 def sam_boxes(base, key, image_b64, dims):
     body = {
         "model": SAM_MODEL,
-        "input_text": "Locate: " + ", ".join(SAM_PROMPTS),
-        "input_image": "data:image/png;base64," + image_b64,
+        "input": [{
+            "role": "user",
+            "content": [
+                {"type": "input_text",
+                 "text": "Locate: " + ", ".join(SAM_PROMPTS)},
+                {"type": "input_image", "file_data": image_b64},
+            ],
+        }],
     }
     status, payload, secs = post_json(base + "/v1/responses", key, body)
-    if status == 404:
-        print("  sam responses path 404 -> segment fallback", flush=True)
-        body = {"model": SAM_MODEL, "imageBase64": image_b64, "prompts": SAM_PROMPTS}
-        status, payload, secs = post_json(base + "/v1/sam/segment", key, body)
     if status < 200 or status >= 300:
         raise RuntimeError(f"SAM call failed: HTTP {status}: {payload}")
     if isinstance(payload, dict):
-        text = json.dumps(payload)
-        boxes = parse_box_tokens(text)
+        text = "\n".join(
+            block.get("text", "")
+            for item in payload.get("output", [])
+            if isinstance(item, dict)
+            for block in item.get("content", [])
+            if isinstance(block, dict) and block.get("type") == "output_text"
+        )
+        boxes = parse_box_tokens(text or json.dumps(payload))
         arr = payload.get("boxes") or payload.get("masks") or []
         for item in arr if isinstance(arr, list) else []:
             try:

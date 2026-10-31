@@ -5,21 +5,28 @@
 # The public endpoint serves these files verbatim: zero marginal model
 # cost, no key on the serving path.
 #
-# Needs META_API_KEY in this shell (the Model API key, never in the
-# repo). Run as root; paste the whole output back to the agent.
+# Needs META_API_KEY (the Model API key, never in the repo, never on
+# a command line). With a TTY it prompts securely; otherwise export it
+# in this shell only. Run as root; paste the whole output back to the agent.
 #
-#   META_API_KEY=... bash /home/hal/apostille/scripts/ops-a2-record.sh
+#   bash /home/hal/apostille/scripts/ops-a2-record.sh
 #
 set -u
 
 [ "$(id -u)" = 0 ] || { echo "ABORT: run as root"; exit 1; }
-[ -n "${META_API_KEY:-}" ] || { echo "ABORT: META_API_KEY is not set (export it in this shell only)"; exit 1; }
+if [ -z "${META_API_KEY:-}" ]; then
+    [ -t 0 ] || { echo "ABORT: META_API_KEY is not set and stdin is not a TTY (export it in this shell only)"; exit 1; }
+    read -rs -p "Model key: " META_API_KEY; echo
+    [ -n "$META_API_KEY" ] || { echo "ABORT: empty key"; exit 1; }
+fi
 command -v python3 >/dev/null || { echo "ABORT: python3 missing"; exit 1; }
 
 STORE=/var/lib/apostille
 DESTDIR="$STORE/demo_precheck"
 RELEASE=/srv/apostille/current
-PNGDIR="${A2_PNG_DIR:-$RELEASE/web/static/demo}"
+# Thumbs are served from the built SPA ($RELEASE/spa/demo); in the
+# release layout `web` is the binary, so web/static/demo does not exist.
+PNGDIR="${A2_PNG_DIR:-$RELEASE/spa/demo}"
 SCRIPTDIR="$(dirname "$0")"
 RECORDER="$SCRIPTDIR/a2-record.py"
 SVC="sudo -u andrii-ai"
