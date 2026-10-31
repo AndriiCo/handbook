@@ -767,6 +767,14 @@ mod tests {
             },
         )
         .unwrap();
+        // Official https source: accepts require a verified citation
+        // (quote 8-400 chars over https), so the fixture provides one.
+        conn.execute(
+            "INSERT INTO source(authority_id, kind, uri)
+             VALUES (?1, 'website_official', 'https://example.gov/office')",
+            [auth_id],
+        )
+        .unwrap();
         // One capture + sidecar; quotes slice bytes [0..12).
         conn.execute(
             "INSERT INTO capture(authority_id, source_id, captured_at, kind, path,

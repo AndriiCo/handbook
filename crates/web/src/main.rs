@@ -2393,6 +2393,14 @@ mod tests {
             },
         )
         .unwrap();
+        // Official https source + sidecar: accepts require a verified
+        // citation (quote 8-400 chars over https).
+        conn.execute(
+            "INSERT INTO source(authority_id, kind, uri)
+             VALUES (?1, 'website_official', 'https://example.gov/office')",
+            [authority],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO capture(authority_id, captured_at, kind, path,
                                   bytes_raw, bytes_stored, sha256, trust)
@@ -2401,13 +2409,20 @@ mod tests {
         )
         .unwrap();
         let cap = conn.last_insert_rowid();
+        std::fs::create_dir_all(store_root.join("text")).unwrap();
+        std::fs::write(
+            store_root.join("text").join(format!("{cap}.txt")),
+            "open 9 to 5; open 8 to 6 daily",
+        )
+        .unwrap();
         let mut ids = Vec::new();
-        for statement in ["open 9 to 5", "open 8 to 6"] {
+        for (statement, end) in [("open 9 to 5", 11), ("open 8 to 6", 23)] {
             conn.execute(
                 "INSERT INTO fact(authority_id, capture_id, topic, statement,
-                                   status, created_by, created_at)
-                 VALUES (?1, ?2, 'hours', ?3, 'proposed', 't', 1)",
-                rusqlite::params![authority, cap, statement],
+                                   status, created_by, created_at,
+                                   citation_start, citation_end)
+                 VALUES (?1, ?2, 'hours', ?3, 'proposed', 't', 1, 0, ?4)",
+                rusqlite::params![authority, cap, statement, end],
             )
             .unwrap();
             ids.push(conn.last_insert_rowid());

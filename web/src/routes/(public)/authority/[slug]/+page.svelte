@@ -159,11 +159,15 @@
 													{cite.quote}
 												</blockquote>
 												<p class="mt-2 mb-0 text-xs text-ink-muted">
-													<a
-														href={cite.source_url}
-														target="_blank"
-														rel="noopener noreferrer">Source</a
-													>
+													{#if typeof cite.source_url === 'string' && cite.source_url.startsWith('https://')}
+														<a
+															href={cite.source_url}
+															target="_blank"
+															rel="noopener noreferrer">Source</a
+														>
+													{:else}
+														<span>Source unavailable</span>
+													{/if}
 													· captured {String(cite.captured_at ?? '').split('T')[0]}
 													· drafted by {fact.drafted_by ?? fact.created_by ?? 'unknown'}
 												</p>

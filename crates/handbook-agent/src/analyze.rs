@@ -36,6 +36,8 @@ pub enum ValidationErrorKind {
     BadConfidence,
     /// Cited quote is shorter than [`MIN_QUOTE_CHARS`] characters.
     ShortQuote,
+    /// Cited quote is longer than [`MAX_QUOTE_CHARS`] characters.
+    LongQuote,
     /// The record value is not found inside its cited quote.
     ValueNotInQuote,
 }
@@ -43,6 +45,10 @@ pub enum ValidationErrorKind {
 /// Minimum cited-quote length in characters: a shorter slice cannot
 /// carry a verifiable claim (A1: `quote.trim().len() >= 8`).
 pub const MIN_QUOTE_CHARS: usize = 8;
+
+/// Maximum cited-quote length in characters: the oracle (A1) requires
+/// `quote <= 400`, and a longer slice is evidence-dump, not a citation.
+pub const MAX_QUOTE_CHARS: usize = 400;
 
 /// Normalize evidence text for containment checks: lowercase with all
 /// whitespace runs collapsed to single spaces.
@@ -99,6 +105,11 @@ pub fn validate_response(
                         errors.push(ValidationError {
                             record_index,
                             kind: ValidationErrorKind::ShortQuote,
+                        });
+                    } else if quote.chars().count() > MAX_QUOTE_CHARS {
+                        errors.push(ValidationError {
+                            record_index,
+                            kind: ValidationErrorKind::LongQuote,
                         });
                     } else if !normalize(quote).contains(&normalize(&record.value)) {
                         errors.push(ValidationError {
@@ -356,6 +367,19 @@ mod tests {
         let errs = validate_response(&resp, &sources, &["hours"]).expect_err("short quote");
         assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].kind, ValidationErrorKind::ShortQuote);
+    }
+
+    #[test]
+    fn validator_rejects_long_quote() {
+        let evidence = format!("PO Box 40220{}", " x".repeat(250));
+        let mut sources = HashMap::new();
+        sources.insert("d1".to_string(), evidence.clone());
+        let mut rec = record("address", "d1", 0, evidence.len() as u32, 0.9);
+        rec.value = "PO Box 40220".to_string();
+        let resp = response(vec![rec]);
+        let errs = validate_response(&resp, &sources, &["address"]).expect_err("long quote");
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].kind, ValidationErrorKind::LongQuote);
     }
 
     #[test]

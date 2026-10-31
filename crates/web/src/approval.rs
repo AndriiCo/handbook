@@ -135,7 +135,9 @@ fn fact_view(
 /// when the cited sidecar slice exists and is long enough to verify.
 /// The URL is the capture's own source, falling back to the
 /// authority's official website source; unattributed or uncited facts
-/// honestly carry zero citations.
+/// honestly carry zero citations. Quotes over 400 chars and non-https
+/// sources never ship: a `javascript:` or `mailto:` URI from a pack
+/// cannot reach the public dossier.
 fn public_citations(
     conn: &Connection,
     store_root: &std::path::Path,
@@ -150,7 +152,8 @@ fn public_citations(
         fact.citation_start,
         fact.citation_end,
     );
-    if quote.chars().count() < 8 {
+    let quote_len = quote.chars().count();
+    if !(8..=400).contains(&quote_len) {
         return vec![];
     }
     let (source_id, captured_at): (Option<i64>, Option<i64>) = conn
@@ -180,6 +183,9 @@ fn public_citations(
     let Some(source_url) = source_url else {
         return vec![];
     };
+    if !source_url.starts_with("https://") {
+        return vec![];
+    }
     vec![PublicCitation {
         quote,
         source_url,
@@ -512,6 +518,14 @@ fn decide_inner(
             conn.execute_batch("ROLLBACK")?;
             return Ok(Err(StatusCode::CONFLICT));
         }
+        // Accepting a fact requires a verified citation (operator fix
+        // `a1-integrity`): quote 8-400 chars from the capture sidecar
+        // over an https source. Uncited facts stay proposed.
+        if decision.to == "accepted" && public_citations(conn, &state.store_root, &fact).is_empty()
+        {
+            conn.execute_batch("ROLLBACK")?;
+            return Ok(Err(StatusCode::UNPROCESSABLE_ENTITY));
+        }
         // Accept-with-edit: the replacement statement lands in the same
         // UPDATE; unchanged-or-absent keeps the current text. The audit
         // reason becomes the §11.5 envelope when the text changed.
@@ -610,8 +624,10 @@ fn decide_inner(
         Ok(Err(status)) => {
             let body = if status == StatusCode::NOT_FOUND {
                 json!({"error": "fact not found"})
-            } else {
+            } else if status == StatusCode::CONFLICT {
                 json!({"error": "fact is not proposed"})
+            } else {
+                json!({"error": "accept requires a verified citation (quote 8-400 chars, https source)"})
             };
             return (status, Json(body)).into_response();
         }
