@@ -155,6 +155,18 @@ struct CaptureView {
     sha256: String,
     trust: String,
     notes: String,
+    /// First 160 chars of the extracted sidecar text, whitespace
+    /// collapsed; empty when the sidecar is missing. Powers the trace
+    /// console without shipping whole captures.
+    excerpt: String,
+}
+
+/// Short text excerpt for one capture's sidecar (trace console).
+fn capture_excerpt(store_root: &std::path::Path, capture_id: i64) -> String {
+    let text = std::fs::read_to_string(store_root.join("text").join(format!("{capture_id}.txt")))
+        .unwrap_or_default();
+    let collapsed: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    collapsed.chars().take(160).collect()
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -226,12 +238,14 @@ async fn list_captures(
     }
     values.push(Box::new(limit));
     let refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|v| &**v).collect();
+    let root = state.store_root.clone();
     let rows: Vec<CaptureView> = conn
         .prepare(&sql)
         .and_then(|mut stmt| {
             stmt.query_map(refs.as_slice(), |row| {
+                let id: i64 = row.get(0)?;
                 Ok(CaptureView {
-                    id: row.get(0)?,
+                    id,
                     authority_slug: row.get(1)?,
                     source_uri: row.get(2)?,
                     captured_at: row.get(3)?,
@@ -240,6 +254,7 @@ async fn list_captures(
                     sha256: row.get(6)?,
                     trust: row.get(7)?,
                     notes: row.get(8)?,
+                    excerpt: capture_excerpt(&root, id),
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -1306,6 +1321,35 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["count"], 1);
         assert_eq!(body["captures"][0]["id"], first);
+    }
+
+    #[tokio::test]
+    async fn captures_carry_text_excerpt() {
+        let fx = Fixture::new();
+        let id = fx.seed_capture("usa-or-sos", None, "file");
+        let long = "word ".repeat(60);
+        std::fs::create_dir_all(fx.state.store_root.join("text")).unwrap();
+        std::fs::write(
+            fx.state.store_root.join("text").join(format!("{id}.txt")),
+            &long,
+        )
+        .unwrap();
+        let (status, body) = json_body(
+            fx.app()
+                .oneshot(authed(
+                    "GET",
+                    "/apostille/api/v1/workers/captures",
+                    STAFF_TOKEN,
+                    None,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let excerpt = body["captures"][0]["excerpt"].as_str().unwrap();
+        assert_eq!(excerpt.chars().count(), 160, "{excerpt}");
+        assert!(long.starts_with(excerpt.trim_end()), "{excerpt}");
     }
 
     #[tokio::test]

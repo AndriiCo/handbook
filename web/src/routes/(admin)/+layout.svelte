@@ -46,6 +46,7 @@
 	aria-label="Admin"
 >
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/triage')}>Triage</a>
+	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/trace')}>Trace</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/review')}>Review</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/console')}
 		>Call console</a

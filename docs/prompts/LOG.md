@@ -29,3 +29,4 @@
 | 124 | 2026-10-31 05:10Z | Fix 5a: A2 recorder pinned shape | input blocks, spa thumbs, read-rs key |
 | 124 | 2026-10-31 05:10Z | Fix 5a: A2 recorder pinned shape | input blocks, spa thumbs, read-rs key |
 | 125 | 2026-10-31 05:40Z | Fix 5b: ship script, runbook, smoke SHA | release installs evals, smoke pins SHA |
+| 126 | 2026-10-31 06:10Z | Operator review fix 6 admin-surface | trace console, excerpt endpoint |
