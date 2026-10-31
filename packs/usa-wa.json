@@ -86,8 +86,8 @@
             "authority": "usa-wa-sos",
             "cadence": "daily",
             "kind": "website_official",
-            "notes": "Post-Tumwater contact page; bot-blocked, headless capture pending (V-2).",
-            "uri": "http://www.sos.wa.gov/about-office/contact-us"
+            "notes": "Post-Tumwater contact page; fetcher 200 2026-10-31 (was bot-blocked 2026-10-26). Upgraded http->https: A1 needs https source_url.",
+            "uri": "https://www.sos.wa.gov/about-office/contact-us"
         },
         {
             "authority": "usa-wa-sos",
@@ -95,6 +95,20 @@
             "kind": "website_official",
             "notes": "Superseded Dec-2024 form; now 404 \u2014 regression seed for the superseded-form hazard.",
             "uri": "https://www.sos.wa.gov/sites/default/files/2025-01/Apostilles.Request.Form_.12.2024.pdf"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Apostille FAQ (fees, processing, document rules); fetcher 200 2026-10-31.",
+            "uri": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Apostilles program hub (services, locations, authenticity search); fetcher 200 2026-10-31.",
+            "uri": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
         }
     ]
 }

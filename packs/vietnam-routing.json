@@ -25,6 +25,12 @@
             "name": "www.hcch.net",
             "notes": "Shared HCCH feed host; verdict owned by the hcch pack.",
             "status": "unverified"
+        },
+        {
+            "authority": "vietnam",
+            "name": "dichvucong.mofa.gov.vn",
+            "notes": "MFA consular portal host; fetcher 200 2026-10-31.",
+            "status": "unverified"
         }
     ],
     "observations": [
@@ -47,6 +53,20 @@
             "kind": "website_official",
             "notes": "Same HCCH feed, attributed to Viet Nam so F2 tasks land on this authority.",
             "uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41"
+        },
+        {
+            "authority": "vietnam",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "HCCH accession news (deposit 2025-12-31, entry into force 2026-09-11); fetcher 200 2026-10-31.",
+            "uri": "https://www.hcch.net/en/news-archive/details/?varevent=1132"
+        },
+        {
+            "authority": "vietnam",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "MFA consular portal (Vietnamese; procedure and form references); fetcher 200 2026-10-31.",
+            "uri": "https://dichvucong.mofa.gov.vn/"
         }
     ]
 }

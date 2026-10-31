@@ -47,23 +47,45 @@ counts() {
 echo "=== 0. prior state (read-only)"
 echo "before: $(counts)"
 
-echo "=== 1. packs-load (vietnam-routing + usa-wa only; skipped when seeded)"
-VN="$($SVC sqlite3 "$DB" "SELECT COUNT(*) FROM authority WHERE slug='vietnam';")"
-WA="$($SVC sqlite3 "$DB" "SELECT COUNT(*) FROM authority WHERE slug='usa-wa-sos';")"
-if [ "$VN" = 1 ] && [ "$WA" = 1 ]; then
-    echo "(both authorities present — packs-load skipped)"
-else
-    [ -f "$PACKS/vietnam-routing.json" ] || { echo "ABORT: no vietnam-routing pack at $PACKS (deploy first)"; exit 1; }
-    [ -f "$PACKS/usa-wa.json" ] || { echo "ABORT: no usa-wa pack at $PACKS (deploy first)"; exit 1; }
-    rm -rf "$SEEDDIR"
-    mkdir -p "$SEEDDIR" || { echo "ABORT: cannot create $SEEDDIR"; exit 1; }
-    cp "$PACKS/vietnam-routing.json" "$PACKS/usa-wa.json" "$SEEDDIR/" \
-        || { echo "ABORT: cannot stage GP2 packs"; exit 1; }
-    chmod 0644 "$SEEDDIR"/*.json
-    $SVC "$XTASK" packs-load --packs "$SEEDDIR" --store "$STORE" --actor gp2-proposals \
-        || { echo "ABORT: packs-load failed (output above)"; exit 1; }
-    rm -rf "$SEEDDIR"
-fi
+echo "=== 1. packs-load (vietnam-routing + usa-wa; always: exists-safe)"
+[ -f "$PACKS/vietnam-routing.json" ] || { echo "ABORT: no vietnam-routing pack at $PACKS (deploy first)"; exit 1; }
+[ -f "$PACKS/usa-wa.json" ] || { echo "ABORT: no usa-wa pack at $PACKS (deploy first)"; exit 1; }
+rm -rf "$SEEDDIR"
+mkdir -p "$SEEDDIR" || { echo "ABORT: cannot create $SEEDDIR"; exit 1; }
+cp "$PACKS/vietnam-routing.json" "$PACKS/usa-wa.json" "$SEEDDIR/" \
+    || { echo "ABORT: cannot stage GP2 packs"; exit 1; }
+chmod 0644 "$SEEDDIR"/*.json
+$SVC "$XTASK" packs-load --packs "$SEEDDIR" --store "$STORE" --actor gp2-proposals \
+    || { echo "ABORT: packs-load failed (output above)"; exit 1; }
+
+echo "=== 1b. retire sources whose URI left the packs"
+# A pack URI change (e.g. http->https) orphans the old store row, and
+# fetch-slug would keep polling it; facts approved from a stale capture
+# would fail A1 for good. Scoped to the two GP2 slugs only. Assumed:
+# their store sources come from these packs alone.
+command -v python3 >/dev/null || { echo "ABORT: python3 missing (retire step needs it)"; exit 1; }
+$SVC python3 - "$SEEDDIR" "$DB" <<'EOF' || { echo "ABORT: retire step failed (output above)"; exit 1; }
+import json, sqlite3, sys, glob
+packdir, db = sys.argv[1], sys.argv[2]
+wanted = {}
+for path in glob.glob(packdir + '/*.json'):
+    pack = json.load(open(path))
+    for seed in pack.get('watch', []):
+        wanted.setdefault(seed['authority'], set()).add(seed['uri'])
+conn = sqlite3.connect(db)
+for slug, uris in wanted.items():
+    aid = conn.execute("SELECT id FROM authority WHERE slug=?", (slug,)).fetchone()
+    if not aid:
+        continue
+    rows = conn.execute("SELECT id, uri FROM source WHERE authority_id=?", (aid[0],)).fetchall()
+    for sid, uri in rows:
+        if uri not in uris:
+            print(f"retire source {sid} {uri}")
+            conn.execute("DELETE FROM source WHERE id=?", (sid,))
+conn.commit()
+print("retire: done")
+EOF
+rm -rf "$SEEDDIR"
 
 echo "=== 2. fetch-slug from prod IPs (one bad URL never aborts the run)"
 for slug in vietnam usa-wa-sos; do
