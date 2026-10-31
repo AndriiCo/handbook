@@ -9,7 +9,7 @@
 // scene captions.
 import { chromium, expect, test } from '@playwright/test';
 import { serveDir } from './helpers/serve.mjs';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -93,7 +93,15 @@ async function checkClean(page, problems, where) {
 	if (scrollWidth > clientWidth + 1) problems.push(`${where}: horizontal scroll`);
 }
 
+function cleanStale(outDir) {
+	mkdirSync(outDir, { recursive: true });
+	for (const f of readdirSync(outDir))
+		if (f.startsWith('page@') && f.endsWith('.webm')) rmSync(join(outDir, f));
+}
+
 async function launch(outDir, size) {
+	// Stable takes: drop stale hash-named videos so each pass leaves one take.
+	cleanStale(outDir);
 	const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
 	const context = await browser.newContext({
 		viewport: { width: size.width, height: size.height },
@@ -169,6 +177,8 @@ test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
 		await checkClean(page, problems, 'order');
 
 		await context.close();
+		await page.video()?.saveAs(join(SHOTS, 'desktop.webm'));
+		cleanStale(SHOTS);
 		expect(problems).toEqual([]);
 	} finally {
 		await browser.close();
@@ -273,6 +283,8 @@ test('demo admin pass approves a fact and opens trace', async () => {
 		await checkClean(page, problems, 'trace');
 
 		await context.close();
+		await page.video()?.saveAs(join(SHOTS, 'admin.webm'));
+		cleanStale(join(SHOTS, 'admin'));
 		expect(problems).toEqual([]);
 	} finally {
 		await browser.close();
@@ -303,6 +315,8 @@ test('demo mobile pass records home and dossier', async () => {
 		await checkClean(page, problems, 'mobile dossier');
 
 		await context.close();
+		await page.video()?.saveAs(join(SHOTS, 'mobile.webm'));
+		cleanStale(join(SHOTS, 'mobile'));
 		expect(problems).toEqual([]);
 	} finally {
 		await browser.close();

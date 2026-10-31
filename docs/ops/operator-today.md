@@ -56,6 +56,8 @@ back: the quality.json lines.
 
 S1: switch LICENSE to MIT (text ready at opensource.org/licenses/MIT),
 make the repo public, and link the demo video in README (video lands 11-03).
+Video: record the production admin approve scene yourself (needs your client
+cert; builder takes desktop/mobile publicly), upload to YouTube, paste the URL back.
 
 GP3 (scoreboard demands a logo inside every configured provider's button):
 run `cargo xtask brand-assets` and follow its four download steps (Apple,
