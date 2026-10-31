@@ -113,6 +113,21 @@
 	{/if}
 </section>
 
+<section class="pb-2" aria-labelledby="how">
+	<h2 id="how" class="kicker">How it works</h2>
+	<ul class="m-0 mt-4 list-none p-0">
+		<li class="list-row">
+			<span><strong>Muse Spark</strong> drafts every fact from official pages, with the exact quote attached</span>
+		</li>
+		<li class="list-row">
+			<span><strong>SAM 3.1</strong> checks your document photo before you order, so retakes happen early</span>
+		</li>
+		<li class="list-row">
+			<span>A human approves every change, and the dossier updates live — model calls cost about $0.02 per lookup, under $0.40 per order</span>
+		</li>
+	</ul>
+</section>
+
 <section class="pb-2" aria-labelledby="featured">
 	<h2 id="featured" class="kicker">Featured destinations</h2>
 	<ul class="m-0 mt-4 flex list-none flex-wrap gap-2 p-0" aria-label="Featured destinations">
