@@ -24,3 +24,4 @@
 | 119 | 2026-10-30 20:30Z | Write docs/ops/staging.md run recipe | run-1 log plus regen steps |
 | 120 | 2026-10-31 03:35Z | Operator review fix 2 packs-coverage | https pages, retire step, rehearsed |
 | 121 | 2026-10-31 04:10Z | Operator review fix 3 live-draft-first | key fallback, 8k budget, quote retry |
+| 122 | 2026-10-31 04:15Z | Fix 3 follow-up: cargo fmt | gate needs fmt-clean |

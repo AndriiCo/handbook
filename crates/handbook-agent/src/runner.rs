@@ -108,20 +108,18 @@ pub fn run_analysis(
     let allowed: Vec<&str> = Topic::ALL.iter().map(|t| t.as_str()).collect();
     let mut errors = Vec::new();
     let mut failed = HashSet::new();
-    let validation_errors =
-        validate_response(&resp, req.sources, &allowed).err().unwrap_or_default();
+    let validation_errors = validate_response(&resp, req.sources, &allowed)
+        .err()
+        .unwrap_or_default();
     // Refused-quote retry (operator fix `live-draft-first`): every record
     // failed on its quote and none is usable — ask once more with fewer
     // records and the refusal reasons attached. The note is appended
     // after the evidence, so existing citation offsets stay valid.
     if !validation_errors.is_empty()
         && validation_errors.len() == resp.records.len()
-        && validation_errors.iter().all(|e| {
-            matches!(
-                e.kind,
-                ShortQuote | ValueNotInQuote
-            )
-        })
+        && validation_errors
+            .iter()
+            .all(|e| matches!(e.kind, ShortQuote | ValueNotInQuote))
         && draft.max_records > 1
     {
         let reasons = validation_errors
