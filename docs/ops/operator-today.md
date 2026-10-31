@@ -4,16 +4,21 @@ Production runs `0.1.0+d93a58c` (deployed today under your explicit
 override of the one-a-day rule; it carries the staging-proven live-draft
 fixes: user-role chat, 32k budget, 8 records/call). Staging proof
 2026-10-31: 9/10, 17 facts via review flow, A2 pass/retake/retake, A5
-quote_found 0.7 (muse-spark-1.3). Run the four lines below in order, in
-one root shell, and paste each command's whole output back.
+quote_found 0.7 (muse-spark-1.3). App ops are now rootless (your
+directive): run everything below as `hal`, never root. One root
+pre-step first (KEK group-read was added after your first run):
 
 ```sh
 ssh andrii.ai
 sudo -i
+bash ~/apostille/scripts/ops-rootless-access.sh
+exit
 ```
 
+then, as `hal`, in order, pasting each command's whole output back:
+
 1. Proposals (server sha256
-   `579f655262f0f42c2e2657f766920fdf2029fbc1588fe2f48c7eb54248af3322`):
+   `0edd5da36d3b872ce0ea0c1c5367a207e99167cd7020ffda57dbbbc7f5cad6ea`):
 
 ```sh
 bash ~/apostille/scripts/ops-gp2-proposals.sh
@@ -28,7 +33,7 @@ before/after counts.
    scene). GP2-data needs >= 8 accepted each. Paste back: accepted counts
    per slug.
 3. A2 (server sha256
-   `01b87122e6321cb8d38553ea3a3fb089ea738a3e8ffbc169957b321e7068e1fe`
+   `3df9ff720b2787e4f5b6541dbb68010d0a7d704bcef87e7565d87c3094e75954`
    and
    `38cc23411ee0d99ffbf6f162fb886a7f71d261bef2f1e0961bd759f3120ebc40`):
 
@@ -40,7 +45,7 @@ One SAM 3.1 + one Spark call per synthetic sample (expect clean=pass,
 dark/wash=retake, 0 SAM boxes on flat shapes — the validator accepts
 that). Paste back: the three verdict lines + the DONE token totals.
 4. A5 (server sha256
-   `5d553a90d046cfbd5452dd26481d3de33d00be162581fa8ec4f00fd0c6844f4a`):
+   `7345caf48f5d62348ac4992563063e14d4d561012ed4d742727dcbf1d9d16739`):
 
 ```sh
 bash ~/apostille/scripts/ops-a5-eval.sh

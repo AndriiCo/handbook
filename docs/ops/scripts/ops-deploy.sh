@@ -1,6 +1,7 @@
 #!/bin/bash
-# Deploy a staged release + install its unit file. Runs as hal
-# (pinned grants + wrappers from ops-hal-access.sh) or root.
+# Deploy a staged release + install its unit file. Runs as the deploy
+# user hal, never root (group perms from ops-rootless-access.sh; restart
+# via its pinned sudoers grant; unit install via the root-owned wrapper).
 #
 #   bash /home/hal/apostille/scripts/ops-deploy.sh /home/hal/apostille/staging/<version>
 #
@@ -30,7 +31,8 @@ OVERLAP=""
 # sudo -n fails fast when a grant is missing (never hangs on a
 # prompt); root passes everything through.
 SUDO="sudo -n"
-SVC="sudo -n -u andrii-ai"
+[ "$(id -u)" != 0 ] || { echo "ABORT: run as the deploy user, not root"; exit 1; }
+command -v sqlite3 >/dev/null || { echo "ABORT: sqlite3 missing"; exit 1; }
 [ -d "$STAGE" ] || { echo "ABORT: no such dir: $STAGE"; exit 1; }
 # Canonical absolute path: the unit wrapper requires an absolute
 # staging path, and the deploy below cds into it.
@@ -78,8 +80,7 @@ if [ -n "$SKIP_ACCEPT" ]; then
     echo "WARNING: accept gate SKIPPED by explicit flag (builder-run deploys announce it here)"
     GATE_ARGS="--skip-accept"
 else
-    N="$(echo "SELECT build_no FROM build ORDER BY build_no DESC LIMIT 1;" \
-        | $SVC /usr/local/sbin/apostille-sqlite 2>/dev/null || true)"
+    N="$(sqlite3 /var/lib/apostille/handbook.sqlite "SELECT build_no FROM build ORDER BY build_no DESC LIMIT 1;" 2>/dev/null || true)"
     [ -n "$N" ] || {
         echo "ABORT: no build row in prod DB — refusing to --skip-accept silently; confirm with agent"
         exit 1

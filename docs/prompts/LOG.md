@@ -41,3 +41,4 @@
 | 134 | 2026-10-31 10:15Z | Override deploy plumbing in ops-deploy.sh | deploying |
 | 135 | 2026-10-31 10:25Z | Operator-today complete command lines | runbook |
 | 136 | 2026-10-31 10:40Z | Rootless app ops one-time script | needs root run |
+| 137 | 2026-10-31 11:00Z | Rootless conversion of app scripts | staged+verified |

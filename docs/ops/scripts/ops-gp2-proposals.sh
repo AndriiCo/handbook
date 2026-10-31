@@ -2,8 +2,10 @@
 # GP2-data proposals: seed vietnam + usa-wa-sos authorities (if missing),
 # fetch their watch URLs from prod IPs, draft proposed facts with the live
 # Meta model, and print the counts to approve in /review.
-# Run as root; re-running is safe (packs-load is exists-safe, fetch-slug
-# dedups, analyze-scan advances a watermark and skips seen captures).
+# Run as the deploy user (hal), never root; re-running is safe
+# (packs-load is exists-safe, fetch-slug dedups, analyze-scan advances
+# a watermark and skips seen captures). Needs ops-rootless-access.sh
+# once (group perms + KEK group-read).
 #
 #   bash /home/hal/apostille/scripts/ops-gp2-proposals.sh
 #
@@ -13,7 +15,7 @@
 # Paste the whole output back to the agent.
 set -u
 
-[ "$(id -u)" = 0 ] || { echo "ABORT: run as root"; exit 1; }
+[ "$(id -u)" != 0 ] || { echo "ABORT: run as the deploy user, not root"; exit 1; }
 command -v sqlite3 >/dev/null || { echo "ABORT: sqlite3 missing"; exit 1; }
 
 XTASK=/srv/apostille/current/xtask
@@ -24,7 +26,6 @@ KEK_SRC=/etc/apostille/handbook-kek
 CREDS=$STORE/.loop-creds
 STAGED=$CREDS/handbook-kek
 SEEDDIR=/tmp/gp2-pack-seed
-SVC="sudo -u andrii-ai"
 
 [ -x "$XTASK" ] || { echo "ABORT: no live release xtask at $XTASK"; exit 1; }
 [ -f "$DB" ] || { echo "ABORT: no prod DB at $DB"; exit 1; }
@@ -33,13 +34,13 @@ SVC="sudo -u andrii-ai"
 
 counts() {
     for slug in vietnam usa-wa-sos; do
-        aid="$($SVC sqlite3 "$DB" "SELECT id FROM authority WHERE slug='$slug';")"
+        aid="$(sqlite3 "$DB" "SELECT id FROM authority WHERE slug='$slug';")"
         if [ -z "$aid" ]; then
             printf '%s=(no authority) ' "$slug"
         else
             printf '%s=proposed:%s/accepted:%s ' "$slug" \
-                "$($SVC sqlite3 "$DB" "SELECT COUNT(*) FROM fact WHERE authority_id=$aid AND status='proposed';")" \
-                "$($SVC sqlite3 "$DB" "SELECT COUNT(*) FROM fact WHERE authority_id=$aid AND status='accepted';")"
+                "$(sqlite3 "$DB" "SELECT COUNT(*) FROM fact WHERE authority_id=$aid AND status='proposed';")" \
+                "$(sqlite3 "$DB" "SELECT COUNT(*) FROM fact WHERE authority_id=$aid AND status='accepted';")"
         fi
     done
 }
@@ -55,7 +56,7 @@ mkdir -p "$SEEDDIR" || { echo "ABORT: cannot create $SEEDDIR"; exit 1; }
 cp "$PACKS/vietnam-routing.json" "$PACKS/usa-wa.json" "$SEEDDIR/" \
     || { echo "ABORT: cannot stage GP2 packs"; exit 1; }
 chmod 0644 "$SEEDDIR"/*.json
-$SVC "$XTASK" packs-load --packs "$SEEDDIR" --store "$STORE" --actor gp2-proposals \
+"$XTASK" packs-load --packs "$SEEDDIR" --store "$STORE" --actor gp2-proposals \
     || { echo "ABORT: packs-load failed (output above)"; exit 1; }
 
 echo "=== 1b. retire sources whose URI left the packs"
@@ -64,7 +65,7 @@ echo "=== 1b. retire sources whose URI left the packs"
 # would fail A1 for good. Scoped to the two GP2 slugs only. Assumed:
 # their store sources come from these packs alone.
 command -v python3 >/dev/null || { echo "ABORT: python3 missing (retire step needs it)"; exit 1; }
-$SVC python3 - "$SEEDDIR" "$DB" <<'EOF' || { echo "ABORT: retire step failed (output above)"; exit 1; }
+python3 - "$SEEDDIR" "$DB" <<'EOF' || { echo "ABORT: retire step failed (output above)"; exit 1; }
 import json, sqlite3, sys, glob
 packdir, db = sys.argv[1], sys.argv[2]
 wanted = {}
@@ -90,22 +91,21 @@ rm -rf "$SEEDDIR"
 echo "=== 2. fetch-slug from prod IPs (one bad URL never aborts the run)"
 for slug in vietnam usa-wa-sos; do
     echo "--- fetch-slug $slug"
-    $SVC "$XTASK" fetch-slug --store "$STORE" --slug "$slug" --actor gp2-proposals \
+    "$XTASK" fetch-slug --store "$STORE" --slug "$slug" --actor gp2-proposals \
         || echo "WARNING: fetch-slug $slug exited nonzero (output above) — continuing"
 done
 
-echo "=== 3. stage andrii-ai-readable KEK copy (deleted after the scans)"
-install -d -o andrii-ai -g andrii-ai -m 0700 "$CREDS"
+echo "=== 3. stage KEK copy (0700 dir, 0600 file, deleted after the scans)"
+install -d -m 0700 "$CREDS"
 cp "$KEK_SRC" "$STAGED"
-chown andrii-ai:andrii-ai "$STAGED"
 chmod 0600 "$STAGED"
 [ "$(stat -c %s "$STAGED")" = 32 ] || { echo "ABORT: staged KEK is not 32 bytes"; exit 1; }
-echo "staged: $STAGED (andrii-ai 0600)"
+echo "staged: $STAGED (0600, owned by $USER)"
 
 echo "=== 4. analyze --scan-captures --live per slug (drafts proposed facts)"
 for slug in vietnam usa-wa-sos; do
     echo "--- analyze $slug"
-    $SVC env CREDENTIALS_DIRECTORY="$CREDS" "$XTASK" analyze --store "$STORE" \
+    CREDENTIALS_DIRECTORY="$CREDS" "$XTASK" analyze --store "$STORE" \
         --scan-captures --slug "$slug" --live --actor gp2-proposals \
         || echo "WARNING: analyze $slug exited nonzero (output above) — continuing"
 done

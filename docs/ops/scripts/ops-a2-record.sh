@@ -7,13 +7,14 @@
 #
 # Needs META_API_KEY (the Model API key, never in the repo, never on
 # a command line). With a TTY it prompts securely; otherwise export it
-# in this shell only. Run as root; paste the whole output back to the agent.
+# in this shell only. Run as the deploy user (hal), never root; paste the
+# whole output back to the agent.
 #
 #   bash /home/hal/apostille/scripts/ops-a2-record.sh
 #
 set -u
 
-[ "$(id -u)" = 0 ] || { echo "ABORT: run as root"; exit 1; }
+[ "$(id -u)" != 0 ] || { echo "ABORT: run as the deploy user, not root"; exit 1; }
 if [ -z "${META_API_KEY:-}" ]; then
     [ -t 0 ] || { echo "ABORT: META_API_KEY is not set and stdin is not a TTY (export it in this shell only)"; exit 1; }
     read -rs -p "Model key: " META_API_KEY; echo
@@ -29,7 +30,6 @@ RELEASE=/srv/apostille/current
 PNGDIR="${A2_PNG_DIR:-$RELEASE/spa/demo}"
 SCRIPTDIR="$(dirname "$0")"
 RECORDER="$SCRIPTDIR/a2-record.py"
-SVC="sudo -u andrii-ai"
 OUTDIR=/tmp/a2-record-out
 
 [ -f "$RECORDER" ] || { echo "ABORT: recorder missing at $RECORDER (sync docs/ops/scripts first)"; exit 1; }
@@ -61,9 +61,9 @@ print(f"ok {sys.argv[1]}: {r['verdict']} {len(r['boxes'])} box(es)")
 EOF
 done
 
-echo "=== 3. install as andrii-ai (0600 dir, 0644 files)"
-install -d -o andrii-ai -g andrii-ai -m 0700 "$DESTDIR"
-install -o andrii-ai -g andrii-ai -m 0644 "$OUTDIR"/*.json "$DESTDIR/" \
+echo "=== 3. install (0750 dir so the app user reads via group, 0644 files)"
+install -d -m 0750 "$DESTDIR"
+install -m 0644 "$OUTDIR"/*.json "$DESTDIR/" \
     || { echo "ABORT: install failed"; exit 1; }
 rm -rf "$OUTDIR"
 
