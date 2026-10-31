@@ -40,3 +40,4 @@
 | 133 | 2026-10-31 10:05Z | Override deploy + --allow-today-overlap flag | deploying |
 | 134 | 2026-10-31 10:15Z | Override deploy plumbing in ops-deploy.sh | deploying |
 | 135 | 2026-10-31 10:25Z | Operator-today complete command lines | runbook |
+| 136 | 2026-10-31 10:40Z | Rootless app ops one-time script | needs root run |
