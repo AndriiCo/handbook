@@ -43,3 +43,4 @@
 | 136 | 2026-10-31 10:40Z | Rootless app ops one-time script | needs root run |
 | 137 | 2026-10-31 11:00Z | Rootless conversion of app scripts | staged+verified |
 | 138 | 2026-10-31 11:20Z | Home How-it-works band (meta-visible) | shots green |
+| 139 | 2026-10-31 11:35Z | README success criteria matches live | readme |

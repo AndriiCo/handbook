@@ -72,10 +72,12 @@ code.
 
 ## Success criteria
 
-Synthetic-document demo: a customer can request an apostille for Viet Nam
-online in a very convenient way, and envelopes with the completed form are
-delivered to their house via FedEx tomorrow (synthetic documents and
-demo postage/stubs only — no real mail, fees, or carrier charges).
+What is live at <https://andrii.ai/apostille> today: search the
+authority index, sign in with passkey, run the photo precheck, and place
+an order whose timeline updates live. Dossiers show quote-carrying facts
+(staging-proven; production facts appear once the operator's approval
+steps below land). What is demo-only: document photos are synthetic
+samples, and there is no real mail, fees, or carrier charges anywhere.
 
 ## Repository
 
