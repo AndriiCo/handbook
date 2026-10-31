@@ -33,3 +33,6 @@
 | 127 | 2026-10-31 06:30Z | Demo script 175s scenes | URLs, data, captions per scene |
 | 128 | 2026-10-31 07:00Z | Demo gate spec + review queue crash fix | demo 3/3 green, queue renders |
 | 129 | 2026-10-31 07:20Z | Day-gate fix in ship-release.sh + deploy() | gate aborts, tests green |
+| 130 | 2026-10-31 08:10Z | Staging-proven live-path fixes + all-sections dossier | 8/10 staging, GP2-page fix |
+| 130 | 2026-10-31 09:10Z | Staging-proof batch: live draft, A2, dossier, README, ops | 9/10 staging |
+| 131 | 2026-10-31 09:15Z | Security H4 + honest A5 tallies | web+xtask green |

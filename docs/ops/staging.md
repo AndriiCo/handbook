@@ -33,6 +33,42 @@ DB copies — ever. Alias only, never a username, IP or key.
   (h1/WS/clean already pass); A2 POST is 503 until verdicts are
   recorded (needs `META_API_KEY`); S1 reads the local repo, not staging.
 
+## Run 2 (2026-10-31, main @ 925f360 + live-path fixes) — 9/10, data green
+
+- Build: delta rsync, `cargo build --release -p web -p xtask` (BUILD_SHA
+  stamps the git SHA — plant tree has `.git`), `npm ci`, `npm run build`
+  + `build:admin`. No pipeline artifact (its BUILD_SHA names the wrong SHA).
+- Ports (this run, recorded here): public **18318**, admin **18319**.
+  18317 belongs to a pipeline artifact server (not ours — leave it).
+- Store: fresh `~/staging/store`; `config-enroll --kek-file ~/staging/kek`;
+  `config-set net.port/net.admin_port`. Server env: `STORE_DIR`,
+  `SPA_DIR=~/staging/handbook/web/build`,
+  `STATIC_DIR=~/staging/handbook/crates/web/static`,
+  `CREDENTIALS_DIRECTORY=~/staging/creds` (0600 KEK copy). Release binary,
+  `nohup … &`, log `/tmp/staging-web2.log`. Currently RUNNING — leave it.
+- Staging Meta key: plant `~/.config/apostille/meta-staging.env` (0600,
+  one `META_API_KEY=` line). Source with `set -a; . <path>; set +a` (the
+  file has no `export`) in the remote shell only; never print, copy or log
+  the value. Record the path, never the value.
+- Data: packs-load, fetch-slug (2+3 fetched, 1 failed each), `analyze
+  --live` (vietnam 8 proposed, usa-wa-sos 9), 17/17 accepted through the
+  admin review API (staff session minted in staging DB + Origin + CSRF;
+  release builds refuse `admin.mtls_off`, so no dev seam — approvals used
+  the real session path), A2 recordings installed to
+  `~/staging/store/demo_precheck` (clean=pass, dark/wash=retake, 0 SAM
+  boxes on flat synthetics), `eval --live --evals evals/authorities`
+  (26 gold, quote_found 0.7, muse-spark-1.3 → quality.json).
+- Live-path fixes proven here (commit with next green tree): chat role
+  `developer`→`user` (endpoint 400s otherwise), 32k completion budget
+  (reasoning tokens), 8 records/call, Spark-vision verdicts in
+  a2-record.py, all-sections dossier (GP2-page needs 8 statements in text).
+- Tunnel (keep between slices; macOS has no `setsid`, managed session):
+  `ssh -N -L 18318:127.0.0.1:18318 -L 18319:127.0.0.1:18319 plant`, then
+  `node .agents/scoreboard/scoreboard.mjs --base
+  http://127.0.0.1:18318/apostille`.
+- Result: 9/10 (only S1 red: licence/video/visibility are operator-owned).
+  Stale-note rule: whenever a stack starts, its ports + tunnel go here.
+
 ## Regeneration (fresh staging DB)
 
 1. `ssh plant 'pkill -f staging/handbook/target/release/web; rm -rf

@@ -35,15 +35,17 @@
 	let authorityName = $state<string | null>(null);
 
 	const groups = $derived(groupFactsByTopic(facts ?? []));
-	const active = $derived(groups.find((g) => g.topic === tab) ?? groups[0] ?? null);
+
 
 	// Full class strings per state (not stacked class: directives):
 	// the active border/text colors must never co-occur with the
 	// idle ones in the cascade.
 	const tabCls = (isActive: boolean) =>
-		`min-h-11 cursor-pointer border-0 border-b-[3px] bg-transparent px-[0.9rem] py-2 ${
+		`inline-flex min-h-11 cursor-pointer items-center border-0 border-b-[3px] bg-transparent px-[0.9rem] py-2 ${
 			isActive ? 'border-accent-fill font-bold text-ink' : 'border-transparent text-ink-muted'
 		}`;
+	const topicId = (topic: string) =>
+		`topic-${topic.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
 	async function reload(current: string) {
 		const res = await readDossier(current, { get });
@@ -128,22 +130,23 @@
 	{:else}
 		<div class="mt-4 grid gap-8 pb-8 md:grid-cols-[3fr_2fr]">
 			<div>
-				<div class="flex flex-wrap gap-1 border-b border-line" role="tablist" aria-label="Dossier sections">
+				<nav class="flex flex-wrap gap-1 border-b border-line" aria-label="Dossier sections">
 					{#each groups as g (g.topic)}
-						<button
-							role="tab"
-							aria-selected={tab === g.topic}
+						<a
+							href={`#${topicId(g.topic)}`}
 							class={tabCls(tab === g.topic)}
+							aria-current={tab === g.topic ? 'true' : undefined}
 							onclick={() => (tab = g.topic)}
 						>
 							{topicLabel(g.topic)}
-						</button>
+						</a>
 					{/each}
-				</div>
-				<div role="tabpanel" aria-label={active ? topicLabel(active.topic) : ''}>
-					{#if active}
+				</nav>
+				{#each groups as g (g.topic)}
+					<section aria-labelledby={topicId(g.topic)}>
+						<h2 id={topicId(g.topic)} class="mt-6 mb-0 text-lg">{topicLabel(g.topic)}</h2>
 						<ul class="m-0 mt-4 list-none p-0">
-							{#each active.facts as fact (fact.id)}
+							{#each g.facts as fact (fact.id)}
 								<li class="border-b border-line py-3">
 									<p class="m-0 mb-2">{fact.statement}</p>
 									{#if Array.isArray(fact.citations) && fact.citations.length > 0}
@@ -184,8 +187,8 @@
 								</li>
 							{/each}
 						</ul>
-					{/if}
-				</div>
+					</section>
+				{/each}
 			</div>
 
 			<aside class="flex flex-col gap-4" aria-label="About this dossier">

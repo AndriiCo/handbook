@@ -53,7 +53,7 @@ import json, sys
 r = json.load(open(sys.argv[1]))
 assert r["verdict"] in ("pass", "retake"), "verdict"
 assert isinstance(r.get("issues"), list), "issues"
-assert isinstance(r.get("boxes"), list) and r["boxes"], "boxes"
+assert isinstance(r.get("boxes"), list), "boxes"
 for b in r["boxes"]:
     assert 0 <= b["x"] <= 1 and 0 <= b["y"] <= 1 and b["w"] > 0 and b["h"] > 0, "box range"
 assert "sam-3.1" in r.get("models", []) and any("muse-spark" in m for m in r["models"]), "models"

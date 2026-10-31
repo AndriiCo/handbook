@@ -290,9 +290,9 @@ fn response_format_for(doc_ids: &[String]) -> serde_json::Value {
 }
 
 /// Completion budget per draft call. Spark's reasoning tokens count
-/// inside it, so a 2k cap truncates real drafts into `finish_reason =
-/// length` (operator fix `live-draft-first`).
-const MAX_COMPLETION_TOKENS: u32 = 8000;
+/// inside it (a two-character reply already costs ~385), so an 8k cap
+/// truncates real drafts into `finish_reason = length` on staging.
+const MAX_COMPLETION_TOKENS: u32 = 32_000;
 
 impl ModelClient for MetaRestClient {
     fn model_id(&self) -> &'static str {
@@ -341,9 +341,11 @@ impl MetaRestClient {
                  and keep every citation on the cited page."
             ));
         }
+        // The Meta chat endpoint requires a `user` (or `tool`) message;
+        // a lone `developer` message is rejected with HTTP 400.
         let body = json!({
             "model": DRAFT_MODEL,
-            "messages": [{"role": "developer", "content": prompt}],
+            "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
             "max_completion_tokens": MAX_COMPLETION_TOKENS,
             "response_format": response_format_for(&req.doc_ids),
@@ -545,7 +547,7 @@ mod tests {
             );
             let v: serde_json::Value = serde_json::from_str(body).unwrap();
             assert_eq!(v["model"], "muse-spark-1.3");
-            assert_eq!(v["messages"][0]["role"], "developer");
+            assert_eq!(v["messages"][0]["role"], "user");
             let prompt = v["messages"][0]["content"].as_str().unwrap();
             assert!(prompt.contains("wa-sos"), "slug substituted");
             assert!(prompt.contains("PO Box 40220"), "evidence inline");
@@ -707,7 +709,7 @@ mod tests {
             let n = seen_calls.fetch_add(1, Ordering::SeqCst);
             let v: serde_json::Value = serde_json::from_str(body).unwrap();
             if n == 0 {
-                assert_eq!(v["max_completion_tokens"], 8000, "raised budget");
+                assert_eq!(v["max_completion_tokens"], 32_000, "raised budget");
                 let first = v["messages"][0]["content"].as_str().unwrap();
                 assert!(first.contains("MAX RECORDS: 4"), "full max_records");
                 assert!(!first.contains("Previous attempt failed"), "no note yet");

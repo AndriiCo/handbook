@@ -30,7 +30,10 @@ use handbook_store::db::{
 pub const PROMPT_VERSION: &str = "aa-prompt-v1";
 
 /// Cap on records requested per draft call (the runner takes no caller budget yet).
-pub const DEFAULT_MAX_RECORDS: u32 = 32;
+/// Records per draft call. Spark reasons per record, so 32 blows past
+/// even a 32k completion budget (`finish_reason = length` on staging);
+/// 8 fits and still clears the 8-facts-per-slug bar across captures.
+pub const DEFAULT_MAX_RECORDS: u32 = 8;
 
 /// `fact.capture_id` for draft evidence with no ingest capture row behind it
 /// yet. Accepted because `capture_id` has no FK enforcement (see

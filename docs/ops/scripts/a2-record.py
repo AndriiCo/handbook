@@ -29,7 +29,8 @@ import urllib.request
 
 SAM_MODEL = "sam-3.1"
 SPARK_MODEL = "muse-spark-1.3"
-SAM_PROMPTS = ["document page", "official seal", "embossed stamp", "face"]
+SAM_PROMPTS = ["document page", "white rectangular page", "official seal",
+               "blue circular seal stamp", "embossed stamp", "face"]
 
 
 def post_json(url, key, body, timeout=120):
@@ -96,7 +97,8 @@ def sam_boxes(base, key, image_b64, dims):
             "content": [
                 {"type": "input_text",
                  "text": "Locate: " + ", ".join(SAM_PROMPTS)},
-                {"type": "input_image", "file_data": image_b64},
+                {"type": "input_image",
+                 "image_url": "data:image/png;base64," + image_b64},
             ],
         }],
     }
@@ -124,7 +126,7 @@ def sam_boxes(base, key, image_b64, dims):
     raise RuntimeError(f"SAM call failed: unexpected body: {payload}")
 
 
-def spark_verdict(base, key, sample_id, label, boxes):
+def spark_verdict(base, key, sample_id, label, boxes, image_b64):
     schema = {
         "type": "object",
         "properties": {
@@ -134,21 +136,25 @@ def spark_verdict(base, key, sample_id, label, boxes):
         "required": ["verdict", "issues"],
         "additionalProperties": False,
     }
+    # Spark sees the pixels itself (vision): SAM boxes are evidence, but
+    # flat synthetic shapes ground to zero boxes, so pixels decide.
     user_text = (
         f"Sample {sample_id} ({label}). SAM 3.1 found these boxes "
         f"(fractions of image width/height): {json.dumps(boxes)}. "
         "Judge: pass only when a document page is fully visible with a "
-        "seal-like mark present and no crop/darkness defect evident from "
-        "the boxes. Reply with verdict + short issues[] (empty when pass)."
+        "seal-like mark present and no crop/darkness defect. Reply with "
+        "verdict + short issues[] (empty when pass)."
     )
     body = {
         "model": SPARK_MODEL,
         "messages": [
-            {"role": "developer", "content": "You judge document-photo prechecks from SAM box evidence. Reply with the schema only."},
-            {"role": "user", "content": user_text},
+            {"role": "user", "content": [
+                {"type": "text", "text": "You judge document-photo prechecks from the image plus SAM box evidence. Reply with the schema only. " + user_text},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64," + image_b64}},
+            ]},
         ],
         "temperature": 0,
-        "max_completion_tokens": 500,
+        "max_completion_tokens": 4000,
         "response_format": {"type": "json_schema",
                             "json_schema": {"name": "PrecheckVerdict", "schema": schema}},
         "prompt_cache_key": "demo-precheck-v1",
@@ -158,12 +164,14 @@ def spark_verdict(base, key, sample_id, label, boxes):
     if status < 200 or status >= 300:
         raise RuntimeError(f"Spark call failed: HTTP {status}: {payload}")
     try:
-        content = payload["choices"][0]["message"]["content"]
+        choice = payload["choices"][0]
+        content = choice["message"]["content"]
         verdict = json.loads(content)
         assert verdict["verdict"] in ("pass", "retake")
         assert isinstance(verdict["issues"], list)
     except (KeyError, IndexError, AssertionError, ValueError, TypeError) as e:
-        raise RuntimeError(f"Spark call failed: bad verdict shape: {e}")
+        detail = choice.get("finish_reason") if "choice" in dir() else "?"
+        raise RuntimeError(f"Spark call failed: bad verdict shape: {e} (finish={detail})")
     usage = payload.get("usage", {}) or {}
     return verdict, usage, secs
 
@@ -197,7 +205,7 @@ def main():
         image_b64 = base64.b64encode(png.read_bytes()).decode()
         boxes, sam_secs = sam_boxes(args.base, key, image_b64, dims)
         print(f"  sam: {len(boxes)} box(es) in {sam_secs:.1f}s", flush=True)
-        verdict, usage, spark_secs = spark_verdict(args.base, key, sample, sample.replace("-", " "), boxes)
+        verdict, usage, spark_secs = spark_verdict(args.base, key, sample, sample.replace("-", " "), boxes, image_b64)
         total_in += int(usage.get("prompt_tokens", 0) or 0)
         total_out += int(usage.get("completion_tokens", 0) or 0)
         print(f"  spark: {verdict['verdict']} {verdict['issues']} in {spark_secs:.1f}s "

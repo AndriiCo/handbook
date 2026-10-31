@@ -1,12 +1,38 @@
 # Apostille Handbook
 
-One source for every country's apostille details and forms — kept current,
-with prepaid labels and envelopes delivered to your door.
+Every apostille fact shows its quote, source and date — drafted by Meta AI,
+approved by a human. Live at <https://andrii.ai/apostille> (demo video link
+lands 11-03, operator step).
 
 Built by Andrii Co. for the
 [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon.md)
-(Startup Track). Design and implementation happen in follow-up prompts;
-this commit establishes the project scaffold, license, and working agreements.
+(Startup Track), 2026-10-26 to 2026-11-04 with Muse Code — every builder
+and judge turn retained in [docs/prompts/](docs/prompts/) (see
+[docs/prompts/sessions/README.md](docs/prompts/sessions/README.md)).
+
+## Which Meta models run where
+
+- **muse-spark-1.3** drafts every proposed fact from fetched captures
+  (quote-checked, refused quotes retried), judges photo-precheck verdicts,
+  and grades the eval gold set.
+- **sam-3.1** locates document marks in precheck photos via the Responses
+  API (`<|box;…|>` tokens become the overlay boxes).
+
+## What is live and what is replayed
+
+Live: drafts, eval, and approvals run against the Meta API (sealed
+production key; staging-only key on plant). The public precheck endpoint
+serves recorded verdict JSONs verbatim — zero marginal model cost, no key
+on the serving path. Replays and fixtures: `evals/authorities/` (26-case
+gold set), `web/e2e/fixtures/`, crate unit tests.
+
+## Eval numbers (2026-10-31, staging, live key)
+
+26 gold cases, model muse-spark-1.3: quote_found_rate **0.7**,
+value_in_quote_rate 0.7, topic_accuracy 0.7; 17/17 staged proposals
+accepted through the review flow (8 Viet Nam + 9 USA-WA-SOS); A2
+clean=pass, dark/wash=retake. Production numbers land after Sunday's
+deploy + operator root steps.
 
 ## The problem
 
@@ -53,9 +79,9 @@ demo postage/stubs only — no real mail, fees, or carrier charges).
 
 ## Repository
 
-Rust workspace. There are no shell scripts: project tasks live in `xtask/`
-and run via `cargo xtask <task>`, reusing the project's language and
-libraries.
+Rust workspace plus a Svelte front end (`web/`). Project tasks live in
+`xtask/` and run via `cargo xtask <task>`; operator runbooks live in
+`docs/ops/scripts/`.
 
 ```text
 crates/handbook/   library crate (design arrives in a later prompt)
