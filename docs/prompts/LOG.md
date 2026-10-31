@@ -32,3 +32,4 @@
 | 126 | 2026-10-31 06:10Z | Operator review fix 6 admin-surface | trace console, excerpt endpoint |
 | 127 | 2026-10-31 06:30Z | Demo script 175s scenes | URLs, data, captions per scene |
 | 128 | 2026-10-31 07:00Z | Demo gate spec + review queue crash fix | demo 3/3 green, queue renders |
+| 129 | 2026-10-31 07:20Z | Day-gate fix in ship-release.sh + deploy() | gate aborts, tests green |

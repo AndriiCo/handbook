@@ -15,17 +15,32 @@ VERSION="$(git rev-parse --short=7 "$SHA")"
 [[ "$VERSION" =~ ^[0-9a-f]{7}$ ]] || { echo "ABORT: bad short SHA: $VERSION"; exit 2; }
 echo "== ship $VERSION ($SHA)"
 
+# Deploy-day gate (AGENTS.md §7: one deploy a day, never two within
+# 8h). Same semantic as day_gate_blockers in xtask/src/release.rs
+# (tested there): any output line means ABORT. Directory names lie
+# (SHA-named); only mtimes count.
+check_day() {
+    local out
+    out="$(ssh andrii.ai 'T=$(TZ=America/Los_Angeles date -d 00:00 +%s); N=$(date +%s); for d in /srv/apostille/releases/*/; do [ -d "$d" ] || continue; m=$(stat -c %Y "$d"); [ "$m" -ge "$T" ] && echo "SPENT-TODAY $d"; [ $((N-m)) -lt 28800 ] && echo "WITHIN-8H $d"; done; true')" \
+        || { echo "ABORT: day-gate ssh failed ($1)"; exit 1; }
+    [ -z "$out" ] || { echo "ABORT: deploy day spent or within 8h ($1):"; echo "$out"; exit 1; }
+}
+
 echo "== 1. rails (schema, migrations, unit)"
-HITS="$(git diff 0c8ea63 "$SHA" -- crates xtask \
+LIVE_VER="$(curl -fsS --max-time 15 https://andrii.ai/apostille/healthz)" \
+    || { echo "ABORT: production /healthz unreachable"; exit 1; }
+LIVE_SHA="$(printf '%s' "$LIVE_VER" | grep -o '"version":"0.1.0+[0-9a-f][0-9a-f]*"' | sed 's/.*+//;s/"//')"
+[[ "${LIVE_SHA:-?}" =~ ^[0-9a-f]{7,40}$ ]] || { echo "ABORT: unparseable live version: $LIVE_VER"; exit 1; }
+git cat-file -e "$LIVE_SHA^{commit}" 2>/dev/null || { echo "ABORT: live SHA $LIVE_SHA not in local repo"; exit 2; }
+echo "live SHA: $LIVE_SHA"
+HITS="$(git diff "$LIVE_SHA" "$SHA" -- crates xtask \
     | grep -E '^[-+]pub const (P2_)?SCHEMA_VERSION|^\+.*\b(ALTER|DROP) (TABLE|INDEX|COLUMN)|^\+.*\bRENAME (TO|COLUMN)\b' || true)"
-[ -z "$HITS" ] || { echo "ABORT: schema delta vs 0c8ea63 — take the migration path with the author:"; echo "$HITS"; exit 1; }
-[ -z "$(git diff --stat 0c8ea63 "$SHA" -- crates/handbook-store/migrations)" ] \
-    || { echo "ABORT: migrations differ from 0c8ea63 — take the migration path with the author"; exit 1; }
+[ -z "$HITS" ] || { echo "ABORT: schema delta vs live $LIVE_SHA — take the migration path with the author:"; echo "$HITS"; exit 1; }
+[ -z "$(git diff --stat "$LIVE_SHA" "$SHA" -- crates/handbook-store/migrations)" ] \
+    || { echo "ABORT: migrations differ from live $LIVE_SHA — take the migration path with the author"; exit 1; }
 git show "$SHA:docs/ops/apostille.service" | ssh andrii.ai 'diff /etc/systemd/system/apostille.service - >/dev/null' \
     || { echo "ABORT: unit file drifted — sync docs/ops/apostille.service first"; exit 1; }
-CLEAN="$(TZ=America/Los_Angeles date +%F)"
-[ -z "$(ssh andrii.ai "ls /srv/apostille/releases | grep -x '$CLEAN'")" ] \
-    || { echo "ABORT: a release dir dated today already exists (one deploy a day)"; exit 1; }
+check_day rails
 ssh andrii.ai 'pgrep -af "[a]postille/scripts/"' \
     && { echo "ABORT: root-owned apostille process running"; exit 1; } || true
 echo "rails OK"
@@ -68,8 +83,7 @@ scp "$WT/docs/ops/scripts/ops-deploy.sh" andrii.ai:apostille/scripts/ || exit 1
 echo "stage OK"
 
 echo "== 5-6. repeat rails + pre-flight"
-[ -z "$(ssh andrii.ai "ls /srv/apostille/releases | grep -x '$CLEAN'")" ] \
-    || { echo "ABORT: today got spent while staging (one deploy a day)"; exit 1; }
+check_day pre-flight
 ssh andrii.ai 'pgrep -af "[a]postille/scripts/"' \
     && { echo "ABORT: root-owned apostille process running"; exit 1; } || true
 ssh andrii.ai 'touch /srv/apostille/releases/.w && rm /srv/apostille/releases/.w && echo WRITE-OK'

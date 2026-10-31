@@ -348,6 +348,26 @@ pub fn smoke(url: &str) -> Result<(), String> {
     }
 }
 
+/// Minimum gap between production deploys, in seconds (AGENTS.md §7).
+const DEPLOY_GAP_SECS: i64 = 28_800;
+
+/// Deploy-day gate (AGENTS.md §7: one deploy a day, never two within
+/// 8h). Pure predicate over release-dir mtimes so `ship-release.sh`
+/// and this crate share one tested semantic: any line returned means
+/// ABORT. `pt_midnight_secs` is 00:00 America/Los_Angeles today.
+pub fn day_gate_blockers(mtimes: &[i64], now_secs: i64, pt_midnight_secs: i64) -> Vec<String> {
+    let mut out = Vec::new();
+    for m in mtimes {
+        if *m >= pt_midnight_secs {
+            out.push("SPENT-TODAY".to_string());
+        }
+        if now_secs - *m < DEPLOY_GAP_SECS {
+            out.push("WITHIN-8H".to_string());
+        }
+    }
+    out
+}
+
 /// Smoke a health endpoint AND pin the build: like [`smoke`], plus the
 /// body must name `"version":"0.1.0+{sha7}"` (runbook-release §3). A
 /// stale binary or orphan process serving the port fails the release
@@ -420,6 +440,9 @@ pub struct DeployOptions {
     pub restart: bool,
     /// Health URL to smoke after the swap.
     pub smoke_url: String,
+    /// 00:00 America/Los_Angeles today for the deploy-day gate
+    /// (`None` skips the gate; tests use `None`).
+    pub pt_midnight_secs: Option<i64>,
 }
 
 /// Ship one release: gates (packs-validate + accept), staged-set
@@ -433,6 +456,31 @@ pub struct DeployOptions {
 /// step fails (after best-effort revert on smoke failure).
 pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
     validate_version(&opts.version)?;
+    if let Some(midnight) = opts.pt_midnight_secs {
+        let now = crate::unix_now();
+        let mut mtimes = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(opts.root.join("releases")) {
+            for entry in entries.flatten() {
+                let mtime = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .map(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0)
+                    })
+                    .unwrap_or(0);
+                mtimes.push(mtime);
+            }
+        }
+        let blockers = day_gate_blockers(&mtimes, now, midnight);
+        if !blockers.is_empty() {
+            return Err(format!(
+                "deploy-day gate refused (one a day, 8h gap): {}",
+                blockers.join(", ")
+            ));
+        }
+    }
     if let Some(dir) = &opts.packs_dir {
         let errors = crate::packs::validate_dir(dir);
         if !errors.is_empty() {
@@ -648,6 +696,26 @@ pub fn run_deploy(args: &[String]) {
         actor: crate::flag(args, "actor").unwrap_or_else(|| "xtask".to_string()),
         restart: !has(args, "no-restart"),
         smoke_url: crate::flag(args, "smoke-url").unwrap_or_else(|| DEFAULT_SMOKE_URL.to_string()),
+        // Prod runs GNU date; fail closed when PT midnight is unknowable.
+        pt_midnight_secs: Some(
+            String::from_utf8_lossy(
+                &std::process::Command::new("date")
+                    .env("TZ", "America/Los_Angeles")
+                    .args(["-d", "00:00", "+%s"])
+                    .output()
+                    .unwrap_or_else(|e| {
+                        eprintln!("deploy: cannot read PT midnight: {e}");
+                        std::process::exit(2);
+                    })
+                    .stdout,
+            )
+            .trim()
+            .parse()
+            .unwrap_or_else(|_| {
+                eprintln!("deploy: cannot parse PT midnight (need GNU date)");
+                std::process::exit(2);
+            }),
+        ),
     };
     match deploy(&opts) {
         Ok(summary) => println!("{summary}"),
@@ -755,6 +823,22 @@ mod tests {
             }
         });
         (url, handle)
+    }
+
+    #[test]
+    fn day_gate_aborts_on_today_or_recent() {
+        // Fixed clock: now = 1_000_000, PT midnight = 990_000.
+        // A release stamped after midnight aborts (SPENT-TODAY);
+        // one 3h55m ago aborts (WITHIN-8H) — the 70960d4/e5cc372 case.
+        assert!(day_gate_blockers(&[], 1_000_000, 990_000).is_empty());
+        assert!(
+            day_gate_blockers(&[995_000], 1_000_000, 990_000).contains(&"SPENT-TODAY".to_string())
+        );
+        let recent = 1_000_000 - (3 * 3600 + 55 * 60);
+        let blockers = day_gate_blockers(&[recent], 1_000_000, 990_000 - 100_000);
+        assert!(blockers.contains(&"WITHIN-8H".to_string()), "{blockers:?}");
+        // A release from yesterday, 9h ago, blocks nothing.
+        assert!(day_gate_blockers(&[1_000_000 - 9 * 3600], 1_000_000, 999_000).is_empty());
     }
 
     #[test]
@@ -941,6 +1025,7 @@ mod tests {
             actor: "test".to_string(),
             restart: false,
             smoke_url: url,
+            pt_midnight_secs: None,
         })
         .unwrap();
         server.join().unwrap();
@@ -980,9 +1065,35 @@ mod tests {
             actor: "test".to_string(),
             restart: false,
             smoke_url: dead_url(),
+            pt_midnight_secs: None,
         })
         .unwrap_err();
         assert!(err.contains("smoke FAILED"), "{err}");
+        assert_eq!(read_current(&root).as_deref(), Some("ddddddd"));
+    }
+
+    #[test]
+    fn deploy_refuses_when_day_spent() {
+        let (dir, root) = fake_root(Some("ddddddd"));
+        // Fresh stub: mtime is now, so both SPENT-TODAY (midnight an
+        // hour ago) and WITHIN-8H fire through the real deploy path.
+        let err = deploy(&DeployOptions {
+            root: root.clone(),
+            src: staged(dir.path()),
+            version: "eeeeeee".to_string(),
+            sha: "e".repeat(40),
+            migration_notes: String::new(),
+            rollback_safe: true,
+            packs_dir: None,
+            expect_build: None,
+            store: dir.path().join("store"),
+            actor: "test".to_string(),
+            restart: false,
+            smoke_url: dead_url(),
+            pt_midnight_secs: Some(crate::unix_now() - 3600),
+        })
+        .unwrap_err();
+        assert!(err.contains("deploy-day gate refused"), "{err}");
         assert_eq!(read_current(&root).as_deref(), Some("ddddddd"));
     }
 
