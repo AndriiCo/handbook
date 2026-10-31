@@ -128,7 +128,8 @@ pub fn validate_version(version: &str) -> Result<(), String> {
 /// Refuse a staged dir that cannot become a release: `web` and
 /// `xtask` must be ELF binaries (script/zip/empty installs
 /// rejected); `spa`, `spa-admin`, and `static` must be dirs.
-/// `packs/` ships for reference when staged (optional).
+/// `packs/` ships for reference and `evals/` for the A5 eval step
+/// when staged (both optional).
 ///
 /// # Errors
 ///
@@ -347,6 +348,27 @@ pub fn smoke(url: &str) -> Result<(), String> {
     }
 }
 
+/// Smoke a health endpoint AND pin the build: like [`smoke`], plus the
+/// body must name `"version":"0.1.0+{sha7}"` (runbook-release §3). A
+/// stale binary or orphan process serving the port fails the release
+/// instead of shipping under the wrong stamp.
+pub fn smoke_sha(url: &str, sha7: &str) -> Result<(), String> {
+    smoke(url)?;
+    let out = std::process::Command::new("curl")
+        .args(["-fsS", "--max-time", "15", url])
+        .output()
+        .map_err(|_| "smoke: curl missing (install curl)".to_string())?;
+    let body: String = String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .collect();
+    let want = format!(r#""version":"0.1.0+{sha7}""#);
+    if body.contains(&want) {
+        Ok(())
+    } else {
+        Err(format!("smoke {url}: build SHA does not name {sha7}"))
+    }
+}
+
 /// Recursive copy of a dir tree (files + subdirs; symlinks not followed).
 fn copy_dir(src: &Path, dst: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
@@ -448,6 +470,10 @@ pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
         let _ = std::fs::remove_dir_all(dst.join("packs"));
         copy_dir(&opts.src.join("packs"), &dst.join("packs"))?;
     }
+    if opts.src.join("evals").is_dir() {
+        let _ = std::fs::remove_dir_all(dst.join("evals"));
+        copy_dir(&opts.src.join("evals"), &dst.join("evals"))?;
+    }
     write_manifest(
         &dst.join("release.toml"),
         &ReleaseManifest {
@@ -465,7 +491,7 @@ pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
         systemctl("restart")?;
         std::thread::sleep(std::time::Duration::from_secs(SETTLE_SECS));
     }
-    match smoke(&opts.smoke_url) {
+    match smoke_sha(&opts.smoke_url, &opts.version) {
         Ok(()) => {
             let pruned = prune_old_releases(&opts.root, &opts.version)?;
             Ok(format!(
@@ -567,7 +593,7 @@ pub fn rollback(opts: &RollbackOptions) -> Result<String, String> {
         systemctl("restart")?;
         std::thread::sleep(std::time::Duration::from_secs(SETTLE_SECS));
     }
-    match smoke(&opts.smoke_url) {
+    match smoke_sha(&opts.smoke_url, &opts.to) {
         Ok(()) => Ok(format!("rolled back {live} -> {}", opts.to)),
         Err(failure) => {
             revert_to_prev(&opts.root, Some(&live), opts.restart, &opts.smoke_url);
@@ -703,28 +729,43 @@ mod tests {
         src
     }
 
-    /// One-shot HTTP server on 127.0.0.1:0 (port 0 = no conflicts);
-    /// serves a single healthz-shaped reply, then the thread exits.
-    fn test_server() -> (String, std::thread::JoinHandle<()>) {
+    /// Versioned healthz server: serves two requests (smoke_sha
+    /// fetches twice) with the given version string, then exits.
+    fn versioned_server(version: &str) -> (String, std::thread::JoinHandle<()>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!(
             "http://{}/apostille/healthz",
             listener.local_addr().unwrap()
         );
+        let body = format!(r#"{{"status":"ok","version":"{version}"}}"#);
         let handle = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 4096];
-            let _ = stream.read(&mut buf);
-            let body = r#"{"status":"ok","version":"test"}"#;
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
-                 Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            )
-            .unwrap();
+            for _ in 0..2 {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            }
         });
         (url, handle)
+    }
+
+    #[test]
+    fn smoke_sha_pins_build() {
+        let (url, handle) = versioned_server("0.1.0+abc1234");
+        smoke_sha(&url, "abc1234").unwrap();
+        handle.join().unwrap();
+        let (url, handle) = versioned_server("0.1.0+deadbee");
+        let err = smoke_sha(&url, "abc1234").expect_err("sha mismatch");
+        assert!(err.contains("does not name"), "{err}");
+        handle.join().unwrap();
     }
 
     /// A URL nothing listens on (listener bound on port 0, then dropped).
@@ -886,7 +927,7 @@ mod tests {
         }
         install_stub(&root, "ddddddd", 7, true);
         atomic_swap(&root, "ddddddd").unwrap();
-        let (url, server) = test_server();
+        let (url, server) = versioned_server("0.1.0+eeeeeee");
         let out = deploy(&DeployOptions {
             root: root.clone(),
             src: staged(dir.path()),
@@ -965,7 +1006,7 @@ mod tests {
         // Hard crossing refused without force + note.
         rollback(&base("ccccccc")).unwrap_err();
         // Forced rollback with a backup note succeeds against a live server.
-        let (url, server) = test_server();
+        let (url, server) = versioned_server("0.1.0+ccccccc");
         let mut forced = base("ccccccc");
         forced.force = true;
         forced.backup_note = Some("offsite nightly 2026-10-27".to_string());

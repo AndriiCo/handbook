@@ -72,7 +72,7 @@ grep -H StartLimit /etc/systemd/system/apostille.service \
 
 echo "=== 1. accept gate"
 if [ -n "$SKIP_ACCEPT" ]; then
-    echo "WARNING: accept gate SKIPPED by explicit operator flag"
+    echo "WARNING: accept gate SKIPPED by explicit flag (builder-run deploys announce it here)"
     GATE_ARGS="--skip-accept"
 else
     N="$(echo "SELECT build_no FROM build ORDER BY build_no DESC LIMIT 1;" \

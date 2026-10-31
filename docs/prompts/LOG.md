@@ -28,3 +28,4 @@
 | 123 | 2026-10-31 04:40Z | Operator review fix 4 a1-integrity | quote 8-400, https, accept gate |
 | 124 | 2026-10-31 05:10Z | Fix 5a: A2 recorder pinned shape | input blocks, spa thumbs, read-rs key |
 | 124 | 2026-10-31 05:10Z | Fix 5a: A2 recorder pinned shape | input blocks, spa thumbs, read-rs key |
+| 125 | 2026-10-31 05:40Z | Fix 5b: ship script, runbook, smoke SHA | release installs evals, smoke pins SHA |

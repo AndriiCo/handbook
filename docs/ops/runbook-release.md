@@ -38,7 +38,10 @@ Verify as hal (the pre-flight for every release day):
 touch /srv/apostille/releases/.w && rm /srv/apostille/releases/.w && echo WRITE-OK
 touch /srv/apostille/.w && rm /srv/apostille/.w && echo FLIP-OK
 sudo -n systemctl status apostille >/dev/null && echo SUDO-OK
-sudo -n systemctl stop apostille  # must FAIL: "not allowed"
+# Read-only proof that `stop` is NOT granted (never attempt it):
+sudo -n -l | grep -q "stop apostille" \
+  && { echo "REFUSING: stop verb granted"; exit 1; } \
+  || echo STOP-ABSENT
 echo 'SELECT 1;' | sudo -n -u andrii-ai /usr/local/sbin/apostille-sqlite >/dev/null && echo SQL-OK
 printf '\n' | sudo -n /usr/local/sbin/apostille-journal >/dev/null && echo JOURNAL-OK
 ```
@@ -67,7 +70,7 @@ survives wipes.)
 ## 2. Stage (Mac → server, as hal)
 
 ```sh
-ssh andrii.ai "mkdir -p ~/apostille/staging/$VERSION/spa"
+ssh andrii.ai "mkdir -p ~/apostille/staging/$VERSION/spa ~/apostille/staging/$VERSION/spa-admin ~/apostille/staging/$VERSION/packs ~/apostille/staging/$VERSION/static ~/apostille/staging/$VERSION/evals"
 scp target/x86_64-unknown-linux-gnu/release/web \
   andrii.ai:apostille/staging/$VERSION/web
 scp -r web/build/. andrii.ai:apostille/staging/$VERSION/spa/
@@ -81,6 +84,13 @@ scp crates/instruct/packs/general.toml \
 scp -r crates/web/static/. andrii.ai:apostille/staging/$VERSION/static/
 scp target/x86_64-unknown-linux-gnu/release/xtask \
   andrii.ai:apostille/staging/$VERSION/xtask
+# SHA file (deploy aborts without the full 40-hex SHA) + unit file:
+git rev-parse HEAD > /tmp/SHA
+scp /tmp/SHA andrii.ai:apostille/staging/$VERSION/SHA
+scp docs/ops/apostille.service andrii.ai:apostille/staging/$VERSION/
+# Gold cases for the A5 eval step (ops-a5-eval.sh reads them from the
+# release; without them the script aborts):
+scp -r evals/. andrii.ai:apostille/staging/$VERSION/evals/
 ```
 
 ## 3. Deploy (on the server, as hal)
@@ -156,7 +166,10 @@ smoke, retention cap, guard matrix, manifest roundtrip.
 
 - `accept gate refused`: the store's latest build is not
   `--expect-build`, or accepted facts changed since the build.
-  Rebuild + re-stamp; never `--skip-accept` on prod.
+  Rebuild + re-stamp; never `--skip-accept`/`--skip-packs` on the
+  `xtask deploy` gates. (`ops-deploy.sh --skip-accept` is a different
+  gate — the prod DB `build` row — scoped by AGENTS.md §8, not this
+  runbook.)
 - `packs-validate refused`: fix the pack, rebuild the staging
   dir, re-ship. Never `--skip-packs` on prod.
 - `not an ELF binary`: the staged `web` is a script/archive —
