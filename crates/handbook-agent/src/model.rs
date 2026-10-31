@@ -289,6 +289,11 @@ fn response_format_for(doc_ids: &[String]) -> serde_json::Value {
     })
 }
 
+/// Completion budget per draft call. Spark's reasoning tokens count
+/// inside it, so a 2k cap truncates real drafts into `finish_reason =
+/// length` (operator fix `live-draft-first`).
+const MAX_COMPLETION_TOKENS: u32 = 8000;
+
 impl ModelClient for MetaRestClient {
     fn model_id(&self) -> &'static str {
         DRAFT_MODEL
@@ -298,12 +303,49 @@ impl ModelClient for MetaRestClient {
         if self.api_key.is_empty() {
             return Err(ModelError::Auth("meta api key not configured".to_string()));
         }
-        let prompt = build_prompt(include_str!("../prompts/aa-prompt-v1.md"), req);
+        match self.attempt(req, None) {
+            Err(ModelError::BadOutput(reason))
+                if is_truncation_or_refusal(&reason) && req.max_records > 1 =>
+            {
+                // One retry with fewer records and the refusal reason, so
+                // a long draft still yields grounded records instead of
+                // nothing.
+                let narrowed = DraftRequest {
+                    max_records: (req.max_records / 2).max(1),
+                    ..req.clone()
+                };
+                self.attempt(&narrowed, Some(reason.as_str()))
+            }
+            other => other,
+        }
+    }
+}
+
+/// Retryable model-side failures: truncation (`finish_reason = length`)
+/// or an explicit refusal. Schema/garbage errors are terminal — asking
+/// again for the same shape rarely helps.
+fn is_truncation_or_refusal(reason: &str) -> bool {
+    reason.contains("truncated") || reason.contains("model refused")
+}
+
+impl MetaRestClient {
+    fn attempt(
+        &self,
+        req: &DraftRequest,
+        previous_failure: Option<&str>,
+    ) -> Result<DraftResponse, ModelError> {
+        let mut prompt = build_prompt(include_str!("../prompts/aa-prompt-v1.md"), req);
+        if let Some(reason) = previous_failure {
+            prompt.push_str(&format!(
+                "\n\nPrevious attempt failed ({reason}). Draft fewer records \
+                 and keep every citation on the cited page."
+            ));
+        }
         let body = json!({
             "model": DRAFT_MODEL,
             "messages": [{"role": "developer", "content": prompt}],
             "temperature": 0,
-            "max_completion_tokens": 2000,
+            "max_completion_tokens": MAX_COMPLETION_TOKENS,
             "response_format": response_format_for(&req.doc_ids),
             "prompt_cache_key": format!("analysis-agent-{}", req.prompt_version),
         });
@@ -608,7 +650,29 @@ mod tests {
     }
 
     #[test]
-    fn draft_refusal_truncation_garbage_are_bad_output() {
+    fn draft_garbage_is_terminal_bad_output() {
+        // Schema violations never retry: one exchange, then BadOutput.
+        let (base, seen, handle) = stub(1, |_, _| {
+            (
+                200,
+                completion(
+                    serde_json::json!({"role": "assistant", "content": "not json{{{"}),
+                    "stop",
+                ),
+            )
+        });
+        let client = MetaRestClient::new(base, "stub-key".to_string());
+        let err = client
+            .draft_records(&sample_request())
+            .expect_err("garbage");
+        assert!(matches!(err, ModelError::BadOutput(_)), "{err}");
+        let _ = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn draft_truncation_then_garbage_is_bad_output() {
+        // Length/refusal retries once; a second failure is terminal.
         for (name, message, finish) in [
             (
                 "refused",
@@ -620,20 +684,61 @@ mod tests {
                 serde_json::json!({"role": "assistant", "content": r#"{"records": []}"#}),
                 "length",
             ),
-            (
-                "garbage",
-                serde_json::json!({"role": "assistant", "content": "not json{{{"}),
-                "stop",
-            ),
         ] {
             let (base, seen, handle) =
-                stub(1, move |_, _| (200, completion(message.clone(), finish)));
+                stub(2, move |_, _| (200, completion(message.clone(), finish)));
             let client = MetaRestClient::new(base, "stub-key".to_string());
             let err = client.draft_records(&sample_request()).expect_err(name);
             assert!(matches!(err, ModelError::BadOutput(_)), "{name}: {err}");
-            let _ = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+            for _ in 0..2 {
+                seen.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
             handle.join().unwrap();
         }
+    }
+
+    #[test]
+    fn draft_truncation_retries_with_fewer_records() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let seen_calls = calls.clone();
+        let records = r#"{"summary": "one", "records": []}"#.to_string();
+        let (base, seen, handle) = stub(2, move |_, body| {
+            let n = seen_calls.fetch_add(1, Ordering::SeqCst);
+            let v: serde_json::Value = serde_json::from_str(body).unwrap();
+            if n == 0 {
+                assert_eq!(v["max_completion_tokens"], 8000, "raised budget");
+                let first = v["messages"][0]["content"].as_str().unwrap();
+                assert!(first.contains("MAX RECORDS: 4"), "full max_records");
+                assert!(!first.contains("Previous attempt failed"), "no note yet");
+                (
+                    200,
+                    completion(
+                        serde_json::json!({"role": "assistant", "content": r#"{"records": []}"#}),
+                        "length",
+                    ),
+                )
+            } else {
+                let prompt = v["messages"][0]["content"].as_str().unwrap();
+                assert!(prompt.contains("Previous attempt failed"), "reason carried");
+                assert!(prompt.contains("MAX RECORDS: 2"), "halved max_records");
+                (
+                    200,
+                    completion(
+                        serde_json::json!({"role": "assistant", "content": records.clone()}),
+                        "stop",
+                    ),
+                )
+            }
+        });
+        let client = MetaRestClient::new(base, "stub-key".to_string());
+        let resp = client.draft_records(&sample_request()).expect("retry wins");
+        assert_eq!(resp.summary, "one");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        for _ in 0..2 {
+            seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
+        handle.join().unwrap();
     }
 
     #[test]

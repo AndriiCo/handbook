@@ -491,6 +491,17 @@ fn run_analyze(args: &[String]) {
 /// `--live` never silently falls back to the stub (a stub run billed
 /// as live would draft fixture records into real captures).
 pub(crate) fn live_client(conn: &rusqlite::Connection) -> handbook_agent::model::MetaRestClient {
+    // `$META_API_KEY` first (same rule as the atlas worker): staging and
+    // one-shot runs without the admin-sealed key.
+    if let Ok(key) = std::env::var("META_API_KEY")
+        && !key.is_empty()
+    {
+        eprintln!("analyze: using $META_API_KEY");
+        return handbook_agent::model::MetaRestClient::new(
+            handbook_agent::model::META_BASE_URL.to_string(),
+            key,
+        );
+    }
     let (kek, _source) = sealed_config::load_kek().unwrap_or_else(|e| {
         eprintln!("analyze: {e}");
         std::process::exit(1);

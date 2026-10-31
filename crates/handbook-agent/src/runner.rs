@@ -14,7 +14,10 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::analyze::{build_prompt, validate_response};
+use crate::analyze::{
+    ValidationErrorKind::{ShortQuote, ValueNotInQuote},
+    build_prompt, validate_response,
+};
 use contracts::error::HandbookError;
 use contracts::model::{DraftRequest, ModelClient, ModelError};
 use contracts::topics::Topic;
@@ -100,16 +103,59 @@ pub fn run_analysis(
     let _ = build_prompt(include_str!("../prompts/aa-prompt-v1.md"), &draft);
 
     // Whole-response failure: no writes, no watermark advance.
-    let resp = client.draft_records(&draft)?;
+    let mut resp = client.draft_records(&draft)?;
 
     let allowed: Vec<&str> = Topic::ALL.iter().map(|t| t.as_str()).collect();
     let mut errors = Vec::new();
     let mut failed = HashSet::new();
-    if let Err(validation_errors) = validate_response(&resp, req.sources, &allowed) {
-        for e in validation_errors {
-            errors.push(format!("record {}: {:?}", e.record_index, e.kind));
-            failed.insert(e.record_index);
+    let validation_errors =
+        validate_response(&resp, req.sources, &allowed).err().unwrap_or_default();
+    // Refused-quote retry (operator fix `live-draft-first`): every record
+    // failed on its quote and none is usable — ask once more with fewer
+    // records and the refusal reasons attached. The note is appended
+    // after the evidence, so existing citation offsets stay valid.
+    if !validation_errors.is_empty()
+        && validation_errors.len() == resp.records.len()
+        && validation_errors.iter().all(|e| {
+            matches!(
+                e.kind,
+                ShortQuote | ValueNotInQuote
+            )
+        })
+        && draft.max_records > 1
+    {
+        let reasons = validation_errors
+            .iter()
+            .map(|e| format!("record {}: {:?}", e.record_index, e.kind))
+            .collect::<Vec<_>>()
+            .join("; ");
+        let narrowed = DraftRequest {
+            input_text: format!(
+                "{}\n\nValidator refused every record ({reasons}). Draft half as many records and keep every quote on the cited page.",
+                draft.input_text
+            ),
+            max_records: (draft.max_records / 2).max(1),
+            ..draft.clone()
+        };
+        match client.draft_records(&narrowed) {
+            Ok(retry) => {
+                let base = resp.records.len();
+                resp.usage.input_tokens += retry.usage.input_tokens;
+                resp.usage.output_tokens += retry.usage.output_tokens;
+                if let Err(more) = validate_response(&retry, req.sources, &allowed) {
+                    for e in more {
+                        errors.push(format!("retry record {}: {:?}", e.record_index, e.kind));
+                        failed.insert(base + e.record_index);
+                    }
+                }
+                resp.records.extend(retry.records);
+            }
+            Err(e) => errors.push(format!("retry: {e}")),
         }
+    }
+    for e in &validation_errors {
+        errors.push(format!("record {}: {:?}", e.record_index, e.kind));
+        failed.insert(e.record_index);
     }
 
     // The fact table has no field/confidence columns: field folds
