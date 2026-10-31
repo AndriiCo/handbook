@@ -443,6 +443,10 @@ pub struct DeployOptions {
     /// 00:00 America/Los_Angeles today for the deploy-day gate
     /// (`None` skips the gate; tests use `None`).
     pub pt_midnight_secs: Option<i64>,
+    /// Explicit same-day override (`--allow-today-overlap`, operator-
+    /// ordered only): skips the day gate and logs the override. The
+    /// default is false; there is no env knob.
+    pub allow_today_overlap: bool,
 }
 
 /// Ship one release: gates (packs-validate + accept), staged-set
@@ -456,7 +460,10 @@ pub struct DeployOptions {
 /// step fails (after best-effort revert on smoke failure).
 pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
     validate_version(&opts.version)?;
-    if let Some(midnight) = opts.pt_midnight_secs {
+    if opts.allow_today_overlap {
+        eprintln!("deploy: DAY GATE OVERRIDDEN (--allow-today-overlap; operator-ordered)");
+    }
+    if let Some(midnight) = opts.pt_midnight_secs.filter(|_| !opts.allow_today_overlap) {
         let now = crate::unix_now();
         let mut mtimes = Vec::new();
         if let Ok(entries) = std::fs::read_dir(opts.root.join("releases")) {
@@ -716,6 +723,7 @@ pub fn run_deploy(args: &[String]) {
                 std::process::exit(2);
             }),
         ),
+        allow_today_overlap: has(args, "allow-today-overlap"),
     };
     match deploy(&opts) {
         Ok(summary) => println!("{summary}"),
@@ -1026,6 +1034,7 @@ mod tests {
             restart: false,
             smoke_url: url,
             pt_midnight_secs: None,
+            allow_today_overlap: false,
         })
         .unwrap();
         server.join().unwrap();
@@ -1065,6 +1074,7 @@ mod tests {
             actor: "test".to_string(),
             restart: false,
             smoke_url: dead_url(),
+            allow_today_overlap: false,
             pt_midnight_secs: None,
         })
         .unwrap_err();
@@ -1090,11 +1100,37 @@ mod tests {
             actor: "test".to_string(),
             restart: false,
             smoke_url: dead_url(),
+            allow_today_overlap: false,
             pt_midnight_secs: Some(crate::unix_now() - 3600),
         })
         .unwrap_err();
         assert!(err.contains("deploy-day gate refused"), "{err}");
         assert_eq!(read_current(&root).as_deref(), Some("ddddddd"));
+    }
+
+    #[test]
+    fn deploy_override_skips_day_gate() {
+        let (dir, root) = fake_root(Some("ddddddd"));
+        // Same spent-day setup as above, but the explicit override
+        // carries past the gate (smoke then fails on the dead URL).
+        let err = deploy(&DeployOptions {
+            root: root.clone(),
+            src: staged(dir.path()),
+            version: "eeeeeee".to_string(),
+            sha: "e".repeat(40),
+            migration_notes: String::new(),
+            rollback_safe: true,
+            packs_dir: None,
+            expect_build: None,
+            store: dir.path().join("store"),
+            actor: "test".to_string(),
+            restart: false,
+            smoke_url: dead_url(),
+            pt_midnight_secs: Some(crate::unix_now() - 3600),
+            allow_today_overlap: true,
+        })
+        .unwrap_err();
+        assert!(!err.contains("deploy-day gate refused"), "{err}");
     }
 
     #[test]
