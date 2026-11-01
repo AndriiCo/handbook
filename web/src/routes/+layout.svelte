@@ -4,7 +4,7 @@
 	import '@fontsource-variable/source-serif-4';
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, onNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { STRINGS, resolveLocale, persistLocale, LOCALES, type Locale } from '#lib/i18n';
 	import { listAuthorities } from '#lib/public-ui/handbook.js';
@@ -161,8 +161,19 @@
 		}
 	}
 
+	onNavigate((nav) => {
+		if (typeof document === 'undefined' || !document.startViewTransition) return;
+		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+		return new Promise<void>((resolveNav) => {
+			document.startViewTransition(async () => {
+				resolveNav();
+				await nav.complete;
+			});
+		});
+	});
+
 	onMount(() => {
-		loadBrandFace();
+		void loadBrandFace();
 		locale = resolveLocale();
 		document.documentElement.lang = locale;
 		try {

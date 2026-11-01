@@ -32,8 +32,8 @@ const SIZES = [
 const THEMES = ['light', 'dark'];
 const BANNED = ['placeholder', 'not wired', 'skeleton', 'lorem', 'todo'];
 // Routes whose redesign slice has landed (each screen gets one graphic
-// drawn from its own data). Extend as slices 2–5 land — currently home.
-const GRAPHIC_ROUTES = ['/'];
+// drawn from its own data). Extend as slices 2–5 land.
+const GRAPHIC_ROUTES = ['/', '/authority/vietnam'];
 // Routes still allowed a native <select>: slice 4 replaces the order
 // destination select with a combobox. Empty when it lands.
 const NATIVE_SELECT_OK = ['/order'];
@@ -165,7 +165,11 @@ try {
 					// slices 3–5 bring the remaining pages up.
 					const pad = w >= 1440 ? 64 : 40;
 					if (wantGraphic) {
-						for (const s of document.querySelectorAll('main section')) {
+						// Major blocks only: page headers, topic sections and
+						// home sections — not cards nested in asides.
+						for (const s of document.querySelectorAll(
+							'main > section, main [data-topic], main > div > section'
+						)) {
 							const cs = getComputedStyle(s);
 							if (parseFloat(cs.paddingTop) < pad || parseFloat(cs.paddingBottom) < pad)
 								out.push(`section padding below ${pad}px`);

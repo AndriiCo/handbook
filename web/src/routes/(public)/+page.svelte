@@ -312,7 +312,7 @@
 						<path d={sil.d} style="fill: var(--color-ink);" />
 					</svg>
 					<span class="relative flex items-center gap-2">
-						<Flag code={authority.flag} label={`${authority.country} flag`} />
+						<Flag code={authority.flag} label={`${authority.country} flag`} class={i === 0 ? 'size-5 vt-flag' : 'size-5'} />
 						{#if verifiedAt[authority.slug]}
 							<span
 								class="ml-auto font-mono text-xs text-ink-muted"
@@ -323,7 +323,7 @@
 						{/if}
 					</span>
 					{#if i === 0}
-						<span class="font-brand text-h2 mt-3 block font-medium text-balance text-ink">
+						<span class="font-brand text-h2 vt-title mt-3 block font-medium text-balance text-ink">
 							{authority.name}
 						</span>
 					{:else}
