@@ -150,4 +150,4 @@
 | 244 | 2026-11-01 23:49Z | Monday slice 5: guardrails post-merge, global cap, upload budget | shared semaphore, 300s upload, 286 tests |
 | 245 | 2026-11-01 23:52Z | Monday slice 6: trace reconcile on hello + 330s timeout | hello re-reads draft-run, 404 fails fast |
 | 246 | 2026-11-01 23:55Z | Monday slice 7: admin WS origin gate | admin origin only + loopback seam, tests |
-| 247 | 2026-11-02 00:13Z | Monday slice 8: copy/demo truth fixes | popover quote, postage honesty, captions |
+| 247 | 2026-11-01 23:57Z | Monday slice 8: copy/demo truth fixes | popover quote, postage honesty, captions |
