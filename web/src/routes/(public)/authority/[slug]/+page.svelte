@@ -350,7 +350,7 @@
 	</section>
 	{#if facts.length > 0}
 		<section aria-label="Evidence" class="grid gap-8 pt-10 pb-16 lg:grid-cols-12 xl:pt-16">
-			<div class="lg:col-span-8" bind:this={sectionsRoot}>
+			<div class="min-w-0 lg:col-span-8" bind:this={sectionsRoot}>
 				<nav
 					class="sticky top-14 z-20 -mx-1 border-b border-line bg-bg/90 px-1 py-1 backdrop-blur"
 					aria-label="Dossier sections"
@@ -379,7 +379,7 @@
 							{#each g.facts as fact (fact.id ?? fact.statement)}
 								{@const cite = firstCapture(fact)}
 								<article class="rounded-xl border border-line bg-bg p-5">
-									<p class="text-body-lg m-0 text-ink">{fact.statement}</p>
+									<p class="text-body-lg m-0 break-words text-ink">{fact.statement}</p>
 									<div class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
 										{#if cite}
 											<VerifiedChip tier="Staff approved" verified={shortDate(cite.captured_at)} />
@@ -428,7 +428,7 @@
 											<div class="mt-2 grid gap-2 sm:grid-cols-2">
 												<div class="rounded-md border border-line bg-bg p-3">
 													<p class="m-0 text-xs font-medium text-ink-muted">Accepted</p>
-													<p class="m-0 mt-1 text-sm text-ink">{fact.statement}</p>
+													<p class="m-0 mt-1 break-words text-sm text-ink">{fact.statement}</p>
 												</div>
 												{#each fact.conflicts ?? [] as sib (sib.id ?? sib.statement)}
 													<div class="rounded-md border border-line bg-bg p-3">
@@ -439,7 +439,7 @@
 																{sib.status === 'accepted' ? 'Accepted' : 'Proposed'}
 															</span>
 														</p>
-														<p class="m-0 mt-1 text-sm text-ink">{sib.statement}</p>
+														<p class="m-0 mt-1 break-words text-sm text-ink">{sib.statement}</p>
 													</div>
 												{/each}
 											</div>
@@ -452,7 +452,7 @@
 				{/each}
 			</div>
 
-			<aside class="lg:col-span-4" aria-label="Evidence ledger">
+			<aside class="min-w-0 lg:col-span-4" aria-label="Evidence ledger">
 				<div class="flex flex-col gap-4 lg:sticky lg:top-20">
 					<section class="rounded-xl border border-line bg-bg p-5" aria-labelledby="ledger">
 						<h2 id="ledger" class="text-h3 m-0 font-semibold">Evidence ledger</h2>

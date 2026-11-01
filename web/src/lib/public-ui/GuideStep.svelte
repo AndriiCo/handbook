@@ -39,7 +39,7 @@
 		<ul class="m-0 mt-3 list-none p-0">
 			{#each step.items as item (item.factIds.join(','))}
 				<li class="m-0 mt-3 border-t border-line pt-3 p-0 first:mt-0 first:border-t-0 first:pt-0">
-					<p class="text-body-lg m-0 text-ink">
+					<p class="text-body-lg m-0 break-words text-ink">
 						<span class="font-semibold">{item.label}: </span>{item.value}
 					</p>
 					<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">

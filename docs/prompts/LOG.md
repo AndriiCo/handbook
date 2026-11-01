@@ -133,3 +133,4 @@
 | 226 | 2026-11-01 19:05Z | Run 10 recorded — 0f53999 staging-green with live admin check | staging 9/10, demo 3/3, live Draft green |
 | 228 | 2026-11-01 19:08Z | Slice: what a judge sees in the first 60 seconds. Home quality chip | quality date, calendar days, region CTA, 307, sitemap |
 | 229 | 2026-11-01 19:20Z | Slice: README.md for judges. They read only this file, the video and the | eval table, shipped/next, arch, prod box, scan clean |
+| 230 | 2026-11-01 19:21Z | Slice: docs/demo-script.md plus demo takes. HERO=usa-wa-sos. | script 175s, HERO takes, overflow fix |

@@ -25,11 +25,14 @@ const SLOWMO = Number(process.env.PW_SLOWMO ?? 250);
 const CAPTIONS = process.env.DEMO_CAPTIONS === '1';
 const BANNED = ['placeholder', 'not wired', 'skeleton', 'lorem', 'TODO'];
 
+// HERO dossier for the recorded takes (docs/demo-script.md; the
+// operator names vietnam or usa-wa-sos — default is the assumed one).
+const HERO = process.env.DEMO_HERO || 'usa-wa-sos';
 const authorities = JSON.parse(
 	readFileSync(join(HERE, 'fixtures', 'authorities.json'), 'utf8')
 );
-const factsVietnam = JSON.parse(
-	readFileSync(join(HERE, 'fixtures', 'facts-vietnam.json'), 'utf8')
+const factsHero = JSON.parse(
+	readFileSync(join(HERE, 'fixtures', `facts-${HERO}.json`), 'utf8')
 );
 const samples = JSON.parse(
 	readFileSync(join(HERE, 'fixtures', 'precheck-samples.json'), 'utf8')
@@ -56,8 +59,8 @@ async function mockApi(page) {
 	await page.route('**/apostille/api/v1/authorities', (route) =>
 		route.fulfill({ json: authorities })
 	);
-	await page.route('**/apostille/api/v1/authorities/vietnam/facts', (route) =>
-		route.fulfill({ json: factsVietnam })
+	await page.route(`**/apostille/api/v1/authorities/${HERO}/facts`, (route) =>
+		route.fulfill({ json: factsHero })
 	);
 	await page.route('**/apostille/api/v1/auth/providers', (route) =>
 		route.fulfill({ json: providers })
@@ -153,9 +156,16 @@ test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
 		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
 		await checkClean(page, problems, 'home');
 
-		await scene('dossier', `${base}/apostille/authority/vietnam`);
-		await caption(page, 'Every fact shows its quote, source and date');
+		await scene('dossier', `${base}/apostille/authority/${HERO}`);
+		await caption(page, 'Muse Spark drafts every fact from official pages');
 		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+		// Evidence popover beat (script scene 3): tap the first guide
+		// citation; guarded so a facts-empty host still passes.
+		if ((await page.getByRole('button', { name: 'Citation' }).count()) > 0) {
+			await page.getByRole('button', { name: 'Citation' }).first().click();
+			await expect(page.locator('blockquote').first()).toBeVisible({ timeout: 15_000 });
+			await caption(page, 'Every fact shows its quote, source and date');
+		}
 		await checkClean(page, problems, 'dossier');
 
 		await scene('login', `${base}/apostille/login`);
@@ -164,7 +174,7 @@ test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
 		await checkClean(page, problems, 'login');
 
 		await scene('precheck', `${base}/apostille/precheck`);
-		await caption(page, 'Photo precheck before you order');
+		await caption(page, 'SAM 3.1 and Muse Spark precheck the photo');
 		await expect(page.getByRole('button', { name: 'Run precheck' })).toBeVisible();
 		if (!LIVE) {
 			await page.getByRole('button', { name: /Clean scan/ }).click();
@@ -307,7 +317,7 @@ test('demo admin pass approves a fact and opens trace', async () => {
 		};
 
 		await scene('review', `${srv.url}/review`);
-		await caption(page, 'A human approves every fact');
+		await caption(page, 'A human approves every Muse Spark draft');
 		await expect(page.getByRole('heading', { name: 'Review queue' })).toBeVisible();
 		await page.getByRole('button', { name: 'Accept', exact: true }).click();
 		await expect(page.getByText('Fact #7 decided: accepted.')).toBeVisible({
@@ -317,7 +327,7 @@ test('demo admin pass approves a fact and opens trace', async () => {
 		await checkClean(page, problems, 'review');
 
 		await scene('trace', `${srv.url}/trace`);
-		await caption(page, 'Every quote traced to its capture');
+		await caption(page, 'Muse Spark drafts live — watch the tokens');
 		await expect(page.getByRole('heading', { name: 'Trace console' })).toBeVisible();
 		await expect(page.getByText('9f2c4a1b', { exact: false }).first()).toBeVisible();
 		// Live Draft: the POST must carry the `hb_csrf` cookie value in
@@ -363,7 +373,7 @@ test('demo mobile pass records home and dossier', async () => {
 		await page.screenshot({ path: join(SHOTS, 'mobile-home.png') });
 		await checkClean(page, problems, 'mobile home');
 
-		await page.goto(`${base}/apostille/authority/vietnam`);
+		await page.goto(`${base}/apostille/authority/${HERO}`);
 		await caption(page, 'Verified facts, one hover away');
 		await page.screenshot({ path: join(SHOTS, 'mobile-dossier.png') });
 		await checkClean(page, problems, 'mobile dossier');

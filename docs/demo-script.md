@@ -1,22 +1,47 @@
-# Demo script — 175 s, stranger to quality number
+# Demo script — 175 s, misroute to quality number
 
-Public segments: recorded by the builder (`npm --prefix web run demo`
-with `DEMO_BASE_URL=https://andrii.ai/apostille`, `DEMO_CAPTIONS=1`).
-Admin approve scene: recorded by the operator (needs their client
-certificate) and uploaded to YouTube. Captions below are the
-`DEMO_CAPTIONS` lines.
+HERO: `usa-wa-sos` (Assumed — the operator names `vietnam` or
+`usa-wa-sos`; switching HERO means the search text, the dossier URL,
+and the CTA line below). The HERO dossier carries the richest
+evidence: a step-by-step guide, a same-field conflict, and a stale
+capture.
 
-| # | Time | Scene (URL) | What happens | Needs on production |
-|---|------|-------------|--------------|---------------------|
-| 1 | 0:00–0:20 | Home `/apostille` | Stranger types "Viet Nam" in the command search, picks the dossier. Caption: "Find your apostille authority in seconds" | Authority index live (done) |
-| 2 | 0:20–0:55 | Dossier `/apostille/authority/vietnam` | Scrolls the step-by-step guide, opens "View quote" on a fact: exact quote, source domain, retrieved date. Caption: "Every fact shows its quote, source and date" | ≥ 1 accepted fact with a verified quote (open: approvals) |
-| 3 | 0:55–1:20 | Review `/review` (admin) | A Spark-drafted fact sits proposed beside its capture quote. Caption: "Muse Spark drafts from a new capture, quote checked" | 2 proposed facts per slug left unapproved (operator keeps 2 back during approvals) |
-| 4 | 1:20–1:45 | Approve → dossier live | Operator clicks Accept; the dossier's evidence ledger gains a verified entry over WS. Caption: "A human approves — the dossier updates live" | Same queue as scene 3 |
-| 5 | 1:45–2:25 | Precheck `/precheck` (390px) | Phone photo of a synthetic sample; SAM boxes trace, verdict "Retake" with reasons. Caption: "Photo precheck before you order" | A2 recordings (done: pass/retake/retake) |
-| 6 | 2:25–2:55 | Home quality chip `/apostille` | Eyebrow chip: verified-quote rate with model. Caption: "Most drafts carry a verified quote — Muse Spark" | Fresh eval run ≤ 72 h (open: A5 re-run after Sunday #3) |
+Takes: (1) fixture take, always green, `npm --prefix web run demo`;
+(2) staging live take as fallback footage,
+`DEMO_BASE_URL=http://127.0.0.1:18318/apostille npm --prefix web run demo`;
+(3) production take once approvals land (same command against
+`https://andrii.ai/apostille`). Recording takes run with
+`DEMO_CAPTIONS=1`; the captions below are those lines. Captions name
+the model doing the work; latency and token counts are read off the
+take's own trace console (logged per take at the bottom).
 
-Total: 20 + 35 + 25 + 25 + 40 + 30 = 175 s.
+| # | Time | Scene (URL) | What happens | Caption |
+|---|------|-------------|--------------|---------|
+| 1 | 0:00–0:15 | Problem (voiceover over `/apostille`) | On 13 Oct 2026 the site sent Viet Nam customers to consular legalization, though the Convention took effect 11 Sep 2026. Stale pages misroute people. | "Stale pages misroute people" |
+| 2 | 0:15–0:50 | Search → HERO dossier `/apostille/authority/usa-wa-sos` | Stranger types "Washington", picks the dossier; the camera walks the guide steps (right office, before you start, costs, submit, how long). | "Muse Spark drafts every fact from official pages" |
+| 3 | 0:50–1:05 | Evidence popover (same page) | "View quote" opens the popover: the exact quote with the value highlighted, source domain, retrieved date. | "Every fact shows its quote, source and date" |
+| 4 | 1:05–1:45 | Review `/review` → approve → guide flips live | A Spark-drafted fact sits proposed beside its capture quote; staff clicks Accept; the HERO guide step flashes the new value over WS `authority:usa-wa-sos`. | "A human approves every Muse Spark draft — the dossier updates live" |
+| 5 | 1:45–2:20 | Precheck `/precheck` (390px) | Phone photo of a synthetic sample; SAM boxes trace, verdict with reasons. | "SAM 3.1 and Muse Spark precheck the photo" |
+| 6 | 2:20–2:45 | Eval chip + Muse Code beat (home, trace console) | Home chip: verified-quote rate with model and date. Cut to the trace console: one draft run's input/output tokens on screen. | "Muse Spark drafts live — watch the tokens" |
+| 7 | 2:45–2:55 | Close on the URL | `https://andrii.ai/apostille` fullscreen. | "Every apostille fact, quoted" |
 
-Fixture gate (`npm run demo`, no base URL) is green on 2026-11-01:
-desktop + admin + mobile, 3/3, zero console errors. The live take
-against production waits on the two "open" rows above.
+Total: 15 + 35 + 15 + 40 + 35 + 25 + 10 = 175 s
+(search ≈ 8 s lives inside beat 2).
+
+Needs per take: beat 2 wants ≥ 1 accepted fact with a verified quote
+on the HERO slug; beat 4 wants 1 proposed fact left unapproved;
+beat 6 wants an eval run ≤ 72 h old. The fixture take mocks all
+three; staging carries 8 + 9 accepted facts and a 2026-11-01 eval;
+production waits on approvals.
+
+## Observed trace-console numbers per take
+
+| Take | Run | Tokens in / out | Proposed / rejected |
+|---|---|---|---|
+| 1 fixture | mocked `run:9` | 100 / 50 | 2 / 1 |
+| 2 staging | live draft on staging | read off the take | read off the take |
+| 3 production | live draft on production | read off the take | read off the take |
+
+Reference (staging Run 10, 2026-11-01): a live capture draft
+reported `Done — 2 proposed, 0 rejected (muse-spark-1.3,
+18862/8785 tok)`.
