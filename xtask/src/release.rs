@@ -3,7 +3,7 @@
 //! Testable Rust replacement for `docs/ops/apostille-ship.sh`.
 //! Runs ON the server as the unprivileged `hal` user: `hal` needs
 //! group-write on `<root>/releases/` plus the pinned grants from
-//! `docs/ops/scripts/ops-hal-access.sh` (`systemctl restart`
+//! `xtask/ops/ops-hal-access.sh` (`systemctl restart`
 //! among them — never stop/disable). Layout under `--root`
 //! (default `/srv/apostille`):
 //!
@@ -301,16 +301,17 @@ pub fn check_rollback_guard(
     ))
 }
 
-/// `sudo systemctl <action> apostille`. Only `restart` is used here,
-/// and hal's sudoers entry (see `ops-hal-access.sh`) covers restart
-/// plus read-only verbs — never stop/disable.
+/// `sudo -n systemctl <action> apostille`. Only `restart` is used here,
+/// and hal's pinned sudoers entry (see `ops-rootless-access.sh`)
+/// covers restart/reload/status/is-active — never stop/disable, and
+/// `-n` fails fast instead of hanging on a password prompt.
 ///
 /// # Errors
 ///
 /// Returns a message when systemctl is missing or reports failure.
 pub fn systemctl(action: &str) -> Result<(), String> {
     let out = std::process::Command::new("sudo")
-        .args(["systemctl", action, SERVICE])
+        .args(["-n", "systemctl", action, SERVICE])
         .output()
         .map_err(|e| format!("sudo systemctl {action}: {e}"))?;
     if out.status.success() {
