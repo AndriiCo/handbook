@@ -122,7 +122,11 @@
 			return;
 		}
 		const rows = res.body?.facts;
-		const list = Array.isArray(rows) ? rows : [];
+		// Defense in depth: the API excludes phone_script, and the
+		// page drops it too, so Evidence never renders it.
+		const list = (Array.isArray(rows) ? rows : []).filter(
+			(f) => f?.topic !== 'phone_script'
+		);
 		facts = list;
 		activeTopic = groupFactsByTopic(list)[0]?.topic ?? activeTopic;
 		seedLedger(list);

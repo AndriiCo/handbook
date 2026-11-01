@@ -81,7 +81,8 @@ pub fn load_dossier(
     };
     let mut stmt = conn.prepare(
         "SELECT topic, statement, capture_id, citation_start, citation_end
-         FROM fact WHERE authority_id = ?1 AND status = 'accepted' ORDER BY id",
+         FROM fact WHERE authority_id = ?1 AND status = 'accepted'
+           AND topic != 'phone_script' ORDER BY id",
     )?;
     let heads: Vec<(String, String, i64, i64, i64)> = stmt
         .query_map([authority_id], |row| {

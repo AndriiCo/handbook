@@ -703,6 +703,7 @@ pub async fn public_facts(
             "SELECT id, topic, statement, status, created_by, created_at,
                     capture_id, citation_start, citation_end
              FROM fact WHERE authority_id = ?1 AND status = 'accepted'
+               AND topic != 'phone_script'
              ORDER BY id LIMIT 200",
         )
         .and_then(|mut stmt| {

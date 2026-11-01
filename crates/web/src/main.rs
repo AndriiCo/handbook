@@ -2951,6 +2951,15 @@ mod tests {
             rusqlite::params![authority, cap],
         )
         .unwrap();
+        // Accepted but staff-only: must never surface publicly.
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                               status, created_by, created_at,
+                               citation_start, citation_end)
+             VALUES (?1, ?2, 'phone_script', 'say hello, then ask', 'accepted', 't', 1, 0, 20)",
+            rusqlite::params![authority, cap],
+        )
+        .unwrap();
     }
 
     async fn body_text(res: axum::response::Response) -> String {
@@ -3012,6 +3021,10 @@ mod tests {
             "hostile statement escaped"
         );
         assert!(!body.contains("open 9 to 5 </script>"), "no raw breakout");
+        assert!(
+            !body.contains("say hello, then ask"),
+            "phone_script stays staff-only"
+        );
         assert!(body.contains("<noscript>"), "crawler summary present");
         assert!(body.contains("/authority/unfurl-sos"), "canonical + links");
         assert!(body.contains("GovernmentService"), "json-ld present");
@@ -3019,6 +3032,26 @@ mod tests {
             body.contains("https://example.test/office"),
             "isBasedOn source"
         );
+    }
+
+    #[tokio::test]
+    async fn public_facts_hide_phone_script() {
+        let fx = fixture();
+        seed_unfurl_dossier(&fx.state.store_root);
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/authorities/unfurl-sos/facts")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let public = json_body(res).await;
+        let facts = public["facts"].as_array().unwrap();
+        assert_eq!(facts.len(), 1, "only the hours fact is public");
+        assert!(facts.iter().all(|f| f["topic"] != "phone_script"));
     }
 
     #[tokio::test]
