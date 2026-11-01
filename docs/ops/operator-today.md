@@ -104,10 +104,9 @@ group-read pre-step from this morning is done — A2 reads prove it.
 
 ## Queued (Meta API follow-ups — not today, builder slices)
 
-F1–F14 landed on a session branch (P184–P195, `muse/session-01a19798-…`,
-eval 0.966–1.000 vs 0.7 baseline, nothing on main). Six items fell
-outside the slice's file list — each is a small builder slice when
-scheduled, except where noted:
+F1–F14 merged to main 11-01 (`f201aa2`, LOG P207; lane eval
+0.966–1.000 vs 0.7 baseline, mine pending plant SSH). Six items fell
+outside the slice's file list:
 
 1. Terms opt-in (YOUR decision first): atlas transcribe/uploads now
    fail closed until Meta's data-handling terms are read. After you
@@ -117,9 +116,7 @@ scheduled, except where noted:
    `reasoning_effort: None` everywhere, and raw model output to
    `debug/extract.txt:382` — align to defaults and confirm the
    debug dump is redacted or remove it.
-3. `meta.base_url` ignored by `crates/web/src/draft.rs` and by the
-   xtask env-key path (`xtask/src/main.rs`) — honor the sealed
-   value on both.
+3. ~~`meta.base_url` — honored in P208 (`draft.rs` + xtask env path, tested).~~ Done.
 4. `cached_tokens`: the wire returns it, but `contracts::Usage`
    has no field — surfacing needs contracts + runner + web trace
    changes together.
@@ -132,7 +129,11 @@ scheduled, except where noted:
 
 Web redesign slices P153–P157 landed on main (shell + GP1–GP4 + login);
 local gates green (check, both builds, imports, tailwind, 20/20 shots).
-Staging 9/10 (only S1 red). Prod 5/10 until approvals land.
+Staging 9/10 (only S1 red) on 117ef58. Main tip `50e19f4`
+(merge + P208/P209) is unstamped: plant SSH down since ~11-01
+19:30Z, submits queued. Prod 5/10 until approvals land. Local
+Chromium currently cannot launch in this sandbox (Mach IPC
+denied) — web e2e red environmentally; plant gate unaffected.
 WA form template (goal priority 5): standalone Dec-2024 form URL
 re-verified dead 11-01 (404 page); live 6.2025 CORPS Records Request
 (URL + $15/40234 evidence in egypt-consular.md V-5a) covers

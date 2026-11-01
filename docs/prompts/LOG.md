@@ -114,3 +114,4 @@
 | 207 | 2026-11-01 18:55Z | meta lane first merge (F1-F14) | gates green, eval pending |
 | 208 | 2026-11-01 19:10Z | sealed meta.base_url honored + test | web 261, xtask 78 |
 | 209 | 2026-11-01 19:20Z | overlap help aligns with lifted cap | gates 8/8, xtask 17 |
+| 210 | 2026-11-01 19:40Z | operator page: merge + queue state | follow-up 3 done |
