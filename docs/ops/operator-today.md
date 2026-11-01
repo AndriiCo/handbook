@@ -1,14 +1,18 @@
 # Operator — Saturday 2026-10-31 (Pacific; updated ~20:50 PDT)
 
-Production runs `0.1.0+d93a58c` — verified 2026-11-01T03:46Z, scoreboard
-**4/10** (P0, GP1, GP4, A2 pass). First red: GP2-data (0/8 accepted per
-slug). Saturday deploy #2 (redesign slices P153–P157) is **blocked**:
-plant `/home` is 100% full, so gate submits abort mid-upload and P154's
-gate died compiling. Builder's orphan partial tarballs are removed
-(queue empty). Free space and paste back `df -h ~`. Workaround tried
-03:54Z: P160 tarball landed byte-complete, manifest queued by hand, but
-the worker died at setup (no room to extract) — prod untouched. Newest
-stamped SHAs for Sunday #3: `78b8dc9` (P153), `d8dfd02` (P151),
+Production runs `0.1.0+d93a58c` — scoreboard **4/10** (P0, GP1, GP4,
+A2 pass). First red: GP2-data (0/8 accepted per slug). Staging 9/10
+(only S1 red), tunnel live during builder turns.
+
+Disk fixed 2026-11-01 ~04:05Z (operator cleaned plant `/home`, now 8%):
+plant pipeline keeps newest 3 runs + artifacts + logs per job
+(`prune_old` in `ops/plant-pipeline/worker.sh`, synced to plant
+`bin/`); one-time prune done (4.9G + 855M → 395M + 136M, 18 stamps
+kept). Production releases keep live + newest 3 (new step 4 in
+`ops-deploy.sh`, staged to `~/apostille/scripts/`); one-time prune
+done (9 → 3 dirs, ~390M → 132M, live `d93a58c` + 2 rollback targets
+kept). P161 `c2bf13f` submitted clean (`20261101-040732-c2bf13f`,
+polling). Newest stamped: `78b8dc9` (P153), `d8dfd02` (P151),
 `868cf02` (P150).
 
 Rootless ops stand (run everything as `hal`, never root). The KEK
@@ -48,8 +52,7 @@ group-read pre-step from this morning is done — A2 reads prove it.
    `web/src/lib/assets/brand/` (operator-owned, never committed),
    then redeploy — the login page renders text-only buttons until
    they land.
-5. Plant disk (blocks everything): see top. Builder cannot free
-   shared pipeline state itself.
+5. ~~Plant disk — fixed, see top.~~ Done.
 
 ## Queued (not today)
 

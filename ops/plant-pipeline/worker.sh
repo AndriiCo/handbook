@@ -124,6 +124,28 @@ process_one() { # returns 0 if a job was processed, 1 if queue empty
   rm -f "$ROOT/running/$run.json" "$ROOT/running/$run.tar.gz"
   log_hist "$run" "final" "\"result\":\"$result\""
   echo "=== run $run $result ===" >>"$ROOT/logs/$run.log"
+  prune_old || true
+  return 0
+}
+
+prune_old() { # keep only the newest $KEEP_RUNS runs + artifacts + logs
+  local keep="${KEEP_RUNS:-3}" old
+  for d in runs artifacts; do
+    # Names sort chronologically (YYYYMMDD-HHMMSS-sha), but mtime is truth.
+    # shellcheck disable=SC2012
+    ls -t "$ROOT/$d" 2>/dev/null | tail -n +"$((keep + 1))" | while IFS= read -r old; do
+      [ -n "$old" ] && rm -rf "$ROOT/$d/$old"
+    done
+  done
+  # Per-run logs follow the same rule; worker.log + history stay.
+  # shellcheck disable=SC2012
+  ls -t "$ROOT"/logs/*.log 2>/dev/null \
+    | grep -v '/worker\.log$' \
+    | tail -n +"$((keep * 5 + 1))" | while IFS= read -r old; do
+    [ -n "$old" ] && rm -f "$old"
+  done
+  # acceptance/*.json stamps, done/ + failed/ verdicts and history.jsonl
+  # are bytes, not builds — they stay (deploys check stamps against them).
   return 0
 }
 
