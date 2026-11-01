@@ -79,7 +79,8 @@ group-read pre-step from this morning is done — A2 reads prove it.
    desktop/mobile), upload to YouTube, paste the URL back.
    Full-history secret scan 11-01 ~16:20Z: clean (gitleaks 8.30.1,
    385 commits, no leaks; working-tree `secrets-scan` clean, 690 files).
-   Scrub list still to come from the builder.
+   Scrub list: `docs/ops/scrub-list-2026-11-01.md` — 2 prompt files need
+   IP redaction, `security-review-2026-10-27.md` moves unless fixed.
 4. GP3 brand assets (scoreboard demands a logo per configured
    provider button; dir still holds only README.md): run
    `cargo xtask brand-assets`, follow its four download steps (Apple,
