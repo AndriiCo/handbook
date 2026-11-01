@@ -23,6 +23,7 @@ Usage:
 import argparse
 import base64
 import json
+import random
 import struct
 import sys
 import time
@@ -36,23 +37,48 @@ SPARK_MODEL = "muse-spark-1.3"
 SAM_PROMPTS = ["document page", "official seal", "embossed stamp", "face"]
 
 
-def post_json(url, key, body, timeout=120):
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode(),
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    started = time.monotonic()
+# Retry discipline (error-handling docs): up to 4 attempts with jitter,
+# honouring Retry-After on 429/5xx. Terminal statuses (400/401/402/403/
+# 404/413) return at once, never retried unchanged.
+RETRYABLE = {429, 500, 502, 503, 504}
+TERMINAL = {400, 401, 402, 403, 404, 413}
+MAX_ATTEMPTS = 4
+
+
+def retry_after_secs(headers):
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as res:
-            payload = res.read()
-            return res.status, json.loads(payload), time.monotonic() - started
-    except urllib.error.HTTPError as e:
-        return e.code, e.read()[:500].decode("utf-8", "replace"), time.monotonic() - started
+        return max(0, int(str(headers.get("Retry-After", "")).strip()))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def post_json(url, key, body, timeout=120):
+    data = json.dumps(body).encode()
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    delay = 2.0
+    for attempt in range(MAX_ATTEMPTS):
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as res:
+                payload = res.read()
+                return res.status, json.loads(payload), time.monotonic() - started
+        except urllib.error.HTTPError as e:
+            payload = e.read()[:500].decode("utf-8", "replace")
+            secs = time.monotonic() - started
+            if e.code in TERMINAL or e.code not in RETRYABLE or attempt == MAX_ATTEMPTS - 1:
+                return e.code, payload, secs
+            wait = retry_after_secs(e.headers)
+            if wait is None:
+                wait = delay * (1.0 + random.random() * 0.5)
+                delay *= 2
+            else:
+                wait = min(wait, 60)
+            time.sleep(wait)
+    raise AssertionError("unreachable: retry loop always returns")
 
 
 def png_size(path):

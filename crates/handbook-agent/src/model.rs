@@ -82,10 +82,37 @@ pub const META_BASE_URL: &str = "https://api.meta.ai/v1";
 /// Drafting model (`docs/meta-api.md`: default Spark on cost).
 const DRAFT_MODEL: &str = "muse-spark-1.3";
 
-/// Sleeps between the 3 attempts (spec §3: 2s/8s/32s + jitter; the
-/// jitter is omitted — a single-operator batch has no thundering
-/// herd — and the third sleep never runs: 3 attempts, then stop).
-const RETRY_SLEEP_SECS: [u64; 2] = [2, 8];
+/// Retry budget: up to 4 attempts per stream POST (error-handling
+/// docs: 3–5 with jitter, honouring `Retry-After`).
+const MAX_ATTEMPTS: u32 = 4;
+/// First backoff step; doubles per retry (2s, 4s, 8s) plus jitter.
+const RETRY_BASE_SECS: u64 = 2;
+/// A server `Retry-After` beyond this is treated as this (minutes-long
+/// sleeps help nobody in an operator batch).
+const MAX_RETRY_AFTER_SECS: u64 = 60;
+
+/// Backoff for retry `attempt_no` (1-based): exponential from the base
+/// with up to +50% jitter, or the server's `Retry-After` when present.
+fn retry_delay(base_secs: u64, attempt_no: u32, retry_after: Option<u64>) -> Duration {
+    if let Some(after) = retry_after {
+        return Duration::from_secs(after.min(MAX_RETRY_AFTER_SECS));
+    }
+    let backoff_secs = base_secs.saturating_mul(1u64 << attempt_no.saturating_sub(1).min(5));
+    Duration::from_secs(backoff_secs) + Duration::from_millis(jitter_ms(backoff_secs * 1000))
+}
+
+/// Jitter without an rng dependency: the nanos clock, capped at half
+/// the backoff (atlas transport precedent).
+fn jitter_ms(range_ms: u64) -> u64 {
+    if range_ms == 0 {
+        return 0;
+    }
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| u64::from(d.subsec_nanos()) % range_ms)
+        .unwrap_or(0)
+        .min(range_ms / 2)
+}
 
 /// Live Meta Models API client (blocking ureq, like the voice client).
 ///
@@ -180,20 +207,27 @@ impl MetaRestClient {
     /// while the model reasons, so long drafts never hit the
     /// non-streaming server time limit (HTTP 504 on expiry). A
     /// mid-stream transport failure restarts the whole stream.
+    ///
+    /// Retry discipline (error-handling docs): up to 4 attempts with
+    /// jitter, honouring `Retry-After` on 429/5xx. Terminal statuses
+    /// (400/401/402/403/404/413) never retry. The only other retry in
+    /// this crate is the narrowed re-draft on truncation/refusal, a
+    /// different request (halved records) — never the same body twice.
     fn post_chat(&self, body: &serde_json::Value) -> Result<RawResponse, ModelError> {
         let url = format!("{}/chat/completions", self.base_url);
-        let mut sleeps = RETRY_SLEEP_SECS.iter();
+        let mut attempt_no = 0u32;
         loop {
             let attempt = self.post_sse(&url, body);
-            let retryable = match &attempt {
-                Err(ModelError::Transport(_)) => true,
-                Ok(r) => matches!(r.status, 429 | 500 | 502 | 503 | 504),
-                _ => false,
-            };
-            match sleeps.next() {
-                Some(secs) if retryable => std::thread::sleep(Duration::from_secs(*secs)),
+            let retry_after = match &attempt {
+                Err(ModelError::Transport(_)) => None,
+                Ok(r) if matches!(r.status, 429 | 500 | 502 | 503 | 504) => r.retry_after_secs,
                 _ => return attempt,
+            };
+            if attempt_no >= MAX_ATTEMPTS - 1 {
+                return attempt;
             }
+            attempt_no += 1;
+            std::thread::sleep(retry_delay(RETRY_BASE_SECS, attempt_no, retry_after));
         }
     }
 
@@ -207,11 +241,20 @@ impl MetaRestClient {
             .send_json(body)
             .map_err(|e| ModelError::Transport(e.to_string()))?;
         let status = response.status().as_u16();
+        let retry_after_secs = response
+            .headers()
+            .get("Retry-After")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse().ok());
         let body = response
             .into_body()
             .read_to_vec()
             .map_err(|e| ModelError::Transport(e.to_string()))?;
-        Ok(RawResponse { status, body })
+        Ok(RawResponse {
+            status,
+            body,
+            retry_after_secs,
+        })
     }
 
     fn get(&self, url: &str) -> Result<RawResponse, ModelError> {
@@ -226,7 +269,11 @@ impl MetaRestClient {
             .into_body()
             .read_to_vec()
             .map_err(|e| ModelError::Transport(e.to_string()))?;
-        Ok(RawResponse { status, body })
+        Ok(RawResponse {
+            status,
+            body,
+            retry_after_secs: None,
+        })
     }
 }
 
@@ -241,6 +288,7 @@ fn short_status(who: &str, status: u16, body: &[u8]) -> ModelError {
 struct RawResponse {
     status: u16,
     body: Vec<u8>,
+    retry_after_secs: Option<u64>,
 }
 
 /// `json_schema` response format for [`DraftResponse`]: schema-constrained
@@ -921,6 +969,19 @@ mod tests {
         assert!(err.to_string().contains("without [DONE]"), "{err}");
         let err = parse_stream(b"not events at all\n").expect_err("no lane");
         assert!(matches!(err, ModelError::BadOutput(_)), "{err}");
+    }
+
+    #[test]
+    fn retry_delay_backs_off_with_jitter_and_retry_after() {
+        for (attempt, low, high) in [(1, 2, 3), (2, 4, 6), (3, 8, 12)] {
+            let got = retry_delay(2, attempt, None);
+            assert!(
+                got >= Duration::from_secs(low) && got <= Duration::from_secs(high),
+                "attempt {attempt}: {got:?}"
+            );
+        }
+        assert_eq!(retry_delay(2, 1, Some(30)), Duration::from_secs(30));
+        assert_eq!(retry_delay(2, 1, Some(3600)), Duration::from_secs(60));
     }
 
     /// Canned HTTP/1.1 exchanges against a port-0 stub (voice precedent):

@@ -96,3 +96,4 @@
 | 189 | 2026-11-01 18:10Z | F5 developer+user layout, 400 root-caused | agent 44 green, eval gate next |
 | 190 | 2026-11-01 19:00Z | F1 drop temperature, F6 explicit effort | 3 crates green, eval gate next |
 | 191 | 2026-11-01 20:00Z | F8 SSE streaming for drafts | agent 45 green, eval gate next |
+| 192 | 2026-11-01 20:40Z | F9 jittered retries, Retry-After, terminal set | gates green, eval gate next |

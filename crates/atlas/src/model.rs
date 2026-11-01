@@ -806,9 +806,8 @@ fn with_retry(op: impl Fn() -> Result<HttpResponse>) -> Result<HttpResponse> {
         if attempt == 3 {
             return Ok(res); // caller reports the terminal status
         }
-        if res.status == 429
-            && let Some(after) = res.retry_after_secs
-        {
+        // Honour Retry-After on any retried status, not just 429.
+        if let Some(after) = res.retry_after_secs {
             std::thread::sleep(Duration::from_secs(after.min(60)));
             continue;
         }
