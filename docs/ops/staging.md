@@ -115,3 +115,18 @@ DB copies — ever. Alias only, never a username, IP or key.
   live runs doubled /apostille and passed vacuously). Staging tree exact
   at 7aa591a (xfer ref; SPA rebuild unneeded — web/src identical).
   LIVE for demo: `DEMO_BASE_URL=http://127.0.0.1:18318/apostille`.
+
+## Run 4 (2026-11-01, daa7768) — 9/10 kept, finding-12 live proof
+- `run:{id}` staff-only WS topic (`crates/auth`, parse+authz+tests);
+  `POST captures/{id}/draft` + `GET draft-runs/{id}` (admin, staff);
+  trace console per-capture Draft button with run-state polling.
+- Live proof on staging (vietnam capture 10): run 1 finished in 27 s,
+  model `muse-spark-1.3`, proposed=2, rejected=0; the 2 proposed facts
+  sit in the review queue. Tokens not surfaced (run_analysis reports
+  no usage — follow-up). Steps also publish to `run:{id}` on the bus.
+- Staging admin auth recipe (release refuses `admin.mtls_off`, so the
+  seam is debug-only): debug binary + `config-set admin.mtls_off=true`
+  + minted staff session + `Host: admin.andrii.ai`,
+  `Origin: https://admin.andrii.ai`, `hb_csrf`/`x-csrf` double-submit.
+  Reverted after (session revoked, seam false, release binary back).
+  Tunnel still the surviving pre-existing forward.

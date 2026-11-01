@@ -79,3 +79,4 @@
 | 171 | 2026-11-01 06:15Z | demo live base double-prefix fix | fixture+live 3/3 green |
 | 172 | 2026-11-01 06:35Z | finding-5 verify + staging 9/10 keep | ship-release exists, rescore green |
 | 173 | 2026-11-01 07:10Z | finding-12 draft-from-capture + run topic | 339 tests, clippy/fmt clean |
+| 174 | 2026-11-01 08:00Z | finding-12 staging live draft proof | 27s Spark run, 9/10 kept |
