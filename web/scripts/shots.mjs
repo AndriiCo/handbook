@@ -23,6 +23,7 @@ const ROUTES = {
 	'/authority/vietnam': { name: 'gp2-dossier', ready: 'Authority dossier' },
 	'/login': { name: 'gp3-login', ready: 'Log in' },
 	'/order': { name: 'gp4-order', ready: 'Destination' },
+	'/orders': { name: 'gp4-orders', ready: 'newest first' },
 	'/precheck': { name: 'a2-precheck', ready: 'Document precheck' }
 };
 const SIZES = [
@@ -58,6 +59,9 @@ const quality = JSON.parse(readFileSync(join(root, 'e2e/fixtures/quality.json'),
 const providers = JSON.parse(readFileSync(join(root, 'e2e/fixtures/providers.json'), 'utf8'));
 const precheckSamples = JSON.parse(
 	readFileSync(join(root, 'e2e/fixtures/precheck-samples.json'), 'utf8')
+);
+const p2Submissions = JSON.parse(
+	readFileSync(join(root, 'e2e/fixtures/p2-submissions.json'), 'utf8')
 );
 
 const failures = [];
@@ -110,6 +114,9 @@ try {
 					}
 					if (path.endsWith('/api/v1/demo/precheck/samples')) {
 						return r.fulfill({ json: precheckSamples });
+					}
+					if (path.endsWith('/api/v1/p2/submissions')) {
+						return r.fulfill({ json: p2Submissions });
 					}
 					// Logged-out shell: anonymous session probes answer
 					// 200 {"user": null}, like the real API — no console

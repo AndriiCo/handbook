@@ -32,7 +32,10 @@ use crate::{AppState, store_unavailable, unix_now};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/forms/{authority}/{code}", get(get_form))
-        .route("/submissions", post(create_submission))
+        .route(
+            "/submissions",
+            post(create_submission).get(list_submissions),
+        )
         .route(
             "/submissions/{id}",
             patch(patch_submission).get(get_submission),
@@ -1049,6 +1052,52 @@ async fn patch_submission(
 }
 
 /// GET the review payload: values + template identity + replica state.
+/// GET the caller's submissions, newest first (the orders list).
+async fn list_submissions(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let Some(customer_ref) = caller_customer_ref(&state, &headers) else {
+        return unauthorized();
+    };
+    let (Some(meta), Some(p2)) = (open_meta(&state), open_p2(&state)) else {
+        return store_unavailable();
+    };
+    let rows: Vec<(i64, i64, String, i64, Option<i64>)> = {
+        let mut stmt = match p2.prepare(
+            "SELECT id, form_template_id, status, created_at, submitted_at
+             FROM form_submission WHERE customer_ref = ?1 ORDER BY id DESC",
+        ) {
+            Ok(stmt) => stmt,
+            Err(_) => return store_unavailable(),
+        };
+        match stmt.query_map([customer_ref.as_str()], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        }) {
+            Ok(mapped) => mapped.filter_map(Result::ok).collect(),
+            Err(_) => return store_unavailable(),
+        }
+    };
+    let mut out = Vec::with_capacity(rows.len());
+    for (id, form_template_id, status, created_at, submitted_at) in rows {
+        let authority = match load_template_by_id(&meta, form_template_id) {
+            Ok(Some(stored)) => stored.template.authority,
+            _ => continue,
+        };
+        out.push(json!({
+            "id": id,
+            "authority": authority,
+            "status": status,
+            "created_at": created_at,
+            "submitted_at": submitted_at,
+        }));
+    }
+    (StatusCode::OK, Json(json!({ "submissions": out }))).into_response()
+}
+
 async fn get_submission(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1625,6 +1674,78 @@ mod tests {
             .await
             .unwrap();
         assert!(bytes.starts_with(b"%PDF-"));
+    }
+
+    #[tokio::test]
+    async fn list_submissions_returns_newest_first_per_customer() {
+        let fx = Fixture::new();
+        fx.login_as("other-token", "cust-2");
+        // Empty at first.
+        let (status, body) = json_body(
+            fx.app()
+                .oneshot(authed("GET", "/p2/submissions", TOKEN, None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["submissions"].as_array().unwrap().len(), 0);
+        // Two drafts; the other customer sees neither.
+        for _ in 0..2 {
+            let (status, _) = json_body(
+                fx.app()
+                    .oneshot(authed(
+                        "POST",
+                        "/p2/submissions",
+                        TOKEN,
+                        Some(json!({
+                            "template_id": fx.template_id,
+                            "draft": true,
+                            "values": {},
+                        })),
+                    ))
+                    .await
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED);
+        }
+        let (status, body) = json_body(
+            fx.app()
+                .oneshot(authed("GET", "/p2/submissions", TOKEN, None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = body["submissions"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["id"], 2);
+        assert_eq!(rows[1]["id"], 1);
+        assert_eq!(rows[0]["status"], "draft");
+        assert_eq!(rows[0]["authority"], "usa-wa-sos");
+        let (status, other) = json_body(
+            fx.app()
+                .oneshot(authed("GET", "/p2/submissions", "other-token", None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(other["submissions"].as_array().unwrap().len(), 0);
+        // Anonymous list is refused.
+        let res = fx
+            .app()
+            .oneshot(
+                Request::builder()
+                    .uri("/p2/submissions")
+                    .method("GET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

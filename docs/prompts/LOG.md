@@ -118,3 +118,4 @@
 | 211 | 2026-11-01 19:55Z | demo script names the dossier guide | still 175 s |
 | 212 | 2026-11-01 20:05Z | taste: drop duplicate guide kicker | check+build green |
 | 213 | 2026-11-01 20:15Z | dossier anchors resolve + guide tests | web 99, check clean |
+| 214 | 2026-11-01 17:29Z | orders list endpoint + page wired, no placeholders | web 262, checks+builds green |
