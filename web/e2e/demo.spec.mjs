@@ -16,6 +16,10 @@ import { dirname, join } from 'node:path';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SHOTS = join(HERE, '..', 'shots', 'demo');
 const LIVE = process.env.DEMO_BASE_URL || null;
+// Scene URLs append `/apostille/...`, so a live base naming the mount
+// (`.../apostille`) is trimmed to the origin root. Without this every
+// live scene doubled the prefix and the SPA fallback passed vacuously.
+const LIVE_ROOT = LIVE?.replace(/\/+$/, '').replace(/\/apostille$/, '');
 const HEADED = process.env.DEMO_HEADED === '1';
 const SLOWMO = Number(process.env.PW_SLOWMO ?? 250);
 const CAPTIONS = process.env.DEMO_CAPTIONS === '1';
@@ -133,7 +137,7 @@ async function launch(outDir, size) {
 test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
 	test.setTimeout(180_000);
 	let srv = null;
-	const base = LIVE ?? (srv = await serveDir(join(HERE, '..', 'build'), { base: '/apostille' })).url;
+	const base = LIVE_ROOT ?? (srv = await serveDir(join(HERE, '..', 'build'), { base: '/apostille' })).url;
 	const { browser, context, problems } = await launch(SHOTS, { width: 1440, height: 900 });
 	try {
 		const page = await context.newPage();
@@ -295,7 +299,7 @@ test('demo admin pass approves a fact and opens trace', async () => {
 test('demo mobile pass records home and dossier', async () => {
 	test.setTimeout(120_000);
 	let srv = null;
-	const base = LIVE ?? (srv = await serveDir(join(HERE, '..', 'build'), { base: '/apostille' })).url;
+	const base = LIVE_ROOT ?? (srv = await serveDir(join(HERE, '..', 'build'), { base: '/apostille' })).url;
 	const { browser, context, problems } = await launch(join(SHOTS, 'mobile'), {
 		width: 390,
 		height: 844
