@@ -27,7 +27,7 @@ SKIP_ACCEPT=""
 [ "${2:-}" = "--skip-accept" ] && SKIP_ACCEPT="--skip-accept"
 OVERLAP=""
 [ "${2:-}" = "--allow-today-overlap" ] || [ "${3:-}" = "--allow-today-overlap" ] && OVERLAP="--allow-today-overlap"
-[ -n "$OVERLAP" ] && echo "WARNING: day gate OVERRIDDEN by explicit flag (operator-ordered same-day deploy)"
+[ -n "$OVERLAP" ] && echo "WARNING: day gate OVERRIDDEN by explicit flag (cap lifted until 2026-11-10; operator-ordered only after)"
 # sudo -n fails fast when a grant is missing (never hangs on a
 # prompt); root passes everything through.
 SUDO="sudo -n"

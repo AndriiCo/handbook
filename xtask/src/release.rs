@@ -444,8 +444,10 @@ pub struct DeployOptions {
     /// 00:00 America/Los_Angeles today for the deploy-day gate
     /// (`None` skips the gate; tests use `None`).
     pub pt_midnight_secs: Option<i64>,
-    /// Explicit same-day override (`--allow-today-overlap`, operator-
-    /// ordered only): skips the day gate and logs the override. The
+    /// Explicit same-day override (`--allow-today-overlap`): skips the
+    /// day gate and logs the override. Until 2026-11-10 the daily cap
+    /// is lifted (operator order `0e9c8c4`), so every deploy passes
+    /// it; after that, operator-ordered same-day deploys only. The
     /// default is false; there is no env knob.
     pub allow_today_overlap: bool,
 }
@@ -462,7 +464,7 @@ pub struct DeployOptions {
 pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
     validate_version(&opts.version)?;
     if opts.allow_today_overlap {
-        eprintln!("deploy: DAY GATE OVERRIDDEN (--allow-today-overlap; operator-ordered)");
+        eprintln!("deploy: DAY GATE OVERRIDDEN (--allow-today-overlap; lifted until 2026-11-10)");
     }
     if let Some(midnight) = opts.pt_midnight_secs.filter(|_| !opts.allow_today_overlap) {
         let now = crate::unix_now();

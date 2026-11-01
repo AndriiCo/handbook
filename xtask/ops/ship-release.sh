@@ -5,9 +5,11 @@
 #
 #   xtask/ops/ship-release.sh [<sha>] [--allow-today-overlap]   # default: HEAD
 #
-# --allow-today-overlap only on the operator's explicit same-day order
-# (same meaning as on ops-deploy.sh and xtask deploy): it skips the day
-# gate and announces the override. There is no env knob.
+# --allow-today-overlap skips the day gate and announces the override
+# (same meaning as on ops-deploy.sh and xtask deploy). Until 2026-11-10
+# the daily cap is lifted (operator order 0e9c8c4), so every deploy
+# passes it; after that, operator-ordered same-day deploys only.
+# There is no env knob.
 #
 # Zero placeholders: every input is derived or refused with ABORT.
 set -u
@@ -17,7 +19,7 @@ SHA="${1:-$(git rev-parse HEAD)}"
 OVERLAP=""
 [ "${2:-}" = "--allow-today-overlap" ] && OVERLAP="--allow-today-overlap"
 [ -z "$OVERLAP" ] && [ -n "${2:-}" ] && { echo "ABORT: unknown flag: $2 (only --allow-today-overlap)"; exit 2; }
-[ -n "$OVERLAP" ] && echo "WARNING: day gate OVERRIDDEN by explicit flag (operator-ordered same-day deploy)"
+[ -n "$OVERLAP" ] && echo "WARNING: day gate OVERRIDDEN by explicit flag (cap lifted until 2026-11-10; operator-ordered only after)"
 git cat-file -e "$SHA^{commit}" 2>/dev/null || { echo "ABORT: not a commit: $SHA"; exit 2; }
 VERSION="$(git rev-parse --short=7 "$SHA")"
 [[ "$VERSION" =~ ^[0-9a-f]{7}$ ]] || { echo "ABORT: bad short SHA: $VERSION"; exit 2; }
@@ -29,7 +31,7 @@ echo "== ship $VERSION ($SHA)"
 # (SHA-named); only mtimes count. Skipped under --allow-today-overlap.
 check_day() {
     if [ -n "$OVERLAP" ]; then
-        echo "day gate SKIPPED (--allow-today-overlap; operator-ordered)"
+        echo "day gate SKIPPED (--allow-today-overlap; lifted until 2026-11-10)"
         return 0
     fi
     local out

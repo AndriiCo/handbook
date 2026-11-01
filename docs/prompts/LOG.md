@@ -113,3 +113,4 @@
 | 206 | 2026-11-01 18:35Z | dossier how-to guide from facts | shots+demo+97 green |
 | 207 | 2026-11-01 18:55Z | meta lane first merge (F1-F14) | gates green, eval pending |
 | 208 | 2026-11-01 19:10Z | sealed meta.base_url honored + test | web 261, xtask 78 |
+| 209 | 2026-11-01 19:20Z | overlap help aligns with lifted cap | gates 8/8, xtask 17 |
