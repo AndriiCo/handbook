@@ -144,4 +144,5 @@
 | 238 | 2026-11-01 21:49Z | Goal: dossier unfurl (title, og, noscript, JSON-LD) + dynamic sitemap | unfurl handler + routes + 6 tests, 277 green |
 | 239 | 2026-11-01 22:03Z | P238 plant gate: dead-code fields + collapsible_if in unfurl | trimmed struct, let-chains, 277 green |
 | 240 | 2026-11-01 23:36Z | Monday slice 1: FollowCard only when notify enabled | status endpoint + gated card, 282 green |
-| 241 | 2026-11-02 00:13Z | Monday slice 2: phone_script never public | API+unfurl+Evidence exclusion, tests |
+| 241 | 2026-11-01 23:38Z | Monday slice 2: phone_script never public | API+unfurl+Evidence exclusion, tests |
+| 242 | 2026-11-01 23:41Z | Monday slice 3: sitemap sentinel, cache headers, JSON-LD escapes | sentinel out, 300s cache, unicode escapes |

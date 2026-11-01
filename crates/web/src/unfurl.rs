@@ -181,8 +181,9 @@ fn citation(
 }
 
 /// JSON-LD `GovernmentService` for one dossier. The serialized
-/// form escapes `</` so a hostile statement can never break out
-/// of the script block (unit-tested with `</script>` input).
+/// form escapes `<`, `>` and `&` as unicode (`\u003c` …) so a
+/// hostile statement can never break out of the script block or
+/// smuggle entities (unit-tested with `</script>` input).
 fn json_ld(meta: &DossierMeta, page_url: &str) -> String {
     let mut service = json!({
         "@context": "https://schema.org",
@@ -224,7 +225,9 @@ fn json_ld(meta: &DossierMeta, page_url: &str) -> String {
     }
     serde_json::to_string(&service)
         .unwrap_or_else(|_| "{}".to_string())
-        .replace("</", "<\\/")
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
 }
 
 /// Shell anchors from `web/src/app.html` (kept in sync by the
@@ -329,10 +332,28 @@ pub async fn dossier(State(state): State<AppState>, Path(slug): Path<String>) ->
             [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
             render_dossier(&shell, &meta, &state.notify_base),
         )
-            .into_response(),
-        None => (StatusCode::NOT_FOUND, serve_shell(&shell)).into_response(),
+            .into_response()
+            .with_cache(),
+        None => (StatusCode::NOT_FOUND, serve_shell(&shell))
+            .into_response()
+            .with_cache(),
     }
 }
+
+/// Dossier heads change only on staff accept (minutes to days):
+/// edge-cached briefly, always revalidated by the client app.
+trait CachedResponse: IntoResponse + Sized {
+    fn with_cache(self) -> Response {
+        let mut res = self.into_response();
+        res.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("public, max-age=300"),
+        );
+        res
+    }
+}
+
+impl CachedResponse for Response {}
 
 fn serve_shell(shell: &str) -> Response {
     (
@@ -392,6 +413,7 @@ pub async fn sitemap(State(state): State<AppState>) -> Response {
         "SELECT a.slug, MAX(c.captured_at) FROM authority a
          LEFT JOIN fact f ON f.authority_id = a.id AND f.status = 'accepted'
          LEFT JOIN capture c ON c.id = f.capture_id
+         WHERE a.id != 0 AND a.slug NOT LIKE 'sentinel-%'
          GROUP BY a.id ORDER BY a.slug",
     ) {
         Ok(stmt) => stmt,
@@ -407,6 +429,7 @@ pub async fn sitemap(State(state): State<AppState>) -> Response {
         build_sitemap(&state.notify_base, &rows, home_day),
     )
         .into_response()
+        .with_cache()
 }
 
 #[cfg(test)]
@@ -441,15 +464,19 @@ mod tests {
         assert!(!page.contains("</script><img"), "no raw breakout");
         assert!(!page.contains("</script>\""), "json-ld cannot close early");
         assert!(
-            page.contains("Box 1 <\\/script> Town"),
-            "ld+json slash-escaped"
+            page.contains("Box 1 \\u003c/script\\u003e Town"),
+            "ld+json unicode-escaped"
+        );
+        assert!(
+            page.contains("\\u0026 Co"),
+            "ampersand unicode-escaped in json-ld"
         );
         assert!(
             page.contains("<link rel=\"canonical\" href=\"https://example.test/apostille/authority/test-sos\" />"),
             "canonical present"
         );
         assert!(page.contains("\"isBasedOn\":[\"https://example.test/hours\"]"));
-        assert!(page.contains("servicePostalAddress\":\"Box 1 <\\/script> Town\""));
+        assert!(page.contains("servicePostalAddress\":\"Box 1 \\u003c/script\\u003e Town\""));
         assert!(page.contains("<noscript>"), "crawler summary present");
         assert!(
             page.contains("<li>hours: open 9-5 &lt;/script&gt;"),

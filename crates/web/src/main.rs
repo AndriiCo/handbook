@@ -3015,6 +3015,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers()["cache-control"],
+            "public, max-age=300",
+            "dossier edge-cached"
+        );
         let body = body_text(res).await;
         assert!(
             body.contains("&lt;/script&gt;"),
@@ -3072,8 +3077,14 @@ mod tests {
             res.headers()["content-type"],
             "application/xml; charset=utf-8"
         );
+        assert_eq!(
+            res.headers()["cache-control"],
+            "public, max-age=300",
+            "sitemap edge-cached"
+        );
         let body = body_text(res).await;
         assert!(body.starts_with("<?xml"), "declaration first");
+        assert!(!body.contains("sentinel"), "id-0 sentinel never listed");
         assert!(
             body.contains(
                 "<loc>https://example.test/apostille/authority/unfurl-sos</loc><lastmod>"
