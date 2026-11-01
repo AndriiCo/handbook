@@ -1,8 +1,110 @@
-# Staging acceptance (`plant`, AGENTS.md §8)
+# Staging → prod pipeline (the only deploy path)
 
-Run log + regeneration recipe. Staging is disposable: reset and full
-delete are always allowed. No prod credentials, no SSH to prod, no prod
-DB copies — ever. Alias only, never a username, IP or key.
+Single box each end: staging on `plant`, prod on `andrii.ai`. Every
+release: plant-gate stamp → exact-SHA staging build → staging
+acceptance (scoreboard 9/10 + live demo 3/3) → `ship-release.sh`
+build + stage → `ops-deploy.sh` → prod-after scoreboard, rollback
+on any regression. Alias only, never a username, IP or key. Staging
+is disposable (reset and full delete always allowed) and holds
+synthetic fixtures only: no prod credentials, no SSH to prod, no
+prod DB copies — ever.
+
+## Steps (`ship-release.sh` is exact; this is the map)
+
+1. Stamp: `ops/plant-pipeline/submit.sh <sha>` → plant gate
+   (`cargo xtask ci`: fmt, clippy `-D warnings`, tests,
+   secrets-scan) + package. The deploy needs the stamp for the
+   exact SHA.
+2. Sync the exact SHA to plant: `git push
+   plant:staging/handbook <sha>:refs/heads/xfer-*` + checkout
+   (plant has no GitHub creds, so no fetch). `BUILD_SHA`
+   stamps the checked-out SHA.
+3. Build on plant natively: `cargo build --release -p web
+   -p xtask`, `npm run build` + `build:admin`.
+4. Accept: forward 18318/18319 (`ssh -N -L 18318:… -L
+   18319:… plant`), full scoreboard plus the live demo take
+   (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
+   9/10 with only operator-owned S1 red is staging-green.
+5. Ship (Mac): `docs/ops/scripts/ship-release.sh <sha>` —
+   throwaway worktree, zigbuild x86_64 (`--target` is NOT
+   optional), ELF + `BUILD_SHA` checks, both web builds, stage
+   to `~/apostille/staging/<sha7>` (binary, SPAs, packs,
+   static, xtask, evals, SHA, service). Refuses on any failed
+   rail, including the day gate.
+6. Deploy (as hal): `bash ~/apostille/scripts/ops-deploy.sh
+   ~/apostille/staging/<sha7> --skip-accept`
+   (`--allow-today-overlap` only on explicit operator order —
+   the script announces both). Auto-rolls-back on failed
+   smoke; keeps live + newest 3 releases.
+7. Verify: prod-after scoreboard against prod-before; roll
+   back on any regression. Never the bare `xtask deploy` line.
+
+## Pre-flight (every release, as hal — no root shell)
+
+```sh
+touch /srv/apostille/releases/.w && rm /srv/apostille/releases/.w && echo WRITE-OK
+touch /srv/apostille/.w && rm /srv/apostille/.w && echo FLIP-OK
+sudo -n systemctl status apostille >/dev/null && echo SUDO-OK
+sudo -n -l | grep -q "stop apostille" && { echo "REFUSING: stop verb granted"; exit 1; } || echo STOP-ABSENT
+echo 'SELECT 1;' | sudo -n -u andrii-ai /usr/local/sbin/apostille-sqlite >/dev/null && echo SQL-OK
+printf '\n' | sudo -n /usr/local/sbin/apostille-journal >/dev/null && echo JOURNAL-OK
+```
+
+## Hosts
+
+- `plant` staging: public **18318**, admin **18319** (store
+  config — `run2.env` on plant is stale, ignore it). Server
+  env: `STORE_DIR`, `SPA_DIR=…/web/build`,
+  `STATIC_DIR=…/crates/web/static`,
+  `CREDENTIALS_DIRECTORY` (0600 KEK copy). Start with
+  `setsid -f` (without `-f` the ssh hangs forever); kill by
+  verified PID, never `pkill -f` with your own command string
+  in the pattern. Meta key for live runs:
+  `~/.config/apostille/meta-staging.env` (0600, sourced in
+  the remote shell only — record the path, never the value).
+- `andrii.ai` prod: `enodia`, Ubuntu 26.04 x86_64. Serves
+  ONLY the .41 v4/v6 addresses; research traffic (URL
+  watching, fetches) originates ONLY from these prod IPs.
+  Systemd unit runs `andrii-ai:andrii-ai`, in-binary ACME,
+  KEK root-held (`/etc/apostille`, `LoadCredential`). No TPM
+  → file-backed KEK is ACTIVE (revisit on hardware change).
+  Releases in `/srv/apostille/releases`, live + newest 3.
+
+## Parity (Mac dev vs prod box)
+
+Pure Rust, no system libs: bundled SQLite, in-process rustls,
+`cargo zigbuild --target x86_64-unknown-linux-gnu` (verify
+ELF + max GLIBC at stage time). 9 jurisdiction packs validate
+(`cargo xtask packs-validate`). Toolchain skew is resolved by
+matching `rustc --version`, never by relaxing lints.
+
+## Watch (monitoring, backup, posture)
+
+- Liveness: `GET /apostille/healthz` → 200 + `{"status":"ok"}`;
+  alert on 3 consecutive failures. Certs renew in-binary
+  (ARI); weekly check `notAfter - now > 21 days`. Disk alert
+  80%. Daily: 5xx count over the last hour; any spike →
+  check, then roll back per § Steps 7.
+- Backup: nightly SQLite backup API (never raw-copy WAL) +
+  `tar` of `store/`, offsite, 7 daily + 4 weekly. Quarterly
+  restore drill onto staging. Secrets backed up separately,
+  encrypted, author-only.
+- Posture: SSH key-only; firewall 80/443 (+UDP 443 with
+  QUIC); unit hardening (`NoNewPrivileges`,
+  `ProtectSystem=strict`); no PII in repo/logs/commits
+  (`secrets-scan` + monthly server-log grep); suspected
+  breach → rotate keys, ship audit log, then investigate.
+
+## Retired (merged here 2026-11-01; process unchanged)
+
+`staging-plan.md` (plant is the box; gated deploys won — the
+conditional and cutover list are moot), `parity.md`,
+`prod.md`, `deploy.md` (Oct 26–27 history: interim user-space
+flow, root install), `runbook-release.md` (superseded by
+`ship-release.sh` + `ops-deploy.sh`; §0 pre-flight kept
+above verbatim).
+
+## Run log
 
 ## Run 1 (2026-10-30, main @ 801b2a3) — 5/10, infra green
 

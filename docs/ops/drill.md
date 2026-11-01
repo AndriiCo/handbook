@@ -7,8 +7,8 @@ that drill (fix, then restart its ×3).
 
 ## Drill 1 — ship + smoke (prod-direct while G5 is relaxed)
 
-Per `runbook-release.md` (zigbuild → stage → `xtask deploy`,
-which smokes itself), then:
+Per `staging.md` § Steps (zigbuild → stage → `ops-deploy.sh`,
+which smokes itself and auto-rolls-back), then:
 
 ```sh
 curl -fsS https://andrii.ai/apostille/healthz   # {"status":"ok","version":"0.1.0+<sha>"}
@@ -41,7 +41,7 @@ log); never run the ×3 back-to-back without watching.
 
 ## Drill 3 — backup + restore
 
-Backup is defined in `prod.md` (SQLite backup API — never raw-copy
+Backup is defined in `staging.md` § Watch (SQLite backup API — never raw-copy
 a WAL-mode DB — + `tar` of `store/`, offsite, 7 daily + 4 weekly).
 The drill proves the restore side on a scratch dir (staging box when
 it exists, otherwise a scratch path on prod — never over live data):

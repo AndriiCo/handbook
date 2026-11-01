@@ -4,7 +4,7 @@
 # What: install a pre-built release (binary + SPA, shipped by the
 # unprivileged `hal` user into /home/hal/apostille/releases/) as the
 # locked-down `andrii-ai` service, then restart + smoke + auto-rollback.
-# Runs AS ROOT via a sudoers entry (see docs/ops/deploy.md). The
+# Runs AS ROOT via a sudoers entry (see docs/ops/staging.md § Steps). The
 # service itself NEVER runs as root: systemd drops to `andrii-ai`
 # with only CAP_NET_BIND_SERVICE (see apostille.service).
 #

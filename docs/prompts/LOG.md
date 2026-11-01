@@ -85,3 +85,4 @@
 | 177 | 2026-11-01 09:00Z | RunReport usage to draft events | strict clippy/tests green |
 | 178 | 2026-11-01 09:20Z | staging run 5 log on usage SHA | 9/10 kept |
 | 179 | 2026-11-01 06:40Z | Sunday deploy 69ca7fa on operator order | prod 5/10, no regression |
+| 180 | 2026-11-01 10:10Z | merge 5 deploy docs into staging.md | links retargeted, scan clean |
