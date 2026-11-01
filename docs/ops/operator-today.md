@@ -5,7 +5,11 @@ Production runs `0.1.0+d93a58c` — verified 2026-11-01T03:46Z, scoreboard
 slug). Saturday deploy #2 (redesign slices P153–P157) is **blocked**:
 plant `/home` is 100% full, so gate submits abort mid-upload and P154's
 gate died compiling. Builder's orphan partial tarballs are removed
-(queue empty). Free space and paste back `df -h ~`.
+(queue empty). Free space and paste back `df -h ~`. Workaround tried
+03:54Z: P160 tarball landed byte-complete, manifest queued by hand, but
+the worker died at setup (no room to extract) — prod untouched. Newest
+stamped SHAs for Sunday #3: `78b8dc9` (P153), `d8dfd02` (P151),
+`868cf02` (P150).
 
 Rootless ops stand (run everything as `hal`, never root). The KEK
 group-read pre-step from this morning is done — A2 reads prove it.
