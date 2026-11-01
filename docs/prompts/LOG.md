@@ -108,3 +108,4 @@
 | 201 | 2026-11-01 17:20Z | call topic takes 32-hex ids + live events | web 259, auth 81 |
 | 202 | 2026-11-01 17:35Z | staff proposals topic + quote publish | web 260, auth 81 |
 | 203 | 2026-11-01 17:45Z | live WA form check, V-5 evidence | 404 re-verified, 40234 live |
+| 204 | 2026-11-01 18:00Z | plant_run into_owned lint (plant clippy) | gate re-run |

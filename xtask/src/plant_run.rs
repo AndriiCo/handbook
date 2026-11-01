@@ -177,7 +177,7 @@ fn scp_to(host: &str, local: &std::path::Path, remote_name: &str) {
             "BatchMode=yes",
             "-o",
             "ConnectTimeout=15",
-            &local.to_string_lossy().into_owned(),
+            &local.to_string_lossy(),
             &format!("{host}:~/models/{remote_name}"),
         ])
         .status()
@@ -367,9 +367,7 @@ fn cmd_fetch(host: &str, job: &str, out: &std::path::Path) {
                 "-o",
                 "ConnectTimeout=15",
                 &format!("{host}:{remote}"),
-                &out.join(format!("{job}.{file}"))
-                    .to_string_lossy()
-                    .into_owned(),
+                &out.join(format!("{job}.{file}")).to_string_lossy(),
             ])
             .status()
             .unwrap_or_else(|e| fail(&format!("spawn scp: {e}")));
