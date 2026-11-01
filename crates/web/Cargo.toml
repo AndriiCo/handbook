@@ -15,6 +15,7 @@ bytes = "1"
 config = { path = "../config" }
 contracts = { path = "../contracts" }
 forms = { path = "../forms" }
+handbook-agent = { path = "../handbook-agent" }
 handbook-store = { path = "../handbook-store" }
 ingest = { path = "../ingest" }
 labels = { path = "../labels" }

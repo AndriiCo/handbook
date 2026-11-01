@@ -30,6 +30,81 @@
 	let exhausted = $state(false);
 	let authority = $state('');
 
+	interface DraftRun {
+		id: number;
+		capture_id: number;
+		slug: string;
+		status: string;
+		proposed: number;
+		rejected: number;
+		model: string;
+		error: string;
+	}
+
+	// Live draft runs by capture id. The server streams steps to
+	// `run:{id}` on the bus; this console polls the run state (the
+	// admin listener serves no WS route).
+	let drafts = $state<Record<number, DraftRun | { status: 'starting' }>>({});
+
+	async function pollDraft(captureId: number, runId: number) {
+		for (let i = 0; i < 120; i++) {
+			await new Promise((r) => setTimeout(r, 1000));
+			const res = await fetch(api(`/draft-runs/${runId}`));
+			if (!res.ok) {
+				drafts[captureId] = {
+					status: 'failed',
+					id: runId,
+					capture_id: captureId,
+					slug: '',
+					proposed: 0,
+					rejected: 0,
+					model: '',
+					error: `run state -> ${res.status}`
+				};
+				return;
+			}
+			const run = (await res.json()) as DraftRun;
+			drafts[captureId] = run;
+			if (run.status === 'finished' || run.status === 'failed') return;
+		}
+	}
+
+	async function draftCapture(captureId: number) {
+		const prior = drafts[captureId];
+		if (prior && prior.status !== 'failed') return;
+		drafts[captureId] = { status: 'starting' };
+		try {
+			const res = await fetch(api(`/captures/${captureId}/draft`), { method: 'POST' });
+			if (!res.ok) throw new Error(`draft -> ${res.status}`);
+			const body = await res.json();
+			const runId = Number(body?.run_id);
+			if (!Number.isInteger(runId) || runId <= 0) throw new Error('bad run id');
+			await pollDraft(captureId, runId);
+		} catch (e) {
+			drafts[captureId] = {
+				status: 'failed',
+				id: 0,
+				capture_id: captureId,
+				slug: '',
+				proposed: 0,
+				rejected: 0,
+				model: '',
+				error: e instanceof Error ? e.message : 'draft failed'
+			};
+		}
+	}
+
+	function draftLabel(captureId: number): string {
+		const d = drafts[captureId];
+		if (!d) return 'Draft from this capture';
+		if (d.status === 'starting' || d.status === 'running') return 'Drafting…';
+		if (d.status === 'finished') {
+			const r = d as DraftRun;
+			return `Done — ${r.proposed} proposed, ${r.rejected} rejected (${r.model || 'model?'})`;
+		}
+		return `Draft failed — ${(d as DraftRun).error || 'retry'}`;
+	}
+
 	function normalize(c: any): Trace | null {
 		if (!c || typeof c.id !== 'number' || typeof c.sha256 !== 'string') return null;
 		return {
@@ -152,6 +227,16 @@
 					sha256:{t.sha256.slice(0, 16)}…
 				</p>
 				<p class="m-0 text-sm text-ink-muted">{t.excerpt || '— no text extracted —'}</p>
+				<p class="m-0 mt-2">
+					<button
+						class={BTN}
+						type="button"
+						onclick={() => draftCapture(t.id)}
+						disabled={!!drafts[t.id] && drafts[t.id].status !== 'failed'}
+					>
+						{draftLabel(t.id)}
+					</button>
+				</p>
 			</li>
 		{/each}
 	</ul>

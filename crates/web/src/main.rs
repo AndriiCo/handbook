@@ -19,6 +19,7 @@ mod admin_voice;
 mod admin_workers;
 mod approval;
 mod demo_precheck;
+mod draft;
 mod host;
 mod magic;
 mod mtls;
@@ -227,6 +228,9 @@ struct AppState {
     /// Demo-precheck buckets (separate map: a flood of distinct demo
     /// IPs must never fill auth's 8192-key map and fail sign-in closed).
     demo_limits: std::sync::Arc<passkey::RateBuckets>,
+    /// Live draft-run registry (operator finding 12): staff-triggered
+    /// model drafts and their step state, keyed by server-allocated id.
+    draft_runs: std::sync::Arc<draft::DraftRuns>,
     /// Google OAuth client (spec `customer-auth.md` §9): `None`
     /// until `google.client_id` + `google.client_secret` rows are
     /// set — the endpoints 503, the boot never refuses.
@@ -282,6 +286,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+            draft_runs: std::sync::Arc::new(draft::DraftRuns::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,
@@ -859,6 +864,7 @@ async fn main() {
         ),
         auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
         demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+        draft_runs: std::sync::Arc::new(draft::DraftRuns::default()),
         google_cfg: match (&cfg.google_client_id, &cfg.google_client_secret) {
             (Some(id), Some(secret)) => Some(oauth::GoogleCfg::from_values(
                 id,
@@ -2658,6 +2664,7 @@ mod tests {
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+            draft_runs: std::sync::Arc::new(draft::DraftRuns::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,

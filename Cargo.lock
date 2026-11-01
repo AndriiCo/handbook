@@ -3916,6 +3916,7 @@ dependencies = [
  "futures-util",
  "h3",
  "h3-quinn",
+ "handbook-agent",
  "handbook-store",
  "ingest",
  "jsonwebtoken",

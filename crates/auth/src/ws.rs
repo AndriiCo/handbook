@@ -20,12 +20,17 @@ pub enum WsTopic {
     Shipment { id: i64 },
     /// Billing events; owner-or-staff (owner named in the topic).
     Billing { customer_ref: String },
+    /// Live draft-run steps (`draft-runs/{id}`); staff-only. The run id
+    /// is a server-allocated counter, so any positive integer parses —
+    /// a dangling id simply never receives events.
+    Run { id: u64 },
 }
 
 impl WsTopic {
     /// Parse `authority:{slug}` / `call:{id}` / `submission:{id}` /
-    /// `shipment:{id}` / `billing:{customer_ref}`. Anything else —
-    /// unknown nouns, empty args, traversal-looking slugs — is `None`.
+    /// `shipment:{id}` / `billing:{customer_ref}` / `run:{id}`.
+    /// Anything else — unknown nouns, empty args, traversal-looking
+    /// slugs — is `None`.
     pub fn parse(input: &str) -> Option<Self> {
         let (noun, arg) = input.split_once(':')?;
         if arg.is_empty() || arg.len() > 128 {
@@ -41,6 +46,11 @@ impl WsTopic {
             "billing" if valid_customer_ref(arg) => Some(WsTopic::Billing {
                 customer_ref: arg.to_string(),
             }),
+            "run" => arg
+                .parse::<u64>()
+                .ok()
+                .filter(|id| *id > 0)
+                .map(|id| WsTopic::Run { id }),
             _ => None,
         }
     }
@@ -53,6 +63,7 @@ impl WsTopic {
             WsTopic::Submission { id } => format!("submission:{id}"),
             WsTopic::Shipment { id } => format!("shipment:{id}"),
             WsTopic::Billing { customer_ref } => format!("billing:{customer_ref}"),
+            WsTopic::Run { id } => format!("run:{id}"),
         }
     }
 }
@@ -127,6 +138,9 @@ pub fn authorize(
             role.meets(Role::Staff)
                 || (role.meets(Role::Customer) && customer_ref == Some(topic_ref.as_str()))
         }
+        // Draft-run steps name no customer data, but run ids are
+        // unguessable only by obscurity — staff-only, never anonymous.
+        WsTopic::Run { .. } => role.meets(Role::Staff),
     }
 }
 
@@ -170,6 +184,7 @@ mod tests {
                     customer_ref: "cust-1".to_string(),
                 },
             ),
+            ("run:7", WsTopic::Run { id: 7 }),
         ] {
             let parsed = WsTopic::parse(text).expect("parse");
             assert_eq!(parsed, expected);
@@ -197,6 +212,11 @@ mod tests {
             "billing:a b",
             "Billing:cust-1",
             "authority",
+            "run:",
+            "run:0",
+            "run:-1",
+            "run:abc",
+            "Run:7",
         ] {
             assert_eq!(WsTopic::parse(bad), None, "input: {bad:?}");
         }
@@ -207,7 +227,13 @@ mod tests {
         let owners = NoOwners;
         let authority = WsTopic::parse("authority:usa-wa-sos").expect("parse");
         assert!(authorize(Role::Anonymous, None, &owners, &authority));
-        for text in ["call:1", "submission:7", "shipment:3", "billing:cust-1"] {
+        for text in [
+            "call:1",
+            "submission:7",
+            "shipment:3",
+            "billing:cust-1",
+            "run:7",
+        ] {
             let topic = WsTopic::parse(text).expect("parse");
             assert!(
                 !authorize(Role::Anonymous, None, &owners, &topic),
@@ -225,6 +251,7 @@ mod tests {
             "submission:7",
             "shipment:3",
             "billing:cust-9",
+            "run:7",
         ] {
             let topic = WsTopic::parse(text).expect("parse");
             assert!(authorize(Role::Staff, None, &owners, &topic));
@@ -264,5 +291,8 @@ mod tests {
         assert!(authorize(Role::Customer, Some("cust-1"), &none, &billing));
         assert!(!authorize(Role::Customer, Some("cust-2"), &none, &billing));
         assert!(!authorize(Role::Customer, None, &none, &billing));
+        // Draft-run steps are staff-only even for logged-in customers.
+        let run = WsTopic::parse("run:7").expect("parse");
+        assert!(!authorize(Role::Customer, Some("cust-1"), &none, &run));
     }
 }

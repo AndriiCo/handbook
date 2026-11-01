@@ -398,6 +398,14 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/apostille/api/v1/bus/publish", post(publish))
         .route(
+            "/apostille/api/v1/captures/{id}/draft",
+            post(crate::draft::draft_capture),
+        )
+        .route(
+            "/apostille/api/v1/draft-runs/{id}",
+            get(crate::draft::draft_run),
+        )
+        .route(
             "/apostille/api/v1/media/upload",
             post(upload_media).layer(DefaultBodyLimit::disable()),
         )
@@ -846,6 +854,7 @@ mod tests {
             webauthn: std::sync::Arc::new(crate::passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            draft_runs: std::sync::Arc::new(crate::draft::DraftRuns::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,
