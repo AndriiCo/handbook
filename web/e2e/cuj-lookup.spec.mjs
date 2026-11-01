@@ -39,7 +39,11 @@ test('J1 lookup costs at most one search plus one click', async ({ page }) => {
 		await expect(page.getByRole('heading', { name: 'Apostille rules' })).toBeVisible();
 		await journey.fill(page.locator('#hero-q'), 'exam');
 		await journey.click(page.getByRole('button', { name: /Example Authority/ }));
-		await expect(page.getByText('Eight dollars per document.')).toBeVisible();
+		// The dossier guide quotes the same statement in its steps, so
+		// scope to the Fees topic: the journey proves the fact is found.
+		await expect(
+			page.getByRole('region', { name: 'Fees' }).getByText('Eight dollars per document.')
+		).toBeVisible();
 
 		expect(journey.summary()).toEqual({ actions: 2, inputs: 1 });
 	} finally {
