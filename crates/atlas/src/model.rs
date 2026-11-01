@@ -1248,7 +1248,7 @@ mod tests {
             user_text: "u".to_string(),
             schema: None,
             max_output_tokens: 100,
-            temperature: 0.1,
+            temperature: 1.0,
             reasoning_effort: Some("low".to_string()),
             cache_key: Some("k".to_string()),
         }

@@ -161,8 +161,10 @@ impl<P: ModelPort> Summarizer for PortSummarizer<'_, P> {
             user_text: input.to_string(),
             schema: None,
             max_output_tokens: 2048,
-            temperature: 0.1,
-            reasoning_effort: None,
+            // `1.0` is the documented default (sampling untouched);
+            // light reasoning fits condensation inside this cap.
+            temperature: 1.0,
+            reasoning_effort: Some("low".to_string()),
             cache_key: None,
         })?;
         Ok(SummaryDraft {

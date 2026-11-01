@@ -234,7 +234,7 @@ def spark_verdict(base, key, sample_id, label, boxes, image_b64):
                 {"type": "image_url", "image_url": {"url": "data:image/png;base64," + image_b64}},
             ]},
         ],
-        "temperature": 0,
+        "reasoning_effort": "low",
         "max_completion_tokens": 4000,
         "response_format": {"type": "json_schema",
                             "json_schema": {"name": "PrecheckVerdict", "schema": schema}},

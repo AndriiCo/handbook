@@ -354,13 +354,18 @@ fn draft_body(req: &DraftRequest, previous_failure: Option<&str>) -> serde_json:
              and keep every citation on the cited page."
         ));
     }
+    // No `temperature`: Spark is tuned for its defaults, and
+    // structured extraction wants sampling untouched. Explicit
+    // `reasoning_effort: medium`: drafts ground claims in evidence
+    // (measured: even trivial replies burn ~60 reasoning tokens, and
+    // verdict-scale JSON runs to ~1.5k — both inside the 32k budget).
     json!({
         "model": DRAFT_MODEL,
         "messages": [
             {"role": "developer", "content": developer.trim()},
             {"role": "user", "content": user},
         ],
-        "temperature": 0,
+        "reasoning_effort": "medium",
         "max_completion_tokens": MAX_COMPLETION_TOKENS,
         "response_format": response_format_for(&req.doc_ids),
         "prompt_cache_key": format!("analysis-agent-{}", req.prompt_version),
@@ -586,7 +591,8 @@ mod tests {
                     ["citation"]["properties"]["doc_id"],
                 serde_json::json!({"type": "string", "enum": ["fixture"]})
             );
-            assert_eq!(v["temperature"], 0);
+            assert!(v.get("temperature").is_none(), "sampling untouched");
+            assert_eq!(v["reasoning_effort"], "medium");
             assert_eq!(v["response_format"]["type"], "json_schema");
             assert_eq!(
                 v["response_format"]["json_schema"]["schema"]["required"],
