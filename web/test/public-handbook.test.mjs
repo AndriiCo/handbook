@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-	buildGuide,
 	factCount,
 	filterAuthorities,
 	groupFactsByTopic,
@@ -125,25 +124,20 @@ test('seedLedgerEvents keeps unique ids on conflict cliques', () => {
 	assert.equal(events.filter((e) => e.kind === 'changed').length, 6);
 });
 
-test('buildGuide orders steps by plan, skips missing groups', () => {
-	const facts = [
-		{ topic: 'processing_time', statement: 'Three days.' },
-		{ topic: 'fees', statement: '$15 per document.' },
-		{ topic: 'eligibility', statement: 'Not frozen.' }
+test('seedLedgerEvents labels accepted conflicts as conflicting reports', () => {
+	const clique = [
+		{
+			id: 1,
+			topic: 'fees',
+			citations: [],
+			conflicts: [{ id: 2, statement: 'Other fee.', status: 'accepted' }]
+		}
 	];
-	const steps = buildGuide(facts);
-	assert.deepEqual(
-		steps.map((s) => s.title),
-		['Pay the fee', 'Wait for processing']
+	const events = seedLedgerEvents(clique);
+	assert.equal(
+		events.find((e) => e.kind === 'changed').text,
+		'Fees — conflicting accepted report'
 	);
-	assert.equal(steps[0].topic, 'fees');
-	assert.equal(steps[0].fact.statement, '$15 per document.');
-});
-
-test('buildGuide is empty without guide topics', () => {
-	assert.deepEqual(buildGuide([]), []);
-	assert.deepEqual(buildGuide(null), []);
-	assert.deepEqual(buildGuide([{ topic: 'eligibility', statement: 'x' }]), []);
 });
 
 test('publicError takes status only — server text can never leak', () => {

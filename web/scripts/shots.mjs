@@ -21,6 +21,8 @@ const BASE = '/apostille';
 const ROUTES = {
 	'/': { name: 'gp1-home', ready: 'Apostille rules' },
 	'/authority/vietnam': { name: 'gp2-dossier', ready: 'Authority dossier' },
+	'/authority/usa-wa-sos': { name: 'gp2-dossier-wa', ready: 'Authority dossier' },
+	'/authority/hcch': { name: 'gp2-dossier-hcch', ready: 'Authority dossier' },
 	'/login': { name: 'gp3-login', ready: 'Log in' },
 	'/order': { name: 'gp4-order', ready: 'Destination' },
 	'/orders': { name: 'gp4-orders', ready: 'newest first' },
@@ -34,7 +36,7 @@ const THEMES = ['light', 'dark'];
 const BANNED = ['placeholder', 'not wired', 'skeleton', 'lorem', 'todo'];
 // Routes whose redesign slice has landed (each screen gets one graphic
 // drawn from its own data). Extend as slices 2–5 land.
-const GRAPHIC_ROUTES = ['/', '/authority/vietnam', '/order', '/precheck', '/login'];
+const GRAPHIC_ROUTES = ['/', '/authority/vietnam', '/authority/usa-wa-sos', '/authority/hcch', '/order', '/precheck', '/login'];
 // Routes still allowed a native <select>: none — slice 4 replaced the
 // order destination select with a combobox.
 const NATIVE_SELECT_OK = [];

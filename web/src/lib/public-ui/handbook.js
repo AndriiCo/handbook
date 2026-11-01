@@ -80,40 +80,6 @@ export function factCount(n) {
 }
 
 /**
- * Step plan for the dossier "How to get your apostille" guide:
- * ordered (title, topics). Topics outside the frozen vocabulary
- * (fixtures, future migrations) never match a step — they still
- * render in their dossier sections.
- */
-export const GUIDE_PLAN = [
-	{ title: 'Confirm this office handles your document', topics: ['jurisdiction', 'authentication', 'legalization_chain'] },
-	{ title: 'Prepare your documents', topics: ['notarization', 'translation', 'copies', 'id_requirements'] },
-	{ title: 'Get the request form', topics: ['forms'] },
-	{ title: 'Pay the fee', topics: ['fees', 'payment'] },
-	{ title: 'Send or bring your packet', topics: ['mailing', 'po_box', 'walkin', 'appointment', 'dropbox', 'address', 'hours', 'holiday_hours', 'parking', 'route_photos'] },
-	{ title: 'Wait for processing', topics: ['processing_time'] },
-	{ title: 'Avoid common rejections', topics: ['rejections'] },
-	{ title: 'Still have questions', topics: ['contacts', 'website'] }
-];
-
-/**
- * Build guide steps from accepted facts: the first unused fact in
- * each plan group, in plan order. Groups with no fact are skipped,
- * so the guide is exactly as complete as the dossier's evidence.
- * @param {any[]} facts
- * @returns {{ title: string, topic: string, fact: any }[]}
- */
-export function buildGuide(facts) {
-	const steps = [];
-	for (const group of GUIDE_PLAN) {
-		const fact = (facts ?? []).find((f) => group.topics.includes(f?.topic));
-		if (!fact) continue;
-		steps.push({ title: group.title, topic: fact.topic, fact });
-	}
-	return steps;
-}
-
-/**
  * Seed the dossier evidence ledger from accepted facts: one `verified`
  * event per fact, one `changed` event per conflict banner. Sibling ids
  * repeat across parents (conflict cliques reference each other), so
@@ -136,10 +102,13 @@ export function seedLedgerEvents(facts) {
 			fresh: false
 		});
 		for (const sib of f?.conflicts ?? []) {
+			const underReview = sib?.status !== 'accepted';
 			events.push({
 				id: `conflict-${parent}-${sib?.id ?? sib?.statement}`,
 				kind: 'changed',
-				text: `${topicLabel(f?.topic)} — new proposal under review`,
+				text: underReview
+					? `${topicLabel(f?.topic)} — new proposal under review`
+					: `${topicLabel(f?.topic)} — conflicting accepted report`,
 				at: '',
 				fresh: false
 			});

@@ -127,3 +127,4 @@
 | 220 | 2026-11-01 18:04Z | staging-green 5bb462a; ship blocked on unit drift | Run 8 9/10, root step listed |
 | 221 | 2026-11-01 18:25Z | admin mTLS out, IP allowlist in (allow_ips) | web 265, e2e 6, demo 3 green |
 | 222 | 2026-11-01 18:26Z | operator page: P221 tip, allow_ips warning | page true |
+| 223 | 2026-11-01 18:35Z | dossier guide v1: steps, citations, conflicts | unit 109, shots 16, demo 3 |

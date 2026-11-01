@@ -1,1 +1,22 @@
-{"authorities":[{"country":"Vietnam","fact_count":3,"name":"Vietnam — Ministry of Foreign Affairs","slug":"vietnam"},{"country":"United States","fact_count":5,"name":"USA — Washington Secretary of State","slug":"usa-wa-sos"},{"country":"Netherlands","fact_count":2,"name":"HCCH — Apostille Section","slug":"hcch"}]}
+{
+ "authorities": [
+  {
+   "country": "Vietnam",
+   "fact_count": 3,
+   "name": "Vietnam \u2014 Ministry of Foreign Affairs",
+   "slug": "vietnam"
+  },
+  {
+   "country": "United States",
+   "fact_count": 9,
+   "name": "USA \u2014 Washington Secretary of State",
+   "slug": "usa-wa-sos"
+  },
+  {
+   "country": "Netherlands",
+   "fact_count": 1,
+   "name": "HCCH \u2014 Apostille Section",
+   "slug": "hcch"
+  }
+ ]
+}

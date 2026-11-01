@@ -5,7 +5,8 @@
 	import { page } from '$app/state';
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
 	import VerifiedChip from '../../../../lib/public-ui/VerifiedChip.svelte';
-	import Guide from '../../../../lib/public-ui/Guide.svelte';
+	import GuideStep from '../../../../lib/public-ui/GuideStep.svelte';
+	import GuideEmpty from '../../../../lib/public-ui/GuideEmpty.svelte';
 	import { Skeleton } from '../../../../lib/components/ui/skeleton/index.js';
 	import * as HoverCard from '../../../../lib/components/ui/hover-card/index.js';
 	import Heading from '../../../../lib/components/brand/Heading.svelte';
@@ -14,7 +15,6 @@
 	import silhouettes from '../../../../lib/geo/silhouettes.json';
 	import { subscribe } from '../../../../lib/live.svelte.js';
 	import {
-		buildGuide,
 		factCount,
 		groupFactsByTopic,
 		publicError,
@@ -22,6 +22,7 @@
 		seedLedgerEvents,
 		topicLabel
 	} from '../../../../lib/public-ui/handbook.js';
+	import { buildGuide, domain, markQuote } from '../../../../lib/public-ui/guide.js';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -90,53 +91,9 @@
 		return String(iso ?? '').split('T')[0];
 	}
 
-	function domain(url: unknown): string {
-		try {
-			return new URL(String(url)).hostname.replace(/^www\./, '');
-		} catch {
-			return 'official source';
-		}
-	}
-
 	function modelName(fact: any): string {
 		const raw = String(fact?.drafted_by ?? fact?.created_by ?? 'unknown');
 		return raw.split(' ')[0];
-	}
-
-	function esc(s: string): string {
-		return s
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;');
-	}
-
-	// Mark the longest statement phrase found in the quote, so the
-	// HoverCard shows which span the fact rests on.
-	function markQuote(quote: string, statement: string): string {
-		const words = String(statement ?? '')
-			.toLowerCase()
-			.replace(/[^a-z0-9\s]/g, ' ')
-			.split(/\s+/)
-			.filter((w) => w.length > 2);
-		const ql = String(quote ?? '').toLowerCase();
-		for (let len = Math.min(12, words.length); len >= 3; len--) {
-			for (let i = 0; i + len <= words.length; i++) {
-				const phrase = words.slice(i, i + len).join(' ');
-				const idx = ql.indexOf(phrase);
-				if (idx >= 0) {
-					const q = String(quote ?? '');
-					return (
-						esc(q.slice(0, idx)) +
-						'<mark>' +
-						esc(q.slice(idx, idx + phrase.length)) +
-						'</mark>' +
-						esc(q.slice(idx + phrase.length))
-					);
-				}
-			}
-		}
-		return esc(String(quote ?? ''));
 	}
 
 	function seedLedger(list: any[]) {
@@ -167,6 +124,7 @@
 		facts = list;
 		activeTopic = groupFactsByTopic(list)[0]?.topic ?? activeTopic;
 		seedLedger(list);
+		armFlash(list);
 	}
 
 	async function resolveName(current: string) {
@@ -232,22 +190,44 @@
 			if (current !== slug) return;
 			if (msg?.type === 'fact_accepted') {
 				pushLiveEvent();
+				if (typeof msg?.fact_id === 'number') pendingFlashFactId = msg.fact_id;
 				void reload(current).catch(() => {});
 			}
 		});
 	});
 
-	const guideSteps = $derived(
-		buildGuide(facts ?? []).map((s) => {
-			const cite = firstCapture(s.fact);
-			return {
-				title: s.title,
-				statement: String(s.fact?.statement ?? ''),
-				verified: cite?.captured_at ? shortDate(cite.captured_at) : '',
-				source: typeof cite?.source_url === 'string' ? domain(cite.source_url) : null,
-				href: `#${topicId(s.topic)}`
-			};
-		})
+	const guideSteps = $derived(buildGuide(facts ?? [], Date.now()));
+
+	// WS flash: the last accepted fact's step lights up after reload.
+	let flashStepId = $state<string | null>(null);
+	let pendingFlashFactId = $state<number | null>(null);
+	let flashTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function armFlash(list: any[]) {
+		if (pendingFlashFactId === null) return;
+		const found = list.find((f) => f?.id === pendingFlashFactId);
+		pendingFlashFactId = null;
+		if (!found) return;
+		const step = guideSteps.find((s) => s.items.some((i) => i.factIds.includes(found.id)));
+		if (!step) return;
+		if (flashTimer) clearTimeout(flashTimer);
+		flashStepId = step.id;
+		flashTimer = setTimeout(() => {
+			flashStepId = null;
+			flashTimer = null;
+		}, 1500);
+	}
+
+	const websiteUrl = $derived(
+		(() => {
+			for (const f of facts ?? []) {
+				if (f?.topic !== 'website' || f?.status !== 'accepted') continue;
+				const cites = Array.isArray(f.citations) ? f.citations : [];
+				const url = cites[0]?.source_url;
+				if (typeof url === 'string' && url.startsWith('https://')) return url;
+			}
+			return null;
+		})()
 	);
 
 	const displayName = $derived(authorityName ?? slug);
@@ -343,21 +323,30 @@
 		</div>
 	</header>
 
-	{#if facts.length === 0}
-		<Notice variant="info" heading="No published facts yet.">
-			<p>
-				This authority is in the index, but no accepted facts have been
-				published. General information, not legal advice.
-			</p>
-			<p>
-				<a href={`${resolve('/(customer)/order')}?destination=${encodeURIComponent(slug)}`}>
-					Start an order anyway
-				</a>
-			</p>
-		</Notice>
-	{:else}
-		<Guide steps={guideSteps} authorityName={displayName} />
-		<div class="grid gap-8 pb-16 lg:grid-cols-12">
+	<section aria-labelledby="howto" class="border-y border-line bg-surface py-10 xl:py-16">
+		<div class="mx-auto w-full max-w-5xl px-4 sm:px-6">
+			<h2 id="howto" class="text-h2 mt-0 mb-0 font-semibold">
+				How to get your apostille<span class="sr-only"> for {displayName}</span>
+			</h2>
+			{#if guideSteps.length === 0}
+				<div class="mt-8">
+					<GuideEmpty websiteUrl={websiteUrl} slug={slug} />
+				</div>
+			{:else}
+				<ol class="m-0 mt-8 list-none p-0">
+					{#each guideSteps as step, i (step.id)}
+						<GuideStep step={step} index={i} flash={flashStepId === step.id} />
+					{/each}
+				</ol>
+				<p class="mt-8 mb-0 max-w-prose text-sm text-ink-muted">
+					Every value above is staff-accepted, with its source one tap
+					away. General information, not legal advice.
+				</p>
+			{/if}
+		</div>
+	</section>
+	{#if facts.length > 0}
+		<section aria-label="Evidence" class="grid gap-8 pt-10 pb-16 lg:grid-cols-12 xl:pt-16">
 			<div class="lg:col-span-8" bind:this={sectionsRoot}>
 				<nav
 					class="sticky top-14 z-20 -mx-1 border-b border-line bg-bg/90 px-1 py-1 backdrop-blur"
@@ -445,7 +434,7 @@
 															<span
 																class="inline-block rounded-full border border-changed bg-changed-bg px-2 py-0.5 text-xs font-semibold text-changed"
 															>
-																Proposed
+																{sib.status === 'accepted' ? 'Accepted' : 'Proposed'}
 															</span>
 														</p>
 														<p class="m-0 mt-1 text-sm text-ink">{sib.statement}</p>
@@ -497,7 +486,7 @@
 					</section>
 				</div>
 			</aside>
-		</div>
+		</section>
 	{/if}
 {/if}
 
