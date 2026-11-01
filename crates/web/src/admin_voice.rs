@@ -911,6 +911,17 @@ async fn quote_to_draft(
         Ok(fact_id) => fact_id,
         Err(_) => return store_unavailable(),
     };
+    // New proposals fan out to the staff `proposals` topic so the
+    // `/review` queue updates live (analyzer-path publishers in the
+    // lane crates follow after the meta merge).
+    state.bus.publish(
+        "proposals",
+        json!({"type": "proposal.created", "topic": "proposals",
+               "fact_id": fact_id,
+               "authority": call.authority.as_deref().unwrap_or(""),
+               "at": now})
+        .to_string(),
+    );
     // Zero-DDL attribution audit: the existing voice audit row, with the
     // fact id + segment seqs + topic in the grep-able reason. Never the
     // transcript text (no PII in audit, per the voice lane rule).
@@ -2333,6 +2344,37 @@ mod tests {
         assert!(reason.contains("segments=[0,1]"), "{reason}");
         assert!(reason.contains("topic=fees"), "{reason}");
         assert!(!reason.contains("Eight dollars"), "{reason}");
+    }
+
+    #[tokio::test]
+    async fn quote_to_draft_publishes_proposal_created() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        seed_call_with_transcripts(&conn, "c-p", Some("usa-wa-sos"));
+        drop(conn);
+        let mut rx = fx.state.bus.subscribe("proposals");
+
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/calls/c-p/quote",
+                true,
+                true,
+                Some(quote_body(vec![0], "fees", "Counter fee is $8.")),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&event).unwrap();
+        assert_eq!(value["type"], "proposal.created");
+        assert_eq!(value["topic"], "proposals");
+        assert_eq!(value["authority"], "usa-wa-sos");
+        assert!(value["fact_id"].as_i64().unwrap() > 0, "{event}");
     }
 
     /// Every invalid shape is a 422 with a non-empty error; nothing lands.

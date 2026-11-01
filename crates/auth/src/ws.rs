@@ -27,14 +27,20 @@ pub enum WsTopic {
     /// is a server-allocated counter, so any positive integer parses —
     /// a dangling id simply never receives events.
     Run { id: u64 },
+    /// New-proposal feed for the `/review` queue; staff-only. One
+    /// channel for all authorities — the event names its own.
+    Proposals,
 }
 
 impl WsTopic {
     /// Parse `authority:{slug}` / `call:{id}` / `submission:{id}` /
-    /// `shipment:{id}` / `billing:{customer_ref}` / `run:{id}`.
-    /// Anything else — unknown nouns, empty args, traversal-looking
-    /// slugs — is `None`.
+    /// `shipment:{id}` / `billing:{customer_ref}` / `run:{id}` /
+    /// bare `proposals`. Anything else — unknown nouns, empty args,
+    /// traversal-looking slugs — is `None`.
     pub fn parse(input: &str) -> Option<Self> {
+        if input == "proposals" {
+            return Some(WsTopic::Proposals);
+        }
         let (noun, arg) = input.split_once(':')?;
         if arg.is_empty() || arg.len() > 128 {
             return None;
@@ -69,6 +75,7 @@ impl WsTopic {
             WsTopic::Shipment { id } => format!("shipment:{id}"),
             WsTopic::Billing { customer_ref } => format!("billing:{customer_ref}"),
             WsTopic::Run { id } => format!("run:{id}"),
+            WsTopic::Proposals => "proposals".to_string(),
         }
     }
 }
@@ -151,6 +158,9 @@ pub fn authorize(
         // Draft-run steps name no customer data, but run ids are
         // unguessable only by obscurity — staff-only, never anonymous.
         WsTopic::Run { .. } => role.meets(Role::Staff),
+        // Proposal events name authority + statement text (unpublished
+        // drafts) — staff-only, never anonymous.
+        WsTopic::Proposals => role.meets(Role::Staff),
     }
 }
 
@@ -200,6 +210,7 @@ mod tests {
                 },
             ),
             ("run:7", WsTopic::Run { id: 7 }),
+            ("proposals", WsTopic::Proposals),
         ] {
             let parsed = WsTopic::parse(text).expect("parse");
             assert_eq!(parsed, expected);
@@ -236,6 +247,9 @@ mod tests {
             "run:-1",
             "run:abc",
             "Run:7",
+            "proposals:x",
+            "Proposals",
+            "proposals ",
         ] {
             assert_eq!(WsTopic::parse(bad), None, "input: {bad:?}");
         }
@@ -252,6 +266,7 @@ mod tests {
             "shipment:3",
             "billing:cust-1",
             "run:7",
+            "proposals",
         ] {
             let topic = WsTopic::parse(text).expect("parse");
             assert!(
@@ -271,6 +286,7 @@ mod tests {
             "shipment:3",
             "billing:cust-9",
             "run:7",
+            "proposals",
         ] {
             let topic = WsTopic::parse(text).expect("parse");
             assert!(authorize(Role::Staff, None, &owners, &topic));
@@ -313,5 +329,13 @@ mod tests {
         // Draft-run steps are staff-only even for logged-in customers.
         let run = WsTopic::parse("run:7").expect("parse");
         assert!(!authorize(Role::Customer, Some("cust-1"), &none, &run));
+        // So is the proposals feed.
+        let proposals = WsTopic::parse("proposals").expect("parse");
+        assert!(!authorize(
+            Role::Customer,
+            Some("cust-1"),
+            &none,
+            &proposals
+        ));
     }
 }

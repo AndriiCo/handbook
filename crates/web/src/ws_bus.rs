@@ -218,6 +218,7 @@ fn topic_noun(topic: &auth::ws::WsTopic) -> &'static str {
         auth::ws::WsTopic::Shipment { .. } => "shipment",
         auth::ws::WsTopic::Billing { .. } => "billing",
         auth::ws::WsTopic::Run { .. } => "run",
+        auth::ws::WsTopic::Proposals => "proposals",
     }
 }
 
