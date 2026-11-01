@@ -68,6 +68,11 @@ DB copies — ever. Alias only, never a username, IP or key.
   http://127.0.0.1:18318/apostille`.
 - Result: 9/10 (only S1 red: licence/video/visibility are operator-owned).
   Stale-note rule: whenever a stack starts, its ports + tunnel go here.
+- P147 proof (2026-11-01): delta rsync; packs-load +2 vietnam sources;
+  fetch-slug vietnam urls=5 fetched=3 (full-text ?cid=41 capture=7,
+  section hub capture=8, mofa re-fetch capture=6) failed=0; analyze
+  --live vietnam proposed=3 (cap6: 2, cap7: 1 with 6 quote-refusals,
+  cap8 hub: 0 draftable — kept as change-watch). Rescore 9/10, only S1 red.
 
 ## Regeneration (fresh staging DB)
 
