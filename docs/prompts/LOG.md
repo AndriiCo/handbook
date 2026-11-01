@@ -87,3 +87,4 @@
 | 179 | 2026-11-01 06:40Z | Sunday deploy 69ca7fa on operator order | prod 5/10, no regression |
 | 180 | 2026-11-01 10:10Z | merge 5 deploy docs into staging.md | links retargeted, scan clean |
 | 181 | 2026-11-01 10:30Z | scripts docs-to-xtaskops + layout review | 16 moved, refs fixed |
+| 182 | 2026-11-01 14:35Z | staging run 6 on scripts-move SHA | 9/10 + demo 3/3 |

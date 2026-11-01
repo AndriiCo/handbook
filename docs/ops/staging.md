@@ -240,3 +240,8 @@ above verbatim).
   (BadTopicClient {1,1} rides along on the rejected path) — no new
   live call spent (staging run 1 already gave model + 27 s + 2/0).
 - Staging exact at 69ca7fa, release binary, rescore 9/10 (only S1 red).
+
+## Run 6 (2026-11-01, 1aa6039) — 9/10 kept, scripts move
+- `docs/ops/scripts/` → `xtask/ops/` (comment-only Rust change);
+  release rebuild + restart, rescore 9/10 (only S1 red), live demo
+  3/3 on the exact SHA.
