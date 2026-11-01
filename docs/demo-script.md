@@ -9,7 +9,7 @@ certificate) and uploaded to YouTube. Captions below are the
 | # | Time | Scene (URL) | What happens | Needs on production |
 |---|------|-------------|--------------|---------------------|
 | 1 | 0:00–0:20 | Home `/apostille` | Stranger types "Viet Nam" in the command search, picks the dossier. Caption: "Find your apostille authority in seconds" | Authority index live (done) |
-| 2 | 0:20–0:55 | Dossier `/apostille/authority/vietnam` | Scrolls topics, opens "View quote" on a fact: exact quote, source domain, retrieved date. Caption: "Every fact shows its quote, source and date" | ≥ 1 accepted fact with a verified quote (open: approvals) |
+| 2 | 0:20–0:55 | Dossier `/apostille/authority/vietnam` | Scrolls the step-by-step guide, opens "View quote" on a fact: exact quote, source domain, retrieved date. Caption: "Every fact shows its quote, source and date" | ≥ 1 accepted fact with a verified quote (open: approvals) |
 | 3 | 0:55–1:20 | Review `/review` (admin) | A Spark-drafted fact sits proposed beside its capture quote. Caption: "Muse Spark drafts from a new capture, quote checked" | 2 proposed facts per slug left unapproved (operator keeps 2 back during approvals) |
 | 4 | 1:20–1:45 | Approve → dossier live | Operator clicks Accept; the dossier's evidence ledger gains a verified entry over WS. Caption: "A human approves — the dossier updates live" | Same queue as scene 3 |
 | 5 | 1:45–2:25 | Precheck `/precheck` (390px) | Phone photo of a synthetic sample; SAM boxes trace, verdict "Retake" with reasons. Caption: "Photo precheck before you order" | A2 recordings (done: pass/retake/retake) |

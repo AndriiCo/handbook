@@ -115,3 +115,4 @@
 | 208 | 2026-11-01 19:10Z | sealed meta.base_url honored + test | web 261, xtask 78 |
 | 209 | 2026-11-01 19:20Z | overlap help aligns with lifted cap | gates 8/8, xtask 17 |
 | 210 | 2026-11-01 19:40Z | operator page: merge + queue state | follow-up 3 done |
+| 211 | 2026-11-01 19:55Z | demo script names the dossier guide | still 175 s |
