@@ -3,6 +3,8 @@
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
 	import Heading from '../../../lib/components/brand/Heading.svelte';
+	import CheckCircleIcon from '@lucide/svelte/icons/circle-check';
+	import XCircleIcon from '@lucide/svelte/icons/circle-x';
 
 	// Demo photo precheck (A2): synthetic samples, recorded live-model
 	// verdicts. SAM boxes animate over the sample; the verdict panel
@@ -147,11 +149,13 @@
 		<Notice variant="warning" heading="Run unavailable."><p>{runError}</p></Notice>
 	{/if}
 
-	{#if result && chosenSample}
-		<section aria-label="Precheck result" class="max-w-[36rem] pb-8">
-			<p class={verdictPillCls(result.verdict === 'pass')} aria-live="polite">
-				{result.verdict === 'pass' ? 'Pass — good to submit' : 'Retake — fix the issues below'}
-			</p>
+	{#if chosenSample}
+		<section aria-label="Precheck result" class="max-w-[36rem] py-10 xl:py-16">
+			{#if result}
+				<p class={verdictPillCls(result.verdict === 'pass')} aria-live="polite">
+					{result.verdict === 'pass' ? 'Pass — good to submit' : 'Retake — fix the issues below'}
+				</p>
+			{/if}
 			<div class="relative mt-2 overflow-hidden rounded-md border border-line">
 				<img
 					src={chosenSample.thumb_url}
@@ -160,34 +164,68 @@
 					height="640"
 					class="block h-auto w-full"
 				/>
-				{#each result.boxes as b, i (b.label + i)}
-					{@const left = Math.max(0, Math.min(100, b.x * 100))}
-					{@const top = Math.max(0, Math.min(100, b.y * 100))}
-					{@const width = Math.max(0, Math.min(100 - left, b.w * 100))}
-					{@const height = Math.max(0, Math.min(100 - top, b.h * 100))}
-					<div
-						class="box-in absolute rounded-xs border-2 border-accent-fill"
-						style="left: {left}%; top: {top}%; width: {width}%; height: {height}%; animation-delay: {i *
-							140}ms"
-					>
+				<svg
+					class="pointer-events-none absolute inset-0 h-full w-full"
+					viewBox="0 0 100 100"
+					preserveAspectRatio="none"
+					aria-hidden="true"
+					data-graphic="precheck-mask"
+				>
+					{#if result}
+						{#each result.boxes as b, i (b.label + i)}
+							{@const left = Math.max(0, Math.min(100, b.x * 100))}
+							{@const top = Math.max(0, Math.min(100, b.y * 100))}
+							{@const width = Math.max(0, Math.min(100 - left, b.w * 100))}
+							{@const height = Math.max(0, Math.min(100 - top, b.h * 100))}
+							<rect
+								x={left}
+								y={top}
+								width={Math.max(width, 0.5)}
+								height={Math.max(height, 0.5)}
+								fill="none"
+								stroke="var(--color-brand-500)"
+								stroke-width="2"
+								vector-effect="non-scaling-stroke"
+								pathLength="1"
+								class="mask-trace"
+								style={`animation-delay: ${i * 220}ms`}
+							/>
+						{/each}
+					{/if}
+				</svg>
+				{#if result}
+					{#each result.boxes as b, i (b.label + i)}
+						{@const left = Math.max(0, Math.min(100, b.x * 100))}
+						{@const top = Math.max(0, Math.min(100, b.y * 100))}
 						<span
-							class="absolute -top-6 left-0 rounded-xs bg-accent-fill px-1 font-mono text-xs whitespace-nowrap text-accent-ink"
-							>{b.label}</span
+							class="box-in absolute rounded-xs bg-accent-fill px-1 font-mono text-xs whitespace-nowrap text-accent-ink"
+							style="left: {left}%; top: {top}%; animation-delay: {i * 220 + 500}ms"
 						>
-					</div>
-				{/each}
-			</div>
-			{#if result.issues.length > 0}
-				<ul class="mt-3">
-					{#each result.issues as issue (issue)}
-						<li>{issue}</li>
+							{b.label}
+						</span>
 					{/each}
-				</ul>
-			{/if}
+				{/if}
+			</div>
+			{#if result}
+			<ul class="mt-3 flex list-none flex-col gap-2 p-0" aria-label="Precheck checklist">
+				{#if result.verdict === 'pass'}
+					<li class="flex min-h-11 items-center gap-2">
+						<CheckCircleIcon class="size-5 flex-none text-verified" aria-hidden="true" />
+						<span>Ready to submit — no defects found</span>
+					</li>
+				{/if}
+				{#each result.issues as issue (issue)}
+					<li class="flex min-h-11 items-center gap-2">
+						<XCircleIcon class="size-5 flex-none text-changed" aria-hidden="true" />
+						<span>{issue}</span>
+					</li>
+				{/each}
+			</ul>
 			<p class="font-mono text-xs text-ink-muted">
 				models {result.models.join(' + ') || 'unrecorded'} · recorded {result.recorded_at ||
 					'—'} · replay of a live run on synthetic samples
 			</p>
+			{/if}
 		</section>
 	{/if}
 {/if}
@@ -204,6 +242,24 @@
 		to {
 			opacity: 1;
 			transform: scale(1);
+		}
+	}
+	/* SAM mask trace: the outline draws itself (dashoffset), then the
+	   verdict checklist below takes over. */
+	.mask-trace {
+		stroke-dasharray: 1;
+		stroke-dashoffset: 1;
+		animation: mask-trace 600ms ease-out both;
+	}
+	@keyframes mask-trace {
+		to {
+			stroke-dashoffset: 0;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.mask-trace {
+			animation: none;
+			stroke-dashoffset: 0;
 		}
 	}
 </style>

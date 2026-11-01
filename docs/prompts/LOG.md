@@ -60,3 +60,5 @@
 | 153 | 2026-11-01 03:05Z | redesign slice 1: Vogun staging+fallback, tokens, header/footer, sub-nav out | check+builds+shots green |
 | 154 | 2026-11-01 03:40Z | redesign slice 2: GP1 hero/map/bento/table + brand audit | 20 shots green |
 | 155 | 2026-11-01 04:10Z | redesign slice 3: GP2 dossier band, scroll-spy, ledger | 20 shots green |
+| 155b | 2026-11-01 04:20Z | operator line (plant disk full), P154 gate failed at compile | rides P156 |
+| 156 | 2026-11-01 04:35Z | redesign slice 4: GP4 grid/stepper/combobox/receipt, precheck trace | 20 shots green |
