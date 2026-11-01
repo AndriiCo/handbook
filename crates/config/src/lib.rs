@@ -915,6 +915,7 @@ pub mod keys {
     pub const TLS_CLIENT_CA_FILE: &str = "tls.client_ca_file";
     pub const ADMIN_MTLS_OFF: &str = "admin.mtls_off";
     pub const ADMIN_REQUIRE_CERT: &str = "admin.require_cert";
+    pub const ADMIN_ALLOW_IPS: &str = "admin.allow_ips";
     pub const MEDIA_TERMS_READ: &str = "media.terms_read";
     pub const ACME_ENABLED: &str = "acme.enabled";
     pub const ACME_DIRECTORY: &str = "acme.directory";
@@ -986,6 +987,7 @@ pub mod keys {
         (TLS_CLIENT_CA_FILE, super::ConfigType::Text),
         (ADMIN_MTLS_OFF, super::ConfigType::Bool),
         (ADMIN_REQUIRE_CERT, super::ConfigType::Bool),
+        (ADMIN_ALLOW_IPS, super::ConfigType::Text),
         (MEDIA_TERMS_READ, super::ConfigType::Bool),
         (ACME_ENABLED, super::ConfigType::Bool),
         (ACME_DIRECTORY, super::ConfigType::Text),
@@ -1098,6 +1100,85 @@ impl std::fmt::Debug for SecretText {
 
 /// Every runtime setting, read once at boot from sealed DB rows.
 ///
+/// One parsed `admin.allow_ips` entry: a base address plus prefix
+/// length. Bare IPs parse as host routes (/32, /128). No new
+/// dependency: the matcher is a few integer ops below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IpNet {
+    addr: std::net::IpAddr,
+    prefix: u8,
+}
+
+impl IpNet {
+    /// True when `ip` falls inside this network (families must match).
+    pub fn contains(&self, ip: &std::net::IpAddr) -> bool {
+        match (self.addr, ip) {
+            (std::net::IpAddr::V4(net), std::net::IpAddr::V4(addr)) => {
+                let shift = 32 - self.prefix.min(32);
+                (u32::from(net) >> shift) == (u32::from(*addr) >> shift)
+            }
+            (std::net::IpAddr::V6(net), std::net::IpAddr::V6(addr)) => {
+                let shift = 128 - self.prefix.min(128);
+                (u128::from(net) >> shift) == (u128::from(*addr) >> shift)
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Loopback-only allowlist: the fail-closed default (first boot can
+/// still reach setup over localhost).
+pub fn loopback_allow_ips() -> Vec<IpNet> {
+    vec![
+        IpNet {
+            addr: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            prefix: 8,
+        },
+        IpNet {
+            addr: std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+            prefix: 128,
+        },
+    ]
+}
+
+/// Parse a comma-separated `admin.allow_ips` value: `203.0.113.0/24`,
+/// `2001:db8::/32`, or a bare IP (host route). Empty overall input
+/// is an error (unset means loopback, never "allow all").
+pub fn parse_allow_ips(csv: &str) -> std::result::Result<Vec<IpNet>, String> {
+    let mut out = Vec::new();
+    for part in csv.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (addr_text, prefix) = match part.split_once('/') {
+            Some((ip, len)) => {
+                let max = if ip.contains(':') { 128 } else { 32 };
+                let bits: u8 = len
+                    .trim()
+                    .parse()
+                    .map_err(|_| format!("admin.allow_ips: bad prefix in {part:?}"))?;
+                if bits > max {
+                    return Err(format!("admin.allow_ips: prefix out of range in {part:?}"));
+                }
+                (ip.trim(), bits)
+            }
+            None => {
+                let max = if part.contains(':') { 128 } else { 32 };
+                (part, max)
+            }
+        };
+        let addr: std::net::IpAddr = addr_text
+            .parse()
+            .map_err(|_| format!("admin.allow_ips: bad address in {part:?}"))?;
+        out.push(IpNet { addr, prefix });
+    }
+    if out.is_empty() {
+        return Err("admin.allow_ips: no usable entries".to_string());
+    }
+    Ok(out)
+}
+
 /// `Default` is exactly the old env-default boot (spec §2.1), so a
 /// fresh store behaves like the old binary with no env set.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1122,6 +1203,7 @@ pub struct RuntimeConfig {
     pub tls_client_ca: Option<String>,
     pub admin_mtls_off: bool,
     pub admin_require_cert: bool,
+    pub admin_allow_ips: Vec<IpNet>,
     pub media_terms_read: bool,
     pub acme_enabled: bool,
     pub acme_directory: String,
@@ -1185,6 +1267,7 @@ impl Default for RuntimeConfig {
             tls_client_ca: None,
             admin_mtls_off: false,
             admin_require_cert: false,
+            admin_allow_ips: loopback_allow_ips(),
             media_terms_read: false,
             acme_enabled: false,
             acme_directory: "prod".to_string(),
@@ -1623,6 +1706,30 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.admin_require_cert,
         )?;
+        // Fail closed: an unparsable allowlist locks the admin
+        // listener to loopback (with a loud warning), never to the
+        // previous value and never to the open internet.
+        match get_text_for_job(conn, kek, keys::ADMIN_ALLOW_IPS) {
+            Ok(None) => {}
+            Ok(Some(v)) if v.trim().is_empty() => {
+                warnings.push(format!(
+                    "{}: empty value; loopback only",
+                    keys::ADMIN_ALLOW_IPS
+                ));
+            }
+            Ok(Some(v)) => match parse_allow_ips(&v) {
+                Ok(nets) => cfg.admin_allow_ips = nets,
+                Err(e) => {
+                    warnings.push(format!("{e}; loopback only"));
+                    cfg.admin_allow_ips = loopback_allow_ips();
+                }
+            },
+            Err(ConfigError::BadValue(why)) => {
+                warnings.push(format!("{}: {why}; loopback only", keys::ADMIN_ALLOW_IPS));
+                cfg.admin_allow_ips = loopback_allow_ips();
+            }
+            Err(e) => return Err(e),
+        }
         overlay_bool(
             conn,
             kek,
@@ -1864,8 +1971,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_58_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 58);
+    fn registry_holds_59_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 59);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -1883,7 +1990,34 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (6, 42, 10));
+        assert_eq!(counts, (6, 43, 10));
+    }
+
+    #[test]
+    fn allow_ips_parses_ranges_hosts_and_v6() {
+        let nets = parse_allow_ips("203.0.113.0/24, 198.51.100.7, 2001:db8::/32").unwrap();
+        assert_eq!(nets.len(), 3);
+        let inside: std::net::IpAddr = "203.0.113.200".parse().unwrap();
+        let outside: std::net::IpAddr = "203.0.114.1".parse().unwrap();
+        assert!(nets.iter().any(|n| n.contains(&inside)));
+        assert!(!nets.iter().any(|n| n.contains(&outside)));
+        let host: std::net::IpAddr = "198.51.100.7".parse().unwrap();
+        let other: std::net::IpAddr = "198.51.100.8".parse().unwrap();
+        assert!(nets.iter().any(|n| n.contains(&host)));
+        assert!(!nets.iter().any(|n| n.contains(&other)));
+        // Families never cross-match.
+        let v6: std::net::IpAddr = "::ffff:203.0.113.200".parse().unwrap();
+        assert!(!nets[0].contains(&v6));
+        // Loopback default holds localhost only.
+        let local: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+        let lan: std::net::IpAddr = "192.168.1.2".parse().unwrap();
+        assert!(loopback_allow_ips().iter().any(|n| n.contains(&local)));
+        assert!(!loopback_allow_ips().iter().any(|n| n.contains(&lan)));
+        // Garbage fails closed (the loader warns + keeps loopback).
+        assert!(parse_allow_ips("").is_err());
+        assert!(parse_allow_ips(" , ").is_err());
+        assert!(parse_allow_ips("10.0.0.0/33").is_err());
+        assert!(parse_allow_ips("not-an-ip").is_err());
     }
 
     #[test]
@@ -1910,6 +2044,7 @@ mod runtime_tests {
         assert_eq!(cfg.tls_client_ca, None);
         assert!(!cfg.admin_mtls_off);
         assert!(!cfg.admin_require_cert);
+        assert_eq!(cfg.admin_allow_ips, loopback_allow_ips());
         assert!(!cfg.media_terms_read);
         assert!(!cfg.acme_enabled);
         assert_eq!(cfg.acme_directory, "prod");

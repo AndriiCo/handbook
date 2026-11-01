@@ -125,3 +125,4 @@
 | 218 | 2026-11-01 17:37Z | orders rows link to live submission detail | shots /orders+/order green |
 | 219 | 2026-11-01 17:39Z | cuj-lookup locator scoped to Fees (guide quotes facts) | plant gate red, local e2e green |
 | 220 | 2026-11-01 18:04Z | staging-green 5bb462a; ship blocked on unit drift | Run 8 9/10, root step listed |
+| 221 | 2026-11-01 18:25Z | admin mTLS out, IP allowlist in (allow_ips) | web 265, e2e 6, demo 3 green |

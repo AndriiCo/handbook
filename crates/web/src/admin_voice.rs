@@ -23,7 +23,7 @@ use voice::scripts::{MAX_QUESTION_CHARS, MAX_QUESTIONS};
 
 use crate::{
     AppState,
-    admin::{AdminAuth, admin_host_guard, csrf_guard, require_client_cert},
+    admin::{AdminAuth, admin_host_guard, csrf_guard, require_admin_ip},
     store_unavailable, unix_now,
 };
 
@@ -67,7 +67,7 @@ pub fn staff_router(state: AppState) -> Router {
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            require_client_cert,
+            require_admin_ip,
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -1178,7 +1178,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
-            admin_require_cert: false,
+            admin_allow_ips: config::loopback_allow_ips(),
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -1231,6 +1231,9 @@ mod tests {
         if method == "POST" {
             builder = builder.header("content-type", "application/json");
         }
+        builder = builder.extension(axum::extract::ConnectInfo(
+            "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+        ));
         builder
             .body(body.map_or_else(Body::empty, |v| Body::from(v.to_string())))
             .unwrap()
@@ -1854,7 +1857,6 @@ mod tests {
     async fn webhook_has_no_client_cert_layer() {
         let mut fx = fixture(webhook_config());
         fx.state.admin_mtls_off = false;
-        fx.state.admin_require_cert = true;
         seed_call(&fx);
         let body = event_body("wh-1", "call.answered", json!({"call_control_id": "leg-9"}));
         // Wrong key signs → 401 from the signature check, not 403

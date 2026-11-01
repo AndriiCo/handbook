@@ -242,3 +242,37 @@ green; (c) boot smoke on the target box.
   `web-stack.md` env-config sections (`STORE_PATH`/`BIND_ADDR`/
   `META_API_KEY`-in-env) to point at this spec. Left untouched
   as non-ops docs outside this stream's scope.
+
+## 8. Admin IP allowlist (replaces client-cert auth)
+
+Client certificates are no longer requested at the handshake and
+no longer checked anywhere: admin access is the session cookie +
+staff role + a peer IP in `admin.allow_ips` (DB key, Text,
+comma-separated CIDRs or bare host IPs, e.g.
+`203.0.113.0/24, 198.51.100.7, 2001:db8::/32`). Proxy headers are
+never trusted — the admin ports are reached directly, so the
+socket peer is the caller. No peer address fails closed.
+
+- Default (key unset): loopback only (`127.0.0.0/8`, `::1`), so
+  first boot can still reach setup over localhost.
+- Invalid value: warning + loopback only (fail closed, never the
+  previous value, never open).
+- Restart-required like every key (read-once at boot). Renders as
+  a text input in the generic admin config UI.
+- Changing it: `cargo xtask config-set --store <store> --kek-file
+  <kek> --key admin.allow_ips --type text --value "<cidrs>"`,
+  then restart. On production the store is `/var/lib/apostille`
+  (see the `ops-gp2-proposals.sh` KEK-staging pattern). Set the
+  range BEFORE the deploy lands (old binaries ignore the unknown
+  row; the new binary reads it at boot) — deploying with the
+  default locks every non-loopback admin out until it is set.
+- Denied callers get HTTP 403 naming their detected IP and this
+  section: `admin access is limited to the configured IP range
+  (admin.allow_ips) — your IP is <ip>; see "Admin IP allowlist"
+  in docs/specs/config-db.md to change it`.
+- Retired (kept as rows so existing DBs stay valid, never
+  consulted): `tls.client_ca_file` (warns when set),
+  `admin.require_cert`, and the cert half of `admin.mtls_off`
+  (the flag still gates the loopback-host and test-header dev
+  seams). Enrolment ceremonies no longer require a presented
+  cert; a presented live cert still binds when present.

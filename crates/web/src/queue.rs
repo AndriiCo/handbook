@@ -825,7 +825,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
-            admin_require_cert: false,
+            admin_allow_ips: config::loopback_allow_ips(),
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -891,6 +891,9 @@ mod tests {
         if method == "POST" {
             builder = builder.header("content-type", "application/json");
         }
+        builder = builder.extension(axum::extract::ConnectInfo(
+            "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+        ));
         builder
             .body(Body::from(body.map(|v| v.to_string()).unwrap_or_default()))
             .unwrap()

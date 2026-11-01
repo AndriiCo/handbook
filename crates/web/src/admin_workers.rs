@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use crate::{
     AppState,
-    admin::{AdminAuth, admin_host_guard, csrf_guard, require_client_cert},
+    admin::{AdminAuth, admin_host_guard, csrf_guard, require_admin_ip},
     store_unavailable, unix_now,
 };
 
@@ -72,7 +72,7 @@ pub fn router(state: AppState) -> Router {
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            require_client_cert,
+            require_admin_ip,
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -992,7 +992,7 @@ mod tests {
                 bus: crate::ws_bus::Bus::new(),
                 kek: None,
                 admin_mtls_off: true,
-                admin_require_cert: false,
+                admin_allow_ips: config::loopback_allow_ips(),
                 admin_spa_dir: dir.path().to_path_buf(),
                 media_terms_read: false,
                 label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -1081,6 +1081,9 @@ mod tests {
                 .header("origin", "http://localhost:3001")
                 .header(auth::CSRF_HEADER, "t");
         }
+        builder = builder.extension(axum::extract::ConnectInfo(
+            "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+        ));
         builder
             .body(body.map_or_else(Body::empty, |v| Body::from(v.to_string())))
             .unwrap()
@@ -1155,10 +1158,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn require_cert_gate_applies_to_merged_workers_routes() {
+    async fn require_ip_gate_applies_to_merged_workers_routes() {
         let mut fx = Fixture::new();
         fx.state.admin_mtls_off = false;
-        fx.state.admin_require_cert = true;
+        fx.state.admin_allow_ips = vec![];
         let (status, body) = json_body(
             fx.app()
                 .oneshot(authed_host(
@@ -1173,7 +1176,8 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(body["error"], "client cert required");
+        let msg = body["error"].as_str().unwrap();
+        assert!(msg.contains("admin.allow_ips"), "points at the key: {msg}");
     }
 
     #[tokio::test]
@@ -1184,6 +1188,9 @@ mod tests {
         let req = Request::builder()
             .uri(status_url)
             .header("host", "localhost")
+            .extension(axum::extract::ConnectInfo(
+                "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+            ))
             .body(Body::empty())
             .unwrap();
         let (status, _) = json_body(fx.app().oneshot(req).await.unwrap()).await;

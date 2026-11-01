@@ -135,21 +135,17 @@ pub async fn enrol_start(
             )
                 .into_response();
         };
-        let Some((fingerprint, presented_cn)) = super::admin::presented_cert_cn(
+        // No presented cert is fine (the IP gate covers the route);
+        // a presented one must still match the invitation.
+        let (fingerprint, presented_cn) = super::admin::presented_cert_cn(
             &headers,
             verified.as_ref().map(|ext| &ext.0),
             &state,
             &conn,
             now,
-        ) else {
-            passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "no cert");
-            return (
-                StatusCode::FORBIDDEN,
-                Json(json!({"error": "client cert required"})),
-            )
-                .into_response();
-        };
-        if presented_cn != cn {
+        )
+        .unwrap_or_default();
+        if !presented_cn.is_empty() && presented_cn != cn {
             passkey::audit_auth(
                 &conn,
                 now,
@@ -331,23 +327,16 @@ pub async fn enrol_finish(
             )
                 .into_response();
         }
-        // Cert recheck BEFORE consume (TOCTOU guard): a cert revoked
-        // between start and finish fails here without burning the
-        // invite.
-        let Some((fingerprint, presented_cn)) = super::admin::presented_cert_cn(
+        // No presented cert is fine (the IP gate covers the route);
+        // a presented one must still match before the invite burns.
+        let (fingerprint, presented_cn) = super::admin::presented_cert_cn(
             &headers,
             verified.as_ref().map(|ext| &ext.0),
             &state,
             &conn,
             now,
-        ) else {
-            passkey::audit_auth(&conn, now, "anonymous", "staff_enrol_refused", "no cert");
-            return (
-                StatusCode::FORBIDDEN,
-                Json(json!({"error": "client cert required"})),
-            )
-                .into_response();
-        };
+        )
+        .unwrap_or_default();
         // CN match BEFORE consume: a mismatch must not burn the
         // invite (an attacker holding another staffer's cert could
         // otherwise DoS the enrolment by burning it; without the
@@ -360,7 +349,7 @@ pub async fn enrol_finish(
             )
                 .into_response();
         };
-        if cn != presented_cn {
+        if !presented_cn.is_empty() && cn != presented_cn {
             passkey::audit_auth(
                 &conn,
                 now,
@@ -656,22 +645,17 @@ pub async fn login_finish(
         )
             .into_response();
     }
-    // Live-cert presence at finish (any live CN — user binding
-    // awaits OPEN-15); recorded in the login audit below.
-    let Some((fingerprint, _)) = super::admin::presented_cert_cn(
+    // Presented cert (if any — user binding awaits OPEN-15);
+    // recorded in the login audit below. No cert is required:
+    // session + listed peer IP admit.
+    let (fingerprint, _) = super::admin::presented_cert_cn(
         &headers,
         verified.as_ref().map(|ext| &ext.0),
         &state,
         &conn,
         now,
-    ) else {
-        passkey::audit_auth(&conn, now, &user_id, "staff_login_refused", "no cert");
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "client cert required"})),
-        )
-            .into_response();
-    };
+    )
+    .unwrap_or_default();
     let presented = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .encode(body.credential.get_credential_id());
     if store::credential_owner(&conn, &presented)
@@ -807,7 +791,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: Some(std::sync::Arc::new(config::Kek::generate())),
             admin_mtls_off: true,
-            admin_require_cert: false,
+            admin_allow_ips: config::loopback_allow_ips(),
             admin_spa_dir: std::path::PathBuf::from("test-admin-spa"),
             media_terms_read: false,
             label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -999,7 +983,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn enrol_start_cert_binding() {
+    async fn enrol_start_cert_optional() {
         let tmp = tempfile::tempdir().unwrap();
         let state = test_state(&tmp);
         let now = unix_now();
@@ -1011,11 +995,11 @@ mod tests {
         let app = crate::admin::router(state.clone());
         let body = format!(r#"{{"invite":"{INVITE}","display_name":"J"}}"#);
         let uri = "/apostille/api/v1/auth/passkey/enrol/start";
-        // No cert → 403.
+        // No cert → starts anyway (the IP gate covers the route).
         let (status, json, _) = json_of(app.clone().oneshot(post(uri, &body)).await.unwrap()).await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(json["error"], "client cert required");
-        // Wrong-CN cert → 403 mismatch.
+        assert_eq!(status, StatusCode::OK);
+        assert!(!json["challenge_id"].as_str().unwrap().is_empty());
+        // Wrong-CN cert → 403 mismatch (presented certs still bind).
         let (status, json, _) = json_of(
             app.clone()
                 .oneshot(with_cert(post(uri, &body), FP_OTHER))
@@ -1025,7 +1009,7 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         assert_eq!(json["error"], "certificate does not match invitation");
-        // Revoked cert → 403 required.
+        // Revoked cert is ignored (not live) → starts anyway.
         let conn = open(&state.store_root);
         auth::revoke_admin_cert(&conn, FP_JDOE, now).unwrap();
         drop(conn);
@@ -1036,7 +1020,7 @@ mod tests {
                 .unwrap(),
         )
         .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(status, StatusCode::OK);
     }
 
     #[tokio::test]
@@ -1258,7 +1242,9 @@ mod tests {
         .await;
         let challenge_id = start_json["challenge_id"].as_str().unwrap().to_string();
         let csrf = csrf_of(&start_cookies);
-        // Revoke between start and finish → 403 TOCTOU guard.
+        // Revoke between start and finish: the revoked cert is
+        // ignored (not live), so finish proceeds past the gate —
+        // never 403 — and the bogus credential fails the ceremony.
         let conn = open(&state.store_root);
         auth::revoke_admin_cert(&conn, FP_JDOE, now).unwrap();
         drop(conn);
@@ -1280,13 +1266,14 @@ mod tests {
                 .unwrap(),
         )
         .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        // Invite survives (cert failure precedes consume).
+        assert_ne!(status, StatusCode::FORBIDDEN);
+        // Invite burns on a past-the-gate attempt (consume precedes
+        // ceremony verify; a fresh invite is the recovery).
         let conn = open(&state.store_root);
         assert!(
             store::get_invite(&conn, &auth::login::token_hash(INVITE), unix_now())
                 .unwrap()
-                .is_some()
+                .is_none()
         );
     }
 
@@ -1567,7 +1554,9 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::GONE);
-        // No cert → 403 (finish requires a live cert).
+        // No cert → proceeds past the gate (certs decide nothing);
+        // unknown credential id → 404 re-register. The attempt
+        // consumed challenge-1 (take runs first), so re-seed below.
         let (status, _, _) = json_of(
             app.clone()
                 .oneshot(with_csrf(
@@ -1583,11 +1572,10 @@ mod tests {
                 .unwrap(),
         )
         .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(status, StatusCode::NOT_FOUND);
         // Unknown credential id → 404 re-register (state_json
-        // never parses — the 404 precedes verification). The
-        // no-cert attempt above consumed challenge-1 (take runs
-        // before the cert check), so re-seed for this leg.
+        // never parses — the 404 precedes verification). Re-seed
+        // for this leg.
         let conn = open(&state.store_root);
         store::store_challenge(
             &conn,

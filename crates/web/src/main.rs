@@ -15,6 +15,7 @@
 //! `auth` crate and the DEMO session stays until then.
 
 mod admin;
+mod admin_ip;
 mod admin_voice;
 mod admin_workers;
 mod approval;
@@ -197,14 +198,13 @@ struct AppState {
     store_root: PathBuf,
     bus: ws_bus::Bus,
     kek: Option<std::sync::Arc<config::Kek>>,
-    /// `admin.mtls_off` dev seam (DB config): skips the
-    /// client-cert requirement and allows loopback origins. Prod
-    /// runs strict (false); true refuses release boot.
+    /// `admin.mtls_off` dev seam (DB config): allows loopback
+    /// admin hosts and honors the test cert header. Prod runs
+    /// strict (false); true refuses release boot.
     admin_mtls_off: bool,
-    /// `admin.require_cert` (DB config): every admin-host request
-    /// (API, HTML, JS) must present a CA-verified client cert,
-    /// except the setup surface and the Telnyx webhook.
-    admin_require_cert: bool,
+    /// `admin.allow_ips` (DB config): parsed CIDR/host allowlist for
+    /// the admin listener. Session + staff role + listed IP, or 403.
+    admin_allow_ips: Vec<config::IpNet>,
     /// Admin SPA build dir (`paths.admin_spa_dir` DB key, default
     /// `web/build-admin`), served from the admin listener root with
     /// SPA fallback.
@@ -277,7 +277,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             bus: ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
-            admin_require_cert: false,
+            admin_allow_ips: config::loopback_allow_ips(),
             admin_spa_dir: PathBuf::from("test-admin-spa"),
             media_terms_read: false,
             label_cfg: p2_labels::LabelCfg::default(),
@@ -695,20 +695,23 @@ fn warn_unless_admin_san(cert_pem: &[u8]) {
     }
 }
 
-/// Single-443 listener TLS: the serving cert/key plus client-cert
-/// chain verification against `tls.client_ca_file` when set. No CA
-/// → plain TLS (strict mode then 403s for lack of a verified cert,
-/// as before). A set but unreadable/invalid CA refuses the boot —
-/// mTLS must never silently downgrade.
+/// Single-443 listener TLS: plain server TLS, no client-cert
+/// request. `tls.client_ca_file` is retired (admin auth is the
+/// `admin.allow_ips` IP allowlist now): a set key prints a loud
+/// warning and is otherwise ignored — never silently re-enabling
+/// cert prompts.
 fn load_admin_tls_from_pem(
     cert_pem: &[u8],
     key_pem: &[u8],
     ca_path: Option<&str>,
 ) -> Result<axum_server::tls_rustls::RustlsConfig, String> {
-    let ca_pem = ca_path
-        .map(|path| std::fs::read(path).map_err(|e| format!("read tls.client_ca_file={path}: {e}")))
-        .transpose()?;
-    let config = mtls::admin_server_config(cert_pem, key_pem, ca_pem.as_deref())?;
+    if ca_path.is_some() {
+        eprintln!(
+            "WARNING: tls.client_ca_file is retired — client certs are neither requested nor \
+             checked; admin access is gated by admin.allow_ips"
+        );
+    }
+    let config = mtls::admin_server_config(cert_pem, key_pem, None)?;
     Ok(axum_server::tls_rustls::RustlsConfig::from_config(
         std::sync::Arc::new(config),
     ))
@@ -716,18 +719,15 @@ fn load_admin_tls_from_pem(
 
 /// Hot-reload the admin config after an ACME renewal: rebuild the
 /// whole `ServerConfig` (rustls has no in-place cert swap on a
-/// custom-built config) and swap it in. Re-reads the CA file, so a
-/// rotated bundle takes effect at the next renewal with no restart.
+/// custom-built config) and swap it in. `ca_path` is accepted and
+/// ignored (see [`load_admin_tls_from_pem`]).
 fn reload_admin_tls(
     admin_tls: &axum_server::tls_rustls::RustlsConfig,
     cert_pem: &[u8],
     key_pem: &[u8],
-    ca_path: Option<&str>,
+    _ca_path: Option<&str>,
 ) -> Result<(), String> {
-    let ca_pem = ca_path
-        .map(|path| std::fs::read(path).map_err(|e| format!("read tls.client_ca_file={path}: {e}")))
-        .transpose()?;
-    let config = mtls::admin_server_config(cert_pem, key_pem, ca_pem.as_deref())?;
+    let config = mtls::admin_server_config(cert_pem, key_pem, None)?;
     admin_tls.reload_from_config(std::sync::Arc::new(config));
     Ok(())
 }
@@ -829,7 +829,7 @@ async fn main() {
     };
     if cfg.admin_mtls_off {
         eprintln!(
-            "WARNING: admin.mtls_off — admin listener skips client-cert auth (local dev only)"
+            "WARNING: admin.mtls_off — local-dev seams on (loopback admin hosts, test cert header; local dev only)"
         );
     }
     let state = AppState {
@@ -839,7 +839,7 @@ async fn main() {
         bus: ws_bus::Bus::new(),
         kek: Some(kek),
         admin_mtls_off: cfg.admin_mtls_off,
-        admin_require_cert: cfg.admin_require_cert,
+        admin_allow_ips: cfg.admin_allow_ips.clone(),
         admin_spa_dir: PathBuf::from(&cfg.admin_spa_dir),
         media_terms_read: cfg.media_terms_read,
         label_cfg: p2_labels::LabelCfg::from_values(&cfg.usps_base_url, cfg.usps_certified),
@@ -2655,7 +2655,7 @@ mod tests {
             bus: ws_bus::Bus::new(),
             kek: Some(std::sync::Arc::new(config::Kek::generate())),
             admin_mtls_off: true,
-            admin_require_cert: false,
+            admin_allow_ips: config::loopback_allow_ips(),
             admin_spa_dir: tmp.path().join("admin-spa"),
             media_terms_read: false,
             label_cfg: p2_labels::LabelCfg::default(),
@@ -2780,6 +2780,8 @@ mod tests {
         if method == "POST" || method == "PUT" {
             builder = builder.header("content-type", "application/json");
         }
+        // Test peers are loopback (the fixture allowlist holds it).
+        builder = builder.extension(ConnectInfo("127.0.0.1:443".parse::<SocketAddr>().unwrap()));
         builder.body(body).unwrap()
     }
 
@@ -3185,7 +3187,7 @@ mod tests {
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(json_body(res).await["role"], "staff");
 
-        // Revoked dev cert → 403 + audit.
+        // Revoked dev cert is ignored → 200 (certs decide nothing now).
         let store = Store::new(&fx.state.store_root);
         let conn = db::open(&store).unwrap();
         auth::issue_admin_cert(&conn, "fp-revoked", "alice", 100, 200, "").unwrap();
@@ -3209,9 +3211,10 @@ mod tests {
             .oneshot(Request::from_parts(parts, body))
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert_eq!(res.status(), StatusCode::OK);
 
-        // Strict mode without a cert → 403 (fail closed).
+        // Strict mode without a cert → 200 for a listed peer (fail open
+        // on certs is gone; the IP gate decides).
         let mut strict = fx.state.clone();
         strict.admin_mtls_off = false;
         let res = admin::router(strict)
@@ -3226,7 +3229,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -3585,6 +3588,7 @@ mod tests {
             .header(auth::CSRF_HEADER, "t")
             .header("origin", "https://admin.andrii.ai")
             .header("content-type", content_type)
+            .extension(ConnectInfo("127.0.0.1:443".parse::<SocketAddr>().unwrap()))
             .body(Body::from(body))
             .unwrap();
         let res = admin_router_for(&fx.state).oneshot(req).await.unwrap();
@@ -3620,6 +3624,7 @@ mod tests {
             .header(auth::CSRF_HEADER, "t")
             .header("origin", "https://admin.andrii.ai")
             .header("content-type", content_type)
+            .extension(ConnectInfo("127.0.0.1:443".parse::<SocketAddr>().unwrap()))
             .body(Body::from(body))
             .unwrap();
         let res = admin_router_for(&fx.state).oneshot(req).await.unwrap();
@@ -3922,7 +3927,7 @@ mod tests {
                 axum_server::from_tcp(listener)
                     .acceptor(mtls::MtlsAcceptor::new(tls))
                     .handle(handle)
-                    .serve(router.into_make_service())
+                    .serve(router.into_make_service_with_connect_info::<SocketAddr>())
                     .await
             }
         });
@@ -3994,7 +3999,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mtls_strict_known_good_cert_returns_200() {
+    async fn ip_gate_known_good_cert_returns_200() {
+        // A presented cert is simply ignored: session + listed IP admit.
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let (ca, ca_key) = test_ca("test-admin-ca");
@@ -4022,8 +4028,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mtls_strict_unknown_cert_returns_403() {
-        // CA-signed (passes the handshake) but never enrolled.
+    async fn ip_gate_unknown_cert_returns_200() {
+        // CA-signed (passes the handshake) but never enrolled:
+        // enrolment is no longer consulted, session + IP decide.
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let (ca, ca_key) = test_ca("test-admin-ca");
@@ -4043,13 +4050,14 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+        assert!(raw.starts_with("HTTP/1.1 200"), "got: {raw}");
         handle.shutdown();
         server.await.unwrap().unwrap();
     }
 
     #[tokio::test]
-    async fn mtls_strict_revoked_cert_returns_403() {
+    async fn ip_gate_revoked_cert_returns_200() {
+        // Revocation no longer gates access: session + listed IP decide.
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let (ca, ca_key) = test_ca("test-admin-ca");
@@ -4071,16 +4079,14 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+        assert!(raw.starts_with("HTTP/1.1 200"), "got: {raw}");
         handle.shutdown();
         server.await.unwrap().unwrap();
     }
 
     #[tokio::test]
-    async fn mtls_strict_missing_cert_returns_403() {
-        // No client cert: the handshake SUCCEEDS (presence is an app
-        // check, so the cert-less webhook keeps working) and strict
-        // mode answers an auditable 403.
+    async fn ip_gate_missing_cert_returns_200() {
+        // No client cert: session + listed loopback peer are enough.
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let (ca, _) = test_ca("test-admin-ca");
@@ -4099,28 +4105,62 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
-        assert!(raw.contains("client cert required"), "got: {raw}");
+        assert!(raw.starts_with("HTTP/1.1 200"), "got: {raw}");
         handle.shutdown();
         server.await.unwrap().unwrap();
     }
 
     #[tokio::test]
-    async fn mtls_wrong_ca_cert_fails_handshake() {
-        // Chained to a CA the server does not trust: dead at the
-        // handshake, before HTTP exists.
+    async fn ip_gate_unlisted_peer_returns_403_naming_ip() {
+        // Same session from an unlisted range: 403 names the peer IP
+        // and the config section that owns the range.
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let mut state = fx.state.clone();
+        state.admin_allow_ips =
+            config::parse_allow_ips("203.0.113.0/24").expect("test allowlist parses");
         let (ca, _) = test_ca("test-admin-ca");
+        let (addr, handle, server) = spawn_mtls_admin(
+            strict_admin_router(&state),
+            self_signed_localhost(),
+            Some(ca.pem().as_bytes()),
+        );
+        let raw = mtls_get(
+            addr,
+            &mtls_client_config(None),
+            "admin.andrii.ai",
+            Some(&staff_cookie()),
+            None,
+            "/apostille/api/v1/me",
+        )
+        .await
+        .unwrap();
+        assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+        assert!(raw.contains("127.0.0.1"), "names the peer: {raw}");
+        assert!(raw.contains("admin.allow_ips"), "points at the key: {raw}");
+        assert!(
+            raw.contains("docs/specs/config-db.md"),
+            "points at the docs: {raw}"
+        );
+        handle.shutdown();
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn ip_gate_wrong_ca_cert_ignored_returns_200() {
+        // Production no longer requests client certs (no CA): even a
+        // cert chained to an unknown CA is ignored, session + IP decide.
+        let fx = strict_fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let (other_ca, other_key) = test_ca("other-ca");
         let client = test_client(&other_ca, &other_key, "ops-1");
         enroll_cert(&fx.state.store_root, &client.fingerprint, "ops-1");
         let (addr, handle, server) = spawn_mtls_admin(
             strict_admin_router(&fx.state),
             self_signed_localhost(),
-            Some(ca.pem().as_bytes()),
+            None,
         );
-        let err = mtls_get(
+        let raw = mtls_get(
             addr,
             &mtls_client_config(Some(&client)),
             "admin.andrii.ai",
@@ -4129,19 +4169,16 @@ mod tests {
             "/apostille/api/v1/me",
         )
         .await
-        .expect_err("wrong-CA cert must fail the handshake");
-        assert!(
-            !err.starts_with("HTTP/"),
-            "got HTTP, want TLS failure: {err}"
-        );
+        .unwrap();
+        assert!(raw.starts_with("HTTP/1.1 200"), "got: {raw}");
         handle.shutdown();
         server.await.unwrap().unwrap();
     }
 
     #[tokio::test]
-    async fn mtls_strict_ignores_dev_cert_header() {
-        // A forwardable header must never authenticate a cert: the
-        // enrolled fingerprint arrives via header, no TLS cert — 403.
+    async fn ip_gate_ignores_dev_cert_header_returns_200() {
+        // The dev cert header never decides access: session + listed
+        // IP admit, with or without it.
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let (ca, ca_key) = test_ca("test-admin-ca");
@@ -4162,16 +4199,15 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+        assert!(raw.starts_with("HTTP/1.1 200"), "got: {raw}");
         handle.shutdown();
         server.await.unwrap().unwrap();
     }
 
     #[tokio::test]
-    async fn mtls_no_ca_configured_fails_closed() {
-        // No `tls.client_ca_file`: strict behaves as before the seam
-        // (403 for lack of a verified cert), with or without a
-        // client cert presented.
+    async fn ip_gate_no_ca_configured_returns_200() {
+        // No `tls.client_ca_file` (the production shape now): session
+        // + listed IP admit, with or without a client cert presented.
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let (ca, ca_key) = test_ca("test-admin-ca");
@@ -4193,7 +4229,7 @@ mod tests {
             )
             .await
             .unwrap();
-            assert!(raw.starts_with("HTTP/1.1 403"), "got: {raw}");
+            assert!(raw.starts_with("HTTP/1.1 200"), "got: {raw}");
         }
         handle.shutdown();
         server.await.unwrap().unwrap();
@@ -4254,25 +4290,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (cert_pem, key_pem) = self_signed_localhost();
         let (ca, _) = test_ca("test-admin-ca");
-        // Missing CA refuses the boot (never silently downgrades).
-        let err = load_admin_tls_from_pem(
+        // A set CA path loads anyway (retired key: warned, ignored).
+        let ca_path = dir.path().join("ca.pem");
+        std::fs::write(&ca_path, ca.pem().as_bytes()).unwrap();
+        load_admin_tls_from_pem(&cert_pem, &key_pem, Some(ca_path.to_str().unwrap()))
+            .expect("set CA path loads (retired)");
+        // Missing and empty CA paths load too — nothing reads them.
+        load_admin_tls_from_pem(
             &cert_pem,
             &key_pem,
             Some(dir.path().join("no-ca.pem").to_str().unwrap()),
         )
-        .expect_err("missing CA must fail");
-        assert!(err.contains("tls.client_ca_file"), "{err}");
-        assert!(!err.contains("BEGIN"), "{err}");
-        // Empty CA refuses too.
+        .expect("missing CA loads (retired)");
         let empty = dir.path().join("empty.pem");
         std::fs::write(&empty, b"").unwrap();
         load_admin_tls_from_pem(&cert_pem, &key_pem, Some(empty.to_str().unwrap()))
-            .expect_err("empty CA must fail");
-        // Full triple loads.
-        let ca_path = dir.path().join("ca.pem");
-        std::fs::write(&ca_path, ca.pem().as_bytes()).unwrap();
-        load_admin_tls_from_pem(&cert_pem, &key_pem, Some(ca_path.to_str().unwrap()))
-            .expect("valid triple loads");
+            .expect("empty CA loads (retired)");
         // No CA loads as plain TLS.
         load_admin_tls_from_pem(&cert_pem, &key_pem, None).expect("no-CA pair loads");
     }
@@ -4367,7 +4400,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn host_matrix_strict_cert_semantics() {
+    async fn host_matrix_ip_semantics() {
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let (ca, ca_key) = test_ca("strict-ca");
@@ -4386,9 +4419,10 @@ mod tests {
             )
         };
 
-        // Session but no cert → 403.
+        // Session but no cert → 200 (certs decide nothing; the
+        // loopback peer is listed).
         let res = router.clone().oneshot(admin_me()).await.unwrap();
-        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert_eq!(res.status(), StatusCode::OK);
 
         // Session + registered cert (as the acceptor would capture,
         // via the branch's own fingerprint layer) → 200, echoed.
@@ -4406,12 +4440,12 @@ mod tests {
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(json_body(res).await["cert_fingerprint"], client.fingerprint);
 
-        // Session + unknown cert → 403.
+        // Session + unknown cert → 200 (certs decide nothing).
         let mut req = admin_me();
         req.extensions_mut()
             .insert(mtls::PeerCertificates::from_ders(vec![vec![0x30, 0x03]]));
         let res = router.oneshot(req).await.unwrap();
-        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[test]
@@ -4699,7 +4733,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn quic_admin_branch_enforces_mtls_allow_and_deny() {
+    async fn quic_admin_branch_enforces_ip_allow_and_deny() {
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let (ca, ca_key) = test_ca("quic-admin-ca");
@@ -4716,7 +4750,8 @@ mod tests {
         let session_cookie = format!("{}=staff-1", auth::ADM_COOKIE);
         let admin_me = "/apostille/api/v1/me";
 
-        // DENY: staff session but no client cert → 403.
+        // ALLOW: staff session, no client cert — the loopback QUIC
+        // peer is listed, and certs decide nothing now.
         let (status, _) = h3_get(
             addr,
             quic_test_client_config(None),
@@ -4725,7 +4760,7 @@ mod tests {
             Some(&session_cookie),
         )
         .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(status, StatusCode::OK);
 
         // ALLOW: same session + registered client cert → 200, echoed.
         let identity = quic_identity_from_pem(&client.cert_pem, &client.key_pem);

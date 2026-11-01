@@ -73,17 +73,32 @@ group-read pre-step from this morning is done — A2 reads prove it.
    /tmp/apostille.service.new` (expect empty) and
    `systemctl is-active apostille`. Paste back: the first diff, the
    empty second diff, is-active. Monday 11-02 is the last code-deploy
-   day — this gates it. The builder then re-runs ship + deploy.
-2. Approvals — no script: open the admin `/review` with your client
-   certificate, accept every proposed fact EXCEPT 2 per slug (leave 2
+   day — this gates it. Then, BEFORE the deploy (old binaries
+   ignore the unknown row; the new binary reads it at boot), set
+   prod `admin.allow_ips` to cover the IP you approve from — the
+   default is loopback-only and would 403 you the moment the new
+   binary starts. As hal on the server (same KEK-staging pattern
+   as `ops-gp2-proposals.sh`: copy `/etc/apostille/handbook-kek`
+   to a mktemp dir, `trap` cleanup):
+   `/srv/apostille/current/xtask config-set --store
+   /var/lib/apostille --kek-file <staged-kek> --key
+   admin.allow_ips --type text --value "<your-ip-or-range>"`
+   (find your IP in any 403 message, or `curl ifconfig.me`).
+   Verify with the readback the command prints, then tell the
+   builder: it re-runs ship + deploy, and the new binary logs a
+   WARNING at boot if the value ever goes bad (loopback-only).
+2. Approvals — no script: open the admin `/review` (no client
+   cert needed anymore — session + your IP in `admin.allow_ips`;
+   do the allow_ips step inside item 1 first or you will 403),
+   accept every proposed fact EXCEPT 2 per slug (leave 2
    vietnam + 2 usa-wa-sos proposed for the video's approve scene).
    GP2-data needs >= 8 accepted each; currently vietnam 0/8,
    usa-wa-sos 1/8 (verified 16:15Z). This flips
    GP2-data, A1 and GP2-page. Paste back: accepted counts per slug.
-   Error guide (ships Sunday #3): "session missing or expired" means
-   log in again; "refused … client certificate" means the session is
-   fine but the browser didn't present your enrolled cert (check the
-   browser's certificate prompt for the admin host).
+   Error guide: "session missing or expired" means
+   log in again; `admin access is limited to the configured IP
+   range` names your detected IP — add it to `admin.allow_ips`
+   (item 1) and retry.
 3. One root step, then two hal runs (all staged, paste back each
    output). (a) As root: `bash ~/apostille/scripts/ops-rootless-access.sh`
    — re-run applies the group-write on `/var/lib/apostille` the first
@@ -96,8 +111,9 @@ group-read pre-step from this morning is done — A2 reads prove it.
    the quality.json lines. Flips A5; proposals feed item 2.
 4. S1: switch LICENSE to MIT, make the repo public, link the demo
    video in README (video lands 11-03). Video: record the production
-   admin approve scene yourself (needs your client cert; builder takes
-   desktop/mobile), upload to YouTube, paste the URL back.
+   admin approve scene yourself (session login from your allowlisted
+   IP, no cert; builder takes desktop/mobile), upload to YouTube,
+   paste the URL back.
    Full-history secret scan 11-01 ~16:20Z: clean (gitleaks 8.30.1,
    385 commits, no leaks; working-tree `secrets-scan` clean, 690 files).
    Scrub list: `docs/ops/scrub-list-2026-11-01.md` — 2 prompt files need

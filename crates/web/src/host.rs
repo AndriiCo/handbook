@@ -1,12 +1,13 @@
 //! Single-443 Host routing + Alt-Svc (goal-026, spec §1–§2.4).
 //!
 //! ONE TCP+TLS listener serves both branches: requests for the
-//! admin host go to the merged admin router (with the mTLS
-//! fingerprint layer); EVERYTHING else — public host, unknown
-//! host, missing host — goes to the public router. Unknown hosts
-//! fail open to the harmless branch: the admin branch keeps its
-//! own host guard + session + cert checks, so misrouting can
-//! never grant admin access.
+//! admin host go to the merged admin router (with the cert
+//! fingerprint layer, still stamped when a chain is presented);
+//! EVERYTHING else — public host, unknown host, missing host —
+//! goes to the public router. Unknown hosts fail open to the
+//! harmless branch: the admin branch keeps its own host guard +
+//! session + IP-allowlist checks, so misrouting can never grant
+//! admin access.
 //!
 //! The TLS handshake is shared (one cert pair, optional client
 //! certs), so the acceptor captures peer chains for every

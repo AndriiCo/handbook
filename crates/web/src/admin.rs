@@ -1,11 +1,11 @@
-//! Admin branch: Host guard, session + mTLS-cert auth, CSRF/Origin.
+//! Admin branch: Host guard, session + IP-allowlist auth, CSRF/Origin.
 //!
 //! Served on the single-443 TLS listener's admin Host branch (and —
 //! in prod — its own origin `https://admin.andrii.ai`, so no public
 //! JS can touch the admin session); plain-HTTP dev keeps a separate
 //! admin port. Every route here requires all of: the admin host, a
-//! staff/admin session, and (unless `admin.mtls_off` in local dev) a
-//! verified client cert. Mutations additionally require the Origin +
+//! staff/admin session, and a peer IP in `admin.allow_ips`.
+//! Mutations additionally require the Origin +
 //! double-submit CSRF checks.
 
 use axum::{
@@ -82,29 +82,17 @@ impl FromRequestParts<AppState> for AdminAuth {
         if !session.role.meets(auth::Role::Staff) {
             return Err(forbidden("staff role required"));
         }
-        // Cert: defense in depth — login alone is not enough.
-        let fingerprint = cert_fingerprint(parts, state);
-        match (state.admin_mtls_off, fingerprint.as_deref()) {
-            // Dev: no cert needed, but a presented one must validate.
-            (true, None) => {}
-            (true, Some(fp)) => {
-                if !cert_known_good(&conn, fp) {
-                    audit_cert(&conn, now, &session.user_id, fp, "admin_cert_rejected_dev");
-                    return Err(forbidden("client cert rejected"));
-                }
-            }
-            // Strict: the TLS seam must supply a known, live cert.
-            (false, Some(fp)) => {
-                if !cert_known_good(&conn, fp) {
-                    audit_cert(&conn, now, &session.user_id, fp, "admin_cert_rejected");
-                    return Err(forbidden("client cert required"));
-                }
-            }
-            (false, None) => {
-                audit_cert(&conn, now, &session.user_id, "", "admin_cert_missing");
-                return Err(forbidden("client cert required"));
-            }
+        // IP allowlist replaces the client-cert requirement: session +
+        // staff role + listed peer IP, or a 403 naming the detected IP
+        // and the config section that owns the range.
+        let peer = parts
+            .extensions
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+            .map(|info| info.0.ip());
+        if !crate::admin_ip::ip_allowed(&state.admin_allow_ips, peer) {
+            return Err(crate::admin_ip::denied_response(peer));
         }
+        let fingerprint = cert_fingerprint(parts, state);
         let _ = auth::touch_session(&conn, &session.id, now);
         Ok(AdminAuth {
             user: auth::AuthenticatedUser {
@@ -136,18 +124,10 @@ fn cert_fingerprint(parts: &Parts, state: &AppState) -> Option<String> {
     }
 }
 
-/// Known fingerprint whose cert is not revoked. Unknown DB errors
-/// fail closed (`false`).
-fn cert_known_good(conn: &rusqlite::Connection, fingerprint: &str) -> bool {
-    auth::admin_cert_valid(conn, fingerprint).unwrap_or(false)
-}
-
 /// Presented client cert for the ceremony handlers (spec §5.2):
 /// `(fingerprint, cn)` for a LIVE cert, else `None`. Strict mode
-/// reads the TLS extension only; dev also accepts the test header
-/// (validated, like `AdminAuth`). Unlike `cert_known_good` this
-/// enforces expiry too — never bind a fresh enrolment to a dead
-/// cert (the `AdminAuth` revoked-only gap is a SEC hardening item).
+/// reads the TLS extension only; dev also accepts the test header.
+/// Enforces expiry too — never bind a fresh enrolment to a dead cert.
 pub(crate) fn presented_cert_cn(
     headers: &axum::http::HeaderMap,
     verified: Option<&VerifiedClientCert>,
@@ -194,15 +174,6 @@ pub(crate) fn require_step_up(
         .is_some_and(|session| now - session.created_at <= window)
 }
 
-/// Audit a cert decision (fingerprint only — never key bytes).
-fn audit_cert(conn: &rusqlite::Connection, now: i64, actor: &str, fingerprint: &str, action: &str) {
-    let _ = conn.execute(
-        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
-         VALUES (?1, ?2, ?3, 'admin_cert', 0, ?4)",
-        rusqlite::params![now, actor, action, fingerprint],
-    );
-}
-
 /// Host guard: the admin host, or loopback hosts in local dev.
 pub async fn admin_host_guard(
     State(state): State<AppState>,
@@ -227,25 +198,22 @@ pub async fn admin_host_guard(
     next.run(req).await
 }
 
-/// Whole-host client-cert gate (`admin.require_cert`): every
-/// admin-branch request (API, HTML, JS) must carry a CA-verified
-/// client cert ([`VerifiedClientCert`], stamped outside these
-/// routers), except the setup surface (first boot has no certs:
-/// the setup API, the `/config` wizard page, and the hashed
-/// `/_app/` assets it needs) and the Telnyx webhook
+/// Whole-host IP gate (`admin.allow_ips`): every admin-branch
+/// request (API, HTML, JS) must arrive from a listed peer IP,
+/// except the setup surface (first boot is loopback-only by
+/// default: the setup API, the `/config` wizard page, and the
+/// hashed `/_app/` assets it needs) and the Telnyx webhook
 /// (server-to-server, signature-authenticated — its router
-/// carries no such layer by construction). Presence only:
-/// registration/revocation stay enforced per API route by
-/// [`AdminAuth`]. Denials are plain 403s (the access log keeps
-/// the ID/route; no audit row per asset fetch).
-pub async fn require_client_cert(
+/// carries no such layer by construction). Session + staff role
+/// stay enforced per API route by [`AdminAuth`]. Denials are 403s
+/// naming the detected IP and the config section that owns the
+/// range (the access log keeps the ID/route; no audit row per
+/// asset fetch).
+pub async fn require_admin_ip(
     State(state): State<AppState>,
     req: axum::http::Request<axum::body::Body>,
     next: Next,
 ) -> impl IntoResponse {
-    if !state.admin_require_cert || state.admin_mtls_off {
-        return next.run(req).await;
-    }
     let path = req.uri().path();
     if path.starts_with("/apostille/api/v1/setup/")
         || path == "/config"
@@ -253,16 +221,9 @@ pub async fn require_client_cert(
     {
         return next.run(req).await;
     }
-    let presented = req
-        .extensions()
-        .get::<VerifiedClientCert>()
-        .is_some_and(|cert| !cert.0.is_empty());
-    if !presented {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "client cert required"})),
-        )
-            .into_response();
+    let peer = crate::admin_ip::peer_ip(&req);
+    if !crate::admin_ip::ip_allowed(&state.admin_allow_ips, peer) {
+        return crate::admin_ip::denied_response(peer);
     }
     next.run(req).await
 }
@@ -422,7 +383,7 @@ pub fn router(state: AppState) -> Router {
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            require_client_cert,
+            require_admin_ip,
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -845,7 +806,7 @@ mod tests {
             bus: crate::ws_bus::Bus::new(),
             kek: None,
             admin_mtls_off: true,
-            admin_require_cert: false,
+            admin_allow_ips: config::loopback_allow_ips(),
             admin_spa_dir: tmp.path().to_path_buf(),
             media_terms_read: false,
             label_cfg: crate::p2_labels::LabelCfg::default(),
@@ -873,6 +834,9 @@ mod tests {
                 Request::builder()
                     .uri("/")
                     .header("host", "admin.andrii.ai")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -910,6 +874,9 @@ mod tests {
                 Request::builder()
                     .uri("/console")
                     .header("host", "admin.andrii.ai")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -929,6 +896,9 @@ mod tests {
                 Request::builder()
                     .uri("/mock/admin/config")
                     .header("host", "admin.andrii.ai")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -937,68 +907,87 @@ mod tests {
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
-    fn strict_cert_state(tmp: &tempfile::TempDir) -> AppState {
+    fn listed_ip_state(tmp: &tempfile::TempDir) -> AppState {
         let mut state = state_with_spa(tmp);
         state.admin_mtls_off = false;
-        state.admin_require_cert = true;
+        state.admin_allow_ips =
+            config::parse_allow_ips("203.0.113.0/24").expect("test allowlist parses");
         state
     }
 
-    fn cert_request(uri: &str, cert: Option<&str>) -> Request<Body> {
+    fn ip_request(uri: &str, ip: Option<&str>) -> Request<Body> {
         let mut req = Request::builder()
             .uri(uri)
             .header("host", "admin.andrii.ai")
             .body(Body::empty())
             .unwrap();
-        if let Some(fingerprint) = cert {
+        if let Some(ip) = ip {
+            let addr: std::net::SocketAddr = format!("{ip}:443").parse().unwrap();
             req.extensions_mut()
-                .insert(VerifiedClientCert(fingerprint.to_string()));
+                .insert(axum::extract::ConnectInfo(addr));
         }
         req
     }
 
     #[tokio::test]
-    async fn require_cert_denies_uncertified_page_and_api() {
+    async fn require_ip_denies_unlisted_page_and_api() {
         let tmp = tempfile::tempdir().unwrap();
-        let app = router(strict_cert_state(&tmp));
+        let app = router(listed_ip_state(&tmp));
         for uri in ["/console", "/apostille/api/v1/me"] {
-            let res = app.clone().oneshot(cert_request(uri, None)).await.unwrap();
+            let res = app
+                .clone()
+                .oneshot(ip_request(uri, Some("198.51.100.9")))
+                .await
+                .unwrap();
             assert_eq!(res.status(), StatusCode::FORBIDDEN, "uri: {uri}");
-            let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+            let body = axum::body::to_bytes(res.into_body(), 2048).await.unwrap();
             let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-            assert_eq!(v["error"], "client cert required");
+            let msg = v["error"].as_str().unwrap();
+            assert!(msg.contains("198.51.100.9"), "names the peer: {msg}");
+            assert!(msg.contains("admin.allow_ips"), "points at the key: {msg}");
+            assert!(
+                msg.contains("docs/specs/config-db.md"),
+                "points at the docs: {msg}"
+            );
         }
+        // Unknown peer (no ConnectInfo) fails closed too.
+        let res = app.oneshot(ip_request("/console", None)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
-    async fn require_cert_allows_verified_client() {
+    async fn require_ip_allows_listed_peer() {
         let tmp = tempfile::tempdir().unwrap();
-        let app = router(strict_cert_state(&tmp));
-        // Page serves the shell once a cert is presented.
+        let app = router(listed_ip_state(&tmp));
+        // Page serves the shell once the peer is listed.
         let res = app
             .clone()
-            .oneshot(cert_request("/console", Some("fingerprint")))
+            .oneshot(ip_request("/console", Some("203.0.113.44")))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         // API passes the gate too (then AdminAuth 401s the missing session).
         let res = app
-            .oneshot(cert_request("/apostille/api/v1/me", Some("fingerprint")))
+            .oneshot(ip_request("/apostille/api/v1/me", Some("203.0.113.44")))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
-    async fn require_cert_exempts_setup_and_assets() {
+    async fn require_ip_exempts_setup_and_assets() {
         let tmp = tempfile::tempdir().unwrap();
-        let app = router(strict_cert_state(&tmp));
+        let app = router(listed_ip_state(&tmp));
         for uri in [
             "/apostille/api/v1/setup/status",
             "/config",
             "/_app/immutable/x.js",
         ] {
-            let res = app.clone().oneshot(cert_request(uri, None)).await.unwrap();
+            let res = app
+                .clone()
+                .oneshot(ip_request(uri, Some("198.51.100.9")))
+                .await
+                .unwrap();
             assert_eq!(res.status(), StatusCode::OK, "uri: {uri}");
         }
     }
