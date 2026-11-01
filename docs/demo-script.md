@@ -1,30 +1,22 @@
-# Demo script (175 s, 3-minute hackathon video)
+# Demo script — 175 s, stranger to quality number
 
-Story: a stranger finds Viet Nam → quote-verified facts → Muse Spark
-drafts a change from a new capture, quote checked → the operator approves
-in `/review` → the page updates live → a phone photo passes SAM 3.1 +
-Spark precheck → the quality number. Public segments record against
-production (`DEMO_BASE_URL`); the admin approve scene is recorded by the
-operator (client certificate) against the local admin build with fixtures
-until the staging key lands, then against staging.
+Public segments: recorded by the builder (`npm --prefix web run demo`
+with `DEMO_BASE_URL=https://andrii.ai/apostille`, `DEMO_CAPTIONS=1`).
+Admin approve scene: recorded by the operator (needs their client
+certificate) and uploaded to YouTube. Captions below are the
+`DEMO_CAPTIONS` lines.
 
-Production data needed before recording day: vietnam + usa-wa-sos seeded
-with accepted facts; **two proposals per slug left unapproved** for the
-approve scene; one fresh capture queued for the draft scene; A2 verdicts
-recorded; a same-week eval run for the quality number.
+| # | Time | Scene (URL) | What happens | Needs on production |
+|---|------|-------------|--------------|---------------------|
+| 1 | 0:00–0:20 | Home `/apostille` | Stranger types "Viet Nam" in the command search, picks the dossier. Caption: "Find your apostille authority in seconds" | Authority index live (done) |
+| 2 | 0:20–0:55 | Dossier `/apostille/authority/vietnam` | Scrolls topics, opens "View quote" on a fact: exact quote, source domain, retrieved date. Caption: "Every fact shows its quote, source and date" | ≥ 1 accepted fact with a verified quote (open: approvals) |
+| 3 | 0:55–1:20 | Review `/review` (admin) | A Spark-drafted fact sits proposed beside its capture quote. Caption: "Muse Spark drafts from a new capture, quote checked" | 2 proposed facts per slug left unapproved (operator keeps 2 back during approvals) |
+| 4 | 1:20–1:45 | Approve → dossier live | Operator clicks Accept; the dossier's evidence ledger gains a verified entry over WS. Caption: "A human approves — the dossier updates live" | Same queue as scene 3 |
+| 5 | 1:45–2:25 | Precheck `/precheck` (390px) | Phone photo of a synthetic sample; SAM boxes trace, verdict "Retake" with reasons. Caption: "Photo precheck before you order" | A2 recordings (done: pass/retake/retake) |
+| 6 | 2:25–2:55 | Home quality chip `/apostille` | Eyebrow chip: verified-quote rate with model. Caption: "Most drafts carry a verified quote — Muse Spark" | Fresh eval run ≤ 72 h (open: A5 re-run after Sunday #3) |
 
-| # | Scene | URL | Data needed | s | Caption |
-|---|-------|-----|-------------|---|---------|
-| 1 | Stranger finds Viet Nam | `/apostille` | 3+ authorities indexed | 20 | "Find any apostille authority in one search." |
-| 2 | Quote-verified dossier | `/apostille/authority/vietnam` | ≥8 accepted facts w/ quotes | 30 | "Every fact carries its source quote." |
-| 3 | Spark drafts from a new capture | `/review` (queue) or trace | 1 fresh capture, Spark draft | 30 | "Muse Spark drafts; the quote must be on the page." |
-| 4 | Operator approves (admin) | `/review` | 2 unapproved proposals/slug | 30 | "A human approves — nothing goes live alone." |
-| 5 | Page updates live | `/apostille/authority/vietnam` | WS `authority:vietnam` | 15 | "The dossier updates while you watch." |
-| 6 | Phone photo precheck | `/apostille/precheck` | A2 verdicts recorded | 30 | "SAM 3.1 reads the photo; Spark judges." |
-| 7 | Quality number | `/apostille` | eval run ≤72 h | 20 | "88% of drafts carry a verified quote." |
+Total: 20 + 35 + 25 + 25 + 40 + 30 = 175 s.
 
-Total: 20+30+30+30+15+30+20 = 175 s. Captions via `DEMO_CAPTIONS=1`
-(`web/e2e/demo.spec.mjs`, `npm --prefix web run demo`): 1440x900
-`recordVideo` into `web/shots/demo/` at `slowMo` 250, plus a 390x844
-pass over the public scenes. Done = desktop run 150–175 s, zero
-console errors, no banned strings.
+Fixture gate (`npm run demo`, no base URL) is green on 2026-11-01:
+desktop + admin + mobile, 3/3, zero console errors. The live take
+against production waits on the two "open" rows above.
