@@ -130,3 +130,11 @@ DB copies — ever. Alias only, never a username, IP or key.
   `Origin: https://admin.andrii.ai`, `hb_csrf`/`x-csrf` double-submit.
   Reverted after (session revoked, seam false, release binary back).
   Tunnel still the surviving pre-existing forward.
+
+## Run 5 (2026-11-01, 69ca7fa) — 9/10 kept, usage end to end
+- `RunReport.usage` (input/output tokens, retry included; zero on
+  skipped paths) flows into `run_finished` events, `draft-runs/{id}`
+  state and the trace button label. Proved by a runner usage assertion
+  (BadTopicClient {1,1} rides along on the rejected path) — no new
+  live call spent (staging run 1 already gave model + 27 s + 2/0).
+- Staging exact at 69ca7fa, release binary, rescore 9/10 (only S1 red).

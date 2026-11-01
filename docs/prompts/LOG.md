@@ -83,3 +83,4 @@
 | 175 | 2026-11-01 08:20Z | gate fail: dead fn + test module order | strict clippy clean |
 | 176 | 2026-11-01 08:35Z | gate fmt newline fix | fmt --check clean |
 | 177 | 2026-11-01 09:00Z | RunReport usage to draft events | strict clippy/tests green |
+| 178 | 2026-11-01 09:20Z | staging run 5 log on usage SHA | 9/10 kept |
