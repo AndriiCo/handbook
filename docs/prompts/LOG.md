@@ -77,3 +77,4 @@
 | 169 | 2026-11-01 05:45Z | GP2-page ledger key crash on conflict cliques | fix + test, check/build green |
 | 170 | 2026-11-01 06:05Z | GP3 passkey above fold on mobile | form-first reorder, check/build green |
 | 171 | 2026-11-01 06:15Z | demo live base double-prefix fix | fixture+live 3/3 green |
+| 172 | 2026-11-01 06:35Z | finding-5 verify + staging 9/10 keep | ship-release exists, rescore green |

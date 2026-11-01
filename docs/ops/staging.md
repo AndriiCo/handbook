@@ -109,3 +109,9 @@ DB copies — ever. Alias only, never a username, IP or key.
 - P169 (edcfb84): `seedLedgerEvents` in handbook.js, parent-qualified
   conflict ids + clique regression test. SPA rebuilt, no restart needed.
   `--only GP2-page`: PASS (8 facts visible, live WS).
+- P170 (088565c): login form-first on mobile → `--only GP3` PASS; full
+  rescore 9/10 (only S1 red). P171 (7aa591a): demo spec live-base fix —
+  fixture demo 3/3, live demo vs staging 3/3 (first real live take; prior
+  live runs doubled /apostille and passed vacuously). Staging tree exact
+  at 7aa591a (xfer ref; SPA rebuild unneeded — web/src identical).
+  LIVE for demo: `DEMO_BASE_URL=http://127.0.0.1:18318/apostille`.
