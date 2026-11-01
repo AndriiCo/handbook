@@ -319,6 +319,15 @@ pub struct DraftOutcome {
     output_tokens: u32,
 }
 
+/// Sealed `meta.base_url` when sealed config loads and names one,
+/// else `None` (the caller falls back to the compiled default).
+/// Key handling is untouched: this only reads the URL.
+fn sealed_base_url(conn: &rusqlite::Connection, kek: Option<&config::Kek>) -> Option<String> {
+    let kek = kek?;
+    let (cfg, _warnings) = config::RuntimeConfig::load(conn, kek).ok()?;
+    (!cfg.meta_base_url.is_empty()).then(|| cfg.meta_base_url.clone())
+}
+
 /// Live model client: `$META_API_KEY` first (staging, one-shot runs),
 /// else the admin-sealed `meta.api_key`. Fails closed — never the stub.
 fn live_client(
@@ -328,10 +337,9 @@ fn live_client(
     if let Ok(key) = std::env::var("META_API_KEY")
         && !key.is_empty()
     {
-        return Ok(handbook_agent::model::MetaRestClient::new(
-            handbook_agent::model::META_BASE_URL.to_string(),
-            key,
-        ));
+        let base = sealed_base_url(conn, kek)
+            .unwrap_or_else(|| handbook_agent::model::META_BASE_URL.to_string());
+        return Ok(handbook_agent::model::MetaRestClient::new(base, key));
     }
     let Some(kek) = kek else {
         return Err("meta api key not configured".to_string());
@@ -346,8 +354,13 @@ fn live_client(
     if key.as_str().is_empty() {
         return Err("meta api key not configured".to_string());
     }
+    let base = if cfg.meta_base_url.is_empty() {
+        handbook_agent::model::META_BASE_URL.to_string()
+    } else {
+        cfg.meta_base_url
+    };
     Ok(handbook_agent::model::MetaRestClient::new(
-        handbook_agent::model::META_BASE_URL.to_string(),
+        base,
         key.as_str().to_string(),
     ))
 }
@@ -381,6 +394,38 @@ mod tests {
         assert_eq!(done.model, "muse-spark-1.3");
         assert_eq!((done.input_tokens, done.output_tokens), (100, 50));
         assert!(runs.get(999).is_none());
+    }
+
+    #[test]
+    fn sealed_base_url_prefers_sealed_value() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        config::migrate_config_tables(&conn).unwrap();
+        let kek = config::Kek::generate();
+        // Fresh store: sealed load yields the compiled default.
+        assert_eq!(
+            sealed_base_url(&conn, Some(&kek)),
+            Some(handbook_agent::model::META_BASE_URL.to_string())
+        );
+        // A sealed custom value wins.
+        config::set_value(
+            &conn,
+            &kek,
+            &config::SetValue {
+                version: 1,
+                key: config::keys::META_BASE_URL,
+                key_type: config::ConfigType::Text,
+                plaintext: b"https://meta-stub.test",
+                now: 1,
+                actor: "test",
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            sealed_base_url(&conn, Some(&kek)),
+            Some("https://meta-stub.test".to_string())
+        );
+        // No sealed access: the caller falls back to the default.
+        assert_eq!(sealed_base_url(&conn, None), None);
     }
 
     #[test]

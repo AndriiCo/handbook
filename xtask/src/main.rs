@@ -503,10 +503,15 @@ pub(crate) fn live_client(conn: &rusqlite::Connection) -> handbook_agent::model:
         && !key.is_empty()
     {
         eprintln!("analyze: using $META_API_KEY");
-        return handbook_agent::model::MetaRestClient::new(
-            handbook_agent::model::META_BASE_URL.to_string(),
-            key,
-        );
+        // Honor the sealed `meta.base_url` when sealed config loads;
+        // the key still comes from the environment either way.
+        let base = sealed_config::load_kek()
+            .ok()
+            .and_then(|(kek, _)| sealed_config::RuntimeConfig::load(conn, &kek).ok())
+            .map(|(cfg, _)| cfg.meta_base_url)
+            .filter(|url| !url.is_empty())
+            .unwrap_or_else(|| handbook_agent::model::META_BASE_URL.to_string());
+        return handbook_agent::model::MetaRestClient::new(base, key);
     }
     let (kek, _source) = sealed_config::load_kek().unwrap_or_else(|e| {
         eprintln!("analyze: {e}");
