@@ -90,3 +90,5 @@
 | 182 | 2026-11-01 14:35Z | staging run 6 on scripts-move SHA | 9/10 + demo 3/3 |
 | 184 | 2026-11-01 15:40Z | F2 transcribe request+audio parts, WAV guards, terms gate | media+atlas green, live pending |
 | 185 | 2026-11-01 16:10Z | F3 flat Responses text.format, refusals, incomplete | atlas 41 green, live pending |
+| 186 | 2026-11-01 16:40Z | F3 live probe budget 512 (reasoning eats cap) | live 2/2, flat format accepted |
+| 187 | 2026-11-01 17:20Z | F4 SAM bare phrases, grammar parse, redact rewrite | media green, recorder proof next |

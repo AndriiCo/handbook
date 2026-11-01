@@ -18,10 +18,11 @@ use crate::transport::{HttpResponse, HttpTransport, TransportError};
 /// Meta Models API base (meta-api.md).
 pub const META_API_BASE: &str = "https://api.meta.ai/v1";
 
-/// SAM-on-API request path. The overview confirms SAM 3.1 is on the
-/// Model API with text prompts; the exact path + JSON shape get
-/// pinned against dev.meta.ai at integration time.
-pub const SAM_PATH: &str = "/v1/sam/segment";
+/// SAM 3.1 runs on the Responses endpoint: one call carries the prompt
+/// plus the image, and streams a box and a mask per object
+/// (sam/segmenting in the Meta docs). The old `/v1/sam/segment` path
+/// never existed — joining it onto the `/v1` base produced `/v1/v1/…`.
+pub const SAM_PATH: &str = "/responses";
 
 /// SAM model version recorded on every derivative.
 pub const SAM_MODEL_VERSION: &str = "sam-3.1";
@@ -48,6 +49,9 @@ impl RedactTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RedactBox {
     pub target: RedactTarget,
+    /// SAM object id of the record this box came from (stable within
+    /// one response; ids are sparse, never positional).
+    pub object_id: u32,
     pub x: f32,
     pub y: f32,
     pub w: f32,
@@ -136,15 +140,27 @@ impl<T: HttpTransport> MetaSamClient<T> {
         }
     }
 
-    /// Request body: model + base64 image + text prompts. Shape is
-    /// pinned against dev.meta.ai at integration time.
-    pub fn request_body(image: &[u8], targets: &[RedactTarget]) -> Value {
+    /// Request body for one concept: model + one bare noun phrase in
+    /// `input_text` + the image in `input_image` (sam/segmenting).
+    /// Concept prompts name one thing per request — lists return zero
+    /// matches — so callers send one body per target.
+    pub fn request_body(prompt: &str, image: &[u8]) -> Value {
         use base64::Engine as _;
-        let prompts: Vec<&str> = targets.iter().map(|t| t.prompt()).collect();
         json!({
             "model": SAM_MODEL_VERSION,
-            "imageBase64": base64::engine::general_purpose::STANDARD.encode(image),
-            "prompts": prompts,
+            "input": [{
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image",
+                     "image_url": format!("data:{};base64,{}",
+                        image_mime(image),
+                        base64::engine::general_purpose::STANDARD.encode(image))},
+                ],
+            }],
+            "stream": false,
+            "metadata": {"include_confidence": "true"},
         })
     }
 }
@@ -165,20 +181,36 @@ impl<T: HttpTransport> Redactor for MetaSamClient<T> {
                 message: "meta api key is not configured".to_string(),
             });
         };
+        // One bare noun phrase per request; merge the matches.
         let url = format!("{}{SAM_PATH}", self.base_url);
-        let response =
-            self.transport
-                .post_json(&url, bearer, &Self::request_body(image, targets))?;
-        check_ok(&response)?;
-        let json: Value = serde_json::from_slice(&response.body)
-            .map_err(|e| RedactError::BadResponse(e.to_string()))?;
-        let boxes = parse_boxes(&json)?;
+        let mut boxes = Vec::new();
+        for target in targets {
+            let response = self.transport.post_json(
+                &url,
+                bearer,
+                &MetaSamClient::<T>::request_body(target.prompt(), image),
+            )?;
+            check_ok(&response)?;
+            let json: Value = serde_json::from_slice(&response.body)
+                .map_err(|e| RedactError::BadResponse(e.to_string()))?;
+            boxes.extend(parse_segmentation(&json, *target)?);
+        }
         Ok(Redaction {
             input_sha: image_sha.to_string(),
             model_version: SAM_MODEL_VERSION.to_string(),
             boxes,
             exif_stripped: true,
         })
+    }
+}
+
+/// Data-URL MIME sniff: PNG magic wins, JPEG SOI second, otherwise
+/// JPEG (the service sniffs content; the label only routes decoding).
+fn image_mime(image: &[u8]) -> &'static str {
+    if image.starts_with(b"\x89PNG\r\n\x1a\n") {
+        "image/png"
+    } else {
+        "image/jpeg"
     }
 }
 
@@ -193,29 +225,196 @@ fn check_ok(response: &HttpResponse) -> Result<(), RedactError> {
     })
 }
 
-fn parse_boxes(json: &Value) -> Result<Vec<RedactBox>, RedactError> {
-    let items = json
-        .get("boxes")
-        .or_else(|| json.get("masks"))
+/// Collect the `output_text` lane of a Responses answer.
+fn output_text(json: &Value) -> String {
+    json.get("output")
         .and_then(Value::as_array)
-        .ok_or_else(|| RedactError::BadResponse("no boxes in sam answer".to_string()))?;
-    let mut boxes = Vec::with_capacity(items.len());
-    for item in items {
-        let target = match item.get("label").and_then(Value::as_str).unwrap_or("") {
-            "license plate" | "license_plate" | "plate" => RedactTarget::LicensePlate,
-            _ => RedactTarget::Face,
-        };
-        let number = |key: &str| item.get(key).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-        boxes.push(RedactBox {
-            target,
-            x: number("x"),
-            y: number("y"),
-            w: number("w"),
-            h: number("h"),
-            score: number("score"),
-        });
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("content")?.as_array())
+                .flatten()
+                .filter(|block| block.get("type").and_then(Value::as_str) == Some("output_text"))
+                .filter_map(|block| block.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default()
+}
+
+/// Parse a SAM 3.1 segmentation answer into boxes for `target`.
+///
+/// Reads the documented token grammar
+/// (`<Nf>id<|box;x1;y1;x2;y2;w;h[;c]|><|mask;…|>,…`): box corners are
+/// source pixels, normalized by the record's own `w`/`h`; records key
+/// by object id, never by position. An empty lane (zero matches) is a
+/// normal result, not an error. `incomplete` and refusals are errors.
+fn parse_segmentation(json: &Value, target: RedactTarget) -> Result<Vec<RedactBox>, RedactError> {
+    if json
+        .get("output")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items.iter().flat_map(|item| {
+                item.get("content")
+                    .and_then(Value::as_array)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[])
+            })
+        })
+        .is_some_and(|mut blocks| {
+            blocks.any(|b| b.get("type").and_then(Value::as_str) == Some("refusal"))
+        })
+    {
+        return Err(RedactError::BadResponse(
+            "sam refused the request".to_string(),
+        ));
     }
-    Ok(boxes)
+    match json.get("status").and_then(Value::as_str) {
+        Some("completed") | None => {}
+        Some("incomplete") => {
+            return Err(RedactError::BadResponse(
+                "sam response incomplete (truncated)".to_string(),
+            ));
+        }
+        Some(other) => {
+            return Err(RedactError::BadResponse(format!("sam status: {other}")));
+        }
+    }
+    let text = output_text(json);
+    Ok(parse_records(&text, target))
+}
+
+/// One grammar record: object id + normalized box + score.
+#[derive(Debug, Clone, PartialEq)]
+struct SamRecord {
+    object_id: u32,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    score: f32,
+    has_mask: bool,
+}
+
+/// Scan `output_text` lines for box records. Fields parse by key, so
+/// tokens read the same with or without confidence `c`.
+fn parse_records(text: &str, target: RedactTarget) -> Vec<RedactBox> {
+    let mut boxes = Vec::new();
+    for line in text.lines() {
+        let mut rest = line.trim();
+        // Frame marker `<Nf>` opens the line; frames never feed boxes.
+        if let Some(end) = rest.strip_prefix('<').and_then(|r| r.find('>')) {
+            rest = rest[end + 1..].trim_start();
+        }
+        for record in split_records(rest) {
+            if let Some(parsed) = parse_record(record)
+                && parsed.w > 0.0
+                && parsed.h > 0.0
+            {
+                boxes.push(RedactBox {
+                    target,
+                    object_id: parsed.object_id,
+                    x: parsed.x,
+                    y: parsed.y,
+                    w: parsed.w,
+                    h: parsed.h,
+                    score: parsed.score,
+                });
+            }
+        }
+    }
+    boxes
+}
+
+/// Split a frame line into `id<|box;…|>…` records. Mask payloads are
+/// base85 and may hold commas and `>`, so records anchor on the
+/// box-token opener with the object id scanned backwards from it —
+/// never on comma or bracket splits.
+fn split_records(line: &str) -> Vec<&str> {
+    let bytes = line.as_bytes();
+    let mut box_at = Vec::new();
+    let mut cursor = 0;
+    while let Some(found) = line[cursor..].find("<|box;") {
+        box_at.push(cursor + found);
+        cursor += found + 6;
+    }
+    // Start of the record owning the box token at `box_pos`: the
+    // run of digits (the object id) right before it.
+    fn record_start(bytes: &[u8], box_pos: usize) -> usize {
+        let mut end = box_pos;
+        while end > 0 && (bytes[end - 1].is_ascii_whitespace() || bytes[end - 1] == b',') {
+            end -= 1;
+        }
+        let mut start = end;
+        while start > 0 && bytes[start - 1].is_ascii_digit() {
+            start -= 1;
+        }
+        start
+    }
+    box_at
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &pos)| {
+            let start = record_start(bytes, pos);
+            if start == pos {
+                return None;
+            }
+            let end = box_at
+                .get(i + 1)
+                .map(|&next| record_start(bytes, next))
+                .unwrap_or(line.len());
+            if end <= start {
+                return None;
+            }
+            Some(&line[start..end])
+        })
+        .collect()
+}
+
+/// Parse one `id<|box;x1=..;…|><|mask;…|>` record.
+fn parse_record(record: &str) -> Option<SamRecord> {
+    let (id_part, box_part) = record.split_once("<|box;")?;
+    let object_id: u32 = id_part.trim().trim_start_matches(',').trim().parse().ok()?;
+    let inner = box_part.split_once("|>")?.0;
+    let mut x1 = None;
+    let mut y1 = None;
+    let mut x2 = None;
+    let mut y2 = None;
+    let mut w = None;
+    let mut h = None;
+    let mut score = 1.0f32;
+    for field in inner.split(';') {
+        let (key, value) = field.split_once('=')?;
+        match key.trim() {
+            "x1" => x1 = value.trim().parse().ok(),
+            "y1" => y1 = value.trim().parse().ok(),
+            "x2" => x2 = value.trim().parse().ok(),
+            "y2" => y2 = value.trim().parse().ok(),
+            "w" => w = value.trim().parse().ok(),
+            "h" => h = value.trim().parse().ok(),
+            "c" => {
+                if let Ok(c) = value.trim().parse::<f32>() {
+                    score = c;
+                }
+            }
+            _ => {}
+        }
+    }
+    let (x1, y1, x2, y2, w, h): (f32, f32, f32, f32, f32, f32) = (x1?, y1?, x2?, y2?, w?, h?);
+    if w <= 0.0 || h <= 0.0 || x2 < x1 || y2 < y1 {
+        return None;
+    }
+    let after_box = box_part.split_once("|>")?.1;
+    let has_mask = after_box.trim_start().starts_with("<|mask;");
+    Some(SamRecord {
+        object_id,
+        x: x1 / w,
+        y: y1 / h,
+        w: (x2 - x1) / w,
+        h: (y2 - y1) / h,
+        score,
+        has_mask,
+    })
 }
 
 /// Deterministic offline redactor for tests, CI, and `dev-seed`: one
@@ -238,6 +437,7 @@ impl Redactor for StubRedactor {
             model_version: "stub-sam-0".to_string(),
             boxes: vec![RedactBox {
                 target,
+                object_id: 0,
                 x: 0.25,
                 y: 0.25,
                 w: 0.5,
@@ -257,7 +457,7 @@ mod tests {
     pub(crate) struct StubTransport {
         pub(crate) response: RefCell<HttpResponse>,
         pub(crate) last_url: RefCell<String>,
-        pub(crate) last_body: RefCell<Value>,
+        pub(crate) bodies: RefCell<Vec<Value>>,
     }
 
     impl StubTransport {
@@ -268,7 +468,7 @@ mod tests {
                     body: body.to_vec(),
                 }),
                 last_url: RefCell::new(String::new()),
-                last_body: RefCell::new(Value::Null),
+                bodies: RefCell::new(Vec::new()),
             }
         }
     }
@@ -281,7 +481,7 @@ mod tests {
             body: &Value,
         ) -> Result<HttpResponse, TransportError> {
             *self.last_url.borrow_mut() = url.to_string();
-            *self.last_body.borrow_mut() = body.clone();
+            self.bodies.borrow_mut().push(body.clone());
             Ok(self.response.borrow().clone())
         }
 
@@ -320,15 +520,41 @@ mod tests {
         );
     }
 
-    #[test]
-    fn sam_client_posts_prompts_and_parses_boxes() {
-        let answer = serde_json::to_vec(&json!({
-            "boxes": [
-                {"label": "face", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.3, "score": 0.99},
-                {"label": "license plate", "x": 0.5, "y": 0.5, "w": 0.2, "h": 0.1, "score": 0.9},
-            ],
+    /// A completed Responses answer carrying one `output_text` lane.
+    fn sam_answer(text: &str) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "id": "resp_sam_1",
+            "status": "completed",
+            "output": [{
+                "type": "message",
+                "content": [{"type": "output_text", "text": text}],
+            }],
         }))
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn sam_request_pins_responses_shape() {
+        // Contract: one bare noun phrase in `input_text`, the image in
+        // `input_image`, on POST {base}/responses — never a list, never
+        // a `/v1/sam/segment` path.
+        let body = MetaSamClient::<StubTransport>::request_body("face", b"image-bytes");
+        assert_eq!(body["model"], json!(SAM_MODEL_VERSION));
+        let content = &body["input"][0]["content"];
+        assert_eq!(content[0], json!({"type": "input_text", "text": "face"}));
+        let url = content[1]["image_url"].as_str().unwrap();
+        assert!(url.starts_with("data:image/jpeg;base64,"), "{url}");
+        assert_eq!(body["metadata"], json!({"include_confidence": "true"}));
+        assert!(body.get("prompts").is_none());
+        assert!(body.get("imageBase64").is_none());
+    }
+
+    #[test]
+    fn sam_client_segments_each_target_separately() {
+        let answer = sam_answer(
+            "<0f>0<|box;x1=181;y1=365;x2=556;y2=486;w=1516;h=1600;c=0.99|>\
+             <|mask;x=0;y=0;c=0.99;data=122,376,~payload|>",
+        );
         let transport = StubTransport::canned(200, &answer);
         let client =
             MetaSamClient::new(META_API_BASE, Some("key-synthetic".to_string()), transport);
@@ -341,16 +567,79 @@ mod tests {
                 &[RedactTarget::Face, RedactTarget::LicensePlate],
             )
             .unwrap();
+        // No doubled path: {base}/responses, one call per concept.
         assert_eq!(
             *client.transport.last_url.borrow(),
             format!("{META_API_BASE}{SAM_PATH}")
         );
-        let body = client.transport.last_body.borrow();
-        assert_eq!(body["model"], json!(SAM_MODEL_VERSION));
-        assert_eq!(body["prompts"], json!(["face", "license plate"]));
+        assert!(!client.transport.last_url.borrow().contains("/v1/v1/"));
+        let bodies = client.transport.bodies.borrow();
+        assert_eq!(bodies.len(), 2);
+        assert_eq!(bodies[0]["input"][0]["content"][0]["text"], json!("face"));
+        assert_eq!(
+            bodies[1]["input"][0]["content"][0]["text"],
+            json!("license plate")
+        );
+        // Same canned lane per request, tagged by requesting target.
         assert_eq!(redaction.boxes.len(), 2);
+        assert_eq!(redaction.boxes[0].target, RedactTarget::Face);
         assert_eq!(redaction.boxes[1].target, RedactTarget::LicensePlate);
+        let first = &redaction.boxes[0];
+        assert_eq!(first.object_id, 0);
+        assert!((first.x - 181.0 / 1516.0).abs() < 1e-4, "{first:?}");
+        assert!(
+            (first.w - (556.0 - 181.0) / 1516.0).abs() < 1e-4,
+            "{first:?}"
+        );
+        assert!((first.score - 0.99).abs() < 1e-6, "{first:?}");
         assert!(redaction.exif_stripped);
+    }
+
+    #[test]
+    fn sam_records_parse_by_object_id() {
+        // Sparse ids (0, 2), confidence, and a mask payload holding
+        // commas must not disturb the parse.
+        let text = "<0f>0<|box;x1=211;y1=228;x2=270;y2=254;w=320;h=334|>\
+            <|mask;x=0;y=0;data=27,60,~a,b|>,2<|box;x1=155;y1=228;x2=202;y2=254;\
+            w=320;h=334|><|mask;x=0;y=0;data=27,48,~c,d|>";
+        let boxes = parse_records(text, RedactTarget::Face);
+        assert_eq!(boxes.len(), 2);
+        assert_eq!(boxes[0].object_id, 0);
+        assert_eq!(boxes[1].object_id, 2);
+        assert!((boxes[1].x - 155.0 / 320.0).abs() < 1e-4);
+        // Zero matches is a normal result, not an error.
+        assert!(parse_records("", RedactTarget::Face).is_empty());
+        assert!(parse_records("<0f>", RedactTarget::Face).is_empty());
+    }
+
+    #[test]
+    fn sam_incomplete_and_refusal_are_errors() {
+        let incomplete = serde_json::to_vec(&json!({
+            "id": "resp_x", "status": "incomplete",
+            "incomplete_details": {"reason": "max_output_tokens"},
+            "output": [],
+        }))
+        .unwrap();
+        assert!(
+            parse_segmentation(
+                &serde_json::from_slice(&incomplete).unwrap(),
+                RedactTarget::Face,
+            )
+            .is_err()
+        );
+        let refusal = serde_json::to_vec(&json!({
+            "id": "resp_y", "status": "completed",
+            "output": [{"type": "message",
+                        "content": [{"type": "refusal", "refusal": "no"}]}],
+        }))
+        .unwrap();
+        assert!(
+            parse_segmentation(
+                &serde_json::from_slice(&refusal).unwrap(),
+                RedactTarget::Face,
+            )
+            .is_err()
+        );
     }
 
     #[test]
