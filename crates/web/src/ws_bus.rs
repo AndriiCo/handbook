@@ -137,6 +137,11 @@ pub struct TopicParams {
 /// [`ws_bus_upgrade_admin`]). The `__Host-` prefix already binds the
 /// cookie to the admin host in real browsers; this closes the seam
 /// for non-browser clients that copy the cookie value across hosts.
+///
+/// The admin branch additionally gates on [`admin_origin_allowed`]:
+/// only the admin origin upgrades there, so a staff session cookie
+/// ridden from any other page (or a header-less native client)
+/// cannot open staff topics.
 pub async fn ws_bus_upgrade(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -147,9 +152,50 @@ pub async fn ws_bus_upgrade(
     ws_bus_upgrade_inner(state, addr, params, headers, ws, false).await
 }
 
+/// The one origin that upgrades on the admin branch (pure:
+/// unit-tested). Browsers always send `Origin` on WS handshakes,
+/// so a missing one is a native client, never the staff console.
+pub const ADMIN_WS_ORIGIN: &str = "https://admin.andrii.ai";
+
+/// Admin-branch origin gate: exactly [`ADMIN_WS_ORIGIN`], plus —
+/// only under the `admin_mtls_off` dev seam (tests, staging
+/// tunnel) — loopback `http` origins, the same seam the admin
+/// host guard admits. The public `https` origin never passes,
+/// even in dev: a staff cookie copied to a public page must not
+/// upgrade staff topics anywhere.
+pub(crate) fn admin_origin_allowed(origin: Option<&str>, dev_seam: bool) -> bool {
+    let Some(o) = origin else {
+        return false;
+    };
+    if o == ADMIN_WS_ORIGIN {
+        return true;
+    }
+    dev_seam && loopback_http_origin(o)
+}
+
+/// Loopback `http` origin with no path (`http://127.0.0.1:18319`,
+/// `http://localhost`, …): the dev-seam half of the gate above.
+fn loopback_http_origin(origin: &str) -> bool {
+    let Some(rest) = origin.strip_prefix("http://") else {
+        return false;
+    };
+    if rest.contains('/') {
+        return false;
+    }
+    let host = rest.split_once(':').map_or(rest, |(h, _)| h);
+    if host != "localhost" && host != "127.0.0.1" {
+        return false;
+    }
+    match rest.split_once(':') {
+        Some((_, port)) => !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()),
+        None => true,
+    }
+}
+
 /// Admin-branch upgrade: same topics and authz, but the staff
 /// session cookie resolves — mounted on the admin router only,
-/// behind its host guard + IP allowlist + log layers.
+/// behind its host guard + IP allowlist + log layers, and behind
+/// the admin origin gate below.
 pub async fn ws_bus_upgrade_admin(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -197,6 +243,26 @@ async fn ws_bus_upgrade_inner(
             )
                 .into_response();
         }
+    }
+    // Admin origin gate: the staff branch upgrades for its own
+    // origin only (plus the loopback dev seam) — checked before any
+    // session work, for every topic, since the staff cookie alone
+    // must never suffice from elsewhere.
+    if accept_admin_cookie
+        && !admin_origin_allowed(
+            headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()),
+            state.admin_mtls_off,
+        )
+    {
+        tracing::warn!(
+            topic_noun = topic_noun(&topic),
+            "ws bus upgrade denied: admin origin gate"
+        );
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "origin forbidden"})),
+        )
+            .into_response();
     }
     // H1 (CSWSH): browsers always send Origin on WS handshakes, so
     // a present-but-disallowlisted Origin is a cross-site page riding
@@ -392,6 +458,50 @@ async fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admin_origin_gate_matches_configured_admin_host() {
+        assert_eq!(
+            ADMIN_WS_ORIGIN,
+            format!("https://{}", auth::ADMIN_HOST),
+            "the gate must track the admin host, not a stale literal"
+        );
+        // Production shape (no dev seam): exactly the admin origin.
+        assert!(admin_origin_allowed(Some(ADMIN_WS_ORIGIN), false));
+        for bad in [
+            None,
+            Some("https://andrii.ai"),
+            Some("https://evil.test"),
+            Some("http://127.0.0.1:18319"),
+            Some("http://localhost:3000"),
+            Some("https://admin.andrii.ai.evil.test"),
+            Some("https://admin.andrii.ai/"),
+            Some("https://admin.andrii.ai:443"),
+        ] {
+            assert!(!admin_origin_allowed(bad, false), "denied in prod: {bad:?}");
+        }
+        // Dev seam (tests, staging tunnel): loopback http joins the
+        // admin origin — the public origin still never passes.
+        for ok in [
+            "https://admin.andrii.ai",
+            "http://127.0.0.1:18319",
+            "http://localhost:3000",
+            "http://127.0.0.1",
+        ] {
+            assert!(admin_origin_allowed(Some(ok), true), "allowed in dev: {ok}");
+        }
+        for bad in [
+            None,
+            Some("https://andrii.ai"),
+            Some("https://evil.test"),
+            Some("https://127.0.0.1:18319"),
+            Some("http://127.0.0.1:abc"),
+            Some("http://127.0.0.1:18319/path"),
+            Some("http://10.0.0.1:18319"),
+        ] {
+            assert!(!admin_origin_allowed(bad, true), "denied in dev: {bad:?}");
+        }
+    }
 
     #[test]
     fn per_ip_cap_holds_and_releases() {

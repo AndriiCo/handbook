@@ -4303,6 +4303,7 @@ mod tests {
             addr: &std::net::SocketAddr,
             topic: &str,
             cookie: Option<String>,
+            origin: Option<String>,
         ) -> Result<
             (
                 tokio_tungstenite::WebSocketStream<
@@ -4318,6 +4319,9 @@ mod tests {
             let mut builder = tokio_tungstenite::tungstenite::ClientRequestBuilder::new(uri);
             if let Some(cookie) = cookie {
                 builder = builder.with_header("cookie", cookie);
+            }
+            if let Some(origin) = origin {
+                builder = builder.with_header("origin", origin);
             }
             tokio_tungstenite::connect_async(builder).await
         }
@@ -4338,9 +4342,13 @@ mod tests {
         }
 
         let staff_cookie = || Some(format!("{}=staff-1", auth::ADM_COOKIE));
+        // Dev-seam origin (fixture runs with `admin_mtls_off`): the
+        // origin gate admits loopback http here, exactly the admin
+        // origin in production.
+        let dev_origin = || Some(format!("http://127.0.0.1:{}", addr.port()));
 
         // `proposals` with the staff cookie: hello + live fan-out.
-        let (mut proposals, _) = ws_connect(&addr, "proposals", staff_cookie())
+        let (mut proposals, _) = ws_connect(&addr, "proposals", staff_cookie(), dev_origin())
             .await
             .unwrap();
         let hello: serde_json::Value =
@@ -4356,17 +4364,35 @@ mod tests {
         proposals.close(None).await.unwrap();
 
         // `run:{id}` with the staff cookie: hello.
-        let (mut run, _) = ws_connect(&addr, "run:9", staff_cookie()).await.unwrap();
+        let (mut run, _) = ws_connect(&addr, "run:9", staff_cookie(), dev_origin())
+            .await
+            .unwrap();
         let hello: serde_json::Value = serde_json::from_str(&next_text(&mut run).await).unwrap();
         assert_eq!(hello["topic"], "run:9");
         run.close(None).await.unwrap();
 
         // Same staff topics with no cookie: 403, no upgrade.
         for topic in ["proposals", "run:9"] {
-            let denied = ws_connect(&addr, topic, None).await;
+            let denied = ws_connect(&addr, topic, None, dev_origin()).await;
             match denied {
                 Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
                     assert_eq!(res.status(), 403, "topic: {topic}");
+                }
+                other => panic!("expected HTTP 403, got {other:?}"),
+            }
+        }
+
+        // Origin gate: a valid staff cookie from any other origin —
+        // or none at all — never upgrades on the admin branch.
+        for origin in [
+            None,
+            Some("https://evil.test".to_string()),
+            Some("https://andrii.ai".to_string()),
+        ] {
+            let denied = ws_connect(&addr, "proposals", staff_cookie(), origin.clone()).await;
+            match denied {
+                Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
+                    assert_eq!(res.status(), 403, "origin: {origin:?}");
                 }
                 other => panic!("expected HTTP 403, got {other:?}"),
             }
