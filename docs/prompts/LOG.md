@@ -141,3 +141,4 @@
 | 235 | 2026-11-01 20:39Z | Staging notify drill found doubled /apostille/apostille dossier link | origin field fix, gates green |
 | 236 | 2026-11-01 21:08Z | Goal: review P1(2) WS ping, 4KiB cap, per-IP cap, client backoff | WS harden + reconnect, all gates green |
 | 237 | 2026-11-01 21:32Z | P236 plant gate failed on fmt --check (scripted long lines) | fmt-only fix, 271/271 green |
+| 238 | 2026-11-01 21:49Z | Goal: dossier unfurl (title, og, noscript, JSON-LD) + dynamic sitemap | unfurl handler + routes + 6 tests, 277 green |

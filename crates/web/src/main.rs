@@ -35,6 +35,7 @@ mod queue;
 mod quic;
 mod setup;
 mod staff_passkey;
+mod unfurl;
 mod ws_bus;
 
 use axum::{
@@ -402,6 +403,11 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
             "/api/v1/authorities/{slug}/facts",
             get(approval::public_facts),
         )
+        // Crawler surface: shell with injected head (slug routes
+        // sort before the SPA fallback below, so unfurls render
+        // with no JS).
+        .route("/authority/{slug}", get(unfurl::dossier))
+        .route("/sitemap.xml", get(unfurl::sitemap))
         .route("/api/v1/notify/subscribe", post(follow::subscribe))
         .route(
             "/api/v1/notify/confirm",
@@ -2847,6 +2853,151 @@ mod tests {
 
     /// Two proposed facts, same authority + topic, different
     /// statements (a conflict pair). Returns `(slug, fact_a, fact_b)`.
+    /// Unfurl dossier: accepted fact with a hostile statement, so
+    /// the crawler surface proves its escaping end to end.
+    fn seed_unfurl_dossier(store_root: &std::path::Path) {
+        let store = Store::new(store_root);
+        let conn = db::open(&store).unwrap();
+        let authority = db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "TS",
+                name: "Test \"SOS\" & Co",
+                slug: "unfurl-sos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO source(authority_id, kind, uri)
+             VALUES (?1, 'website_official', 'https://example.test/office')",
+            [authority],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                  bytes_raw, bytes_stored, sha256, trust)
+             VALUES (?1, 1761000000, 'file', 'p', 0, 0, 's', 'staff_verified')",
+            [authority],
+        )
+        .unwrap();
+        let cap = conn.last_insert_rowid();
+        std::fs::create_dir_all(store_root.join("text")).unwrap();
+        std::fs::write(
+            store_root.join("text").join(format!("{cap}.txt")),
+            "open 9 to 5 weekdays",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                               status, created_by, created_at,
+                               citation_start, citation_end)
+             VALUES (?1, ?2, 'hours', 'open 9 to 5 </script>', 'accepted', 't', 1, 0, 20)",
+            rusqlite::params![authority, cap],
+        )
+        .unwrap();
+    }
+
+    async fn body_text(res: axum::response::Response) -> String {
+        String::from_utf8(
+            axum::body::to_bytes(res.into_body(), 1 << 20)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn unfurl_unknown_slug_serves_shell_as_404() {
+        let fx = fixture();
+        let body = body_text(
+            public_router_for(&fx.state)
+                .oneshot(
+                    Request::builder()
+                        .uri("/apostille/authority/nope")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        )
+        .await;
+        // Status asserted via a second identical request (body_text consumes).
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/authority/nope")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert!(body.contains("spa-fixture"), "unknown slug keeps the shell");
+    }
+
+    #[tokio::test]
+    async fn unfurl_dossier_escapes_and_lists_accepted_facts() {
+        let fx = fixture();
+        seed_unfurl_dossier(&fx.state.store_root);
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/authority/unfurl-sos")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = body_text(res).await;
+        assert!(
+            body.contains("&lt;/script&gt;"),
+            "hostile statement escaped"
+        );
+        assert!(!body.contains("open 9 to 5 </script>"), "no raw breakout");
+        assert!(body.contains("<noscript>"), "crawler summary present");
+        assert!(body.contains("/authority/unfurl-sos"), "canonical + links");
+        assert!(body.contains("GovernmentService"), "json-ld present");
+        assert!(
+            body.contains("https://example.test/office"),
+            "isBasedOn source"
+        );
+    }
+
+    #[tokio::test]
+    async fn sitemap_lists_authorities_with_lastmod() {
+        let fx = fixture();
+        seed_unfurl_dossier(&fx.state.store_root);
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/sitemap.xml")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers()["content-type"],
+            "application/xml; charset=utf-8"
+        );
+        let body = body_text(res).await;
+        assert!(body.starts_with("<?xml"), "declaration first");
+        assert!(
+            body.contains(
+                "<loc>https://example.test/apostille/authority/unfurl-sos</loc><lastmod>"
+            ),
+            "authority row with lastmod, got: {body}"
+        );
+        assert!(body.ends_with("</urlset>\n"), "closed urlset");
+    }
+
     fn seed_conflicting_facts(store_root: &std::path::Path) -> (String, i64, i64) {
         let store = Store::new(store_root);
         let conn = db::open(&store).unwrap();
