@@ -158,7 +158,10 @@
 				fetch(api(`/workers/captures${query}`), { credentials: 'same-origin' })
 			]);
 			if ([statusRes, authRes, capRes].some(authFailed)) {
-				loadError = 'Staff session required — log in on the admin host first.';
+				const forbidden = [statusRes, authRes, capRes].some((r) => r.status === 403);
+				loadError = forbidden
+					? 'Logged in, but the admin host refused the request — the browser must present your enrolled client certificate.'
+					: 'Staff session missing or expired — log in on the admin host again.';
 			} else if (!statusRes.ok || !authRes.ok || !capRes.ok) {
 				throw new Error('one section failed to load');
 			} else {

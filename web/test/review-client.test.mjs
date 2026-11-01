@@ -251,6 +251,28 @@ test('review round-trips against a stub admin API', async () => {
 	}
 });
 
+test('review tells expired sessions apart from missing client certs', async () => {
+	const server = createServer((req, res) => {
+		res.writeHead(req.url.includes('cert') ? 403 : 401, {
+			'content-type': 'application/json'
+		});
+		res.end(JSON.stringify({ error: 'denied' }));
+	});
+	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+	const base = `http://127.0.0.1:${server.address().port}/api/v1`;
+	try {
+		// 401: no/invalid session — the fix is logging in again.
+		await assert.rejects(fetchQueue(base, { limit: 50 }), /log in on the admin host again/);
+		// 403 with a session: the TLS seam saw no known client cert.
+		await assert.rejects(
+			fetchQueueItem(base, 'cert'),
+			/client certificate/
+		);
+	} finally {
+		server.close();
+	}
+});
+
 test('review surfaces 409 and 422 server detail', async () => {
 	const server = createServer((req, res) => {
 		res.writeHead(req.url.endsWith('/accept') ? 409 : 422, {

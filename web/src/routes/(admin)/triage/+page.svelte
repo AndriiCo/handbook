@@ -59,8 +59,11 @@
 			const res = await fetch(api('/facts?status=proposed&limit=100'), {
 				credentials: 'same-origin'
 			});
-			if (res.status === 401 || res.status === 403) {
-				loadError = 'Staff session required — log in on the admin host first.';
+			if (res.status === 401) {
+				loadError = 'Staff session missing or expired — log in on the admin host again.';
+			} else if (res.status === 403) {
+				loadError =
+					'Logged in, but the admin host refused the request — the browser must present your enrolled client certificate.';
 			} else if (!res.ok) {
 				throw new Error(`HTTP ${res.status}`);
 			} else {

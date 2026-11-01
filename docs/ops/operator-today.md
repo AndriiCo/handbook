@@ -36,6 +36,10 @@ group-read pre-step from this morning is done — A2 reads prove it.
    vietnam + 2 usa-wa-sos proposed for the video's approve scene).
    GP2-data needs >= 8 accepted each; currently 0/8. This flips
    GP2-data, A1 and GP2-page. Paste back: accepted counts per slug.
+   Error guide (ships Sunday #3): "session missing or expired" means
+   log in again; "refused … client certificate" means the session is
+   fine but the browser didn't present your enrolled cert (check the
+   browser's certificate prompt for the admin host).
 2. A5 eval — root-caused by builder: the script passed `--evals
    …/current/evals`, but xtask reads `*.json` flat and the 26 gold
    cases live in `evals/authorities/` (the files were on prod all
