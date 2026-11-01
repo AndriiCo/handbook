@@ -63,6 +63,9 @@ const precheckSamples = JSON.parse(
 const p2Submissions = JSON.parse(
 	readFileSync(join(root, 'e2e/fixtures/p2-submissions.json'), 'utf8')
 );
+const p2Forms = JSON.parse(
+	readFileSync(join(root, 'e2e/fixtures/p2-forms.json'), 'utf8')
+);
 
 const failures = [];
 const shots = [];
@@ -117,6 +120,9 @@ try {
 					}
 					if (path.endsWith('/api/v1/p2/submissions')) {
 						return r.fulfill({ json: p2Submissions });
+					}
+					if (path.endsWith('/api/v1/p2/forms')) {
+						return r.fulfill({ json: p2Forms });
 					}
 					// Logged-out shell: anonymous session probes answer
 					// 200 {"user": null}, like the real API — no console

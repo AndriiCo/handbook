@@ -40,6 +40,9 @@
 	let index = $state<{ slug: string; name: string; country: string }[] | null>(null);
 	let loadError = $state<string | null>(null);
 	let destFacts = $state<any[] | null>(null);
+	let templates = $state<{ id: number; code: string; title: string }[]>([]);
+	let saveState = $state<'idle' | 'saving' | 'saved' | 'login' | 'error'>('idle');
+	let savedId = $state<number | null>(null);
 
 	const t = $derived(STRINGS[locale]);
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
@@ -65,6 +68,7 @@
 				if (preset && index.some((a) => a.slug === preset)) {
 					authority = preset;
 					void loadDestFacts(preset);
+					void loadTemplates(preset);
 				}
 			})
 			.catch(() => {
@@ -86,7 +90,61 @@
 	function pick(slug: string) {
 		authority = slug;
 		comboOpen = false;
+		saveState = 'idle';
+		savedId = null;
 		void loadDestFacts(slug);
+		void loadTemplates(slug);
+	}
+
+	async function loadTemplates(slug: string) {
+		templates = [];
+		try {
+			const res = await fetch(api(`/p2/forms?authority=${encodeURIComponent(slug)}`), {
+				credentials: 'same-origin'
+			});
+			const body = await res.json().catch(() => ({}));
+			templates = res.ok && Array.isArray(body?.templates) ? body.templates : [];
+		} catch {
+			templates = [];
+		}
+	}
+
+	async function saveDraft() {
+		if (templates.length === 0 || saveState === 'saving') return;
+		saveState = 'saving';
+		try {
+			const res = await fetch(api('/p2/submissions'), {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					template_id: templates[0].id,
+					draft: true,
+					values: {
+						full_name: name.trim(),
+						email: email.trim(),
+						street: street.trim(),
+						city: city.trim(),
+						postal_code: postal.trim(),
+						document_type: docType,
+						destination: authority
+					}
+				})
+			});
+			if (res.status === 401) {
+				saveState = 'login';
+				return;
+			}
+			const body = await res.json().catch(() => ({}));
+			if (res.status === 201 && typeof body?.id === 'number') {
+				savedId = body.id;
+				saveState = 'saved';
+				return;
+			}
+			saveState = 'error';
+		} catch {
+			saveState = 'error';
+		}
 	}
 
 	const STEPS = ['Destination', 'Document', 'Contact', 'Review'];
@@ -401,6 +459,40 @@
 						onclick={() => (done = true)}>Draft order</button
 					>
 				</p>
+				{#if templates.length > 0 && !done}
+					<div class="mt-4 max-w-[32rem] rounded-md border border-line bg-surface p-4">
+						{#if saveState === 'saved' && savedId !== null}
+							<p class="m-0 font-bold">Draft saved as order #{savedId}.</p>
+							<p class="mt-2 mb-0 text-sm">
+								<a href={resolve('/(customer)/orders')}>See it in your orders</a>.
+							</p>
+						{:else}
+							<p class="m-0 text-sm text-ink-muted">
+								{templates[0].title} is available for {authorityName} — keep this
+								draft in your account.
+							</p>
+							<p class="mt-3 mb-0 flex gap-3">
+								<button
+									class="min-h-11 cursor-pointer rounded-sm border border-line bg-bg px-5 font-bold text-ink disabled:cursor-not-allowed"
+									disabled={saveState === 'saving'}
+									onclick={saveDraft}
+								>
+									{saveState === 'saving' ? 'Saving…' : 'Save draft to my orders'}
+								</button>
+							</p>
+							{#if saveState === 'login'}
+								<p class="mt-2 mb-0 text-sm">
+									Sign-in opens order submission.
+									<a href={resolve('/(customer)/login')}>Continue to {t.loginLabel}</a>
+								</p>
+							{:else if saveState === 'error'}
+								<p class="mt-2 mb-0 text-sm" role="alert">
+									Could not save the draft. Check your connection and try again.
+								</p>
+							{/if}
+						{/if}
+					</div>
+				{/if}
 			{/if}
 		</div>
 

@@ -10,7 +10,7 @@
 
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Json},
     routing::{get, patch, post},
@@ -32,6 +32,7 @@ use crate::{AppState, store_unavailable, unix_now};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/forms/{authority}/{code}", get(get_form))
+        .route("/forms", get(list_forms))
         .route(
             "/submissions",
             post(create_submission).get(list_submissions),
@@ -521,6 +522,46 @@ fn compute_prefill(
 }
 
 /// GET template + prefill from accepted facts (U1 steps 1–2).
+/// GET active form templates, optionally filtered by `?authority=<slug>`.
+/// The order page uses this to offer a draft save for the destination.
+async fn list_forms(
+    State(state): State<AppState>,
+    Query(params): Query<BTreeMap<String, String>>,
+) -> impl IntoResponse {
+    let Some(meta) = open_meta(&state) else {
+        return store_unavailable();
+    };
+    let authority = params.get("authority").map(String::as_str).unwrap_or("");
+    let sql = format!(
+        "SELECT {TEMPLATE_COLS} FROM form_template t
+         JOIN authority a ON a.id = t.authority_id
+         WHERE t.status = 'active' AND (?1 = '' OR a.slug = ?1)
+         ORDER BY a.slug, t.code"
+    );
+    let mut stmt = match meta.prepare(&sql) {
+        Ok(stmt) => stmt,
+        Err(_) => return store_unavailable(),
+    };
+    let rows: Vec<StoredTemplate> = match stmt.query_map([authority], template_from_row) {
+        Ok(mapped) => mapped.filter_map(Result::ok).flatten().collect(),
+        Err(_) => return store_unavailable(),
+    };
+    let out: Vec<Value> = rows
+        .iter()
+        .map(|stored| {
+            json!({
+                "id": stored.id,
+                "authority": stored.template.authority,
+                "code": stored.template.code,
+                "title": stored.template.title,
+                "version": stored.template.version,
+                "authority_revision": stored.template.authority_revision,
+            })
+        })
+        .collect();
+    (StatusCode::OK, Json(json!({ "templates": out }))).into_response()
+}
+
 async fn get_form(
     State(state): State<AppState>,
     Path((authority, code)): Path<(String, String)>,
@@ -1746,6 +1787,43 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn list_forms_filters_active_by_authority() {
+        let fx = Fixture::new();
+        let (status, body) = json_body(
+            fx.app()
+                .oneshot(authed("GET", "/p2/forms?authority=usa-wa-sos", TOKEN, None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = body["templates"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["code"], "wa-apostille-request");
+        assert_eq!(rows[0]["authority"], "usa-wa-sos");
+        // Unknown slug: empty, not 404.
+        let (status, body) = json_body(
+            fx.app()
+                .oneshot(authed("GET", "/p2/forms?authority=vietnam", TOKEN, None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["templates"].as_array().unwrap().len(), 0);
+        // No filter: every active template.
+        let (status, body) = json_body(
+            fx.app()
+                .oneshot(authed("GET", "/p2/forms", TOKEN, None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["templates"].as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]
