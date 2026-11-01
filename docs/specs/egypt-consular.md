@@ -120,7 +120,12 @@
   and
   https://legalclarity.org/how-to-get-a-birth-certificate-in-washington/
   . **PHONE-VALIDATION TASKS V-5:** (a) current WA mail-to address —
-  the README's "two PO Boxes" conflict is still unresolved; (b)
+  the README's "two PO Boxes" conflict is still unresolved; live
+  6.2025 CORPS Records Request (verified 2026-11-01, PDF text
+  extracted) names **PO Box 40234, Olympia WA 98504-0234**,
+  **$15 per apostille**, plus a country-of-use field:
+  https://www.sos.wa.gov/sites/default/files/2025-06/6.2025%20CORPS%20Records%20Request.pdf
+  (vs PO Box 40228 in the dead Dec-2024 standalone form); (b)
   confirm WA issues a distinct "Certificate of Authentication"
   product for non-Hague countries and its exact request wording; (c)
   confirm same-day fee/hours.

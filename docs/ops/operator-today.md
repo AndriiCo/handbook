@@ -106,3 +106,9 @@ group-read pre-step from this morning is done — A2 reads prove it.
 Web redesign slices P153–P157 landed on main (shell + GP1–GP4 + login);
 local gates green (check, both builds, imports, tailwind, 20/20 shots).
 Staging 9/10 (only S1 red). Prod 5/10 until approvals land.
+WA form template (goal priority 5): standalone Dec-2024 form URL
+re-verified dead 11-01 (404 page); live 6.2025 CORPS Records Request
+(URL + $15/40234 evidence in egypt-consular.md V-5a) covers
+business-entity apostilles, not the standalone request form. Say
+which official form to model (or paste its fields) and the builder
+scaffolds `forms/usa-wa-sos/wa-apostille-request/` from it.
