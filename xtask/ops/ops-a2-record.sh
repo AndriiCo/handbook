@@ -32,7 +32,7 @@ SCRIPTDIR="$(dirname "$0")"
 RECORDER="$SCRIPTDIR/a2-record.py"
 OUTDIR=/tmp/a2-record-out
 
-[ -f "$RECORDER" ] || { echo "ABORT: recorder missing at $RECORDER (sync docs/ops/scripts first)"; exit 1; }
+[ -f "$RECORDER" ] || { echo "ABORT: recorder missing at $RECORDER (sync xtask/ops first)"; exit 1; }
 [ -d "$PNGDIR" ] || { echo "ABORT: no sample PNGs at $PNGDIR (deploy first, or set A2_PNG_DIR)"; exit 1; }
 [ -n "$(ls "$PNGDIR"/syn-doc-*.png 2>/dev/null)" ] || { echo "ABORT: no syn-doc-*.png in $PNGDIR"; exit 1; }
 python3 -c "import json,urllib.request" || { echo "ABORT: python3 stdlib incomplete"; exit 1; }

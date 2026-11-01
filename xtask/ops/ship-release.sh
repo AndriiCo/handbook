@@ -3,7 +3,7 @@
 # "How to deploy", steps 1-6). Ends by printing the exact ops-deploy.sh
 # invocation; it never deploys (step 7 stays an explicit builder action).
 #
-#   docs/ops/scripts/ship-release.sh [<sha>]   # default: HEAD
+#   xtask/ops/ship-release.sh [<sha>]   # default: HEAD
 #
 # Zero placeholders: every input is derived or refused with ABORT.
 set -u
@@ -79,9 +79,9 @@ scp "$R/xtask" "andrii.ai:apostille/staging/$VERSION/xtask" || exit 1
 scp -r "$WT/evals/." "andrii.ai:apostille/staging/$VERSION/evals/" || exit 1
 git -C "$WT" rev-parse HEAD > /tmp/SHA-ship && scp /tmp/SHA-ship "andrii.ai:apostille/staging/$VERSION/SHA" || exit 1
 scp "$WT/docs/ops/apostille.service" "andrii.ai:apostille/staging/$VERSION/" || exit 1
-scp "$WT/docs/ops/scripts/ops-deploy.sh" andrii.ai:apostille/scripts/ || exit 1
+scp "$WT/xtask/ops/ops-deploy.sh" andrii.ai:apostille/scripts/ || exit 1
 for script in ops-gp2-proposals.sh ops-a2-record.sh a2-record.py ops-a5-eval.sh; do
-    scp "$WT/docs/ops/scripts/$script" andrii.ai:apostille/scripts/ || exit 1
+    scp "$WT/xtask/ops/$script" andrii.ai:apostille/scripts/ || exit 1
 done
 echo "stage OK"
 

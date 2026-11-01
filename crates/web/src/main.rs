@@ -526,7 +526,7 @@ async fn demo_login(
 /// home page probes this endpoint on every load and a 4xx/5xx there
 /// would log a console error on GP1. The A5 row still fails on the
 /// pending body (no `run_at`, `gold_count` 0) until the operator runs
-/// docs/ops/scripts/ops-a5-eval.sh.
+/// xtask/ops/ops-a5-eval.sh.
 async fn quality(State(state): State<AppState>) -> impl IntoResponse {
     let pending = || {
         (

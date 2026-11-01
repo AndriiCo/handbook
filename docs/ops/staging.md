@@ -25,7 +25,7 @@ prod DB copies — ever.
    18319:… plant`), full scoreboard plus the live demo take
    (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
    9/10 with only operator-owned S1 red is staging-green.
-5. Ship (Mac): `docs/ops/scripts/ship-release.sh <sha>` —
+5. Ship (Mac): `xtask/ops/ship-release.sh <sha>` —
    throwaway worktree, zigbuild x86_64 (`--target` is NOT
    optional), ELF + `BUILD_SHA` checks, both web builds, stage
    to `~/apostille/staging/<sha7>` (binary, SPAs, packs,
