@@ -6,6 +6,58 @@
    dates); Source Serif 4 Variable ONLY for quoted source text. */
 
 @import 'tailwindcss';
+@import 'tw-animate-css';
+
+@plugin '@tailwindcss/typography';
+
+/* Brand display face: Vogun Medium (Yukita Creative, corporate licence
+   held by Andrii Co.) staged at build time by scripts/brand-fonts.mjs
+   into /fonts/brand/ (git-ignored, never in the public repo). Served
+   unmodified, font-display: swap. Vite rebases the absolute public-dir
+   URL per build base (/apostille public, '' admin). */
+@font-face {
+	font-family: 'Vogun';
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url('/fonts/brand/Vogun-Medium.woff2') format('woff2');
+}
+
+@font-face {
+	font-family: 'Vogun';
+	font-style: italic;
+	font-weight: 500;
+	font-display: swap;
+	src: url('/fonts/brand/Vogun-MediumItalic.woff2') format('woff2');
+}
+
+/* 'Vogun Fallback': Source Serif 4 Variable (OFL, vendored in
+   static/fonts/fallback/) with Vogun's metrics (UPM 1000, cap 710,
+   x-height 480, ascent 990, descent 300) so the swap never shifts
+   layout. Only weights 500/600 ever request it. */
+@font-face {
+	font-family: 'Vogun Fallback';
+	font-style: normal;
+	font-weight: 500 600;
+	font-display: swap;
+	src: url('/fonts/fallback/source-serif-4-latin-wght-normal.woff2') format('woff2');
+	size-adjust: 100%;
+	ascent-override: 99%;
+	descent-override: 30%;
+	line-gap-override: 0%;
+}
+
+@font-face {
+	font-family: 'Vogun Fallback';
+	font-style: italic;
+	font-weight: 500 600;
+	font-display: swap;
+	src: url('/fonts/fallback/source-serif-4-latin-wght-normal.woff2') format('woff2');
+	size-adjust: 100%;
+	ascent-override: 99%;
+	descent-override: 30%;
+	line-gap-override: 0%;
+}
 
 /* `dark:` follows the repo theme attr (always set by the boot snippet:
    explicit choice, or OS-resolved when 'auto'). */
@@ -22,6 +74,34 @@
 	--font-sans: 'Public Sans Variable', 'Public Sans', system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
 	--font-quote: 'Source Serif 4 Variable', 'Source Serif 4', serif;
+	--font-brand: 'Vogun', 'Vogun Fallback', serif;
+
+	/* Type scale (clamp spans the 390px and 1440px viewports, so one
+	   token serves both; never use arbitrary text-[…]). */
+	--text-display: clamp(2.75rem, 1.375rem + 7vw, 4.5rem);
+	--text-display--line-height: 1;
+	--text-display--letter-spacing: -0.02em;
+	--text-h1: clamp(2.125rem, 1.35rem + 3.9vw, 3rem);
+	--text-h1--line-height: 1.08;
+	--text-h1--letter-spacing: -0.015em;
+	--text-h2: clamp(1.625rem, 1.19rem + 2.2vw, 2rem);
+	--text-h2--line-height: 1.19;
+	--text-h2--letter-spacing: -0.01em;
+	--text-h3: 1.25rem;
+	--text-h3--line-height: 1.4;
+	--text-body-lg: 1.125rem;
+	--text-body-lg--line-height: 1.56;
+	--text-body: 1rem;
+	--text-body--line-height: 1.625;
+	--text-sm: 0.875rem;
+	--text-sm--line-height: 1.43;
+	--text-eyebrow: 0.75rem;
+	--text-eyebrow--line-height: 1.33;
+	--text-eyebrow--letter-spacing: 0.06em;
+
+	/* Motion: signature easing + 150/200/300 durations. */
+	--ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+	--shadow-xl: 0 24px 48px -12px rgb(15 31 43 / 0.25);
 
 	/* Radius scale: 4 / 8 / 12 / 16 / 24. */
 	--radius-xs: 4px;
@@ -100,7 +180,7 @@
 	--bg: #ffffff;
 	--surface: #eff3f6;
 	--surface-2: #e2eaf0;
-	--border: #cbd8e2;
+	--border: #d5dde4;
 	--text: #0f1f2b;
 	--text-muted: #334e63;
 	--accent: #0b4a75;
@@ -144,10 +224,10 @@
    afterwards, so the attribute blocks below are authoritative. */
 @media (prefers-color-scheme: dark) {
 	:root {
-		--bg: #0b141b;
+		--bg: #07121c;
 		--surface: #13222d;
 		--surface-2: #1b2f3e;
-		--border: #2e4658;
+		--border: #1e303f;
 		--text: #edf3f7;
 		--text-muted: #b9cbd8;
 		--accent: #7cc0ea;
@@ -175,7 +255,7 @@
 	--bg: #ffffff;
 	--surface: #eff3f6;
 	--surface-2: #e2eaf0;
-	--border: #cbd8e2;
+	--border: #d5dde4;
 	--text: #0f1f2b;
 	--text-muted: #334e63;
 	--accent: #0b4a75;
@@ -198,10 +278,10 @@
 }
 
 :root[data-theme='dark'] {
-	--bg: #0b141b;
+	--bg: #07121c;
 	--surface: #13222d;
 	--surface-2: #1b2f3e;
-	--border: #2e4658;
+	--border: #1e303f;
 	--text: #edf3f7;
 	--text-muted: #b9cbd8;
 	--accent: #7cc0ea;
@@ -239,6 +319,16 @@
 	}
 
 	h1,
+	h2,
+	h3 {
+		text-wrap: balance;
+	}
+
+	p {
+		text-wrap: pretty;
+	}
+
+	h1,
 	h2 {
 		letter-spacing: -0.01em;
 		line-height: 1.2;
@@ -247,6 +337,57 @@
 
 /* Quoted source text uses `font-quote` (serif, from --font-quote).
    Serif is reserved for that utility — never for UI chrome or headings. */
+
+/* Brand display face rules: one weight (500) plus italic, never below
+   24px (enforced in shots), never for controls or body. No faux bold.
+   Vogun has no Cyrillic and lacks most Vietnamese letters, so
+   lang-marked content always falls back to the UI sans — never one word
+   in two fonts. */
+.font-brand {
+	font-synthesis: none;
+}
+
+.font-brand:lang(vi),
+.font-brand:lang(uk),
+.font-brand:lang(ru),
+:lang(vi) .font-brand,
+:lang(uk) .font-brand,
+:lang(ru) .font-brand {
+	font-family: var(--font-sans);
+}
+
+/* Surface helpers (v4 @utility so they compose with variants). */
+@utility hairline {
+	border: 1px solid var(--border);
+}
+
+@utility ring-inset-hairline {
+	box-shadow: inset 0 0 0 1px var(--border);
+}
+
+@utility glass {
+	background: color-mix(in srgb, var(--surface) 72%, transparent);
+	backdrop-filter: blur(12px) saturate(1.4);
+	-webkit-backdrop-filter: blur(12px) saturate(1.4);
+}
+
+@utility bg-grain {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+/* Typography-plugin quote style: quotes read as the authority's own
+   words (Source Serif italic); `mark` highlights the matched span. */
+.prose blockquote {
+	font-family: var(--font-quote);
+	font-style: italic;
+}
+
+.prose mark {
+	background: var(--changed-bg);
+	border-radius: 2px;
+	color: inherit;
+	padding-inline: 1px;
+}
 
 @layer components {
 	/* Small-caps section heading with a rule. Type scale + 4px grid only. */

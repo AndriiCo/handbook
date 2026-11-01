@@ -27,3 +27,6 @@ vite.config.ts.timestamp-*
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Proprietary brand face (licensed to Andrii Co., never in git)
+/static/fonts/brand/

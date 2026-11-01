@@ -119,3 +119,9 @@ alongside the work it produced.
 
 Proprietary. Copyright (c) 2026 Andrii Co. All rights reserved.
 See [LICENSE](LICENSE).
+
+Brand font: headings use Vogun Medium (Yukita Creative), a proprietary
+face licensed to Andrii Co. It is staged at build time from
+`$BRAND_FONT_DIR` (see `web/scripts/brand-fonts.mjs`) and never enters
+this repo. Public builds fall back to a metric-matched Source Serif 4
+face (OFL, vendored in `web/static/fonts/fallback/`).

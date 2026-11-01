@@ -93,7 +93,42 @@
 		}
 	}
 
+	async function signOut() {
+		try {
+			await fetch(api('/auth/logout'), { method: 'POST', credentials: 'same-origin' });
+		} catch {
+			// Cookie state is server-side; navigate home regardless.
+		}
+		customerRef = null;
+		status = 'out';
+		await goto(home);
+	}
+
+	function loadBrandFace() {
+		// Vogun is staged at build time (scripts/brand-fonts.mjs) and never
+		// in git. A missing file rejects the promise — caught below, the
+		// metric-matched 'Vogun Fallback' face renders instead.
+		try {
+			const face = new FontFace('Vogun', `url(${asset('fonts/brand/Vogun-Medium.woff2')})`, {
+				style: 'normal',
+				weight: '500'
+			});
+			const italic = new FontFace('Vogun', `url(${asset('fonts/brand/Vogun-MediumItalic.woff2')})`, {
+				style: 'italic',
+				weight: '500'
+			});
+			Promise.all([face.load(), italic.load()])
+				.then((faces) => {
+					for (const f of faces) document.fonts.add(f);
+				})
+				.catch(() => {});
+		} catch {
+			// FontFace unsupported — fallback face covers headings.
+		}
+	}
+
 	onMount(() => {
+		loadBrandFace();
 		locale = resolveLocale();
 		document.documentElement.lang = locale;
 		try {
@@ -157,7 +192,13 @@
 	>
 		<div class="mx-auto flex h-14 max-w-[1080px] items-center gap-2 px-4">
 			<a href={home} class="flex min-w-0 items-center gap-2 no-underline" aria-label="Apostille Handbook — home">
-				<img src={asset('favicon.svg')} alt="" width="28" height="28" class="size-7 flex-none" />
+				<img
+					src={asset('service-mark.svg')}
+					alt=""
+					width="32"
+					height="32"
+					class="size-8 flex-none dark:invert"
+				/>
 				<span class="hidden truncate font-semibold tracking-tight text-ink min-[400px]:inline">
 					Apostille Handbook
 				</span>
@@ -242,6 +283,11 @@
 							<DropdownMenu.Item onSelect={() => goto(resolve('/(customer)/billing'))}>
 								{t.billingLabel}
 							</DropdownMenu.Item>
+							<DropdownMenu.Item onSelect={() => goto(resolve('/(customer)/security'))}>
+								Security
+							</DropdownMenu.Item>
+							<DropdownMenu.Separator />
+							<DropdownMenu.Item onSelect={() => signOut()}>Sign out</DropdownMenu.Item>
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>
 				{:else if status === 'out'}
@@ -321,38 +367,40 @@
 </main>
 
 <footer class="border-t border-line">
-	<div
-		class="mx-auto flex max-w-[1080px] flex-col gap-3 px-4 py-6 text-sm text-ink-muted md:flex-row md:items-center"
-	>
-		<p class="m-0">Apostille Handbook — general information, not legal advice.</p>
-		<nav class="flex flex-wrap gap-x-4 gap-y-1" aria-label="Footer">
-			<a class="text-ink-muted no-underline hover:text-ink hover:underline" href={home}>Home</a>
+	<div class="mx-auto grid max-w-[1080px] gap-8 px-4 py-10 text-sm md:grid-cols-3">
+		<div>
 			<a
-				class="text-ink-muted no-underline hover:text-ink hover:underline"
-				href={resolve('/(customer)/order')}>New {t.orderLabel.toLowerCase()}</a
+				class="inline-flex items-center gap-2 no-underline"
+				href="https://andrii.co"
+				title="Andrii℠ — service mark of Andrii Co. USPTO Serial No. 50060860, Ukraine No. m202617219, Australia No. 2696315 (all pending)"
 			>
-			<a
-				class="text-ink-muted no-underline hover:text-ink hover:underline"
-				href={resolve('/(customer)/orders')}>{t.orderLabel}s</a
-			>
-		</nav>
-		<a
-			class="flex items-center gap-2 no-underline md:ml-auto"
-			href="https://andrii.co"
-			title="Andrii℠ — service mark of Andrii Co. USPTO Serial No. 50060860, Ukraine No. m202617219, Australia No. 2696315 (all pending)"
-		>
-			<span class="text-ink-muted">by</span>
-			<span class="inline-flex flex-none items-center rounded-sm bg-white p-1" aria-hidden="true">
 				<img
 					src={asset('service-mark.svg')}
 					alt=""
-					width="48"
-					height="48"
-					class="h-12 w-auto"
+					width="40"
+					height="40"
+					class="size-10 flex-none dark:invert"
 				/>
-			</span>
-			<span class="font-semibold text-ink">Andrii℠</span>
-		</a>
+				<span class="font-semibold text-ink">Andrii℠</span>
+			</a>
+			<p class="mt-3 max-w-[38ch] text-sm text-ink-muted">
+				Verified apostille guidance, quote by quote.
+			</p>
+		</div>
+		<nav class="flex flex-col gap-2" aria-label="Footer">
+			<a class="w-fit text-ink-muted no-underline hover:text-ink hover:underline" href={home}>Home</a>
+			<a
+				class="w-fit text-ink-muted no-underline hover:text-ink hover:underline"
+				href={resolve('/(customer)/order')}>New {t.orderLabel.toLowerCase()}</a
+			>
+			<a
+				class="w-fit text-ink-muted no-underline hover:text-ink hover:underline"
+				href={resolve('/(customer)/orders')}>{t.orderLabel}s</a
+			>
+		</nav>
+		<p class="m-0 text-sm text-ink-muted">
+			Apostille Handbook — general information, not legal advice.
+		</p>
 	</div>
 </footer>
 
