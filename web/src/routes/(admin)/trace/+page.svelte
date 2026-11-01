@@ -3,7 +3,7 @@
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
 	import { csrfHeaders } from '../../../lib/admin/config-client.js';
-	import { subscribe } from '../../../lib/live.svelte.js';
+	import { subscribe, type BusMessage } from '../../../lib/live.svelte.js';
 
 	// Trace console: every watched page's capture sha256 + short text,
 	// newest first. Batches of 25 through before_id paging — never one
@@ -62,6 +62,52 @@
 		runTimers.delete(captureId);
 	}
 
+	function applyFinished(captureId: number, runId: number, src: BusMessage) {
+		drafts[captureId] = {
+			status: 'finished',
+			id: runId,
+			capture_id: captureId,
+			slug: typeof src?.slug === 'string' ? src.slug : '',
+			proposed: typeof src?.proposed === 'number' ? src.proposed : 0,
+			rejected: typeof src?.rejected === 'number' ? src.rejected : 0,
+			model: typeof src?.model === 'string' ? src.model : '',
+			input_tokens: typeof src?.input_tokens === 'number' ? src.input_tokens : 0,
+			output_tokens: typeof src?.output_tokens === 'number' ? src.output_tokens : 0,
+			error: ''
+		};
+		clearRunWatch(captureId);
+	}
+
+	// Reconcile against the server's run registry: a `run_finished`
+	// or `run_failed` step emitted while the socket was down never
+	// arrives, so every `subscribed` hello re-reads the run. A 404
+	// means the registry is gone (server restarted) — fail fast
+	// instead of waiting out the budget. Anything else unreadable
+	// keeps waiting; the client timeout still guards.
+	async function reconcileRun(captureId: number, runId: number) {
+		let res: Response;
+		try {
+			res = await fetch(api(`/draft-runs/${runId}`));
+		} catch {
+			return;
+		}
+		if (res.status === 404) {
+			failRun(captureId, runId, 'run not found on server (it may have restarted)');
+			return;
+		}
+		if (!res.ok) return;
+		let run: any;
+		try {
+			run = await res.json();
+		} catch {
+			return;
+		}
+		if (!run || run.id !== runId) return;
+		if (run.status === 'finished') applyFinished(captureId, runId, run);
+		else if (run.status === 'failed')
+			failRun(captureId, runId, typeof run.error === 'string' && run.error ? run.error : 'draft run failed');
+	}
+
 	function failRun(captureId: number, runId: number, error: string) {
 		drafts[captureId] = {
 			status: 'failed',
@@ -81,21 +127,16 @@
 	function watchRun(captureId: number, runId: number) {
 		clearRunWatch(captureId);
 		const unsub = subscribe(`run:${runId}`, (msg) => {
+			// The server re-sends its hello on every (re)connect and
+			// carries no run_id: reconcile instead of ignoring it,
+			// so a terminal step missed during a blink still lands.
+			if (msg?.type === 'subscribed') {
+				reconcileRun(captureId, runId);
+				return;
+			}
 			if (msg?.run_id !== runId) return;
 			if (msg?.type === 'run_finished') {
-				drafts[captureId] = {
-					status: 'finished',
-					id: runId,
-					capture_id: captureId,
-					slug: typeof msg?.slug === 'string' ? msg.slug : '',
-					proposed: typeof msg?.proposed === 'number' ? msg.proposed : 0,
-					rejected: typeof msg?.rejected === 'number' ? msg.rejected : 0,
-					model: typeof msg?.model === 'string' ? msg.model : '',
-					input_tokens: typeof msg?.input_tokens === 'number' ? msg.input_tokens : 0,
-					output_tokens: typeof msg?.output_tokens === 'number' ? msg.output_tokens : 0,
-					error: ''
-				};
-				clearRunWatch(captureId);
+				applyFinished(captureId, runId, msg);
 			} else if (msg?.type === 'run_failed') {
 				failRun(
 					captureId,
@@ -105,8 +146,10 @@
 			}
 		});
 		runSubs.set(captureId, unsub);
-		// A run that never reports back must not spin the button
-		// forever: fail it after two minutes (the old poll budget).
+		// The hello above reconciles the common case at once; this
+		// timer is the backstop. A run that never reports back must
+		// not spin the button forever: fail it after 330 s (the
+		// model budget is 300 s, plus margin for the live steps).
 		runTimers.set(
 			captureId,
 			setTimeout(() => {
@@ -116,7 +159,7 @@
 				} else {
 					clearRunWatch(captureId);
 				}
-			}, 120_000)
+			}, 330_000)
 		);
 	}
 
