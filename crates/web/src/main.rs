@@ -2102,7 +2102,10 @@ mod tests {
         listener.set_nonblocking(true).unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(
-            axum_server::from_tcp(listener).serve(public_router_for(&fx.state).into_make_service_with_connect_info::<std::net::SocketAddr>()),
+            axum_server::from_tcp(listener).serve(
+                public_router_for(&fx.state)
+                    .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            ),
         );
 
         async fn ws_connect(
@@ -3861,7 +3864,10 @@ mod tests {
         listener.set_nonblocking(true).unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(
-            axum_server::from_tcp(listener).serve(public_router_for(&fx.state).into_make_service_with_connect_info::<std::net::SocketAddr>()),
+            axum_server::from_tcp(listener).serve(
+                public_router_for(&fx.state)
+                    .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            ),
         );
 
         async fn next_text(
@@ -4506,7 +4512,10 @@ mod tests {
             async move {
                 axum_server::tls_rustls::from_tcp_rustls(listener, tls)
                     .handle(handle)
-                    .serve(public_router_for(&fx.state).into_make_service_with_connect_info::<std::net::SocketAddr>())
+                    .serve(
+                        public_router_for(&fx.state)
+                            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                    )
                     .await
             }
         });
