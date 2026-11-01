@@ -79,6 +79,8 @@ into `.agents/goal.md` yourself; builder never edits it): Muse Glimmer
 self-hosted documents/facts evaluator on plant (feasibility gate first).
 2026-11-01 A2-fix (prod 503 with 3 recordings installed: dir is hal:hal 0750, app user andrii-ai can't traverse): `chgrp apostille /var/lib/apostille/demo_precheck && curl -s -X POST https://andrii.ai/apostille/api/v1/demo/precheck -d '{"sample":"syn-doc-clean"}'` — paste back the verdict line; script fixed in repo (P146) so re-runs set the group.
 
+Plant disk full (`/home` 100%, 0 avail — P155 `11f34f4` cannot submit; my two orphan partial tarballs removed, queue empty): free space (old `~/apostille-pipeline/artifacts/` runs?) and paste back `df -h ~`.
+
 Inference workstream (side-chat built, main session to adopt as a goal
 item — full design at docs/ops/plant-inference.md):
 `cargo xtask plant-run` + `ops/plant-inference/` drive Qwen2.5-VL-7B
