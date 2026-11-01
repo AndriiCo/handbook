@@ -49,3 +49,4 @@
 | 142 | 2026-10-31 14:05Z | queue Glimmer evaluator goal for operator | ops |
 | 143 | 2026-11-01 01:05Z | sandbox browser breakage to operator | ops |
 | 144 | 2026-11-01 01:05Z | browsers back, shots+demo green, band shown | shots |
+| 145 | 2026-11-01 01:20Z | staging run-2 rescored 9/10 via tunnel | ops |
