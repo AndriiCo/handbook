@@ -8,7 +8,7 @@ boxes (text-only chat shape, pinned in docs/meta-api-shapes.md). Writes
 one <sample>.json per sample to --out-dir; the web tier serves those
 files verbatim as replay (zero marginal model cost).
 
-SAM request shape: POST <base>/v1/responses with model sam-3.1, one
+SAM request shape: POST <base>/responses with model sam-3.1, one
 bare noun phrase per request in `input_text` plus the image in
 `input_image` (pinned in docs/meta-api-shapes.md). Boxes parse from the
 documented token grammar in the `output_text` lane
@@ -205,7 +205,7 @@ def sam_call(base, key, prompt, image_b64):
         "stream": False,
         "metadata": {"include_confidence": "true"},
     }
-    status, payload, secs = post_json(base + "/v1/responses", key, body)
+    status, payload, secs = post_json(base.rstrip("/") + "/responses", key, body)
     if status < 200 or status >= 300:
         raise RuntimeError(f"SAM call failed for {prompt!r}: HTTP {status}: {payload}")
     if not isinstance(payload, dict):
@@ -267,7 +267,7 @@ def spark_verdict(base, key, sample_id, label, boxes, image_b64):
         "prompt_cache_key": "demo-precheck-v1",
         "stream": False,
     }
-    status, payload, secs = post_json(base + "/v1/chat/completions", key, body)
+    status, payload, secs = post_json(base.rstrip("/") + "/chat/completions", key, body)
     if status < 200 or status >= 300:
         raise RuntimeError(f"Spark call failed: HTTP {status}: {payload}")
     try:
@@ -297,7 +297,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--png-dir", required=True)
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--base", default="https://api.meta.ai")
+    # Same canonical base as every Rust client
+    # (`https://api.meta.ai/v1`); paths below carry no version prefix.
+    ap.add_argument("--base", default="https://api.meta.ai/v1")
     args = ap.parse_args()
 
     import os
