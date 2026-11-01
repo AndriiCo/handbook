@@ -26,7 +26,9 @@ const ROUTES = {
 	'/login': { name: 'gp3-login', ready: 'Log in' },
 	'/order': { name: 'gp4-order', ready: 'Destination' },
 	'/orders': { name: 'gp4-orders', ready: 'newest first' },
-	'/precheck': { name: 'a2-precheck', ready: 'Document precheck' }
+	'/precheck': { name: 'a2-precheck', ready: 'Document precheck' },
+	'/notify/confirm': { name: 'notify-confirm', ready: 'invalid or expired' },
+	'/notify/unsubscribe': { name: 'notify-unsubscribe', ready: 'Unsubscribe from updates' }
 };
 const SIZES = [
 	{ w: 390, h: 844 },

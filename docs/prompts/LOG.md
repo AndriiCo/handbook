@@ -135,3 +135,4 @@
 | 229 | 2026-11-01 19:20Z | Slice: README.md for judges. They read only this file, the video and the | eval table, shipped/next, arch, prod box, scan clean |
 | 230 | 2026-11-01 19:21Z | Slice: docs/demo-script.md plus demo takes. HERO=usa-wa-sos. | script 175s, HERO takes, overflow fix |
 | 231 | 2026-11-01 19:50Z | Goal: visitors can follow an authority and get an email when an accepted | notify crate + routes + worker wired, tests green; UI next |
+| 232 | 2026-11-01 20:06Z | Slice: dossier guide v1 (GP2-page, web-only, no Rust, no migration). | follow card + confirm pages, shots+demo green |

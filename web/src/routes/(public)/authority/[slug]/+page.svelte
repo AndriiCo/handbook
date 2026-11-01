@@ -7,6 +7,7 @@
 	import VerifiedChip from '../../../../lib/public-ui/VerifiedChip.svelte';
 	import GuideStep from '../../../../lib/public-ui/GuideStep.svelte';
 	import GuideEmpty from '../../../../lib/public-ui/GuideEmpty.svelte';
+	import FollowCard from '../../../../lib/public-ui/FollowCard.svelte';
 	import { Skeleton } from '../../../../lib/components/ui/skeleton/index.js';
 	import * as HoverCard from '../../../../lib/components/ui/hover-card/index.js';
 	import Heading from '../../../../lib/components/brand/Heading.svelte';
@@ -347,6 +348,9 @@
 				</p>
 			{/if}
 		</div>
+	</section>
+	<section aria-label="Follow this office" class="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 xl:py-16">
+		<FollowCard slug={slug} name={displayName} apiBase={apiRoot} />
 	</section>
 	{#if facts.length > 0}
 		<section aria-label="Evidence" class="grid gap-8 pt-10 pb-16 lg:grid-cols-12 xl:pt-16">
