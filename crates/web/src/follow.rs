@@ -49,6 +49,14 @@ fn valid_token(raw: &str) -> Option<String> {
     (token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit())).then_some(token)
 }
 
+/// `GET /api/v1/notify/status`: the master switch as public
+/// data (the dossier hides its follow card while off — production
+/// runs off until the operator enables it). Static bool, no DB, no
+/// limits, no oracle.
+pub async fn status(State(state): State<AppState>) -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({ "enabled": state.notify_enabled }))
+}
+
 #[derive(serde::Deserialize)]
 pub struct SubscribeBody {
     pub authority: String,
@@ -251,6 +259,8 @@ pub fn run_pass(cfg: &WorkerCfg) {
     if notify::enqueue_from_audit(&conn, now).is_err() {
         return;
     }
+    // Liveness for `/readyz`: every pass beats, sends or not.
+    super::readyz::beat("notify", now);
     let Some(mailer) = cfg.mailer.clone() else {
         return;
     };

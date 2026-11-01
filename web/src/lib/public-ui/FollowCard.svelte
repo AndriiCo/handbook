@@ -10,6 +10,25 @@
 	let busy = $state(false);
 	let done = $state(false);
 	let error = $state<string | null>(null);
+	// The card renders only while the notify master switch is on
+	// (production runs off). `null` = still checking: render
+	// nothing yet, so the dossier never flashes a dead form.
+	let enabled = $state<boolean | null>(null);
+
+	$effect(() => {
+		let cancelled = false;
+		fetch(`${apiBase}/api/v1/notify/status`, { credentials: 'same-origin' })
+			.then((res) => (res.ok ? res.json() : { enabled: false }))
+			.then((body) => {
+				if (!cancelled) enabled = body?.enabled === true;
+			})
+			.catch(() => {
+				if (!cancelled) enabled = false;
+			});
+		return () => {
+			cancelled = true;
+		};
+	});
 
 	function csrf(): string {
 		for (const part of document.cookie.split(';')) {
@@ -55,6 +74,7 @@
 	}
 </script>
 
+{#if enabled}
 <Card.Root id="follow" class="scroll-mt-32">
 	<Card.Header>
 		<Card.Title class="flex items-center gap-2">
@@ -108,3 +128,4 @@
 		</p>
 	</Card.Footer>
 </Card.Root>
+{/if}

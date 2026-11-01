@@ -116,6 +116,9 @@ try {
 					if (path.endsWith('/api/v1/quality')) {
 						return r.fulfill({ json: quality });
 					}
+					if (path.endsWith('/api/v1/notify/status')) {
+						return r.fulfill({ json: { enabled: true } });
+					}
 					if (path.endsWith('/api/v1/auth/providers')) {
 						return r.fulfill({ json: providers });
 					}

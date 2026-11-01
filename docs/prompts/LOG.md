@@ -143,3 +143,4 @@
 | 237 | 2026-11-01 21:32Z | P236 plant gate failed on fmt --check (scripted long lines) | fmt-only fix, 271/271 green |
 | 238 | 2026-11-01 21:49Z | Goal: dossier unfurl (title, og, noscript, JSON-LD) + dynamic sitemap | unfurl handler + routes + 6 tests, 277 green |
 | 239 | 2026-11-01 22:03Z | P238 plant gate: dead-code fields + collapsible_if in unfurl | trimmed struct, let-chains, 277 green |
+| 240 | 2026-11-02 00:01Z | Monday slice 1: FollowCard only when notify enabled | status endpoint + gated card, 282 green |

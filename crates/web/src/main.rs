@@ -33,6 +33,7 @@ mod p2_labels;
 mod passkey;
 mod queue;
 mod quic;
+mod readyz;
 mod setup;
 mod staff_passkey;
 mod unfurl;
@@ -364,6 +365,7 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
     let spa_index = state.spa_index.clone();
     let api = Router::new()
         .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz::readyz))
         .route("/version", get(version))
         .route("/ws/echo", get(ws_echo_upgrade))
         .route("/ws/bus", get(ws_bus::ws_bus_upgrade))
@@ -408,6 +410,7 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         // with no JS).
         .route("/authority/{slug}", get(unfurl::dossier))
         .route("/sitemap.xml", get(unfurl::sitemap))
+        .route("/api/v1/notify/status", get(follow::status))
         .route("/api/v1/notify/subscribe", post(follow::subscribe))
         .route(
             "/api/v1/notify/confirm",
@@ -818,6 +821,9 @@ fn reload_admin_tls(
 ) -> Result<(), String> {
     let config = mtls::admin_server_config(cert_pem, key_pem, None)?;
     admin_tls.reload_from_config(std::sync::Arc::new(config));
+    // Renewals refresh the leaf `/readyz` watches, or it would
+    // report the old expiry forever.
+    readyz::record_serving_leaf(cert_pem);
     Ok(())
 }
 
@@ -1366,6 +1372,9 @@ async fn serve_tls(
     quic_reloader: quic::QuicReloader,
     prebound_redirect: Option<Vec<axum_server::Handle>>,
 ) {
+    // The leaf `/readyz` watches (both explicit and ACME pairs
+    // arrive here; renewals re-record via `reload_admin_tls`).
+    readyz::record_serving_leaf(&cert_pem);
     let router = tls_router(public, admin, cfg);
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
@@ -1585,6 +1594,49 @@ mod tests {
                 serde_json::json!({"customer_ref": customer_ref}).to_string(),
             ))
             .unwrap()
+    }
+
+    /// `/readyz` fails closed in tests (no serving leaf recorded,
+    /// no KEK, no worker beats — statics stay unset outside boot),
+    /// but still names every check honestly.
+    #[tokio::test]
+    async fn readyz_fails_closed_outside_boot() {
+        let fx = fixture();
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/readyz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["status"], "not-ready");
+        assert_eq!(v["checks"]["database"], true, "fixture DB opens");
+        assert_eq!(v["checks"]["tls_certificate"], false, "no leaf recorded");
+        assert_eq!(v["checks"]["kek"], true, "fixture mints a kek");
+        assert_eq!(v["checks"]["timers"]["notify"], false, "no beats in tests");
+    }
+
+    #[tokio::test]
+    async fn notify_status_reports_master_switch() {
+        let fx = fixture();
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/notify/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["enabled"], false, "fixtures run with notify off");
     }
 
     #[tokio::test]
