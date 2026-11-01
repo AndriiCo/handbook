@@ -167,7 +167,11 @@ after on the gold set).
   worktrees (registered in `.agents/goal.md` "Lanes"), each owning the
   paths its role file lists plus `docs/lanes/<name>.md` (its status and
   requests to the builder) and its own LOG.md lines; never
-  `docs/ops/operator-today.md`. The builder merges them. A lane builds
+  `docs/ops/operator-today.md`. Each lane step is merged into `main` as
+  soon as it is ready: the lane commits it green on its branch and marks
+  it with a `ready:` line in `docs/lanes/<name>.md`, and the builder
+  merges that step at once, one step at a time, never in batches. A lane
+  builds
   with the main checkout's target directory
   (`CARGO_TARGET_DIR=<main checkout>/target`; the Mac's disk is nearly
   full, and cargo's lock makes builds wait, not collide). Write-capable

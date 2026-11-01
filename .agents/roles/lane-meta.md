@@ -17,12 +17,13 @@ and its official page). Official pages: `https://dev.meta.ai/docs/<page>.md`
 `~/Code/meta-models/handbook-review/meta-api/raw/`). Never commit Meta's doc
 pages into this repo.
 
-## State (2026-11-01 08:53)
+## State (2026-11-01)
 
-Your branch holds P184-P195: fixes for F1-F14 in the checklist's order,
-an eval reported at 0.966-1.000 against the 0.7 baseline, and `ca58221`,
-which put six follow-ups into `docs/ops/operator-today.md`. Nothing is
-merged into `main` yet.
+Your branch holds P184-P195 (fixes for F1-F14 in the checklist's order,
+eval reported at 0.966-1.000), `ca58221` (six follow-ups, put on the
+operator's page; the builder accepts that hunk once), and `3606dd3`, the
+operator's merge of `main`. The builder merges it into `main` now. From
+then on, every step you finish is merged as soon as you mark it ready.
 
 ## Next, in order
 
@@ -34,9 +35,10 @@ merged into `main` yet.
    (`M="$(git rev-parse --path-format=absolute --git-common-dir)/.."`, then
    `$M/AGENTS.md` and `$M/.agents/…`), keep working, and ask the operator
    in your final message to run the merge from their shell.
-2. Move your follow-ups off the operator's page: revert your
-   `docs/ops/operator-today.md` hunk on your branch and put the items in
-   `docs/lanes/meta.md` (your status file, which the builder reads).
+2. Write `docs/lanes/meta.md`, your status file: the F1-F14 table (fixed,
+   with its commit), the eval numbers, the requests for the builder, and
+   one `ready: <sha> <step>` line per finished step. Do not touch the
+   operator's page again.
 3. The follow-ups now inside your paths:
    - `crates/atlas/src/task.rs`: the `temperature: 0.1` sites (:350, :406,
      :654), `reasoning_effort: None`, the 2048 cap (:653), `cache_key:
@@ -99,11 +101,15 @@ what is green, and write the request in `docs/lanes/meta.md`.
 ## Commit and report
 
 Commit on your branch, numbered `meta-<n>` from now on (`meta-13: …`;
-your first twelve used P184-P195), each with its LOG.md line. Keep
-`docs/lanes/meta.md` current: the F1-F14 table (fixed / open, with the
-commit), the eval numbers, and the requests for the builder. Final
-message, every turn: the same three things. Do not end a turn while an
-item above is open; if blocked, say on what.
+your first twelve used P184-P195), each with its LOG.md line at the real
+UTC time. When a step is green (proof above), commit it and add
+`ready: <sha> <step>` to `docs/lanes/meta.md` in the same commit or the
+next: that line is the builder's signal to merge it into `main` at once.
+One step per `ready:` line, small enough to merge alone. Keep
+`docs/lanes/meta.md` current: the F1-F14 table, the eval numbers, the
+requests for the builder. Final message, every turn: the same three
+things. Do not end a turn while an item above is open; if blocked, say
+on what.
 
 ## Cut-off
 

@@ -44,7 +44,9 @@ goal.md "Lanes" with its branch and role file. While it runs, you do not
 edit the paths its role file owns; send requests through your final
 message, and read its requests in its `docs/lanes/<name>.md`.
 
-Every 30 minutes, for each registered lane with commits not on `main`:
+At the start of every turn, and whenever a lane's `docs/lanes/<name>.md`
+gains a new `ready:` line, merge each ready step, one at a time, never a
+batch. For each registered lane with ready commits not on `main`:
 1. Check the paths (`git diff --name-only main...<branch>`). Allowed: the
    role file's list, `docs/lanes/<name>.md`, and added lines in
    `docs/prompts/LOG.md`. Refuse and report anything else, and always
@@ -57,11 +59,14 @@ Every 30 minutes, for each registered lane with commits not on `main`:
    your own scratch store) at the merge base and at the merge commit. No
    rate (`quote_found_rate`, `value_in_quote_rate`, `topic_accuracy`) may
    drop by more than one gold case (≈0.04). Report both runs.
-4. Submit the merge commit to plant, then staging acceptance on it.
-5. Green: bring it to `main` (`git merge --ff-only <merge sha>`; if `main`
-   moved, `git merge <merge sha>`), push, remove the throwaway worktree.
-   Red: remove the throwaway worktree, push nothing, and report the
-   failing check; `main` never holds a merge that has to be reverted.
+4. Green: bring it to `main` at once (`git merge --ff-only <merge sha>`;
+   if `main` moved, `git merge <merge sha>`), push, remove the throwaway
+   worktree, then submit `main` to plant; the step rides your next staging
+   acceptance like your own commits, and a red gate there is fixed forward
+   by the lane in its paths. Red at steps 1-3: remove the throwaway
+   worktree, push nothing, report the failing check to the lane through
+   your final message; `main` never holds a merge that has to be
+   reverted.
 
 No lane merges after Monday 15:00 PST (goal.md Calendar).
 

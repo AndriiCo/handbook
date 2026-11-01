@@ -23,9 +23,15 @@ hook repeats it on every resume and compaction):
 
 ## Lanes
 
-| Lane | Role file | Session / worktree / branch | State (2026-11-01 08:53) |
+| Lane | Role file | Session / worktree / branch | State |
 |---|---|---|---|
-| `meta` | `.agents/roles/lane-meta.md` | `01a19798-66eb-72b0-8ce7-3e80f3958724`, `.muse/worktrees/20261101-7e99`, `muse/session-01a19798-66eb-72b0-8ce7-3e80f3958724` | F1-F14 fixed on the branch (P184-P195), not merged; follow-ups listed in its role file |
+| `meta` | `.agents/roles/lane-meta.md` | `01a19798-66eb-72b0-8ce7-3e80f3958724`, `.muse/worktrees/20261101-7e99`, `muse/session-01a19798-66eb-72b0-8ce7-3e80f3958724` | F1-F14 fixed on the branch (P184-P195), `main` merged in (`3606dd3`), ready to merge now; then each step as it is marked ready |
+
+One-time exception for that first merge: the branch's `ca58221` added a
+"Queued (Meta API follow-ups)" section to `docs/ops/operator-today.md`.
+Accept it, and fold those items into the page's builder and lane notes.
+The branch's LOG.md lines 184-195 carry wrong times: set each to its
+commit's time in the merge.
 
 Any other `muse/session-*` branch (the judges') is not a lane: never merge it.
 
