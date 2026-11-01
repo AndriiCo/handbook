@@ -13,7 +13,8 @@
 		factCount,
 		filterAuthorities,
 		listAuthorities,
-		publicError
+		publicError,
+		relativeDay
 	} from '../../lib/public-ui/handbook.js';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
@@ -30,6 +31,7 @@
 	let loadError = $state<string | null>(null);
 	let qualityPct = $state<number | null>(null);
 	let qualityModel = $state<string | null>(null);
+	let qualityRunAt = $state<string | null>(null);
 	let comboOpen = $state(false);
 	let activeDescendant = $state('');
 
@@ -84,11 +86,8 @@
 		}
 	}
 
-	function relative(iso: string): string {
-		const days = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
-		if (days <= 0) return 'today';
-		if (days === 1) return 'yesterday';
-		return `${days} days ago`;
+	function shortDate(iso: string): string {
+		return String(iso ?? '').split('T')[0] || '';
 	}
 
 	$effect(() => {
@@ -111,6 +110,7 @@
 				if (res.ok && typeof rate === 'number' && rate >= 0 && rate <= 1) {
 					qualityPct = Math.round(rate * 100);
 					if (typeof res.body?.model === 'string') qualityModel = res.body.model;
+					if (typeof res.body?.run_at === 'string') qualityRunAt = res.body.run_at;
 				}
 			})
 			.catch(() => {});
@@ -169,7 +169,8 @@
 					></span>
 					<span class="relative inline-flex size-2 rounded-full bg-verified"></span>
 				</span>
-				{qualityPct}% of drafted records carry a verified quote{#if qualityModel}
+				Eval: {qualityPct}% of Muse Spark drafts quote the source verbatim{#if qualityRunAt}
+					· {shortDate(qualityRunAt)}{/if}{#if qualityModel}
 					<span class="font-mono text-xs text-ink-muted">{qualityModel}</span>
 				{/if}
 			</p>
@@ -318,7 +319,7 @@
 								class="ml-auto font-mono text-xs text-ink-muted"
 								title={`Last verified ${verifiedAt[authority.slug]}`}
 							>
-								verified {relative(verifiedAt[authority.slug])}
+								verified {relativeDay(verifiedAt[authority.slug])}
 							</span>
 						{/if}
 					</span>
@@ -371,18 +372,26 @@
 		<div class="mt-4 rounded-xl border border-line p-6">
 			<p class="m-0 font-medium text-ink">
 				{#if tableFilter === 'all'}
-					Every authority is featured above.
+					No other authorities yet.
 				{:else}
 					No authorities in this group yet.
 				{/if}
 			</p>
 			<p class="mt-1 mb-0 text-sm text-ink-muted">
 				{#if tableFilter === 'all'}
-					The full list grows here as new destinations are verified.
+					New destinations appear here as staff verify them.
 				{:else}
 					Try the “All” filter to see every destination.
 				{/if}
 			</p>
+			{#if tableFilter === 'all'}
+				<p class="mt-3 mb-0 text-sm">
+					Start with a featured dossier:{#each featured as f, i (f.slug)}
+						{#if i > 0}<span aria-hidden="true"> · </span>{/if}<a
+							href={authorityHref(f.slug)}>{f.country || f.name}</a
+						>{/each}
+				</p>
+			{/if}
 		</div>
 	{:else}
 		<table class="mt-4 w-full border-collapse text-left">

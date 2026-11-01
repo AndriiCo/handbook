@@ -7,6 +7,7 @@ import {
 	listAuthorities,
 	publicError,
 	readDossier,
+	relativeDay,
 	seedLedgerEvents,
 	topicLabel
 } from '../src/lib/public-ui/handbook.js';
@@ -138,6 +139,16 @@ test('seedLedgerEvents labels accepted conflicts as conflicting reports', () => 
 		events.find((e) => e.kind === 'changed').text,
 		'Fees — conflicting accepted report'
 	);
+});
+
+test('relativeDay counts calendar days in the viewer zone', () => {
+	// Local-midnight arithmetic: timezone-independent. Now is 01:00;
+	// a 23:00 capture from "2 h ago" is yesterday, not today.
+	const nowMs = new Date(2026, 10, 1, 1, 0, 0).getTime();
+	assert.equal(relativeDay(new Date(2026, 10, 1, 0, 30).toISOString(), nowMs), 'today');
+	assert.equal(relativeDay(new Date(2026, 9, 31, 23, 0).toISOString(), nowMs), 'yesterday');
+	assert.equal(relativeDay(new Date(2026, 9, 29, 12, 0).toISOString(), nowMs), '3 days ago');
+	assert.equal(relativeDay('not-a-date', nowMs), '');
 });
 
 test('publicError takes status only — server text can never leak', () => {

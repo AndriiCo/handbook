@@ -92,12 +92,16 @@ export function domain(url) {
  * @param {string} statement
  */
 export function markQuote(quote, statement) {
+	// Source quotes carry the page's line breaks (office addresses
+	// especially); HTML would collapse them into one run-on line, so
+	// they render as breaks in the popover.
 	const esc = (/** @type {string} */ s) =>
 		String(s ?? '')
 			.replace(/&/g, '&amp;')
 			.replace(/</g, '&lt;')
 			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;');
+			.replace(/"/g, '&quot;')
+			.replace(/\n/g, '<br>');
 	const words = String(statement ?? '')
 		.toLowerCase()
 		.replace(/[^a-z0-9\s]/g, ' ')

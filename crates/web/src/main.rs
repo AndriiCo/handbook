@@ -367,6 +367,10 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
     // https://andrii.ai/auth/<provider>/callback. (Start stays a
     // nested API call; only the provider-facing URL is flat.)
     Router::new()
+        // Domain root is not the handbook: the whole public surface
+        // lives under `/apostille`, so `/` redirects there (a bare
+        // 404 today). Static target — no open redirect.
+        .route("/", get(root_to_apostille))
         .route("/apostille", get(serve_spa_index))
         .route("/apostille/", get(serve_spa_index))
         .route("/robots.txt", get(serve_robots))
@@ -387,6 +391,15 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
             request_id_and_log,
         ))
         .with_state(state)
+}
+
+/// `GET /` on the public host is never content: redirect to the
+/// handbook root. Static target — no open redirect.
+async fn root_to_apostille() -> impl IntoResponse {
+    (
+        StatusCode::TEMPORARY_REDIRECT,
+        [(header::LOCATION, HeaderValue::from_static("/apostille/"))],
+    )
 }
 
 /// Serve the SPA shell for `/apostille/` exactly (the nested `/` never
@@ -1516,6 +1529,18 @@ mod tests {
                 "uri: {uri}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn domain_root_redirects_to_handbook() {
+        // `andrii.ai/` is not the handbook (a bare 404 today): 307 to
+        // `/apostille/`, keeping the method for form replays.
+        let res = test_app()
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(res.headers().get(header::LOCATION).unwrap(), "/apostille/");
     }
 
     #[tokio::test]
@@ -2931,18 +2956,18 @@ mod tests {
         let conn = db::open(&store).unwrap();
         // Inserted out of slug order on purpose: the endpoint must sort.
         let specs = [
-            ("usa-wa-sos", "WA", "USA"),
-            ("deu-berlin", "Berlin", "Germany"),
-            ("fra-paris", "Paris", "France"),
+            ("usa-wa-sos", "WA", "USA", "Washington"),
+            ("deu-berlin", "Berlin", "Germany", ""),
+            ("fra-paris", "Paris", "France", ""),
         ];
         let mut ids = std::collections::HashMap::new();
-        for (slug, name, country) in specs {
+        for (slug, name, country, region) in specs {
             let id = db::add_authority(
                 &conn,
                 &db::NewAuthority {
                     kind: "state",
                     country,
-                    region: "",
+                    region,
                     name,
                     slug,
                     actor: "t",
@@ -3009,6 +3034,9 @@ mod tests {
         assert_eq!(authorities[1]["fact_count"], 0);
         assert_eq!(authorities[2]["slug"], "usa-wa-sos");
         assert_eq!(authorities[2]["fact_count"], 2);
+        // The dossier CTA reads the region when present.
+        assert_eq!(authorities[2]["region"], "Washington");
+        assert_eq!(authorities[0]["region"], "");
         // No sentinel row, no other keys on the envelope.
         assert!(authorities.iter().all(|a| a["slug"] != ""));
         assert_eq!(

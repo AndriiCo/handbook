@@ -80,6 +80,25 @@ export function factCount(n) {
 }
 
 /**
+ * `today` / `yesterday` / `N days ago` in whole CALENDAR days in the
+ * viewer's zone — never 24 h periods, so a capture from late last
+ * night reads `yesterday` after midnight, not `today`.
+ * @param {string} iso
+ * @param {number} [nowMs]
+ */
+export function relativeDay(iso, nowMs = Date.now()) {
+	const at = new Date(iso);
+	const now = new Date(nowMs);
+	if (Number.isNaN(at.getTime())) return '';
+	const day = (/** @type {Date} */ d) =>
+		new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+	const days = Math.round((day(now) - day(at)) / 86400000);
+	if (days <= 0) return 'today';
+	if (days === 1) return 'yesterday';
+	return `${days} days ago`;
+}
+
+/**
  * Seed the dossier evidence ledger from accepted facts: one `verified`
  * event per fact, one `changed` event per conflict banner. Sibling ids
  * repeat across parents (conflict cliques reference each other), so

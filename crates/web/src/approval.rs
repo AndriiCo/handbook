@@ -738,7 +738,7 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
     };
     let rows: Vec<serde_json::Value> = conn
         .prepare(
-            "SELECT a.slug, a.name, a.country,
+            "SELECT a.slug, a.name, a.country, a.region,
                     COUNT(CASE WHEN f.status = 'accepted' THEN 1 END)
              FROM authority a LEFT JOIN fact f ON f.authority_id = a.id
              WHERE a.id != 0
@@ -750,7 +750,8 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
                     "slug": row.get::<_, String>(0)?,
                     "name": row.get::<_, String>(1)?,
                     "country": row.get::<_, String>(2)?,
-                    "fact_count": row.get::<_, i64>(3)?,
+                    "region": row.get::<_, String>(3)?,
+                    "fact_count": row.get::<_, i64>(4)?,
                 }))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()

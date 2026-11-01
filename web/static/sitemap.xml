@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Placeholder. `xtask build-handbook` will generate sitemap.xml +
-     per-country shards with lastmod/hreflang (site-theme.md §7.2). -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
@@ -8,5 +6,14 @@
     <xhtml:link rel="alternate" hreflang="en" href="https://andrii.ai/apostille/"/>
     <xhtml:link rel="alternate" hreflang="es" href="https://andrii.ai/apostille/?l=es"/>
     <xhtml:link rel="alternate" hreflang="fr" href="https://andrii.ai/apostille/?l=fr"/>
+  </url>
+  <url>
+    <loc>https://andrii.ai/apostille/authority/vietnam</loc>
+  </url>
+  <url>
+    <loc>https://andrii.ai/apostille/authority/usa-wa-sos</loc>
+  </url>
+  <url>
+    <loc>https://andrii.ai/apostille/authority/hcch</loc>
   </url>
 </urlset>

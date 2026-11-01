@@ -4,19 +4,22 @@
    "country": "Vietnam",
    "fact_count": 3,
    "name": "Vietnam \u2014 Ministry of Foreign Affairs",
-   "slug": "vietnam"
+   "slug": "vietnam",
+   "region": ""
   },
   {
    "country": "United States",
    "fact_count": 9,
    "name": "USA \u2014 Washington Secretary of State",
-   "slug": "usa-wa-sos"
+   "slug": "usa-wa-sos",
+   "region": "Washington"
   },
   {
    "country": "Netherlands",
    "fact_count": 1,
    "name": "HCCH \u2014 Apostille Section",
-   "slug": "hcch"
+   "slug": "hcch",
+   "region": ""
   }
  ]
 }

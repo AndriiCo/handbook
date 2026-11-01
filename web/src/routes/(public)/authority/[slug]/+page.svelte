@@ -56,6 +56,7 @@
 	let notFound = $state(false);
 	let authorityName = $state<string | null>(null);
 	let authorityCountry = $state<string | null>(null);
+	let authorityRegion = $state<string | null>(null);
 	let activeTopic = $state('');
 
 	type LedgerEvent = {
@@ -136,6 +137,8 @@
 			if (found && typeof found.name === 'string' && found.name) authorityName = found.name;
 			if (found && typeof found.country === 'string' && found.country)
 				authorityCountry = found.country;
+			if (found && typeof found.region === 'string' && found.region)
+				authorityRegion = found.region;
 		} catch {
 			// The slug stays the heading; the index is a nicety, not a gate.
 		}
@@ -312,7 +315,7 @@
 				href={`${resolve('/(customer)/order')}?destination=${encodeURIComponent(slug)}`}
 				class="inline-flex min-h-11 items-center rounded-sm bg-accent-fill px-5 font-medium text-accent-ink no-underline transition-colors hover:bg-accent-hover"
 			>
-				Start an order for {authorityCountry ?? displayName}
+				Start an order for {authorityRegion ?? authorityCountry ?? displayName}
 			</a>
 			<a
 				href={resolve('/(customer)/login')}
@@ -372,8 +375,7 @@
 				</nav>
 				{#each groups as g (g.topic)}
 					<section id={topicId(g.topic)} data-topic={g.topic} aria-label={topicLabel(g.topic)} class="scroll-mt-32 py-10 xl:py-16">
-						<Heading level={2}>{topicLabel(g.topic)}</Heading>
-						<div class="mt-6 flex flex-col gap-4">
+						<div class="flex flex-col gap-4">
 							{#each g.facts as fact (fact.id ?? fact.statement)}
 								{@const cite = firstCapture(fact)}
 								<article class="rounded-xl border border-line bg-bg p-5">

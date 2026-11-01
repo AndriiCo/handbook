@@ -137,6 +137,12 @@ test('markQuote highlights the shared span, escapes the rest', () => {
 	assert.ok(escaped.includes('&lt;b&gt;'));
 });
 
+test('markQuote keeps source line breaks as breaks', () => {
+	const html = markQuote('Town Center 3\n243 Israel Rd SE', '243 Israel Rd SE');
+	assert.ok(html.includes('<br>'));
+	assert.ok(!html.includes('\n'));
+});
+
 test('domain shortens hosts, degrades gracefully', () => {
 	assert.equal(domain('https://www.sos.wa.gov/x'), 'sos.wa.gov');
 	assert.equal(domain('not a url'), 'official source');
