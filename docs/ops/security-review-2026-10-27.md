@@ -2,6 +2,7 @@
 
 - Base: 7535194. Agent: read-only child, rust-review skill. Parent spot-checked cited files (SECURITY.md, demo token insert, eab-prod.txt ref) — grounded.
 - Status: findings UNFIXED as of filing; H1/H2/H4 block PII on prod. Track fixes as follow-up work, not in this commit.
+- Update 2026-11-01 (P168, commit `0ea4187`): H1 fixed (origin gate on credentialed/non-public WS upgrades), H4 fixed (demo tokens hashed, Secure cookie), M1 partially fixed (demo-login 10/min/IP, 16 KiB publish cap, 4096-channel reap), M2 baseline fixed (nosniff/no-referrer/framing/HSTS on both listeners). Deferred: H1 double-submit handshake, H4 demo-in-prod env gate + `__Host-` prefix, M1 per-account buckets, M2 CSP + HSTS preload. H2, L1, L4 untouched — see file body.
 
 ---
 

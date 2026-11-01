@@ -73,3 +73,4 @@
 | 165 | 2026-11-01 05:10Z | perms root cause: mktemp scripts + rootless re-run | staged, operator runs |
 | 166 | 2026-11-01 05:30Z | gate fix: cuj spec to redesign + null-safe keys | e2e 6/6, shots 20/20 |
 | 167 | 2026-11-01 05:50Z | README judges screen + prod eval numbers | child-drafted, reviewed |
+| 168 | 2026-11-01 06:10Z | merge SEC slice H1/H4/M1/M2 + review status | 376 tests green |
