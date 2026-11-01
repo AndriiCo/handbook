@@ -127,16 +127,18 @@ outside the slice's file list:
 
 ## Builder state (info only)
 
-Local gates green on main tip `d65cf5b` (P214): web 262 tests,
+Local gates green on main tip `ecb6958` (P216): web 263 tests,
 clippy, svelte-check, imports, tailwind, both builds, web unit 99.
 Staging 9/10 (only S1 red) on 117ef58. Main past P208 is unstamped:
 plant SSH down since ~11-01 19:30Z (`No user exists for uid 501`),
-submits queued (`f201aa2` → `d65cf5b`, 8 SHAs). Prod 1/10 in this
+submits queued (`f201aa2` → `ecb6958`, 9 SHAs). Prod 1/10 in this
 sandbox's scoreboard run (browser rows fail: local Chromium cannot
 launch here, Mach IPC denied — environmental; data rows fail on
 approvals: vietnam 0/8, usa-wa-sos 1/8). P214 adds
 `GET /p2/submissions` (orders list, newest-first, per-customer) and
 wires `/orders` to it — the page no longer shows placeholder rows.
+P216 adds `GET /p2/forms?authority=` and a "Save draft to my orders"
+step on `/order` review (401 → sign-in prompt, 201 → order link).
 WA form template (goal priority 5): standalone Dec-2024 form URL
 re-verified dead 11-01 (404 page); live 6.2025 CORPS Records Request
 (URL + $15/40234 evidence in egypt-consular.md V-5a) covers
