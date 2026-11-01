@@ -39,7 +39,7 @@
     "observations": [
         {
             "authority": "usa-wa-sos",
-            "source_uri": "http://www.sos.wa.gov/about-office/contact-us",
+            "source_uri": "https://www.sos.wa.gov/about-office/contact-us",
             "statement": "OBSERVED (contact-page snippet): walk-in apostille/authentication moved to Town Center 3, 243 Israel Rd SE, Tumwater, WA 98501; eastern office at Eastern Washington University, 960 Washington Street, Cheney, WA 99004.",
             "status": "needs_review",
             "topic": "walkin",

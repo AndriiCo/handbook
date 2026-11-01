@@ -67,6 +67,20 @@
             "kind": "website_official",
             "notes": "MFA consular portal (Vietnamese; procedure and form references); fetcher 200 2026-10-31.",
             "uri": "https://dichvucong.mofa.gov.vn/"
+        },
+        {
+            "authority": "vietnam",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Apostille Convention full text (scope, articles 2-7 procedure); added 2026-11-01, fetchability unproven until the staging fetch.",
+            "uri": "https://www.hcch.net/en/instruments/conventions/full-text/?cid=41"
+        },
+        {
+            "authority": "vietnam",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "HCCH Apostille section hub (how the Convention works, e-Register); added 2026-11-01, fetchability unproven until the staging fetch.",
+            "uri": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
         }
     ]
 }

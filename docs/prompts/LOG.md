@@ -51,3 +51,4 @@
 | 144 | 2026-11-01 01:05Z | browsers back, shots+demo green, band shown | shots |
 | 145 | 2026-11-01 01:20Z | staging run-2 rescored 9/10 via tunnel | ops |
 | 146 | 2026-11-01 01:50Z | Operator prod steps: A2 503 diagnosed (dir group), script fix + chgrp line | P146 committed, A2/A5/GP2 triaged |
+| 147 | 2026-11-01 02:05Z | packs-coverage: vietnam +2 HCCH watch URLs, usa-wa http->https | P147, validate+load green |
