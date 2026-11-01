@@ -4,8 +4,9 @@ Production runs `0.1.0+69ca7fa` (deployed 2026-11-01 ~06:35Z on your
 "deploy now" order, `--allow-today-overlap`) — scoreboard **5/10**
 (P0, GP1, GP4, A2, A5 pass; see `web/shots/prod-before.json` →
 `web/shots/prod-after.json`, no regression). First red: GP2-data
-(vietnam 0/8, usa-wa-sos 1/8 accepted). Staging 9/10 (only S1 red) on the exact
-SHA; tunnel live during builder turns.
+(vietnam 0/8, usa-wa-sos 1/8 accepted). Staging 9/10 (only S1 red) on
+117ef58 (stamp + live demo 3/3 — Monday's candidate); tunnel live
+during builder turns.
 
 Your lines that flip production rows now (all code is already live):
 1. Approve the proposed facts for vietnam + usa-wa-sos in `/review`

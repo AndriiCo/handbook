@@ -247,3 +247,22 @@ above verbatim).
 - `docs/ops/scripts/` → `xtask/ops/` (comment-only Rust change);
   release rebuild + restart, rescore 9/10 (only S1 red), live demo
   3/3 on the exact SHA.
+
+## Run 7 (2026-11-01, 117ef58) — 9/10 kept, WS topics stack
+- Plant stamp `acceptance/117ef58b75e6.json` (`ci_green: true`).
+  First submit (56fb8ee) failed the gate on two
+  `clippy::unnecessary_to_owned` in `xtask/src/plant_run.rs` (plant
+  runs clippy 1.99, newer than the Mac) — P204 drops them, resubmit
+  passed.
+- Exact checkout via xfer ref, release rebuild, restart on
+  18318/18319 (DB reused: vietnam 8 + usa-wa-sos 9 accepted stand).
+  Restart lesson: the old server runs as `./target/release/web`
+  (relative path), so a `staging/handbook/...` pkill pattern misses
+  it; and never pkill a pattern that also appears literally in your
+  own remote command (self-kill — it took staging down once, back
+  up in minutes, nothing else touched).
+- Rescore 9/10, only S1 red (operator-owned licence/video/
+  visibility). Live demo take 3/3 on the exact SHA
+  (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
+- Staging-green deploy candidate for Monday 11-02 (Sunday spent,
+  no order): stamp + 9/10 + live demo 3/3 all on 117ef58.
