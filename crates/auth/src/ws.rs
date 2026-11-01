@@ -12,8 +12,11 @@ use crate::Role;
 pub enum WsTopic {
     /// Public handbook stream for one authority; accepted facts only.
     Authority { slug: String },
-    /// Live call console; staff-only.
-    Call { id: i64 },
+    /// Live call console; staff-only. The id is the 32-hex call id
+    /// minted at dial (`new_call_id` in the web crate), so any
+    /// well-formed id parses — a dangling id simply never receives
+    /// events.
+    Call { id: String },
     /// Order submission; owner-or-staff.
     Submission { id: i64 },
     /// Outbound shipment; owner-or-staff.
@@ -40,7 +43,9 @@ impl WsTopic {
             "authority" if valid_slug(arg) => Some(WsTopic::Authority {
                 slug: arg.to_string(),
             }),
-            "call" => positive_id(arg).map(|id| WsTopic::Call { id }),
+            "call" if valid_call_id(arg) => Some(WsTopic::Call {
+                id: arg.to_string(),
+            }),
             "submission" => positive_id(arg).map(|id| WsTopic::Submission { id }),
             "shipment" => positive_id(arg).map(|id| WsTopic::Shipment { id }),
             "billing" if valid_customer_ref(arg) => Some(WsTopic::Billing {
@@ -87,6 +92,11 @@ fn valid_customer_ref(customer_ref: &str) -> bool {
 
 fn positive_id(arg: &str) -> Option<i64> {
     arg.parse::<i64>().ok().filter(|id| *id > 0)
+}
+
+/// 32 lowercase-or-upper hex chars: the dial-minted call id alphabet.
+fn valid_call_id(id: &str) -> bool {
+    id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Ownership lookup for `submission:{id}` / `shipment:{id}` topics.
@@ -175,7 +185,12 @@ mod tests {
                     slug: "usa-wa-sos".to_string(),
                 },
             ),
-            ("call:12", WsTopic::Call { id: 12 }),
+            (
+                "call:0123456789abcdef0123456789abcdef",
+                WsTopic::Call {
+                    id: "0123456789abcdef0123456789abcdef".to_string(),
+                },
+            ),
             ("submission:7", WsTopic::Submission { id: 7 }),
             ("shipment:3", WsTopic::Shipment { id: 3 }),
             (
@@ -205,8 +220,12 @@ mod tests {
             "authority:a/b",
             "call:0",
             "call:-1",
+            "call:12",
             "call:abc",
             "call:1:2",
+            "call:0123456789abcdef0123456789abcde",
+            "call:0123456789abcdef0123456789abcdef0",
+            "call:0123456789abcdef0123456789abcdeg",
             "submission:",
             "billing:",
             "billing:a b",
@@ -228,7 +247,7 @@ mod tests {
         let authority = WsTopic::parse("authority:usa-wa-sos").expect("parse");
         assert!(authorize(Role::Anonymous, None, &owners, &authority));
         for text in [
-            "call:1",
+            "call:0123456789abcdef0123456789abcdef",
             "submission:7",
             "shipment:3",
             "billing:cust-1",
@@ -247,7 +266,7 @@ mod tests {
         let owners = NoOwners;
         for text in [
             "authority:usa-wa-sos",
-            "call:1",
+            "call:0123456789abcdef0123456789abcdef",
             "submission:7",
             "shipment:3",
             "billing:cust-9",
@@ -257,7 +276,7 @@ mod tests {
             assert!(authorize(Role::Staff, None, &owners, &topic));
             assert!(authorize(Role::Admin, None, &owners, &topic));
         }
-        let call = WsTopic::parse("call:1").expect("parse");
+        let call = WsTopic::parse("call:0123456789abcdef0123456789abcdef").expect("parse");
         assert!(!authorize(Role::Customer, Some("cust-1"), &owners, &call));
     }
 
