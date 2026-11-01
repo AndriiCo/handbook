@@ -286,3 +286,18 @@ above verbatim).
   P180 comment retarget vs installed — operator root step on
   `docs/ops/operator-today.md` item 1 (install + daemon-reload, no
   restart), then re-run ship + deploy.
+
+## Run 9 (2026-11-01, 2cce16d) — 9/10 kept, guide v1 on staging
+- Plant stamp `acceptance/2cce16d4cfe8.json` (`ci_green: true`).
+- Exact checkout via xfer ref, native release rebuild + both SPAs,
+  restart on 18318/18319 by verified PID (DB reused: vietnam 8 +
+  usa-wa-sos 9 accepted stand). `healthz` → `0.1.0+2cce16d`.
+- Rescore 9/10, only S1 red (operator-owned licence/video/
+  visibility). GP2-data + A1 pass on the reused stand; GP2-page
+  passes with the guide live. Live demo take 3/3 on the exact SHA
+  (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
+- Staging-green deploy candidate (Sunday open, cap lifted until
+  11-10): stamp + 9/10 + live demo 3/3 all on 2cce16d. Ship needs
+  the unit-file root step first (unchanged), plus prod
+  `admin.allow_ips` set to the operator's IP before the binary
+  starts (P221 default is loopback-only).

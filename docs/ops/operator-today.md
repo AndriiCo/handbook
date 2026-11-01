@@ -182,6 +182,10 @@ staging-green. Deploy waits on your item 1 (unit file) above.
 P221 (tip `bce01ad`, on plant now): admin mTLS removed, IP
 allowlist `admin.allow_ips` in — set it (item 1) before ANY
 deploy of this SHA, or you 403 yourself out.
+P223 guide v1 (tip `2cce16d`): staging exact rescored 9/10
+(only S1 red) + live demo 3/3 — staging-green, supersedes
+`5bb462a` as the deploy candidate. Ship needs item 1 (unit
+file) + prod `admin.allow_ips` first.
 WA form template (goal priority 5): standalone Dec-2024 form URL
 re-verified dead 11-01 (404 page); live 6.2025 CORPS Records Request
 (URL + $15/40234 evidence in egypt-consular.md V-5a) covers
