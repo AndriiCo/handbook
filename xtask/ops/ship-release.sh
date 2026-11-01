@@ -3,13 +3,21 @@
 # "How to deploy", steps 1-6). Ends by printing the exact ops-deploy.sh
 # invocation; it never deploys (step 7 stays an explicit builder action).
 #
-#   xtask/ops/ship-release.sh [<sha>]   # default: HEAD
+#   xtask/ops/ship-release.sh [<sha>] [--allow-today-overlap]   # default: HEAD
+#
+# --allow-today-overlap only on the operator's explicit same-day order
+# (same meaning as on ops-deploy.sh and xtask deploy): it skips the day
+# gate and announces the override. There is no env knob.
 #
 # Zero placeholders: every input is derived or refused with ABORT.
 set -u
 
 cd "$(git rev-parse --show-toplevel)"
 SHA="${1:-$(git rev-parse HEAD)}"
+OVERLAP=""
+[ "${2:-}" = "--allow-today-overlap" ] && OVERLAP="--allow-today-overlap"
+[ -z "$OVERLAP" ] && [ -n "${2:-}" ] && { echo "ABORT: unknown flag: $2 (only --allow-today-overlap)"; exit 2; }
+[ -n "$OVERLAP" ] && echo "WARNING: day gate OVERRIDDEN by explicit flag (operator-ordered same-day deploy)"
 git cat-file -e "$SHA^{commit}" 2>/dev/null || { echo "ABORT: not a commit: $SHA"; exit 2; }
 VERSION="$(git rev-parse --short=7 "$SHA")"
 [[ "$VERSION" =~ ^[0-9a-f]{7}$ ]] || { echo "ABORT: bad short SHA: $VERSION"; exit 2; }
@@ -18,13 +26,41 @@ echo "== ship $VERSION ($SHA)"
 # Deploy-day gate (AGENTS.md §7: one deploy a day, never two within
 # 8h). Same semantic as day_gate_blockers in xtask/src/release.rs
 # (tested there): any output line means ABORT. Directory names lie
-# (SHA-named); only mtimes count.
+# (SHA-named); only mtimes count. Skipped under --allow-today-overlap.
 check_day() {
+    if [ -n "$OVERLAP" ]; then
+        echo "day gate SKIPPED (--allow-today-overlap; operator-ordered)"
+        return 0
+    fi
     local out
     out="$(ssh andrii.ai 'T=$(TZ=America/Los_Angeles date -d 00:00 +%s); N=$(date +%s); for d in /srv/apostille/releases/*/; do [ -d "$d" ] || continue; m=$(stat -c %Y "$d"); [ "$m" -ge "$T" ] && echo "SPENT-TODAY $d"; [ $((N-m)) -lt 28800 ] && echo "WITHIN-8H $d"; done; true')" \
         || { echo "ABORT: day-gate ssh failed ($1)"; exit 1; }
     [ -z "$out" ] || { echo "ABORT: deploy day spent or within 8h ($1):"; echo "$out"; exit 1; }
 }
+
+# Plant stamp gate (AGENTS.md §8: no stamp with ci_green, no ship).
+# Stamp files are acceptance/<sha12>.json on plant.
+check_stamp() {
+    local sha12 out
+    sha12="$(git rev-parse --short=12 "$SHA")"
+    out="$(ssh plant 'grep -l "\"ci_green\": true" ~/apostille-pipeline/acceptance/'"$sha12"'*.json')" \
+        || { echo "ABORT: no plant stamp with ci_green for $SHA (submit it first)"; exit 1; }
+    [ -n "$out" ] || { echo "ABORT: no plant stamp with ci_green for $SHA (submit it first)"; exit 1; }
+    echo "stamp OK: $out"
+}
+
+# Full root-process probe (AGENTS.md §7: the two lines must print
+# nothing — checked again right before ops-deploy.sh). The [a] keeps
+# pgrep from matching the remote shell running it.
+check_roots() {
+    local out
+    out="$(ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "[a]postille/scripts/"')" \
+        || { echo "ABORT: root-probe ssh failed ($1)"; exit 1; }
+    [ -z "$out" ] || { echo "ABORT: operator script may be running ($1):"; echo "$out"; exit 1; }
+}
+
+echo "== 0. plant stamp"
+check_stamp
 
 echo "== 1. rails (schema, migrations, unit)"
 LIVE_VER="$(curl -fsS --max-time 15 https://andrii.ai/apostille/healthz)" \
@@ -41,8 +77,7 @@ HITS="$(git diff "$LIVE_SHA" "$SHA" -- crates xtask \
 git show "$SHA:docs/ops/apostille.service" | ssh andrii.ai 'diff /etc/systemd/system/apostille.service - >/dev/null' \
     || { echo "ABORT: unit file drifted — sync docs/ops/apostille.service first"; exit 1; }
 check_day rails
-ssh andrii.ai 'pgrep -af "[a]postille/scripts/"' \
-    && { echo "ABORT: root-owned apostille process running"; exit 1; } || true
+check_roots rails
 echo "rails OK"
 
 echo "== 2. prod-before scoreboard"
@@ -87,8 +122,7 @@ echo "stage OK"
 
 echo "== 5-6. repeat rails + pre-flight"
 check_day pre-flight
-ssh andrii.ai 'pgrep -af "[a]postille/scripts/"' \
-    && { echo "ABORT: root-owned apostille process running"; exit 1; } || true
+check_roots pre-flight
 ssh andrii.ai 'touch /srv/apostille/releases/.w && rm /srv/apostille/releases/.w && echo WRITE-OK'
 ssh andrii.ai 'touch /srv/apostille/.w && rm /srv/apostille/.w && echo FLIP-OK'
 ssh andrii.ai 'sudo -n systemctl status apostille >/dev/null && echo SUDO-OK'

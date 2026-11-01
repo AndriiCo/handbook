@@ -91,3 +91,4 @@
 | 196 | 2026-11-01 16:20Z | README live-claims fix + operator counts | timeline roadmap, 1/8 WA |
 | 197 | 2026-11-01 16:25Z | full-history secret scan for S1 | 385 commits clean |
 | 198 | 2026-11-01 16:35Z | S1 scrub list, IP/enrolment sweep | 2 files redact, 1 move |
+| 199 | 2026-11-01 16:45Z | ship-release overlap flag + stamp/probe | 8 gate tests pass |
