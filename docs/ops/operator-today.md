@@ -13,8 +13,18 @@ Your lines that flip production rows now (all code is already live):
    shipped in this deploy).
 2. Drop brand SVGs into `web/src/lib/assets/brand/` (GP3 now fails
    only on "google/apple button has no logo"; the fold fix shipped).
-3. S1: LICENSE MIT, public repo visibility, demo video link.
+3. S1: LICENSE text (recommendation: MIT — see below), public repo
+   visibility, demo video link (replace the README line yourself on
+   2026-11-03; builder must never upload it).
 4. Prod `META_API_KEY` is already working (A2 live, 48 ms).
+
+License recommendation (builder input, your call): take MIT. Both are
+permissive and judge-familiar, but Apache-2.0's extra weight is its
+patent grant + retaliation clause, which only matters if you expect
+contributors holding relevant patents — unlikely for an apostille
+handbook, and no such contributions exist. MIT is shorter, unambiguous
+for reuse of the demo code, and the hackathon default. Do not switch
+without saying so; the builder changes nothing here.
 
 Disk fixed 2026-11-01 ~04:05Z (operator cleaned plant `/home`, now 8%):
 plant pipeline keeps newest 3 runs + artifacts + logs per job
