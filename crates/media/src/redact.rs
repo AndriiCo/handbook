@@ -290,7 +290,7 @@ mod tests {
             url: &str,
             _bearer: &str,
             _file: &crate::transport::MultipartFile,
-            _fields: &[(&str, &str)],
+            _fields: &[crate::transport::MultipartField],
         ) -> Result<HttpResponse, TransportError> {
             *self.last_url.borrow_mut() = url.to_string();
             Ok(self.response.borrow().clone())
