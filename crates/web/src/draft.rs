@@ -55,15 +55,6 @@ pub struct DraftRuns {
 }
 
 impl DraftRuns {
-    fn running_count(&self) -> usize {
-        self.runs
-            .lock()
-            .expect("draft-runs lock poisoned")
-            .values()
-            .filter(|r| r.status == "running")
-            .count()
-    }
-
     /// Allocate a run, or `None` when [`MAX_RUNNING`] are in flight.
     pub fn start(&self, capture_id: i64, slug: String, now: i64) -> Option<u64> {
         let mut runs = self.runs.lock().expect("draft-runs lock poisoned");
@@ -308,6 +299,39 @@ impl DraftTask {
     }
 }
 
+/// Live model client: `$META_API_KEY` first (staging, one-shot runs),
+/// else the admin-sealed `meta.api_key`. Fails closed — never the stub.
+fn live_client(
+    conn: &rusqlite::Connection,
+    kek: Option<&config::Kek>,
+) -> Result<handbook_agent::model::MetaRestClient, String> {
+    if let Ok(key) = std::env::var("META_API_KEY")
+        && !key.is_empty()
+    {
+        return Ok(handbook_agent::model::MetaRestClient::new(
+            handbook_agent::model::META_BASE_URL.to_string(),
+            key,
+        ));
+    }
+    let Some(kek) = kek else {
+        return Err("meta api key not configured".to_string());
+    };
+    let (cfg, _warnings) =
+        config::RuntimeConfig::load(conn, kek).map_err(|e| format!("config: {e}"))?;
+    let Some(key) = cfg.meta_api_key else {
+        return Err("meta api key not configured".to_string());
+    };
+    // Borrowed under the config value; never logged (the redacting
+    // `SecretText` only exposes `as_str` to callers that must not log).
+    if key.as_str().is_empty() {
+        return Err("meta api key not configured".to_string());
+    }
+    Ok(handbook_agent::model::MetaRestClient::new(
+        handbook_agent::model::META_BASE_URL.to_string(),
+        key.as_str().to_string(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,37 +370,4 @@ mod tests {
         // A freed slot admits the next draft.
         assert!(runs.start(2, "vietnam".to_string(), 300).is_some());
     }
-}
-
-/// Live model client: `$META_API_KEY` first (staging, one-shot runs),
-/// else the admin-sealed `meta.api_key`. Fails closed — never the stub.
-fn live_client(
-    conn: &rusqlite::Connection,
-    kek: Option<&config::Kek>,
-) -> Result<handbook_agent::model::MetaRestClient, String> {
-    if let Ok(key) = std::env::var("META_API_KEY")
-        && !key.is_empty()
-    {
-        return Ok(handbook_agent::model::MetaRestClient::new(
-            handbook_agent::model::META_BASE_URL.to_string(),
-            key,
-        ));
-    }
-    let Some(kek) = kek else {
-        return Err("meta api key not configured".to_string());
-    };
-    let (cfg, _warnings) =
-        config::RuntimeConfig::load(conn, kek).map_err(|e| format!("config: {e}"))?;
-    let Some(key) = cfg.meta_api_key else {
-        return Err("meta api key not configured".to_string());
-    };
-    // Borrowed under the config value; never logged (the redacting
-    // `SecretText` only exposes `as_str` to callers that must not log).
-    if key.as_str().is_empty() {
-        return Err("meta api key not configured".to_string());
-    }
-    Ok(handbook_agent::model::MetaRestClient::new(
-        handbook_agent::model::META_BASE_URL.to_string(),
-        key.as_str().to_string(),
-    ))
 }
