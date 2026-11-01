@@ -50,3 +50,4 @@
 | 143 | 2026-11-01 01:05Z | sandbox browser breakage to operator | ops |
 | 144 | 2026-11-01 01:05Z | browsers back, shots+demo green, band shown | shots |
 | 145 | 2026-11-01 01:20Z | staging run-2 rescored 9/10 via tunnel | ops |
+| 146 | 2026-11-01 01:50Z | Operator prod steps: A2 503 diagnosed (dir group), script fix + chgrp line | P146 committed, A2/A5/GP2 triaged |

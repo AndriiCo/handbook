@@ -77,6 +77,8 @@ text-only buttons until they land.
 New goal queued (memory `goals-queue.md`, handed over in chat — paste it
 into `.agents/goal.md` yourself; builder never edits it): Muse Glimmer
 self-hosted documents/facts evaluator on plant (feasibility gate first).
+2026-11-01 A2-fix (prod 503 with 3 recordings installed: dir is hal:hal 0750, app user andrii-ai can't traverse): `chgrp apostille /var/lib/apostille/demo_precheck && curl -s -X POST https://andrii.ai/apostille/api/v1/demo/precheck -d '{"sample":"syn-doc-clean"}'` — paste back the verdict line; script fixed in repo (P146) so re-runs set the group.
+
 Inference workstream (side-chat built, main session to adopt as a goal
 item — full design at docs/ops/plant-inference.md):
 `cargo xtask plant-run` + `ops/plant-inference/` drive Qwen2.5-VL-7B

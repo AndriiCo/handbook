@@ -61,8 +61,11 @@ print(f"ok {sys.argv[1]}: {r['verdict']} {len(r['boxes'])} box(es)")
 EOF
 done
 
-echo "=== 3. install (0750 dir so the app user reads via group, 0644 files)"
+echo "=== 3. install (0750 dir group-read for the app group, 0644 files)"
 install -d -m 0750 "$DESTDIR"
+# The app runs as its own user (prod: andrii-ai, in group apostille);
+# without the group bit a 0750 hal-owned dir is EACCES -> endpoint 503.
+chgrp apostille "$DESTDIR" 2>/dev/null || true
 install -m 0644 "$OUTDIR"/*.json "$DESTDIR/" \
     || { echo "ABORT: install failed"; exit 1; }
 rm -rf "$OUTDIR"
