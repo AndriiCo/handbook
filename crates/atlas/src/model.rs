@@ -29,6 +29,18 @@ pub const INLINE_MEDIA_LIMIT: usize = 50_000_000;
 /// Transcription model id.
 pub const VOICE_MODEL: &str = "muse-voice-transcribe-1.0";
 
+/// Uploaded-file lifetime: 7 days, inside the documented 1h–30d
+/// window. Uploads never expire unless `expires_after` is set, and
+/// team storage is capped — per-run inference files must age out.
+pub const UPLOAD_EXPIRY_SECS: u32 = 7 * 24 * 3600;
+
+/// Hashed abuse-detection id sent as `safety_identifier` on Responses
+/// calls: a deployment hash, never a username or email (≤64 chars).
+pub fn safety_identifier() -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest("apostille-atlas"))
+}
+
 /// Transcribe request-body cap: bodies over 32 MB are rejected (413).
 pub const TRANSCRIBE_BODY_LIMIT: usize = 32 * 1024 * 1024;
 
@@ -632,7 +644,16 @@ impl<T: Transport> ModelPort for MetaClient<T> {
             "model": req.model,
             "instructions": req.instructions,
             "input": [{"role": "user", "content": input}],
+            // Hashed deployment id for abuse detection — never a
+            // username or email (safety-identifier docs).
+            "safety_identifier": safety_identifier(),
         });
+        if !req.background {
+            // Sync calls are never retrieved later, so nothing must
+            // persist server-side. Background calls stay stored: the
+            // poller reads them back by id.
+            body["store"] = json!(false);
+        }
         if let Some(effort) = req.reasoning_effort.as_deref() {
             body["reasoning"] = json!({"effort": effort});
         }
@@ -698,18 +719,32 @@ impl<T: Transport> ModelPort for MetaClient<T> {
         if self.api_key.is_empty() {
             return Err(Error::Model("auth: empty api key".to_string()));
         }
+        if !self.terms_read {
+            return Err(Error::Model(
+                "real media is blocked until the meta api data-handling terms are read".to_string(),
+            ));
+        }
         let file = MultipartFile {
             field: "file",
             filename,
             content_type: mime,
             bytes,
         };
+        // `purpose: user_data` for inference files (file-handling
+        // docs); `expires_after` before the file part so per-run
+        // uploads age out instead of filling team storage.
+        let expiry = UPLOAD_EXPIRY_SECS.to_string();
+        let fields = [
+            MultipartField::text("purpose", "user_data"),
+            MultipartField::text("expires_after[anchor]", "created_at"),
+            MultipartField::text("expires_after[seconds]", &expiry),
+        ];
         let res = with_retry(|| {
             self.transport.post_multipart(
                 &format!("{}/files", self.base_url),
                 &self.api_key,
                 &file,
-                &[MultipartField::text("purpose", "assistants")],
+                &fields,
             )
         })?;
         let json = Self::check(res.status, &res.body, res.retry_after_secs)?;
@@ -1591,6 +1626,98 @@ mod tests {
             client.transcribe("v", "audio/wav", &overlong).unwrap_err()
         );
         assert!(err.contains("10-minute"), "{err}");
+    }
+
+    #[test]
+    fn upload_posts_expiring_user_data_and_gates_terms() {
+        // Contract: `purpose=user_data` + `expires_after` fields
+        // before the file part (file-handling docs); uploads of real
+        // media stay fail-closed until the terms are read.
+        let transport = CaptureTransport::canned(200, r#"{"id":"file-1"}"#);
+        let client = MetaClient::new(transport, BASE_URL, "k".to_string()).with_terms_read(true);
+        let id = client
+            .upload_file("clip.pdf", "application/pdf", b"%PDF")
+            .unwrap();
+        assert_eq!(id, "file-1");
+        let file = client.transport.last_file.borrow();
+        assert_eq!(file.0, "file");
+        let fields = client.transport.last_fields.borrow();
+        let plain: Vec<(&str, &str)> = fields
+            .iter()
+            .map(|(n, v, _)| (n.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(
+            plain,
+            [
+                ("purpose", "user_data"),
+                ("expires_after[anchor]", "created_at"),
+                (
+                    "expires_after[seconds]",
+                    UPLOAD_EXPIRY_SECS.to_string().as_str()
+                ),
+            ]
+        );
+        let gated = MetaClient::new(StubTransport::default(), BASE_URL, "k".to_string());
+        let err = format!(
+            "{}",
+            gated
+                .upload_file("c.pdf", "application/pdf", b"%PDF")
+                .unwrap_err()
+        );
+        assert!(err.contains("terms are read"), "{err}");
+    }
+
+    #[test]
+    fn sync_responses_are_not_stored_and_carry_a_hashed_id() {
+        let transport = CaptureTransport::canned(
+            200,
+            r#"{"id":"resp_1","status":"completed",
+                "output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}],
+                "usage":{"input_tokens":3,"output_tokens":4}}"#,
+        );
+        let client = MetaClient::new(transport, BASE_URL, "k".to_string());
+        client
+            .create_response(&ResponsesRequest {
+                model: "m".to_string(),
+                instructions: "i".to_string(),
+                input: vec![InputBlock::Text("hi".to_string())],
+                schema: None,
+                max_output_tokens: None,
+                reasoning_effort: None,
+                background: false,
+                previous_response_id: None,
+            })
+            .unwrap();
+        let body = client.transport.last_json.borrow();
+        assert_eq!(body["store"], json!(false));
+        let id = body["safety_identifier"].as_str().unwrap();
+        assert_eq!(id.len(), 64);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(id, &safety_identifier());
+    }
+
+    #[test]
+    fn background_responses_stay_retrievable() {
+        let transport = CaptureTransport::canned(200, r#"{"id":"resp_b","status":"queued"}"#);
+        let client = MetaClient::new(transport, BASE_URL, "k".to_string());
+        client
+            .create_response(&ResponsesRequest {
+                model: "m".to_string(),
+                instructions: "i".to_string(),
+                input: vec![InputBlock::Text("hi".to_string())],
+                schema: None,
+                max_output_tokens: None,
+                reasoning_effort: None,
+                background: true,
+                previous_response_id: None,
+            })
+            .unwrap();
+        let body = client.transport.last_json.borrow();
+        assert!(
+            body.get("store").is_none(),
+            "background stays stored for polling"
+        );
+        assert!(body["safety_identifier"].is_string());
     }
 
     #[test]
