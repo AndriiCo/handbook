@@ -31,6 +31,12 @@
             "name": "dichvucong.mofa.gov.vn",
             "notes": "MFA consular portal host; fetcher 200 2026-10-31.",
             "status": "unverified"
+        },
+        {
+            "authority": "vietnam",
+            "name": "www.mofa.gov.vn",
+            "notes": "MFA English portal host; added 2026-11-01, verdict pending staging fetch.",
+            "status": "unverified"
         }
     ],
     "observations": [
@@ -81,6 +87,27 @@
             "kind": "website_official",
             "notes": "HCCH Apostille section hub (how the Convention works, e-Register); added 2026-11-01, fetchability unproven until the staging fetch.",
             "uri": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+        },
+        {
+            "authority": "vietnam",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "HCCH member page for Viet Nam (membership, Convention dates); added 2026-11-01, fetchability unproven until the staging fetch.",
+            "uri": "https://www.hcch.net/en/states/hcch-members/viet-nam"
+        },
+        {
+            "authority": "vietnam",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "HCCH Apostille e-Register hub (verification channel); added 2026-11-01, fetchability unproven until the staging fetch.",
+            "uri": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille/e-register"
+        },
+        {
+            "authority": "vietnam",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "MFA Viet Nam English portal (consular procedure references); added 2026-11-01, fetchability unproven until the staging fetch.",
+            "uri": "https://www.mofa.gov.vn/en-us/"
         }
     ]
 }
