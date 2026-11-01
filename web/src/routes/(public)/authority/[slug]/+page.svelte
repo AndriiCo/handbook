@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
 	import VerifiedChip from '../../../../lib/public-ui/VerifiedChip.svelte';
+	import Guide from '../../../../lib/public-ui/Guide.svelte';
 	import { Skeleton } from '../../../../lib/components/ui/skeleton/index.js';
 	import * as HoverCard from '../../../../lib/components/ui/hover-card/index.js';
 	import Heading from '../../../../lib/components/brand/Heading.svelte';
@@ -13,6 +14,7 @@
 	import silhouettes from '../../../../lib/geo/silhouettes.json';
 	import { subscribe } from '../../../../lib/live.svelte.js';
 	import {
+		buildGuide,
 		factCount,
 		groupFactsByTopic,
 		publicError,
@@ -235,6 +237,19 @@
 		});
 	});
 
+	const guideSteps = $derived(
+		buildGuide(facts ?? []).map((s) => {
+			const cite = firstCapture(s.fact);
+			return {
+				title: s.title,
+				statement: String(s.fact?.statement ?? ''),
+				verified: cite?.captured_at ? shortDate(cite.captured_at) : '',
+				source: typeof cite?.source_url === 'string' ? domain(cite.source_url) : null,
+				href: `#${topicId(s.topic)}`
+			};
+		})
+	);
+
 	const displayName = $derived(authorityName ?? slug);
 	const native = $derived(NATIVE[slug]);
 	const inForce = $derived(IN_FORCE[slug]);
@@ -334,8 +349,14 @@
 				This authority is in the index, but no accepted facts have been
 				published. General information, not legal advice.
 			</p>
+			<p>
+				<a href={`${resolve('/(customer)/order')}?destination=${encodeURIComponent(slug)}`}>
+					Start an order anyway
+				</a>
+			</p>
 		</Notice>
 	{:else}
+		<Guide steps={guideSteps} authorityName={displayName} />
 		<div class="grid gap-8 pb-16 lg:grid-cols-12">
 			<div class="lg:col-span-8" bind:this={sectionsRoot}>
 				<nav

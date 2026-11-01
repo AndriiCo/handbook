@@ -98,3 +98,4 @@
 | 203 | 2026-11-01 17:45Z | live WA form check, V-5 evidence | 404 re-verified, 40234 live |
 | 204 | 2026-11-01 18:00Z | plant_run into_owned lint (plant clippy) | gate re-run |
 | 205 | 2026-11-01 18:15Z | staging run 7 on 117ef58 | 9/10 + demo 3/3 |
+| 206 | 2026-11-01 18:35Z | dossier how-to guide from facts | shots+demo+97 green |
