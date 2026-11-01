@@ -55,3 +55,4 @@
 | 148 | 2026-11-01 02:20Z | P147 staging proof: vietnam fetch+analyze, rescore 9/10 | staging log |
 | 149 | 2026-11-01 02:35Z | plant gate race (json-before-tarball) fixed, 8c9fd21 stamped | gate green |
 | 150 | 2026-11-01 02:35Z | packs-coverage: vietnam +3 watch URLs (member, e-register, MFA EN) | validate+load green |
+| 151 | 2026-11-01 02:50Z | packs-coverage: swap 3 dead vietnam URLs for authorities1 + mofa root | staging fetch 2/2 |
