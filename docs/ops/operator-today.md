@@ -1,8 +1,20 @@
-# Operator — Saturday 2026-10-31 (Pacific; updated ~20:50 PDT)
+# Operator — Sunday 2026-11-01 (Pacific; updated ~00:05 PDT)
 
-Production runs `0.1.0+d93a58c` — scoreboard **4/10** (P0, GP1, GP4,
-A2 pass). First red: GP2-data (0/8 accepted per slug). Staging 9/10
-(only S1 red), tunnel live during builder turns.
+Production runs `0.1.0+69ca7fa` (deployed 2026-11-01 ~06:35Z on your
+"deploy now" order, `--allow-today-overlap`) — scoreboard **5/10**
+(P0, GP1, GP4, A2, A5 pass; see `web/shots/prod-before.json` →
+`web/shots/prod-after.json`, no regression). First red: GP2-data
+(0/8 accepted per slug). Staging 9/10 (only S1 red) on the exact
+SHA; tunnel live during builder turns.
+
+Your lines that flip production rows now (all code is already live):
+1. Approve the proposed facts for vietnam + usa-wa-sos in `/review`
+   (flips GP2-data, A1, GP2-page — the code fixes for those rows
+   shipped in this deploy).
+2. Drop brand SVGs into `web/src/lib/assets/brand/` (GP3 now fails
+   only on "google/apple button has no logo"; the fold fix shipped).
+3. S1: LICENSE MIT, public repo visibility, demo video link.
+4. Prod `META_API_KEY` is already working (A2 live, 48 ms).
 
 Disk fixed 2026-11-01 ~04:05Z (operator cleaned plant `/home`, now 8%):
 plant pipeline keeps newest 3 runs + artifacts + logs per job
