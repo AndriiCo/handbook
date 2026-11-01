@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+	buildGuide,
 	factCount,
 	filterAuthorities,
 	groupFactsByTopic,
@@ -122,6 +123,27 @@ test('seedLedgerEvents keeps unique ids on conflict cliques', () => {
 	assert.equal(ids.length, new Set(ids).size);
 	assert.equal(events.filter((e) => e.kind === 'verified').length, 3);
 	assert.equal(events.filter((e) => e.kind === 'changed').length, 6);
+});
+
+test('buildGuide orders steps by plan, skips missing groups', () => {
+	const facts = [
+		{ topic: 'processing_time', statement: 'Three days.' },
+		{ topic: 'fees', statement: '$15 per document.' },
+		{ topic: 'eligibility', statement: 'Not frozen.' }
+	];
+	const steps = buildGuide(facts);
+	assert.deepEqual(
+		steps.map((s) => s.title),
+		['Pay the fee', 'Wait for processing']
+	);
+	assert.equal(steps[0].topic, 'fees');
+	assert.equal(steps[0].fact.statement, '$15 per document.');
+});
+
+test('buildGuide is empty without guide topics', () => {
+	assert.deepEqual(buildGuide([]), []);
+	assert.deepEqual(buildGuide(null), []);
+	assert.deepEqual(buildGuide([{ topic: 'eligibility', statement: 'x' }]), []);
 });
 
 test('publicError takes status only — server text can never leak', () => {

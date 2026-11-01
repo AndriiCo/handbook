@@ -382,7 +382,7 @@
 					</ul>
 				</nav>
 				{#each groups as g (g.topic)}
-					<section aria-labelledby={topicId(g.topic)} data-topic={g.topic} class="scroll-mt-32 py-10 xl:py-16">
+					<section id={topicId(g.topic)} data-topic={g.topic} aria-label={topicLabel(g.topic)} class="scroll-mt-32 py-10 xl:py-16">
 						<Heading level={2}>{topicLabel(g.topic)}</Heading>
 						<div class="mt-6 flex flex-col gap-4">
 							{#each g.facts as fact (fact.id ?? fact.statement)}
