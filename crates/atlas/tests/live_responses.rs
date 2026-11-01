@@ -53,10 +53,12 @@ fn live_flat_text_format_round_trip() {
         }),
         strict: true,
     };
+    // 512 tokens: the cap counts reasoning tokens too, and 64 starved
+    // even this one-line reply (observed live: incomplete at 64).
     let created = client()
         .create_response(&request(
             Some(schema),
-            Some(64),
+            Some(512),
             "Reply with {\"ok\": true}.",
         ))
         .expect("live structured-output call");
