@@ -620,8 +620,22 @@ pub fn insert_analysis_audit(
     Ok(conn.last_insert_rowid())
 }
 
+/// Hash a DEMO session secret for storage (H4: the table held
+/// plaintext tokens, so a DB/file leak hijacked every demo session).
+/// Tokens are 256-bit random hex, so plain SHA-256 suffices — the
+/// same rationale as the magic-link hashes in `auth`.
+fn hash_demo_token(token: &str) -> String {
+    use sha2::Digest as _;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(token.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
 /// Insert a DEMO session row (migration 003). Demo-only: no password is
 /// checked anywhere; real auth (passkey/OAuth) replaces this table.
+/// Stores only the token hash — the raw token travels in the cookie
+/// and is never persisted (H4). Rows written before hashing return
+/// no match (fail closed; demo sessions re-mint on next login).
 pub fn create_demo_session(
     conn: &Connection,
     token: &str,
@@ -632,7 +646,7 @@ pub fn create_demo_session(
     conn.execute(
         "INSERT INTO demo_session(token, customer_ref, created_at, expires_at)
          VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![token, customer_ref, created_at, expires_at],
+        rusqlite::params![hash_demo_token(token), customer_ref, created_at, expires_at],
     )?;
     Ok(())
 }
@@ -644,7 +658,7 @@ pub fn get_demo_session(conn: &Connection, token: &str) -> Result<Option<(String
     // `?` lifts the rusqlite error into `contracts::Result`.
     Ok(rusqlite::OptionalExtension::optional(conn.query_row(
         "SELECT customer_ref, expires_at FROM demo_session WHERE token = ?1",
-        [token],
+        [hash_demo_token(token)],
         |row| Ok((row.get(0)?, row.get(1)?)),
     ))?)
 }
@@ -1617,6 +1631,23 @@ mod tests {
             Some(("demo-1".to_string(), 2000))
         );
         assert_eq!(get_demo_session(&conn, "bogus").unwrap(), None);
+    }
+
+    #[test]
+    fn demo_session_stores_hash_not_plaintext() {
+        // H4: a DB/file leak must not hand out live credentials.
+        let (_dir, _store, conn) = migrated();
+        create_demo_session(&conn, "tok-1", "demo-1", 1000, 2000).unwrap();
+        let stored: String = conn
+            .query_row("SELECT token FROM demo_session", [], |row| row.get(0))
+            .unwrap();
+        assert_ne!(stored, "tok-1");
+        assert_eq!(stored.len(), 64);
+        // Lookup still resolves the raw token from the cookie.
+        assert_eq!(
+            get_demo_session(&conn, "tok-1").unwrap(),
+            Some(("demo-1".to_string(), 2000))
+        );
     }
 
     #[test]

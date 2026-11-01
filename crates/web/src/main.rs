@@ -37,7 +37,7 @@ mod ws_bus;
 use axum::{
     Router,
     extract::{
-        MatchedPath, State,
+        ConnectInfo, MatchedPath, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, HeaderValue, StatusCode, header},
@@ -117,6 +117,11 @@ async fn request_id_and_log(
         if let Ok(value) = HeaderValue::from_str(&id) {
             res.headers_mut().insert("x-request-id", value);
         }
+        // M2: baseline security headers on every response, both
+        // branches (the admin branch additionally denies framing).
+        for (name, value) in security_headers(branch) {
+            res.headers_mut().insert(name, value);
+        }
         if res.status().is_server_error() {
             tracing::error!(
                 status = %res.status(),
@@ -139,6 +144,34 @@ async fn request_id_and_log(
     }
     .instrument(span)
     .await
+}
+
+/// Baseline security headers (M2): MIME-sniffing off, no
+/// referrer leakage, and framing limited (denied on the admin
+/// branch, same-origin on public). HSTS without preload: honored
+/// on the TLS listeners, ignored by browsers over plain-HTTP dev.
+/// No CSP here — the SvelteKit shells need script nonces first.
+fn security_headers(branch: &str) -> [(axum::http::HeaderName, HeaderValue); 4] {
+    let frame = if branch == "admin" {
+        "DENY"
+    } else {
+        "SAMEORIGIN"
+    };
+    [
+        (
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ),
+        (
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ),
+        (header::X_FRAME_OPTIONS, HeaderValue::from_static(frame)),
+        (
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        ),
+    ]
 }
 
 /// Stamp TCP-delivered requests with their transport (the QUIC
@@ -408,12 +441,26 @@ async fn ws_echo_upgrade(ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(ws_echo)
 }
 
+/// `demo_session` Set-Cookie value (H4: `Secure` outside local dev,
+/// the same `secure = !admin_mtls_off` convention as the session and
+/// CSRF cookies. The `__Host-` prefix stays deferred — it requires
+/// `Path=/`, which would widen the cookie past `/apostille`).
+fn demo_session_cookie(token: &str, secure: bool) -> String {
+    // Built manually (no cookie crate): token is hex, so always valid.
+    let mut cookie = format!("demo_session={token}; HttpOnly; SameSite=Lax; Path=/apostille");
+    if secure {
+        cookie.push_str("; Secure");
+    }
+    cookie
+}
+
 /// DEMO login: no password is checked (clearly-marked demo only).
 /// Creates a `demo_session` row with 24h expiry and sets a
-/// `demo_session` cookie. The full token is stored server-side; prod
-/// upgrades to hashes before any real auth.
+/// `demo_session` cookie. Only the token hash is stored server-side
+/// (H4); the cookie carries the raw token.
 async fn demo_login(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<LoginBody>,
 ) -> impl IntoResponse {
     // H4: demo sessions read that ref's submissions, so only `demo-`
@@ -429,24 +476,34 @@ async fn demo_login(
         )
             .into_response();
     }
+    let now = unix_now();
+    // M1/H4: per-IP rate limit on mint-as-anyone (10/min). The sweep
+    // below bounds table rows; this bounds the mint rate (and token
+    // guessing through `me`, which shares the stored hash).
+    let ip = passkey::client_ip(addr);
+    if !state.demo_limits.check(&format!("dl:{ip}"), now, 10, 60) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error": "too many demo logins — wait a minute"})),
+        )
+            .into_response();
+    }
     let bytes = rand::random::<[u8; 32]>();
     let mut token = String::with_capacity(64);
     for b in bytes {
         token.push_str(&format!("{b:02x}"));
     }
-    let now = unix_now();
     let conn = match db::open(&Store::new(&state.store_root)) {
         Ok(conn) => conn,
         Err(_) => return store_unavailable(),
     };
     // M1: sweep expired rows on every login so the demo table cannot
-    // grow unboundedly (a per-IP rate limit is still Day-7 work).
+    // grow unboundedly.
     let _ = db::delete_expired_demo_sessions(&conn, now);
     if db::create_demo_session(&conn, &token, &body.customer_ref, now, now + 86_400).is_err() {
         return store_unavailable();
     }
-    // Built manually (no cookie crate): token is hex, so always valid.
-    let cookie = format!("demo_session={token}; HttpOnly; SameSite=Lax; Path=/apostille");
+    let cookie = demo_session_cookie(&token, !state.admin_mtls_off);
     let Ok(set_cookie) = HeaderValue::from_str(&cookie) else {
         return store_unavailable();
     };
@@ -1379,10 +1436,13 @@ mod tests {
     }
 
     fn login_request(customer_ref: &str) -> Request<Body> {
+        // `ConnectInfo` is a required extractor (same as the precheck
+        // handler): oneshot requests carry it as an extension.
         Request::builder()
             .uri("/apostille/api/v1/demo/login")
             .method("POST")
             .header("content-type", "application/json")
+            .extension(demo_addr())
             .body(Body::from(
                 serde_json::json!({"customer_ref": customer_ref}).to_string(),
             ))
@@ -1773,6 +1833,7 @@ mod tests {
                     .uri("/apostille/api/v1/demo/login")
                     .method("POST")
                     .header("content-type", "application/json")
+                    .extension(demo_addr())
                     .body(Body::from(
                         serde_json::json!({"customer_ref": "demo-1", "admin": true}).to_string(),
                     ))
@@ -1781,6 +1842,244 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[test]
+    fn demo_session_cookie_secure_flag() {
+        // H4: dev (plain HTTP loopback) omits Secure; strict sets it.
+        let dev = demo_session_cookie("abc", false);
+        assert!(dev.starts_with("demo_session=abc"));
+        assert!(dev.contains("HttpOnly"));
+        assert!(!dev.contains("Secure"));
+        let prod = demo_session_cookie("abc", true);
+        assert!(prod.contains("; Secure"));
+    }
+
+    #[test]
+    fn security_headers_branch_values() {
+        // M2: admin denies framing outright; public allows same-origin.
+        let admin: std::collections::HashMap<_, _> =
+            security_headers("admin").into_iter().collect();
+        let public: std::collections::HashMap<_, _> =
+            security_headers("public").into_iter().collect();
+        for map in [&admin, &public] {
+            assert_eq!(map[&header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+            assert_eq!(map[&header::REFERRER_POLICY], "no-referrer");
+            assert_eq!(
+                map[&header::STRICT_TRANSPORT_SECURITY],
+                "max-age=63072000; includeSubDomains"
+            );
+        }
+        assert_eq!(admin[&header::X_FRAME_OPTIONS], "DENY");
+        assert_eq!(public[&header::X_FRAME_OPTIONS], "SAMEORIGIN");
+    }
+
+    #[tokio::test]
+    async fn security_headers_on_public_responses() {
+        // M2: the middleware stamps every public response, including
+        // static fallbacks (not just JSON APIs).
+        for uri in ["/apostille/healthz", "/apostille/no-such-page"] {
+            let res = test_app()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let headers = res.headers();
+            assert_eq!(headers["x-content-type-options"], "nosniff");
+            assert_eq!(headers["referrer-policy"], "no-referrer");
+            assert_eq!(headers["x-frame-options"], "SAMEORIGIN");
+            assert!(
+                headers.contains_key("strict-transport-security"),
+                "uri: {uri}"
+            );
+        }
+    }
+
+    fn login_request_from(ip: &str, customer_ref: &str) -> Request<Body> {
+        Request::builder()
+            .uri("/apostille/api/v1/demo/login")
+            .method("POST")
+            .header("content-type", "application/json")
+            .extension(ConnectInfo(ip.parse::<SocketAddr>().unwrap()))
+            .body(Body::from(
+                serde_json::json!({"customer_ref": customer_ref}).to_string(),
+            ))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn demo_login_limits_per_ip() {
+        // M1/H4: 10 demo mints/min per IP; the eleventh is limited.
+        let tmp = tempfile::tempdir().unwrap();
+        let app = session_app(tmp.path());
+        for _ in 0..10 {
+            let res = app
+                .clone()
+                .oneshot(login_request_from("127.0.0.1:9", "demo-1"))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+        }
+        let res = app
+            .oneshot(login_request_from("127.0.0.1:9", "demo-1"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn ws_origin_gate_live() {
+        // H1 over a real socket (oneshot has no upgrade support, so the
+        // extractor 426s before the handler): a cross-site page riding
+        // ambient cookies is denied, while native clients (no Origin)
+        // and anonymous public reads are unaffected.
+        use futures_util::StreamExt as _;
+
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        {
+            let store = Store::new(&fx.state.store_root);
+            let conn = db::open(&store).unwrap();
+            db::add_authority(
+                &conn,
+                &db::NewAuthority {
+                    kind: "state",
+                    country: "USA",
+                    region: "WA",
+                    name: "WA",
+                    slug: "usa-wa-sos",
+                    actor: "t",
+                    at: 1,
+                },
+            )
+            .unwrap();
+        }
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(
+            axum_server::from_tcp(listener).serve(public_router_for(&fx.state).into_make_service()),
+        );
+
+        async fn ws_connect(
+            addr: &std::net::SocketAddr,
+            topic: &str,
+            cookie: Option<String>,
+            origin: Option<&str>,
+        ) -> Result<
+            (
+                tokio_tungstenite::WebSocketStream<
+                    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                >,
+                tokio_tungstenite::tungstenite::handshake::client::Response,
+            ),
+            tokio_tungstenite::tungstenite::Error,
+        > {
+            let uri: axum::http::Uri = format!("ws://{addr}/apostille/ws/bus?topic={topic}")
+                .parse()
+                .unwrap();
+            let mut builder = tokio_tungstenite::tungstenite::ClientRequestBuilder::new(uri);
+            if let Some(cookie) = cookie {
+                builder = builder.with_header("cookie", cookie);
+            }
+            if let Some(origin) = origin {
+                builder = builder.with_header("origin", origin);
+            }
+            tokio_tungstenite::connect_async(builder).await
+        }
+
+        async fn next_text(
+            ws: &mut tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+        ) -> String {
+            tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+                .await
+                .expect("ws message within 5s")
+                .expect("stream open")
+                .expect("message ok")
+                .into_text()
+                .expect("text frame")
+                .to_string()
+        }
+
+        // Valid staff credential, disallowlisted Origin: 403 (without
+        // the gate this exact request upgrades to a hello).
+        let denied = ws_connect(
+            &addr,
+            "call:1",
+            Some(format!("{}=staff-1", auth::ADM_COOKIE)),
+            Some("https://evil.test"),
+        )
+        .await;
+        match denied {
+            Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
+                assert_eq!(res.status(), 403);
+            }
+            other => panic!("expected HTTP 403, got {other:?}"),
+        }
+
+        // Same credential from an allowlisted dev Origin: hello.
+        let (mut staff, _) = ws_connect(
+            &addr,
+            "call:1",
+            Some(format!("{}=staff-1", auth::ADM_COOKIE)),
+            Some("http://localhost:3000"),
+        )
+        .await
+        .unwrap();
+        let hello: serde_json::Value = serde_json::from_str(&next_text(&mut staff).await).unwrap();
+        assert_eq!(hello["topic"], "call:1");
+        staff.close(None).await.unwrap();
+
+        // Anonymous public read from a cross-site Origin: unaffected
+        // (no cookies to ride — public data, by design).
+        let (mut anon, _) = ws_connect(
+            &addr,
+            "authority:usa-wa-sos",
+            None,
+            Some("https://evil.test"),
+        )
+        .await
+        .unwrap();
+        let hello: serde_json::Value = serde_json::from_str(&next_text(&mut anon).await).unwrap();
+        assert_eq!(hello["topic"], "authority:usa-wa-sos");
+        anon.close(None).await.unwrap();
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_oversized_body() {
+        // M1: arbitrary-JSON fan-out is capped; normal events flow.
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let publish = |body: serde_json::Value| {
+            admin_request(
+                "POST",
+                "/apostille/api/v1/bus/publish",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("http://localhost:3001"),
+                Some(serde_json::json!({
+                    "topic": "call:1",
+                    "kind": "note",
+                    "body": body,
+                })),
+            )
+        };
+        let res = admin_router_for(&fx.state)
+            .oneshot(publish(serde_json::json!({"text": "hello"})))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let big = "x".repeat(20_000);
+        let res = admin_router_for(&fx.state)
+            .oneshot(publish(serde_json::json!({"text": big})))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     #[tokio::test]

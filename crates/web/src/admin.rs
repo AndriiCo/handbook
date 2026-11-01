@@ -615,6 +615,15 @@ struct PublishBody {
     body: serde_json::Value,
 }
 
+/// True when a publish event body exceeds the fan-out cap (16 KiB
+/// serialized): large enough for fact payloads, small enough that
+/// one publish cannot flood anonymous subscribers.
+fn publish_body_too_large(body: &serde_json::Value) -> bool {
+    serde_json::to_string(body)
+        .map(|s| s.len() > 16_384)
+        .unwrap_or(true)
+}
+
 /// Staff publish to one bus channel. Authority channels accept only
 /// `fact_accepted` events — this is what keeps anonymous subscribers
 /// on accepted facts only.
@@ -641,6 +650,16 @@ async fn publish(
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(json!({"error": "bad event kind"})),
+        )
+            .into_response();
+    }
+    // M1: the event body is arbitrary JSON fanned out to anonymous
+    // subscribers — cap the payload so one staff call cannot flood
+    // every subscriber on the channel.
+    if publish_body_too_large(&body.body) {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({"error": "event body too large"})),
         )
             .into_response();
     }

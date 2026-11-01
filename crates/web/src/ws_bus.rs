@@ -30,6 +30,11 @@ pub struct Bus {
 }
 
 impl Bus {
+    /// Bound on live channels before idle ones are reaped (M1: every
+    /// distinct topic string keys a channel, so an enumeration loop
+    /// would otherwise grow the map forever).
+    const MAX_CHANNELS: usize = 4096;
+
     /// Empty bus (no channels until first subscribe/publish).
     pub fn new() -> Self {
         Bus::default()
@@ -45,11 +50,24 @@ impl Bus {
         let _ = self.sender(channel).send(msg);
     }
 
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.inner.lock().expect("bus lock poisoned").len()
+    }
+
     fn sender(&self, channel: &str) -> broadcast::Sender<String> {
-        self.inner
-            .lock()
-            .expect("bus lock poisoned")
-            .entry(channel.to_string())
+        let mut map = self.inner.lock().expect("bus lock poisoned");
+        if let Some(tx) = map.get(channel) {
+            return tx.clone();
+        }
+        if map.len() >= Self::MAX_CHANNELS {
+            // Reap idle channels (no receivers left): a subscribe loop
+            // that disconnects cannot grow the map. A flood of LIVE
+            // channels still grows past the bound, but only with a live
+            // subscriber attached to each.
+            map.retain(|_, tx| tx.receiver_count() > 0);
+        }
+        map.entry(channel.to_string())
             .or_insert_with(|| broadcast::channel(64).0)
             .clone()
     }
@@ -98,6 +116,34 @@ pub async fn ws_bus_upgrade(
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Json(json!({"error": "unknown topic"})),
+            )
+                .into_response();
+        }
+    }
+    // H1 (CSWSH): browsers always send Origin on WS handshakes, so
+    // a present-but-disallowlisted Origin is a cross-site page riding
+    // ambient cookies — fail closed before any session work. Checked
+    // only for credentialed upgrades and non-public topics: anonymous
+    // authority reads carry no cookies to ride (public data, by
+    // design). A missing Origin is a native client, not a browser.
+    let cookies = headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let credentialed = auth::cookie_value(cookies, auth::ADM_COOKIE)
+        .or_else(|| auth::cookie_value(cookies, auth::PUB_COOKIE))
+        .is_some()
+        || demo_cookie_value(cookies).is_some();
+    if credentialed || !matches!(topic, auth::ws::WsTopic::Authority { .. }) {
+        let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+        if origin.is_some_and(|o| !auth::csrf::origin_allowed(Some(o), state.admin_mtls_off)) {
+            tracing::warn!(
+                topic_noun = topic_noun(&topic),
+                "ws bus upgrade denied: disallowlisted origin"
+            );
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"error": "origin forbidden"})),
             )
                 .into_response();
         }
@@ -162,6 +208,18 @@ fn resolve_caller(
     Ok((auth::Role::Anonymous, None))
 }
 
+/// Topic noun for denial logs (never the full topic: `billing:`
+/// and owner topics name customer data — M5).
+fn topic_noun(topic: &auth::ws::WsTopic) -> &'static str {
+    match topic {
+        auth::ws::WsTopic::Authority { .. } => "authority",
+        auth::ws::WsTopic::Call { .. } => "call",
+        auth::ws::WsTopic::Submission { .. } => "submission",
+        auth::ws::WsTopic::Shipment { .. } => "shipment",
+        auth::ws::WsTopic::Billing { .. } => "billing",
+    }
+}
+
 /// `demo_session` cookie value, if present and non-empty.
 fn demo_cookie_value(cookies: &str) -> Option<&str> {
     cookies
@@ -212,5 +270,36 @@ async fn serve(mut socket: WebSocket, mut rx: broadcast::Receiver<String>, chann
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn channel_map_reaps_idle_past_bound() {
+        // M1: an enumeration loop that disconnects cannot grow the map:
+        // past MAX_CHANNELS every idle channel is reaped on next use.
+        let bus = Bus::new();
+        for i in 0..Bus::MAX_CHANNELS {
+            bus.publish(&format!("call:{}", i + 1), "x".to_string());
+        }
+        assert_eq!(bus.len(), Bus::MAX_CHANNELS);
+        bus.publish("call:9999999", "x".to_string());
+        assert_eq!(bus.len(), 1);
+    }
+
+    #[test]
+    fn channel_map_keeps_live_subscribers_past_bound() {
+        // Channels with live receivers survive the reap.
+        let bus = Bus::new();
+        let _live = bus.subscribe("call:1");
+        for i in 1..Bus::MAX_CHANNELS {
+            bus.publish(&format!("call:{}", i + 1), "x".to_string());
+        }
+        assert_eq!(bus.len(), Bus::MAX_CHANNELS);
+        bus.publish("call:9999999", "x".to_string());
+        assert_eq!(bus.len(), 2);
     }
 }
