@@ -127,13 +127,16 @@ outside the slice's file list:
 
 ## Builder state (info only)
 
-Web redesign slices P153–P157 landed on main (shell + GP1–GP4 + login);
-local gates green (check, both builds, imports, tailwind, 20/20 shots).
-Staging 9/10 (only S1 red) on 117ef58. Main tip `50e19f4`
-(merge + P208/P209) is unstamped: plant SSH down since ~11-01
-19:30Z, submits queued. Prod 5/10 until approvals land. Local
-Chromium currently cannot launch in this sandbox (Mach IPC
-denied) — web e2e red environmentally; plant gate unaffected.
+Local gates green on main tip `d65cf5b` (P214): web 262 tests,
+clippy, svelte-check, imports, tailwind, both builds, web unit 99.
+Staging 9/10 (only S1 red) on 117ef58. Main past P208 is unstamped:
+plant SSH down since ~11-01 19:30Z (`No user exists for uid 501`),
+submits queued (`f201aa2` → `d65cf5b`, 8 SHAs). Prod 1/10 in this
+sandbox's scoreboard run (browser rows fail: local Chromium cannot
+launch here, Mach IPC denied — environmental; data rows fail on
+approvals: vietnam 0/8, usa-wa-sos 1/8). P214 adds
+`GET /p2/submissions` (orders list, newest-first, per-customer) and
+wires `/orders` to it — the page no longer shows placeholder rows.
 WA form template (goal priority 5): standalone Dec-2024 form URL
 re-verified dead 11-01 (404 page); live 6.2025 CORPS Records Request
 (URL + $15/40234 evidence in egypt-consular.md V-5a) covers
