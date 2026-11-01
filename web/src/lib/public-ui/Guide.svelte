@@ -15,10 +15,7 @@
 
 <section aria-labelledby="howto" class="border-y border-line bg-surface py-10 xl:py-16">
 	<div class="mx-auto w-full max-w-5xl px-4 sm:px-6">
-		<p class="text-eyebrow mt-0 font-semibold tracking-[0.06em] text-ink-muted uppercase">
-			Step by step
-		</p>
-		<h2 id="howto" class="text-h2 mt-2 mb-0 font-semibold">
+		<h2 id="howto" class="text-h2 mt-0 mb-0 font-semibold">
 			How to get your apostille{#if authorityName}<span class="sr-only"> for {authorityName}</span>{/if}
 		</h2>
 		{#if steps.length === 0}

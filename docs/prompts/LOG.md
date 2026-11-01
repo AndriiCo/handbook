@@ -116,3 +116,4 @@
 | 209 | 2026-11-01 19:20Z | overlap help aligns with lifted cap | gates 8/8, xtask 17 |
 | 210 | 2026-11-01 19:40Z | operator page: merge + queue state | follow-up 3 done |
 | 211 | 2026-11-01 19:55Z | demo script names the dossier guide | still 175 s |
+| 212 | 2026-11-01 20:05Z | taste: drop duplicate guide kicker | check+build green |
