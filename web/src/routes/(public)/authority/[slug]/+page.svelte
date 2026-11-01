@@ -141,7 +141,7 @@
 		for (const f of list) {
 			const cite = firstCapture(f);
 			events.push({
-				id: `fact-${f.id}`,
+				id: `fact-${f.id ?? f.statement}`,
 				kind: 'verified',
 				text: `${topicLabel(f.topic)} — verified quote`,
 				at: cite?.captured_at ?? '',
@@ -149,7 +149,7 @@
 			});
 			for (const sib of f.conflicts ?? []) {
 				events.push({
-					id: `conflict-${sib.id}`,
+					id: `conflict-${sib.id ?? sib.statement}`,
 					kind: 'changed',
 					text: `${topicLabel(f.topic)} — new proposal under review`,
 					at: '',
@@ -384,7 +384,7 @@
 					<section aria-labelledby={topicId(g.topic)} data-topic={g.topic} class="scroll-mt-32 py-10 xl:py-16">
 						<Heading level={2}>{topicLabel(g.topic)}</Heading>
 						<div class="mt-6 flex flex-col gap-4">
-							{#each g.facts as fact (fact.id)}
+							{#each g.facts as fact (fact.id ?? fact.statement)}
 								{@const cite = firstCapture(fact)}
 								<article class="rounded-xl border border-line bg-bg p-5">
 									<p class="text-body-lg m-0 text-ink">{fact.statement}</p>
@@ -438,7 +438,7 @@
 													<p class="m-0 text-xs font-medium text-ink-muted">Accepted</p>
 													<p class="m-0 mt-1 text-sm text-ink">{fact.statement}</p>
 												</div>
-												{#each fact.conflicts ?? [] as sib (sib.id)}
+												{#each fact.conflicts ?? [] as sib (sib.id ?? sib.statement)}
 													<div class="rounded-md border border-line bg-bg p-3">
 														<p class="m-0 text-xs font-medium text-ink-muted">
 															<span

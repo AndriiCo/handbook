@@ -71,3 +71,4 @@
 | 163 | 2026-11-01 04:30Z | A5 root cause: evals path, fixed+staged, operator re-runs | loader proved 26 cases |
 | 164 | 2026-11-01 04:50Z | admin 401 vs 403 split + test, operator error guide | 96 tests, demo 3/3 |
 | 165 | 2026-11-01 05:10Z | perms root cause: mktemp scripts + rootless re-run | staged, operator runs |
+| 166 | 2026-11-01 05:30Z | gate fix: cuj spec to redesign + null-safe keys | e2e 6/6, shots 20/20 |

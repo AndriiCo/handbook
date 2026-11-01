@@ -36,9 +36,9 @@ test('J1 lookup costs at most one search plus one click', async ({ page }) => {
 		);
 
 		await journey.goto(`${srv.url}/apostille`);
-		await expect(page.getByRole('heading', { name: 'Start with your destination' })).toBeVisible();
-		await journey.fill(page.locator('#q'), 'exam');
-		await journey.click(page.getByRole('link', { name: 'Example Authority' }));
+		await expect(page.getByRole('heading', { name: 'Apostille rules' })).toBeVisible();
+		await journey.fill(page.locator('#hero-q'), 'exam');
+		await journey.click(page.getByRole('button', { name: /Example Authority/ }));
 		await expect(page.getByText('Eight dollars per document.')).toBeVisible();
 
 		expect(journey.summary()).toEqual({ actions: 2, inputs: 1 });
