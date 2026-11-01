@@ -2,7 +2,13 @@
 	import { resolve } from '$app/paths';
 	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
 	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
-	import { cookieValue, loginPasskey, registerPasskey } from '../../../lib/customer/passkey.js';
+	import {
+		cookieValue,
+		credentialRequestArgs,
+		loginPasskey,
+		registerPasskey,
+		serializeAuthentication
+	} from '../../../lib/customer/passkey.js';
 	import {
 		OAUTH_LABELS,
 		OAUTH_PROVIDERS,
@@ -12,6 +18,9 @@
 	} from '../../../lib/customer/oauth.js';
 	import { consumeMagic, magicError, requestMagic } from '../../../lib/customer/magic.js';
 	import Heading from '../../../lib/components/brand/Heading.svelte';
+	import Guilloche from '../../../lib/components/brand/Guilloche.svelte';
+	import ApostilleCertificate from '../../../lib/components/brand/ApostilleCertificate.svelte';
+	import CheckIcon from '@lucide/svelte/icons/check';
 
 	let locale = $state<Locale>(resolveLocale());
 	let displayName = $state('');
@@ -29,6 +38,9 @@
 	let magicSent = $state(false);
 	let magicBusy = $state(false);
 	let magicStarted = false;
+	let magicOpen = $state(false);
+	let tab = $state<'signin' | 'create'>('signin');
+	let conditionalStarted = false;
 
 	// Official provider artwork, dropped in by the operator
 	// (see lib/assets/brand/README.md). Missing file → text button.
@@ -71,6 +83,11 @@
 		return body.error ?? `Request failed (HTTP ${status}).`;
 	}
 
+	function signedInAs(userId: string) {
+		localStorage.setItem('hb_last_user', userId);
+		me = { user_id: userId };
+	}
+
 	async function register(event: SubmitEvent) {
 		event.preventDefault();
 		error = null;
@@ -84,8 +101,7 @@
 				error = friendly(res.status, res.body);
 				return;
 			}
-			localStorage.setItem('hb_last_user', res.body.user_id);
-			me = { user_id: res.body.user_id };
+			signedInAs(res.body.user_id);
 		} catch (e) {
 			error = e instanceof DOMException && e.name === 'AbortError'
 				? 'Cancelled — no passkey was created.'
@@ -108,8 +124,7 @@
 				error = friendly(res.status, res.body);
 				return;
 			}
-			localStorage.setItem('hb_last_user', res.body.user_id);
-			me = { user_id: res.body.user_id };
+			signedInAs(res.body.user_id);
 		} catch (e) {
 			error = e instanceof DOMException && e.name === 'AbortError'
 				? 'Cancelled — not logged in.'
@@ -156,6 +171,34 @@
 		}
 	}
 
+	// Passkey autofill: offer the account's passkey through conditional
+	// mediation when the browser supports it. Silent by design — any
+	// failure falls through to the explicit button below.
+	async function tryConditionalMediation() {
+		try {
+			if (conditionalStarted || typeof PublicKeyCredential === 'undefined') return;
+			if (!PublicKeyCredential.isConditionalMediationAvailable) return;
+			if (!(await PublicKeyCredential.isConditionalMediationAvailable())) return;
+			conditionalStarted = true;
+			const started = await post('/auth/passkey/login/start', { account: '' });
+			if (!started.ok) return;
+			const cred = await navigator.credentials.get({
+				...credentialRequestArgs(started.body.options),
+				mediation: 'conditional'
+			} as CredentialRequestOptions);
+			if (!cred) return;
+			const finished = await post('/auth/passkey/login/finish', {
+				challenge_id: started.body.challenge_id,
+				credential: serializeAuthentication(cred)
+			});
+			if (finished.ok && typeof finished.body?.user_id === 'string') {
+				signedInAs(finished.body.user_id);
+			}
+		} catch {
+			// Autofill unavailable — the button path still works.
+		}
+	}
+
 	$effect(() => {
 		// Magic-link consume (#t= fragment — never a query param, so
 		// the token stays out of server logs). Read once, strip
@@ -172,8 +215,7 @@
 						error = magicError(res.status, 'consume');
 						return;
 					}
-					localStorage.setItem('hb_last_user', res.body.user_id);
-					me = { user_id: res.body.user_id };
+					signedInAs(res.body.user_id);
 				})
 				.catch(() => {
 					error = magicError(500, 'consume');
@@ -221,133 +263,200 @@
 	<title>{t.loginLabel} — Apostille Handbook</title>
 </svelte:head>
 
-<Heading level={1}>{t.loginLabel}</Heading>
-
-{#if !webauthnOk}
-	<p class="max-w-[28rem] rounded-sm border border-line bg-error-bg px-4 py-3" role="alert">
-		This browser cannot do passkeys. Use a current Safari, Chrome, Edge, or Firefox.
-	</p>
-{:else if me}
-	<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3" role="status">
-		Logged in. <a href={resolve('/(customer)/orders')}>Continue to {t.orderLabel}s</a>
-		· <a href={resolve('/(customer)/security')}>Manage sign-in methods</a>
-		· <button
-			type="button"
-			class="min-h-0 cursor-pointer border-0 bg-transparent p-0 font-normal text-accent-strong underline"
-			onclick={logout}>{t.logoutLabel}</button
-		>
-	</p>
-{:else}
-	{#if magicBusy}
-		<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3" role="status">Signing you in…</p>
-	{/if}
-	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={login}>
-		<label class="font-bold" for="account">User ID or email</label>
-		<input
-			class="field"
-			id="account"
-			name="account"
-			type="text"
-			bind:value={account}
-			required
-			autocomplete="username webauthn"
+<section
+	class="grid items-stretch gap-8 py-10 lg:grid-cols-2 xl:py-16"
+	aria-label={t.loginLabel}
+>
+	<div
+		class="relative overflow-clip rounded-xl p-8 text-white sm:p-10"
+		style="background: linear-gradient(135deg, #0e3a5c 0%, #07121c 70%);"
+	>
+		<Guilloche
+			seed="login-panel"
+			class="pointer-events-none absolute -top-16 -right-16 size-80 text-white opacity-20 [mask-image:radial-gradient(circle,black,transparent_70%)]"
 		/>
-		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
-			type="submit"
-			disabled={busy}>Sign in with passkey</button
-		>
-	</form>
-
-	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={register}>
-		<h2 class="form-title">New here? Register a passkey</h2>
-		<label class="font-bold" for="display-name">Display name</label>
-		<input
-			class="field"
-			id="display-name"
-			name="display_name"
-			type="text"
-			bind:value={displayName}
-			required
-		/>
-		<label class="font-bold" for="key-label">Key label (optional)</label>
-		<input
-			class="field"
-			id="key-label"
-			name="label"
-			type="text"
-			bind:value={label}
-			placeholder="MacBook Pro"
-		/>
-		<label class="font-bold" for="reg-email">Email (optional, for account recovery)</label>
-		<input
-			class="field"
-			id="reg-email"
-			name="email"
-			type="email"
-			bind:value={email}
-			autocomplete="email"
-		/>
-		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
-			type="submit"
-			disabled={busy}>Register passkey</button
-		>
-	</form>
-
-	{#if error}
-		<p class="max-w-[28rem] rounded-sm border border-line bg-error-bg px-4 py-3" role="alert">{error}</p>
-	{/if}
-
-	{#if providers === null}
-		<div role="status" aria-label="Checking sign-in options" class="mb-2 max-w-[28rem]">
-			<span class="sr-only">Checking sign-in options</span>
-			<Skeleton class="h-11 w-full" />
+		<div class="relative w-36 rotate-3 rounded-lg p-2 shadow-xl" style="background: var(--surface);">
+			<ApostilleCertificate highlight={2} />
 		</div>
-	{:else}
-		{#each providers as provider (provider)}
-			{@const logo = brandFor(provider)}
-			<button
-				class="mb-2 flex min-h-11 w-full max-w-[28rem] cursor-pointer items-center justify-center gap-2 rounded-sm border border-line bg-bg px-4 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
-				type="button"
-				disabled={busy}
-				onclick={() => oauthLogin(provider)}
-			>
-				{#if logo}
-					<img src={logo} alt="" width="18" height="18" class="size-[18px] flex-none" />
-				{/if}
-				Continue with {OAUTH_LABELS[provider] ?? provider}
-			</button>
-		{/each}
-	{/if}
-
-	<form class="mb-8 flex max-w-[28rem] flex-col gap-2" onsubmit={magicRequest}>
-		<h2 class="form-title">Or get an email link</h2>
-		<label class="font-bold" for="magic-email">Email</label>
-		<input
-			class="field"
-			id="magic-email"
-			name="magic_email"
-			type="email"
-			bind:value={magicEmail}
-			required
-			autocomplete="email"
-			disabled={busy}
-		/>
-		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
-			type="submit"
-			disabled={busy}>Send sign-in link</button
-		>
-	</form>
-
-	{#if magicSent}
-		<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3" role="status">
-			Check your inbox — if that address has an account, a sign-in link is on its way.
+		<p class="font-brand text-h2 relative mt-8 max-w-[20ch] font-medium text-balance">
+			Your documents, verified quote by quote.
 		</p>
-	{/if}
-{/if}
+		<ul class="relative mt-6 flex list-none flex-col gap-3 p-0 text-[0.95rem]">
+			{#each ['Muse Spark drafts from official pages', 'Every quote checked byte-exact', 'Staff approve before anything publishes'] as point (point)}
+				<li class="flex items-center gap-2">
+					<CheckIcon class="size-5 flex-none" aria-hidden="true" />
+					<span>{point}</span>
+				</li>
+			{/each}
+		</ul>
+	</div>
+
+	<div class="mx-auto w-full max-w-[25rem]">
+		<div class="rounded-xl border border-line bg-bg p-6 shadow-md">
+			{#if !webauthnOk}
+				<Heading level={1}>{t.loginLabel}</Heading>
+				<p class="rounded-md border border-line bg-error-bg px-4 py-3" role="alert">
+					This browser cannot do passkeys. Use a current Safari, Chrome, Edge, or Firefox.
+				</p>
+			{:else if me}
+				<Heading level={1}>{t.loginLabel}</Heading>
+				<p class="rounded-md border border-line px-4 py-3" role="status">
+					Logged in. <a href={resolve('/(customer)/orders')}>Continue to {t.orderLabel}s</a>
+					· <a href={resolve('/(customer)/security')}>Manage sign-in methods</a>
+					· <button
+						type="button"
+						class="min-h-0 cursor-pointer border-0 bg-transparent p-0 font-normal text-accent-strong underline"
+						onclick={logout}>{t.logoutLabel}</button
+					>
+				</p>
+			{:else}
+				<Heading level={1}>{tab === 'signin' ? t.loginLabel : 'Create account'}</Heading>
+				<div class="mt-4 flex rounded-md border border-line bg-surface p-1" role="tablist" aria-label="Sign in or create account">
+					{#each [{ v: 'signin', label: t.loginLabel }, { v: 'create', label: 'Create account' }] as opt (opt.v)}
+						<button
+							type="button"
+							role="tab"
+							aria-selected={tab === opt.v}
+							onclick={() => (tab = opt.v as 'signin' | 'create')}
+							class={`min-h-11 flex-1 cursor-pointer rounded-sm px-3 text-sm font-medium transition-colors ${
+								tab === opt.v ? 'bg-bg text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
+							}`}
+						>
+							{opt.label}
+						</button>
+					{/each}
+				</div>
+
+				{#if magicBusy}
+					<p class="rounded-md border border-line px-4 py-3" role="status">Signing you in…</p>
+				{/if}
+
+				{#if tab === 'signin'}
+					<form class="mt-4 flex flex-col gap-2" onsubmit={login}>
+						<label class="font-bold" for="account">User ID or email</label>
+						<input
+							class="field"
+							id="account"
+							name="account"
+							type="text"
+							bind:value={account}
+							required
+							autocomplete="username webauthn"
+							onfocus={() => void tryConditionalMediation()}
+						/>
+						<button
+							class="mt-2 min-h-12 cursor-pointer rounded-md border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
+							type="submit"
+							disabled={busy}>Sign in with passkey</button
+						>
+					</form>
+
+					<div class="my-4 flex items-center gap-3 text-sm text-ink-muted" aria-hidden="true">
+						<span class="h-px flex-1 bg-line"></span>
+						<span>or</span>
+						<span class="h-px flex-1 bg-line"></span>
+					</div>
+
+					{#if providers === null}
+						<div role="status" aria-label="Checking sign-in options">
+							<span class="sr-only">Checking sign-in options</span>
+							<Skeleton class="h-11 w-full" />
+						</div>
+					{:else}
+						{#each providers as provider (provider)}
+							{@const logo = brandFor(provider)}
+							<button
+								class="mb-2 flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-line bg-bg px-4 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
+								type="button"
+								disabled={busy}
+								onclick={() => oauthLogin(provider)}
+							>
+								{#if logo}
+									<img src={logo} alt="" width="18" height="18" class="size-[18px] flex-none" />
+								{/if}
+								Continue with {OAUTH_LABELS[provider] ?? provider}
+							</button>
+						{/each}
+					{/if}
+
+					<button
+						type="button"
+						aria-expanded={magicOpen}
+						onclick={() => (magicOpen = !magicOpen)}
+						class="mt-2 inline-flex min-h-11 cursor-pointer items-center font-medium text-accent-strong underline decoration-dotted underline-offset-4"
+					>
+						{magicOpen ? 'Hide the email link option' : 'Use an email link instead'}
+					</button>
+					{#if magicOpen}
+						<form class="mt-2 flex flex-col gap-2" onsubmit={magicRequest}>
+							<label class="font-bold" for="magic-email">Email</label>
+							<input
+								class="field"
+								id="magic-email"
+								name="magic_email"
+								type="email"
+								bind:value={magicEmail}
+								required
+								autocomplete="email"
+								disabled={busy}
+							/>
+							<button
+								class="min-h-11 cursor-pointer rounded-md border border-line bg-surface px-5 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
+								type="submit"
+								disabled={busy}>Send sign-in link</button
+							>
+						</form>
+						{#if magicSent}
+							<p class="rounded-md border border-line px-4 py-3" role="status">
+								Check your inbox — if that address has an account, a sign-in link is on its way.
+							</p>
+						{/if}
+					{/if}
+				{:else}
+					<form class="mt-4 flex flex-col gap-2" onsubmit={register}>
+						<label class="font-bold" for="display-name">Display name</label>
+						<input
+							class="field"
+							id="display-name"
+							name="display_name"
+							type="text"
+							bind:value={displayName}
+							required
+						/>
+						<label class="font-bold" for="key-label">Key label (optional)</label>
+						<input
+							class="field"
+							id="key-label"
+							name="label"
+							type="text"
+							bind:value={label}
+							placeholder="MacBook Pro"
+						/>
+						<label class="font-bold" for="reg-email">Email (optional, for account recovery)</label>
+						<input
+							class="field"
+							id="reg-email"
+							name="email"
+							type="email"
+							bind:value={email}
+							autocomplete="email"
+						/>
+						<button
+							class="mt-2 min-h-12 cursor-pointer rounded-md border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
+							type="submit"
+							disabled={busy}>Register passkey</button
+						>
+					</form>
+				{/if}
+
+				{#if error}
+					<p class="rounded-md border border-line bg-error-bg px-4 py-3" role="alert">{error}</p>
+				{/if}
+			{/if}
+		</div>
+	</div>
+</section>
 
 {#if oauthError}
-	<p class="max-w-[28rem] rounded-sm border border-line bg-error-bg px-4 py-3" role="alert">{oauthError}</p>
+	<p class="max-w-[28rem] rounded-md border border-line bg-error-bg px-4 py-3" role="alert">{oauthError}</p>
 {/if}

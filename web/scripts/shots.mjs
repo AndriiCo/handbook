@@ -33,7 +33,7 @@ const THEMES = ['light', 'dark'];
 const BANNED = ['placeholder', 'not wired', 'skeleton', 'lorem', 'todo'];
 // Routes whose redesign slice has landed (each screen gets one graphic
 // drawn from its own data). Extend as slices 2–5 land.
-const GRAPHIC_ROUTES = ['/', '/authority/vietnam', '/order', '/precheck'];
+const GRAPHIC_ROUTES = ['/', '/authority/vietnam', '/order', '/precheck', '/login'];
 // Routes still allowed a native <select>: none — slice 4 replaced the
 // order destination select with a combobox.
 const NATIVE_SELECT_OK = [];
