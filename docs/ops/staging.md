@@ -266,3 +266,23 @@ above verbatim).
   (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
 - Staging-green deploy candidate for Monday 11-02 (Sunday spent,
   no order): stamp + 9/10 + live demo 3/3 all on 117ef58.
+
+## Run 8 (2026-11-01, 5bb462a) — 9/10 kept, orders flow live on staging
+- Plant gate first failed on `2a826de` (pre-guide CUJ locator went
+  strict-mode ambiguous: the dossier guide quotes fact statements —
+  P219 scopes it to the Fees region, verified locally, resubmitted).
+  Stamp `acceptance/5bb462a383cb.json` (`ci_green: true`); short-SHA
+  submits stamp under the short name, which `ship-release.sh` rejects —
+  always submit the full SHA.
+- Exact checkout via xfer ref, native release rebuild + both SPAs,
+  restart on 18318/18319 by verified PID (DB reused: vietnam 8 +
+  usa-wa-sos 9 accepted stand). `healthz` → `0.1.0+5bb462a`.
+- Rescore 9/10, only S1 red (operator-owned licence/video/
+  visibility). Live demo take 3/3 on the exact SHA
+  (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
+- Staging-green deploy candidate (Sunday open, cap lifted until 11-10):
+  stamp + 9/10 + live demo 3/3 all on 5bb462a. Ship blocked on the
+  unit-file drift rail: repo `docs/ops/apostille.service` line 6 is a
+  P180 comment retarget vs installed — operator root step on
+  `docs/ops/operator-today.md` item 1 (install + daemon-reload, no
+  restart), then re-run ship + deploy.

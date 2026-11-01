@@ -54,7 +54,27 @@ group-read pre-step from this morning is done — A2 reads prove it.
 
 ## Still open (in order)
 
-1. Approvals — no script: open the admin `/review` with your client
+1. DEPLOY BLOCKER (root, one comment line, no restart): Sunday's
+   staging-green candidate `5bb462a` (stamp `ci_green: true`, staging
+   9/10 + live demo 3/3) cannot ship until the installed unit file
+   matches the repo — `ship-release.sh` aborts on any drift, and a
+   rollback would not restore the unit (AGENTS.md §7). The whole
+   difference is line 6, comment-only:
+   `runbook-release.md` → `staging.md § Steps` (P180 doc retarget).
+   From your checkout, as hal: `scp docs/ops/apostille.service
+   andrii.ai:/tmp/apostille.service.new` and check
+   `sha256sum /tmp/apostille.service.new` =
+   `a5c416fb67ccafa52a5730627d057e77030b2eebe8f5ff0b85c5f116e809f964`.
+   Then as root: `diff /etc/systemd/system/apostille.service
+   /tmp/apostille.service.new` (expect only line 6),
+   `install -m 644 /tmp/apostille.service.new
+   /etc/systemd/system/apostille.service && systemctl daemon-reload`
+   (no restart, no downtime), then `systemctl cat apostille | diff -
+   /tmp/apostille.service.new` (expect empty) and
+   `systemctl is-active apostille`. Paste back: the first diff, the
+   empty second diff, is-active. Monday 11-02 is the last code-deploy
+   day — this gates it. The builder then re-runs ship + deploy.
+2. Approvals — no script: open the admin `/review` with your client
    certificate, accept every proposed fact EXCEPT 2 per slug (leave 2
    vietnam + 2 usa-wa-sos proposed for the video's approve scene).
    GP2-data needs >= 8 accepted each; currently vietnam 0/8,
@@ -64,7 +84,7 @@ group-read pre-step from this morning is done — A2 reads prove it.
    log in again; "refused … client certificate" means the session is
    fine but the browser didn't present your enrolled cert (check the
    browser's certificate prompt for the admin host).
-2. One root step, then two hal runs (all staged, paste back each
+3. One root step, then two hal runs (all staged, paste back each
    output). (a) As root: `bash ~/apostille/scripts/ops-rootless-access.sh`
    — re-run applies the group-write on `/var/lib/apostille` the first
    run predates (prod shows `andrii-ai:andrii-ai drwxr-xr-x`, so hal
@@ -73,8 +93,8 @@ group-read pre-step from this morning is done — A2 reads prove it.
    staging is mktemp now; same stale-dir bug fixed there too), then
    `bash ~/apostille/scripts/ops-a5-eval.sh` (evals path + mktemp +
    store-writability preflight). Paste back: the proposals counts,
-   the quality.json lines. Flips A5; proposals feed item 1.
-3. S1: switch LICENSE to MIT, make the repo public, link the demo
+   the quality.json lines. Flips A5; proposals feed item 2.
+4. S1: switch LICENSE to MIT, make the repo public, link the demo
    video in README (video lands 11-03). Video: record the production
    admin approve scene yourself (needs your client cert; builder takes
    desktop/mobile), upload to YouTube, paste the URL back.
@@ -82,7 +102,7 @@ group-read pre-step from this morning is done — A2 reads prove it.
    385 commits, no leaks; working-tree `secrets-scan` clean, 690 files).
    Scrub list: `docs/ops/scrub-list-2026-11-01.md` — 2 prompt files need
    IP redaction, `security-review-2026-10-27.md` moves unless fixed.
-4. GP3 brand assets (scoreboard demands a logo per configured
+5. GP3 brand assets (scoreboard demands a logo per configured
    provider button; dir still holds only README.md): run
    `cargo xtask brand-assets`, follow its four download steps (Apple,
    Google, Meta, FIDO), then `cargo xtask brand-assets --check
@@ -90,7 +110,7 @@ group-read pre-step from this morning is done — A2 reads prove it.
    `web/src/lib/assets/brand/` (operator-owned, never committed),
    then redeploy — the login page renders text-only buttons until
    they land.
-5. ~~Plant disk — fixed, see top.~~ Done.
+6. ~~Plant disk — fixed, see top.~~ Done.
 
 ## Queued (not today)
 
@@ -139,6 +159,10 @@ approvals: vietnam 0/8, usa-wa-sos 1/8). P214 adds
 wires `/orders` to it — the page no longer shows placeholder rows.
 P216 adds `GET /p2/forms?authority=` and a "Save draft to my orders"
 step on `/order` review (401 → sign-in prompt, 201 → order link).
+P219 scopes the CUJ locator to Fees (plant gate red fixed).
+Plant back: `5bb462a` stamped `ci_green: true`, staging exact at
+`0.1.0+5bb462a` rescored 9/10 (only S1 red) + live demo 3/3 —
+staging-green. Deploy waits on your item 1 (unit file) above.
 WA form template (goal priority 5): standalone Dec-2024 form URL
 re-verified dead 11-01 (404 page); live 6.2025 CORPS Records Request
 (URL + $15/40234 evidence in egypt-consular.md V-5a) covers
