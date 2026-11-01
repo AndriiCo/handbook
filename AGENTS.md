@@ -161,13 +161,14 @@ Kept, never relaxed:
 - Deploys are the builder session's (standing approval, operator's
   decision of 2026-10-30), as hal, by "How to deploy" in
   `.agents/goal.md`. The rails:
-  - Days are Pacific (`TZ=America/Los_Angeles date +%F`). At most one
-    binary deploy a day, counting the operator's: a directory under
-    `/srv/apostille/releases` created today means today's deploy is
-    spent, even one whose smoke reverted. Rollbacks do not count. Deploy
+  - Days are Pacific (`TZ=America/Los_Angeles date +%F`). Until
+    2026-11-10, no limit on binary deploys per day and no minimum
+    gap between deploys (operator order 2026-11-01); after that the
+    one-a-day limit and the 8-hour gap return. Until then a
+    directory under `/srv/apostille/releases` created today does
+    not spend the day. Rollbacks do not count. Deploy
     when a gated SHA carries that day's row of the deploy days in
-    `.agents/goal.md` (or at 20:00 PT with the newest gated SHA), and
-    never two deploys within 8 hours.
+    `.agents/goal.md` (or at 20:00 PT with the newest gated SHA).
   - Freeze: the last code deploy is Mon 11-02, and its after-scoreboard
     and rollback rule hold even if they finish after midnight. From Tue
     11-03 00:00 PST until the operator lifts the freeze after judging:
