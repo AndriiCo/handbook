@@ -19,9 +19,9 @@ take's own trace console (logged per take at the bottom).
 |---|------|-------------|--------------|---------|
 | 1 | 0:00–0:15 | Problem (voiceover over `/apostille`) | On 13 Oct 2026 the site sent Viet Nam customers to consular legalization, though the Convention took effect 11 Sep 2026. Stale pages misroute people. | "Stale pages misroute people" |
 | 2 | 0:15–0:50 | Search → HERO dossier `/apostille/authority/usa-wa-sos` | Stranger types "Washington", picks the dossier; the camera walks the guide steps (right office, before you start, costs, submit, how long). | "Muse Spark drafts every fact from official pages" |
-| 3 | 0:50–1:05 | Evidence popover (same page) | "View quote" opens the popover: the exact quote with the value highlighted, source domain, retrieved date. | "Every fact shows its quote, source and date" |
+| 3 | 0:50–1:05 | Evidence popover (same page) | "Citation" opens the popover: the exact quote with the value highlighted, source domain, captured date. | "Every fact shows its quote, source and date" |
 | 4 | 1:05–1:45 | Review `/review` → approve → guide flips live | A Spark-drafted fact sits proposed beside its capture quote; staff clicks Accept; the HERO guide step flashes the new value over WS `authority:usa-wa-sos`. | "A human approves every Muse Spark draft — the dossier updates live" |
-| 5 | 1:45–2:20 | Precheck `/precheck` (390px) | Phone photo of a synthetic sample; SAM boxes trace, verdict with reasons. | "SAM 3.1 and Muse Spark precheck the photo" |
+| 5 | 1:45–2:20 | Precheck `/precheck` (390px) | Recorded replay over a synthetic sample photo; SAM boxes trace, verdict with reasons. | "Precheck replay: SAM 3.1 + Muse Spark" |
 | 6 | 2:20–2:45 | Eval chip + Muse Code beat (home, trace console) | Home chip: verified-quote rate with model and date. Cut to the trace console: one draft run's input/output tokens on screen. | "Muse Spark drafts live — watch the tokens" |
 | 7 | 2:45–2:55 | Close on the URL | `https://andrii.ai/apostille` fullscreen. | "Every apostille fact, quoted" |
 

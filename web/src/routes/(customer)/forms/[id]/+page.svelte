@@ -188,7 +188,7 @@
 			</a>
 		</p>
 		<p class="text-sm text-ink-muted">sha256: <code class="font-mono break-all">{submission.pdf_sha256}</code></p>
-		<p>Print it, sign in ink on the signature line, and mail it with your shipping labels.</p>
+		<p>Print it, sign in ink on the signature line, and mail it with your own postage.</p>
 	{:else}
 		<Notice variant="info" heading="No PDF yet.">
 			<p>This submission is still a draft, or the PDF is rendering — this page refreshes itself.</p>

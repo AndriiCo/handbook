@@ -65,8 +65,8 @@ the U.S., Canada, and Mexico.
 
 What is live at <https://andrii.ai/apostille> today: search the
 authority index; dossier pages with a step-by-step guide, cited evidence,
-and live updates; sign in with passkey; run the photo precheck; place an
-order. Staff approve every fact in the review queue and watch captures in
+and live updates; sign in with passkey; run the photo precheck; save an
+order draft. Staff approve every fact in the review queue and watch captures in
 the trace console; approvals reach the public dossier live. Dossiers show
 quote-carrying facts where approved — production's dossiers fill in as
 facts are approved. The watch packs define 24 source URLs across 15

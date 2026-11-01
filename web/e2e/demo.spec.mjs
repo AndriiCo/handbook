@@ -174,7 +174,7 @@ test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
 		await checkClean(page, problems, 'login');
 
 		await scene('precheck', `${base}/apostille/precheck`);
-		await caption(page, 'SAM 3.1 and Muse Spark precheck the photo');
+		await caption(page, 'Precheck replay: SAM 3.1 + Muse Spark');
 		await expect(page.getByRole('button', { name: 'Run precheck' })).toBeVisible();
 		if (!LIVE) {
 			await page.getByRole('button', { name: /Clean scan/ }).click();
@@ -186,7 +186,7 @@ test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
 		await checkClean(page, problems, 'precheck');
 
 		await scene('order', `${base}/apostille/order`);
-		await caption(page, 'Order in minutes, watch it live');
+		await caption(page, 'Draft your order in minutes');
 		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
 		await checkClean(page, problems, 'order');
 
@@ -374,7 +374,7 @@ test('demo mobile pass records home and dossier', async () => {
 		await checkClean(page, problems, 'mobile home');
 
 		await page.goto(`${base}/apostille/authority/${HERO}`);
-		await caption(page, 'Verified facts, one hover away');
+		await caption(page, 'Verified facts, one tap away');
 		await page.screenshot({ path: join(SHOTS, 'mobile-dossier.png') });
 		await checkClean(page, problems, 'mobile dossier');
 

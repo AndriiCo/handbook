@@ -9,7 +9,7 @@
 	import GuideEmpty from '../../../../lib/public-ui/GuideEmpty.svelte';
 	import FollowCard from '../../../../lib/public-ui/FollowCard.svelte';
 	import { Skeleton } from '../../../../lib/components/ui/skeleton/index.js';
-	import * as HoverCard from '../../../../lib/components/ui/hover-card/index.js';
+	import * as Popover from '../../../../lib/components/ui/popover/index.js';
 	import Heading from '../../../../lib/components/brand/Heading.svelte';
 	import Guilloche from '../../../../lib/components/brand/Guilloche.svelte';
 	import Flag from '../../../../lib/components/brand/Flag.svelte';
@@ -402,13 +402,13 @@
 										{/if}
 										<span class="text-xs text-ink-muted">approved by staff · {modelName(fact)}</span>
 										{#if cite?.quote}
-											<HoverCard.Root>
-												<HoverCard.Trigger
+											<Popover.Root>
+												<Popover.Trigger
 													class="inline-flex min-h-11 cursor-pointer items-center font-medium text-accent-strong underline decoration-dotted underline-offset-4"
 												>
 													View quote
-												</HoverCard.Trigger>
-												<HoverCard.Content class="max-w-80" align="start">
+												</Popover.Trigger>
+												<Popover.Content class="max-w-80" align="start">
 													<blockquote class="font-quote m-0 border-l-2 border-verified pl-3 italic">
 														{@html markQuote(cite.quote, fact.statement)}
 													</blockquote>
@@ -424,8 +424,8 @@
 														{/if}
 														· retrieved {shortDate(cite.captured_at)}
 													</p>
-												</HoverCard.Content>
-											</HoverCard.Root>
+												</Popover.Content>
+											</Popover.Root>
 										{/if}
 									</div>
 									{#if fact.conflict}

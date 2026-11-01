@@ -584,7 +584,7 @@
 				</label>
 				<label class="flex min-h-11 items-center gap-[0.6rem] font-bold">
 					<input type="radio" name="kind" value="prepaid" bind:group={kind} />
-					B — Prepaid USPS label (postage included)
+					B — Prepaid USPS label (demo purchase, no live postage)
 				</label>
 			</fieldset>
 
