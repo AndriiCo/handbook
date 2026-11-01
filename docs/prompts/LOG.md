@@ -92,3 +92,4 @@
 | 185 | 2026-11-01 16:10Z | F3 flat Responses text.format, refusals, incomplete | atlas 41 green, live pending |
 | 186 | 2026-11-01 16:40Z | F3 live probe budget 512 (reasoning eats cap) | live 2/2, flat format accepted |
 | 187 | 2026-11-01 17:20Z | F4 SAM bare phrases, grammar parse, redact rewrite | media green, recorder proof next |
+| 188 | 2026-11-01 17:40Z | F10 Spark finish/refusal guards in recorder | stub-verified, live rerun next |

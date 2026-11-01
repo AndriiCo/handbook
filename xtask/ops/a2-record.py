@@ -246,13 +246,23 @@ def spark_verdict(base, key, sample_id, label, boxes, image_b64):
         raise RuntimeError(f"Spark call failed: HTTP {status}: {payload}")
     try:
         choice = payload["choices"][0]
-        content = choice["message"]["content"]
-        verdict = json.loads(content)
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"Spark call failed: no choice: {e}: {payload}")
+    finish = choice.get("finish_reason")
+    if finish == "length":
+        raise RuntimeError("Spark call failed: truncated (finish_reason=length) — "
+                           "raise max_completion_tokens, never parse the partial JSON")
+    message = choice.get("message") or {}
+    if message.get("refusal"):
+        raise RuntimeError(f"Spark call failed: model refused: {message['refusal']}")
+    if finish != "stop":
+        raise RuntimeError(f"Spark call failed: finish_reason={finish}")
+    try:
+        verdict = json.loads(message["content"])
         assert verdict["verdict"] in ("pass", "retake")
         assert isinstance(verdict["issues"], list)
-    except (KeyError, IndexError, AssertionError, ValueError, TypeError) as e:
-        detail = choice.get("finish_reason") if "choice" in dir() else "?"
-        raise RuntimeError(f"Spark call failed: bad verdict shape: {e} (finish={detail})")
+    except (KeyError, AssertionError, ValueError, TypeError) as e:
+        raise RuntimeError(f"Spark call failed: bad verdict shape: {e} (finish={finish})")
     usage = payload.get("usage", {}) or {}
     return verdict, usage, secs
 
