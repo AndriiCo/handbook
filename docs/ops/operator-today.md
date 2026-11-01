@@ -36,10 +36,12 @@ group-read pre-step from this morning is done — A2 reads prove it.
    vietnam + 2 usa-wa-sos proposed for the video's approve scene).
    GP2-data needs >= 8 accepted each; currently 0/8. This flips
    GP2-data, A1 and GP2-page. Paste back: accepted counts per slug.
-2. A5 eval — attempted 01:41Z, **ABORTED** (`no gold files`: `evals/`
-   never reaches a release). Needs Sunday deploy #3 carrying fix 5,
-   then re-run `bash ~/apostille/scripts/ops-a5-eval.sh` and paste
-   back the quality.json lines.
+2. A5 eval — root-caused by builder: the script passed `--evals
+   …/current/evals`, but xtask reads `*.json` flat and the 26 gold
+   cases live in `evals/authorities/` (the files were on prod all
+   along). Fixed + staged to `~/apostille/scripts/` — just re-run
+   `bash ~/apostille/scripts/ops-a5-eval.sh` and paste back the
+   quality.json lines. Flips A5.
 3. S1: switch LICENSE to MIT, make the repo public, link the demo
    video in README (video lands 11-03). Video: record the production
    admin approve scene yourself (needs your client cert; builder takes

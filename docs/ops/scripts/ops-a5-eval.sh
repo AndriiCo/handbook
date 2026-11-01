@@ -31,7 +31,9 @@ cp "$KEK_SRC" "$STAGED"
 chmod 0600 "$STAGED"
 
 echo "=== 2. live eval (one draft call per gold case)"
-CREDENTIALS_DIRECTORY="$CREDS" "$XTASK" eval --live --store "$STORE" --evals /srv/apostille/current/evals \
+# Gold cases live in evals/authorities/ (xtask reads *.json flat, never
+# recursive) — passing evals/ itself aborts with "no gold files".
+CREDENTIALS_DIRECTORY="$CREDS" "$XTASK" eval --live --store "$STORE" --evals /srv/apostille/current/evals/authorities \
     || { echo "ABORT: eval failed (output above)"; rm -f "$STAGED"; exit 1; }
 
 echo "=== 3. cleanup + verify"

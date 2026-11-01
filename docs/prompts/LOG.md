@@ -68,3 +68,4 @@
 | 160 | 2026-11-01 05:45Z | demo track: demo-script.md 175s, gate 3/3 green | live take waits approvals+A5 |
 | 161 | 2026-11-01 04:05Z | drive prod: manifest workaround failed setup, stamps listed | prod 4/10 steady |
 | 162 | 2026-11-01 04:15Z | retention: worker prune_old + deploy step 4, pruned both | P161 resubmitted clean |
+| 163 | 2026-11-01 04:30Z | A5 root cause: evals path, fixed+staged, operator re-runs | loader proved 26 cases |
