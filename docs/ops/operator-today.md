@@ -179,6 +179,9 @@ P219 scopes the CUJ locator to Fees (plant gate red fixed).
 Plant back: `5bb462a` stamped `ci_green: true`, staging exact at
 `0.1.0+5bb462a` rescored 9/10 (only S1 red) + live demo 3/3 —
 staging-green. Deploy waits on your item 1 (unit file) above.
+P221 (tip `bce01ad`, on plant now): admin mTLS removed, IP
+allowlist `admin.allow_ips` in — set it (item 1) before ANY
+deploy of this SHA, or you 403 yourself out.
 WA form template (goal priority 5): standalone Dec-2024 form URL
 re-verified dead 11-01 (404 page); live 6.2025 CORPS Records Request
 (URL + $15/40234 evidence in egypt-consular.md V-5a) covers
