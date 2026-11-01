@@ -1,8 +1,9 @@
 # Apostille Handbook
 
 Every apostille fact shows its quote, source and date — drafted by Meta AI,
-approved by a human. Live at <https://andrii.ai/apostille> (demo video link
-lands 11-03, operator step).
+approved by a human. Live at <https://andrii.ai/apostille>.
+
+> Demo video: _no video yet — operator replaces this line with the video URL on 2026-11-03._
 
 Built by Andrii Co. for the
 [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon.md)
@@ -31,8 +32,13 @@ gold set), `web/e2e/fixtures/`, crate unit tests.
 26 gold cases, model muse-spark-1.3: quote_found_rate **0.7**,
 value_in_quote_rate 0.7, topic_accuracy 0.7; 17/17 staged proposals
 accepted through the review flow (8 Viet Nam + 9 USA-WA-SOS); A2
-clean=pass, dark/wash=retake. Production numbers land after Sunday's
-deploy + operator root steps.
+clean=pass, dark/wash=retake.
+
+## Eval numbers (2026-11-01, production, live key)
+
+26 gold cases, model muse-spark-1.3: quote_found_rate **1.0**,
+value_in_quote_rate 0.969, topic_accuracy 0.641; written to the live
+store by `ops-a5-eval.sh`, shown on the home page.
 
 ## The problem
 
