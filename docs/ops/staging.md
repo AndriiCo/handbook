@@ -89,3 +89,23 @@ DB copies — ever. Alias only, never a username, IP or key.
    ~/staging/store ~/staging/kek ~/staging/creds'`
 2. Re-run: sync, build (skip if tree unchanged), init, enroll, ports,
    seed, boot, tunnel, scoreboard — commands above verbatim.
+
+## Run 3 (2026-11-01, c5e16e3 → edcfb84) — 8/10, ledger crash fixed
+- Exact checkout via `git push plant:staging/handbook <sha>:refs/heads/xfer-*`
+  (plant can't fetch; tar overlay rejected by checkout, bundle refused empty —
+  push-to-side-ref works). `git checkout -f` after deleting paths that are
+  untracked-but-tracked-upstream. BUILD_SHA stamps the checked-out SHA.
+- Run2.env is stale (PUB=18317 = pipeline artifact server edeedc2, not ours).
+  Real staging: public **18318**, admin **18319** (store config). Tunnel the
+  same two ports; a pre-existing tunnel from the earlier session survived —
+  reuse it (new ssh fails "Address already in use" = tunnel alive, not an error).
+- Remote start: `setsid` WITHOUT `-f` hangs the ssh forever (server runs in
+  foreground, health check never runs). Always `setsid -f`, or terminate the
+  hung ssh — the setsid'd child survives. Never `pkill -f <pattern>` whose
+  string appears in your own remote command (self-kill).
+- c5e16e3 scored 7/10: P0/GP2-data/A1/GP1/GP4/A2/A5 pass; GP2-page 500'd
+  (each_key_duplicate: conflict cliques share sibling ids → duplicate
+  `conflict-*` ledger keys → render crash); GP3 passkey below fold; S1 operator-owned.
+- P169 (edcfb84): `seedLedgerEvents` in handbook.js, parent-qualified
+  conflict ids + clique regression test. SPA rebuilt, no restart needed.
+  `--only GP2-page`: PASS (8 facts visible, live WS).
