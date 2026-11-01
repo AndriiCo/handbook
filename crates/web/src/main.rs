@@ -1033,6 +1033,7 @@ async fn main() {
             mailer: state.mailer.clone(),
             kek: state.kek.clone(),
             base: state.notify_base.clone(),
+            origin: cfg.auth_origin.trim_end_matches('/').to_string(),
         },
         state.notify_poke.clone(),
     );

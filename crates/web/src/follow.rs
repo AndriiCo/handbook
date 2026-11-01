@@ -230,7 +230,11 @@ pub struct WorkerCfg {
     pub postal: String,
     pub mailer: Option<Mailer>,
     pub kek: Option<Arc<config::Kek>>,
+    /// `{origin}/apostille` (confirm/unsubscribe links).
     pub base: String,
+    /// Bare `{origin}` (`build_digest` adds `/apostille/authority/…`
+    /// itself — passing `base` here doubled the segment on staging).
+    pub origin: String,
 }
 
 /// One worker pass: tail the audit, then lease and send due
@@ -281,7 +285,7 @@ pub fn run_pass(cfg: &WorkerCfg) {
                 continue;
             }
         };
-        let (subject, text) = notify::build_digest(&facts, &cfg.base, &unsub_url, &cfg.postal);
+        let (subject, text) = notify::build_digest(&facts, &cfg.origin, &unsub_url, &cfg.postal);
         let to = match notify::open_email(&kek, &group.email_blob) {
             Ok(to) => to,
             Err(_) => {
