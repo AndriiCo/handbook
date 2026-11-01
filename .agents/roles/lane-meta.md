@@ -27,7 +27,13 @@ merged into `main` yet.
 ## Next, in order
 
 1. `git merge main` (never a rebase), so you have this file and the
-   current rules.
+   current rules. Your sandbox cannot write `.agents/`, so when `main`
+   changed files there the merge fails with `cannot create directory at
+   '.agents/…': Operation not permitted`. Do not retry: read the current
+   rules from the main checkout
+   (`M="$(git rev-parse --path-format=absolute --git-common-dir)/.."`, then
+   `$M/AGENTS.md` and `$M/.agents/…`), keep working, and ask the operator
+   in your final message to run the merge from their shell.
 2. Move your follow-ups off the operator's page: revert your
    `docs/ops/operator-today.md` hunk on your branch and put the items in
    `docs/lanes/meta.md` (your status file, which the builder reads).

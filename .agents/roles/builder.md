@@ -67,19 +67,20 @@ No lane merges after Monday 15:00 PST (goal.md Calendar).
 
 ## Deploy
 
-Only on a day goal.md "Calendar" marks open, or when the operator orders
-a deploy in the session. Then, in order (`docs/ops/staging.md` "Steps" is
-the map):
-1. The SHA has a plant stamp:
-   `ssh plant 'grep -l "\"ci_green\": true" ~/apostille-pipeline/acceptance/<sha7>*.json'`
-   prints a file; and its staging acceptance (scoreboard + live demo take)
-   is green.
-2. `xtask/ops/ship-release.sh <sha>`: schema, migrations, unit and day
-   rails, prod-before, build, stage. It never deploys.
-3. The root-process probe from AGENTS.md §7 prints nothing:
-   `ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "[a]postille/scripts/"'`.
-4. As hal: `bash ~/apostille/scripts/ops-deploy.sh ~/apostille/staging/<sha7> --skip-accept`,
-   adding `--allow-today-overlap` only on the operator's order.
+Whenever a stamped, staging-green SHA carries work worth shipping, until
+the Tue 11-03 00:00 PST freeze (goal.md "Calendar"). Until 2026-11-10
+there is no daily cap or gap (AGENTS.md §7), so every deploy passes
+`--allow-today-overlap`. In order (`docs/ops/staging.md` "Steps" is the
+map):
+1. The SHA's staging acceptance (scoreboard + live demo take) is green.
+2. `xtask/ops/ship-release.sh <sha> --allow-today-overlap` (the flag until
+   2026-11-10): plant stamp, schema, migrations, unit, root-process probe,
+   prod-before, build, stage. It never deploys.
+3. Right before deploying, the root-process probe from AGENTS.md §7 again:
+   `ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "[a]postille/scripts/"'`
+   prints nothing.
+4. As hal: `bash ~/apostille/scripts/ops-deploy.sh ~/apostille/staging/<sha7> --skip-accept --allow-today-overlap`
+   (the flag until 2026-11-10; after that only on the operator's order).
 5. `node .agents/scoreboard/scoreboard.mjs --out web/shots/prod-after.json`,
    compare with prod-before, roll back under AGENTS.md §7, remove the
    build worktree, update `docs/ops/operator-today.md` (stage any script
@@ -105,7 +106,7 @@ waits on the operator, the lanes' state, anything assumed (`Assumed: …`).
 
 ## Never
 
-- Deploy on a closed day without the operator's order, deploy an
+- Deploy during the freeze without the operator's order, deploy an
   unstamped or not staging-green SHA, or skip prod-before/prod-after.
 - Copy staging data to production, or accept facts on production.
 - Run a root action, or print, copy or commit a secret value.

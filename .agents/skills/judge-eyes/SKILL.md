@@ -14,8 +14,9 @@ holds up live), Technical depth 20. Startup track: "technical execution and
 whether it would hold up in production".
 
 What shapes this skill:
-- Production moves at most once a day, so judging production alone repeats
-  yesterday's verdict. Judge main first.
+- Production moves only when the builder deploys a stamped, staging-green
+  SHA, so judging production alone often repeats the last verdict. Judge
+  main first.
 - The builder cannot view images, so nobody else looks at its screenshots.
   Your channel is `web/shots/judge.md` in this worktree (git-ignored); the
   builder reads the newest one before every slice.
@@ -31,7 +32,10 @@ What shapes this skill:
 
 0. Set up. `M="$(git rev-parse --path-format=absolute --git-common-dir)/.."`
    is the main checkout. Run `git merge --ff-only main` (you have no commits
-   of your own; if it refuses, say so and read main through `$M`). Then
+   of your own). If it refuses, or fails with `Operation not permitted`
+   because your sandbox cannot write `.agents/`, do not retry: read main
+   through `$M` (this skill's current text is `$M/.agents/skills/judge-eyes/SKILL.md`)
+   and ask the operator to run the merge from their shell. Then
    `[ -e web/node_modules ] || ln -s "$M/web/node_modules" web/node_modules`.
 1. What changed. `P=$(curl -s https://andrii.ai/apostille/healthz | jq -r .version)`
    and `H=$(git -C "$M" rev-parse --short main)`. If line 1 of

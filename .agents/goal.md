@@ -56,8 +56,8 @@ the demo video.
 
 | Day (Pacific) | Deploy | Notes |
 |---|---|---|
-| Sun 11-01 | **spent.** `69ca7fa` went out Sat 23:33 PDT on the operator's order; the operator counts it as Sunday's deploy. The day gate would allow one today: do not use it unless the operator orders a deploy in the session. | Staging proof, lane merges, demo dry run on staging. |
-| Mon 11-02 | **the last code deploy**: the newest stamped, staging-green SHA, after the 15:00 PST merge cut | Lane work not merged by 15:00 PST waits until after judging. The operator re-runs A2 (if F4 shipped) and A5. |
+| Sun 11-01 | **open, no daily cap or gap** (operator order, `0e9c8c4`, until 11-10): deploy each stamped, staging-green SHA worth shipping, with `--allow-today-overlap` (AGENTS.md §7) | Lane merges, staging proof, demo dry run on production once facts are approved. |
+| Mon 11-02 | **the last code-deploy day**, no cap; deploys end at the Tue 00:00 PST freeze | Lane merges stop at 15:00 PST, so the last deploy is staging-proven by evening. The operator re-runs A2 (if F4 shipped) and A5. |
 | Tue 11-03 | freeze: no deploy | Recording, README video link. Rollback only on the operator's word or a failing `/healthz` (AGENTS.md §7). |
 | Wed 11-04 | freeze until the operator lifts it after judging | The operator re-runs A5 in the morning and submits by 12:00 PST (close 18:00 PST). Same rollback rule. |
 
@@ -73,10 +73,11 @@ the demo video.
    `crates/web/src/draft.rs` and the env-key path in `xtask/src/main.rs`;
    `cached_tokens` through `contracts::Usage`, the runner and the trace
    console. No shared client crate before judging.
-3. Release path: `ship-release.sh` gains `--allow-today-overlap` (passed
-   only on an operator order) and checks the plant stamp and the full
-   root-process probe itself; `README.md` points at `xtask/ops/`, not
-   `docs/ops/scripts/`.
+3. Release path: done in P199 (`ship-release.sh` takes
+   `--allow-today-overlap`, which every deploy needs until 11-10, and
+   checks the plant stamp and the root-process probe). The scripts' help
+   text still calls the flag operator-ordered only: align it with
+   AGENTS.md §7.
 4. Demo: once approvals land, a production dry run
    (`DEMO_BASE_URL=https://andrii.ai/apostille npm --prefix web run demo`),
    then the `DEMO_CAPTIONS=1` take; `docs/demo-script.md` stays within 175 s.

@@ -192,22 +192,21 @@ Kept, never relaxed:
 - Deploys are the builder session's (standing approval, operator's
   decision of 2026-10-30), as hal, by `docs/ops/staging.md` "Steps" and
   `.agents/roles/builder.md` "Deploy": `xtask/ops/ship-release.sh <sha>`
-  checks the schema, migrations, unit and day rails, runs prod-before,
-  builds and stages (it never deploys, and it does not check the plant
-  stamp or the full root-process probe: the builder checks both); then,
-  as hal,
+  checks the plant stamp, the schema, migrations, unit and day rails and
+  the root-process probe, runs prod-before, builds and stages (it never
+  deploys); then, as hal,
   `bash ~/apostille/scripts/ops-deploy.sh ~/apostille/staging/<sha7> --skip-accept`;
   then prod-after. The rails:
-  - Days are Pacific (`TZ=America/Los_Angeles date +%F`). At most one
-    binary deploy a day, counting the operator's: a release directory
-    whose mtime falls on today, or within the last 8 hours, means no
-    deploy (`ship-release.sh` checks both). Rollbacks do not count.
-    `.agents/goal.md` "Calendar" says which day is still open.
-  - `--allow-today-overlap` (on `ops-deploy.sh` and `xtask deploy`) only
-    when the operator orders that deploy in the session ("deploy now"),
-    and the report says so. `ship-release.sh` has no override yet: until
-    it gains the same flag, an ordered same-day deploy runs its other
-    steps by hand, every rail but the day gate still checked.
+  - Until 2026-11-10: no limit on binary deploys per day and no minimum
+    gap between deploys (operator order 2026-11-01, commit `0e9c8c4`); a
+    release directory created today does not spend the day. The day gate
+    in `ship-release.sh`, `ops-deploy.sh` and `xtask deploy` still
+    enforces the old rule, so until then every deploy passes
+    `--allow-today-overlap` to both scripts and the report says so.
+  - From 2026-11-10: at most one binary deploy a Pacific day
+    (`TZ=America/Los_Angeles date +%F`), counting the operator's, never
+    two within 8 hours (rollbacks do not count), and
+    `--allow-today-overlap` only on the operator's explicit order.
   - Freeze: the last code deploy is Mon 11-02, and its after-scoreboard
     and rollback rule hold even if they finish after midnight. From Tue
     11-03 00:00 PST until the operator lifts the freeze after judging:
