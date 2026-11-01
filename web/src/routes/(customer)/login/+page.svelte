@@ -264,11 +264,11 @@
 </svelte:head>
 
 <section
-	class="grid items-stretch gap-8 py-10 lg:grid-cols-2 xl:py-16"
+	class="grid items-stretch gap-8 py-6 lg:grid-cols-2 lg:py-10 xl:py-16"
 	aria-label={t.loginLabel}
 >
 	<div
-		class="relative overflow-clip rounded-xl p-8 text-white sm:p-10"
+		class="relative order-2 overflow-clip rounded-xl p-8 text-white sm:p-10 lg:order-1"
 		style="background: linear-gradient(135deg, #0e3a5c 0%, #07121c 70%);"
 	>
 		<Guilloche
@@ -291,7 +291,7 @@
 		</ul>
 	</div>
 
-	<div class="mx-auto w-full max-w-[25rem]">
+	<div class="order-1 mx-auto w-full max-w-[25rem] lg:order-2">
 		<div class="rounded-xl border border-line bg-bg p-6 shadow-md">
 			{#if !webauthnOk}
 				<Heading level={1}>{t.loginLabel}</Heading>

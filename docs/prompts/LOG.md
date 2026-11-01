@@ -75,3 +75,4 @@
 | 167 | 2026-11-01 05:50Z | README judges screen + prod eval numbers | child-drafted, reviewed |
 | 168 | 2026-11-01 06:10Z | merge SEC slice H1/H4/M1/M2 + review status | 376 tests green |
 | 169 | 2026-11-01 05:45Z | GP2-page ledger key crash on conflict cliques | fix + test, check/build green |
+| 170 | 2026-11-01 06:05Z | GP3 passkey above fold on mobile | form-first reorder, check/build green |
