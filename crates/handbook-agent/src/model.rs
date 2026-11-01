@@ -328,29 +328,52 @@ fn is_truncation_or_refusal(reason: &str) -> bool {
     reason.contains("truncated") || reason.contains("model refused")
 }
 
+/// Split between the stable standing rules and the per-run values in
+/// `aa-prompt-v1.md`. Everything before the marker ships as the
+/// `developer` message (stable prefix: cacheable, outranks `user`);
+/// everything after renders per run into the `user` message.
+const PER_RUN_MARKER: &str = "<!-- PER-RUN -->";
+
+/// Chat request body: stable rules first (`developer`), per-run values
+/// last (`user`). A lone `developer` message is rejected with HTTP 400
+/// (`` `messages` must contain at least one message with role `user`
+/// or `tool` ``), so the `user` message is always present.
+fn draft_body(req: &DraftRequest, previous_failure: Option<&str>) -> serde_json::Value {
+    let template = include_str!("../prompts/aa-prompt-v1.md");
+    let (developer, per_run) = template
+        .split_once(PER_RUN_MARKER)
+        .expect("aa-prompt-v1.md carries a PER-RUN part");
+    debug_assert!(
+        !developer.contains("{{"),
+        "standing rules must not hold per-run placeholders"
+    );
+    let mut user = build_prompt(per_run, req);
+    if let Some(reason) = previous_failure {
+        user.push_str(&format!(
+            "\n\nPrevious attempt failed ({reason}). Draft fewer records \
+             and keep every citation on the cited page."
+        ));
+    }
+    json!({
+        "model": DRAFT_MODEL,
+        "messages": [
+            {"role": "developer", "content": developer.trim()},
+            {"role": "user", "content": user},
+        ],
+        "temperature": 0,
+        "max_completion_tokens": MAX_COMPLETION_TOKENS,
+        "response_format": response_format_for(&req.doc_ids),
+        "prompt_cache_key": format!("analysis-agent-{}", req.prompt_version),
+    })
+}
+
 impl MetaRestClient {
     fn attempt(
         &self,
         req: &DraftRequest,
         previous_failure: Option<&str>,
     ) -> Result<DraftResponse, ModelError> {
-        let mut prompt = build_prompt(include_str!("../prompts/aa-prompt-v1.md"), req);
-        if let Some(reason) = previous_failure {
-            prompt.push_str(&format!(
-                "\n\nPrevious attempt failed ({reason}). Draft fewer records \
-                 and keep every citation on the cited page."
-            ));
-        }
-        // The Meta chat endpoint requires a `user` (or `tool`) message;
-        // a lone `developer` message is rejected with HTTP 400.
-        let body = json!({
-            "model": DRAFT_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0,
-            "max_completion_tokens": MAX_COMPLETION_TOKENS,
-            "response_format": response_format_for(&req.doc_ids),
-            "prompt_cache_key": format!("analysis-agent-{}", req.prompt_version),
-        });
+        let body = draft_body(req, previous_failure);
         let response = self.post_chat(&body)?;
         if response.status == 401 {
             return Err(ModelError::Auth(
@@ -547,8 +570,14 @@ mod tests {
             );
             let v: serde_json::Value = serde_json::from_str(body).unwrap();
             assert_eq!(v["model"], "muse-spark-1.3");
-            assert_eq!(v["messages"][0]["role"], "user");
-            let prompt = v["messages"][0]["content"].as_str().unwrap();
+            // Stable rules first, per-run values last.
+            assert_eq!(v["messages"][0]["role"], "developer");
+            let rules = v["messages"][0]["content"].as_str().unwrap();
+            assert!(!rules.contains("{{"), "no placeholders in standing rules");
+            assert!(!rules.contains("wa-sos"), "no per-run slug in rules");
+            assert!(!rules.contains("PO Box 40220"), "no evidence in rules");
+            assert_eq!(v["messages"][1]["role"], "user");
+            let prompt = v["messages"][1]["content"].as_str().unwrap();
             assert!(prompt.contains("wa-sos"), "slug substituted");
             assert!(prompt.contains("PO Box 40220"), "evidence inline");
             assert!(prompt.contains("fixture"), "doc ids named");
@@ -710,7 +739,7 @@ mod tests {
             let v: serde_json::Value = serde_json::from_str(body).unwrap();
             if n == 0 {
                 assert_eq!(v["max_completion_tokens"], 32_000, "raised budget");
-                let first = v["messages"][0]["content"].as_str().unwrap();
+                let first = v["messages"][1]["content"].as_str().unwrap();
                 assert!(first.contains("MAX RECORDS: 4"), "full max_records");
                 assert!(!first.contains("Previous attempt failed"), "no note yet");
                 (
@@ -721,7 +750,7 @@ mod tests {
                     ),
                 )
             } else {
-                let prompt = v["messages"][0]["content"].as_str().unwrap();
+                let prompt = v["messages"][1]["content"].as_str().unwrap();
                 assert!(prompt.contains("Previous attempt failed"), "reason carried");
                 assert!(prompt.contains("MAX RECORDS: 2"), "halved max_records");
                 (

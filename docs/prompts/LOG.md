@@ -93,3 +93,4 @@
 | 186 | 2026-11-01 16:40Z | F3 live probe budget 512 (reasoning eats cap) | live 2/2, flat format accepted |
 | 187 | 2026-11-01 17:20Z | F4 SAM bare phrases, grammar parse, redact rewrite | media green, recorder proof next |
 | 188 | 2026-11-01 17:40Z | F10 Spark finish/refusal guards in recorder | stub-verified, live rerun next |
+| 189 | 2026-11-01 18:10Z | F5 developer+user layout, 400 root-caused | agent 44 green, eval gate next |
