@@ -23,8 +23,10 @@ const SHELL_WRITES = [
   new RegExp(String.raw`(>>?|\btee\b(\s+-a)?)\s*["']?[^\s"'|;&]*` + P),
   new RegExp(String.raw`\b(sed\s+-i|perl\s+-\w*i|rm|mv|cp|rsync|install|truncate|chmod|ln|touch|unlink|git\s+(checkout|restore|rm|mv|stash|clean))\b[^;&|\n]*` + P),
 ];
-// A file tool's text fields; every other field, known or not, is a target.
-const CONTENT = /^(content|find|replace|old_string|new_string|old_str|new_str|text|body)$/i;
+// A tool's text fields; every other field, known or not, is a target. A
+// prompt, goal or message that names .agents/ (a scheduled job, a subagent's
+// task) is text, not a write.
+const CONTENT = /^(content|find|replace|old_string|new_string|old_str|new_str|text|body|prompt|instructions|description|message|task|objective|summary|reason|note)$/i;
 const targets = strip(JSON.stringify(Object.fromEntries(Object.entries(toolInput).filter(([k]) => !CONTENT.test(k)))));
 // Raw strings keep real newlines, which end a command for SHELL_WRITES.
 const command = SHELL_TOOL.test(tool)
