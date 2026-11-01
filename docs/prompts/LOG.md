@@ -134,3 +134,4 @@
 | 228 | 2026-11-01 19:08Z | Slice: what a judge sees in the first 60 seconds. Home quality chip | quality date, calendar days, region CTA, 307, sitemap |
 | 229 | 2026-11-01 19:20Z | Slice: README.md for judges. They read only this file, the video and the | eval table, shipped/next, arch, prod box, scan clean |
 | 230 | 2026-11-01 19:21Z | Slice: docs/demo-script.md plus demo takes. HERO=usa-wa-sos. | script 175s, HERO takes, overflow fix |
+| meta-1 | 2026-11-01 19:28Z | topic_accuracy 0.641: v2 prompt with 25 topic definitions + closed field lists | v2 prompt + selection + eval --prompt, tests green |
