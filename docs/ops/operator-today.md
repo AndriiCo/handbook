@@ -96,6 +96,32 @@ group-read pre-step from this morning is done — A2 reads prove it.
   pilot (uncompiled/unproven — needs `cargo clippy -p xtask`, a live
   `setup`, and the `job-001` run with its three numbers).
 
+## Queued (Meta API follow-ups — not today, builder slices)
+
+F1–F14 landed on a session branch (P184–P195, `muse/session-01a19798-…`,
+eval 0.966–1.000 vs 0.7 baseline, nothing on main). Six items fell
+outside the slice's file list — each is a small builder slice when
+scheduled, except where noted:
+
+1. Terms opt-in (YOUR decision first): atlas transcribe/uploads now
+   fail closed until Meta's data-handling terms are read. After you
+   confirm, a builder one-liner wires `.with_terms_read(true)` in
+   `xtask/src/atlas.rs` `live_client`.
+2. `crates/atlas/src/task.rs`: three `temperature: 0.1` sites,
+   `reasoning_effort: None` everywhere, and raw model output to
+   `debug/extract.txt:382` — align to defaults and confirm the
+   debug dump is redacted or remove it.
+3. `meta.base_url` ignored by `crates/web/src/draft.rs` and by the
+   xtask env-key path (`xtask/src/main.rs`) — honor the sealed
+   value on both.
+4. `cached_tokens`: the wire returns it, but `contracts::Usage`
+   has no field — surfacing needs contracts + runner + web trace
+   changes together.
+5. One base URL / key lookup / model-id helper shared across
+   crates — needs a new shared crate (restructuring; your call).
+6. Staging checkout restored to main; F1–F14 SHAs stay on plant
+   as `xfer-f2…xfer-f12` refs for reference.
+
 ## Builder state (info only)
 
 Web redesign slices P153–P157 landed on main (shell + GP1–GP4 + login);
