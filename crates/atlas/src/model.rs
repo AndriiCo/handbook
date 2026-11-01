@@ -91,6 +91,22 @@ pub fn transcribe_request_json(options: &TranscribeOptions) -> Value {
     request
 }
 
+/// Build the `text` parameter of a Responses structured-output call.
+///
+/// Flat per the structured-output docs:
+/// `text.format = {type: "json_schema", name, schema, strict}`. The
+/// nested `json_schema` wrapper belongs to chat `response_format`.
+pub fn responses_text_format(schema: &JsonSchema) -> Value {
+    json!({
+        "format": {
+            "type": "json_schema",
+            "name": schema.name,
+            "schema": schema.schema,
+            "strict": schema.strict,
+        },
+    })
+}
+
 /// Check the clip is a supported WAV file before uploading.
 ///
 /// The endpoint accepts a RIFF/WAVE container holding mono 16-bit
@@ -623,12 +639,11 @@ impl<T: Transport> ModelPort for MetaClient<T> {
         if let Some(max) = req.max_output_tokens {
             body["max_output_tokens"] = json!(max);
         }
+        // Flat `text.format` per the structured-output docs
+        // (`text.format.{type,name,schema,strict}` — the nested
+        // `json_schema` wrapper is the chat `response_format` shape).
         if let Some(schema) = req.schema.as_ref() {
-            body["text"] = json!({
-                "format": {"type": "json_schema",
-                           "json_schema": {"name": schema.name, "schema": schema.schema,
-                                           "strict": schema.strict}},
-            });
+            body["text"] = responses_text_format(schema);
         }
         if req.background {
             body["background"] = json!(true);
@@ -868,6 +883,16 @@ fn parse_status(json: &Value) -> BackgroundStatus {
         Some("in_progress") => BackgroundStatus::InProgress,
         Some("completed") => BackgroundStatus::Completed,
         Some("cancelled") => BackgroundStatus::Cancelled,
+        // Truncation (e.g. max_output_tokens hit) surfaces as
+        // `status: "incomplete"` with `incomplete_details`, not as an
+        // empty completion — never treat it as success.
+        Some("incomplete") => BackgroundStatus::Failed(format!(
+            "response incomplete: {}",
+            json.get("incomplete_details")
+                .and_then(|d| d.get("reason"))
+                .and_then(Value::as_str)
+                .unwrap_or("truncated"),
+        )),
         Some("failed") => BackgroundStatus::Failed(
             json.get("error")
                 .and_then(|e| e.get("message"))
@@ -909,17 +934,41 @@ fn collect_output_text(json: &Value) -> String {
     texts.join("\n")
 }
 
-fn completion_from_responses(json: &Value) -> Option<Completion> {
+/// Find a model refusal in a Responses `output` array: content
+/// items shaped `{"type": "refusal", "refusal": "..."}`.
+fn refusal_text(json: &Value) -> Option<String> {
+    fn walk(value: &Value) -> Option<String> {
+        match value {
+            Value::Object(map) => {
+                if map.get("type").and_then(Value::as_str) == Some("refusal") {
+                    return map
+                        .get("refusal")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                }
+                map.values().find_map(walk)
+            }
+            Value::Array(items) => items.iter().find_map(walk),
+            _ => None,
+        }
+    }
+    json.get("output").and_then(walk)
+}
+
+fn completion_from_responses(json: &Value) -> Result<Option<Completion>> {
+    if refusal_text(json).is_some() {
+        return Err(Error::Model("model refused the request".to_string()));
+    }
     let text = collect_output_text(json);
     if text.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(Completion {
+    Ok(Some(Completion {
         text,
         input_tokens: usage(json, &["input_tokens", "prompt_tokens"]),
         output_tokens: usage(json, &["output_tokens", "completion_tokens"]),
         cached_tokens: 0,
-    })
+    }))
 }
 
 fn parse_created_response(json: &Value) -> Result<CreatedResponse> {
@@ -932,7 +981,7 @@ fn parse_created_response(json: &Value) -> Result<CreatedResponse> {
         return Err(Error::Model(format!("response failed: {reason}")));
     }
     let completion = if status == BackgroundStatus::Completed {
-        completion_from_responses(json)
+        completion_from_responses(json)?
     } else {
         None
     };
@@ -945,8 +994,11 @@ fn parse_created_response(json: &Value) -> Result<CreatedResponse> {
 
 fn parse_retrieved_response(json: &Value) -> Result<RetrievedResponse> {
     let status = parse_status(json);
+    if let BackgroundStatus::Failed(reason) = &status {
+        return Err(Error::Model(format!("response failed: {reason}")));
+    }
     let completion = if status == BackgroundStatus::Completed {
-        completion_from_responses(json)
+        completion_from_responses(json)?
     } else {
         None
     };
@@ -1336,10 +1388,12 @@ mod tests {
         out
     }
 
-    /// Capturing transport: records the multipart parts of one call.
+    /// Capturing transport: records the JSON body or the multipart
+    /// parts of one call.
     struct CaptureTransport {
         status: u16,
         body: Vec<u8>,
+        last_json: std::cell::RefCell<Value>,
         last_file: std::cell::RefCell<(String, String, String, Vec<u8>)>,
         last_fields: std::cell::RefCell<Vec<(String, String, Option<String>)>>,
     }
@@ -1349,6 +1403,7 @@ mod tests {
             Self {
                 status,
                 body: body.as_bytes().to_vec(),
+                last_json: std::cell::RefCell::new(Value::Null),
                 last_file: std::cell::RefCell::new((
                     String::new(),
                     String::new(),
@@ -1361,8 +1416,13 @@ mod tests {
     }
 
     impl Transport for CaptureTransport {
-        fn post_json(&self, _url: &str, _bearer: &str, _body: &Value) -> Result<HttpResponse> {
-            panic!("transcribe uses multipart, not json");
+        fn post_json(&self, _url: &str, _bearer: &str, body: &Value) -> Result<HttpResponse> {
+            *self.last_json.borrow_mut() = body.clone();
+            Ok(HttpResponse {
+                status: self.status,
+                body: self.body.clone(),
+                retry_after_secs: None,
+            })
         }
 
         fn post_multipart(
@@ -1543,6 +1603,110 @@ mod tests {
             client.transcribe("v", "audio/wav", &audio).unwrap_err()
         );
         assert!(err.contains("terms are read"), "{err}");
+    }
+
+    fn table_schema() -> JsonSchema {
+        JsonSchema {
+            name: "rows".to_string(),
+            schema: json!({
+                "type": "object",
+                "properties": {"rows": {"type": "array"}},
+                "required": ["rows"],
+                "additionalProperties": false,
+            }),
+            strict: true,
+        }
+    }
+
+    #[test]
+    fn responses_create_pins_flat_text_format() {
+        // Contract: `text.format` is flat
+        // ({type,name,schema,strict}) — the nested `json_schema`
+        // wrapper is the chat `response_format` shape.
+        let transport = CaptureTransport::canned(
+            200,
+            r#"{"id":"resp_1","status":"completed",
+                "output":[{"type":"message","content":[{"type":"output_text","text":"{\"rows\":[]}"}]}],
+                "usage":{"input_tokens":3,"output_tokens":4}}"#,
+        );
+        let client = MetaClient::new(transport, BASE_URL, "k".to_string());
+        let created = client
+            .create_response(&ResponsesRequest {
+                model: "muse-spark-1.3".to_string(),
+                instructions: "i".to_string(),
+                input: vec![InputBlock::Text("hi".to_string())],
+                schema: Some(table_schema()),
+                max_output_tokens: None,
+                reasoning_effort: None,
+                background: false,
+                previous_response_id: None,
+            })
+            .unwrap();
+        assert_eq!(created.completion.unwrap().text, "{\"rows\":[]}");
+        let body = client.transport.last_json.borrow();
+        assert_eq!(
+            body["text"],
+            json!({
+                "format": {
+                    "type": "json_schema",
+                    "name": "rows",
+                    "schema": {
+                        "type": "object",
+                        "properties": {"rows": {"type": "array"}},
+                        "required": ["rows"],
+                        "additionalProperties": false,
+                    },
+                    "strict": true,
+                },
+            })
+        );
+        assert!(body["text"]["format"].get("json_schema").is_none());
+    }
+
+    #[test]
+    fn responses_incomplete_is_an_error() {
+        let stub = StubTransport::default().route(
+            "GET",
+            "/responses/resp_9",
+            200,
+            r#"{"id":"resp_9","status":"incomplete",
+                "incomplete_details":{"reason":"max_output_tokens"},
+                "output":[]}"#,
+        );
+        let client = MetaClient::new(stub, BASE_URL, "k".to_string());
+        let err = format!("{}", client.retrieve_response("resp_9").unwrap_err());
+        assert!(err.contains("incomplete"), "{err}");
+        assert!(err.contains("max_output_tokens"), "{err}");
+    }
+
+    #[test]
+    fn responses_refusal_is_an_error() {
+        let stub = StubTransport::default().route(
+            "POST",
+            "/responses",
+            200,
+            r#"{"id":"resp_2","status":"completed",
+                "output":[{"type":"message","content":[
+                    {"type":"refusal","refusal":"I cannot help with that"}]}],
+                "usage":{"input_tokens":3,"output_tokens":4}}"#,
+        );
+        let client = MetaClient::new(stub, BASE_URL, "k".to_string());
+        let err = format!(
+            "{}",
+            client
+                .create_response(&ResponsesRequest {
+                    model: "m".to_string(),
+                    instructions: "i".to_string(),
+                    input: vec![InputBlock::Text("hi".to_string())],
+                    schema: None,
+                    max_output_tokens: None,
+                    reasoning_effort: None,
+                    background: false,
+                    previous_response_id: None,
+                })
+                .unwrap_err()
+        );
+        assert!(err.contains("refused"), "{err}");
     }
 
     #[test]

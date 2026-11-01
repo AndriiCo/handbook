@@ -89,3 +89,4 @@
 | 181 | 2026-11-01 10:30Z | scripts docs-to-xtaskops + layout review | 16 moved, refs fixed |
 | 182 | 2026-11-01 14:35Z | staging run 6 on scripts-move SHA | 9/10 + demo 3/3 |
 | 184 | 2026-11-01 15:40Z | F2 transcribe request+audio parts, WAV guards, terms gate | media+atlas green, live pending |
+| 185 | 2026-11-01 16:10Z | F3 flat Responses text.format, refusals, incomplete | atlas 41 green, live pending |
