@@ -63,3 +63,4 @@
 | 155b | 2026-11-01 04:20Z | operator line (plant disk full), P154 gate failed at compile | rides P156 |
 | 156 | 2026-11-01 04:35Z | redesign slice 4: GP4 grid/stepper/combobox/receipt, precheck trace | 20 shots green |
 | 157 | 2026-11-01 05:00Z | redesign slice 5: GP3 split panel, tabs, conditional mediation | 20 shots green |
+| 158 | 2026-11-01 05:10Z | operator-today refresh: struck done, 5 open, disk still full | verified via 2 subagents |
