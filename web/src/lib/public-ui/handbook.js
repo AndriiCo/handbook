@@ -80,6 +80,42 @@ export function factCount(n) {
 }
 
 /**
+ * Seed the dossier evidence ledger from accepted facts: one `verified`
+ * event per fact, one `changed` event per conflict banner. Sibling ids
+ * repeat across parents (conflict cliques reference each other), so
+ * conflict ids are parent-qualified — bare sibling ids duplicated and
+ * crashed the keyed ledger render (each_key_duplicate). Newest first.
+ * @param {any[]} facts
+ */
+export function seedLedgerEvents(facts) {
+	const events = [];
+	const list = facts ?? [];
+	for (let i = 0; i < list.length; i++) {
+		const f = list[i];
+		const cites = Array.isArray(f?.citations) ? f.citations : [];
+		const parent = f?.id ?? `row-${i}`;
+		events.push({
+			id: `fact-${parent}`,
+			kind: 'verified',
+			text: `${topicLabel(f?.topic)} — verified quote`,
+			at: cites.length > 0 ? (cites[0]?.captured_at ?? '') : '',
+			fresh: false
+		});
+		for (const sib of f?.conflicts ?? []) {
+			events.push({
+				id: `conflict-${parent}-${sib?.id ?? sib?.statement}`,
+				kind: 'changed',
+				text: `${topicLabel(f?.topic)} — new proposal under review`,
+				at: '',
+				fresh: false
+			});
+		}
+	}
+	events.sort((a, b) => (a.at < b.at ? 1 : -1));
+	return events;
+}
+
+/**
  * Friendly copy for public-read failures (status-mapped, never raw —
  * takes status only so server text can't leak). One mapper shared by
  * search + dossier; the 429 sentence matches magic.js exactly so the

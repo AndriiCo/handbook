@@ -7,6 +7,7 @@ import {
 	listAuthorities,
 	publicError,
 	readDossier,
+	seedLedgerEvents,
 	topicLabel
 } from '../src/lib/public-ui/handbook.js';
 import { magicError } from '../src/lib/customer/magic.js';
@@ -105,6 +106,22 @@ test('publicError maps index/dossier statuses', () => {
 test('publicError 429 shares the magic.js sentence', () => {
 	assert.equal(publicError(429, 'index'), magicError(429, 'request'));
 	assert.equal(publicError(429, 'dossier'), magicError(429, 'request'));
+});
+
+test('seedLedgerEvents keeps unique ids on conflict cliques', () => {
+	// Staging vietnam: facts 1, 5, 8 conflict with each other, so the
+	// same sibling id appears under several parents. Bare sibling ids
+	// duplicated here and crashed the keyed ledger render (each_key_duplicate).
+	const clique = [
+		{ id: 1, topic: 't', citations: [], conflicts: [{ id: 5 }, { id: 8 }] },
+		{ id: 5, topic: 't', citations: [], conflicts: [{ id: 1 }, { id: 8 }] },
+		{ id: 8, topic: 't', citations: [], conflicts: [{ id: 1 }, { id: 5 }] }
+	];
+	const events = seedLedgerEvents(clique);
+	const ids = events.map((e) => e.id);
+	assert.equal(ids.length, new Set(ids).size);
+	assert.equal(events.filter((e) => e.kind === 'verified').length, 3);
+	assert.equal(events.filter((e) => e.kind === 'changed').length, 6);
 });
 
 test('publicError takes status only — server text can never leak', () => {

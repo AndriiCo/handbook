@@ -17,6 +17,7 @@
 		groupFactsByTopic,
 		publicError,
 		readDossier,
+		seedLedgerEvents,
 		topicLabel
 	} from '../../../../lib/public-ui/handbook.js';
 
@@ -137,28 +138,7 @@
 	}
 
 	function seedLedger(list: any[]) {
-		const events: LedgerEvent[] = [];
-		for (const f of list) {
-			const cite = firstCapture(f);
-			events.push({
-				id: `fact-${f.id ?? f.statement}`,
-				kind: 'verified',
-				text: `${topicLabel(f.topic)} — verified quote`,
-				at: cite?.captured_at ?? '',
-				fresh: false
-			});
-			for (const sib of f.conflicts ?? []) {
-				events.push({
-					id: `conflict-${sib.id ?? sib.statement}`,
-					kind: 'changed',
-					text: `${topicLabel(f.topic)} — new proposal under review`,
-					at: '',
-					fresh: false
-				});
-			}
-		}
-		events.sort((a, b) => (a.at < b.at ? 1 : -1));
-		ledger = events;
+		ledger = seedLedgerEvents(list) as LedgerEvent[];
 	}
 
 	function pushLiveEvent() {
