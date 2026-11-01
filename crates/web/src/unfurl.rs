@@ -23,9 +23,6 @@ use super::{AppState, store_unavailable};
 pub struct MetaFact {
     pub topic: String,
     pub statement: String,
-    pub quote: String,
-    /// ISO `YYYY-MM-DD` (empty when the fact carries no capture).
-    pub captured_day: String,
 }
 
 /// Everything the head injects for one dossier.
@@ -107,22 +104,17 @@ pub fn load_dossier(
         if (topic == "address" || topic == "mailing") && postal.is_none() {
             postal = Some(statement.clone());
         }
-        let (quote, source_url, captured_at) = citation(conn, store_root, capture_id, start, end);
-        if let Some(url) = source_url {
-            if !sources.contains(&url) {
-                sources.push(url);
-            }
+        let (source_url, captured_at) = citation(conn, store_root, capture_id, start, end);
+        if let Some(url) = source_url
+            && !sources.contains(&url)
+        {
+            sources.push(url);
         }
         let day = (captured_at > 0).then(|| notify::iso_day(captured_at));
         if day.as_deref() > last_day.as_deref() {
             last_day = day.clone();
         }
-        facts.push(MetaFact {
-            topic,
-            statement,
-            quote,
-            captured_day: day.unwrap_or_default(),
-        });
+        facts.push(MetaFact { topic, statement });
     }
     Ok(Some(DossierMeta {
         slug: slug.to_string(),
@@ -135,26 +127,28 @@ pub fn load_dossier(
     }))
 }
 
-/// One fact's quote/source/day, mirroring the A1 citation rules
-/// (sidecar slice 8–400 chars, https source or the official site).
+/// One fact's source/day, mirroring the A1 citation rules (a
+/// sidecar slice of 8–400 chars must exist; https source or the
+/// official site). The quote itself stays on the page, one tap
+/// away — crawlers get statements plus source URLs.
 fn citation(
     conn: &rusqlite::Connection,
     store_root: &std::path::Path,
     capture_id: i64,
     start: i64,
     end: i64,
-) -> (String, Option<String>, i64) {
+) -> (Option<String>, i64) {
     if capture_id <= 0 || start < 0 || end <= start {
-        return (String::new(), None, 0);
+        return (None, 0);
     }
     let bytes = std::fs::read(store_root.join("text").join(format!("{capture_id}.txt")))
         .unwrap_or_default();
     if start as usize >= bytes.len() || end as usize > bytes.len() {
-        return (String::new(), None, 0);
+        return (None, 0);
     }
-    let quote = String::from_utf8_lossy(&bytes[start as usize..end as usize]).to_string();
+    let quote = String::from_utf8_lossy(&bytes[start as usize..end as usize]);
     if !(8..=400).contains(&quote.chars().count()) {
-        return (String::new(), None, 0);
+        return (None, 0);
     }
     let (source_id, captured_at): (Option<i64>, Option<i64>) = conn
         .query_row(
@@ -182,7 +176,7 @@ fn citation(
             .ok();
     }
     let url = url.filter(|u| u.starts_with("https://"));
-    (quote, url, captured_at)
+    (url, captured_at)
 }
 
 /// JSON-LD `GovernmentService` for one dossier. The serialized
@@ -311,11 +305,11 @@ pub fn render_dossier(shell: &str, meta: &DossierMeta, base: &str) -> String {
         esc(&meta.name),
         items
     );
-    if let Some(body) = page.find("<body") {
-        if let Some(end) = page[body..].find('>') {
-            let at = body + end + 1;
-            page.insert_str(at, &noscript);
-        }
+    if let Some(body) = page.find("<body")
+        && let Some(end) = page[body..].find('>')
+    {
+        let at = body + end + 1;
+        page.insert_str(at, &noscript);
     }
     page
 }
@@ -426,8 +420,6 @@ mod tests {
             facts: vec![MetaFact {
                 topic: "hours".to_string(),
                 statement: "open 9-5 </script><img src=x onerror=alert(1)>".to_string(),
-                quote: "open 9-5".to_string(),
-                captured_day: "2026-10-31".to_string(),
             }],
             sources: vec!["https://example.test/hours".to_string()],
             last_day: Some("2026-10-31".to_string()),
