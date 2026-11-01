@@ -12,6 +12,7 @@ mod admin_cert;
 mod admin_staff;
 mod atlas;
 mod backup;
+mod brand_assets;
 mod build_handbook;
 mod config;
 mod demo_vietnam;
@@ -22,6 +23,7 @@ mod instruct;
 mod mcp_serve;
 mod packs;
 mod pii_sweep;
+mod plant_run;
 mod quic_probe;
 mod release;
 mod review_conflicts;
@@ -52,6 +54,7 @@ fn main() {
         Some("build-handbook") => build_handbook::run(&args[1..]),
         Some("mcp-serve") => mcp_serve::run(&args[1..]),
         Some("pii-sweep") => pii_sweep::run(&args[1..]),
+        Some("plant-run") => plant_run::run(&args[1..]),
         Some("accept") => accept::run(&args[1..]),
         Some("form-scaffold") => form_scaffold::run(&args[1..]),
         Some("quic-probe") => quic_probe::run(&args[1..]),
@@ -59,6 +62,7 @@ fn main() {
         Some("eval") => eval::run(&args[1..]),
         Some("backup") => backup::run(&args[1..]),
         Some("backup-verify") => backup::run_verify(&args[1..]),
+        Some("brand-assets") => brand_assets::run(&args[1..]),
         Some("packs-validate") => run_packs_validate(&args[1..]),
         Some("packs-load") => run_packs_load(&args[1..]),
         Some("config-enroll") => config::run_enroll(&args[1..]),
@@ -111,12 +115,14 @@ Tasks:
   build-handbook accepted-only static build + sitemap/robots [--out --base-url]
   mcp-serve   serve lookup_authority on 127.0.0.1 [--port]
   pii-sweep   fail closed on PII in publishable surfaces
+  plant-run   setup|models|start|status|log|fetch|attach inference jobs on plant (--job, tmux-held)
   accept      deploy gate: --expect-build must match latest build + facts_hash
   form-scaffold  per-form skeleton: --authority --code --title [--out] [--force]; --check compares
   quic-probe  HTTP/3 GET probe: --addr <ip:port> --server-name <sni> [--cacert <pem>] [--path <p>] [--host <h>]
   demo-vietnam  frozen VN drill on a temp store (never prod)
   backup   nightly backup: SQLite backup API + tar (see flags below)
   backup-verify  restore-to-scratch + checks (drill-3 engine)
+  brand-assets  operator logo runbook; --check scans ~/Downloads
   packs-validate  validate packs/*.json (F13; needs_review invariants)
   packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)

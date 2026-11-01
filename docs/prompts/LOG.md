@@ -100,3 +100,11 @@
 | 193 | 2026-11-01 21:20Z | F12 expiry, store:false, safety id, terms | atlas 44 green, live proof next |
 | 194 | 2026-11-01 22:00Z | F13 canonical base URL everywhere | join verified, rest flagged |
 | 195 | 2026-11-01 22:30Z | F14 meta-api docs re-verified + linked | shapes + digest updated |
+| 196 | 2026-11-01 16:20Z | README live-claims fix + operator counts | timeline roadmap, 1/8 WA |
+| 197 | 2026-11-01 16:25Z | full-history secret scan for S1 | 385 commits clean |
+| 198 | 2026-11-01 16:35Z | S1 scrub list, IP/enrolment sweep | 2 files redact, 1 move |
+| 199 | 2026-11-01 16:45Z | ship-release overlap flag + stamp/probe | 8 gate tests pass |
+| 200 | 2026-11-01 17:05Z | shipment WS events carry topic | 258/258 web tests |
+| 201 | 2026-11-01 17:20Z | call topic takes 32-hex ids + live events | web 259, auth 81 |
+| 202 | 2026-11-01 17:35Z | staff proposals topic + quote publish | web 260, auth 81 |
+| 203 | 2026-11-01 17:45Z | live WA form check, V-5 evidence | 404 re-verified, 40234 live |

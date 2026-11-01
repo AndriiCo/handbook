@@ -540,6 +540,22 @@ async fn telnyx_webhook(
     ack()
 }
 
+/// One call event onto `call:{id}`: every event carries its `topic`
+/// field, like the authority/shipment/run publishers. Staff-only
+/// subscribers see status moves and transcript segments live.
+fn publish_call(state: &AppState, call_id: &str, event: serde_json::Value) {
+    let mut event = event;
+    if let Some(map) = event.as_object_mut() {
+        map.insert(
+            "topic".to_string(),
+            serde_json::Value::String(format!("call:{call_id}")),
+        );
+    }
+    state
+        .bus
+        .publish(&format!("call:{call_id}"), event.to_string());
+}
+
 /// Apply one fresh webhook to its call row (state moves, transcript
 /// appends, background recording download).
 fn apply_event(
@@ -557,6 +573,11 @@ fn apply_event(
             _ => None,
         };
         let _ = voice::store::set_status(conn, &call.id, next, detail.as_deref(), now);
+        publish_call(
+            state,
+            &call.id,
+            json!({"type": "call.status", "status": next.as_str(), "at": now}),
+        );
         if matches!(event, voice::EventType::Hangup) {
             audit(
                 conn,
@@ -579,12 +600,12 @@ fn apply_event(
             if let Some(text) = payload.segment_text()
                 && !text.trim().is_empty()
             {
-                let _ = voice::store::append_transcript(
-                    conn,
+                let text: String = text.chars().take(2000).collect();
+                let _ = voice::store::append_transcript(conn, &call.id, None, &text, now);
+                publish_call(
+                    state,
                     &call.id,
-                    None,
-                    &text.chars().take(2000).collect::<String>(),
-                    now,
+                    json!({"type": "call.transcript", "text": text, "at": now}),
                 );
             }
         }
@@ -890,6 +911,17 @@ async fn quote_to_draft(
         Ok(fact_id) => fact_id,
         Err(_) => return store_unavailable(),
     };
+    // New proposals fan out to the staff `proposals` topic so the
+    // `/review` queue updates live (analyzer-path publishers in the
+    // lane crates follow after the meta merge).
+    state.bus.publish(
+        "proposals",
+        json!({"type": "proposal.created", "topic": "proposals",
+               "fact_id": fact_id,
+               "authority": call.authority.as_deref().unwrap_or(""),
+               "at": now})
+        .to_string(),
+    );
     // Zero-DDL attribution audit: the existing voice audit row, with the
     // fact id + segment seqs + topic in the grep-able reason. Never the
     // transcript text (no PII in audit, per the voice lane rule).
@@ -1892,6 +1924,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn webhook_publishes_call_events_with_topic() {
+        let fx = fixture(webhook_config());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        let id = "0123456789abcdef0123456789abcdef";
+        voice::store::insert_call(
+            &conn,
+            &voice::store::NewCall {
+                id,
+                call_control_id: "leg-hex",
+                call_leg_id: "leg-hex",
+                call_session_id: "sess-hex",
+                to_hash: "abc",
+                authority: None,
+                questions_json: "[]",
+                script_id: "inline",
+                created_by: "staff-1",
+                now: 1,
+            },
+        )
+        .unwrap();
+        let mut rx = fx.state.bus.subscribe(&format!("call:{id}"));
+        let key = test_signing_key();
+        let now = unix_now().to_string();
+
+        let body = event_body(
+            "wh-1",
+            "call.answered",
+            json!({"call_control_id": "leg-hex"}),
+        );
+        let res = webhook_router(fx.state.clone())
+            .oneshot(webhook_request(&key, &now, &body))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&event).unwrap();
+        assert_eq!(value["type"], "call.status");
+        assert_eq!(value["status"], "in_progress");
+        assert_eq!(value["topic"], format!("call:{id}"));
+
+        let body = event_body(
+            "wh-2",
+            "call.transcription",
+            json!({"call_control_id": "leg-hex", "transcript": "the fee is eight dollars"}),
+        );
+        let res = webhook_router(fx.state.clone())
+            .oneshot(webhook_request(&key, &now, &body))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&event).unwrap();
+        assert_eq!(value["type"], "call.transcript");
+        assert_eq!(value["text"], "the fee is eight dollars");
+        assert_eq!(value["topic"], format!("call:{id}"));
+    }
+
+    #[tokio::test]
     async fn webhook_out_of_order_and_hangup_audit() {
         let fx = fixture(webhook_config());
         seed_call(&fx);
@@ -2247,6 +2344,37 @@ mod tests {
         assert!(reason.contains("segments=[0,1]"), "{reason}");
         assert!(reason.contains("topic=fees"), "{reason}");
         assert!(!reason.contains("Eight dollars"), "{reason}");
+    }
+
+    #[tokio::test]
+    async fn quote_to_draft_publishes_proposal_created() {
+        let fx = fixture(voice::VoiceConfig::default());
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        seed_call_with_transcripts(&conn, "c-p", Some("usa-wa-sos"));
+        drop(conn);
+        let mut rx = fx.state.bus.subscribe("proposals");
+
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/calls/c-p/quote",
+                true,
+                true,
+                Some(quote_body(vec![0], "fees", "Counter fee is $8.")),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&event).unwrap();
+        assert_eq!(value["type"], "proposal.created");
+        assert_eq!(value["topic"], "proposals");
+        assert_eq!(value["authority"], "usa-wa-sos");
+        assert!(value["fact_id"].as_i64().unwrap() > 0, "{event}");
     }
 
     /// Every invalid shape is a 422 with a non-empty error; nothing lands.

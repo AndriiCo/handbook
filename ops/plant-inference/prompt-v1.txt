@@ -1,0 +1,1 @@
+Describe this document photo for apostille precheck. Reply with JSON only, no other text: {"verdict":"pass|retake","issues":[]}

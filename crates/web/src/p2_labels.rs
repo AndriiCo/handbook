@@ -497,7 +497,15 @@ fn refresh_shipment_status(p2: &rusqlite::Connection, shipment_id: i64, now: i64
     next.to_string()
 }
 
-fn publish(state: &crate::AppState, shipment_id: i64, event: serde_json::Value) {
+/// Shipment events onto `shipment:{id}`: every event carries its
+/// `topic` field, like the authority/run/admin publishers.
+fn publish(state: &crate::AppState, shipment_id: i64, mut event: serde_json::Value) {
+    if let Some(map) = event.as_object_mut() {
+        map.insert(
+            "topic".to_string(),
+            serde_json::Value::String(format!("shipment:{shipment_id}")),
+        );
+    }
     state
         .bus
         .publish(&format!("shipment:{shipment_id}"), event.to_string());
@@ -1853,6 +1861,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(event.contains("label.ready"), "{event}");
+        let value: serde_json::Value = serde_json::from_str(&event).unwrap();
+        assert_eq!(value["topic"], format!("shipment:{id}"), "{event}");
 
         let res = app(&fixture.state)
             .oneshot(get(

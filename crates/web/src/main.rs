@@ -2013,7 +2013,7 @@ mod tests {
         // the gate this exact request upgrades to a hello).
         let denied = ws_connect(
             &addr,
-            "call:1",
+            "call:0123456789abcdef0123456789abcdef",
             Some(format!("{}=staff-1", auth::ADM_COOKIE)),
             Some("https://evil.test"),
         )
@@ -2028,14 +2028,14 @@ mod tests {
         // Same credential from an allowlisted dev Origin: hello.
         let (mut staff, _) = ws_connect(
             &addr,
-            "call:1",
+            "call:0123456789abcdef0123456789abcdef",
             Some(format!("{}=staff-1", auth::ADM_COOKIE)),
             Some("http://localhost:3000"),
         )
         .await
         .unwrap();
         let hello: serde_json::Value = serde_json::from_str(&next_text(&mut staff).await).unwrap();
-        assert_eq!(hello["topic"], "call:1");
+        assert_eq!(hello["topic"], "call:0123456789abcdef0123456789abcdef");
         staff.close(None).await.unwrap();
 
         // Anonymous public read from a cross-site Origin: unaffected
@@ -2069,7 +2069,7 @@ mod tests {
                 Some("csrf-token"),
                 Some("http://localhost:3001"),
                 Some(serde_json::json!({
-                    "topic": "call:1",
+                    "topic": "call:0123456789abcdef0123456789abcdef",
                     "kind": "note",
                     "body": body,
                 })),
@@ -3270,7 +3270,9 @@ mod tests {
         let fx = fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
         let uri = "/apostille/api/v1/bus/publish";
-        let body = Some(serde_json::json!({"topic": "call:1", "kind": "note", "body": {}}));
+        let body = Some(
+            serde_json::json!({"topic": "call:0123456789abcdef0123456789abcdef", "kind": "note", "body": {}}),
+        );
 
         // Mutation without Origin → 403.
         let res = admin_router_for(&fx.state)
@@ -3759,7 +3761,7 @@ mod tests {
         anon.close(None).await.unwrap();
 
         // Anonymous call subscribe: 403, no upgrade.
-        let denied = ws_connect(&addr, "call:1", None).await;
+        let denied = ws_connect(&addr, "call:0123456789abcdef0123456789abcdef", None).await;
         match denied {
             Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
                 assert_eq!(res.status(), 403);
@@ -3793,13 +3795,13 @@ mod tests {
         // Staff call subscribe: hello.
         let (mut staff, _) = ws_connect(
             &addr,
-            "call:1",
+            "call:0123456789abcdef0123456789abcdef",
             Some(format!("{}=staff-1", auth::ADM_COOKIE)),
         )
         .await
         .unwrap();
         let hello: serde_json::Value = serde_json::from_str(&next_text(&mut staff).await).unwrap();
-        assert_eq!(hello["topic"], "call:1");
+        assert_eq!(hello["topic"], "call:0123456789abcdef0123456789abcdef");
         staff.close(None).await.unwrap();
 
         server.abort();

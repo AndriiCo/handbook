@@ -1,10 +1,10 @@
-# Operator — Sunday 2026-11-01 (Pacific; updated ~00:05 PDT)
+# Operator — Sunday 2026-11-01 (Pacific; updated ~09:15 PDT)
 
 Production runs `0.1.0+69ca7fa` (deployed 2026-11-01 ~06:35Z on your
 "deploy now" order, `--allow-today-overlap`) — scoreboard **5/10**
 (P0, GP1, GP4, A2, A5 pass; see `web/shots/prod-before.json` →
 `web/shots/prod-after.json`, no regression). First red: GP2-data
-(0/8 accepted per slug). Staging 9/10 (only S1 red) on the exact
+(vietnam 0/8, usa-wa-sos 1/8 accepted). Staging 9/10 (only S1 red) on the exact
 SHA; tunnel live during builder turns.
 
 Your lines that flip production rows now (all code is already live):
@@ -56,7 +56,8 @@ group-read pre-step from this morning is done — A2 reads prove it.
 1. Approvals — no script: open the admin `/review` with your client
    certificate, accept every proposed fact EXCEPT 2 per slug (leave 2
    vietnam + 2 usa-wa-sos proposed for the video's approve scene).
-   GP2-data needs >= 8 accepted each; currently 0/8. This flips
+   GP2-data needs >= 8 accepted each; currently vietnam 0/8,
+   usa-wa-sos 1/8 (verified 16:15Z). This flips
    GP2-data, A1 and GP2-page. Paste back: accepted counts per slug.
    Error guide (ships Sunday #3): "session missing or expired" means
    log in again; "refused … client certificate" means the session is
@@ -76,6 +77,10 @@ group-read pre-step from this morning is done — A2 reads prove it.
    video in README (video lands 11-03). Video: record the production
    admin approve scene yourself (needs your client cert; builder takes
    desktop/mobile), upload to YouTube, paste the URL back.
+   Full-history secret scan 11-01 ~16:20Z: clean (gitleaks 8.30.1,
+   385 commits, no leaks; working-tree `secrets-scan` clean, 690 files).
+   Scrub list: `docs/ops/scrub-list-2026-11-01.md` — 2 prompt files need
+   IP redaction, `security-review-2026-10-27.md` moves unless fixed.
 4. GP3 brand assets (scoreboard demands a logo per configured
    provider button; dir still holds only README.md): run
    `cargo xtask brand-assets`, follow its four download steps (Apple,
@@ -126,4 +131,10 @@ scheduled, except where noted:
 
 Web redesign slices P153–P157 landed on main (shell + GP1–GP4 + login);
 local gates green (check, both builds, imports, tailwind, 20/20 shots).
-Staging 9/10 (only S1 red). Prod 4/10 until approvals + Sunday #3.
+Staging 9/10 (only S1 red). Prod 5/10 until approvals land.
+WA form template (goal priority 5): standalone Dec-2024 form URL
+re-verified dead 11-01 (404 page); live 6.2025 CORPS Records Request
+(URL + $15/40234 evidence in egypt-consular.md V-5a) covers
+business-entity apostilles, not the standalone request form. Say
+which official form to model (or paste its fields) and the builder
+scaffolds `forms/usa-wa-sos/wa-apostille-request/` from it.

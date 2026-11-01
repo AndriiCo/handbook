@@ -25,12 +25,14 @@ prod DB copies — ever.
    18319:… plant`), full scoreboard plus the live demo take
    (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
    9/10 with only operator-owned S1 red is staging-green.
-5. Ship (Mac): `xtask/ops/ship-release.sh <sha>` —
-   throwaway worktree, zigbuild x86_64 (`--target` is NOT
-   optional), ELF + `BUILD_SHA` checks, both web builds, stage
-   to `~/apostille/staging/<sha7>` (binary, SPAs, packs,
-   static, xtask, evals, SHA, service). Refuses on any failed
-   rail, including the day gate.
+5. Ship (Mac): `xtask/ops/ship-release.sh <sha>
+   [--allow-today-overlap]` — plant stamp check, throwaway
+   worktree, zigbuild x86_64 (`--target` is NOT optional),
+   ELF + `BUILD_SHA` checks, both web builds, stage to
+   `~/apostille/staging/<sha7>` (binary, SPAs, packs,
+   static, xtask, evals, SHA, service), full root-process
+   probe. Refuses on any failed rail, including the day gate
+   (`--allow-today-overlap` only on explicit operator order).
 6. Deploy (as hal): `bash ~/apostille/scripts/ops-deploy.sh
    ~/apostille/staging/<sha7> --skip-accept`
    (`--allow-today-overlap` only on explicit operator order —

@@ -80,7 +80,8 @@ code.
 
 What is live at <https://andrii.ai/apostille> today: search the
 authority index, sign in with passkey, run the photo precheck, and place
-an order whose timeline updates live. Dossiers show quote-carrying facts
+an order. The live order timeline, form PDF and carrier label are roadmap.
+Dossiers show quote-carrying facts
 (staging-proven; production facts appear once the operator's approval
 steps below land). What is demo-only: document photos are synthetic
 samples, and there is no real mail, fees, or carrier charges anywhere.
@@ -89,7 +90,7 @@ samples, and there is no real mail, fees, or carrier charges anywhere.
 
 Rust workspace plus a Svelte front end (`web/`). Project tasks live in
 `xtask/` and run via `cargo xtask <task>`; operator runbooks live in
-`docs/ops/scripts/`.
+`xtask/ops/`.
 
 ```text
 crates/handbook/   library crate (design arrives in a later prompt)

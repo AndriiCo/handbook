@@ -1,252 +1,122 @@
 # Goal brief: Apostille Handbook, Meta AI hackathon (until 2026-11-04 18:00 PT)
 
-This file and `.agents/scoreboard/` are guardrails. Run them, never edit
-them. If a row's contract below is wrong for the product, say so in your
-final message and keep working on other rows. The operator edits this file.
+This file, `.agents/roles/`, `.agents/scoreboard/` and `.agents/skills/`
+are guardrails. Run them, never edit them; propose changes in your final
+message. The operator edits them. History before 2026-11-01 (the 10-30
+review list, the old deploy recipe) is in `.agents/archive/`.
 
-## The goal (pasted into the builder session; on an existing goal, send it as `/goal edit <text>`)
+## Objective
 
-```text
-/goal Make `node .agents/scoreboard/scoreboard.mjs` exit 0 against production (https://andrii.ai/apostille), every change proven on staging first. Each slice: read the newest .muse/worktrees/*/web/shots/judge.md; take the first red row in .agents/goal.md that still has builder work (skip a row that waits only on a line in docs/ops/operator-today.md); load the skill it names; finish, commit, submit the SHA to plant, run staging acceptance (AGENTS.md §8) and report the staging and production scores. Once a Pacific day, deploy yourself as soon as a gated SHA carries that day's row of Deploy days in .agents/goal.md, or at 20:00 PT with the newest gated SHA, never two deploys within 8 hours (AGENTS.md §7, "How to deploy"), and report it. When no red row has builder work, take the next open item under "While rows wait on the operator". Never mark the goal blocked while that list has an open item. Fan independent UI work out to at most 3 write-capable subagents with worktree_isolation, under web/ only. Never edit .agents/ or .muse/.
-```
+Make `node .agents/scoreboard/scoreboard.mjs` exit 0 against production
+(https://andrii.ai/apostille), every change proven on staging first, and
+make the 3-minute demo show Meta models doing visible, measured work on
+real data.
 
-## Deploy days
+How each session is started (one file reference each; the SessionStart
+hook repeats it on every resume and compaction):
 
-You deploy production yourself, once a Pacific day, under the rails in
-AGENTS.md §7: a SHA with a plant stamp and a staging-green run (§8),
-built exactly, with the production scoreboard before and after, and a
-rollback on any regression. Root steps stay the operator's: after a
-deploy, put them in `docs/ops/operator-today.md` as exact lines. A row is
-finished only when it passes on production.
+| Session | Start | Scheduled |
+|---|---|---|
+| builder (main checkout) | `/goal Follow .agents/roles/builder.md` | `/loop "*/30 * * * *" Continue: follow .agents/roles/builder.md` |
+| lane (`muse -w`) | `/goal Follow .agents/roles/lane-<name>.md` | none |
+| judge (`muse -w`) | `Run /judge-eyes now.` | `/loop "0 */2 * * *" /judge-eyes` |
 
-| Day | Deploy | What it must carry |
-|-----|--------|--------------------|
-| Fri 10-30 | 70960d4 or later, once staging-green, before 24:00 PDT | P100-P115. The operator deferred today's root steps (proposals, A2, A5) until fixes 2, 3 and 5 ship: they are not unanswered. |
-| Sat 10-31 | #2 | Fixes 1-6. Then the operator runs proposals, A2 and A5 on it. |
-| Sun 11-01 | #3 | Fixes 7-11; first dry run of the demo against production. |
-| Mon 11-02 | #4, the last code deploy | Dry-run fixes. The operator re-runs A5 so it is fresh through judging. |
+## Lanes
+
+| Lane | Role file | Session / worktree / branch | State (2026-11-01 08:53) |
+|---|---|---|---|
+| `meta` | `.agents/roles/lane-meta.md` | `01a19798-66eb-72b0-8ce7-3e80f3958724`, `.muse/worktrees/20261101-7e99`, `muse/session-01a19798-66eb-72b0-8ce7-3e80f3958724` | F1-F14 fixed on the branch (P184-P195), not merged; follow-ups listed in its role file |
+
+Any other `muse/session-*` branch (the judges') is not a lane: never merge it.
+
+## State (2026-11-01 08:00 PST; the SessionStart hook prints the last full runs)
+
+Production `0.1.0+69ca7fa`: **5/10** (P0, GP1, GP4, A2, A5). Staging:
+**9/10** (only S1 red). Main is ahead of production by docs, ops and
+README commits (P180-P183).
+
+| # | Row | Prod | Skill | Who moves it now | Contract ("pass" needs) |
+|---|-----|------|-------|------------------|-------------------------|
+| 1 | P0 | pass | (none) | builder: never regress | `/healthz` 200. |
+| 2 | GP2-data | FAIL | `ai-slice` | operator approves in `/review` (the 11-01 01:41Z proposals run left usa-wa-sos 17 proposed, vietnam 0); builder: if the operator reports vietnam still empty, list the `ops-gp2-proposals.sh` line (as hal) | `GET /api/v1/authorities` lists `vietnam` and `usa-wa-sos`, each with `fact_count >= 8`. Facts reach "accepted" only through the operator's `/review` approvals. |
+| 3 | A1 | FAIL | `ai-slice` | follows GP2-data | `GET /api/v1/authorities/{slug}/facts`: every fact has `citations: [{quote, source_url, captured_at}]` (quote 8-400 chars, found on the captured page; `https` URL; ISO date) and `drafted_by` (e.g. `"muse-spark-1.3"`). |
+| 4 | GP1 | pass | `ship-screen` | builder: never regress | Home: real typeface, a search affordance (`role=combobox` or `[aria-keyshortcuts]`), >= 3 links to `/authority/…`, zero console errors, no overflow at 390 px, no banned strings. |
+| 5 | GP2-page | FAIL | `ship-screen` | follows GP2-data | `/authority/vietnam`: h1 is the authority's name; accepted fact statements on the page (all topics); opens `/ws/bus?topic=authority:vietnam`; each fact's quote, source and date one tap or hover away. |
+| 6 | GP3 | FAIL | `ship-screen` | operator adds the official `google.svg` + `apple.svg` to `web/src/lib/assets/brand/` and commits them (they ship in the public bundle; the folder is not git-ignored); then the next deploy | `/login` at 390x844: `input[autocomplete="username webauthn"]` with conditional mediation, a "Sign in with passkey" button above the fold, `GET /api/v1/auth/providers` → `{"providers":[…]}` (production: google, apple), one button with the official logo per provider. |
+| 7 | GP4 | pass | `ship-screen` | builder: never regress | `/order`: a stepper marked with `aria-current="step"`, clean at 1440 and 390. |
+| 8 | A2 | pass | `ai-slice` | operator re-runs `ops-a2-record.sh` after the `meta` lane's SAM fix (F4) is deployed; builder stages the recorder and lists the line | `GET /api/v1/demo/precheck/samples`; `POST /api/v1/demo/precheck {"sample":id}` → `{"verdict","issues","models":["sam-3.1","muse-spark-1.3"]}`, rate-limited; `/precheck` says when the replay was recorded. |
+| 9 | A5 | pass | `ai-slice` | operator re-runs `ops-a5-eval.sh` Monday evening whether or not Monday's deploy happens, and again Wednesday morning: the current run (11-01 04:29Z) leaves the 72 h window Tue 11-03 20:29 PST | `GET /api/v1/quality` → `{run_at, gold_count >= 25, quote_found_rate > 0, …, model}` from a live `muse-spark` eval in the last 72 h; home shows the percent with model and date. Current: quote_found 1.0, value_in_quote 0.969, topic_accuracy 0.641. |
+| 10 | S1 | FAIL | `ship-it` | operator: MIT licence, public repo, video link (11-03); builder: README (no claim of anything not live), scrub list, full-history secret scan | MIT or Apache-2.0 LICENSE, a judges' README with a YouTube/Vimeo/Loom link and "built with Muse Code", public repo. |
+
+Not on the scoreboard because no public URL shows them: the GP5 review
+queue (approve → GP2 updates live) and the A4 trace console. Both are in
+the demo video.
+
+## Calendar
+
+| Day (Pacific) | Deploy | Notes |
+|---|---|---|
+| Sun 11-01 | **open, no daily cap or gap** (operator order, `0e9c8c4`, until 11-10): deploy each stamped, staging-green SHA worth shipping, with `--allow-today-overlap` (AGENTS.md §7) | Lane merges, staging proof, demo dry run on production once facts are approved. |
+| Mon 11-02 | **the last code-deploy day**, no cap; deploys end at the Tue 00:00 PST freeze | Lane merges stop at 15:00 PST, so the last deploy is staging-proven by evening. The operator re-runs A2 (if F4 shipped) and A5. |
 | Tue 11-03 | freeze: no deploy | Recording, README video link. Rollback only on the operator's word or a failing `/healthz` (AGENTS.md §7). |
-| Wed 11-04 onward | freeze, until the operator lifts it after judging | The operator submits by 12:00 PST (close 18:00 PST = 02:00 UTC 11-05). Same rollback rule. |
+| Wed 11-04 | freeze until the operator lifts it after judging | The operator re-runs A5 in the morning and submits by 12:00 PST (close 18:00 PST). Same rollback rule. |
 
-Prove rows on staging (AGENTS.md §8: `ssh plant`, the staging stack seeded
-from packs, `--base` the tunnelled URL) or, for screens only, the dev
-server with fixtures:
-`node .agents/scoreboard/scoreboard.mjs --base <staging or http://localhost:5173/apostille> --only <row>`.
+## Builder priorities, top first
 
-### How to deploy (until `docs/ops/scripts/ship-release.sh` exists)
-
-`<live>` is the SHA in production's `/healthz`; `<sha>` is the gated one.
-
-1. Check the rails (AGENTS.md §7). Each command must print nothing:
-   - schema: `git diff <live> <sha> -- crates xtask | grep -E '^[-+]pub const (P2_)?SCHEMA_VERSION|^\+.*\b(ALTER|DROP) (TABLE|INDEX|COLUMN)|^\+.*\bRENAME (TO|COLUMN)\b'`
-     and `git diff --stat <live> <sha> -- crates/handbook-store/migrations`;
-   - unit: `git show <sha>:docs/ops/apostille.service | ssh andrii.ai 'diff /etc/systemd/system/apostille.service -'`;
-   - today unspent: `ssh andrii.ai 'TZ=America/Los_Angeles ls -lt --time-style=+%F /srv/apostille/releases | head -3'`
-     shows no directory dated today (this one prints; read it);
-   - no root script: `ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "[a]postille/scripts/"'`.
-     The `[a]` keeps `pgrep` from matching the remote shell running it.
-     `ROOT-PROCS-HIDDEN` means the check cannot see: ask the operator in
-     your final message and deploy on their answer.
-   Plus the plant stamp, a staging-green run of `<sha>`, and, once
-   `npm --prefix web run demo` exists, a green demo run of `<sha>`.
-2. `node .agents/scoreboard/scoreboard.mjs --out web/shots/prod-before.json`.
-3. Build in a throwaway worktree that reuses the main `target/` (the disk
-   is nearly full):
-   `git worktree add --detach ../hb-ship-<sha7> <sha> && cd ../hb-ship-<sha7>`,
-   `export CARGO_TARGET_DIR=<main checkout>/target R=$CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release`.
-   Symlink `web/node_modules` from the main checkout when
-   `git diff --quiet <sha> main -- web/package-lock.json` holds, or else
-   run `npm ci --prefix web`. Then runbook-release §1: zigbuild with
-   `--target x86_64-unknown-linux-gnu`, both web builds, `file $R/web`,
-   and the BUILD_SHA check on `$R/build/web-*/output`.
-4. Stage from that worktree only, never the main checkout: runbook-release
-   §2 into `apostille/staging/<sha7>` (the seven-character SHA:
-   `ops-deploy.sh` checks the stamp against it), reading its
-   `target/x86_64-unknown-linux-gnu/release/` as `$R/`, plus the full
-   40-hex `SHA` file (`git rev-parse HEAD` there) and the worktree's
-   `docs/ops/apostille.service`, and copy its
-   `docs/ops/scripts/ops-deploy.sh` to `~/apostille/scripts/`.
-   `git status --porcelain` in the worktree prints nothing.
-5. Repeat step 1's today-unspent and root-script checks. On the server, as
-   hal: runbook §0's pre-flight lines except the `systemctl stop` probe
-   (if a grant ever changed, it would stop production). Then
-   `bash ~/apostille/scripts/ops-deploy.sh ~/apostille/staging/<sha7> --skip-accept`.
-   Never runbook §3's bare `xtask deploy` line.
-6. Back in the main checkout:
-   `node .agents/scoreboard/scoreboard.mjs --out web/shots/prod-after.json`.
-   Compare (AGENTS.md §7), roll back if a rail says so, remove the
-   worktree (`git worktree remove --force ../hb-ship-<sha7>`), and report.
-
-## While rows wait on the operator
-
-A row that is code-complete but red on production is not a reason to
-stop: work this list, top first, and never mark the goal blocked while an
-item is open.
-
-1. Plant gate: `ops/plant-pipeline/submit.sh <sha>` for every commit you
-   want deployed, so it has an `acceptance/<sha12>.json` stamp with
-   `ci_green: true`. Poll with `status.sh`; never wait on it.
-2. Staging acceptance (AGENTS.md §8): stand up the staging stack on plant,
-   seed vietnam and usa-wa-sos from the packs, fetch, analyze, approve on
-   staging, and run the whole scoreboard against it. You write
-   `docs/ops/staging.md` (ports, tunnel, regeneration recipes) without
-   asking. A row green on staging is the evidence the next deploy will
-   turn it green.
-3. Demo (skill `ship-it`): `docs/demo-script.md` today, then
-   `web/e2e/demo.spec.mjs` and `npm --prefix web run demo` (the gate
-   AGENTS.md §4 and §7 name) by 10-31, against staging or fixtures. You
-   record the public segments; the operator records the production
-   `/review` segment and uploads.
-4. The judges' README (row S1, everything except the operator's licence,
-   visibility and video steps).
-5. The operator's review below, top first.
+1. Production rows. Keep `docs/ops/operator-today.md` exact and current
+   (approvals, logos, A2/A5 re-runs, the terms decision, S1). S1 prep:
+   the README claims nothing that is not live (today it calls the order
+   timeline live), the scrub list, the full-history secret scan
+   (`ship-it`).
+2. Merge the `meta` lane under the protocol in `.agents/roles/builder.md`.
+   Then the follow-ups outside its paths: `meta.base_url` honoured in
+   `crates/web/src/draft.rs` and the env-key path in `xtask/src/main.rs`;
+   `cached_tokens` through `contracts::Usage`, the runner and the trace
+   console. No shared client crate before judging.
+3. Release path: done in P199 (`ship-release.sh` takes
+   `--allow-today-overlap`, which every deploy needs until 11-10, and
+   checks the plant stamp and the root-process probe). The scripts' help
+   text still calls the flag operator-ordered only: align it with
+   AGENTS.md §7.
+4. Demo: once approvals land, a production dry run
+   (`DEMO_BASE_URL=https://andrii.ai/apostille npm --prefix web run demo`),
+   then the `DEMO_CAPTIONS=1` take; `docs/demo-script.md` stays within 175 s.
+5. Breadth from the operator's 10-31 list, each staging-proven before
+   Monday's cut, none needing a migration, top first:
+   - live updates where they are missing: a staff topic for new proposals
+     so `/review` updates live; `call:` accepting the 32-hex call id and
+     carrying status and transcript events; `label.*` and shipment events
+     carrying their `topic` field;
+   - a readable step-by-step "how to get your apostille" guide on the
+     dossier, built from accepted facts, with a friendly empty state;
+   - the Washington SOS apostille request form template, seeded from the
+     official form (cite its URL), prefilled from accepted facts;
+   - `/order` saving a submission, with a live order timeline;
+   - Meta transcription of call recordings with the `meta` lane's fixed
+     client, once merged (Telnyx WAV recording in `crates/voice`).
 6. `/taste` findings you listed but did not fix.
 
-## Operator's review of P100-P116 (2026-10-30), fix in this order
+Not before judging unless the operator orders it in the session: live
+carrier postage (FedEx/USPS/DHL), payments, self-hosted inference
+(Glimmer, `docs/ops/plant-inference.md`), new auth providers, schema
+migrations.
 
-Five reviewers read 0c8ea63..801b2a3; a second reader tried to refute each
-finding and none fell. Use the ids in log lines.
+## Operator-only steps
 
-1. `plant-submit-guard`: `ops/plant-pipeline/submit.sh` refuses whenever
-   a tracked file is modified, even with an explicit SHA it archives from
-   git, and the session-log hook rewrites
-   `docs/prompts/sessions/README.md` after every turn. Check the tree only
-   for the HEAD default, and exclude `docs/prompts/sessions`. While in
-   `ops/plant-pipeline/`, remove the plant user's name from its README,
-   `bootstrap.sh` and `worker.sh` (AGENTS.md §8: the alias only), and its
-   "no `--skip-*` flags, ever" now reads as AGENTS.md §8 scopes it.
-2. `packs-coverage`: neither pack can yield 8 genuine cited facts.
-   `packs/usa-wa.json`'s only fetchable watch URL is http (A1 needs https)
-   and its PDF is a 404; vietnam watches one row of the HCCH status table.
-   Add official https pages until each slug has the text for 8 facts
-   (`cargo xtask packs-validate`). Make `ops-gp2-proposals.sh` always run
-   packs-load and retire a source row whose URL changed: facts approved
-   from an http capture would fail A1 for good.
-3. `live-draft-first`: no real draft call has ever been made. Give
-   `live_client` the `$META_API_KEY` fallback `atlas.rs` has; raise
-   `max_completion_tokens` from 2000 (Spark's reasoning counts inside it,
-   and `finish_reason=length` becomes BadOutput); on length or a refused
-   quote, retry once with fewer records and the refusal reason
-   (legal-agent-workshop `quote_on_page`). Prove it on staging with the
-   staging key (AGENTS.md §8), save the replies as fixtures, report tokens
-   and p50/p95.
-4. `a1-integrity`: accepting a fact requires a verified citation; a quote
-   is 8-400 characters (the oracle now checks this); `source_url` must be
-   https and is never rendered as a raw href (a `javascript:` or `mailto:`
-   URI in a pack would reach the public dossier).
-5. `ops-scripts-runnable`: `evals/` never reaches a release, so
-   `ops-a5-eval.sh` aborts; `ops-a2-record.sh` looks for PNGs inside the
-   `web` binary (use `$RELEASE/spa/demo`), sends a SAM request in a shape
-   that contradicts `meta-api-shapes.md`, and takes the key on the command
-   line (use `read -rs`); runbook-release §2 stages neither the `SHA` file
-   nor `apostille.service`, which `ops-deploy.sh` requires, and its §6
-   ("never `--skip-accept` on prod") contradicts AGENTS.md §8. Then write
-   the Mac-side `docs/ops/scripts/ship-release.sh <sha>` you run for every
-   deploy: it does every step of "How to deploy" above, refuses on any
-   failed check in step 1, and rolls back on a regression (AGENTS.md §7). Until it exists, follow "How to deploy"
-   by hand. Also bring `ops-deploy.sh`'s header, its WARNING ("operator
-   flag") and its "paste back" lines up to builder-run deploys; make
-   xtask's smoke check the `/healthz` SHA, as runbook-release §3 claims it
-   does; and replace runbook §0's `systemctl stop` probe with a read-only
-   check of the sudo grants.
-6. `security-before-judges`: `/api/v1/demo/login` mints a 24 h session
-   for any `customer_ref`, including a real account's user id, which then
-   reads that customer's submissions, PDFs, labels and WS topics (review
-   H4, still unfixed). Accept only `demo-`-prefixed refs, which no real
-   account can have. Give `/demo/precheck` its own rate-limit map (it
-   shares auth's, which fails closed above 8192 keys, so a flood locks
-   out sign-in). Refuse WS topics for slugs that do not exist.
-7. `dossier-all-topics`: the dossier renders only the first topic tab, so
-   GP2-page sees fewer than 8 statements. Render every topic (tabs become
-   anchors); make quote, source and date reachable by tap and keyboard (a
-   phone cannot hover) with a visible verified mark; show "approved by
-   staff" and a readable `drafted_by` on each fact; on a live update keep
-   the tab and highlight the new fact.
-8. `meta-visible`: no public page names Muse Spark or SAM. Add a "How it
-   works" band on home (Spark drafts from watched official pages, the
-   quote is checked byte-exact, a human approves, SAM 3.1 + Spark
-   pre-check photos), the eval's model and run date next to the percent,
-   a link to `/precheck`, and "replayed from a live run on <date>"
-   wherever a replay is shown.
-9. `visual-pass`: 21 bare `<h1>` render as body text (login, order,
-   precheck, review, console); `/review` buttons and inputs are unstyled,
-   and it is the "approved by a human" shot; precheck animates the SAM
-   boxes below the fold and clips the top labels; home's featured chips
-   fall back to slugs that 404 on production; signed-out visitors get the
-   7-link account sub-nav; the footer mark is a white tile in dark mode;
-   login is a 1100 px left-aligned stack (center it, passkey first,
-   provider logos).
-10. `a5-honest`: `quote_found_rate`, `value_in_quote_rate` and
-    `topic_accuracy` are identical by construction; compute each from its
-    own check. The oracle now refuses a non-Spark or zero-rate run.
-11. `gp3-conditional-mediation`: the `username webauthn` attribute is
-    there, but `navigator.credentials.get({mediation: 'conditional'})` is
-    never called.
-12. `camera-safe-draft`: the "Spark drafts from a new capture" scene has
-    no trigger on production (an unchanged page yields no capture). Add an
-    admin "Draft from this capture" action (mTLS) that runs one live draft
-    and streams its steps; that is also A4's minimal trace view.
-13. `readme-promise`: README promises order → completed form → FedEx
-    label, and `/order` saves nothing. Assumed: rewrite the success
-    criteria to what is live and call the order leg roadmap; wire `/order`
-    only when 1-12 are done.
-14. `log-in-same-commit`: AGENTS.md §5. The LOG.md line goes in the
-    slice's commit; P100-P116 each have a separate "log line" commit.
-
-## Row order and skills
-
-| # | Row | Skill | What "pass" needs (contract) |
-|---|-----|-------|------------------------------|
-| 1 | P0 | (none) | `/healthz` 200. Never regress it. |
-| 2 | GP2-data | `ai-slice` | `GET /api/v1/authorities` lists `vietnam` and `usa-wa-sos`, each with `fact_count >= 8`. Facts reach "accepted" only when the operator approves them in `/review`; queue the proposals, then list "approve N proposals" in operator-today.md. |
-| 3 | A1 | `ai-slice` | `GET /api/v1/authorities/{slug}/facts`: every fact has `citations: [{quote, source_url, captured_at}]` (quote 8-400 chars, found on the captured page; `https` URL; ISO date) and `drafted_by` (e.g. `"muse-spark-1.3"`). Pattern: legal-agent-workshop `quote_on_page`, refused quote returned to the model, one retry. |
-| 4 | GP1 | `ship-screen` | Home: body font is a real typeface (`@fontsource-variable`), a search affordance (`role=combobox` or `[aria-keyshortcuts]` for ⌘K), >= 3 links to `/authority/…`, zero console errors, no overflow at 390 px, none of: placeholder, not wired, skeleton, lorem ipsum, TODO, coming soon. |
-| 5 | GP2-page | `ship-screen` | `/authority/vietnam`: h1 is the authority's name, not the slug; accepted fact statements are on the page (all topics, not one tab); the page opens `/ws/bus?topic=authority:vietnam`. Each fact shows its quote, source and date one tap or hover away (AGENTS.md §3), reachable on a phone. |
-| 6 | GP3 | `ship-screen` | `/login` at 390x844: `input[autocomplete="username webauthn"]` with conditional mediation, a "Sign in with passkey" button above the fold, `GET /api/v1/auth/providers` → `{"providers":[…]}` listing only providers configured in production, and one button with the official logo per listed provider. |
-| 7 | GP4 | `ship-screen` | `/order`: a stepper marked with `aria-current="step"`, clean at 1440 and 390. |
-| 8 | A2 | `ai-slice` | `GET /api/v1/demo/precheck/samples` → `{"samples":[{"id","label","thumb_url"}]}` (synthetic documents only); `POST /api/v1/demo/precheck {"sample":id}` → `{"verdict":"pass"|"retake","issues":[…],"models":["sam-3.1","muse-spark-1.3"]}`, rate-limited and cost-capped; `/precheck` animates the SAM boxes and the verdict, and says when the replayed run was recorded. |
-| 9 | A5 | `ai-slice` | `GET /api/v1/quality` → `{run_at, gold_count >= 25, quote_found_rate > 0, value_in_quote_rate, topic_accuracy, model}` from a live `muse-spark` eval run in the last 72 h; home shows `quote_found_rate` as a whole percent with the model and date. |
-| 10 | S1 | `ship-it` | MIT or Apache-2.0 LICENSE, a README for judges with a YouTube/Vimeo/Loom demo link and "built with Muse Code", public repo. **The operator makes the repo public and switches the licence; prepare both and list them.** |
-
-Not on the scoreboard because no public URL can show them: the GP5 review
-queue (approve → GP2 updates live) and the A4 agent trace console. Both are
-in the demo video (fix 12 gives A4 its first view).
-
-## Run rules
-
-- One row or one fix per slice. A slice ends green and committed
-  (`P0NN: <row or fix id>: …`) with its LOG.md line in the same commit.
-- Subagents work under `web/` only and never run cargo in their worktree:
-  the Mac's disk is 98% full. Rust gates run in the main checkout or on
-  plant. Children own only their route files; the parent owns `app.css`,
-  layouts, `package*.json` and merges.
-- AI rows (2, 3, 8, 9) report a live run: model, p50/p95 latency, tokens,
-  and save the recorded responses as replay fixtures.
-- The judge session writes `web/shots/judge.md` in its worktree. It is
-  review input, not orders: fold its top fixes into the current or next
-  slice. It can view your PNGs; you cannot. A `REGRESSION:` line naming
-  the version production runs now means: re-run that row against
-  production yourself. Roll back only under AGENTS.md §7's rule (a
-  release you deployed that day, a row that passed in that day's
-  `prod-before.json`); a row that fails from time or data never is.
-- Deploys: you deploy one plant-stamped, staging-green SHA a Pacific day
-  yourself, under AGENTS.md §7 and "How to deploy" above. Anything that needs root goes into
-  `docs/ops/operator-today.md` as one script.
-
-## Operator-only steps (the agent cannot do these)
-
-- Run the root scripts the builder lists in `docs/ops/operator-today.md`
-  (proposals, A2 recording, A5 eval), only after the fixes they need have
-  shipped (2, 3, 5), and paste their output back.
-- Approve proposals in `/review`: at least 8 per slug, keeping at least 2
-  per slug proposed for the video's approve scene.
-- Install a staging-only Meta key on plant (AGENTS.md §8), so the first
-  live calls happen off production.
-- Provide Apple/Google/Meta OAuth credentials, or drop those providers
-  from `/api/v1/auth/providers`; put the official brand assets for each
-  configured provider in `web/src/lib/assets/brand/`.
-- Copy the official Cerebral Valley submission rules (form fields, video
-  length and host, repo and licence terms) into row S1 above.
-- Record the production `/review` segment, upload the video, switch the
-  licence, make the repo public once `docs/ops/` is scrubbed, and submit
-  by 11-04 12:00 PST.
+- Approve proposals in `/review`: at least 8 per slug, keeping 2 per slug
+  proposed for the video's approve scene.
+- Add and commit the official `google.svg` and `apple.svg` in
+  `web/src/lib/assets/brand/`.
+- Decide the Meta data-handling terms opt-in for atlas transcription and
+  uploads (the `meta` lane left them fail-closed); tell the builder.
+- Re-run A2 after F4 ships; re-run A5 Monday evening and Wednesday
+  morning.
+- S1: switch LICENSE to MIT, make the repo public after the builder's
+  scrub list and secret scan, add the video link on 11-03.
+- Vogun on production only if its licence covers web embedding: then set
+  `BRAND_FONT_DIR` for the builder's release builds (README "Brand
+  font"); otherwise builds keep the OFL fallback face.
+- Record the production `/review` segment; upload the video; copy the
+  official Cerebral Valley submission rules into row S1; submit by
+  11-04 12:00 PST.
+- Any root step, any production config or secret.

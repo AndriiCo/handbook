@@ -5,8 +5,14 @@
 //   node .agents/scoreboard/scoreboard.mjs --base http://localhost:5173/apostille
 //   node .agents/scoreboard/scoreboard.mjs --only GP3,A1
 //
-// Exit 0 only when every selected row passes. Results go to
-// web/shots/scoreboard.json (the SessionStart hook reads it).
+// Exit 0 only when every selected row passes. Results go to --out, or by
+// default web/shots/scoreboard.json for a full run and
+// web/shots/scoreboard-partial.json for an --only run, so a one-row check
+// never stands in for the real score. Production runs use --out
+// web/shots/prod-before.json / prod-after.json and staging acceptance
+// --out web/shots/staging-accept.json (AGENTS.md §5); the SessionStart
+// hook reads those. Chromium starts only when a row needs a page, so the
+// API rows still run where a sandbox blocks the browser.
 //
 // This file lives under .agents/, a Muse guardrail path: the agent may run
 // it but never edit it. A row that fails is fixed in the product, not here.
@@ -22,7 +28,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = parseArgs(process.argv.slice(2));
 const BASE = (args.base || process.env.SCOREBOARD_BASE || 'https://andrii.ai/apostille').replace(/\/$/, '');
 const ONLY = args.only ? new Set(String(args.only).split(',')) : null;
-const OUT = resolve(ROOT, args.out || 'web/shots/scoreboard.json');
+const OUT = resolve(ROOT, args.out || (ONLY ? 'web/shots/scoreboard-partial.json' : 'web/shots/scoreboard.json'));
 
 const SLUGS = ['vietnam', 'usa-wa-sos'];
 const MIN_FACTS = 8;
@@ -51,7 +57,10 @@ const CHECKS = [
 ];
 
 const { chromium } = loadPlaywright();
-const browser = await chromium.launch();
+let browserLaunch = null; // started by the first row that visits a page
+const browser = () => (browserLaunch ??= chromium.launch().catch((err) => {
+  throw new Error(`browser unavailable: ${String(err?.message || err).split('\n')[0].slice(0, 120)}`);
+}));
 const results = [];
 for (const [id, title, run] of CHECKS) {
   if (ONLY && !ONLY.has(id)) continue;
@@ -67,7 +76,7 @@ for (const [id, title, run] of CHECKS) {
   }
   results.push({ id, title, pass: problems.length === 0, detail: problems.join('; ') || note, ms: Date.now() - started });
 }
-await browser.close();
+if (browserLaunch) await browserLaunch.then((b) => b.close(), () => {});
 
 const passing = results.filter((r) => r.pass).length;
 const firstRed = results.find((r) => !r.pass);
@@ -263,7 +272,7 @@ async function s1() {
 // --------------------------------------------------------------- helpers
 
 async function visit(path, width, height) {
-  const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: 'light' });
+  const ctx = await (await browser()).newContext({ viewport: { width, height }, colorScheme: 'light' });
   const page = await ctx.newPage();
   const errors = [];
   const sockets = [];
