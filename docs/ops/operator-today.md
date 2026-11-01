@@ -70,6 +70,9 @@ web/src/lib/assets/brand/ (operator-owned, never committed), then redeploy
 — the login page bundles them at build time via import.meta.glob and renders
 text-only buttons until they land.
 
+New goal queued (memory `goals-queue.md`, handed over in chat — paste it
+into `.agents/goal.md` yourself; builder never edits it): Muse Glimmer
+self-hosted documents/facts evaluator on plant (feasibility gate first).
 Inference workstream (side-chat built, main session to adopt as a goal
 item — full design at docs/ops/plant-inference.md):
 `cargo xtask plant-run` + `ops/plant-inference/` drive Qwen2.5-VL-7B
