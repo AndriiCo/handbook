@@ -42,6 +42,8 @@ pub struct RunView {
     pub proposed: usize,
     pub rejected: usize,
     pub model: String,
+    pub input_tokens: u32,
+    pub output_tokens: u32,
     pub error: String,
     pub started_at: i64,
     pub finished_at: i64,
@@ -72,6 +74,8 @@ impl DraftRuns {
                 proposed: 0,
                 rejected: 0,
                 model: String::new(),
+                input_tokens: 0,
+                output_tokens: 0,
                 error: String::new(),
                 started_at: now,
                 finished_at: 0,
@@ -80,13 +84,15 @@ impl DraftRuns {
         Some(id)
     }
 
-    pub fn finish(&self, id: u64, proposed: usize, rejected: usize, model: &str, now: i64) {
+    pub fn finish(&self, id: u64, outcome: &DraftOutcome, now: i64) {
         let mut runs = self.runs.lock().expect("draft-runs lock poisoned");
         if let Some(run) = runs.get_mut(&id) {
             run.status = "finished".to_string();
-            run.proposed = proposed;
-            run.rejected = rejected;
-            run.model = model.to_string();
+            run.proposed = outcome.proposed;
+            run.rejected = outcome.rejected;
+            run.model = outcome.model.clone();
+            run.input_tokens = outcome.input_tokens;
+            run.output_tokens = outcome.output_tokens;
             run.finished_at = now;
         }
     }
@@ -236,14 +242,17 @@ impl DraftTask {
         let outcome = tokio::task::spawn_blocking(move || self.draft_blocking()).await;
         let now = unix_now();
         match outcome {
-            Ok(Ok((proposed, rejected, model))) => {
-                runs.finish(run_id, proposed, rejected, &model, now);
+            Ok(Ok(report)) => {
+                runs.finish(run_id, &report, now);
                 publish(
                     "run_finished",
                     json!({
                         "capture_id": capture_id, "slug": slug,
-                        "proposed": proposed, "rejected": rejected,
-                        "model": model, "elapsed_ms": started.elapsed().as_millis() as u64,
+                        "proposed": report.proposed, "rejected": report.rejected,
+                        "model": report.model,
+                        "input_tokens": report.input_tokens,
+                        "output_tokens": report.output_tokens,
+                        "elapsed_ms": started.elapsed().as_millis() as u64,
                     }),
                 );
             }
@@ -262,7 +271,7 @@ impl DraftTask {
     /// Open a fresh connection (the request-scoped one cannot cross
     /// into `spawn_blocking`) and run one analyzer pass over this
     /// capture's extracted text.
-    fn draft_blocking(&self) -> Result<(usize, usize, String), String> {
+    fn draft_blocking(&self) -> Result<DraftOutcome, String> {
         use std::collections::HashMap;
 
         let store = handbook_store::store::Store::new(&self.store_root);
@@ -291,12 +300,23 @@ impl DraftTask {
             // failure labels — no key material flows through here.
             format!("draft failed: {e}")
         })?;
-        Ok((
-            report.proposed,
-            report.rejected,
-            client.model_id().to_string(),
-        ))
+        Ok(DraftOutcome {
+            proposed: report.proposed,
+            rejected: report.rejected,
+            model: client.model_id().to_string(),
+            input_tokens: report.usage.input_tokens,
+            output_tokens: report.usage.output_tokens,
+        })
     }
+}
+
+/// One finished analyzer pass, as the run registry and step events read it.
+pub struct DraftOutcome {
+    proposed: usize,
+    rejected: usize,
+    model: String,
+    input_tokens: u32,
+    output_tokens: u32,
 }
 
 /// Live model client: `$META_API_KEY` first (staging, one-shot runs),
@@ -344,11 +364,22 @@ mod tests {
         let view = runs.get(id).expect("get");
         assert_eq!(view.status, "running");
         assert_eq!(view.capture_id, 9);
-        runs.finish(id, 2, 1, "muse-spark-1.3", 200);
+        runs.finish(
+            id,
+            &DraftOutcome {
+                proposed: 2,
+                rejected: 1,
+                model: "muse-spark-1.3".to_string(),
+                input_tokens: 100,
+                output_tokens: 50,
+            },
+            200,
+        );
         let done = runs.get(id).expect("get");
         assert_eq!(done.status, "finished");
         assert_eq!(done.proposed, 2);
         assert_eq!(done.model, "muse-spark-1.3");
+        assert_eq!((done.input_tokens, done.output_tokens), (100, 50));
         assert!(runs.get(999).is_none());
     }
 

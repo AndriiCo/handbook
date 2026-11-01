@@ -82,3 +82,4 @@
 | 174 | 2026-11-01 08:00Z | finding-12 staging live draft proof | 27s Spark run, 9/10 kept |
 | 175 | 2026-11-01 08:20Z | gate fail: dead fn + test module order | strict clippy clean |
 | 176 | 2026-11-01 08:35Z | gate fmt newline fix | fmt --check clean |
+| 177 | 2026-11-01 09:00Z | RunReport usage to draft events | strict clippy/tests green |

@@ -38,6 +38,8 @@
 		proposed: number;
 		rejected: number;
 		model: string;
+		input_tokens: number;
+		output_tokens: number;
 		error: string;
 	}
 
@@ -59,6 +61,8 @@
 					proposed: 0,
 					rejected: 0,
 					model: '',
+					input_tokens: 0,
+					output_tokens: 0,
 					error: `run state -> ${res.status}`
 				};
 				return;
@@ -89,6 +93,8 @@
 				proposed: 0,
 				rejected: 0,
 				model: '',
+				input_tokens: 0,
+				output_tokens: 0,
 				error: e instanceof Error ? e.message : 'draft failed'
 			};
 		}
@@ -100,7 +106,7 @@
 		if (d.status === 'starting' || d.status === 'running') return 'Drafting…';
 		if (d.status === 'finished') {
 			const r = d as DraftRun;
-			return `Done — ${r.proposed} proposed, ${r.rejected} rejected (${r.model || 'model?'})`;
+			return `Done — ${r.proposed} proposed, ${r.rejected} rejected (${r.model || 'model?'}, ${r.input_tokens ?? 0}/${r.output_tokens ?? 0} tok)`;
 		}
 		return `Draft failed — ${(d as DraftRun).error || 'retry'}`;
 	}

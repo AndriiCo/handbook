@@ -19,7 +19,7 @@ use crate::analyze::{
     build_prompt, validate_response,
 };
 use contracts::error::HandbookError;
-use contracts::model::{DraftRequest, ModelClient, ModelError};
+use contracts::model::{DraftRequest, ModelClient, ModelError, Usage};
 use contracts::topics::Topic;
 use handbook_store::db::{
     NewProposedFact, SuppressionHit, check_suppression, in_transaction, insert_analysis_audit,
@@ -54,6 +54,9 @@ pub struct RunReport {
     /// model call, no facts — only watermark, task, and audit rows.
     pub skipped: bool,
     pub errors: Vec<String>,
+    /// Billed tokens for the draft call(s), retry included; zero when
+    /// no model call ran (skipped paths).
+    pub usage: Usage,
 }
 
 /// One [`run_analysis`] call's caller-owned inputs.
@@ -166,7 +169,7 @@ pub fn run_analysis(
     let capture_sha = capture_sha256(conn, req.capture_id);
     // B1: facts + watermark + audit commit atomically — a mid-run
     // failure never leaves content rows without their audit row.
-    let (proposed, rejected, suppressed) = in_transaction(conn, || {
+    let (proposed, rejected, suppressed, usage) = in_transaction(conn, || {
         let mut proposed = 0;
         let mut suppressed = 0;
         for (index, record) in resp.records.iter().enumerate() {
@@ -245,7 +248,7 @@ pub fn run_analysis(
             resp.usage.input_tokens, resp.usage.output_tokens
         );
         insert_analysis_audit(conn, req.at, req.actor, authority_id, &reason)?;
-        Ok((proposed, rejected, suppressed))
+        Ok((proposed, rejected, suppressed, resp.usage.clone()))
     })
     .map_err(db_err)?;
 
@@ -256,6 +259,7 @@ pub fn run_analysis(
         suppressed,
         skipped: false,
         errors,
+        usage,
     })
 }
 
@@ -325,6 +329,10 @@ fn skip_unsupported_lang(
         suppressed: 0,
         skipped: true,
         errors: Vec::new(),
+        usage: Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+        },
     })
 }
 
@@ -418,6 +426,10 @@ pub fn skip_missing_sidecar(
         suppressed: 0,
         skipped: true,
         errors: Vec::new(),
+        usage: Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+        },
     })
 }
 
@@ -556,6 +568,14 @@ mod tests {
         assert_eq!((report.proposed, report.rejected), (0, 1));
         assert!(!report.skipped);
         assert_eq!(report.errors.len(), 1);
+        // Usage rides along even when every record is rejected.
+        assert_eq!(
+            report.usage,
+            Usage {
+                input_tokens: 1,
+                output_tokens: 1
+            }
+        );
         assert!(
             report.errors[0].contains("record 0"),
             "got: {}",
