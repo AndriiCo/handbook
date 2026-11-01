@@ -104,26 +104,60 @@
 		await goto(home);
 	}
 
-	function loadBrandFace() {
-		// Vogun is staged at build time (scripts/brand-fonts.mjs) and never
-		// in git. A missing file rejects the promise — caught below, the
-		// metric-matched 'Vogun Fallback' face renders instead.
+	async function loadBrandFace() {
+		// Brand faces register here so `asset()` keeps the /apostille
+		// base correct in both builds (CSS cannot rebase public-dir
+		// URLs). Order: metric-matched fallback first, so headings never
+		// show a serif default; Vogun replaces it when staged.
+		// Vogun is staged at build time (scripts/brand-fonts.mjs) and
+		// never in git. The SPA fallback answers 200 for missing files,
+		// so the content type is checked before decoding.
 		try {
-			const face = new FontFace('Vogun', `url(${asset('fonts/brand/Vogun-Medium.woff2')})`, {
-				style: 'normal',
-				weight: '500'
-			});
-			const italic = new FontFace('Vogun', `url(${asset('fonts/brand/Vogun-MediumItalic.woff2')})`, {
-				style: 'italic',
-				weight: '500'
-			});
-			Promise.all([face.load(), italic.load()])
-				.then((faces) => {
-					for (const f of faces) document.fonts.add(f);
-				})
-				.catch(() => {});
+			const fallback = [
+				new FontFace(
+					'Vogun Fallback',
+					`url(${asset('fonts/fallback/source-serif-4-latin-wght-normal.woff2')})`,
+					{ style: 'normal', weight: '500 600', display: 'swap' }
+				),
+				new FontFace(
+					'Vogun Fallback',
+					`url(${asset('fonts/fallback/source-serif-4-latin-wght-normal.woff2')})`,
+					{ style: 'italic', weight: '500 600', display: 'swap' }
+				)
+			];
+			// Metric match for Vogun (UPM 1000, cap 710, x 480,
+			// ascent 990, descent 300): the swap never shifts layout.
+			for (const f of fallback) {
+				f.ascentOverride = '99%';
+				f.descentOverride = '30%';
+				f.lineGapOverride = '0%';
+			}
+			const loaded = await Promise.all(fallback.map((f) => f.load()));
+			for (const f of loaded) document.fonts.add(f);
 		} catch {
-			// FontFace unsupported — fallback face covers headings.
+			// Vendored fallback missing — serif covers headings.
+		}
+		try {
+			const probe = await fetch(asset('fonts/brand/Vogun-Medium.woff2'), {
+				method: 'HEAD',
+				credentials: 'same-origin'
+			});
+			if (!probe.ok || !(probe.headers.get('content-type') ?? '').includes('font')) return;
+			const faces = await Promise.all([
+				new FontFace('Vogun', `url(${asset('fonts/brand/Vogun-Medium.woff2')})`, {
+					style: 'normal',
+					weight: '500',
+					display: 'swap'
+				}).load(),
+				new FontFace('Vogun', `url(${asset('fonts/brand/Vogun-MediumItalic.woff2')})`, {
+					style: 'italic',
+					weight: '500',
+					display: 'swap'
+				}).load()
+			]);
+			for (const f of faces) document.fonts.add(f);
+		} catch {
+			// Brand face absent — the fallback already covers headings.
 		}
 	}
 

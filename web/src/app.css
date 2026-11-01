@@ -10,54 +10,11 @@
 
 @plugin '@tailwindcss/typography';
 
-/* Brand display face: Vogun Medium (Yukita Creative, corporate licence
-   held by Andrii Co.) staged at build time by scripts/brand-fonts.mjs
-   into /fonts/brand/ (git-ignored, never in the public repo). Served
-   unmodified, font-display: swap. Vite rebases the absolute public-dir
-   URL per build base (/apostille public, '' admin). */
-@font-face {
-	font-family: 'Vogun';
-	font-style: normal;
-	font-weight: 500;
-	font-display: swap;
-	src: url('/fonts/brand/Vogun-Medium.woff2') format('woff2');
-}
-
-@font-face {
-	font-family: 'Vogun';
-	font-style: italic;
-	font-weight: 500;
-	font-display: swap;
-	src: url('/fonts/brand/Vogun-MediumItalic.woff2') format('woff2');
-}
-
-/* 'Vogun Fallback': Source Serif 4 Variable (OFL, vendored in
-   static/fonts/fallback/) with Vogun's metrics (UPM 1000, cap 710,
-   x-height 480, ascent 990, descent 300) so the swap never shifts
-   layout. Only weights 500/600 ever request it. */
-@font-face {
-	font-family: 'Vogun Fallback';
-	font-style: normal;
-	font-weight: 500 600;
-	font-display: swap;
-	src: url('/fonts/fallback/source-serif-4-latin-wght-normal.woff2') format('woff2');
-	size-adjust: 100%;
-	ascent-override: 99%;
-	descent-override: 30%;
-	line-gap-override: 0%;
-}
-
-@font-face {
-	font-family: 'Vogun Fallback';
-	font-style: italic;
-	font-weight: 500 600;
-	font-display: swap;
-	src: url('/fonts/fallback/source-serif-4-latin-wght-normal.woff2') format('woff2');
-	size-adjust: 100%;
-	ascent-override: 99%;
-	descent-override: 30%;
-	line-gap-override: 0%;
-}
+/* Brand faces load from JS (root layout `loadBrandFace`), never from
+   CSS: Vite does not rebase absolute public-dir URLs in stylesheets,
+   which would break the /apostille base. `font-family: 'Vogun',
+   'Vogun Fallback'` below resolves once the FontFace API registers
+   them; until then headings fall through to serif. */
 
 /* `dark:` follows the repo theme attr (always set by the boot snippet:
    explicit choice, or OS-resolved when 'auto'). */

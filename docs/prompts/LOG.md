@@ -58,3 +58,4 @@
 | 151 | 2026-11-01 02:50Z | packs-coverage: swap 3 dead vietnam URLs for authorities1 + mofa root | staging fetch 2/2 |
 | 152 | 2026-11-01 02:55Z | staging-proof P150/P151: 404s swapped, rescore 9/10 | rides next commit |
 | 153 | 2026-11-01 03:05Z | redesign slice 1: Vogun staging+fallback, tokens, header/footer, sub-nav out | check+builds+shots green |
+| 154 | 2026-11-01 03:40Z | redesign slice 2: GP1 hero/map/bento/table + brand audit | 20 shots green |

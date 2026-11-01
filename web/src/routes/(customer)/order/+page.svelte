@@ -4,6 +4,7 @@
 	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
 	import { listAuthorities, publicError } from '../../../lib/public-ui/handbook.js';
 	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
+	import Heading from '../../../lib/components/brand/Heading.svelte';
 
 	let locale = $state<Locale>(resolveLocale());
 
@@ -72,7 +73,7 @@
 	<title>{t.orderLabel} — Apostille Handbook</title>
 </svelte:head>
 
-<h1>{t.orderLabel}</h1>
+<Heading level={1}>{t.orderLabel}</Heading>
 
 {#if loadError}
 	<Notice variant="error" heading="The order form is unavailable."><p>{loadError}</p></Notice>

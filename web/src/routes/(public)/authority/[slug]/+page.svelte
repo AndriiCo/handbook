@@ -12,6 +12,7 @@
 		readDossier,
 		topicLabel
 	} from '../../../../lib/public-ui/handbook.js';
+	import Heading from '../../../../lib/components/brand/Heading.svelte';
 
 	// Slice A: live dossier over GET /api/v1/authorities/{slug}/facts
 	// (accepted-only + conflict banners). Same-origin, no auth.
@@ -117,7 +118,7 @@
 {:else}
 	<header class="mb-4 pt-6 pb-4">
 		<p class="kicker">Authority dossier</p>
-		<h1 class="mt-1 mb-2 font-sans text-3xl md:text-4xl">{authorityName ?? slug}</h1>
+		<Heading level={1}>{authorityName ?? slug}</Heading>
 	</header>
 
 	{#if facts.length === 0}

@@ -11,6 +11,7 @@
 		startOAuth
 	} from '../../../lib/customer/oauth.js';
 	import { consumeMagic, magicError, requestMagic } from '../../../lib/customer/magic.js';
+	import Heading from '../../../lib/components/brand/Heading.svelte';
 
 	let locale = $state<Locale>(resolveLocale());
 	let displayName = $state('');
@@ -220,7 +221,7 @@
 	<title>{t.loginLabel} — Apostille Handbook</title>
 </svelte:head>
 
-<h1>{t.loginLabel}</h1>
+<Heading level={1}>{t.loginLabel}</Heading>
 
 {#if !webauthnOk}
 	<p class="max-w-[28rem] rounded-sm border border-line bg-error-bg px-4 py-3" role="alert">

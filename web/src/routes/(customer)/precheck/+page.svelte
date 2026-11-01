@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
+	import Heading from '../../../lib/components/brand/Heading.svelte';
 
 	// Demo photo precheck (A2): synthetic samples, recorded live-model
 	// verdicts. SAM boxes animate over the sample; the verdict panel
@@ -92,7 +93,7 @@
 	<title>Precheck — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Document precheck</h1>
+<Heading level={1}>Document precheck</Heading>
 <p class="max-w-[36rem] text-ink-muted">
 	Try the photo check on a synthetic sample. SAM boxes draw over the page;
 	the verdict names its models and recording date.
