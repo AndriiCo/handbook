@@ -40,7 +40,12 @@ jq -n --arg run "$RUN" --arg sha "$SHA" --arg type "$TYPE" --arg actor "$ACTOR" 
   --arg ts "$(date -u +%FT%TZ)" '{run:$run,sha:$sha,type:$type,actor:$actor,created_at:$ts,attempt:1}' \
   >"$TMP/$RUN.json"
 
-scp -q "$TMP/$RUN.json" "$TMP/$RUN.tar.gz" "plant:apostille-pipeline/queue/" \
-  || { echo "ABORT: scp to plant failed (is ~/apostille-pipeline bootstrapped? run bootstrap.sh)"; exit 1; }
+# The worker triggers on queue/*.json, so the tarball must land first:
+# uploading both in one scp let the worker extract a half-written archive
+# (gzip EOF at stage setup). Two steps, tarball before manifest.
+scp -q "$TMP/$RUN.tar.gz" "plant:apostille-pipeline/queue/" \
+  || { echo "ABORT: scp tarball to plant failed (is ~/apostille-pipeline bootstrapped? run bootstrap.sh)"; exit 1; }
+scp -q "$TMP/$RUN.json" "plant:apostille-pipeline/queue/" \
+  || { echo "ABORT: scp manifest to plant failed (orphan tarball $RUN.tar.gz in queue/)"; exit 1; }
 echo "queued $RUN ($TYPE @ $SHORT)"
 echo "poll: ./ops/plant-pipeline/status.sh $RUN"

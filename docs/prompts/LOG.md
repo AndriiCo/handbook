@@ -53,3 +53,4 @@
 | 146 | 2026-11-01 01:50Z | Operator prod steps: A2 503 diagnosed (dir group), script fix + chgrp line | P146 committed, A2/A5/GP2 triaged |
 | 147 | 2026-11-01 02:05Z | packs-coverage: vietnam +2 HCCH watch URLs, usa-wa http->https | P147, validate+load green |
 | 148 | 2026-11-01 02:20Z | P147 staging proof: vietnam fetch+analyze, rescore 9/10 | staging log |
+| 149 | 2026-11-01 02:35Z | plant gate race (json-before-tarball) fixed, 8c9fd21 stamped | gate green |
