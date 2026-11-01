@@ -1122,16 +1122,26 @@ pub struct IpNet {
 }
 
 impl IpNet {
-    /// True when `ip` falls inside this network (families must match).
+    /// True when `ip` falls inside this network. Both sides are
+    /// canonicalized first, so a v4-mapped peer (`::ffff:203.0.113.7`)
+    /// matches a v4 range. Prefix 0 is match-all for its family
+    /// (shifting a u32 by 32 panics under overflow-checks, so the
+    /// zero case returns early instead of shifting).
     pub fn contains(&self, ip: &std::net::IpAddr) -> bool {
-        match (self.addr, ip) {
+        match (self.addr.to_canonical(), ip.to_canonical()) {
             (std::net::IpAddr::V4(net), std::net::IpAddr::V4(addr)) => {
+                if self.prefix == 0 {
+                    return true;
+                }
                 let shift = 32 - self.prefix.min(32);
-                (u32::from(net) >> shift) == (u32::from(*addr) >> shift)
+                (u32::from(net) >> shift) == (u32::from(addr) >> shift)
             }
             (std::net::IpAddr::V6(net), std::net::IpAddr::V6(addr)) => {
+                if self.prefix == 0 {
+                    return true;
+                }
                 let shift = 128 - self.prefix.min(128);
-                (u128::from(net) >> shift) == (u128::from(*addr) >> shift)
+                (u128::from(net) >> shift) == (u128::from(addr) >> shift)
             }
             _ => false,
         }
@@ -2061,9 +2071,12 @@ mod runtime_tests {
         let other: std::net::IpAddr = "198.51.100.8".parse().unwrap();
         assert!(nets.iter().any(|n| n.contains(&host)));
         assert!(!nets.iter().any(|n| n.contains(&other)));
-        // Families never cross-match.
-        let v6: std::net::IpAddr = "::ffff:203.0.113.200".parse().unwrap();
-        assert!(!nets[0].contains(&v6));
+        // A v4-mapped peer canonicalizes into its v4 range …
+        let mapped: std::net::IpAddr = "::ffff:203.0.113.200".parse().unwrap();
+        assert!(nets[0].contains(&mapped));
+        // … while a true v6 address never matches a v4 range.
+        let v6: std::net::IpAddr = "2001:db9::1".parse().unwrap();
+        assert!(!nets.iter().any(|n| n.contains(&v6)));
         // Loopback default holds localhost only.
         let local: std::net::IpAddr = "127.0.0.1".parse().unwrap();
         let lan: std::net::IpAddr = "192.168.1.2".parse().unwrap();
@@ -2073,6 +2086,38 @@ mod runtime_tests {
         assert!(parse_allow_ips("").is_err());
         assert!(parse_allow_ips(" , ").is_err());
         assert!(parse_allow_ips("10.0.0.0/33").is_err());
+    }
+
+    #[test]
+    fn allow_ips_zero_prefix_matches_all_without_panic() {
+        // Prefix 0 used to shift a u32 by 32 and panic every admin
+        // request under overflow-checks; now it is match-all.
+        let any4 = parse_allow_ips("0.0.0.0/0").unwrap();
+        let any6 = parse_allow_ips("::/0").unwrap();
+        let v4a: std::net::IpAddr = "203.0.113.7".parse().unwrap();
+        let v4b: std::net::IpAddr = "10.255.0.1".parse().unwrap();
+        let v6a: std::net::IpAddr = "::1".parse().unwrap();
+        let v6b: std::net::IpAddr = "2001:db8::1".parse().unwrap();
+        assert!(any4.iter().any(|n| n.contains(&v4a)));
+        assert!(any4.iter().any(|n| n.contains(&v4b)));
+        assert!(any6.iter().any(|n| n.contains(&v6a)));
+        assert!(any6.iter().any(|n| n.contains(&v6b)));
+        // … but families still do not cross: v6 /0 takes no v4 peer.
+        assert!(!any6.iter().any(|n| n.contains(&v4a)));
+        assert!(!any4.iter().any(|n| n.contains(&v6a)));
+    }
+
+    #[test]
+    fn allow_ips_mapped_peer_matches_host_route() {
+        // The operator's stack may present ::ffff:203.0.113.7 for a
+        // v4 client: it must match a 203.0.113.7 range entry.
+        let nets = parse_allow_ips("203.0.113.7").unwrap();
+        let mapped: std::net::IpAddr = "::ffff:203.0.113.7".parse().unwrap();
+        let plain: std::net::IpAddr = "203.0.113.7".parse().unwrap();
+        let other: std::net::IpAddr = "::ffff:203.0.113.8".parse().unwrap();
+        assert!(nets.iter().any(|n| n.contains(&mapped)));
+        assert!(nets.iter().any(|n| n.contains(&plain)));
+        assert!(!nets.iter().any(|n| n.contains(&other)));
         assert!(parse_allow_ips("not-an-ip").is_err());
     }
 
