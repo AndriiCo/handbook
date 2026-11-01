@@ -138,4 +138,5 @@
 | 232 | 2026-11-01 20:06Z | Slice: dossier guide v1 (GP2-page, web-only, no Rust, no migration). | follow card + confirm pages, shots+demo green |
 | 233 | 2026-11-01 20:14Z | Goal: the review §5 P1 items, one slice each, staging-proven: (1) tower-h | timeouts+concurrency+QUIC cap, tests green |
 | 234 | 2026-11-01 20:28Z | Plant gate red on notify clippy (1.99 lints); fixed needless-?/cast/t | notify clippy-1.99 clean, resubmitted |
-| 235 | 2026-11-01 20:45Z | Staging notify drill found doubled /apostille/apostille dossier link | origin field fix, gates green |
+| 235 | 2026-11-01 20:39Z | Staging notify drill found doubled /apostille/apostille dossier link | origin field fix, gates green |
+| 236 | 2026-11-01 21:08Z | Goal: review P1(2) WS ping, 4KiB cap, per-IP cap, client backoff | WS harden + reconnect, all gates green |

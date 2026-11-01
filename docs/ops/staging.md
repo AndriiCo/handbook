@@ -318,6 +318,27 @@ above verbatim).
   `127.0.0.1:18319/trace` clicked Draft → POST 202 (real CSRF
   double-submit) → `run:{id}` socket reported `Done — 2 proposed,
   0 rejected (muse-spark-1.3, 18862/8785 tok)`, zero console errors.
+
+## Run 11 (2026-11-01, b74eb5c) — 9/10 kept, P1(1) + notify drill live
+- Plant stamp `acceptance/b74eb5c5726d.json` (`ci_green: true`,
+  run `20261101-201638-b74eb5c`). P232's run failed the gate on
+  four clippy-1.99 lints in new `crates/notify` (P234 fixed).
+- Exact checkout via xfer ref (`xfer-p234`), native release rebuild
+  + both SPAs, restart on 18318/18319 by verified PID (DB reused).
+  `healthz` → `0.1.0+b74eb5c` (guardrails live).
+- Rescore 9/10, only S1 red. Live demo take 3/3 on the exact SHA.
+- P1(1) live: slow-header socket closed at exactly 10.0 s, zero bytes.
+- Notify drill (staging-only, file mailer — no external sends):
+  `mailer.provider=file`, `notify.enabled=1`, `notify.daily_cap=3`,
+  `notify.postal_address` = clearly-marked drill placeholder (the
+  operator's real address still needed before production use).
+  Subscribe `notify-drill@example.org` (synthetic) → 200 + confirm
+  file; confirm → ok, replay → 410; synthetic `fact_accept` audit
+  row over real accepted fact 17 → digest file within the 60 s tick
+  with quote/source/date, dossier link, RFC 8058 pair, postal footer.
+  One-click unsub → ok; resubscribe → pending. Drill found one bug:
+  dossier link doubled `/apostille/apostille` (P235 `origin` fix,
+  re-proof pending its stamp).
 - Staging-green deploy candidate (Sunday open, cap lifted until
   11-10): stamp + 9/10 + live demo 3/3 + live admin check all on
   0f53999. Ship needs the unit-file root step first (unchanged),

@@ -9,7 +9,7 @@
 
 use axum::{
     extract::{
-        Query, State,
+        ConnectInfo, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, StatusCode, header},
@@ -18,10 +18,56 @@ use axum::{
 use handbook_store::db;
 use serde_json::json;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 
 use crate::{AppState, store_unavailable, unix_now};
+
+/// Inbound frame ceiling (4 KiB): clients never publish over
+/// the socket, so anything bigger is abuse, not protocol.
+pub const MAX_WS_MESSAGE: usize = 4096;
+/// Server heartbeat: a ping this often keeps NATs and browsers
+/// from silently dropping idle dossier sockets (browsers pong
+/// automatically — no client code needed).
+pub const WS_PING_SECS: u64 = 30;
+/// Open sockets per client IP, both listeners combined (one
+/// process serves both, so one process-wide counter is exact).
+pub const MAX_WS_PER_IP: usize = 32;
+
+static WS_CONN_COUNT: std::sync::LazyLock<Mutex<HashMap<std::net::IpAddr, usize>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// One held socket slot, released back to the IP budget on drop
+/// (the upgrade future owns it for the connection lifetime).
+struct WsConnGuard {
+    ip: std::net::IpAddr,
+}
+
+impl WsConnGuard {
+    fn acquire(ip: std::net::IpAddr) -> Option<Self> {
+        let mut counts = WS_CONN_COUNT.lock().expect("ws conn counts poisoned");
+        let n = counts.entry(ip).or_insert(0);
+        if *n >= MAX_WS_PER_IP {
+            tracing::warn!("ws bus upgrade denied: per-IP connection cap");
+            return None;
+        }
+        *n += 1;
+        Some(Self { ip })
+    }
+}
+
+impl Drop for WsConnGuard {
+    fn drop(&mut self) {
+        let mut counts = WS_CONN_COUNT.lock().expect("ws conn counts poisoned");
+        if let Some(n) = counts.get_mut(&self.ip) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                counts.remove(&self.ip);
+            }
+        }
+    }
+}
 
 /// One broadcast channel per topic, created on first use.
 #[derive(Clone, Debug, Default)]
@@ -93,11 +139,12 @@ pub struct TopicParams {
 /// for non-browser clients that copy the cookie value across hosts.
 pub async fn ws_bus_upgrade(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<TopicParams>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws_bus_upgrade_inner(state, params, headers, ws, false).await
+    ws_bus_upgrade_inner(state, addr, params, headers, ws, false).await
 }
 
 /// Admin-branch upgrade: same topics and authz, but the staff
@@ -105,15 +152,17 @@ pub async fn ws_bus_upgrade(
 /// behind its host guard + IP allowlist + log layers.
 pub async fn ws_bus_upgrade_admin(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<TopicParams>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    ws_bus_upgrade_inner(state, params, headers, ws, true).await
+    ws_bus_upgrade_inner(state, addr, params, headers, ws, true).await
 }
 
 async fn ws_bus_upgrade_inner(
     state: AppState,
+    addr: SocketAddr,
     params: TopicParams,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
@@ -194,9 +243,20 @@ async fn ws_bus_upgrade_inner(
         )
             .into_response();
     }
+    // Per-IP socket budget, checked after authz (no oracle for
+    // capped subnets: strangers fail topic checks first). The guard
+    // rides the upgrade future — the slot frees on disconnect.
+    let Some(conn_guard) = WsConnGuard::acquire(addr.ip()) else {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error": "too many connections"})),
+        )
+            .into_response();
+    };
     let channel = topic.as_channel();
     let rx = state.bus.subscribe(&channel);
-    ws.on_upgrade(move |socket| serve(socket, rx, channel))
+    ws.max_message_size(MAX_WS_MESSAGE)
+        .on_upgrade(move |socket| serve(socket, rx, channel, conn_guard))
 }
 
 /// Resolve (role, customer_ref) from the session cookies. No (or an
@@ -270,7 +330,13 @@ fn demo_cookie_value(cookies: &str) -> Option<&str> {
 
 /// Serve one subscription: a hello (with an ephemeral presence id
 /// for anonymous callers — never linkable), then broadcast fan-out.
-async fn serve(mut socket: WebSocket, mut rx: broadcast::Receiver<String>, channel: String) {
+/// `_conn_guard` holds the per-IP slot for the socket lifetime.
+async fn serve(
+    mut socket: WebSocket,
+    mut rx: broadcast::Receiver<String>,
+    channel: String,
+    _conn_guard: WsConnGuard,
+) {
     let presence: String = (0..8)
         .map(|_| format!("{:02x}", rand::random::<u8>()))
         .collect();
@@ -282,8 +348,19 @@ async fn serve(mut socket: WebSocket, mut rx: broadcast::Receiver<String>, chann
     {
         return;
     }
+    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(WS_PING_SECS));
+    heartbeat.tick().await;
     loop {
         tokio::select! {
+            _ = heartbeat.tick() => {
+                if socket
+                    .send(Message::Ping(bytes::Bytes::from_static(b"hb")))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
             msg = rx.recv() => {
                 match msg {
                     Ok(text) => {
@@ -315,6 +392,24 @@ async fn serve(mut socket: WebSocket, mut rx: broadcast::Receiver<String>, chann
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn per_ip_cap_holds_and_releases() {
+        let ip: std::net::IpAddr = "203.0.113.7".parse().unwrap();
+        let mut guards = Vec::new();
+        for _ in 0..MAX_WS_PER_IP {
+            guards.push(WsConnGuard::acquire(ip).expect("slot under cap"));
+        }
+        assert!(WsConnGuard::acquire(ip).is_none(), "cap refuses one more");
+        // A neighbour IP is unaffected by another's full budget.
+        let other: std::net::IpAddr = "203.0.113.8".parse().unwrap();
+        let _other_guard = WsConnGuard::acquire(other).expect("other IP has room");
+        guards.pop();
+        assert!(
+            WsConnGuard::acquire(ip).is_some(),
+            "drop frees exactly one slot"
+        );
+    }
 
     #[test]
     fn channel_map_reaps_idle_past_bound() {
