@@ -6,15 +6,24 @@
   (prompt 049): base URL + Bearer auth confirmed; upstream env name
   is `MODEL_API_KEY` (`META_API_KEY` stays a project-local alias);
   structured output confirmed; NO embeddings endpoint exists (404).
+  Re-verified 2026-11-01 (F1–F14): every call site below matches
+  the live docs; verification notes with file:line in
+  `~/Code/meta-models/handbook-review/meta-api/findings.md`.
   Pinned request/response shapes: [meta-api-shapes.md](meta-api-shapes.md).
 
 ## Connection
 
-- Base URL `https://api.meta.ai/v1`, auth `Authorization: Bearer
-  $META_API_KEY` (env `META_API_KEY`, never in repo/logs).
+- Base URL `https://api.meta.ai/v1` everywhere (one canonical
+  value: Rust `META_BASE_URL` / `BASE_URL` / `META_API_BASE`
+  consts, `a2-record.py --base`). Auth `Authorization: Bearer
+  $META_API_KEY` (never in repo/logs). Key lookup order: sealed
+  `meta.api_key` row first, `$META_API_KEY` env fallback for
+  operator one-shots (`xtask analyze/eval --live`); upstream env
+  name is `MODEL_API_KEY` (`META_API_KEY` stays a project-local
+  alias).
 - Pricing pay-as-you-go; details at
   https://dev.meta.ai/docs/pricing-rate-limits (transcription:
-  $0.18/hr).
+  $0.18/hr; reasoning tokens bill as output).
 
 ## Models we use
 
@@ -40,8 +49,14 @@
     TTS, no speech-to-speech API.
   - Feeds the P1 call console (`call:{id}` WS) and stored
     `capture(kind='transcript')`.
-- **SAM 3.1** (on Model API): text prompt ("face", "license plate")
-  → boxes + pixel masks, images and frame-tracked video. Feeds F9
+- **SAM 3.1** (on Model API via `POST .../v1/responses`,
+  `model: "sam-3.1"`): ONE bare noun phrase per request
+  (`"face"`, then a separate call for `"license plate"` —
+  commands, questions and comma/and lists return zero matches)
+  → a box and a mask per match, images and frame-tracked video.
+  Output grammar: `<Nf>id<|box;x1;y1;x2;y2;w;h[;c]|><|mask;…|>,…`
+  in the `output_text` lane (corners are source pixels, records
+  key by object id, empty lane = zero matches). Feeds F9
   redaction for both customer-side and admin-side use (see
   [specs/app-features.md](specs/app-features.md) F9). Verify recall
   on fixtures; a self-hosted detector is the fallback, not the
@@ -58,10 +73,15 @@
 
 ## Client design consequences
 
-- One `ModelClient` trait (see
-  [specs/analysis-agent.md](specs/analysis-agent.md) §4) with
-  `MetaRestClient` + `StubClient`; add a realtime-STT client
-  honoring the handshake-auth gotcha above.
+- Clients (one per surface, all blocking + stubbed for tests):
+  `MetaRestClient` (chat drafting, streamed SSE) + `StubClient`
+  in the analysis agent; atlas `ModelPort` (`MetaClient` live,
+  `StubPort` scripted: chat, background Responses, Files,
+  Transcribe); media `VoiceFileClient` (`request` JSON + `audio`
+  multipart) and `MetaSamClient` (one Responses call per concept)
+  behind the `media.terms_read` gate; the A2 recorder
+  (`xtask/ops/a2-record.py`) for replay fixtures. Add a
+  realtime-STT client honoring the handshake-auth gotcha above.
 - `StubClient` + fixtures keep `cargo test` and `dev-seed`
   offline-safe; `--dry-run` prints projected calls/tokens.
 - Open: exact request/response JSON shapes (pin at implementation);
