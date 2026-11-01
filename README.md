@@ -21,24 +21,26 @@ and judge turn retained in [docs/prompts/](docs/prompts/) (see
 
 ## What is live and what is replayed
 
-Live: drafts, eval, and approvals run against the Meta API (sealed
-production key; staging-only key on plant). The public precheck endpoint
-serves recorded verdict JSONs verbatim — zero marginal model cost, no key
-on the serving path. Replays and fixtures: `evals/authorities/` (26-case
-gold set), `web/e2e/fixtures/`, crate unit tests.
-
-## Eval numbers (2026-10-31, staging, live key)
-
-26 gold cases, model muse-spark-1.3: quote_found_rate **0.7**,
-value_in_quote_rate 0.7, topic_accuracy 0.7; 17/17 staged proposals
-accepted through the review flow (8 Viet Nam + 9 USA-WA-SOS); A2
-clean=pass, dark/wash=retake.
+Live: drafts, eval, and approvals run against the Meta API. The public
+precheck endpoint serves recorded verdict JSONs verbatim — zero marginal
+model cost, no key on the serving path. Replays and fixtures:
+`evals/authorities/` (26-case gold set), `web/e2e/fixtures/`, crate unit
+tests.
 
 ## Eval numbers (2026-11-01, production, live key)
 
-26 gold cases, model muse-spark-1.3: quote_found_rate **1.0**,
-value_in_quote_rate 0.969, topic_accuracy 0.641; written to the live
-store by `ops-a5-eval.sh`, shown on the home page.
+Model muse-spark-1.3, written to the live store, shown on the home page:
+
+| Metric | What it measures | Latest |
+|---|---|---|
+| `quote_found_rate` | Share of drafted records whose quote is found verbatim on the captured page | **1.0** |
+| `value_in_quote_rate` | Share of records whose fact value appears inside its own quote | 0.969 |
+| `topic_accuracy` | Share of records filed under the correct frozen topic | 0.641 |
+
+Honest note: the gold set is 26 synthetic passages in
+`evals/authorities/`, not live government pages — it grades the
+drafter in isolation, before the quote-checker and human review add
+their own gates.
 
 ## The problem
 
@@ -57,47 +59,93 @@ The Apostille Handbook aims to be one source for every country: every detail
 and form, then prepaid labels and envelopes delivered to your door, kept
 current so nobody plans a visit around a two-year-old address or mails the
 wrong form. It plans to cover all authorities on Earth, starting with
-106 apostille authorities in the U.S., Canada, and Mexico.
+the U.S., Canada, and Mexico.
 
-## The 10-day build (with Muse Code)
-
-Automate that upkeep for the U.S., Canada, and Mexico first, then add other
-countries (Build for Your World) — a new country means new sources, not new
-code.
-
-- **Days 1–4:** watch the handbook's 500+ cited URLs, HCCH's feed, and an
-  inbox for authority notices; Muse Spark turns only changes into cited
-  records the author approves, reading English, Spanish, or French pages and
-  forms to flag contradictions like Washington's two PO Boxes.
-- **Days 5–6:** one consular legalization chain (Egypt in USA) with
-  pre-filled authority forms.
-- **Days 7–8:** walk-in reports (route photos, parking tips, rejections)
-  update the handbook, SAM 3.1 masking faces and plates; self-hosted Muse
-  Glimmer pre-checks document photos.
-- **Days 9–10:** approved changes reach the handbook and MCP server.
-
-## Success criteria
+## What shipped
 
 What is live at <https://andrii.ai/apostille> today: search the
-authority index, sign in with passkey, run the photo precheck, and place
-an order. The live order timeline, form PDF and carrier label are roadmap.
-Dossiers show quote-carrying facts
-(staging-proven; production facts appear once the operator's approval
-steps below land). What is demo-only: document photos are synthetic
+authority index; dossier pages with a step-by-step guide, cited evidence,
+and live updates; sign in with passkey; run the photo precheck; place an
+order. Staff approve every fact in the review queue and watch captures in
+the trace console; approvals reach the public dossier live. Dossiers show
+quote-carrying facts where approved — production's dossiers fill in as
+facts are approved. The watch packs define 24 source URLs across 15
+authorities (`packs/`, 9 packs); 3 authorities are loaded in production,
+not 500+. What is demo-only: document photos are synthetic
 samples, and there is no real mail, fees, or carrier charges anywhere.
+
+## What's next
+
+The live order timeline, the form PDF, and the carrier label are roadmap.
+More authorities load as their packs verify; the eval gold set grows past
+the first 26 synthetic passages.
+
+## How we built it with Muse Code
+
+One builder session ships numbered slices (`P196`, `P197`, … in
+[docs/prompts/LOG.md](docs/prompts/LOG.md)); Meta-model work happens in
+lane sessions on their own worktree branches, merged back by the builder.
+A judge agent re-reads the live screens like a juror would. The oracle is
+a script, not an opinion: `node .agents/scoreboard/scoreboard.mjs`
+scores ten rows (home, dossier data and page, login, order, precheck,
+eval, submission) against production and staging, and every deploy needs
+its green stamp from the plant build gate. The full prompt-and-response
+record sits in [docs/prompts/sessions/](docs/prompts/sessions/).
+
+## Architecture
+
+```text
+                    ┌──────────────────────────────┐
+                    │  single Rust binary (axum)   │
+                    │  TLS + HTTP/3, one listener  │
+                    └───────┬──────────────┬───────┘
+                            │ Host         │ Host
+                            ▼              ▼
+                 public SPA (build/)  admin SPA (build-admin/)
+                 search · dossiers    review · trace · config
+                 anonymous + login    staff session + IP allowlist
+                            │              │
+                            └──────┬───────┘
+                                   ▼
+                     WS bus (authority:{slug} public;
+                             proposals / run:{id} staff)
+                                   │
+                            SQLite (WAL) + timers
+                    (captures · facts · sessions · audit)
+                                   │
+            plant gate ──► staging ──► production
+         (full test suite)  (9/10 +   (scoreboard
+                             live demo) before/after)
+```
+
+## Holds up in production
+
+- Every deploy is scoreboarded before and after; a regression rolls
+  back to the previous release, never forward into the unknown.
+- Schema changes are additive-only, and a build refuses to open a
+  store it cannot read — a bad migration fails closed, it never
+  corrupts data.
+- Public AI surfaces are rate-limited per IP and cost-capped; the
+  public precheck serves recorded verdicts, so a traffic spike
+  costs nothing in model calls.
+- Nightly backups with a restore check; security headers (HSTS,
+  same-origin framing) on every response.
 
 ## Repository
 
 Rust workspace plus a Svelte front end (`web/`). Project tasks live in
-`xtask/` and run via `cargo xtask <task>`; operator runbooks live in
+`xtask/` and run via `cargo xtask <task>`; deployment runbooks live in
 `xtask/ops/`.
 
 ```text
-crates/handbook/   library crate (design arrives in a later prompt)
-xtask/             task runner (`cargo xtask ci` = fmt check, clippy, tests)
-docs/prompts/      complete log of prompts and responses
-AGENTS.md          working agreements for coding agents
-LICENSE            proprietary license, Andrii Co.
+crates/handbook-store/   evidence store (authority / fact / capture tables, WAL)
+crates/handbook-agent/   analysis runner (draft, validate, store as proposed)
+crates/web/              API + WS bus + admin branch (IP-allowlisted)
+web/                     public + admin SPAs (SvelteKit, adapter-static)
+xtask/                   task runner (`cargo xtask ci` = fmt check, clippy, tests)
+docs/prompts/            complete log of prompts and responses
+AGENTS.md                working agreements for coding agents
+LICENSE                  proprietary license, Andrii Co.
 ```
 
 Build, test, and lint:
