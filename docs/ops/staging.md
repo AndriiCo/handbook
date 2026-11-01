@@ -73,6 +73,15 @@ DB copies — ever. Alias only, never a username, IP or key.
   section hub capture=8, mofa re-fetch capture=6) failed=0; analyze
   --live vietnam proposed=3 (cap6: 2, cap7: 1 with 6 quote-refusals,
   cap8 hub: 0 draftable — kept as change-watch). Rescore 9/10, only S1 red.
+- P150/P151 proof (2026-11-01): P150's 3 guessed vietnam URLs all 404'd
+  in the staging fetch (member page, e-register, www.mofa.gov.vn/en-us).
+  P151 replaced them with 2 verified-200 URLs: HCCH authorities1/?cid=41
+  (capture=9, names Viet Nam's authority) and https://mofa.gov.vn/
+  (capture=10, Liferay chrome). analyze --live: cap9 proposed=0
+  rejected=3 (nav-boilerplate quotes refused), cap10 proposed=0 (no
+  quotable text on portal root). Staging facts stand at vietnam 8 +
+  usa-wa-sos 9 accepted (Run 2's set). Full rescore via the kept tunnel:
+  9/10, only S1 red (binary still 925f360; packs-only change).
 
 ## Regeneration (fresh staging DB)
 
