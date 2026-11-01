@@ -21,6 +21,7 @@ mod admin_workers;
 mod approval;
 mod demo_precheck;
 mod draft;
+mod follow;
 mod host;
 mod magic;
 mod mtls;
@@ -250,6 +251,19 @@ struct AppState {
     /// Magic-link landing base (origin-derived, never
     /// configured): `{auth.origin}/apostille/login`.
     magic_link_base: String,
+    /// Follower-notification poke: approval pokes after each accept;
+    /// the worker loop also ticks every 60 s for backoff rows.
+    notify_poke: std::sync::Arc<tokio::sync::Notify>,
+    /// `notify.*` rows (fail-closed: off, cap 3, empty postal).
+    notify_enabled: bool,
+    notify_daily_cap: u64,
+    notify_postal: String,
+    /// Follow rate-limit buckets (separate map: a flood of distinct
+    /// targets must never fill auth's map and fail sign-in closed).
+    notify_limits: std::sync::Arc<passkey::RateBuckets>,
+    /// Notify link base (origin-derived, never configured):
+    /// `{auth.origin}/apostille`.
+    notify_base: String,
     /// Meta deletion-status base (origin-derived, never
     /// configured): `{auth.origin}/auth/meta/delete-status`.
     meta_delete_status_base: String,
@@ -292,6 +306,12 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             meta_cfg: None,
             mailer: None,
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            notify_poke: std::sync::Arc::new(tokio::sync::Notify::new()),
+            notify_enabled: false,
+            notify_daily_cap: 3,
+            notify_postal: String::new(),
+            notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+            notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         },
         static_dir,
@@ -344,6 +364,15 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route(
             "/api/v1/authorities/{slug}/facts",
             get(approval::public_facts),
+        )
+        .route("/api/v1/notify/subscribe", post(follow::subscribe))
+        .route(
+            "/api/v1/notify/confirm",
+            post(follow::confirm_post).get(follow::confirm_get),
+        )
+        .route(
+            "/api/v1/notify/unsubscribe",
+            post(follow::unsubscribe_post).get(follow::unsubscribe_get),
         )
         .nest("/api/v1/p2", p2::router())
         // Unknown API paths must 404 as JSON, not fall through to
@@ -808,6 +837,8 @@ async fn main() {
     // this lane never edits the shared schema file.
     voice::store::migrate(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate voice tables: {e}"));
+    notify::migrate(&conn)
+        .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate notify tables: {e}"));
     drop(conn);
     // config-db: the KEK is mandatory now — runtime config lives in
     // sealed rows, so without it there is nothing to serve with.
@@ -937,11 +968,33 @@ async fn main() {
         },
         mailer: magic::mailer_from_config(&cfg, std::path::Path::new(store_dir.as_str())),
         magic_link_base: format!("{}/apostille/login", cfg.auth_origin.trim_end_matches('/')),
+        notify_poke: std::sync::Arc::new(tokio::sync::Notify::new()),
+        notify_enabled: cfg.notify_enabled,
+        notify_daily_cap: cfg.notify_daily_cap,
+        notify_postal: cfg.notify_postal_address.clone(),
+        notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+        notify_base: format!("{}/apostille", cfg.auth_origin.trim_end_matches('/')),
         meta_delete_status_base: format!(
             "{}/auth/meta/delete-status",
             cfg.auth_origin.trim_end_matches('/')
         ),
     };
+    // Follower notifications (phase 1 email): in-process worker
+    // (the ACME-renewal precedent), poke-woken plus a 60 s tick for
+    // backoff rows. Disabled by default; sends need the master
+    // switch, a mailer, and the operator's postal footer.
+    follow::spawn_worker(
+        follow::WorkerCfg {
+            store_root: state.store_root.clone(),
+            enabled: state.notify_enabled,
+            daily_cap: state.notify_daily_cap,
+            postal: state.notify_postal.clone(),
+            mailer: state.mailer.clone(),
+            kek: state.kek.clone(),
+            base: state.notify_base.clone(),
+        },
+        state.notify_poke.clone(),
+    );
     let public = public_router(
         state.clone(),
         &cfg.static_dir,
@@ -2700,6 +2753,12 @@ mod tests {
             meta_cfg: None,
             mailer: None,
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            notify_poke: std::sync::Arc::new(tokio::sync::Notify::new()),
+            notify_enabled: false,
+            notify_daily_cap: 3,
+            notify_postal: String::new(),
+            notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
+            notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         };
         Fixture { _tmp: tmp, state }

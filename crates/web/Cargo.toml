@@ -20,6 +20,7 @@ handbook-store = { path = "../handbook-store" }
 ingest = { path = "../ingest" }
 labels = { path = "../labels" }
 media = { path = "../media" }
+notify = { path = "../notify" }
 rand = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }

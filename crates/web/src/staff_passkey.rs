@@ -806,6 +806,12 @@ mod tests {
             meta_cfg: None,
             mailer: None,
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            notify_poke: std::sync::Arc::new(tokio::sync::Notify::new()),
+            notify_enabled: false,
+            notify_daily_cap: 3,
+            notify_postal: String::new(),
+            notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         }
     }

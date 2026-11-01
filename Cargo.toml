@@ -15,6 +15,7 @@ members = [
     "crates/mail",
     "crates/mcp",
     "crates/media",
+    "crates/notify",
     "crates/publish",
     "crates/voice",
     "crates/web",

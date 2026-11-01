@@ -963,6 +963,15 @@ pub mod keys {
     pub const MAILER_PASSWORD: &str = "mailer.password";
     pub const MAILER_FROM: &str = "mailer.from";
     pub const MAILER_DIR: &str = "mailer.dir";
+    /// Follower notifications (phase 1 email): master switch, off
+    /// unless the operator enables it after setting a postal address.
+    pub const NOTIFY_ENABLED: &str = "notify.enabled";
+    /// Max digest emails per subscriber per day (parsed as u64,
+    /// defaulted by the worker when missing or malformed).
+    pub const NOTIFY_DAILY_CAP: &str = "notify.daily_cap";
+    /// CAN-SPAM postal address footer (operator-supplied, required
+    /// before any digest sends; confirm mails carry it too).
+    pub const NOTIFY_POSTAL_ADDRESS: &str = "notify.postal_address";
     /// Setup-wizard gate (secure-config.md §9): SHA-256 hex of the
     /// CLI-minted setup key. Writers are mint/burn only — admin
     /// PUT and setup PUT both refuse `setup.*`.
@@ -1028,6 +1037,9 @@ pub mod keys {
         (MAILER_PASSWORD, super::ConfigType::Secret),
         (MAILER_FROM, super::ConfigType::Text),
         (MAILER_DIR, super::ConfigType::Text),
+        (NOTIFY_ENABLED, super::ConfigType::Bool),
+        (NOTIFY_DAILY_CAP, super::ConfigType::Text),
+        (NOTIFY_POSTAL_ADDRESS, super::ConfigType::Text),
         (SETUP_KEY_HASH, super::ConfigType::Secret),
     ];
 }
@@ -1243,6 +1255,14 @@ pub struct RuntimeConfig {
     pub mailer_password: Option<SecretText>,
     pub mailer_from: Option<String>,
     pub mailer_dir: String,
+    /// Follower notifications master switch (fail-closed: off until
+    /// the operator sets a postal address and enables it).
+    pub notify_enabled: bool,
+    /// Max digest emails per subscriber per day.
+    pub notify_daily_cap: u64,
+    /// CAN-SPAM postal footer (operator-supplied; digests refuse to
+    /// send while empty).
+    pub notify_postal_address: String,
 }
 
 impl Default for RuntimeConfig {
@@ -1318,6 +1338,9 @@ impl Default for RuntimeConfig {
             mailer_password: None,
             mailer_from: None,
             mailer_dir: "mail".to_string(),
+            notify_enabled: false,
+            notify_daily_cap: 3,
+            notify_postal_address: String::new(),
         }
     }
 }
@@ -1917,6 +1940,39 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.mail_refresh_token,
         )?;
+        overlay_bool(
+            conn,
+            kek,
+            keys::NOTIFY_ENABLED,
+            &mut warnings,
+            &mut cfg.notify_enabled,
+        )?;
+        // Daily cap: missing/malformed → default 3 (warn on garbage,
+        // mirroring the port overlay's leniency).
+        match get_text_for_job(conn, kek, keys::NOTIFY_DAILY_CAP) {
+            Ok(None) => {}
+            Ok(Some(v)) => match v.trim().parse::<u64>() {
+                Ok(n) if (1..=50).contains(&n) => cfg.notify_daily_cap = n,
+                _ => warnings.push(format!(
+                    "{}: {v:?} is not 1-50; using default 3",
+                    keys::NOTIFY_DAILY_CAP
+                )),
+            },
+            Err(ConfigError::BadValue(why)) => warnings.push(format!(
+                "{}: {why}; using default 3",
+                keys::NOTIFY_DAILY_CAP
+            )),
+            Err(e) => return Err(e),
+        }
+        // Postal footer: empty → default (empty warns); the worker
+        // refuses digest sends while it stays empty.
+        overlay_required_text(
+            conn,
+            kek,
+            keys::NOTIFY_POSTAL_ADDRESS,
+            &mut warnings,
+            &mut cfg.notify_postal_address,
+        )?;
         // H6 fix baked into the migration: a persistent dev-bypass
         // flag must never boot a release binary (spec §3).
         if cfg.admin_mtls_off && !cfg!(debug_assertions) {
@@ -1971,17 +2027,17 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_59_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 59);
+    fn registry_holds_62_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 62);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
         // Ten secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
         // client secrets, Meta Model API key, Gmail client secret +
-        // refresh token, mailer password, setup key hash); six bools
-        // (admin.require_cert is the sixth); rest text (auth.* adds
-        // three, google/apple/meta ids six, mailer.* six, meta.* one,
-        // mail.* three).
+        // refresh token, mailer password, setup key hash); seven
+        // bools (notify.enabled is the seventh); rest text (auth.*
+        // adds three, google/apple/meta ids six, mailer.* six,
+        // meta.* one, mail.* three, notify.* two).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -1990,7 +2046,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (6, 43, 10));
+        assert_eq!(counts, (7, 45, 10));
     }
 
     #[test]

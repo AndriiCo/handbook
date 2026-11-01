@@ -617,6 +617,16 @@ fn decide_inner(
             fact.statement = decision.statement.unwrap_or("").to_string();
         }
         conn.execute_batch("COMMIT")?;
+        // Follower fan-out: tail the fresh `fact_accept` audit row
+        // into the notify outbox, then poke the worker. Best-effort
+        // past the COMMIT — the decision already stands, and the
+        // worker's 60 s tick re-tails the cursor anyway.
+        if decision.action == "fact_accept" {
+            if let Err(e) = notify::enqueue_from_audit(conn, decision.now) {
+                eprintln!("notify: enqueue_from_audit failed: {e}");
+            }
+            state.notify_poke.notify_one();
+        }
         Ok(Ok((fact, rule_outcome)))
     })();
     let (fact, rule) = match outcome {

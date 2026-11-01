@@ -86,21 +86,95 @@ fn map_smtp_error(error: lettre::transport::smtp::Error) -> flow::MailError {
     }
 }
 
+/// RFC 8058 one-click headers as typed lettre headers (the only
+/// custom headers this binary ever sends; anything else is dropped
+/// by `send_with_headers` rather than passed through).
+#[derive(Clone)]
+struct ListUnsubscribe(String);
+
+impl lettre::message::header::Header for ListUnsubscribe {
+    fn name() -> lettre::message::header::HeaderName {
+        lettre::message::header::HeaderName::new_from_ascii_str("List-Unsubscribe")
+    }
+
+    fn parse(s: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Self(s.to_string()))
+    }
+
+    fn display(&self) -> lettre::message::header::HeaderValue {
+        lettre::message::header::HeaderValue::new(Self::name(), self.0.clone())
+    }
+}
+
+#[derive(Clone)]
+struct ListUnsubscribePost(String);
+
+impl lettre::message::header::Header for ListUnsubscribePost {
+    fn name() -> lettre::message::header::HeaderName {
+        lettre::message::header::HeaderName::new_from_ascii_str("List-Unsubscribe-Post")
+    }
+
+    fn parse(s: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Self(s.to_string()))
+    }
+
+    fn display(&self) -> lettre::message::header::HeaderValue {
+        lettre::message::header::HeaderValue::new(Self::name(), self.0.clone())
+    }
+}
+
+fn build_message(
+    from: &str,
+    to: &str,
+    subject: &str,
+    text_body: &str,
+    headers: &[(&str, &str)],
+) -> Result<lettre::Message, flow::MailError> {
+    let mut builder = lettre::Message::builder()
+        .from(
+            from.parse()
+                .map_err(|_| flow::MailError::Transport("bad sender".into()))?,
+        )
+        .to(to
+            .parse()
+            .map_err(|_| flow::MailError::Transport("bad recipient".into()))?)
+        .subject(subject);
+    // Closed header set: only the RFC 8058 pair passes; the values
+    // are mailbox/URL-shaped by construction at the call site.
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case("List-Unsubscribe") {
+            builder = builder.header(ListUnsubscribe(value.to_string()));
+        } else if name.eq_ignore_ascii_case("List-Unsubscribe-Post") {
+            builder = builder.header(ListUnsubscribePost(value.to_string()));
+        }
+    }
+    builder
+        .body(text_body.to_string())
+        .map_err(|_| flow::MailError::Transport("message build failed".into()))
+}
+
+impl SmtpMailer {
+    /// Send with extra headers (follower digests: RFC 8058 pair).
+    pub fn send_with_headers(
+        &self,
+        to: &str,
+        subject: &str,
+        text_body: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<(), flow::MailError> {
+        use lettre::Transport as _;
+        let message = build_message(&self.from, to, subject, text_body, headers)?;
+        self.transport()?
+            .send(&message)
+            .map(|_| ())
+            .map_err(map_smtp_error)
+    }
+}
+
 impl flow::Mailer for SmtpMailer {
     fn send(&self, to: &str, subject: &str, text_body: &str) -> Result<(), flow::MailError> {
         use lettre::Transport as _;
-        let message = lettre::Message::builder()
-            .from(
-                self.from
-                    .parse()
-                    .map_err(|_| flow::MailError::Transport("bad sender".into()))?,
-            )
-            .to(to
-                .parse()
-                .map_err(|_| flow::MailError::Transport("bad recipient".into()))?)
-            .subject(subject)
-            .body(text_body.to_string())
-            .map_err(|_| flow::MailError::Transport("message build failed".into()))?;
+        let message = build_message(&self.from, to, subject, text_body, &[])?;
         self.transport()?
             .send(&message)
             .map(|_| ())
@@ -134,8 +208,17 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::write(path, bytes)
 }
 
-impl flow::Mailer for FileMailer {
-    fn send(&self, to: &str, subject: &str, text_body: &str) -> Result<(), flow::MailError> {
+impl FileMailer {
+    /// File twin of `SmtpMailer::send_with_headers`: the closed
+    /// header set is recorded above the body so handler tests can
+    /// assert the RFC 8058 pair without an SMTP server.
+    pub fn send_with_headers(
+        &self,
+        to: &str,
+        subject: &str,
+        text_body: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<(), flow::MailError> {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
@@ -143,9 +226,23 @@ impl flow::Mailer for FileMailer {
         let seq = FILE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let hash16 = &auth::hash_str(&to.to_lowercase())[..16];
         let path = self.dir.join(format!("{nanos}-{seq}-{hash16}.txt"));
-        let content = format!("To: {to}\nSubject: {subject}\n\n{text_body}");
+        let mut content = format!("To: {to}\nSubject: {subject}\n");
+        for (name, value) in headers {
+            if name.eq_ignore_ascii_case("List-Unsubscribe")
+                || name.eq_ignore_ascii_case("List-Unsubscribe-Post")
+            {
+                content.push_str(&format!("{name}: {value}\n"));
+            }
+        }
+        content.push_str(&format!("\n{text_body}"));
         write_private(&path, content.as_bytes())
             .map_err(|_| flow::MailError::Transport("mail file write failed".into()))
+    }
+}
+
+impl flow::Mailer for FileMailer {
+    fn send(&self, to: &str, subject: &str, text_body: &str) -> Result<(), flow::MailError> {
+        self.send_with_headers(to, subject, text_body, &[])
     }
 }
 
@@ -155,6 +252,22 @@ impl flow::Mailer for FileMailer {
 pub enum Mailer {
     Smtp(SmtpMailer),
     File(FileMailer),
+}
+
+impl Mailer {
+    /// Dispatch `send_with_headers` to the configured backend.
+    pub fn send_with_headers(
+        &self,
+        to: &str,
+        subject: &str,
+        text_body: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<(), flow::MailError> {
+        match self {
+            Mailer::Smtp(inner) => inner.send_with_headers(to, subject, text_body, headers),
+            Mailer::File(inner) => inner.send_with_headers(to, subject, text_body, headers),
+        }
+    }
 }
 
 impl flow::Mailer for Mailer {
@@ -514,6 +627,12 @@ mod tests {
             meta_cfg: None,
             mailer,
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            notify_poke: std::sync::Arc::new(tokio::sync::Notify::new()),
+            notify_enabled: false,
+            notify_daily_cap: 3,
+            notify_postal: String::new(),
+            notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
@@ -554,6 +673,12 @@ mod tests {
                 dir: mail_dir.clone(),
             })),
             magic_link_base: "https://example.test/apostille/login".to_string(),
+            notify_poke: std::sync::Arc::new(tokio::sync::Notify::new()),
+            notify_enabled: false,
+            notify_daily_cap: 3,
+            notify_postal: String::new(),
+            notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
