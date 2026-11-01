@@ -146,4 +146,5 @@
 | 240 | 2026-11-01 23:36Z | Monday slice 1: FollowCard only when notify enabled | status endpoint + gated card, 282 green |
 | 241 | 2026-11-01 23:38Z | Monday slice 2: phone_script never public | API+unfurl+Evidence exclusion, tests |
 | 242 | 2026-11-01 23:41Z | Monday slice 3: sitemap sentinel, cache headers, JSON-LD escapes | sentinel out, 300s cache, unicode escapes |
-| 243 | 2026-11-01 23:52Z | Monday slice 4: allow_ips /0 panic + canonicalization | match-all zero prefix, mapped peers, tests |
+| 243 | 2026-11-01 23:44Z | Monday slice 4: allow_ips /0 panic + canonicalization | match-all zero prefix, mapped peers, tests |
+| 244 | 2026-11-01 23:49Z | Monday slice 5: guardrails post-merge, global cap, upload budget | shared semaphore, 300s upload, 286 tests |

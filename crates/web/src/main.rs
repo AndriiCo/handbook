@@ -276,36 +276,87 @@ struct AppState {
 /// Upgrade responses (WS 101s) resolve in milliseconds, so
 /// long-lived streams are unaffected.
 pub(crate) const REQUEST_TIMEOUT_SECS: u64 = 30;
+/// Media-upload budget: multipart bodies stream inside the
+/// handler future, so the 30 s default would 408 slow client
+/// uploads. The route's byte cap still bounds the bytes.
+pub(crate) const UPLOAD_TIMEOUT_SECS: u64 = 300;
+/// The one path with the long budget (the admin upload route
+/// and the selector below share it — no second spelling).
+pub(crate) const MEDIA_UPLOAD_PATH: &str = "/apostille/api/v1/media/upload";
 /// Slowloris guard at the hyper layer (both listeners): a client
 /// that cannot finish its request head in this long is closed.
 pub(crate) const HEADER_READ_TIMEOUT_SECS: u64 = 10;
-/// In-flight request ceiling per listener. Overflow waits inside
-/// the 30 s request timeout above, then 408s like anything slow.
+/// In-flight request ceiling for the whole process. Overflow
+/// waits inside the request budget above, then 408s like
+/// anything slow.
 pub(crate) const MAX_CONCURRENT_REQUESTS: usize = 512;
 
-/// The same guardrail stack on both routers (public + admin):
-/// concurrency ceiling inside, 30 s timeout, 408 mapping outside.
+/// Per-path request budget in seconds (pure: unit-tested): the
+/// media upload gets 300 s, everything else the 30 s default.
+pub(crate) fn budget_secs_for_path(path: &str) -> u64 {
+    if path == MEDIA_UPLOAD_PATH {
+        UPLOAD_TIMEOUT_SECS
+    } else {
+        REQUEST_TIMEOUT_SECS
+    }
+}
+
+/// The one in-flight ceiling for the whole process: public, the
+/// fully-merged admin stack, and the QUIC bridge (which re-enters
+/// the same guarded routers via `oneshot`) all draw permits from
+/// this semaphore, so a flood on one listener cannot starve the
+/// others past the shared cap. Clones share it — never rebuild it
+/// per router.
+pub(crate) fn shared_concurrency() -> tower::limit::GlobalConcurrencyLimitLayer {
+    tower::limit::GlobalConcurrencyLimitLayer::with_semaphore(shared_semaphore())
+}
+
+/// The one semaphore behind [`shared_concurrency`]: owned here so
+/// tests can read free permits without saturating the cap.
+fn shared_semaphore() -> std::sync::Arc<tokio::sync::Semaphore> {
+    static SHARED: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    SHARED
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_REQUESTS)))
+        .clone()
+}
+
+/// Free permits on the shared ceiling (test seam: proves held
+/// requests hold shared permits without saturating the cap).
+#[cfg(test)]
+pub(crate) fn shared_concurrency_permits() -> usize {
+    shared_semaphore().available_permits()
+}
+
+/// Per-request budget middleware: the upload path gets 300 s,
+/// everything else 30 s; overruns end in 408 with an empty body
+/// (the same observable the old `HandleErrorLayer` produced).
+async fn request_budget(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let secs = budget_secs_for_path(req.uri().path());
+    match tokio::time::timeout(std::time::Duration::from_secs(secs), next.run(req)).await {
+        Ok(res) => res,
+        Err(_) => StatusCode::REQUEST_TIMEOUT.into_response(),
+    }
+}
+
+/// The same guardrail stack on every router: the shared
+/// concurrency ceiling inside, the per-path budget outside, so
+/// time spent queued for a permit counts toward the budget.
 /// Logging middleware stays outermost (each router adds it after),
-/// so timed-out requests still log.
+/// so timed-out requests still log. Applied once per router —
+/// never nest it, or one request holds two shared permits.
 pub(crate) fn guardrails<S>(router: Router<S>) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    // ServiceBuilder reads top-down (unlike stacked `.layer`
-    // calls): 408 mapping outside, budget next, concurrency
-    // ceiling closest to the routes — so time spent queued for a
-    // permit counts toward the 30 s budget.
-    let stack = tower::ServiceBuilder::new()
-        .layer(axum::error_handling::HandleErrorLayer::new(
-            |_: BoxError| async { StatusCode::REQUEST_TIMEOUT },
-        ))
-        .layer(tower::timeout::TimeoutLayer::new(
-            std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS),
-        ))
-        .layer(tower::limit::ConcurrencyLimitLayer::new(
-            MAX_CONCURRENT_REQUESTS,
-        ));
-    router.layer(stack)
+    // `Router::layer` wraps outside-in per call: budget first,
+    // then the shared ceiling, then the routes.
+    router
+        .layer(shared_concurrency())
+        .layer(axum::middleware::from_fn(request_budget))
 }
 
 /// Build the full PUBLIC app router. `static_dir` roots
@@ -1071,11 +1122,17 @@ async fn main() {
     // admin router (approval/config, workers, voice staff, webhook),
     // so each one's `AdminAuth` sees the same TLS-supplied identity.
     // Without peer certs (plain HTTP dev, no-CA TLS) it no-ops.
-    let admin = admin::router(state.clone())
-        .merge(admin_workers::router(state.clone()))
-        .merge(admin_voice::staff_router(state.clone()))
-        .merge(admin_voice::webhook_router(state))
-        .layer(axum::middleware::from_fn(mtls::inject_verified_cert));
+    // Guardrails land AFTER the merges: admin, workers, voice
+    // staff and webhook share one concurrency ceiling and one
+    // per-path budget (the media upload's 300 s survives because
+    // the budget is per-path, not per-router).
+    let admin = guardrails(
+        admin::router(state.clone())
+            .merge(admin_workers::router(state.clone()))
+            .merge(admin_voice::staff_router(state.clone()))
+            .merge(admin_voice::webhook_router(state)),
+    )
+    .layer(axum::middleware::from_fn(mtls::inject_verified_cert));
     // Explicit files always win: ACME stays off when the
     // operator pinned a certificate.
     match explicit_tls_pair(cfg.tls_cert.clone(), cfg.tls_key.clone()) {
@@ -4826,11 +4883,13 @@ mod tests {
     /// the public router, Alt-Svc iff `quic_enabled`.
     fn merged_router_for(state: &AppState, quic_enabled: bool) -> Router {
         let public = public_router_for(state);
-        let admin = admin::router(state.clone())
-            .merge(admin_workers::router(state.clone()))
-            .merge(admin_voice::staff_router(state.clone()))
-            .merge(admin_voice::webhook_router(state.clone()))
-            .layer(axum::middleware::from_fn(mtls::inject_verified_cert));
+        let admin = guardrails(
+            admin::router(state.clone())
+                .merge(admin_workers::router(state.clone()))
+                .merge(admin_voice::staff_router(state.clone()))
+                .merge(admin_voice::webhook_router(state.clone())),
+        )
+        .layer(axum::middleware::from_fn(mtls::inject_verified_cert));
         let cfg = config::RuntimeConfig {
             quic_enabled,
             ..config::RuntimeConfig::default()
@@ -4879,6 +4938,106 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    /// The media upload is the one path with the 300 s budget;
+    /// everything else stays on the 30 s default (pure selector,
+    /// so the budgets are pinned without waiting them out).
+    #[test]
+    fn upload_path_gets_long_budget_everything_else_default() {
+        assert_eq!(
+            budget_secs_for_path(MEDIA_UPLOAD_PATH),
+            UPLOAD_TIMEOUT_SECS,
+            "upload must outlast slow client bodies"
+        );
+        for path in [
+            "/",
+            "/apostille/",
+            "/apostille/api/v1/me",
+            "/apostille/api/v1/workers/status",
+            "/apostille/api/v1/calls/webhook",
+            "/apostille/ws/bus",
+        ] {
+            assert_eq!(
+                budget_secs_for_path(path),
+                REQUEST_TIMEOUT_SECS,
+                "path: {path}"
+            );
+        }
+    }
+
+    /// Fast requests pass through the real [`guardrails`] stack
+    /// untouched, on both the default budget and the upload path.
+    #[tokio::test]
+    async fn guardrails_pass_fast_requests_through() {
+        let app = guardrails(
+            Router::new()
+                .route("/ok", get(|| async { "fine" }))
+                .route(MEDIA_UPLOAD_PATH, get(|| async { "upload-slot" })),
+        );
+        for uri in ["/ok", MEDIA_UPLOAD_PATH] {
+            let res = app
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "uri: {uri}");
+        }
+    }
+
+    /// The guardrail ceiling is one process-wide semaphore: blocked
+    /// requests visibly hold its permits, so a flood on one router
+    /// (public, admin, QUIC bridge) counts against every other.
+    #[tokio::test]
+    async fn guardrails_draw_from_one_shared_ceiling() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let entered = Arc::new(AtomicUsize::new(0));
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let app = guardrails(Router::new().route(
+            "/hold",
+            get({
+                let entered = entered.clone();
+                let gate = gate.clone();
+                move || {
+                    let entered = entered.clone();
+                    let gate = gate.clone();
+                    async move {
+                        entered.fetch_add(1, Ordering::SeqCst);
+                        gate.notified().await;
+                        "released"
+                    }
+                }
+            }),
+        ));
+        let in_flight: Vec<_> = (0..4)
+            .map(|_| {
+                tokio::spawn(
+                    app.clone()
+                        .oneshot(Request::builder().uri("/hold").body(Body::empty()).unwrap()),
+                )
+            })
+            .collect();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while entered.load(Ordering::SeqCst) < 4 && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            entered.load(Ordering::SeqCst),
+            4,
+            "handlers must block inside"
+        );
+        assert!(
+            shared_concurrency_permits() <= MAX_CONCURRENT_REQUESTS - 4,
+            "four held requests must hold four shared permits"
+        );
+        gate.notify_waiters();
+        for task in in_flight {
+            let res = task.await.expect("request task").expect("oneshot");
+            assert_eq!(res.status(), StatusCode::OK);
+        }
     }
 
     #[tokio::test]
