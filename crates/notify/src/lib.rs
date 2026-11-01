@@ -175,12 +175,12 @@ pub fn subscribe(
 
 /// Drop expired pending rows (unconfirmed addresses never linger).
 pub fn sweep_expired(conn: &Connection, now: i64) -> rusqlite::Result<usize> {
-    Ok(conn.execute(
+    conn.execute(
         "DELETE FROM notify_subscription
          WHERE status = 'pending' AND confirm_expires_at IS NOT NULL
            AND confirm_expires_at <= ?1",
         [now],
-    )?)
+    )
 }
 
 /// Confirm a double-opt-in token. Single-use: the hash clears on
@@ -310,7 +310,7 @@ pub fn enqueue_from_audit(conn: &Connection, now: i64) -> rusqlite::Result<usize
              SELECT s.id, ?1, 'email', 'queued', ?2 FROM notify_subscription s
              WHERE s.authority_slug = ?3 AND s.status = 'active'",
             rusqlite::params![fact_id, now, slug],
-        )? as usize;
+        )?;
     }
     conn.execute(
         "INSERT INTO notify_cursor(name, last_id) VALUES (?1, ?2)
@@ -428,6 +428,11 @@ pub fn lease_due_groups(
     Ok(groups)
 }
 
+/// One `fact` row joined to its authority (the `load_fact`
+/// select: statement, topic, authority/capture ids, citation span,
+/// row id, authority slug and name).
+type FactHead = (String, String, i64, i64, i64, i64, i64, String, String);
+
 /// Load one fact's digest content: statement, topic, quote slice,
 /// https source (capture's own, else the official website), capture
 /// day, and the previous accepted statement on the topic.
@@ -436,7 +441,7 @@ pub fn load_fact(
     store_root: &std::path::Path,
     fact_id: i64,
 ) -> rusqlite::Result<Option<DigestFact>> {
-    let row: Option<(String, String, i64, i64, i64, i64, i64, String, String)> = conn
+    let row: Option<FactHead> = conn
         .query_row(
             "SELECT f.statement, f.topic, f.authority_id, f.capture_id,
                     f.citation_start, f.citation_end, f.id, a.slug, a.name
@@ -462,15 +467,16 @@ pub fn load_fact(
         return Ok(None);
     };
     let mut quote = String::new();
-    if capture_id > 0 && start >= 0 && end > start {
-        if let Ok(bytes) = std::fs::read(store_root.join("text").join(format!("{capture_id}.txt")))
-        {
-            let (s, e) = (start as usize, end as usize);
-            if e <= bytes.len() {
-                let slice = String::from_utf8_lossy(&bytes[s..e]).to_string();
-                if (8..=400).contains(&slice.chars().count()) {
-                    quote = slice;
-                }
+    if capture_id > 0
+        && start >= 0
+        && end > start
+        && let Ok(bytes) = std::fs::read(store_root.join("text").join(format!("{capture_id}.txt")))
+    {
+        let (s, e) = (start as usize, end as usize);
+        if e <= bytes.len() {
+            let slice = String::from_utf8_lossy(&bytes[s..e]).to_string();
+            if (8..=400).contains(&slice.chars().count()) {
+                quote = slice;
             }
         }
     }
