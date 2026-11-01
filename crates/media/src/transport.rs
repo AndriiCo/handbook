@@ -25,6 +25,34 @@ pub struct MultipartFile<'a> {
     pub bytes: &'a [u8],
 }
 
+/// One text part of a multipart upload. A part whose `content_type`
+/// is `Some` (e.g. the Transcribe `request` JSON part, sent as
+/// `application/json` per the speech-to-text docs) is sent with that
+/// MIME type; `None` sends a plain text part.
+pub struct MultipartField<'a> {
+    pub name: &'a str,
+    pub value: &'a str,
+    pub content_type: Option<&'a str>,
+}
+
+impl<'a> MultipartField<'a> {
+    pub fn text(name: &'a str, value: &'a str) -> Self {
+        Self {
+            name,
+            value,
+            content_type: None,
+        }
+    }
+
+    pub fn typed(name: &'a str, value: &'a str, content_type: &'a str) -> Self {
+        Self {
+            name,
+            value,
+            content_type: Some(content_type),
+        }
+    }
+}
+
 /// Minimal HTTP surface the Meta clients need.
 pub trait HttpTransport {
     fn post_json(
@@ -39,7 +67,7 @@ pub trait HttpTransport {
         url: &str,
         bearer: &str,
         file: &MultipartFile,
-        fields: &[(&str, &str)],
+        fields: &[MultipartField],
     ) -> Result<HttpResponse, TransportError>;
 }
 
@@ -88,11 +116,21 @@ impl HttpTransport for UreqTransport {
         url: &str,
         bearer: &str,
         file: &MultipartFile,
-        fields: &[(&str, &str)],
+        fields: &[MultipartField],
     ) -> Result<HttpResponse, TransportError> {
         let mut form = ureq::unversioned::multipart::Form::new();
-        for (name, value) in fields {
-            form = form.text(name, value);
+        for field in fields {
+            match field.content_type {
+                Some(mime) => {
+                    let part = ureq::unversioned::multipart::Part::text(field.value)
+                        .mime_str(mime)
+                        .map_err(TransportError::from_ureq)?;
+                    form = form.part(field.name, part);
+                }
+                None => {
+                    form = form.text(field.name, field.value);
+                }
+            }
         }
         let part = ureq::unversioned::multipart::Part::bytes(file.bytes)
             .file_name(file.name)

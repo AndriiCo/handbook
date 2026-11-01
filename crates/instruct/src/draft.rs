@@ -114,8 +114,10 @@ pub fn draft_instructions<P: ModelPort>(
         user_text: context.clone(),
         schema: Some(sections_schema),
         max_output_tokens,
-        temperature: 0.1,
-        reasoning_effort: None,
+        // `1.0` is the documented default (sampling untouched); light
+        // reasoning fits section JSON inside the pack cap.
+        temperature: 1.0,
+        reasoning_effort: Some("low".to_string()),
         cache_key: Some(format!("instruct-draft-{}", template.version)),
     })?;
     let mut sections = parse_sections(&draft.text)?;
@@ -141,8 +143,10 @@ pub fn draft_instructions<P: ModelPort>(
         ),
         schema: Some(refine_schema),
         max_output_tokens,
-        temperature: 0.1,
-        reasoning_effort: None,
+        // `1.0` is the documented default (sampling untouched); light
+        // reasoning fits overrides JSON inside the pack cap.
+        temperature: 1.0,
+        reasoning_effort: Some("low".to_string()),
         cache_key: None,
     })?;
     let overrides = parse_overrides(&refine.text)?;

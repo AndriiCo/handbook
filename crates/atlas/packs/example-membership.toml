@@ -1,5 +1,7 @@
 # EXAMPLE pack (mechanism demo — prompts marked [EXAMPLE] are
-# placeholders, not jurisdiction content). Rerunnable offline:
+# placeholders, not jurisdiction content). No `-contributor` model is
+# listed: those train on inputs, so no personal or confidential data
+# may go to them. Rerunnable offline:
 #   cargo xtask atlas --config crates/atlas/packs/example-membership.toml \
 #     --task membership-scan --dry-run
 # Live (key required):
@@ -18,17 +20,6 @@ max_output_tokens = 4096
 rpm = 3000
 tpm = 4000000
 # Fill from https://dev.meta.ai/docs/pricing-rate-limits before costing runs.
-input_per_1m = 0.0
-output_per_1m = 0.0
-
-[[models]]
-name = "spark-cheap"
-id = "muse-spark-1.3-contributor"
-mode = "contributor"
-context_window = 1048576
-max_output_tokens = 4096
-rpm = 150
-tpm = 3000000
 input_per_1m = 0.0
 output_per_1m = 0.0
 

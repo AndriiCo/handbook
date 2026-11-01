@@ -29,6 +29,180 @@ pub const INLINE_MEDIA_LIMIT: usize = 50_000_000;
 /// Transcription model id.
 pub const VOICE_MODEL: &str = "muse-voice-transcribe-1.0";
 
+/// Uploaded-file lifetime: 7 days, inside the documented 1h–30d
+/// window. Uploads never expire unless `expires_after` is set, and
+/// team storage is capped — per-run inference files must age out.
+pub const UPLOAD_EXPIRY_SECS: u32 = 7 * 24 * 3600;
+
+/// Hashed abuse-detection id sent as `safety_identifier` on Responses
+/// calls: a deployment hash, never a username or email (≤64 chars).
+pub fn safety_identifier() -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest("apostille-atlas"))
+}
+
+/// Transcribe request-body cap: bodies over 32 MB are rejected (413).
+pub const TRANSCRIBE_BODY_LIMIT: usize = 32 * 1024 * 1024;
+
+/// Transcribe audio-duration cap: clips over 10 minutes are rejected (400).
+pub const TRANSCRIBE_MAX_DURATION_MS: u64 = 10 * 60 * 1000;
+
+/// Transcribe settings for one file upload.
+///
+/// `mode` is one of `PUSH_TO_TALK` (single turn; `turns` comes back
+/// empty), `ENDPOINTING` (model-detected turn boundaries) or
+/// `DIARIZATION` (plus speaker labels). `language_bias` lists language
+/// names (`["English", "French"]`), never free-form context; `keywords`
+/// biases recognition toward product names and domain terms. Both ride
+/// inside the `request` JSON part.
+#[derive(Debug, Clone)]
+pub struct TranscribeOptions<'a> {
+    pub mode: &'a str,
+    pub language_bias: &'a [&'a str],
+    pub keywords: &'a [&'a str],
+}
+
+impl Default for TranscribeOptions<'static> {
+    fn default() -> Self {
+        Self {
+            mode: "ENDPOINTING",
+            language_bias: &[],
+            keywords: &[],
+        }
+    }
+}
+
+/// Build the `request` JSON part of the Transcribe multipart body.
+///
+/// Pinned to the speech-to-text docs: `model`, `audioEncoding: "WAV"`,
+/// `mode`, plus `languageBias`/`keywords` only when non-empty.
+pub fn transcribe_request_json(options: &TranscribeOptions) -> Value {
+    let mut request = json!({
+        "model": VOICE_MODEL,
+        "audioEncoding": "WAV",
+        "mode": options.mode,
+    });
+    if !options.language_bias.is_empty() {
+        request["languageBias"] = Value::from(
+            options
+                .language_bias
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+        );
+    }
+    if !options.keywords.is_empty() {
+        request["keywords"] = Value::from(
+            options
+                .keywords
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+        );
+    }
+    request
+}
+
+/// Build the `text` parameter of a Responses structured-output call.
+///
+/// Flat per the structured-output docs:
+/// `text.format = {type: "json_schema", name, schema, strict}`. The
+/// nested `json_schema` wrapper belongs to chat `response_format`.
+pub fn responses_text_format(schema: &JsonSchema) -> Value {
+    json!({
+        "format": {
+            "type": "json_schema",
+            "name": schema.name,
+            "schema": schema.schema,
+            "strict": schema.strict,
+        },
+    })
+}
+
+/// Check the clip is a supported WAV file before uploading.
+///
+/// The endpoint accepts a RIFF/WAVE container holding mono 16-bit
+/// integer PCM at 16 or 24 kHz. Returns the audio duration in ms.
+/// Anything else is a 400 on the wire (`ffmpeg -ac 1 -ar 24000
+/// -c:a pcm_s16le` converts); bodies over 32 MB are a 413.
+pub fn validate_wav_audio(audio: &[u8]) -> Result<u64> {
+    if audio.len() > TRANSCRIBE_BODY_LIMIT {
+        return Err(Error::Model(format!(
+            "audio is {} bytes, over the 32 MB body cap — split into shorter clips",
+            audio.len()
+        )));
+    }
+    let wav = WavInfo::parse(audio)?;
+    let duration_ms = wav.duration_ms();
+    if duration_ms > TRANSCRIBE_MAX_DURATION_MS {
+        return Err(Error::Model(format!(
+            "audio is {duration_ms} ms, over the 10-minute cap — split into shorter clips"
+        )));
+    }
+    Ok(duration_ms)
+}
+
+struct WavInfo {
+    sample_rate: u64,
+    data_len: u64,
+}
+
+impl WavInfo {
+    fn parse(audio: &[u8]) -> Result<Self> {
+        let invalid = |why: String| Error::Model(format!("not a supported WAV file: {why}"));
+        if audio.len() < 12 || &audio[0..4] != b"RIFF" || &audio[8..12] != b"WAVE" {
+            return Err(invalid(
+                "not a RIFF/WAVE file — convert to mono 16-bit WAV at 16 or 24 kHz".to_string(),
+            ));
+        }
+        let mut offset = 12;
+        let mut fmt: Option<(u16, u16, u32, u16)> = None;
+        let mut data_len: Option<u64> = None;
+        while offset + 8 <= audio.len() {
+            let id = &audio[offset..offset + 4];
+            let size =
+                u32::from_le_bytes(audio[offset + 4..offset + 8].try_into().expect("u32")) as usize;
+            let body = offset + 8;
+            if id == b"fmt " {
+                if audio.len() < body + 16 {
+                    return Err(invalid("WAV fmt chunk is truncated".to_string()));
+                }
+                let tag = u16::from_le_bytes(audio[body..body + 2].try_into().expect("u16"));
+                let channels =
+                    u16::from_le_bytes(audio[body + 2..body + 4].try_into().expect("u16"));
+                let rate = u32::from_le_bytes(audio[body + 4..body + 8].try_into().expect("u32"));
+                let bits = u16::from_le_bytes(audio[body + 14..body + 16].try_into().expect("u16"));
+                fmt = Some((tag, channels, rate, bits));
+            } else if id == b"data" {
+                // Declared size: the duration guard judges what the
+                // header claims. A truncated file still fails on the
+                // wire (400); the server re-validates regardless.
+                data_len = Some(size as u64);
+            }
+            offset = body + size + (size % 2);
+        }
+        let Some((tag, channels, rate, bits)) = fmt else {
+            return Err(invalid("WAV has no fmt chunk".to_string()));
+        };
+        if tag != 1 || channels != 1 || bits != 16 || (rate != 16000 && rate != 24000) {
+            return Err(invalid(format!(
+                "must be mono 16-bit PCM at 16 or 24 kHz (got format={tag} channels={channels} bits={bits} rate={rate})"
+            )));
+        }
+        let Some(data_len) = data_len else {
+            return Err(invalid("WAV has no data chunk".to_string()));
+        };
+        Ok(Self {
+            sample_rate: u64::from(rate),
+            data_len,
+        })
+    }
+
+    fn duration_ms(&self) -> u64 {
+        self.data_len.saturating_mul(1000) / (self.sample_rate.saturating_mul(2).max(1))
+    }
+}
+
 /// Raw HTTP response: status + bytes + parsed Retry-After.
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
@@ -45,6 +219,34 @@ pub struct MultipartFile<'a> {
     pub bytes: &'a [u8],
 }
 
+/// One text part of a multipart upload. A part whose `content_type`
+/// is `Some` (e.g. the Transcribe `request` JSON part, sent as
+/// `application/json` per the speech-to-text docs) is sent with that
+/// MIME type; `None` sends a plain text part.
+pub struct MultipartField<'a> {
+    pub name: &'a str,
+    pub value: &'a str,
+    pub content_type: Option<&'a str>,
+}
+
+impl<'a> MultipartField<'a> {
+    pub fn text(name: &'a str, value: &'a str) -> Self {
+        Self {
+            name,
+            value,
+            content_type: None,
+        }
+    }
+
+    pub fn typed(name: &'a str, value: &'a str, content_type: &'a str) -> Self {
+        Self {
+            name,
+            value,
+            content_type: Some(content_type),
+        }
+    }
+}
+
 /// Minimal HTTP surface the client needs (stubbed in tests).
 pub trait Transport {
     fn post_json(&self, url: &str, bearer: &str, body: &Value) -> Result<HttpResponse>;
@@ -53,7 +255,7 @@ pub trait Transport {
         url: &str,
         bearer: &str,
         file: &MultipartFile,
-        fields: &[(&str, &str)],
+        fields: &[MultipartField],
     ) -> Result<HttpResponse>;
     fn get(&self, url: &str, bearer: &str) -> Result<HttpResponse>;
     fn delete(&self, url: &str, bearer: &str) -> Result<HttpResponse>;
@@ -100,11 +302,21 @@ impl Transport for UreqTransport {
         url: &str,
         bearer: &str,
         file: &MultipartFile,
-        fields: &[(&str, &str)],
+        fields: &[MultipartField],
     ) -> Result<HttpResponse> {
         let mut form = ureq::unversioned::multipart::Form::new();
-        for (name, value) in fields {
-            form = form.text(name, value);
+        for field in fields {
+            match field.content_type {
+                Some(mime) => {
+                    let part = ureq::unversioned::multipart::Part::text(field.value)
+                        .mime_str(mime)
+                        .map_err(|e| Error::Model(format!("transport: {e}")))?;
+                    form = form.part(field.name, part);
+                }
+                None => {
+                    form = form.text(field.name, field.value);
+                }
+            }
         }
         let part = ureq::unversioned::multipart::Part::bytes(file.bytes)
             .file_name(file.filename)
@@ -312,6 +524,10 @@ pub struct MetaClient<T: Transport> {
     transport: T,
     base_url: String,
     api_key: String,
+    /// Meta API data-handling terms read: voice uploads stay
+    /// fail-closed until the owner opts in (same tripwire as the
+    /// media crate's `MediaPolicy::terms_read`).
+    terms_read: bool,
 }
 
 impl<T: Transport> fmt::Debug for MetaClient<T> {
@@ -332,7 +548,15 @@ impl<T: Transport> MetaClient<T> {
             transport,
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
+            terms_read: false,
         }
+    }
+
+    /// Opt in after the Meta API data-handling terms are read.
+    /// Voice transcription stays fail-closed without this.
+    pub fn with_terms_read(mut self, terms_read: bool) -> Self {
+        self.terms_read = terms_read;
+        self
     }
 
     fn post(&self, path: &str, body: &Value) -> Result<HttpResponse> {
@@ -420,19 +644,27 @@ impl<T: Transport> ModelPort for MetaClient<T> {
             "model": req.model,
             "instructions": req.instructions,
             "input": [{"role": "user", "content": input}],
+            // Hashed deployment id for abuse detection — never a
+            // username or email (safety-identifier docs).
+            "safety_identifier": safety_identifier(),
         });
+        if !req.background {
+            // Sync calls are never retrieved later, so nothing must
+            // persist server-side. Background calls stay stored: the
+            // poller reads them back by id.
+            body["store"] = json!(false);
+        }
         if let Some(effort) = req.reasoning_effort.as_deref() {
             body["reasoning"] = json!({"effort": effort});
         }
         if let Some(max) = req.max_output_tokens {
             body["max_output_tokens"] = json!(max);
         }
+        // Flat `text.format` per the structured-output docs
+        // (`text.format.{type,name,schema,strict}` — the nested
+        // `json_schema` wrapper is the chat `response_format` shape).
         if let Some(schema) = req.schema.as_ref() {
-            body["text"] = json!({
-                "format": {"type": "json_schema",
-                           "json_schema": {"name": schema.name, "schema": schema.schema,
-                                           "strict": schema.strict}},
-            });
+            body["text"] = responses_text_format(schema);
         }
         if req.background {
             body["background"] = json!(true);
@@ -487,18 +719,32 @@ impl<T: Transport> ModelPort for MetaClient<T> {
         if self.api_key.is_empty() {
             return Err(Error::Model("auth: empty api key".to_string()));
         }
+        if !self.terms_read {
+            return Err(Error::Model(
+                "real media is blocked until the meta api data-handling terms are read".to_string(),
+            ));
+        }
         let file = MultipartFile {
             field: "file",
             filename,
             content_type: mime,
             bytes,
         };
+        // `purpose: user_data` for inference files (file-handling
+        // docs); `expires_after` before the file part so per-run
+        // uploads age out instead of filling team storage.
+        let expiry = UPLOAD_EXPIRY_SECS.to_string();
+        let fields = [
+            MultipartField::text("purpose", "user_data"),
+            MultipartField::text("expires_after[anchor]", "created_at"),
+            MultipartField::text("expires_after[seconds]", &expiry),
+        ];
         let res = with_retry(|| {
             self.transport.post_multipart(
                 &format!("{}/files", self.base_url),
                 &self.api_key,
                 &file,
-                &[("purpose", "assistants")],
+                &fields,
             )
         })?;
         let json = Self::check(res.status, &res.body, res.retry_after_secs)?;
@@ -524,10 +770,25 @@ impl<T: Transport> ModelPort for MetaClient<T> {
         if self.api_key.is_empty() {
             return Err(Error::Model("auth: empty api key".to_string()));
         }
+        if !self.terms_read {
+            return Err(Error::Model(
+                "real media is blocked until the meta api data-handling terms are read".to_string(),
+            ));
+        }
+        if bytes.is_empty() {
+            return Err(Error::Model("audio is empty".to_string()));
+        }
+        validate_wav_audio(bytes)?;
+        // The caller passes through whatever container the source had;
+        // the wire part is always the validated WAV clip.
+        let _ = mime;
+        let request = transcribe_request_json(&TranscribeOptions::default());
+        let request_body = serde_json::to_string(&request)
+            .map_err(|e| Error::Model(format!("transcribe request: {e}")))?;
         let file = MultipartFile {
-            field: "file",
+            field: "audio",
             filename,
-            content_type: mime,
+            content_type: "audio/wav",
             bytes,
         };
         let res = with_retry(|| {
@@ -535,7 +796,11 @@ impl<T: Transport> ModelPort for MetaClient<T> {
                 &format!("{}/asr/transcribe", self.base_url),
                 &self.api_key,
                 &file,
-                &[("model", VOICE_MODEL)],
+                &[MultipartField::typed(
+                    "request",
+                    &request_body,
+                    "application/json",
+                )],
             )
         })?;
         let json = Self::check(res.status, &res.body, res.retry_after_secs)?;
@@ -576,9 +841,8 @@ fn with_retry(op: impl Fn() -> Result<HttpResponse>) -> Result<HttpResponse> {
         if attempt == 3 {
             return Ok(res); // caller reports the terminal status
         }
-        if res.status == 429
-            && let Some(after) = res.retry_after_secs
-        {
+        // Honour Retry-After on any retried status, not just 429.
+        if let Some(after) = res.retry_after_secs {
             std::thread::sleep(Duration::from_secs(after.min(60)));
             continue;
         }
@@ -653,6 +917,16 @@ fn parse_status(json: &Value) -> BackgroundStatus {
         Some("in_progress") => BackgroundStatus::InProgress,
         Some("completed") => BackgroundStatus::Completed,
         Some("cancelled") => BackgroundStatus::Cancelled,
+        // Truncation (e.g. max_output_tokens hit) surfaces as
+        // `status: "incomplete"` with `incomplete_details`, not as an
+        // empty completion — never treat it as success.
+        Some("incomplete") => BackgroundStatus::Failed(format!(
+            "response incomplete: {}",
+            json.get("incomplete_details")
+                .and_then(|d| d.get("reason"))
+                .and_then(Value::as_str)
+                .unwrap_or("truncated"),
+        )),
         Some("failed") => BackgroundStatus::Failed(
             json.get("error")
                 .and_then(|e| e.get("message"))
@@ -694,17 +968,41 @@ fn collect_output_text(json: &Value) -> String {
     texts.join("\n")
 }
 
-fn completion_from_responses(json: &Value) -> Option<Completion> {
+/// Find a model refusal in a Responses `output` array: content
+/// items shaped `{"type": "refusal", "refusal": "..."}`.
+fn refusal_text(json: &Value) -> Option<String> {
+    fn walk(value: &Value) -> Option<String> {
+        match value {
+            Value::Object(map) => {
+                if map.get("type").and_then(Value::as_str) == Some("refusal") {
+                    return map
+                        .get("refusal")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                }
+                map.values().find_map(walk)
+            }
+            Value::Array(items) => items.iter().find_map(walk),
+            _ => None,
+        }
+    }
+    json.get("output").and_then(walk)
+}
+
+fn completion_from_responses(json: &Value) -> Result<Option<Completion>> {
+    if refusal_text(json).is_some() {
+        return Err(Error::Model("model refused the request".to_string()));
+    }
     let text = collect_output_text(json);
     if text.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(Completion {
+    Ok(Some(Completion {
         text,
         input_tokens: usage(json, &["input_tokens", "prompt_tokens"]),
         output_tokens: usage(json, &["output_tokens", "completion_tokens"]),
         cached_tokens: 0,
-    })
+    }))
 }
 
 fn parse_created_response(json: &Value) -> Result<CreatedResponse> {
@@ -717,7 +1015,7 @@ fn parse_created_response(json: &Value) -> Result<CreatedResponse> {
         return Err(Error::Model(format!("response failed: {reason}")));
     }
     let completion = if status == BackgroundStatus::Completed {
-        completion_from_responses(json)
+        completion_from_responses(json)?
     } else {
         None
     };
@@ -730,39 +1028,66 @@ fn parse_created_response(json: &Value) -> Result<CreatedResponse> {
 
 fn parse_retrieved_response(json: &Value) -> Result<RetrievedResponse> {
     let status = parse_status(json);
+    if let BackgroundStatus::Failed(reason) = &status {
+        return Err(Error::Model(format!("response failed: {reason}")));
+    }
     let completion = if status == BackgroundStatus::Completed {
-        completion_from_responses(json)
+        completion_from_responses(json)?
     } else {
         None
     };
     Ok(RetrievedResponse { status, completion })
 }
 
-/// Parse a turn-level transcript (`turns`, or `segments` alias).
+/// Parse a turn-level transcript.
+///
+/// Official `turns` array first (`turnId`, `startMs`, `endMs`,
+/// `transcript`, `speaker`); legacy `segments`/`text` aliases for older
+/// replays. `PUSH_TO_TALK` returns no turns at all, so a top-level
+/// `transcript` string falls back to one turn.
 fn parse_transcript(json: &Value) -> Result<Transcript> {
-    let items = json
+    if let Some(items) = json
         .get("turns")
         .or_else(|| json.get("segments"))
         .and_then(Value::as_array)
-        .ok_or_else(|| Error::Model("transcript has no turns".to_string()))?;
-    let mut turns = Vec::with_capacity(items.len());
-    for (index, item) in items.iter().enumerate() {
-        let text = item
-            .get("text")
-            .and_then(Value::as_str)
-            .ok_or_else(|| Error::Model("transcript turn without text".to_string()))?;
-        turns.push(TranscriptTurn {
-            index,
-            speaker: item
-                .get("speaker")
+        .filter(|items| !items.is_empty())
+    {
+        let mut turns = Vec::with_capacity(items.len());
+        for item in items.iter() {
+            let text = item
+                .get("transcript")
+                .or_else(|| item.get("text"))
                 .and_then(Value::as_str)
-                .map(str::to_string),
-            text: text.to_string(),
-            start_ms: millis(item, "start"),
-            end_ms: millis(item, "end"),
+                .ok_or_else(|| Error::Model("transcript turn without text".to_string()))?;
+            turns.push(TranscriptTurn {
+                index: item
+                    .get("turnId")
+                    .and_then(Value::as_u64)
+                    .map(|n| n as usize)
+                    .unwrap_or(turns.len()),
+                speaker: item
+                    .get("speaker")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                text: text.to_string(),
+                start_ms: millis(item, "start"),
+                end_ms: millis(item, "end"),
+            });
+        }
+        return Ok(Transcript { turns });
+    }
+    if let Some(text) = json.get("transcript").and_then(Value::as_str) {
+        return Ok(Transcript {
+            turns: vec![TranscriptTurn {
+                index: 0,
+                speaker: None,
+                text: text.to_string(),
+                start_ms: 0,
+                end_ms: 0,
+            }],
         });
     }
-    Ok(Transcript { turns })
+    Err(Error::Model("transcript has no turns".to_string()))
 }
 
 fn millis(item: &Value, side: &str) -> u64 {
@@ -817,7 +1142,7 @@ impl Transport for StubTransport {
         url: &str,
         _bearer: &str,
         _file: &MultipartFile,
-        _fields: &[(&str, &str)],
+        _fields: &[MultipartField],
     ) -> Result<HttpResponse> {
         self.lookup("POST", url)
     }
@@ -957,7 +1282,7 @@ mod tests {
             user_text: "u".to_string(),
             schema: None,
             max_output_tokens: 100,
-            temperature: 0.1,
+            temperature: 1.0,
             reasoning_effort: Some("low".to_string()),
             cache_key: Some("k".to_string()),
         }
@@ -1076,8 +1401,125 @@ mod tests {
         assert!(format!("{err}").contains("Files API"), "{err}");
     }
 
+    /// Minimal mono 16-bit WAV at `rate` Hz with `samples` frames.
+    fn wav_bytes(rate: u32, channels: u16, bits: u16, samples: u32) -> Vec<u8> {
+        let bytes_per_frame = u32::from(channels) * u32::from(bits) / 8;
+        let data_len = samples * bytes_per_frame;
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&(36 + data_len).to_le_bytes());
+        out.extend_from_slice(b"WAVEfmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&channels.to_le_bytes());
+        out.extend_from_slice(&rate.to_le_bytes());
+        out.extend_from_slice(&(rate * bytes_per_frame).to_le_bytes());
+        out.extend_from_slice(&(channels * bits / 8).to_le_bytes());
+        out.extend_from_slice(&bits.to_le_bytes());
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&data_len.to_le_bytes());
+        out.resize(out.len() + data_len as usize, 0);
+        out
+    }
+
+    /// Capturing transport: records the JSON body or the multipart
+    /// parts of one call.
+    struct CaptureTransport {
+        status: u16,
+        body: Vec<u8>,
+        last_json: std::cell::RefCell<Value>,
+        last_file: std::cell::RefCell<(String, String, String, Vec<u8>)>,
+        last_fields: std::cell::RefCell<Vec<(String, String, Option<String>)>>,
+    }
+
+    impl CaptureTransport {
+        fn canned(status: u16, body: &str) -> Self {
+            Self {
+                status,
+                body: body.as_bytes().to_vec(),
+                last_json: std::cell::RefCell::new(Value::Null),
+                last_file: std::cell::RefCell::new((
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    Vec::new(),
+                )),
+                last_fields: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl Transport for CaptureTransport {
+        fn post_json(&self, _url: &str, _bearer: &str, body: &Value) -> Result<HttpResponse> {
+            *self.last_json.borrow_mut() = body.clone();
+            Ok(HttpResponse {
+                status: self.status,
+                body: self.body.clone(),
+                retry_after_secs: None,
+            })
+        }
+
+        fn post_multipart(
+            &self,
+            _url: &str,
+            _bearer: &str,
+            file: &MultipartFile,
+            fields: &[MultipartField],
+        ) -> Result<HttpResponse> {
+            *self.last_file.borrow_mut() = (
+                file.field.to_string(),
+                file.filename.to_string(),
+                file.content_type.to_string(),
+                file.bytes.to_vec(),
+            );
+            *self.last_fields.borrow_mut() = fields
+                .iter()
+                .map(|f| {
+                    (
+                        f.name.to_string(),
+                        f.value.to_string(),
+                        f.content_type.map(str::to_string),
+                    )
+                })
+                .collect();
+            Ok(HttpResponse {
+                status: self.status,
+                body: self.body.clone(),
+                retry_after_secs: None,
+            })
+        }
+
+        fn get(&self, _url: &str, _bearer: &str) -> Result<HttpResponse> {
+            panic!("transcribe uses multipart, not get");
+        }
+
+        fn delete(&self, _url: &str, _bearer: &str) -> Result<HttpResponse> {
+            panic!("transcribe uses multipart, not delete");
+        }
+    }
+
     #[test]
-    fn transcript_parses_turns() {
+    fn transcript_parses_official_turns() {
+        let stub = StubTransport::default().route(
+            "POST",
+            "/asr/transcribe",
+            200,
+            r#"{"sessionId":"s-1","transcript":"hello hi","audioDurationMs":2000,
+                "turns":[{"turnId":1,"transcript":"hello","speaker":"A","startMs":0,"endMs":900},
+                         {"turnId":2,"transcript":"hi","startMs":1000,"endMs":2000}]}"#,
+        );
+        let client = MetaClient::new(stub, BASE_URL, "k".to_string()).with_terms_read(true);
+        let audio = wav_bytes(16000, 1, 16, 16000);
+        let out = client.transcribe("v.wav", "audio/wav", &audio).unwrap();
+        assert_eq!(out.turns.len(), 2);
+        assert_eq!(out.turns[0].speaker.as_deref(), Some("A"));
+        assert_eq!(out.turns[1].start_ms, 1000);
+        assert!(out.to_text().contains("A: hello"));
+    }
+
+    #[test]
+    fn transcript_parses_legacy_aliases_and_push_to_talk() {
+        // Older replays used `segments`/`text` with float seconds.
         let stub = StubTransport::default().route(
             "POST",
             "/asr/transcribe",
@@ -1085,12 +1527,312 @@ mod tests {
             r#"{"turns":[{"text":"hello","speaker":"A","startMs":0,"endMs":900},
                           {"text":"hi","start":1.0,"end":2.0}]}"#,
         );
-        let client = MetaClient::new(stub, BASE_URL, "k".to_string());
-        let out = client.transcribe("v.mp3", "audio/mpeg", b"bytes").unwrap();
-        assert_eq!(out.turns.len(), 2);
-        assert_eq!(out.turns[0].speaker.as_deref(), Some("A"));
+        let client = MetaClient::new(stub, BASE_URL, "k".to_string()).with_terms_read(true);
+        let audio = wav_bytes(16000, 1, 16, 16000);
+        let out = client.transcribe("v.wav", "audio/wav", &audio).unwrap();
         assert_eq!(out.turns[1].start_ms, 1000);
-        assert!(out.to_text().contains("A: hello"));
+        // PUSH_TO_TALK returns no turns: top-level transcript is one turn.
+        let stub = StubTransport::default().route(
+            "POST",
+            "/asr/transcribe",
+            200,
+            r#"{"sessionId":"s-2","transcript":"hello there","audioDurationMs":900,"turns":[]}"#,
+        );
+        let client = MetaClient::new(stub, BASE_URL, "k".to_string()).with_terms_read(true);
+        let out = client.transcribe("v.wav", "audio/wav", &audio).unwrap();
+        assert_eq!(out.turns.len(), 1);
+        assert_eq!(out.turns[0].text, "hello there");
+    }
+
+    #[test]
+    fn transcribe_posts_request_and_audio_parts() {
+        // Contract: `request` JSON part (application/json) + `audio`
+        // WAV part (audio/wav), per the speech-to-text docs.
+        let transport = CaptureTransport::canned(
+            200,
+            r#"{"sessionId":"s-1","transcript":"hi","audioDurationMs":500,"turns":[]}"#,
+        );
+        let client = MetaClient::new(transport, BASE_URL, "k".to_string()).with_terms_read(true);
+        let audio = wav_bytes(24000, 1, 16, 12000);
+        client.transcribe("v.wav", "audio/wav", &audio).unwrap();
+        let file = client.transport.last_file.borrow();
+        assert_eq!(file.0, "audio");
+        assert_eq!(file.1, "v.wav");
+        assert_eq!(file.2, "audio/wav");
+        assert_eq!(file.3, audio);
+        let fields = client.transport.last_fields.borrow();
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].0, "request");
+        assert_eq!(fields[0].2.as_deref(), Some("application/json"));
+        let request: Value = serde_json::from_str(&fields[0].1).unwrap();
+        assert_eq!(
+            request,
+            json!({
+                "model": VOICE_MODEL,
+                "audioEncoding": "WAV",
+                "mode": "ENDPOINTING",
+            })
+        );
+    }
+
+    #[test]
+    fn transcribe_request_json_pins_official_shape() {
+        assert_eq!(
+            transcribe_request_json(&TranscribeOptions::default()),
+            json!({
+                "model": VOICE_MODEL,
+                "audioEncoding": "WAV",
+                "mode": "ENDPOINTING",
+            })
+        );
+        let options = TranscribeOptions {
+            mode: "DIARIZATION",
+            language_bias: &["English", "French"],
+            keywords: &["Acme Mobile"],
+        };
+        assert_eq!(
+            transcribe_request_json(&options),
+            json!({
+                "model": VOICE_MODEL,
+                "audioEncoding": "WAV",
+                "mode": "DIARIZATION",
+                "languageBias": ["English", "French"],
+                "keywords": ["Acme Mobile"],
+            })
+        );
+    }
+
+    #[test]
+    fn transcribe_validates_wav_before_sending() {
+        let client = MetaClient::new(StubTransport::default(), BASE_URL, "k".to_string())
+            .with_terms_read(true);
+        for (why, audio) in [
+            ("mp3 bytes", b"fake-audio".to_vec()),
+            ("stereo", wav_bytes(24000, 2, 16, 100)),
+            ("44.1 kHz", wav_bytes(44100, 1, 16, 100)),
+        ] {
+            let err = format!(
+                "{}",
+                client.transcribe("v", "audio/mpeg", &audio).unwrap_err()
+            );
+            assert!(err.contains("WAV"), "{why}: {err}");
+        }
+        // Declared data size claims >10 minutes; no big allocation.
+        let mut overlong = wav_bytes(16000, 1, 16, 100);
+        let too_much = TRANSCRIBE_MAX_DURATION_MS * 32 + 2000;
+        overlong[40..44].copy_from_slice(&(too_much as u32).to_le_bytes());
+        let err = format!(
+            "{}",
+            client.transcribe("v", "audio/wav", &overlong).unwrap_err()
+        );
+        assert!(err.contains("10-minute"), "{err}");
+    }
+
+    #[test]
+    fn upload_posts_expiring_user_data_and_gates_terms() {
+        // Contract: `purpose=user_data` + `expires_after` fields
+        // before the file part (file-handling docs); uploads of real
+        // media stay fail-closed until the terms are read.
+        let transport = CaptureTransport::canned(200, r#"{"id":"file-1"}"#);
+        let client = MetaClient::new(transport, BASE_URL, "k".to_string()).with_terms_read(true);
+        let id = client
+            .upload_file("clip.pdf", "application/pdf", b"%PDF")
+            .unwrap();
+        assert_eq!(id, "file-1");
+        let file = client.transport.last_file.borrow();
+        assert_eq!(file.0, "file");
+        let fields = client.transport.last_fields.borrow();
+        let plain: Vec<(&str, &str)> = fields
+            .iter()
+            .map(|(n, v, _)| (n.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(
+            plain,
+            [
+                ("purpose", "user_data"),
+                ("expires_after[anchor]", "created_at"),
+                (
+                    "expires_after[seconds]",
+                    UPLOAD_EXPIRY_SECS.to_string().as_str()
+                ),
+            ]
+        );
+        let gated = MetaClient::new(StubTransport::default(), BASE_URL, "k".to_string());
+        let err = format!(
+            "{}",
+            gated
+                .upload_file("c.pdf", "application/pdf", b"%PDF")
+                .unwrap_err()
+        );
+        assert!(err.contains("terms are read"), "{err}");
+    }
+
+    #[test]
+    fn sync_responses_are_not_stored_and_carry_a_hashed_id() {
+        let transport = CaptureTransport::canned(
+            200,
+            r#"{"id":"resp_1","status":"completed",
+                "output":[{"type":"message","content":[{"type":"output_text","text":"done"}]}],
+                "usage":{"input_tokens":3,"output_tokens":4}}"#,
+        );
+        let client = MetaClient::new(transport, BASE_URL, "k".to_string());
+        client
+            .create_response(&ResponsesRequest {
+                model: "m".to_string(),
+                instructions: "i".to_string(),
+                input: vec![InputBlock::Text("hi".to_string())],
+                schema: None,
+                max_output_tokens: None,
+                reasoning_effort: None,
+                background: false,
+                previous_response_id: None,
+            })
+            .unwrap();
+        let body = client.transport.last_json.borrow();
+        assert_eq!(body["store"], json!(false));
+        let id = body["safety_identifier"].as_str().unwrap();
+        assert_eq!(id.len(), 64);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(id, &safety_identifier());
+    }
+
+    #[test]
+    fn background_responses_stay_retrievable() {
+        let transport = CaptureTransport::canned(200, r#"{"id":"resp_b","status":"queued"}"#);
+        let client = MetaClient::new(transport, BASE_URL, "k".to_string());
+        client
+            .create_response(&ResponsesRequest {
+                model: "m".to_string(),
+                instructions: "i".to_string(),
+                input: vec![InputBlock::Text("hi".to_string())],
+                schema: None,
+                max_output_tokens: None,
+                reasoning_effort: None,
+                background: true,
+                previous_response_id: None,
+            })
+            .unwrap();
+        let body = client.transport.last_json.borrow();
+        assert!(
+            body.get("store").is_none(),
+            "background stays stored for polling"
+        );
+        assert!(body["safety_identifier"].is_string());
+    }
+
+    #[test]
+    fn transcribe_fails_closed_until_terms_read() {
+        let client = MetaClient::new(StubTransport::default(), BASE_URL, "k".to_string());
+        let audio = wav_bytes(16000, 1, 16, 100);
+        let err = format!(
+            "{}",
+            client.transcribe("v", "audio/wav", &audio).unwrap_err()
+        );
+        assert!(err.contains("terms are read"), "{err}");
+    }
+
+    fn table_schema() -> JsonSchema {
+        JsonSchema {
+            name: "rows".to_string(),
+            schema: json!({
+                "type": "object",
+                "properties": {"rows": {"type": "array"}},
+                "required": ["rows"],
+                "additionalProperties": false,
+            }),
+            strict: true,
+        }
+    }
+
+    #[test]
+    fn responses_create_pins_flat_text_format() {
+        // Contract: `text.format` is flat
+        // ({type,name,schema,strict}) — the nested `json_schema`
+        // wrapper is the chat `response_format` shape.
+        let transport = CaptureTransport::canned(
+            200,
+            r#"{"id":"resp_1","status":"completed",
+                "output":[{"type":"message","content":[{"type":"output_text","text":"{\"rows\":[]}"}]}],
+                "usage":{"input_tokens":3,"output_tokens":4}}"#,
+        );
+        let client = MetaClient::new(transport, BASE_URL, "k".to_string());
+        let created = client
+            .create_response(&ResponsesRequest {
+                model: "muse-spark-1.3".to_string(),
+                instructions: "i".to_string(),
+                input: vec![InputBlock::Text("hi".to_string())],
+                schema: Some(table_schema()),
+                max_output_tokens: None,
+                reasoning_effort: None,
+                background: false,
+                previous_response_id: None,
+            })
+            .unwrap();
+        assert_eq!(created.completion.unwrap().text, "{\"rows\":[]}");
+        let body = client.transport.last_json.borrow();
+        assert_eq!(
+            body["text"],
+            json!({
+                "format": {
+                    "type": "json_schema",
+                    "name": "rows",
+                    "schema": {
+                        "type": "object",
+                        "properties": {"rows": {"type": "array"}},
+                        "required": ["rows"],
+                        "additionalProperties": false,
+                    },
+                    "strict": true,
+                },
+            })
+        );
+        assert!(body["text"]["format"].get("json_schema").is_none());
+    }
+
+    #[test]
+    fn responses_incomplete_is_an_error() {
+        let stub = StubTransport::default().route(
+            "GET",
+            "/responses/resp_9",
+            200,
+            r#"{"id":"resp_9","status":"incomplete",
+                "incomplete_details":{"reason":"max_output_tokens"},
+                "output":[]}"#,
+        );
+        let client = MetaClient::new(stub, BASE_URL, "k".to_string());
+        let err = format!("{}", client.retrieve_response("resp_9").unwrap_err());
+        assert!(err.contains("incomplete"), "{err}");
+        assert!(err.contains("max_output_tokens"), "{err}");
+    }
+
+    #[test]
+    fn responses_refusal_is_an_error() {
+        let stub = StubTransport::default().route(
+            "POST",
+            "/responses",
+            200,
+            r#"{"id":"resp_2","status":"completed",
+                "output":[{"type":"message","content":[
+                    {"type":"refusal","refusal":"I cannot help with that"}]}],
+                "usage":{"input_tokens":3,"output_tokens":4}}"#,
+        );
+        let client = MetaClient::new(stub, BASE_URL, "k".to_string());
+        let err = format!(
+            "{}",
+            client
+                .create_response(&ResponsesRequest {
+                    model: "m".to_string(),
+                    instructions: "i".to_string(),
+                    input: vec![InputBlock::Text("hi".to_string())],
+                    schema: None,
+                    max_output_tokens: None,
+                    reasoning_effort: None,
+                    background: false,
+                    previous_response_id: None,
+                })
+                .unwrap_err()
+        );
+        assert!(err.contains("refused"), "{err}");
     }
 
     #[test]

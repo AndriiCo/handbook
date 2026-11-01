@@ -82,6 +82,18 @@
 | 174 | 2026-11-01 08:00Z | finding-12 staging live draft proof | 27s Spark run, 9/10 kept |
 | 175 | 2026-11-01 08:20Z | gate fail: dead fn + test module order | strict clippy clean |
 | 176 | 2026-11-01 08:35Z | gate fmt newline fix | fmt --check clean |
+| 184 | 2026-11-01 08:08Z | F2 transcribe request+audio parts, WAV guards, terms gate | media+atlas green, live pending |
+| 185 | 2026-11-01 08:16Z | F3 flat Responses text.format, refusals, incomplete | atlas 41 green, live pending |
+| 186 | 2026-11-01 08:17Z | F3 live probe budget 512 (reasoning eats cap) | live 2/2, flat format accepted |
+| 187 | 2026-11-01 08:20Z | F4 SAM bare phrases, grammar parse, redact rewrite | media green, recorder proof next |
+| 188 | 2026-11-01 08:21Z | F10 Spark finish/refusal guards in recorder | stub-verified, live rerun next |
+| 189 | 2026-11-01 08:23Z | F5 developer+user layout, 400 root-caused | agent 44 green, eval gate next |
+| 190 | 2026-11-01 08:30Z | F1 drop temperature, F6 explicit effort | 3 crates green, eval gate next |
+| 191 | 2026-11-01 08:37Z | F8 SSE streaming for drafts | agent 45 green, eval gate next |
+| 192 | 2026-11-01 08:42Z | F9 jittered retries, Retry-After, terminal set | gates green, eval gate next |
+| 193 | 2026-11-01 08:48Z | F12 expiry, store:false, safety id, terms | atlas 44 green, live proof next |
+| 194 | 2026-11-01 08:48Z | F13 canonical base URL everywhere | join verified, rest flagged |
+| 195 | 2026-11-01 08:49Z | F14 meta-api docs re-verified + linked | shapes + digest updated |
 | 177 | 2026-11-01 09:00Z | RunReport usage to draft events | strict clippy/tests green |
 | 178 | 2026-11-01 09:20Z | staging run 5 log on usage SHA | 9/10 kept |
 | 179 | 2026-11-01 06:40Z | Sunday deploy 69ca7fa on operator order | prod 5/10, no regression |
@@ -99,3 +111,4 @@
 | 204 | 2026-11-01 18:00Z | plant_run into_owned lint (plant clippy) | gate re-run |
 | 205 | 2026-11-01 18:15Z | staging run 7 on 117ef58 | 9/10 + demo 3/3 |
 | 206 | 2026-11-01 18:35Z | dossier how-to guide from facts | shots+demo+97 green |
+| 207 | 2026-11-01 18:55Z | meta lane first merge (F1-F14) | gates green, eval pending |
