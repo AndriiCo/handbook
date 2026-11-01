@@ -34,7 +34,7 @@
 	const chosenSample = $derived(samples?.find((s) => s.id === chosen) ?? null);
 
 	const sampleBtnCls = (active: boolean) =>
-		`flex min-h-11 w-full max-w-[36rem] cursor-pointer items-center gap-3 rounded-md border bg-bg px-3 py-2 text-left text-ink transition-colors ${active ? `border-accent-fill` : `border-line hover:border-focus`}`;
+		`flex min-h-11 w-full max-w-[36rem] cursor-pointer items-center gap-3 rounded-sm border bg-bg px-3 py-2 text-left text-ink transition-colors ${active ? `border-accent-fill` : `border-line hover:border-focus`}`;
 
 	const verdictPillCls = (pass: boolean) =>
 		`inline-block rounded-xs border px-3 py-1 text-sm font-bold ${pass ? `border-verified bg-verified-bg text-verified` : `border-changed bg-changed-bg text-changed`}`;

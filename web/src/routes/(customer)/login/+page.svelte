@@ -345,7 +345,7 @@
 							onfocus={() => void tryConditionalMediation()}
 						/>
 						<button
-							class="mt-2 min-h-12 cursor-pointer rounded-md border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
+							class="mt-2 min-h-12 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 							type="submit"
 							disabled={busy}>Sign in with passkey</button
 						>
@@ -366,7 +366,7 @@
 						{#each providers as provider (provider)}
 							{@const logo = brandFor(provider)}
 							<button
-								class="mb-2 flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-line bg-bg px-4 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
+								class="mb-2 flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-sm border border-line bg-bg px-4 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
 								type="button"
 								disabled={busy}
 								onclick={() => oauthLogin(provider)}
@@ -401,7 +401,7 @@
 								disabled={busy}
 							/>
 							<button
-								class="min-h-11 cursor-pointer rounded-md border border-line bg-surface px-5 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
+								class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
 								type="submit"
 								disabled={busy}>Send sign-in link</button
 							>
@@ -442,7 +442,7 @@
 							autocomplete="email"
 						/>
 						<button
-							class="mt-2 min-h-12 cursor-pointer rounded-md border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
+							class="mt-2 min-h-12 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 							type="submit"
 							disabled={busy}>Register passkey</button
 						>

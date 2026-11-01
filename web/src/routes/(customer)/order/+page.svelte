@@ -205,7 +205,7 @@
 				</Notice>
 				<p>
 					<button
-						class="min-h-11 cursor-pointer rounded-md border border-line bg-surface px-5 font-bold text-ink"
+						class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink"
 						onclick={() => (done = false)}>Back to review</button
 					>
 				</p>
@@ -261,7 +261,7 @@
 					</Popover.Root>
 					<p>
 						<button
-							class="min-h-11 cursor-pointer rounded-md border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed"
+							class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed"
 							type="submit"
 							disabled={!canNext1}>Continue</button
 						>
@@ -296,12 +296,12 @@
 					</fieldset>
 					<p class="flex gap-3">
 						<button
-							class="min-h-11 cursor-pointer rounded-md border border-line bg-surface px-5 font-bold text-ink"
+							class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink"
 							type="button"
 							onclick={() => (step = 1)}>Back</button
 						>
 						<button
-							class="min-h-11 cursor-pointer rounded-md border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed"
+							class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed"
 							type="submit"
 							disabled={!canNext2}>Continue</button
 						>
@@ -362,12 +362,12 @@
 					</div>
 					<p class="flex gap-3">
 						<button
-							class="min-h-11 cursor-pointer rounded-md border border-line bg-surface px-5 font-bold text-ink"
+							class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink"
 							type="button"
 							onclick={() => (step = 2)}>Back</button
 						>
 						<button
-							class="min-h-11 cursor-pointer rounded-md border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed"
+							class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed"
 							type="submit"
 							disabled={!canNext3}>Review order</button
 						>
@@ -393,11 +393,11 @@
 				</dl>
 				<p class="flex gap-3">
 					<button
-						class="min-h-11 cursor-pointer rounded-md border border-line bg-surface px-5 font-bold text-ink"
+						class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink"
 						onclick={() => (step = 3)}>Back</button
 					>
 					<button
-						class="min-h-11 cursor-pointer rounded-md border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink"
+						class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink"
 						onclick={() => (done = true)}>Draft order</button
 					>
 				</p>

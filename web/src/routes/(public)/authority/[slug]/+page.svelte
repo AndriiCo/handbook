@@ -335,13 +335,13 @@
 		<div class="mt-6 flex flex-wrap gap-2">
 			<a
 				href={`${resolve('/(customer)/order')}?destination=${encodeURIComponent(slug)}`}
-				class="inline-flex min-h-11 items-center rounded-md bg-accent-fill px-5 font-medium text-accent-ink no-underline transition-colors hover:bg-accent-hover"
+				class="inline-flex min-h-11 items-center rounded-sm bg-accent-fill px-5 font-medium text-accent-ink no-underline transition-colors hover:bg-accent-hover"
 			>
 				Start an order for {authorityCountry ?? displayName}
 			</a>
 			<a
 				href={resolve('/(customer)/login')}
-				class="inline-flex min-h-11 items-center rounded-md border border-line bg-bg px-5 font-medium text-ink no-underline transition-colors hover:border-focus"
+				class="inline-flex min-h-11 items-center rounded-sm border border-line bg-bg px-5 font-medium text-ink no-underline transition-colors hover:border-focus"
 			>
 				Report a change
 			</a>
