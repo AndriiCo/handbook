@@ -38,7 +38,7 @@ mod staff_passkey;
 mod ws_bus;
 
 use axum::{
-    Router,
+    BoxError, Router,
     extract::{
         ConnectInfo, MatchedPath, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -269,6 +269,43 @@ struct AppState {
     meta_delete_status_base: String,
 }
 
+/// Full-request budget, routing to response head: slow clients
+/// and stuck handlers end in 408, never a hung connection.
+/// Upgrade responses (WS 101s) resolve in milliseconds, so
+/// long-lived streams are unaffected.
+pub(crate) const REQUEST_TIMEOUT_SECS: u64 = 30;
+/// Slowloris guard at the hyper layer (both listeners): a client
+/// that cannot finish its request head in this long is closed.
+pub(crate) const HEADER_READ_TIMEOUT_SECS: u64 = 10;
+/// In-flight request ceiling per listener. Overflow waits inside
+/// the 30 s request timeout above, then 408s like anything slow.
+pub(crate) const MAX_CONCURRENT_REQUESTS: usize = 512;
+
+/// The same guardrail stack on both routers (public + admin):
+/// concurrency ceiling inside, 30 s timeout, 408 mapping outside.
+/// Logging middleware stays outermost (each router adds it after),
+/// so timed-out requests still log.
+pub(crate) fn guardrails<S>(router: Router<S>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    // ServiceBuilder reads top-down (unlike stacked `.layer`
+    // calls): 408 mapping outside, budget next, concurrency
+    // ceiling closest to the routes — so time spent queued for a
+    // permit counts toward the 30 s budget.
+    let stack = tower::ServiceBuilder::new()
+        .layer(axum::error_handling::HandleErrorLayer::new(
+            |_: BoxError| async { StatusCode::REQUEST_TIMEOUT },
+        ))
+        .layer(tower::timeout::TimeoutLayer::new(
+            std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS),
+        ))
+        .layer(tower::limit::ConcurrencyLimitLayer::new(
+            MAX_CONCURRENT_REQUESTS,
+        ));
+    router.layer(stack)
+}
+
 /// Build the full PUBLIC app router. `static_dir` roots
 /// `/apostille/static`; `spa_dir` (the SvelteKit `build/` output)
 /// serves the app shell at `/apostille/` and every other
@@ -395,31 +432,35 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
     // itself, not the /apostille sub-service — providers register
     // https://andrii.ai/auth/<provider>/callback. (Start stays a
     // nested API call; only the provider-facing URL is flat.)
-    Router::new()
-        // Domain root is not the handbook: the whole public surface
-        // lives under `/apostille`, so `/` redirects there (a bare
-        // 404 today). Static target — no open redirect.
-        .route("/", get(root_to_apostille))
-        .route("/apostille", get(serve_spa_index))
-        .route("/apostille/", get(serve_spa_index))
-        .route("/robots.txt", get(serve_robots))
-        .route("/privacy", get(serve_privacy))
-        .route("/auth/google/callback", get(oauth::callback))
-        .route("/auth/google/risc", post(oauth::risc))
-        .route("/auth/apple/callback", get(oauth_apple::callback))
-        .route("/auth/meta/callback", get(oauth_meta::callback))
-        .route(
-            "/auth/meta/delete-request",
-            post(oauth_meta::delete_request),
-        )
-        .route("/auth/meta/delete-status", get(oauth_meta::delete_status))
-        .nest("/apostille", api)
-        .nest_service("/.well-known/acme-challenge", ServeDir::new(acme_dir))
-        .layer(axum::middleware::from_fn_with_state(
-            "public",
-            request_id_and_log,
-        ))
-        .with_state(state)
+    // Guardrails sit INSIDE the request-id log layer below, so
+    // timed-out requests still log.
+    guardrails(
+        Router::new()
+            // Domain root is not the handbook: the whole public surface
+            // lives under `/apostille`, so `/` redirects there (a bare
+            // 404 today). Static target — no open redirect.
+            .route("/", get(root_to_apostille))
+            .route("/apostille", get(serve_spa_index))
+            .route("/apostille/", get(serve_spa_index))
+            .route("/robots.txt", get(serve_robots))
+            .route("/privacy", get(serve_privacy))
+            .route("/auth/google/callback", get(oauth::callback))
+            .route("/auth/google/risc", post(oauth::risc))
+            .route("/auth/apple/callback", get(oauth_apple::callback))
+            .route("/auth/meta/callback", get(oauth_meta::callback))
+            .route(
+                "/auth/meta/delete-request",
+                post(oauth_meta::delete_request),
+            )
+            .route("/auth/meta/delete-status", get(oauth_meta::delete_status))
+            .nest("/apostille", api)
+            .nest_service("/.well-known/acme-challenge", ServeDir::new(acme_dir))
+            .layer(axum::middleware::from_fn_with_state(
+                "public",
+                request_id_and_log,
+            )),
+    )
+    .with_state(state)
 }
 
 /// `GET /` on the public host is never content: redirect to the
@@ -1208,8 +1249,18 @@ async fn serve_http(public: Router, admin: Router, cfg: &config::RuntimeConfig) 
                     .clone()
                     .layer(axum::middleware::from_fn(insert_tcp_transport));
                 async move {
-                    axum_server::bind(addr)
-                        .handle(handle)
+                    let mut server = axum_server::bind(addr).handle(handle);
+                    // Slowloris guard: the head must arrive fast. The
+                    // timer is mandatory — hyper panics on a timeout
+                    // without one.
+                    server
+                        .http_builder()
+                        .http1()
+                        .timer(hyper_util::rt::TokioTimer::new())
+                        .header_read_timeout(std::time::Duration::from_secs(
+                            HEADER_READ_TIMEOUT_SECS,
+                        ));
+                    server
                         .serve(router.into_make_service_with_connect_info::<SocketAddr>())
                         .await
                 }
@@ -1335,9 +1386,17 @@ async fn serve_tls(
                         .layer(axum::middleware::from_fn(insert_tcp_transport));
                     let tls = admin_tls.clone();
                     async move {
-                        axum_server::bind(addr)
+                        let mut server = axum_server::bind(addr)
                             .acceptor(mtls::MtlsAcceptor::new(tls))
-                            .handle(handle)
+                            .handle(handle);
+                        server
+                            .http_builder()
+                            .http1()
+                            .timer(hyper_util::rt::TokioTimer::new())
+                            .header_read_timeout(std::time::Duration::from_secs(
+                                HEADER_READ_TIMEOUT_SECS,
+                            ));
+                        server
                             .serve(router.into_make_service_with_connect_info::<SocketAddr>())
                             .await
                     }
@@ -4520,6 +4579,49 @@ mod tests {
             ..config::RuntimeConfig::default()
         };
         tls_router(public, admin, &cfg)
+    }
+
+    /// The guardrail stack shape both routers carry: a stuck
+    /// handler ends in 408 (not 500, not a hang) while a fast one
+    /// passes through untouched. Production uses the 30 s
+    /// [`REQUEST_TIMEOUT_SECS`]; the short budget here proves the
+    /// mapping, not the constant.
+    #[tokio::test]
+    async fn guardrail_stack_maps_stuck_handlers_to_408() {
+        use axum::error_handling::HandleErrorLayer;
+        use tower::ServiceBuilder;
+        use tower::limit::ConcurrencyLimitLayer;
+        use tower::timeout::TimeoutLayer;
+        async fn stuck() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+        let app = Router::new()
+            .route("/stuck", axum::routing::get(stuck))
+            .route("/ok", axum::routing::get(|| async { "fine" }))
+            .layer(
+                ServiceBuilder::new()
+                    .layer(HandleErrorLayer::new(|_: BoxError| async {
+                        StatusCode::REQUEST_TIMEOUT
+                    }))
+                    .layer(TimeoutLayer::new(std::time::Duration::from_millis(20)))
+                    .layer(ConcurrencyLimitLayer::new(1)),
+            );
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/stuck")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::REQUEST_TIMEOUT);
+        let res = app
+            .oneshot(Request::builder().uri("/ok").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[tokio::test]

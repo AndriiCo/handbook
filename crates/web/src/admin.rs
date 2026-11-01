@@ -294,118 +294,124 @@ pub async fn csrf_guard(
 /// segment.
 pub fn router(state: AppState) -> Router {
     let spa_index = state.admin_spa_dir.join("index.html");
-    Router::new()
-        // Domain root is staff-only: the admin build also registers the
-        // (public) homepage at `/`, so serve no shell here — send
-        // browsers to the review queue (its layout gate forwards to
-        // /staff-login when unauthenticated). `/console` keeps a
-        // redirect for old bookmarks (the call-console page is gone;
-        // its three panes live on in /calls, /trace and /review).
-        .route("/", get(root_to_review))
-        .route("/console", get(root_to_review))
-        // Demo routes never serve on the staff origin: (mock) ships in
-        // the admin JS bundle (client-routable) but must 404 server-side.
-        .route("/mock/{*rest}", get(admin_not_found))
-        .route("/apostille/api/v1/me", get(admin_me))
-        .route("/apostille/api/v1/facts", get(approval::list_facts))
-        .route(
-            "/apostille/api/v1/facts/{id}/accept",
-            post(approval::accept_fact),
-        )
-        .route(
-            "/apostille/api/v1/facts/{id}/reject",
-            post(approval::reject_fact),
-        )
-        .route("/apostille/api/v1/queue", get(queue::queue_items))
-        .route("/apostille/api/v1/queue/{id}", get(queue::queue_item))
-        .route(
-            "/apostille/api/v1/suppress-rules",
-            get(queue::list_rules).post(queue::create_rule),
-        )
-        .route(
-            "/apostille/api/v1/suppress-rules/{id}/revoke",
-            post(queue::revoke_rule),
-        )
-        .route(
-            "/apostille/api/v1/suppressions",
-            get(queue::list_suppressions),
-        )
-        .route("/apostille/api/v1/config", get(get_config))
-        .route("/apostille/api/v1/config/{key}", put(set_config))
-        .route(
-            "/apostille/api/v1/setup/status",
-            get(crate::setup::setup_status),
-        )
-        .route(
-            "/apostille/api/v1/setup/steps",
-            get(crate::setup::setup_steps),
-        )
-        .route(
-            "/apostille/api/v1/setup/keys/{key}",
-            post(crate::setup::setup_set_key),
-        )
-        .route(
-            "/apostille/api/v1/auth/passkey/enrol/start",
-            post(crate::staff_passkey::enrol_start),
-        )
-        .route(
-            "/apostille/api/v1/auth/passkey/enrol/finish",
-            post(crate::staff_passkey::enrol_finish),
-        )
-        .route(
-            "/apostille/api/v1/auth/passkey/login/start",
-            post(crate::staff_passkey::login_start),
-        )
-        .route(
-            "/apostille/api/v1/auth/passkey/login/finish",
-            post(crate::staff_passkey::login_finish),
-        )
-        .route("/apostille/api/v1/bus/publish", post(publish))
-        // Staff topic subscriptions (`proposals`, `run:{id}`) live on
-        // the admin host only (M-A): the public branch ignores the
-        // staff session cookie, so these topics upgrade here alone.
-        // Same host + IP + log layers as every route below; the CSRF
-        // layer passes the GET handshake through (safe method).
-        .route(
-            "/apostille/ws/bus",
-            get(crate::ws_bus::ws_bus_upgrade_admin),
-        )
-        .route(
-            "/apostille/api/v1/captures/{id}/draft",
-            post(crate::draft::draft_capture),
-        )
-        .route(
-            "/apostille/api/v1/draft-runs/{id}",
-            get(crate::draft::draft_run),
-        )
-        .route(
-            "/apostille/api/v1/media/upload",
-            post(upload_media).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
-        )
-        .route(
-            "/apostille/api/v1/{*path}",
-            get(admin_not_found)
-                .post(admin_not_found)
-                .put(admin_not_found),
-        )
-        .fallback_service(ServeDir::new(&state.admin_spa_dir).fallback(ServeFile::new(spa_index)))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            csrf_guard,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            require_admin_ip,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            admin_host_guard,
-        ))
-        .layer(axum::middleware::from_fn_with_state(
-            "admin",
-            crate::request_id_and_log,
-        ))
-        .with_state(state)
+    // Same guardrail stack as the public router, inside the
+    // request-id log layer so timed-out staff requests still log.
+    crate::guardrails(
+        Router::new()
+            // Domain root is staff-only: the admin build also registers the
+            // (public) homepage at `/`, so serve no shell here — send
+            // browsers to the review queue (its layout gate forwards to
+            // /staff-login when unauthenticated). `/console` keeps a
+            // redirect for old bookmarks (the call-console page is gone;
+            // its three panes live on in /calls, /trace and /review).
+            .route("/", get(root_to_review))
+            .route("/console", get(root_to_review))
+            // Demo routes never serve on the staff origin: (mock) ships in
+            // the admin JS bundle (client-routable) but must 404 server-side.
+            .route("/mock/{*rest}", get(admin_not_found))
+            .route("/apostille/api/v1/me", get(admin_me))
+            .route("/apostille/api/v1/facts", get(approval::list_facts))
+            .route(
+                "/apostille/api/v1/facts/{id}/accept",
+                post(approval::accept_fact),
+            )
+            .route(
+                "/apostille/api/v1/facts/{id}/reject",
+                post(approval::reject_fact),
+            )
+            .route("/apostille/api/v1/queue", get(queue::queue_items))
+            .route("/apostille/api/v1/queue/{id}", get(queue::queue_item))
+            .route(
+                "/apostille/api/v1/suppress-rules",
+                get(queue::list_rules).post(queue::create_rule),
+            )
+            .route(
+                "/apostille/api/v1/suppress-rules/{id}/revoke",
+                post(queue::revoke_rule),
+            )
+            .route(
+                "/apostille/api/v1/suppressions",
+                get(queue::list_suppressions),
+            )
+            .route("/apostille/api/v1/config", get(get_config))
+            .route("/apostille/api/v1/config/{key}", put(set_config))
+            .route(
+                "/apostille/api/v1/setup/status",
+                get(crate::setup::setup_status),
+            )
+            .route(
+                "/apostille/api/v1/setup/steps",
+                get(crate::setup::setup_steps),
+            )
+            .route(
+                "/apostille/api/v1/setup/keys/{key}",
+                post(crate::setup::setup_set_key),
+            )
+            .route(
+                "/apostille/api/v1/auth/passkey/enrol/start",
+                post(crate::staff_passkey::enrol_start),
+            )
+            .route(
+                "/apostille/api/v1/auth/passkey/enrol/finish",
+                post(crate::staff_passkey::enrol_finish),
+            )
+            .route(
+                "/apostille/api/v1/auth/passkey/login/start",
+                post(crate::staff_passkey::login_start),
+            )
+            .route(
+                "/apostille/api/v1/auth/passkey/login/finish",
+                post(crate::staff_passkey::login_finish),
+            )
+            .route("/apostille/api/v1/bus/publish", post(publish))
+            // Staff topic subscriptions (`proposals`, `run:{id}`) live on
+            // the admin host only (M-A): the public branch ignores the
+            // staff session cookie, so these topics upgrade here alone.
+            // Same host + IP + log layers as every route below; the CSRF
+            // layer passes the GET handshake through (safe method).
+            .route(
+                "/apostille/ws/bus",
+                get(crate::ws_bus::ws_bus_upgrade_admin),
+            )
+            .route(
+                "/apostille/api/v1/captures/{id}/draft",
+                post(crate::draft::draft_capture),
+            )
+            .route(
+                "/apostille/api/v1/draft-runs/{id}",
+                get(crate::draft::draft_run),
+            )
+            .route(
+                "/apostille/api/v1/media/upload",
+                post(upload_media).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
+            )
+            .route(
+                "/apostille/api/v1/{*path}",
+                get(admin_not_found)
+                    .post(admin_not_found)
+                    .put(admin_not_found),
+            )
+            .fallback_service(
+                ServeDir::new(&state.admin_spa_dir).fallback(ServeFile::new(spa_index)),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                csrf_guard,
+            ))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                require_admin_ip,
+            ))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                admin_host_guard,
+            ))
+            .layer(axum::middleware::from_fn_with_state(
+                "admin",
+                crate::request_id_and_log,
+            )),
+    )
+    .with_state(state)
 }
 
 /// Session + cert visibility for the admin shell.

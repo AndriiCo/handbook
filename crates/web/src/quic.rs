@@ -36,9 +36,23 @@ use crate::RequestTransport;
 /// client completes a QUIC handshake against this endpoint.
 const H3_ALPN: &[u8] = b"h3";
 
-/// Cap for one buffered bridge body each way (8 MiB — orders of
-/// magnitude above our JSON APIs and SPA shells).
-const MAX_BRIDGE_BODY: usize = 8 * 1024 * 1024;
+/// Cap for one buffered bridge body each way (2 MiB — orders of
+/// magnitude above our JSON APIs; the admin upload path refuses
+/// past its own cap before a body ever gets this far).
+const MAX_BRIDGE_BODY: usize = 2 * 1024 * 1024;
+
+/// Declared-size gate: reject an over-cap `Content-Length` before
+/// reading a single body byte (unit-tested). Returns the 413 body
+/// when the head already proves the body cannot fit.
+fn bridge_body_allowed(content_length: u64) -> Option<serde_json::Value> {
+    if content_length > MAX_BRIDGE_BODY as u64 {
+        Some(serde_json::json!({
+            "error": "request body too large (2 MiB bridge cap)"
+        }))
+    } else {
+        None
+    }
+}
 
 /// Build the QUIC endpoint crypto from the same PEM material as
 /// the TCP listener: the [`mtls`](crate::mtls) server config
@@ -211,6 +225,17 @@ async fn serve_request(
         )
         .await;
     }
+    // Early reject: a declared over-cap length never reaches
+    // the read loop (slow-drip bodies still trip the loop cap).
+    if let Some(reject) = parts
+        .headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .and_then(bridge_body_allowed)
+    {
+        return send_synthetic(&mut stream, StatusCode::PAYLOAD_TOO_LARGE, reject).await;
+    }
     let mut body_bytes = Vec::new();
     while let Some(mut chunk) = stream
         .recv_data()
@@ -218,7 +243,7 @@ async fn serve_request(
         .map_err(|e| format!("h3 receive body: {e}"))?
     {
         if body_bytes.len() + chunk.remaining() > MAX_BRIDGE_BODY {
-            return Err("h3 request body exceeds 8 MiB".to_string());
+            return Err("h3 request body exceeds 2 MiB".to_string());
         }
         while chunk.has_remaining() {
             body_bytes.extend_from_slice(chunk.chunk());
@@ -306,6 +331,25 @@ async fn send_synthetic(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bridge_cap_rejects_declared_oversize_early() {
+        assert!(bridge_body_allowed(0).is_none(), "empty body fits");
+        assert!(
+            bridge_body_allowed(MAX_BRIDGE_BODY as u64).is_none(),
+            "exactly the cap fits"
+        );
+        let reject = bridge_body_allowed(MAX_BRIDGE_BODY as u64 + 1);
+        let body = reject.expect("one byte over must reject");
+        assert_eq!(
+            body["error"].as_str().unwrap_or(""),
+            "request body too large (2 MiB bridge cap)"
+        );
+        assert!(
+            bridge_body_allowed(u64::MAX).is_some(),
+            "absurd lengths reject without reading"
+        );
+    }
 
     #[test]
     fn ws_paths_stay_tcp_only() {
