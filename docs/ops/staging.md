@@ -301,3 +301,27 @@ above verbatim).
   the unit-file root step first (unchanged), plus prod
   `admin.allow_ips` set to the operator's IP before the binary
   starts (P221 default is loopback-only).
+
+## Run 10 (2026-11-01, 0f53999) — 9/10 kept, admin live on staging
+- Plant stamp `acceptance/0f53999e0724.json` (`ci_green: true`,
+  run `20261101-185456-0f53999`).
+- Exact checkout via xfer ref (`xfer-p225`), native release rebuild
+  + both SPAs, restart on 18318/18319 by verified PID (DB reused:
+  vietnam 8 + usa-wa-sos 9 accepted stand).
+  `healthz` → `0.1.0+0f53999`.
+- Rescore 9/10, only S1 red (operator-owned licence/video/
+  visibility). Live demo take 3/3 on the exact SHA
+  (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
+- Live admin check (debug binary `0.1.0+0f53999` + `config-set
+  admin.mtls_off=true` + minted staff session, all reverted after:
+  session revoked, seam false, release binary back): Chromium on
+  `127.0.0.1:18319/trace` clicked Draft → POST 202 (real CSRF
+  double-submit) → `run:{id}` socket reported `Done — 2 proposed,
+  0 rejected (muse-spark-1.3, 18862/8785 tok)`, zero console errors.
+- Staging-green deploy candidate (Sunday open, cap lifted until
+  11-10): stamp + 9/10 + live demo 3/3 + live admin check all on
+  0f53999. Ship needs the unit-file root step first (unchanged),
+  plus prod `admin.allow_ips` set to the operator's IP before the
+  binary starts (P221 default is loopback-only). The 2 draft
+  proposals from the live check sit in the staging queue
+  (harmless synthetic data; approve or reject at will).
