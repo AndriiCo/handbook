@@ -122,3 +122,4 @@
 | 215 | 2026-11-01 17:30Z | operator page: tip, plant queue, prod counts current | builder-state true |
 | 216 | 2026-11-01 17:34Z | order review saves draft via forms list endpoint | web 263, checks+builds green |
 | 217 | 2026-11-01 17:36Z | operator page: P216 tip, 9-SHA plant queue | builder-state true |
+| 218 | 2026-11-01 17:37Z | orders rows link to live submission detail | shots /orders+/order green |

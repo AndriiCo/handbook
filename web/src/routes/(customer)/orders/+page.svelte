@@ -99,7 +99,7 @@
 	<p class="text-sm text-ink-muted">
 		{rows.length}
 		{rows.length === 1 ? 'order' : 'orders'}, newest first.
-		<a href={resolve('/(customer)/order')}>Start a new order</a>.
+		<a class="underline" href={resolve('/(customer)/order')}>Start a new order</a>.
 	</p>
 	<table class="mt-4 block w-full border-collapse md:table">
 		<caption class="sr-only">Your orders, newest first</caption>
@@ -119,7 +119,7 @@
 					<td
 						data-label="Order"
 						class="block border-0 border-b border-line px-[0.8rem] py-[0.6rem] text-left font-mono text-[0.9rem] last:border-b-0 md:table-cell md:border"
-						>#{row.id}</td
+						><a class="underline" href={resolve('/(customer)/forms/[id]', { id: String(row.id) })}>#{row.id}</a></td
 					>
 					<td
 						data-label="Authority"
