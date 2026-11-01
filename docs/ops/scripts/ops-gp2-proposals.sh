@@ -23,8 +23,10 @@ STORE=/var/lib/apostille
 DB="$STORE/handbook.sqlite"
 PACKS=/srv/apostille/current/packs
 KEK_SRC=/etc/apostille/handbook-kek
-CREDS=$STORE/.loop-creds
+CREDS="$(mktemp -d /tmp/apostille-kek.XXXXXX)"
 STAGED=$CREDS/handbook-kek
+cleanup() { rm -rf "$CREDS"; }
+trap cleanup EXIT
 SEEDDIR=/tmp/gp2-pack-seed
 
 [ -x "$XTASK" ] || { echo "ABORT: no live release xtask at $XTASK"; exit 1; }
@@ -95,8 +97,7 @@ for slug in vietnam usa-wa-sos; do
         || echo "WARNING: fetch-slug $slug exited nonzero (output above) — continuing"
 done
 
-echo "=== 3. stage KEK copy (0700 dir, 0600 file, deleted after the scans)"
-install -d -m 0700 "$CREDS"
+echo "=== 3. stage KEK copy (mktemp 0700 dir, 0600 file, deleted after the scans)"
 cp "$KEK_SRC" "$STAGED"
 chmod 0600 "$STAGED"
 [ "$(stat -c %s "$STAGED")" = 32 ] || { echo "ABORT: staged KEK is not 32 bytes"; exit 1; }
@@ -109,9 +110,9 @@ for slug in vietnam usa-wa-sos; do
         --scan-captures --slug "$slug" --live --actor gp2-proposals \
         || echo "WARNING: analyze $slug exited nonzero (output above) — continuing"
 done
-rm -f "$STAGED"
+rm -rf "$CREDS"
+trap - EXIT
 [ -e "$STAGED" ] && { echo "ABORT: staged KEK undeletable"; exit 1; }
-rmdir "$CREDS" 2>/dev/null || echo "WARNING: $CREDS not empty, left in place (inspect)"
 echo "staged KEK removed"
 
 echo "=== 5. root-residue check + counts after"

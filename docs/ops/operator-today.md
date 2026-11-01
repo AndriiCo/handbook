@@ -40,12 +40,16 @@ group-read pre-step from this morning is done — A2 reads prove it.
    log in again; "refused … client certificate" means the session is
    fine but the browser didn't present your enrolled cert (check the
    browser's certificate prompt for the admin host).
-2. A5 eval — root-caused by builder: the script passed `--evals
-   …/current/evals`, but xtask reads `*.json` flat and the 26 gold
-   cases live in `evals/authorities/` (the files were on prod all
-   along). Fixed + staged to `~/apostille/scripts/` — just re-run
-   `bash ~/apostille/scripts/ops-a5-eval.sh` and paste back the
-   quality.json lines. Flips A5.
+2. One root step, then two hal runs (all staged, paste back each
+   output). (a) As root: `bash ~/apostille/scripts/ops-rootless-access.sh`
+   — re-run applies the group-write on `/var/lib/apostille` the first
+   run predates (prod shows `andrii-ai:andrii-ai drwxr-xr-x`, so hal
+   can't write quality.json) and removes the stale 0700 `.loop-creds`.
+   (b) As hal: `bash ~/apostille/scripts/ops-gp2-proposals.sh` (KEK
+   staging is mktemp now; same stale-dir bug fixed there too), then
+   `bash ~/apostille/scripts/ops-a5-eval.sh` (evals path + mktemp +
+   store-writability preflight). Paste back: the proposals counts,
+   the quality.json lines. Flips A5; proposals feed item 1.
 3. S1: switch LICENSE to MIT, make the repo public, link the demo
    video in README (video lands 11-03). Video: record the production
    admin approve scene yourself (needs your client cert; builder takes

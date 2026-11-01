@@ -70,3 +70,4 @@
 | 162 | 2026-11-01 04:15Z | retention: worker prune_old + deploy step 4, pruned both | P161 resubmitted clean |
 | 163 | 2026-11-01 04:30Z | A5 root cause: evals path, fixed+staged, operator re-runs | loader proved 26 cases |
 | 164 | 2026-11-01 04:50Z | admin 401 vs 403 split + test, operator error guide | 96 tests, demo 3/3 |
+| 165 | 2026-11-01 05:10Z | perms root cause: mktemp scripts + rootless re-run | staged, operator runs |

@@ -28,6 +28,14 @@ for d in /srv/apostille /var/lib/apostille; do
 done
 ls -ld /srv/apostille /var/lib/apostille
 
+echo "== 2b. stale per-run credential dirs (any owner — root can)"
+# Operator scripts stage KEK copies under mktemp since P165; a fixed
+# $STORE/.loop-creds left by an older run (0700, other owner) breaks
+# every later run for hal. Remove it unconditionally.
+rm -rf /var/lib/apostille/.loop-creds || fail "rm .loop-creds"
+[ -e /var/lib/apostille/.loop-creds ] && fail ".loop-creds undeletable"
+echo "stale creds gone"
+
 echo "== 3. restart grant (pinned, no shell, no install wrapper)"
 cat > /etc/sudoers.d/apostille-restart <<'EOF'
 # Builder-managed (ops-rootless-access.sh). The deploy user may bounce
