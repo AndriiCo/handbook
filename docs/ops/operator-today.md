@@ -58,6 +58,10 @@ S1: switch LICENSE to MIT (text ready at opensource.org/licenses/MIT),
 make the repo public, and link the demo video in README (video lands 11-03).
 Video: record the production admin approve scene yourself (needs your client
 cert; builder takes desktop/mobile publicly), upload to YouTube, paste the URL back.
+Sandbox (builder session): local browsers no longer launch (Chromium/Chrome
+Mach bootstrap denied; Firefox/WebKit version drift; same family as the SSH
+uid 501 failure) — `npm run shots` / `npm run demo` can't run here until that
+recovers; last green gate 2026-10-31 12:33 local.
 
 GP3 (scoreboard demands a logo inside every configured provider's button):
 run `cargo xtask brand-assets` and follow its four download steps (Apple,
