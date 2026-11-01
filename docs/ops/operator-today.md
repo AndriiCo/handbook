@@ -1,10 +1,10 @@
-# Operator — Sunday 2026-11-01 (Pacific; updated ~00:05 PDT)
+# Operator — Sunday 2026-11-01 (Pacific; updated ~09:15 PDT)
 
 Production runs `0.1.0+69ca7fa` (deployed 2026-11-01 ~06:35Z on your
 "deploy now" order, `--allow-today-overlap`) — scoreboard **5/10**
 (P0, GP1, GP4, A2, A5 pass; see `web/shots/prod-before.json` →
 `web/shots/prod-after.json`, no regression). First red: GP2-data
-(0/8 accepted per slug). Staging 9/10 (only S1 red) on the exact
+(vietnam 0/8, usa-wa-sos 1/8 accepted). Staging 9/10 (only S1 red) on the exact
 SHA; tunnel live during builder turns.
 
 Your lines that flip production rows now (all code is already live):
@@ -56,7 +56,8 @@ group-read pre-step from this morning is done — A2 reads prove it.
 1. Approvals — no script: open the admin `/review` with your client
    certificate, accept every proposed fact EXCEPT 2 per slug (leave 2
    vietnam + 2 usa-wa-sos proposed for the video's approve scene).
-   GP2-data needs >= 8 accepted each; currently 0/8. This flips
+   GP2-data needs >= 8 accepted each; currently vietnam 0/8,
+   usa-wa-sos 1/8 (verified 16:15Z). This flips
    GP2-data, A1 and GP2-page. Paste back: accepted counts per slug.
    Error guide (ships Sunday #3): "session missing or expired" means
    log in again; "refused … client certificate" means the session is
@@ -100,4 +101,4 @@ group-read pre-step from this morning is done — A2 reads prove it.
 
 Web redesign slices P153–P157 landed on main (shell + GP1–GP4 + login);
 local gates green (check, both builds, imports, tailwind, 20/20 shots).
-Staging 9/10 (only S1 red). Prod 4/10 until approvals + Sunday #3.
+Staging 9/10 (only S1 red). Prod 5/10 until approvals land.
