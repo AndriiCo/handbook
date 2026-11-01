@@ -439,16 +439,18 @@ pub fn revoke_admin_cert(conn: &Connection, fingerprint: &str, now: i64) -> rusq
     Ok(())
 }
 
-/// True when the fingerprint is known and not revoked.
-pub fn admin_cert_valid(conn: &Connection, fingerprint: &str) -> rusqlite::Result<bool> {
-    let revoked: Option<Option<i64>> = conn
+/// True when the fingerprint is known, not revoked, and not
+/// expired (`expires_at` is exclusive: `now >= expires_at` fails
+/// closed, the same reading as [`Session::valid`]).
+pub fn admin_cert_valid(conn: &Connection, fingerprint: &str, now: i64) -> rusqlite::Result<bool> {
+    let row: Option<(Option<i64>, i64)> = conn
         .query_row(
-            "SELECT revoked_at FROM admin_cert WHERE fingerprint = ?1",
+            "SELECT revoked_at, expires_at FROM admin_cert WHERE fingerprint = ?1",
             [fingerprint],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
-    Ok(matches!(revoked, Some(None)))
+    Ok(matches!(row, Some((None, expires_at)) if now < expires_at))
 }
 
 /// `Set-Cookie` value for a session id. `__Host-` names require
@@ -638,11 +640,22 @@ mod tests {
     #[test]
     fn admin_cert_lifecycle() {
         let conn = memory();
-        assert!(!admin_cert_valid(&conn, "fp-unknown").expect("unknown is invalid"));
+        assert!(!admin_cert_valid(&conn, "fp-unknown", 150).expect("unknown is invalid"));
         issue_admin_cert(&conn, "fp-1", "alice", 100, 200, "").expect("issue");
-        assert!(admin_cert_valid(&conn, "fp-1").expect("valid"));
+        assert!(admin_cert_valid(&conn, "fp-1", 150).expect("valid"));
         revoke_admin_cert(&conn, "fp-1", 200).expect("revoke");
-        assert!(!admin_cert_valid(&conn, "fp-1").expect("revoked fails closed"));
+        assert!(!admin_cert_valid(&conn, "fp-1", 150).expect("revoked fails closed"));
+    }
+
+    #[test]
+    fn admin_cert_expired_fails_closed() {
+        // An unrevoked cert past `expires_at` is invalid — expiry is
+        // exclusive, so `now == expires_at` already fails.
+        let conn = memory();
+        issue_admin_cert(&conn, "fp-old", "alice", 100, 200, "").expect("issue");
+        assert!(admin_cert_valid(&conn, "fp-old", 199).expect("live until expiry"));
+        assert!(!admin_cert_valid(&conn, "fp-old", 200).expect("expired at the boundary"));
+        assert!(!admin_cert_valid(&conn, "fp-old", 201).expect("expired after"));
     }
 
     #[test]

@@ -297,9 +297,12 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         // Domain root is staff-only: the admin build also registers the
         // (public) homepage at `/`, so serve no shell here — send
-        // browsers to the console (its layout gate forwards to
-        // /staff-login when unauthenticated).
-        .route("/", get(root_to_console))
+        // browsers to the review queue (its layout gate forwards to
+        // /staff-login when unauthenticated). `/console` keeps a
+        // redirect for old bookmarks (the call-console page is gone;
+        // its three panes live on in /calls, /trace and /review).
+        .route("/", get(root_to_review))
+        .route("/console", get(root_to_review))
         // Demo routes never serve on the staff origin: (mock) ships in
         // the admin JS bundle (client-routable) but must 404 server-side.
         .route("/mock/{*rest}", get(admin_not_found))
@@ -358,6 +361,15 @@ pub fn router(state: AppState) -> Router {
             post(crate::staff_passkey::login_finish),
         )
         .route("/apostille/api/v1/bus/publish", post(publish))
+        // Staff topic subscriptions (`proposals`, `run:{id}`) live on
+        // the admin host only (M-A): the public branch ignores the
+        // staff session cookie, so these topics upgrade here alone.
+        // Same host + IP + log layers as every route below; the CSRF
+        // layer passes the GET handshake through (safe method).
+        .route(
+            "/apostille/ws/bus",
+            get(crate::ws_bus::ws_bus_upgrade_admin),
+        )
         .route(
             "/apostille/api/v1/captures/{id}/draft",
             post(crate::draft::draft_capture),
@@ -368,7 +380,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/apostille/api/v1/media/upload",
-            post(upload_media).layer(DefaultBodyLimit::disable()),
+            post(upload_media).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
         )
         .route(
             "/apostille/api/v1/{*path}",
@@ -410,13 +422,14 @@ async fn admin_not_found() -> impl IntoResponse {
     (StatusCode::NOT_FOUND, Json(json!({"error": "not found"})))
 }
 
-/// `GET /` on the admin host is never the public homepage (the admin
-/// build registers `(public)/+page` at `/` too): redirect to the
-/// staff console. Static target — no open redirect.
-async fn root_to_console() -> impl IntoResponse {
+/// `GET /` (and the retired `/console`) on the admin host is never
+/// the public homepage (the admin build registers `(public)/+page`
+/// at `/` too): redirect to the review queue. Static target — no
+/// open redirect.
+async fn root_to_review() -> impl IntoResponse {
     (
         StatusCode::SEE_OTHER,
-        [(header::LOCATION, HeaderValue::from_static("/console"))],
+        [(header::LOCATION, HeaderValue::from_static("/review"))],
     )
 }
 
@@ -641,6 +654,15 @@ async fn publish(
     (StatusCode::OK, Json(json!({"published": true}))).into_response()
 }
 
+/// Admin upload body cap: the media crate's max file size plus 1 MiB
+/// of multipart framing headroom. Bodies past it 413 before the
+/// handler reads a byte (the old seam disabled the limit entirely).
+const MAX_UPLOAD_BODY_BYTES: usize = media::upload::MAX_UPLOAD_BYTES + 1024 * 1024;
+
+// The 413 test below posts 40 MiB: it must stay over the cap, or the
+// test proves nothing. Compile-time, not a runtime assert.
+const _: () = assert!(40 * 1024 * 1024 > MAX_UPLOAD_BODY_BYTES);
+
 /// Staff media upload (F8 intake): multipart `file` (+ `authority`
 /// slug, `grant_version`, `grant_accepted_at`, optional
 /// `synthetic=true`). Validates through the media crate, persists a
@@ -649,6 +671,7 @@ async fn publish(
 async fn upload_media(
     auth: AdminAuth,
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     let bad = |msg: String| {
@@ -658,6 +681,22 @@ async fn upload_media(
         )
             .into_response()
     };
+    // The route's [`DefaultBodyLimit`] caps the stream, but the
+    // multipart extractor surfaces an over-long stream as a field
+    // read error (422) — so reject a declared over-cap body here
+    // with an honest 413 first. Chunked liars still hit the stream
+    // cap and fail closed (as a 422 field error, never a full read).
+    let declared: Option<usize> = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok());
+    if declared.is_some_and(|len| len > MAX_UPLOAD_BODY_BYTES) {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({"error": "upload body too large"})),
+        )
+            .into_response();
+    }
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut filename: Option<String> = None;
     let mut content_type: Option<String> = None;
@@ -826,24 +865,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn root_redirects_to_console_not_public_shell() {
+    async fn root_and_console_redirect_to_review_not_public_shell() {
         let tmp = tempfile::tempdir().unwrap();
         let app = router(state_with_spa(&tmp));
-        let res = app
-            .oneshot(
-                Request::builder()
-                    .uri("/")
-                    .header("host", "admin.andrii.ai")
-                    .extension(axum::extract::ConnectInfo(
-                        "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
-                    ))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::SEE_OTHER);
-        assert_eq!(res.headers().get(header::LOCATION).unwrap(), "/console");
+        // Domain root and the retired `/console` both land on the
+        // review queue (old bookmarks keep working).
+        for uri in ["/", "/console"] {
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(uri)
+                        .header("host", "admin.andrii.ai")
+                        .extension(axum::extract::ConnectInfo(
+                            "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+                        ))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::SEE_OTHER, "uri: {uri}");
+            assert_eq!(res.headers().get(header::LOCATION).unwrap(), "/review");
+        }
     }
 
     #[tokio::test]
@@ -872,7 +916,7 @@ mod tests {
         let res = app
             .oneshot(
                 Request::builder()
-                    .uri("/console")
+                    .uri("/review")
                     .header("host", "admin.andrii.ai")
                     .extension(axum::extract::ConnectInfo(
                         "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
@@ -907,6 +951,68 @@ mod tests {
         assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
+    #[tokio::test]
+    async fn upload_rejects_body_past_cap_with_413() {
+        // 40 MiB multipart body against a ~33 MiB cap: the route
+        // layer 413s before the handler reads a byte.
+        let tmp = tempfile::tempdir().unwrap();
+        let state = state_with_spa(&tmp);
+        let store = Store::new(tmp.path());
+        let conn = db::open(&store).unwrap();
+        auth::create_session(
+            &conn,
+            "staff-1",
+            &auth::NewSession {
+                user_id: "staff-1",
+                role: auth::Role::Staff,
+                customer_ref: None,
+                now: crate::unix_now(),
+                ip: "127.0.0.1",
+                user_agent: "test",
+            },
+        )
+        .unwrap();
+        drop(conn);
+        let boundary = "cap-test-boundary";
+        let mut body = Vec::new();
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; \
+                 filename=\"big.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(&vec![b'x'; 40 * 1024 * 1024]);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        let len = body.len().to_string();
+        let res = router(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/media/upload")
+                    .method("POST")
+                    .header("host", "admin.andrii.ai")
+                    .header("content-length", len)
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .header(
+                        "cookie",
+                        format!("{}=staff-1; {}=tok", auth::ADM_COOKIE, auth::CSRF_COOKIE),
+                    )
+                    .header(auth::CSRF_HEADER, "tok")
+                    .header("origin", "http://localhost:3001")
+                    .extension(axum::extract::ConnectInfo(
+                        "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
     fn listed_ip_state(tmp: &tempfile::TempDir) -> AppState {
         let mut state = state_with_spa(tmp);
         state.admin_mtls_off = false;
@@ -933,7 +1039,7 @@ mod tests {
     async fn require_ip_denies_unlisted_page_and_api() {
         let tmp = tempfile::tempdir().unwrap();
         let app = router(listed_ip_state(&tmp));
-        for uri in ["/console", "/apostille/api/v1/me"] {
+        for uri in ["/review", "/apostille/api/v1/me"] {
             let res = app
                 .clone()
                 .oneshot(ip_request(uri, Some("198.51.100.9")))
@@ -962,7 +1068,7 @@ mod tests {
         // Page serves the shell once the peer is listed.
         let res = app
             .clone()
-            .oneshot(ip_request("/console", Some("203.0.113.44")))
+            .oneshot(ip_request("/review", Some("203.0.113.44")))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);

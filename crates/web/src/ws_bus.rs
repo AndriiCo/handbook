@@ -84,11 +84,40 @@ pub struct TopicParams {
 /// channels only; every other topic needs a session whose role (and,
 /// for owned topics, `customer_ref`) passes [`auth::ws::authorize`].
 /// Denials return 403 JSON instead of upgrading.
+///
+/// Security M-A: the PUBLIC branch ignores [`auth::ADM_COOKIE`] — a
+/// staff session cookie presented there resolves to anonymous, so
+/// staff topics are reachable only on the admin host (which mounts
+/// [`ws_bus_upgrade_admin`]). The `__Host-` prefix already binds the
+/// cookie to the admin host in real browsers; this closes the seam
+/// for non-browser clients that copy the cookie value across hosts.
 pub async fn ws_bus_upgrade(
     State(state): State<AppState>,
     Query(params): Query<TopicParams>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    ws_bus_upgrade_inner(state, params, headers, ws, false).await
+}
+
+/// Admin-branch upgrade: same topics and authz, but the staff
+/// session cookie resolves — mounted on the admin router only,
+/// behind its host guard + IP allowlist + log layers.
+pub async fn ws_bus_upgrade_admin(
+    State(state): State<AppState>,
+    Query(params): Query<TopicParams>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    ws_bus_upgrade_inner(state, params, headers, ws, true).await
+}
+
+async fn ws_bus_upgrade_inner(
+    state: AppState,
+    params: TopicParams,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+    accept_admin_cookie: bool,
 ) -> impl IntoResponse {
     let Some(topic) = auth::ws::WsTopic::parse(&params.topic) else {
         return (
@@ -130,7 +159,10 @@ pub async fn ws_bus_upgrade(
         .get(header::COOKIE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let credentialed = auth::cookie_value(cookies, auth::ADM_COOKIE)
+    let admin_cookie = accept_admin_cookie
+        .then(|| auth::cookie_value(cookies, auth::ADM_COOKIE))
+        .flatten();
+    let credentialed = admin_cookie
         .or_else(|| auth::cookie_value(cookies, auth::PUB_COOKIE))
         .is_some()
         || demo_cookie_value(cookies).is_some();
@@ -148,7 +180,7 @@ pub async fn ws_bus_upgrade(
                 .into_response();
         }
     }
-    let (role, customer_ref) = match resolve_caller(&state, &headers) {
+    let (role, customer_ref) = match resolve_caller(&state, &headers, accept_admin_cookie) {
         Ok(caller) => caller,
         Err(()) => return store_unavailable(),
     };
@@ -170,16 +202,21 @@ pub async fn ws_bus_upgrade(
 /// Resolve (role, customer_ref) from the session cookies. No (or an
 /// invalid) session is anonymous, not an error — anonymous subscribe
 /// is legitimate on authority topics. A broken store is a 500.
+/// `accept_admin_cookie` gates [`auth::ADM_COOKIE`]: false on the
+/// public branch (M-A), true on the admin branch.
 fn resolve_caller(
     state: &AppState,
     headers: &HeaderMap,
+    accept_admin_cookie: bool,
 ) -> Result<(auth::Role, Option<String>), ()> {
     let cookies = headers
         .get(header::COOKIE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let token = auth::cookie_value(cookies, auth::ADM_COOKIE)
-        .or_else(|| auth::cookie_value(cookies, auth::PUB_COOKIE));
+    let admin_token = accept_admin_cookie
+        .then(|| auth::cookie_value(cookies, auth::ADM_COOKIE))
+        .flatten();
+    let token = admin_token.or_else(|| auth::cookie_value(cookies, auth::PUB_COOKIE));
     let demo = demo_cookie_value(cookies);
     if token.is_none() && demo.is_none() {
         return Ok((auth::Role::Anonymous, None));

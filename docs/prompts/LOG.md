@@ -129,3 +129,4 @@
 | 222 | 2026-11-01 18:26Z | operator page: P221 tip, allow_ips warning | page true |
 | 223 | 2026-11-01 18:35Z | dossier guide v1: steps, citations, conflicts | unit 109, shots 16, demo 3 |
 | 224 | 2026-11-01 18:43Z | staging-green 2cce16d, GP2-page live | Run 9 9/10, demo 3/3 |
+| 225 | 2026-11-01 18:54Z | Slice: admin live and correctness. These are bugs that break the recorded | admin WS + CSRF + expiry + cap + redirect live, all gates green |

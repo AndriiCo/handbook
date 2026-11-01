@@ -178,8 +178,8 @@ pub async fn draft_capture(
         .into_response()
 }
 
-/// `GET /apostille/api/v1/draft-runs/{id}` — the trace console polls
-/// this while a run is `running`.
+/// `GET /apostille/api/v1/draft-runs/{id}` — run state read-back
+/// (the trace console subscribes to the `run:{id}` steps instead).
 pub async fn draft_run(
     _auth: AdminAuth,
     State(state): State<AppState>,
@@ -255,6 +255,17 @@ impl DraftTask {
                         "elapsed_ms": started.elapsed().as_millis() as u64,
                     }),
                 );
+                // New proposals fan out to the staff `proposals` topic
+                // so `/review` inserts the cards live (same envelope
+                // as the voice-quote path: every event carries `topic`).
+                for fact_id in &report.proposed_ids {
+                    bus.publish(
+                        "proposals",
+                        json!({"type": "proposal.created", "topic": "proposals",
+                               "fact_id": fact_id, "authority": slug, "at": now})
+                        .to_string(),
+                    );
+                }
             }
             Ok(Err(error)) => {
                 runs.fail(run_id, error.clone(), now);
@@ -276,6 +287,16 @@ impl DraftTask {
 
         let store = handbook_store::store::Store::new(&self.store_root);
         let conn = db::open(&store).map_err(|e| format!("store unavailable: {e}"))?;
+        // High-water mark for the `proposals` fan-out: everything the
+        // analyzer inserts below lands above it (ids are monotonic).
+        // A concurrent analyzer run could interleave its own inserts —
+        // harmless, since each `proposal.created` names a real fact id
+        // and `/review` dedupes by id.
+        let before: i64 = conn
+            .query_row("SELECT COALESCE(MAX(id), 0) FROM fact", [], |row| {
+                row.get(0)
+            })
+            .unwrap_or(0);
         let client = live_client(&conn, self.kek.as_deref())?;
         let mut sources = HashMap::new();
         sources.insert("fixture".to_string(), self.text.clone());
@@ -300,12 +321,21 @@ impl DraftTask {
             // failure labels — no key material flows through here.
             format!("draft failed: {e}")
         })?;
+        let mut inserted = conn
+            .prepare("SELECT id FROM fact WHERE id > ?1 AND status = 'proposed' ORDER BY id")
+            .map_err(|e| format!("store unavailable: {e}"))?;
+        let proposed_ids: Vec<i64> = inserted
+            .query_map([before], |row| row.get(0))
+            .map_err(|e| format!("store unavailable: {e}"))?
+            .filter_map(|id| id.ok())
+            .collect();
         Ok(DraftOutcome {
             proposed: report.proposed,
             rejected: report.rejected,
             model: client.model_id().to_string(),
             input_tokens: report.usage.input_tokens,
             output_tokens: report.usage.output_tokens,
+            proposed_ids,
         })
     }
 }
@@ -317,6 +347,8 @@ pub struct DraftOutcome {
     model: String,
     input_tokens: u32,
     output_tokens: u32,
+    /// Ids this run inserted (for the `proposals` fan-out below).
+    proposed_ids: Vec<i64>,
 }
 
 /// Sealed `meta.base_url` when sealed config loads and names one,
@@ -385,6 +417,7 @@ mod tests {
                 model: "muse-spark-1.3".to_string(),
                 input_tokens: 100,
                 output_tokens: 50,
+                proposed_ids: vec![11, 12],
             },
             200,
         );

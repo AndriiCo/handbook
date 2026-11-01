@@ -53,7 +53,7 @@
 				return;
 			}
 			me = await check.json();
-			window.location.href = resolve('/(admin)/console');
+			window.location.href = resolve('/(admin)/review');
 		} catch (err) {
 			if (err instanceof DOMException && err.name === 'NotAllowedError') {
 				error = CANCELLED_COPY;

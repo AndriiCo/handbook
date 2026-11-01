@@ -252,7 +252,44 @@ async function mockAdmin(page) {
 			}
 		})
 	);
+
+	// Trace Draft POST: record the CSRF double-submit pair (asserted in
+	// the trace scene) and hand back a run id for the live `run:{id}`
+	// socket below.
+	await page.route('**/apostille/api/v1/captures/*/draft', (route) => {
+		const headers = route.request().headers();
+		draftCsrf.header = headers['x-csrf'] ?? null;
+		draftCsrf.cookie = headers['cookie'] ?? '';
+		return route.fulfill({ status: 202, json: { run_id: 9, topic: 'run:9' } });
+	});
+
+	// Admin bus: `run:{id}` delivers one finished step and closes (the
+	// trace scene asserts the live numbers); `proposals` holds open so
+	// the review scene's live feed logs no console error.
+	await page.routeWebSocket('**/apostille/ws/bus*', (ws) => {
+		const topic = new URL(ws.url()).searchParams.get('topic') ?? '';
+		if (!topic.startsWith('run:')) return;
+		const runId = Number(topic.slice(4));
+		ws.send(
+			JSON.stringify({
+				type: 'run_finished',
+				topic,
+				run_id: runId,
+				capture_id: 3,
+				slug: 'vietnam',
+				proposed: 2,
+				rejected: 1,
+				model: 'muse-spark-1.3',
+				input_tokens: 100,
+				output_tokens: 50
+			})
+		);
+		ws.close();
+	});
 }
+
+// CSRF pair seen on the intercepted Draft POST (one admin take).
+const draftCsrf = { header: null, cookie: '' };
 
 test('demo admin pass approves a fact and opens trace', async () => {
 	test.setTimeout(120_000);
@@ -283,6 +320,19 @@ test('demo admin pass approves a fact and opens trace', async () => {
 		await caption(page, 'Every quote traced to its capture');
 		await expect(page.getByRole('heading', { name: 'Trace console' })).toBeVisible();
 		await expect(page.getByText('9f2c4a1b', { exact: false }).first()).toBeVisible();
+		// Live Draft: the POST must carry the `hb_csrf` cookie value in
+		// `x-csrf` (double-submit), and the `run:{id}` socket reports
+		// the finished numbers with no polling.
+		await page.evaluate(() => {
+			document.cookie = 'hb_csrf=demo-csrf-1; Path=/; SameSite=Lax';
+		});
+		await page.getByRole('button', { name: 'Draft from this capture' }).click();
+		await expect(page.getByText('Done — 2 proposed, 1 rejected')).toBeVisible({
+			timeout: 15_000
+		});
+		const csrfCookie = (/hb_csrf=([^;]+)/.exec(draftCsrf.cookie) ?? [])[1] ?? null;
+		expect(draftCsrf.header).toBe('demo-csrf-1');
+		expect(draftCsrf.header).toBe(csrfCookie);
 		await page.screenshot({ path: join(SHOTS, '..', 'gp5-trace-1440x900-light.png') });
 		await checkClean(page, problems, 'trace');
 

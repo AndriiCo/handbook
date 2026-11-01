@@ -48,9 +48,6 @@
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/triage')}>Triage</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/trace')}>Trace</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/review')}>Review</a>
-	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/console')}
-		>Call console</a
-	>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/calls')}>Voice calls</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/config')}>Config</a>
 	<a class="inline-flex min-h-11 items-center font-bold" href={resolve('/(admin)/workers')}>Workers</a>

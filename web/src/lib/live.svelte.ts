@@ -1,9 +1,14 @@
-// Live bus client for GP screens: one shared WebSocket per topic,
-// refcounted across subscribers. The bus takes one `?topic=` per
-// connection; anonymous callers may subscribe to `authority:{slug}`
-// only (server-enforced in ws_bus + auth::ws). Anything else needs a
-// session cookie, same-origin. No polling on GP screens.
-import { resolve } from '$app/paths';
+// Live bus client for GP screens and the admin console: one shared
+// WebSocket per topic, refcounted across subscribers. The bus takes
+// one `?topic=` per connection; anonymous callers may subscribe to
+// `authority:{slug}` only (server-enforced in ws_bus + auth::ws).
+// Anything else needs a session cookie, same-origin. No polling on
+// GP screens.
+//
+// The API mount is `/apostille` on BOTH hosts (public base IS
+// `/apostille`; the admin host serves its API under `/apostille`
+// too), so the socket always targets this host's `/apostille/ws/bus`
+// — never `$app/paths`, whose base is '' in the admin build.
 
 export type BusMessage = {
 	type?: string;
@@ -15,9 +20,8 @@ type Handler = (msg: BusMessage) => void;
 const sockets = new Map<string, { ws: WebSocket; handlers: Set<Handler> }>();
 
 function busUrl(topic: string): string {
-	const root = resolve('/(public)').replace(/\/$/, '');
 	const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-	return `${scheme}://${window.location.host}${root}/ws/bus?topic=${encodeURIComponent(topic)}`;
+	return `${scheme}://${window.location.host}/apostille/ws/bus?topic=${encodeURIComponent(topic)}`;
 }
 
 /**

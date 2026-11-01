@@ -132,8 +132,8 @@
 			<code>{grant.userId}</code>
 		</p>
 		<p>
-			<a href={setupMode ? resolve('/(admin)/config') : resolve('/(admin)/console')}>
-				Continue to the {setupMode ? 'config' : 'dashboard'} →
+			<a href={setupMode ? resolve('/(admin)/config') : resolve('/(admin)/review')}>
+				Continue to the {setupMode ? 'config' : 'review queue'} →
 			</a>
 		</p>
 	</Notice>

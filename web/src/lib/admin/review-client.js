@@ -314,7 +314,7 @@ async function throwForStatus(res, what) {
 		throw new Error('Staff session missing or expired — log in on the admin host again.');
 	}
 	if (res.status === 403) {
-		throw new Error('Logged in, but the admin host refused the request — the browser must present your enrolled client certificate.');
+		throw new Error('Logged in, but the admin host refused the request — the client IP may be outside admin.allow_ips, or the session lacks the staff role.');
 	}
 	if (res.status === 404) throw new Error(`${what} not found (404).`);
 	if (res.status === 409) {

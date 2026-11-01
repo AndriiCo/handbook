@@ -263,10 +263,10 @@ test('review tells expired sessions apart from missing client certs', async () =
 	try {
 		// 401: no/invalid session — the fix is logging in again.
 		await assert.rejects(fetchQueue(base, { limit: 50 }), /log in on the admin host again/);
-		// 403 with a session: the TLS seam saw no known client cert.
+		// 403 with a session: IP allowlist, staff role, or CSRF said no.
 		await assert.rejects(
 			fetchQueueItem(base, 'cert'),
-			/client certificate/
+			/admin\.allow_ips/
 		);
 	} finally {
 		server.close();

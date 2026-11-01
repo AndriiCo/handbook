@@ -252,7 +252,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(certs, 1);
-        assert!(!auth::admin_cert_valid(&conn, "fp-1").unwrap());
+        assert!(!auth::admin_cert_valid(&conn, "fp-1", now).unwrap());
         // Step 2: sessions.
         assert_eq!(auth::revoke_user_sessions(&conn, "u-s").unwrap(), 1);
         assert!(auth::get_session(&conn, "sess-1").unwrap().is_none());

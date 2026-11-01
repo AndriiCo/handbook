@@ -2025,18 +2025,23 @@ mod tests {
             other => panic!("expected HTTP 403, got {other:?}"),
         }
 
-        // Same credential from an allowlisted dev Origin: hello.
-        let (mut staff, _) = ws_connect(
+        // Same credential from an allowlisted dev Origin: still 403
+        // (M-A: the public branch ignores the staff cookie, so the
+        // caller is anonymous and the staff topic is forbidden — the
+        // hello lives on the admin branch, covered below).
+        let denied = ws_connect(
             &addr,
             "call:0123456789abcdef0123456789abcdef",
             Some(format!("{}=staff-1", auth::ADM_COOKIE)),
             Some("http://localhost:3000"),
         )
-        .await
-        .unwrap();
-        let hello: serde_json::Value = serde_json::from_str(&next_text(&mut staff).await).unwrap();
-        assert_eq!(hello["topic"], "call:0123456789abcdef0123456789abcdef");
-        staff.close(None).await.unwrap();
+        .await;
+        match denied {
+            Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
+                assert_eq!(res.status(), 403);
+            }
+            other => panic!("expected HTTP 403, got {other:?}"),
+        }
 
         // Anonymous public read from a cross-site Origin: unaffected
         // (no cookies to ride — public data, by design).
@@ -3797,17 +3802,118 @@ mod tests {
             other => panic!("expected HTTP 403, got {other:?}"),
         }
 
-        // Staff call subscribe: hello.
-        let (mut staff, _) = ws_connect(
+        // Staff cookie on the public branch: 403 even for a live
+        // staff session (M-A — the admin branch below upgrades it).
+        let denied = ws_connect(
             &addr,
             "call:0123456789abcdef0123456789abcdef",
             Some(format!("{}=staff-1", auth::ADM_COOKIE)),
         )
-        .await
-        .unwrap();
-        let hello: serde_json::Value = serde_json::from_str(&next_text(&mut staff).await).unwrap();
-        assert_eq!(hello["topic"], "call:0123456789abcdef0123456789abcdef");
-        staff.close(None).await.unwrap();
+        .await;
+        match denied {
+            Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
+                assert_eq!(res.status(), 403);
+            }
+            other => panic!("expected HTTP 403, got {other:?}"),
+        }
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn ws_admin_branch_upgrades_staff_topics() {
+        // M-A: staff topics (`proposals`, `run:{id}`) upgrade on the
+        // admin router with the staff cookie, and stay closed without
+        // one. Served on an ephemeral port like the public-branch
+        // tests above (loopback peer passes the fixture allowlist;
+        // the Host guard admits loopback in `admin_mtls_off` dev).
+        use futures_util::StreamExt as _;
+
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(
+            axum_server::from_tcp(listener).serve(
+                crate::admin::router(fx.state.clone())
+                    .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            ),
+        );
+
+        async fn ws_connect(
+            addr: &std::net::SocketAddr,
+            topic: &str,
+            cookie: Option<String>,
+        ) -> Result<
+            (
+                tokio_tungstenite::WebSocketStream<
+                    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                >,
+                tokio_tungstenite::tungstenite::handshake::client::Response,
+            ),
+            tokio_tungstenite::tungstenite::Error,
+        > {
+            let uri: axum::http::Uri = format!("ws://{addr}/apostille/ws/bus?topic={topic}")
+                .parse()
+                .unwrap();
+            let mut builder = tokio_tungstenite::tungstenite::ClientRequestBuilder::new(uri);
+            if let Some(cookie) = cookie {
+                builder = builder.with_header("cookie", cookie);
+            }
+            tokio_tungstenite::connect_async(builder).await
+        }
+
+        async fn next_text(
+            ws: &mut tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+        ) -> String {
+            tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+                .await
+                .expect("ws message within 5s")
+                .expect("stream open")
+                .expect("message ok")
+                .into_text()
+                .expect("text frame")
+                .to_string()
+        }
+
+        let staff_cookie = || Some(format!("{}=staff-1", auth::ADM_COOKIE));
+
+        // `proposals` with the staff cookie: hello + live fan-out.
+        let (mut proposals, _) = ws_connect(&addr, "proposals", staff_cookie())
+            .await
+            .unwrap();
+        let hello: serde_json::Value =
+            serde_json::from_str(&next_text(&mut proposals).await).unwrap();
+        assert_eq!(hello["type"], "subscribed");
+        assert_eq!(hello["topic"], "proposals");
+        fx.state.bus.publish(
+            "proposals",
+            r#"{"type":"proposal.created","topic":"proposals","fact_id":7}"#.to_string(),
+        );
+        let event = next_text(&mut proposals).await;
+        assert!(event.contains("proposal.created"), "got: {event}");
+        proposals.close(None).await.unwrap();
+
+        // `run:{id}` with the staff cookie: hello.
+        let (mut run, _) = ws_connect(&addr, "run:9", staff_cookie()).await.unwrap();
+        let hello: serde_json::Value = serde_json::from_str(&next_text(&mut run).await).unwrap();
+        assert_eq!(hello["topic"], "run:9");
+        run.close(None).await.unwrap();
+
+        // Same staff topics with no cookie: 403, no upgrade.
+        for topic in ["proposals", "run:9"] {
+            let denied = ws_connect(&addr, topic, None).await;
+            match denied {
+                Err(tokio_tungstenite::tungstenite::Error::Http(res)) => {
+                    assert_eq!(res.status(), 403, "topic: {topic}");
+                }
+                other => panic!("expected HTTP 403, got {other:?}"),
+            }
+        }
 
         server.abort();
     }

@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
+	import { csrfHeaders } from '../../../lib/admin/config-client.js';
+	import { subscribe } from '../../../lib/live.svelte.js';
 
 	// Trace console: every watched page's capture sha256 + short text,
 	// newest first. Batches of 25 through before_id paging — never one
@@ -44,33 +46,78 @@
 	}
 
 	// Live draft runs by capture id. The server streams steps to
-	// `run:{id}` on the bus; this console polls the run state (the
-	// admin listener serves no WS route).
+	// `run:{id}` on the admin bus; this console subscribes — no polling.
 	let drafts = $state<Record<number, DraftRun | { status: 'starting' }>>({});
 
-	async function pollDraft(captureId: number, runId: number) {
-		for (let i = 0; i < 120; i++) {
-			await new Promise((r) => setTimeout(r, 1000));
-			const res = await fetch(api(`/draft-runs/${runId}`));
-			if (!res.ok) {
+	// One `run:{id}` subscription per started draft (unsubscribed on
+	// terminal steps, on timeout, and when the page goes away).
+	const runSubs = new Map<number, () => void>();
+	const runTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+	function clearRunWatch(captureId: number) {
+		runSubs.get(captureId)?.();
+		runSubs.delete(captureId);
+		const timer = runTimers.get(captureId);
+		if (timer !== undefined) clearTimeout(timer);
+		runTimers.delete(captureId);
+	}
+
+	function failRun(captureId: number, runId: number, error: string) {
+		drafts[captureId] = {
+			status: 'failed',
+			id: runId,
+			capture_id: captureId,
+			slug: '',
+			proposed: 0,
+			rejected: 0,
+			model: '',
+			input_tokens: 0,
+			output_tokens: 0,
+			error
+		};
+		clearRunWatch(captureId);
+	}
+
+	function watchRun(captureId: number, runId: number) {
+		clearRunWatch(captureId);
+		const unsub = subscribe(`run:${runId}`, (msg) => {
+			if (msg?.run_id !== runId) return;
+			if (msg?.type === 'run_finished') {
 				drafts[captureId] = {
-					status: 'failed',
+					status: 'finished',
 					id: runId,
 					capture_id: captureId,
-					slug: '',
-					proposed: 0,
-					rejected: 0,
-					model: '',
-					input_tokens: 0,
-					output_tokens: 0,
-					error: `run state -> ${res.status}`
+					slug: typeof msg?.slug === 'string' ? msg.slug : '',
+					proposed: typeof msg?.proposed === 'number' ? msg.proposed : 0,
+					rejected: typeof msg?.rejected === 'number' ? msg.rejected : 0,
+					model: typeof msg?.model === 'string' ? msg.model : '',
+					input_tokens: typeof msg?.input_tokens === 'number' ? msg.input_tokens : 0,
+					output_tokens: typeof msg?.output_tokens === 'number' ? msg.output_tokens : 0,
+					error: ''
 				};
-				return;
+				clearRunWatch(captureId);
+			} else if (msg?.type === 'run_failed') {
+				failRun(
+					captureId,
+					runId,
+					typeof msg?.error === 'string' && msg.error ? msg.error : 'draft run failed'
+				);
 			}
-			const run = (await res.json()) as DraftRun;
-			drafts[captureId] = run;
-			if (run.status === 'finished' || run.status === 'failed') return;
-		}
+		});
+		runSubs.set(captureId, unsub);
+		// A run that never reports back must not spin the button
+		// forever: fail it after two minutes (the old poll budget).
+		runTimers.set(
+			captureId,
+			setTimeout(() => {
+				const current = drafts[captureId];
+				if (current && (current.status === 'starting' || current.status === 'running')) {
+					failRun(captureId, runId, 'run timed out waiting for live steps');
+				} else {
+					clearRunWatch(captureId);
+				}
+			}, 120_000)
+		);
 	}
 
 	async function draftCapture(captureId: number) {
@@ -78,12 +125,17 @@
 		if (prior && prior.status !== 'failed') return;
 		drafts[captureId] = { status: 'starting' };
 		try {
-			const res = await fetch(api(`/captures/${captureId}/draft`), { method: 'POST' });
+			// Double-submit CSRF: the admin csrf_guard 403s mutations
+			// without the `hb_csrf` cookie echoed in `x-csrf`.
+			const res = await fetch(api(`/captures/${captureId}/draft`), {
+				method: 'POST',
+				headers: { ...csrfHeaders() }
+			});
 			if (!res.ok) throw new Error(`draft -> ${res.status}`);
 			const body = await res.json();
 			const runId = Number(body?.run_id);
 			if (!Number.isInteger(runId) || runId <= 0) throw new Error('bad run id');
-			await pollDraft(captureId, runId);
+			watchRun(captureId, runId);
 		} catch (e) {
 			drafts[captureId] = {
 				status: 'failed',
@@ -172,7 +224,12 @@
 		}
 	}
 
-	onMount(reload);
+	onMount(() => {
+		reload();
+		return () => {
+			for (const captureId of [...runSubs.keys()]) clearRunWatch(captureId);
+		};
+	});
 </script>
 
 <svelte:head>

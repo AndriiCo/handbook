@@ -7,6 +7,7 @@
 		acceptFact,
 		createRule,
 		fetchQueue,
+		fetchQueueItem,
 		fetchRules,
 		fetchSuppressions,
 		rejectBody,
@@ -14,6 +15,7 @@
 		revokeRule,
 		ruleBody
 	} from '../../../lib/admin/review-client.js';
+	import { subscribe } from '../../../lib/live.svelte.js';
 
 	interface QueueItem {
 		id: number;
@@ -234,6 +236,25 @@
 		}
 	}
 
+	// Staff `proposals` feed: a draft run or voice quote that inserts
+	// proposals publishes `proposal.created` per fact — insert the card
+	// live (deduped by id) instead of waiting for the next refresh.
+	async function onProposal(msg: { type?: unknown; fact_id?: unknown }) {
+		if (msg?.type !== 'proposal.created') return;
+		const id = msg?.fact_id;
+		if (typeof id !== 'number') return;
+		if (decided[id] || items.some((item) => item.id === id)) return;
+		try {
+			const item = await fetchQueueItem(api(), id);
+			cardUi(item.id);
+			items = [item, ...items];
+			queueCount += 1;
+			refreshNote = `New proposal #${item.id} arrived live.`;
+		} catch {
+			// The next queue refresh picks it up; never break the feed.
+		}
+	}
+
 	onMount(() => {
 		const params = new URLSearchParams(location.search);
 		authority = params.get('authority') ?? '';
@@ -243,16 +264,25 @@
 		void loadQueue();
 		void loadRules();
 		void loadSuppressions();
+		const unsub = subscribe('proposals', (msg) => {
+			void onProposal(msg);
+		});
+		return () => unsub();
 	});
 
 	async function accept(id: number) {
 		const card = cardUi(id);
+		if (decided[id] || card.acting) return;
 		card.acting = true;
 		card.error = null;
+		// Optimistic: the card reads decided the moment staff clicks;
+		// a failed POST rolls it back below.
+		decided[id] = 'accepted';
 		try {
 			const out = await acceptFact(api(), id, acceptBody(undefined, undefined) ?? {});
 			decided[id] = out.status;
 		} catch (err) {
+			delete decided[id];
 			const message = err instanceof Error ? err.message : 'Accept failed.';
 			if (/409|not proposed/.test(message)) {
 				refreshNote = `Fact #${id}: already decided — refreshing.`;
