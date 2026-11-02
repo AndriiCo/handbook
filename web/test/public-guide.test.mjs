@@ -147,7 +147,7 @@ test('markQuote keeps source line breaks as breaks', () => {
 	assert.ok(!html.includes('\n'));
 });
 
-test('markQuote marks the exact value span for all 26 gold cases', () => {
+test('markQuote marks the exact value span for all 30 gold cases', () => {
 	const dir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'evals', 'authorities');
 	const files = readdirSync(dir)
 		.filter((f) => f.endsWith('.json'))
@@ -173,9 +173,9 @@ test('markQuote marks the exact value span for all 26 gold cases', () => {
 			else missed.push(`${f} ${c.id} [${c.value}]`);
 		}
 	}
-	assert.equal(total, 26);
+	assert.equal(total, 30);
 	assert.deepEqual(missed, []);
-	assert.equal(marked, 26);
+	assert.equal(marked, 30);
 });
 
 test('markQuote keeps digits and $/:/- in the span', () => {

@@ -32,7 +32,7 @@ Live: drafts and eval run against the Meta API; approvals are staff
 decisions in /review (deterministic quote checks only — no model call).
 The public precheck endpoint serves recorded verdict JSONs verbatim —
 zero marginal model cost, no key on the serving path. Replays and fixtures:
-`evals/authorities/` (26-case gold set), `web/e2e/fixtures/`, crate unit
+`evals/authorities/` (30-case gold set), `web/e2e/fixtures/`, crate unit
 tests.
 
 ## Eval numbers (2026-11-01, production, live key)
@@ -46,20 +46,23 @@ Model muse-spark-1.3, written to the live store, shown on the home page:
 | `topic_accuracy` | Share of records filed under the correct frozen topic | 0.641 |
 
 Planted faults (`cargo xtask eval --planted`; deterministic, no
-model): **157/158 caught** after the verifier gates (105/158
-before). Per class over the 26 gold cases: value swap 26/26, span
-moved 26/26, digit change 26/26, empty value 26/26 (before 0/26),
-truncated value 26/26 (before 0/26), dropped "not"/"only" 1/2,
-wrong topic 26/26. The one miss is `dropped_negation:vn-04`:
+model; re-measured 2026-11-02 on the 30-case set): **181/182
+caught** after the verifier gates (121/182 before). Per class over
+the 30 gold cases: value swap 30/30, span moved 30/30, digit change
+30/30, empty value 30/30 (before 0/30), truncated value 30/30
+(before 0/30), dropped "not"/"only" 1/2, wrong topic 30/30. The one
+miss is `dropped_negation:vn-04`:
 dropping trailing "only" from "8 Le Van Huu, Hanoi, mornings
 only" leaves a string still contained in the quote, so no
 substring gate can see it — that edit needs a human (or a judge
 model) to catch.
 
-Honest note: the gold set is 26 synthetic passages in
+Honest note: the gold set is 30 synthetic passages in
 `evals/authorities/`, not live government pages — it grades the
 drafter in isolation, before the quote-checker and human review add
-their own gates. `topic_accuracy` understates by construction: each
+their own gates. The live-model rates above were measured 2026-11-01
+on the then-26 English-only cases; four Spanish/French cases landed
+2026-11-02 and live rates on the full set are not yet re-measured. `topic_accuracy` understates by construction: each
 gold case carries one topic, but every case drafts several records
 (two from the stub, up to eight live), so at most one record per
 case can match — the other drafted records count as misses even
@@ -101,7 +104,7 @@ samples, and there is no real mail, fees, or carrier charges anywhere.
 
 The live order timeline, the form PDF, and the carrier label are roadmap.
 More authorities load as their packs verify; the eval gold set grows past
-the first 26 synthetic passages.
+the first 30 synthetic passages.
 
 ## How we built it with Muse Code
 
