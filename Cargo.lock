@@ -1702,11 +1702,15 @@ name = "ingest"
 version = "0.1.0"
 dependencies = [
  "contracts",
+ "data-encoding",
+ "flate2",
  "handbook-store",
  "rusqlite",
  "rustls",
+ "sha1",
  "tempfile",
  "ureq",
+ "webpki-roots",
 ]
 
 [[package]]
