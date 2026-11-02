@@ -1,11 +1,15 @@
-# Operator — Monday 2026-11-02 (Pacific; updated ~03:00 PST)
+# Operator — Monday 2026-11-02 (Pacific; updated ~04:10 PST)
 
 MISSION "SUBMIT" runs (`docs/ops/push-plan.md`): S0.1 DONE —
-production runs `0.1.0+eb57cdc` (deployed 2026-11-02 ~10:50Z:
-stamp + staging 9/10 + demo 3/3 on `eb57cdc`, ship rails green,
-`ops-deploy.sh --skip-accept`, no `--allow-today-overlap` — the
-8 h window had cleared; prod-before → prod-after identical 5/10,
-no regression; previous release `3836bfb` kept for rollback).
+production runs `0.1.0+eb57cdc` (5/10 steady, re-checked just
+now; previous release `3836bfb` kept for rollback). Wave-1 merges
+are all on main (SA-D, SA-19 + wiring, SA-20 + wiring, SA-16,
+SA-6 code, gold set 30) and Run 17 stamped + staging-green on
+`6e16ded` (plant `ci_green`, scoreboard 9/10 with only S1 red,
+live demo 3/3). Say "deploy now" and the builder ships `6e16ded`
+(second Monday deploy, `--allow-today-overlap`; ready by 22:00
+PST, never after Mon 23:59 PST). SA-14 parked: max 1 capture per
+source on prod and staging, precondition needs ≥2.
 Scoreboard **5/10** (P0, GP1, GP4, A2, A5 pass). First red:
 GP2-data (vietnam 0/8, usa-wa-sos 1/8 accepted — flips with your
 approvals below, no code needed). This deploy ships your
@@ -97,7 +101,9 @@ group-read pre-step from this morning is done — A2 reads prove it.
    staging is mktemp now; same stale-dir bug fixed there too), then
    `bash ~/apostille/scripts/ops-a5-eval.sh` (evals path + mktemp +
    store-writability preflight). Paste back: the proposals counts,
-   the quality.json lines. Flips A5; proposals feed item 2.
+   the quality.json lines. Flips A5; proposals feed item 2. A5 window:
+   re-run Monday evening whether or not Monday's deploy happens
+   (current 72 h window expires Tue 20:29 PST), and again Wed morning.
 4. S1 (MISSION SUBMIT decision: LICENSE stays proprietary — do
    not change it): make the repo public, link the demo video in
    README (video lands 11-03). Video: record the production admin
