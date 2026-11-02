@@ -957,25 +957,6 @@ fn run_model_gate() {
     eprintln!("model-gate: clean ({scanned} file(s))");
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn model_gate_flags_banned_ids_and_passes_meta_ones() {
-        // Build banned strings at runtime: literals here would trip
-        // the gate on its own source.
-        let model = ["Qw", "en2.5-VL"].concat();
-        let host = ["api.openai", ".com"].concat();
-        let src = format!("let m = \"muse-spark-1.3\";\nlet q = \"{model}\";\ncall {host}/v1\n");
-        let hits = model_gate_hits("crates/x.rs", src.as_bytes());
-        assert_eq!(hits.len(), 2, "got: {hits:?}");
-        assert!(hits[0].ends_with(MODEL_NEEDLES[0]), "got: {}", hits[0]);
-        assert!(hits[1].contains(MODEL_NEEDLES[8]), "got: {}", hits[1]);
-        assert!(model_gate_hits("crates/y.rs", b"muse-voice-transcribe-1.0\nsam-3.1\n").is_empty());
-    }
-}
-
 /// Validate every `*.json` pack in `--packs <dir>` (default: `packs`).
 /// Exit 1 lists every violation; exit 0 prints the clean count.
 fn run_packs_validate(args: &[String]) {
@@ -1108,5 +1089,24 @@ fn run_audit() {
             eprintln!("audit: cargo-audit not installed ({e}); run `cargo install cargo-audit`");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_gate_flags_banned_ids_and_passes_meta_ones() {
+        // Build banned strings at runtime: literals here would trip
+        // the gate on its own source.
+        let model = ["Qw", "en2.5-VL"].concat();
+        let host = ["api.openai", ".com"].concat();
+        let src = format!("let m = \"muse-spark-1.3\";\nlet q = \"{model}\";\ncall {host}/v1\n");
+        let hits = model_gate_hits("crates/x.rs", src.as_bytes());
+        assert_eq!(hits.len(), 2, "got: {hits:?}");
+        assert!(hits[0].ends_with(MODEL_NEEDLES[0]), "got: {}", hits[0]);
+        assert!(hits[1].contains(MODEL_NEEDLES[8]), "got: {}", hits[1]);
+        assert!(model_gate_hits("crates/y.rs", b"muse-voice-transcribe-1.0\nsam-3.1\n").is_empty());
     }
 }
