@@ -18,6 +18,16 @@ fallback shape: undocumented endpoints stay unsent).
 
 Usage:
   META_API_KEY=... python3 a2-record.py --png-dir web/static/demo --out-dir /tmp/a2-out
+
+Open-weights SAM backend (plant RTX 3060; Muse Spark still judges)::
+
+  META_API_KEY=... python3 a2-record.py --png-dir web/static/demo --out-dir /tmp/a2-out \\
+      --sam-backend open-weights --mask "faces,license plates"
+
+The open-weights path shells out to ops/open-weights/sam3_boxes.py once
+per sample (model loads once per call); --mask blackens the detected
+face / license-plate boxes via that script before Spark ever sees the
+pixels. --mask needs --sam-backend open-weights.
 """
 
 import argparse
@@ -30,6 +40,7 @@ import time
 import urllib.request
 
 SAM_MODEL = "sam-3.1"
+SAM3_OPEN_MODEL = "facebook/sam3"
 SPARK_MODEL = "muse-spark-1.3"
 # One bare noun phrase per request. Commands ("locate ..."), questions,
 # and comma/and lists return zero matches (sam/segmenting), so each
@@ -293,14 +304,85 @@ def spark_verdict(base, key, sample_id, label, boxes, image_b64):
     return verdict, usage, secs
 
 
-def main():
+def default_sam3_script():
+    """ops/open-weights/sam3_boxes.py next to the repo root (this file
+    lives in xtask/ops/). Explicit --sam3-script wins."""
+    import pathlib
+    return str(pathlib.Path(__file__).resolve().parent.parent.parent
+               / "ops" / "open-weights" / "sam3_boxes.py")
+
+
+def check_mask_backend(backend, mask):
+    """--mask needs local boxes; the hosted path cannot blacken."""
+    if mask and backend != "open-weights":
+        raise ValueError("--mask needs --sam-backend open-weights "
+                         "(masking runs inside sam3_boxes.py)")
+
+
+def sam_boxes_via_script(script, image_path, prompts, mask, workdir):
+    """One sam3_boxes.py call per sample: boxes + optional masked PNG.
+
+    Returns (boxes, seconds, counts, masked_png_path_or_None). The JSON
+    array on --out carries the hosted box record shape, so downstream
+    code treats both backends identically.
+    """
+    import pathlib
+    import subprocess
+
+    workdir = pathlib.Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    boxes_path = workdir / (pathlib.Path(image_path).stem + ".boxes.json")
+    cmd = [sys.executable, script, "--image", str(image_path),
+           "--out", str(boxes_path)]
+    for prompt in prompts:
+        cmd += ["--prompt", prompt]
+    masked_path = None
+    if mask:
+        masked_path = workdir / (pathlib.Path(image_path).stem + ".masked.png")
+        cmd += ["--mask", mask, "--masked-out", str(masked_path)]
+    started = time.monotonic()
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    secs = time.monotonic() - started
+    if proc.returncode != 0:
+        raise RuntimeError(f"sam3_boxes.py failed ({proc.returncode}): "
+                           f"{proc.stderr[-2000:]}")
+    try:
+        boxes = json.loads(boxes_path.read_text())
+        assert isinstance(boxes, list)
+    except (ValueError, AssertionError) as e:
+        raise RuntimeError(f"sam3_boxes.py wrote no boxes array: {e}")
+    counts = {}
+    for box in boxes:
+        counts[box.get("label", "?")] = counts.get(box.get("label", "?"), 0) + 1
+    return boxes, secs, counts, str(masked_path) if mask else None
+
+
+def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("--png-dir", required=True)
     ap.add_argument("--out-dir", required=True)
     # Same canonical base as every Rust client
     # (`https://api.meta.ai/v1`); paths below carry no version prefix.
     ap.add_argument("--base", default="https://api.meta.ai/v1")
-    args = ap.parse_args()
+    ap.add_argument("--sam-backend", default="hosted",
+                    choices=["hosted", "open-weights"],
+                    help="hosted: SAM 3.1 over the Model API; "
+                         "open-weights: local facebook/sam3 via sam3_boxes.py")
+    ap.add_argument("--sam3-script", default=None,
+                    help="sam3_boxes.py path (default: ops/open-weights/sam3_boxes.py)")
+    ap.add_argument("--mask", default="",
+                    help='blacken targets before judging, e.g. "faces,license plates" '
+                         "(needs --sam-backend open-weights)")
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
+    try:
+        check_mask_backend(args.sam_backend, args.mask)
+    except ValueError as e:
+        print(f"ABORT: {e}", file=sys.stderr)
+        return 2
 
     import os
     key = os.environ.get("META_API_KEY", "")
@@ -315,6 +397,19 @@ def main():
         return 1
     out = pathlib.Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    use_open = args.sam_backend == "open-weights"
+    sam_id = SAM3_OPEN_MODEL if use_open else SAM_MODEL
+    script = args.sam3_script or default_sam3_script()
+    if use_open:
+        import pathlib as _pl
+        if not _pl.Path(script).is_file():
+            print(f"ABORT: sam3_boxes.py not found at {script} (--sam3-script to override)",
+                  file=sys.stderr)
+            return 1
+        print(f"sam backend: open-weights ({SAM3_OPEN_MODEL} via {script})", flush=True)
+    scratch = out / ".sam3-scratch"
+    if use_open:
+        scratch.mkdir(parents=True, exist_ok=True)
 
     total_in, total_out = 0, 0
     for png in pngs:
@@ -322,7 +417,17 @@ def main():
         print(f"== {sample}", flush=True)
         png_size(png)
         image_b64 = base64.b64encode(png.read_bytes()).decode()
-        boxes, sam_secs, counts = sam_boxes(args.base, key, image_b64)
+        masked_labels = []
+        if use_open:
+            boxes, sam_secs, counts, masked_png = sam_boxes_via_script(
+                script, png, SAM_PROMPTS, args.mask, scratch)
+            if masked_png:
+                image_b64 = base64.b64encode(pathlib.Path(masked_png).read_bytes()).decode()
+                for label in ("face", "license plate"):
+                    if counts.get(label, 0):
+                        masked_labels.append(label)
+        else:
+            boxes, sam_secs, counts = sam_boxes(args.base, key, image_b64)
         print(f"  sam: {len(boxes)} box(es) {counts} in {sam_secs:.1f}s", flush=True)
         if sample == "syn-doc-clean" and not boxes:
             print("ABORT: SAM returned 0 boxes on the clean sample "
@@ -340,11 +445,13 @@ def main():
             "verdict": verdict["verdict"],
             "issues": [str(i) for i in verdict["issues"]][:8],
             "boxes": boxes,
-            "models": [SAM_MODEL, SPARK_MODEL],
-            "seconds": {SAM_MODEL: round(sam_secs, 1), SPARK_MODEL: round(spark_secs, 1)},
+            "models": [sam_id, SPARK_MODEL],
+            "seconds": {sam_id: round(sam_secs, 1), SPARK_MODEL: round(spark_secs, 1)},
             "usage": {"prompt_tokens": prompt_tokens,
                       "completion_tokens": completion_tokens},
             "sam_counts": counts,
+            "sam_backend": args.sam_backend,
+            "masked": masked_labels,
             "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         dest = out / f"{sample}.json"

@@ -20,6 +20,7 @@ fails the build otherwise). Organizer rule, enforced in code.
 |---|---|---|
 | `muse-spark-1.3` | Meta Model API (`https://api.meta.ai/v1`) | Drafts every proposed fact from fetched captures (quote-checked, refused quotes retried); judges photo-precheck verdicts |
 | `sam-3.1` | Meta Model API (`https://api.meta.ai/v1`) | Locates document marks in precheck photos via the Responses API (`<\|box;…\|>` tokens become the overlay boxes); the public endpoint serves recorded verdicts |
+| `facebook/sam3` | plant RTX 3060, home venv (`ops/open-weights/sam3_boxes.py`) | Open-weights SAM 3 drop-in for the A2 recorder (`--sam-backend open-weights`, optional `--mask faces,license plates`); emits the same box shape as the hosted call, Muse Spark still judges; weights gated behind the Meta licence, never committed |
 | `muse-voice-transcribe-1.0` | Meta Model API (`https://api.meta.ai/v1`) | Transcribes call recordings after hangup (multipart `request` JSON + `audio` WAV); without the data-handling terms read, calls stay untranscribed |
 
 The eval gold set is graded by deterministic checks (quote found,
