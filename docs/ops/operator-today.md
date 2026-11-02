@@ -1,49 +1,34 @@
 # Operator — Monday 2026-11-02 (Pacific; updated ~04:10 PST)
 
-MISSION "SUBMIT" runs (`docs/ops/push-plan.md`): S0.1 DONE —
-production runs `0.1.0+eb57cdc` (5/10 steady, re-checked just
-now; previous release `3836bfb` kept for rollback). Wave-1 merges
-are all on main (SA-D, SA-19 + wiring, SA-20 + wiring, SA-16,
-SA-6 code, gold set 30) and Run 18 stamped + staging-green on
-`2b4bc8d` (plant `ci_green`, scoreboard 9/10 with only S1 red,
-live demo 3/3; adds P298 login padding). P301 (`7eaf0df`, xtask-only) fixes the RO-2 judge dry run:
-`cargo xtask up --check` passes on a clean clone (bootstrap
-authorities for the pack-less `france-legalisation`/`mexico-sre`
-gold slugs); plant stamp `acceptance/7eaf0df863c8.json`
-(`ci_green: true`, run `20261102-123912-7eaf0df`, 12:45Z).
-Only `xtask/src/up.rs` changed since `2b4bc8d`, so the production
-binary + SPAs are identical — `2b4bc8d` stays the deploy candidate.
-Say "deploy now" and the
-builder ships `2b4bc8d` (second Monday deploy,
-`--allow-today-overlap`; ready by 22:00 PST, never after Mon
-23:59 PST). SA-14 parked: max 1 capture per source on prod and
-staging, precondition needs ≥2.
-Scoreboard **5/10** (P0, GP1, GP4, A2, A5 pass). First red:
+DEPLOYED 09:23 PST on your "deploy now": production runs
+`0.1.0+2b4bc8d` (previous `eb57cdc` kept for rollback; flags
+`--skip-accept --allow-today-overlap` announced per §7).
+Prod-after **5/10**, zero regressions vs prod-before (P0, GP1,
+GP4, A2, A5 pass; every red row identical). First red still
 GP2-data (vietnam 0/8, usa-wa-sos 1/8 accepted — flips with your
 approvals below, no code needed). This deploy ships your
 P-ADMIN-IP fix: 403s name the IP, no admin UI without an
 allowlisted IP. If your browser 403s, the page itself tells you
 which IP (or IPv6 /64) to add — then restart is needed (the
 list reads once at boot).
+Wave-2 merged since: SA-18 egypt-chain, SA-17 north-america-106
+(106/106 authorities), SA-21 walk-in reports + wiring (P305);
+P304 closed the release-train gap (no day gate, /healthz settle
+poll). New candidate builds on plant now (P304 run
+`20261102-172509-8cafecc`, P305 run `20261102-172905-bde970e`).
+SA-14 parked: max 1 capture per source on prod and staging,
+precondition needs ≥2.
 
-Your lines that flip production rows now (all code is already live):
-1. Approve the proposed facts for vietnam + usa-wa-sos in `/review`
-   (flips GP2-data, A1, GP2-page — the code fixes for those rows
-   shipped in this deploy).
-2. Drop brand SVGs into `web/src/lib/assets/brand/` (GP3 now fails
-   only on "google/apple button has no logo"; the fold fix shipped).
-3. S1: LICENSE text (recommendation: MIT — see below), public repo
-   visibility, demo video link (replace the README line yourself on
+Your top lines now (details in Still-open below):
+1. Approvals in `/review` (≥8 per slug, keep 2 per slug for the
+   video) — flips GP2-data, A1, GP2-page.
+2. Viet Nam proposals + A5: `ops-gp2-proposals.sh`, then
+   `ops-a5-eval.sh` Monday evening — the 72 h window expires
+   **Tue 20:29 PST** — and again Wed morning.
+3. S1: LICENSE stays proprietary (no change); repo public,
+   demo video link (replace the README line yourself on
    2026-11-03; builder must never upload it).
-4. Prod `META_API_KEY` is already working (A2 live, 48 ms).
-
-License recommendation (builder input, your call): take MIT. Both are
-permissive and judge-familiar, but Apache-2.0's extra weight is its
-patent grant + retaliation clause, which only matters if you expect
-contributors holding relevant patents — unlikely for an apostille
-handbook, and no such contributions exist. MIT is shorter, unambiguous
-for reuse of the demo code, and the hackathon default. Do not switch
-without saying so; the builder changes nothing here.
+4. Prod `META_API_KEY` is already working (A2 live, 38 ms).
 
 Disk fixed 2026-11-01 ~04:05Z (operator cleaned plant `/home`, now 8%):
 plant pipeline keeps newest 3 runs + artifacts + logs per job
@@ -112,12 +97,12 @@ group-read pre-step from this morning is done — A2 reads prove it.
    the quality.json lines. Flips A5; proposals feed item 2. A5 window:
    re-run Monday evening whether or not Monday's deploy happens
    (current 72 h window expires Tue 20:29 PST), and again Wed morning.
-4. S1 (MISSION SUBMIT decision: LICENSE stays proprietary — do
-   not change it): make the repo public, link the demo video in
-   README (video lands 11-03). Video: record the production admin
-   approve scene yourself (session login from your allowlisted IP,
-   no cert; builder takes desktop/mobile), upload to YouTube,
-   paste the URL back.
+4. S1 (LICENSE stays proprietary — do not change it): make
+   the repo public, link the demo video in README (video lands
+   11-03). Video: record the production admin approve scene
+   yourself (session login from your allowlisted IP, no cert;
+   builder takes desktop/mobile), upload to YouTube, paste the
+   URL back.
    Full-history secret scan 11-01 ~16:20Z: clean (gitleaks 8.30.1,
    385 commits, no leaks; working-tree `secrets-scan` clean, 690 files).
    Scrub list: `docs/ops/scrub-list-2026-11-01.md` — 2 prompt files need
@@ -131,6 +116,17 @@ group-read pre-step from this morning is done — A2 reads prove it.
    then redeploy — the login page renders text-only buttons until
    they land.
 6. ~~Plant disk — fixed, see top.~~ Done.
+7. SA-6 weights (after the code ships): accept the HuggingFace
+   licence for `facebook/sam3` on the account whose token is on
+   plant, then paste back "HF ok" — unblocks `ops-a2-record.sh`
+   with SAM 3 and the 3 synthetic recordings for production.
+8. FedEx live (after the wave-2 deploy, in admin `/config` —
+   no script, your keys): set `labels.fedex_client_id`,
+   `labels.fedex_client_secret`, `labels.fedex_account`, the ZIP
+   allowlist (`labels.ship_to_allow`), then `labels.live=true`;
+   buy one real overnight label pair to your address (void if
+   unused). Caps are already in code (2/day, $60). Paste back
+   the label IDs or the void confirmation.
 
 ## Queued (not today)
 
