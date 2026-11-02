@@ -99,7 +99,10 @@ group-read pre-step from this morning is done — A2 reads prove it.
    Error guide: "session missing or expired" means
    log in again; `admin access is limited to the configured IP
    range` names your detected IP — add it to `admin.allow_ips`
-   (item 1) and retry.
+   (item 1) and retry. A refused browser tab shows a plain 403
+   page (no login form) naming the IP, its family (IPv4/IPv6) and
+   the transport (tcp/quic): for IPv6 add the /64 it names, and
+   restart — the list reads once at boot.
 3. One root step, then two hal runs (all staged, paste back each
    output). (a) As root: `bash ~/apostille/scripts/ops-rootless-access.sh`
    — re-run applies the group-write on `/var/lib/apostille` the first

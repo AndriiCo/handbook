@@ -48,7 +48,7 @@ export const STEPS = [
 			{ key: 'paths.acme_challenge_dir', type: 'text', label: 'ACME challenge dir', hint: 'Required on prod: the compiled default is a repo-relative dev path. Must be writable by the service user.', placeholder: '/srv/apostille/current/acme' },
 			{ key: 'tls.cert_file', type: 'text', label: 'TLS cert file', hint: 'Required on prod (no compiled default). The ACME manager writes the issued cert here.', placeholder: '/var/lib/apostille/tls/cert.pem' },
 			{ key: 'tls.key_file', type: 'text', label: 'TLS key file', hint: 'Required on prod (no compiled default). Never leaves the server.', placeholder: '/var/lib/apostille/tls/key.pem' },
-			{ key: 'tls.client_ca_file', type: 'text', label: 'Client CA file', hint: 'Required on prod (no compiled default). Verifies staff mTLS certs.', placeholder: '/var/lib/apostille/admin-certs/ca.pem' }
+			{ key: 'tls.client_ca_file', type: 'text', label: 'Client CA file', hint: 'Retired: client certs are neither requested nor checked. Leave unset; a set key only warns.', placeholder: '' }
 		],
 		guide: {
 			intro: 'No consoles to visit — but do not trust the compiled defaults: they are loopback/dev (127.0.0.1, repo paths, no TLS). A public server sets every field in this step except the deprecated ports. Values apply at boot — restart to reload.',
@@ -90,14 +90,14 @@ export const STEPS = [
 			{ key: 'auth.rp_id', type: 'text', label: 'RP ID', hint: 'Required. The effective domain of the admin host (no scheme, no port).', placeholder: 'admin.andrii.ai' },
 			{ key: 'auth.rp_name', type: 'text', label: 'RP name', hint: 'Required. Human name shown by authenticators during ceremonies.', placeholder: 'Apostille Handbook (staff)' },
 			{ key: 'auth.origin', type: 'text', label: 'Origin', hint: 'Required. Staff WebAuthn origin ONLY (exact admin origin over TLS) — public links use net.public_host.', placeholder: 'https://admin.andrii.ai' },
-			{ key: 'admin.mtls_off', type: 'bool', label: 'Disable staff mTLS', hint: 'Keep OFF (mTLS on). Break-glass only — enrol and sessions normally require certs.', placeholder: '' }
+			{ key: 'admin.mtls_off', type: 'bool', label: 'Disable staff mTLS', hint: 'Keep OFF on any public host. Break-glass for loopback dev only — it opens loopback admin hosts and a test header.', placeholder: '' }
 		],
 		guide: {
-			intro: 'Three strings, no console: they must describe the staff WebAuthn origin precisely (never the public host). The wizard cannot check them — a typo fails at enrolment.',
+			intro: 'Three strings, no console: they must describe the staff WebAuthn origin precisely (never the public host). The wizard cannot check them — a typo fails at enrolment. Staff access is also IP-gated: set admin.allow_ips (xtask config-set) to your address BEFORE opening /config from anywhere but loopback, then restart — a refused browser gets a 403 page naming its IP.',
 			steps: [
 				'Set the RP ID to the admin host bare domain and the origin to its full https URL (trailing slash never).',
 				'Pick an RP display name your staff will recognize on their authenticator prompts.',
-				'Leave staff mTLS enabled: the first enrolment is the only flow that skips the client cert (setup key instead).'
+				'Set admin.allow_ips first: your IPv4 address, or your IPv6 /64 (privacy addresses rotate per connection, so one address never suffices). Values apply at boot — restart to reload.'
 			]
 		}
 	},

@@ -270,6 +270,22 @@ socket peer is the caller. No peer address fails closed.
   section: `admin access is limited to the configured IP range
   (admin.allow_ips) — your IP is <ip>; see "Admin IP allowlist"
   in docs/specs/config-db.md to change it`.
+- IPv6: list the /64, never one address. Privacy extensions rotate
+  the source address per connection, so a single allowlisted IPv6
+  address passes one fetch and 403s the next; the denial names the
+  /64 to add. IPv4 privacy is per-network, so a bare address (or
+  its /24) is stable.
+- Dual-stack surprise: the admin host serves A + AAAA (+ HTTP/3),
+  so a browser can arrive over IPv6 or QUIC with a different source
+  address than the IPv4 you tested. Every denial names the family
+  (IPv4/IPv6) and the transport (tcp/quic) — add whichever it shows.
+- First boot from anywhere but loopback: set `admin.allow_ips`
+  with `xtask config-set` BEFORE opening `/config` — the setup
+  surface (page, assets, setup API) is gated by the same list, and
+  a refused browser gets a static 403 page (no SPA, no JS) naming
+  its IP, family, transport, and these fix steps. API paths keep
+  the JSON denial (`code: ip_not_allowed`); `/_app/` assets get a
+  bare 403.
 - Retired (kept as rows so existing DBs stay valid, never
   consulted): `tls.client_ca_file` (warns when set),
   `admin.require_cert`, and the cert half of `admin.mtls_off`

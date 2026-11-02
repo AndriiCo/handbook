@@ -181,3 +181,6 @@
 | 278 | 2026-11-02 09:44Z | wait_healthy test hermetic (plant red) | closed port, proven live |
 | 279 | 2026-11-02 09:54Z | Staging accept f861e44: 9/10 + demo | stamp 366s, Run 15 record |
 | 280 | 2026-11-02 09:56Z | SA-13 live leg: Spark cites fact 9 | 5191ms, 2426/778 tokens |
+| 281 | 2026-11-02 10:10Z | BUG P-ADMIN-IP: admin access refused with a message that hides the IP, and admin | F1+F2+F4 Rust: coded denials, gate, 302+33 green |
+| 282 | 2026-11-02 10:10Z | BUG P-ADMIN-IP: admin access refused with a message that hides the IP, and admin | F3 web: http-errors helper, 123 unit green |
+| 283 | 2026-11-02 10:10Z | BUG P-ADMIN-IP: admin access refused with a message that hides the IP, and admin | F5 docs: allowlist /64, wizard, 403 guide |
