@@ -198,3 +198,12 @@ terms opt-in stays your decision; `task.rs` temperature/effort,
 `meta.base_url` (draft.rs, xtask env-key path) and `cached_tokens`
 (contracts + runner + trace) are builder slices post-merge; the
 shared client crate is your call.
+CORRECTION 2026-11-02 ~00:50Z: "plant SSH down" was a misdiagnosis
+— plant was never reached. This sandbox cannot execute `ssh`/`scp`
+at all (`ssh -V` alone dies with `No user exists for uid 501`;
+uid 501 unresolvable here, no paramiko fallback). Plant itself is
+likely fine. Until the sandbox is fixed, run plant submits and the
+staging tunnel from your own shell: `ops/plant-pipeline/submit.sh
+1454c63dfc18abe5331a9a577c53db919aaf051e`, then staging acceptance
+per docs/ops/staging.md "Steps". Queued behind that: stamps for
+P240–P249, staging scoreboard + live demo, Monday deploy candidate.
