@@ -161,3 +161,4 @@
 | 256 | 2026-11-02 03:20Z | Staging accept 1992959: 9/10 + demo 3/3 | timed gate 209s, staging 48s |
 | 258 | 2026-11-02 03:35Z | Public readiness: prod-now 5/10 stable | readiness doc from evidence |
 | 259 | 2026-11-02 03:45Z | Addendum: world archive SA-7/SA-8/RO-4 | spawned SA-7 + RO-4 |
+| 260 | 2026-11-02 04:10Z | Merge sub/rights: world-archive rights | 1 doc, HCCH terms + robots |
