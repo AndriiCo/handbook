@@ -1,101 +1,1745 @@
 {
   "pack": "US",
   "version": 1,
-  "title": "United States of America — HCCH 1961 competent authorities (world index, needs review)",
+  "title": "United States of America — apostille issuing offices, one per jurisdiction (SA-17 North-America slice, needs review)",
   "authorities": [
     {
-      "kind": "country",
+      "kind": "office",
       "country": "United States of America",
       "region": "",
-      "name": "Authentication Officer, Acting Authentication Officer and Assistant Authentication Officer, United States Department of State.",
-      "slug": "us-ca-1"
+      "name": "U.S. Department of State — Office of Authentications",
+      "slug": "us-dos-auth"
     },
     {
-      "kind": "country",
+      "kind": "office",
       "country": "United States of America",
       "region": "",
-      "name": "The U.S. Department of State’s Office of Authentications issues Apostilles for documents issued by Federal agencies of the United States.",
-      "slug": "us-ca-2"
+      "name": "U.S. Department of State — Passport Services, Vital Records Section",
+      "slug": "us-dos-vital"
     },
     {
-      "kind": "country",
+      "kind": "office",
       "country": "United States of America",
       "region": "",
-      "name": "The U.S. Department of State’s Bureau of Consular Affairs, Passport Services, Vital Records Section issues apostilles for Consular Reports of Birth, Death and Marriage.",
-      "slug": "us-ca-3"
+      "name": "Clerks and Deputy Clerks of the U.S. Federal Courts",
+      "slug": "us-fed-courts"
     },
     {
-      "kind": "country",
+      "kind": "state",
       "country": "United States of America",
-      "region": "",
-      "name": "The Clerks and Deputy Clerks of U.S. Federal Courts issue apostilles on documents issued by those courts.",
-      "slug": "us-ca-4"
+      "region": "Alabama",
+      "name": "Alabama Secretary of State",
+      "slug": "us-al-sos"
     },
     {
-      "kind": "country",
+      "kind": "state",
       "country": "United States of America",
-      "region": "",
-      "name": "Public documents issued by U.S. states, the District of Columbia and other U.S. jurisdictions may be apostillized by designated competent authorities in their respective jurisdictions, generally the state Secretary of State's office.",
-      "slug": "us-ca-5"
+      "region": "Alaska",
+      "name": "Lieutenant Governor of Alaska",
+      "slug": "us-ak-lg"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Arizona",
+      "name": "Arizona Secretary of State",
+      "slug": "us-az-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Arkansas",
+      "name": "Arkansas Secretary of State",
+      "slug": "us-ar-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "California",
+      "name": "California Secretary of State",
+      "slug": "us-ca-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Colorado",
+      "name": "Colorado Secretary of State",
+      "slug": "us-co-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Connecticut",
+      "name": "Connecticut Secretary of the State",
+      "slug": "us-ct-sots"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Delaware",
+      "name": "Delaware Secretary of State",
+      "slug": "us-de-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Florida",
+      "name": "Florida Department of State",
+      "slug": "us-fl-dos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Georgia",
+      "name": "Georgia Secretary of State",
+      "slug": "us-ga-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Hawaii",
+      "name": "Lieutenant Governor of Hawaii",
+      "slug": "us-hi-lg"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Idaho",
+      "name": "Idaho Secretary of State",
+      "slug": "us-id-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Illinois",
+      "name": "Illinois Secretary of State",
+      "slug": "us-il-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Indiana",
+      "name": "Indiana Secretary of State",
+      "slug": "us-in-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Iowa",
+      "name": "Iowa Secretary of State",
+      "slug": "us-ia-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Kansas",
+      "name": "Kansas Secretary of State",
+      "slug": "us-ks-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Kentucky",
+      "name": "Kentucky Secretary of State",
+      "slug": "us-ky-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Louisiana",
+      "name": "Louisiana Secretary of State",
+      "slug": "us-la-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Maine",
+      "name": "Maine Secretary of State",
+      "slug": "us-me-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Maryland",
+      "name": "Maryland Secretary of State",
+      "slug": "us-md-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Massachusetts",
+      "name": "Secretary of the Commonwealth of Massachusetts",
+      "slug": "us-ma-sec"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Michigan",
+      "name": "Michigan Secretary of State",
+      "slug": "us-mi-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Minnesota",
+      "name": "Minnesota Secretary of State",
+      "slug": "us-mn-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Mississippi",
+      "name": "Mississippi Secretary of State",
+      "slug": "us-ms-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Missouri",
+      "name": "Missouri Secretary of State",
+      "slug": "us-mo-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Montana",
+      "name": "Montana Secretary of State",
+      "slug": "us-mt-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Nebraska",
+      "name": "Nebraska Secretary of State",
+      "slug": "us-ne-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Nevada",
+      "name": "Nevada Secretary of State",
+      "slug": "us-nv-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "New Hampshire",
+      "name": "New Hampshire Secretary of State",
+      "slug": "us-nh-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "New Jersey",
+      "name": "New Jersey Department of State",
+      "slug": "us-nj-dos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "New Mexico",
+      "name": "New Mexico Secretary of State",
+      "slug": "us-nm-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "New York",
+      "name": "New York Department of State",
+      "slug": "us-ny-dos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "North Carolina",
+      "name": "North Carolina Secretary of State",
+      "slug": "us-nc-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "North Dakota",
+      "name": "North Dakota Secretary of State",
+      "slug": "us-nd-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Ohio",
+      "name": "Ohio Secretary of State",
+      "slug": "us-oh-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Oklahoma",
+      "name": "Oklahoma Secretary of State",
+      "slug": "us-ok-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Oregon",
+      "name": "Oregon Secretary of State",
+      "slug": "us-or-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Pennsylvania",
+      "name": "Pennsylvania Department of State",
+      "slug": "us-pa-dos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Rhode Island",
+      "name": "Rhode Island Secretary of State",
+      "slug": "us-ri-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "South Carolina",
+      "name": "South Carolina Secretary of State",
+      "slug": "us-sc-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "South Dakota",
+      "name": "South Dakota Secretary of State",
+      "slug": "us-sd-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Tennessee",
+      "name": "Tennessee Secretary of State",
+      "slug": "us-tn-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Texas",
+      "name": "Texas Secretary of State",
+      "slug": "us-tx-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Utah",
+      "name": "Lieutenant Governor of Utah",
+      "slug": "us-ut-lg"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Vermont",
+      "name": "Vermont Secretary of State",
+      "slug": "us-vt-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Virginia",
+      "name": "Secretary of the Commonwealth of Virginia",
+      "slug": "us-va-sec"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Washington",
+      "name": "Washington Secretary of State",
+      "slug": "us-wa-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "West Virginia",
+      "name": "West Virginia Secretary of State",
+      "slug": "us-wv-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Wisconsin",
+      "name": "Wisconsin Secretary of State",
+      "slug": "us-wi-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Wyoming",
+      "name": "Wyoming Secretary of State",
+      "slug": "us-wy-sos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "District of Columbia",
+      "name": "Secretary of the District of Columbia",
+      "slug": "us-dc-sec"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Puerto Rico",
+      "name": "Secretary of State of Puerto Rico",
+      "slug": "us-pr-dos"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Guam",
+      "name": "Office of the Governor of Guam",
+      "slug": "us-gu-gov"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "U.S. Virgin Islands",
+      "name": "Lieutenant Governor of the U.S. Virgin Islands",
+      "slug": "us-vi-lg"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "Northern Mariana Islands",
+      "name": "Attorney General of the Northern Mariana Islands",
+      "slug": "us-mp-ag"
+    },
+    {
+      "kind": "state",
+      "country": "United States of America",
+      "region": "American Samoa",
+      "name": "American Samoa Government — designated apostille office",
+      "slug": "us-as-gov"
     }
   ],
   "domains": [
     {
-      "name": "www.hcch.net",
-      "authority": "us-ca-1",
+      "name": "azsos.gov",
+      "authority": "us-az-sos",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for United States of America (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "dos.myflorida.com",
+      "authority": "us-fl-dos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "dos.ny.gov",
+      "authority": "us-ny-dos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "estado.pr.gov",
+      "authority": "us-pr-dos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "governor.guam.gov",
+      "authority": "us-gu-gov",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "ltg.gov.vi",
+      "authority": "us-vi-lg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "ltgov.alaska.gov",
+      "authority": "us-ak-lg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "ltgov.hawaii.gov",
+      "authority": "us-hi-lg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "ltgovernor.utah.gov",
+      "authority": "us-ut-lg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "os.dc.gov",
+      "authority": "us-dc-sec",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "portal.ct.gov",
+      "authority": "us-ct-sots",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sdsos.gov",
+      "authority": "us-sd-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.alabama.gov",
+      "authority": "us-al-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.delaware.gov",
+      "authority": "us-de-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.ga.gov",
+      "authority": "us-ga-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.iowa.gov",
+      "authority": "us-ia-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.ks.gov",
+      "authority": "us-ks-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.maryland.gov",
+      "authority": "us-md-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.nd.gov",
+      "authority": "us-nd-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.nh.gov",
+      "authority": "us-nh-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.oregon.gov",
+      "authority": "us-or-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.tn.gov",
+      "authority": "us-tn-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.vermont.gov",
+      "authority": "us-vt-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.wi.gov",
+      "authority": "us-wi-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.wv.gov",
+      "authority": "us-wv-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sos.wyo.gov",
+      "authority": "us-wy-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "sosmt.gov",
+      "authority": "us-mt-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     },
     {
       "name": "travel.state.gov",
-      "authority": "us-ca-1",
+      "authority": "us-dos-auth",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for United States of America (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     },
     {
-      "name": "www.nass.org",
-      "authority": "us-ca-2",
+      "name": "www.americansamoa.gov",
+      "authority": "us-as-gov",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for United States of America (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.cnmioag.org",
+      "authority": "us-mp-ag",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.coloradosos.gov",
+      "authority": "us-co-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.commonwealth.virginia.gov",
+      "authority": "us-va-sec",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.dos.pa.gov",
+      "authority": "us-pa-dos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.hcch.net",
+      "authority": "us-dos-auth",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.ilsos.gov",
+      "authority": "us-il-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.in.gov",
+      "authority": "us-in-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.maine.gov",
+      "authority": "us-me-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.michigan.gov",
+      "authority": "us-mi-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.nj.gov",
+      "authority": "us-nj-dos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.nvsos.gov",
+      "authority": "us-nv-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.ohiosos.gov",
+      "authority": "us-oh-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.scsos.com",
+      "authority": "us-sc-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sec.state.ma.us",
+      "authority": "us-ma-sec",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.secstate.wa.gov",
+      "authority": "us-wa-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.arkansas.gov",
+      "authority": "us-ar-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.ca.gov",
+      "authority": "us-ca-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.idaho.gov",
+      "authority": "us-id-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.ky.gov",
+      "authority": "us-ky-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.la.gov",
+      "authority": "us-la-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.mn.gov",
+      "authority": "us-mn-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.mo.gov",
+      "authority": "us-mo-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.ms.gov",
+      "authority": "us-ms-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.ne.gov",
+      "authority": "us-ne-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.nm.gov",
+      "authority": "us-nm-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.ok.gov",
+      "authority": "us-ok-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.ri.gov",
+      "authority": "us-ri-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sos.texas.gov",
+      "authority": "us-tx-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.sosnc.gov",
+      "authority": "us-nc-sos",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.uscourts.gov",
+      "authority": "us-fed-courts",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "us-ca-1",
+      "authority": "us-dos-auth",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=76&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for United States of America (citation page; staff capture pending)."
     },
     {
-      "authority": "us-ca-1",
+      "authority": "us-dos-auth",
       "kind": "website_official",
       "uri": "https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=353 (needs staff capture; W-7)."
+      "notes": "Official site of the U.S. Department of State — Office of Authentications (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "us-ca-2",
+      "authority": "us-dos-vital",
       "kind": "website_official",
-      "uri": "http://www.nass.org",
+      "uri": "https://travel.state.gov/",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=353 (needs staff capture; W-7)."
+      "notes": "Official site of the U.S. Department of State — Passport Services, Vital Records Section (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-fed-courts",
+      "kind": "website_official",
+      "uri": "https://www.uscourts.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Clerks and Deputy Clerks of the U.S. Federal Courts (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-al-sos",
+      "kind": "website_official",
+      "uri": "http://sos.alabama.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Alabama Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ak-lg",
+      "kind": "website_official",
+      "uri": "https://ltgov.alaska.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Lieutenant Governor of Alaska (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-az-sos",
+      "kind": "website_official",
+      "uri": "https://azsos.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Arizona Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ar-sos",
+      "kind": "website_official",
+      "uri": "http://www.sos.arkansas.gov/Pages/default.aspx",
+      "cadence": "weekly",
+      "notes": "Official site of the Arkansas Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ca-sos",
+      "kind": "website_official",
+      "uri": "https://www.sos.ca.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the California Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-co-sos",
+      "kind": "website_official",
+      "uri": "https://www.coloradosos.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Colorado Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ct-sots",
+      "kind": "website_official",
+      "uri": "https://portal.ct.gov/sots",
+      "cadence": "weekly",
+      "notes": "Official site of the Connecticut Secretary of the State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-de-sos",
+      "kind": "website_official",
+      "uri": "https://sos.delaware.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Delaware Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-fl-dos",
+      "kind": "website_official",
+      "uri": "https://dos.myflorida.com/",
+      "cadence": "weekly",
+      "notes": "Official site of the Florida Department of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ga-sos",
+      "kind": "website_official",
+      "uri": "https://sos.ga.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Georgia Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-hi-lg",
+      "kind": "website_official",
+      "uri": "https://ltgov.hawaii.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Lieutenant Governor of Hawaii (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-id-sos",
+      "kind": "website_official",
+      "uri": "http://www.sos.idaho.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Idaho Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-il-sos",
+      "kind": "website_official",
+      "uri": "https://www.ilsos.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Illinois Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-in-sos",
+      "kind": "website_official",
+      "uri": "https://www.in.gov/sos/",
+      "cadence": "weekly",
+      "notes": "Official site of the Indiana Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ia-sos",
+      "kind": "website_official",
+      "uri": "https://sos.iowa.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Iowa Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ks-sos",
+      "kind": "website_official",
+      "uri": "https://sos.ks.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Kansas Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ky-sos",
+      "kind": "website_official",
+      "uri": "http://www.sos.ky.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Kentucky Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-la-sos",
+      "kind": "website_official",
+      "uri": "https://www.sos.la.gov/Pages/default.aspx",
+      "cadence": "weekly",
+      "notes": "Official site of the Louisiana Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-me-sos",
+      "kind": "website_official",
+      "uri": "https://www.maine.gov/sos/",
+      "cadence": "weekly",
+      "notes": "Official site of the Maine Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-md-sos",
+      "kind": "website_official",
+      "uri": "https://sos.maryland.gov/Pages/default.aspx",
+      "cadence": "weekly",
+      "notes": "Official site of the Maryland Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ma-sec",
+      "kind": "website_official",
+      "uri": "https://www.sec.state.ma.us/",
+      "cadence": "weekly",
+      "notes": "Official site of the Secretary of the Commonwealth of Massachusetts (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-mi-sos",
+      "kind": "website_official",
+      "uri": "http://www.michigan.gov/sos",
+      "cadence": "weekly",
+      "notes": "Official site of the Michigan Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-mn-sos",
+      "kind": "website_official",
+      "uri": "https://www.sos.mn.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Minnesota Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ms-sos",
+      "kind": "website_official",
+      "uri": "https://www.sos.ms.gov",
+      "cadence": "weekly",
+      "notes": "Official site of the Mississippi Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-mo-sos",
+      "kind": "website_official",
+      "uri": "http://www.sos.mo.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Missouri Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-mt-sos",
+      "kind": "website_official",
+      "uri": "https://sosmt.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Montana Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ne-sos",
+      "kind": "website_official",
+      "uri": "http://www.sos.ne.gov/dyindex.html",
+      "cadence": "weekly",
+      "notes": "Official site of the Nebraska Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-nv-sos",
+      "kind": "website_official",
+      "uri": "https://www.nvsos.gov/sos",
+      "cadence": "weekly",
+      "notes": "Official site of the Nevada Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-nh-sos",
+      "kind": "website_official",
+      "uri": "https://sos.nh.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the New Hampshire Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-nj-dos",
+      "kind": "website_official",
+      "uri": "https://www.nj.gov/state/index.shtml",
+      "cadence": "weekly",
+      "notes": "Official site of the New Jersey Department of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-nm-sos",
+      "kind": "website_official",
+      "uri": "https://www.sos.nm.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the New Mexico Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ny-dos",
+      "kind": "website_official",
+      "uri": "https://dos.ny.gov",
+      "cadence": "weekly",
+      "notes": "Official site of the New York Department of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-nc-sos",
+      "kind": "website_official",
+      "uri": "https://www.sosnc.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the North Carolina Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-nd-sos",
+      "kind": "website_official",
+      "uri": "https://sos.nd.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the North Dakota Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-oh-sos",
+      "kind": "website_official",
+      "uri": "https://www.ohiosos.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Ohio Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ok-sos",
+      "kind": "website_official",
+      "uri": "https://www.sos.ok.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Oklahoma Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-or-sos",
+      "kind": "website_official",
+      "uri": "https://sos.oregon.gov/Pages/index.aspx",
+      "cadence": "weekly",
+      "notes": "Official site of the Oregon Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-pa-dos",
+      "kind": "website_official",
+      "uri": "http://www.dos.pa.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Pennsylvania Department of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ri-sos",
+      "kind": "website_official",
+      "uri": "http://www.sos.ri.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Rhode Island Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-sc-sos",
+      "kind": "website_official",
+      "uri": "https://www.scsos.com/",
+      "cadence": "weekly",
+      "notes": "Official site of the South Carolina Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-sd-sos",
+      "kind": "website_official",
+      "uri": "https://sdsos.gov/default.aspx",
+      "cadence": "weekly",
+      "notes": "Official site of the South Dakota Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-tn-sos",
+      "kind": "website_official",
+      "uri": "https://sos.tn.gov",
+      "cadence": "weekly",
+      "notes": "Official site of the Tennessee Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-tx-sos",
+      "kind": "website_official",
+      "uri": "https://www.sos.texas.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Texas Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-ut-lg",
+      "kind": "website_official",
+      "uri": "https://ltgovernor.utah.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Lieutenant Governor of Utah (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-vt-sos",
+      "kind": "website_official",
+      "uri": "https://sos.vermont.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Vermont Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-va-sec",
+      "kind": "website_official",
+      "uri": "http://www.commonwealth.virginia.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Secretary of the Commonwealth of Virginia (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-wa-sos",
+      "kind": "website_official",
+      "uri": "http://www.secstate.wa.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Washington Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-wv-sos",
+      "kind": "website_official",
+      "uri": "https://sos.wv.gov/Pages/default.aspx",
+      "cadence": "weekly",
+      "notes": "Official site of the West Virginia Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-wi-sos",
+      "kind": "website_official",
+      "uri": "https://sos.wi.gov",
+      "cadence": "weekly",
+      "notes": "Official site of the Wisconsin Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-wy-sos",
+      "kind": "website_official",
+      "uri": "https://sos.wyo.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Wyoming Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-dc-sec",
+      "kind": "website_official",
+      "uri": "http://os.dc.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Secretary of the District of Columbia (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-pr-dos",
+      "kind": "website_official",
+      "uri": "http://estado.pr.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Secretary of State of Puerto Rico (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-gu-gov",
+      "kind": "website_official",
+      "uri": "http://governor.guam.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the Office of the Governor of Guam (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-vi-lg",
+      "kind": "website_official",
+      "uri": "http://ltg.gov.vi/",
+      "cadence": "weekly",
+      "notes": "Official site of the Lieutenant Governor of the U.S. Virgin Islands (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-mp-ag",
+      "kind": "website_official",
+      "uri": "https://www.cnmioag.org/",
+      "cadence": "weekly",
+      "notes": "Official site of the Attorney General of the Northern Mariana Islands (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "us-as-gov",
+      "kind": "website_official",
+      "uri": "https://www.americansamoa.gov/",
+      "cadence": "weekly",
+      "notes": "Official site of the American Samoa Government — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
     }
   ],
   "chain_steps": [
     {
       "id": "us-index",
-      "authority": "us-ca-1",
+      "authority": "us-dos-auth",
       "order": 0,
-      "title": "Verify HCCH competent-authority index",
-      "detail": "Confirm the designated authorities and website URLs for United States of America against a staff capture of the cited HCCH pages (deterministic).",
+      "title": "Verify North-America issuing-office roster",
+      "detail": "Confirm every listed issuing office and official URL for United States of America against a staff capture of the cited pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-dos-auth-verify",
+      "authority": "us-dos-auth",
+      "order": 1,
+      "title": "Verify issuing office: U.S. Department of State — Office of Authentications",
+      "detail": "Confirm the U.S. Department of State — Office of Authentications designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-dos-vital-verify",
+      "authority": "us-dos-vital",
+      "order": 2,
+      "title": "Verify issuing office: U.S. Department of State — Passport Services, Vital Records Section",
+      "detail": "Confirm the U.S. Department of State — Passport Services, Vital Records Section designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-fed-courts-verify",
+      "authority": "us-fed-courts",
+      "order": 3,
+      "title": "Verify issuing office: Clerks and Deputy Clerks of the U.S. Federal Courts",
+      "detail": "Confirm the Clerks and Deputy Clerks of the U.S. Federal Courts designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-al-sos-verify",
+      "authority": "us-al-sos",
+      "order": 4,
+      "title": "Verify issuing office: Alabama",
+      "detail": "Confirm the Alabama Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ak-lg-verify",
+      "authority": "us-ak-lg",
+      "order": 5,
+      "title": "Verify issuing office: Alaska",
+      "detail": "Confirm the Lieutenant Governor of Alaska designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-az-sos-verify",
+      "authority": "us-az-sos",
+      "order": 6,
+      "title": "Verify issuing office: Arizona",
+      "detail": "Confirm the Arizona Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ar-sos-verify",
+      "authority": "us-ar-sos",
+      "order": 7,
+      "title": "Verify issuing office: Arkansas",
+      "detail": "Confirm the Arkansas Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ca-sos-verify",
+      "authority": "us-ca-sos",
+      "order": 8,
+      "title": "Verify issuing office: California",
+      "detail": "Confirm the California Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-co-sos-verify",
+      "authority": "us-co-sos",
+      "order": 9,
+      "title": "Verify issuing office: Colorado",
+      "detail": "Confirm the Colorado Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ct-sots-verify",
+      "authority": "us-ct-sots",
+      "order": 10,
+      "title": "Verify issuing office: Connecticut",
+      "detail": "Confirm the Connecticut Secretary of the State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-de-sos-verify",
+      "authority": "us-de-sos",
+      "order": 11,
+      "title": "Verify issuing office: Delaware",
+      "detail": "Confirm the Delaware Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-fl-dos-verify",
+      "authority": "us-fl-dos",
+      "order": 12,
+      "title": "Verify issuing office: Florida",
+      "detail": "Confirm the Florida Department of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ga-sos-verify",
+      "authority": "us-ga-sos",
+      "order": 13,
+      "title": "Verify issuing office: Georgia",
+      "detail": "Confirm the Georgia Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-hi-lg-verify",
+      "authority": "us-hi-lg",
+      "order": 14,
+      "title": "Verify issuing office: Hawaii",
+      "detail": "Confirm the Lieutenant Governor of Hawaii designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-id-sos-verify",
+      "authority": "us-id-sos",
+      "order": 15,
+      "title": "Verify issuing office: Idaho",
+      "detail": "Confirm the Idaho Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-il-sos-verify",
+      "authority": "us-il-sos",
+      "order": 16,
+      "title": "Verify issuing office: Illinois",
+      "detail": "Confirm the Illinois Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-in-sos-verify",
+      "authority": "us-in-sos",
+      "order": 17,
+      "title": "Verify issuing office: Indiana",
+      "detail": "Confirm the Indiana Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ia-sos-verify",
+      "authority": "us-ia-sos",
+      "order": 18,
+      "title": "Verify issuing office: Iowa",
+      "detail": "Confirm the Iowa Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ks-sos-verify",
+      "authority": "us-ks-sos",
+      "order": 19,
+      "title": "Verify issuing office: Kansas",
+      "detail": "Confirm the Kansas Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ky-sos-verify",
+      "authority": "us-ky-sos",
+      "order": 20,
+      "title": "Verify issuing office: Kentucky",
+      "detail": "Confirm the Kentucky Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-la-sos-verify",
+      "authority": "us-la-sos",
+      "order": 21,
+      "title": "Verify issuing office: Louisiana",
+      "detail": "Confirm the Louisiana Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-me-sos-verify",
+      "authority": "us-me-sos",
+      "order": 22,
+      "title": "Verify issuing office: Maine",
+      "detail": "Confirm the Maine Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-md-sos-verify",
+      "authority": "us-md-sos",
+      "order": 23,
+      "title": "Verify issuing office: Maryland",
+      "detail": "Confirm the Maryland Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ma-sec-verify",
+      "authority": "us-ma-sec",
+      "order": 24,
+      "title": "Verify issuing office: Massachusetts",
+      "detail": "Confirm the Secretary of the Commonwealth of Massachusetts designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-mi-sos-verify",
+      "authority": "us-mi-sos",
+      "order": 25,
+      "title": "Verify issuing office: Michigan",
+      "detail": "Confirm the Michigan Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-mn-sos-verify",
+      "authority": "us-mn-sos",
+      "order": 26,
+      "title": "Verify issuing office: Minnesota",
+      "detail": "Confirm the Minnesota Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ms-sos-verify",
+      "authority": "us-ms-sos",
+      "order": 27,
+      "title": "Verify issuing office: Mississippi",
+      "detail": "Confirm the Mississippi Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-mo-sos-verify",
+      "authority": "us-mo-sos",
+      "order": 28,
+      "title": "Verify issuing office: Missouri",
+      "detail": "Confirm the Missouri Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-mt-sos-verify",
+      "authority": "us-mt-sos",
+      "order": 29,
+      "title": "Verify issuing office: Montana",
+      "detail": "Confirm the Montana Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ne-sos-verify",
+      "authority": "us-ne-sos",
+      "order": 30,
+      "title": "Verify issuing office: Nebraska",
+      "detail": "Confirm the Nebraska Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-nv-sos-verify",
+      "authority": "us-nv-sos",
+      "order": 31,
+      "title": "Verify issuing office: Nevada",
+      "detail": "Confirm the Nevada Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-nh-sos-verify",
+      "authority": "us-nh-sos",
+      "order": 32,
+      "title": "Verify issuing office: New Hampshire",
+      "detail": "Confirm the New Hampshire Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-nj-dos-verify",
+      "authority": "us-nj-dos",
+      "order": 33,
+      "title": "Verify issuing office: New Jersey",
+      "detail": "Confirm the New Jersey Department of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-nm-sos-verify",
+      "authority": "us-nm-sos",
+      "order": 34,
+      "title": "Verify issuing office: New Mexico",
+      "detail": "Confirm the New Mexico Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ny-dos-verify",
+      "authority": "us-ny-dos",
+      "order": 35,
+      "title": "Verify issuing office: New York",
+      "detail": "Confirm the New York Department of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-nc-sos-verify",
+      "authority": "us-nc-sos",
+      "order": 36,
+      "title": "Verify issuing office: North Carolina",
+      "detail": "Confirm the North Carolina Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-nd-sos-verify",
+      "authority": "us-nd-sos",
+      "order": 37,
+      "title": "Verify issuing office: North Dakota",
+      "detail": "Confirm the North Dakota Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-oh-sos-verify",
+      "authority": "us-oh-sos",
+      "order": 38,
+      "title": "Verify issuing office: Ohio",
+      "detail": "Confirm the Ohio Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ok-sos-verify",
+      "authority": "us-ok-sos",
+      "order": 39,
+      "title": "Verify issuing office: Oklahoma",
+      "detail": "Confirm the Oklahoma Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-or-sos-verify",
+      "authority": "us-or-sos",
+      "order": 40,
+      "title": "Verify issuing office: Oregon",
+      "detail": "Confirm the Oregon Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-pa-dos-verify",
+      "authority": "us-pa-dos",
+      "order": 41,
+      "title": "Verify issuing office: Pennsylvania",
+      "detail": "Confirm the Pennsylvania Department of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ri-sos-verify",
+      "authority": "us-ri-sos",
+      "order": 42,
+      "title": "Verify issuing office: Rhode Island",
+      "detail": "Confirm the Rhode Island Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-sc-sos-verify",
+      "authority": "us-sc-sos",
+      "order": 43,
+      "title": "Verify issuing office: South Carolina",
+      "detail": "Confirm the South Carolina Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-sd-sos-verify",
+      "authority": "us-sd-sos",
+      "order": 44,
+      "title": "Verify issuing office: South Dakota",
+      "detail": "Confirm the South Dakota Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-tn-sos-verify",
+      "authority": "us-tn-sos",
+      "order": 45,
+      "title": "Verify issuing office: Tennessee",
+      "detail": "Confirm the Tennessee Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-tx-sos-verify",
+      "authority": "us-tx-sos",
+      "order": 46,
+      "title": "Verify issuing office: Texas",
+      "detail": "Confirm the Texas Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-ut-lg-verify",
+      "authority": "us-ut-lg",
+      "order": 47,
+      "title": "Verify issuing office: Utah",
+      "detail": "Confirm the Lieutenant Governor of Utah designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-vt-sos-verify",
+      "authority": "us-vt-sos",
+      "order": 48,
+      "title": "Verify issuing office: Vermont",
+      "detail": "Confirm the Vermont Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-va-sec-verify",
+      "authority": "us-va-sec",
+      "order": 49,
+      "title": "Verify issuing office: Virginia",
+      "detail": "Confirm the Secretary of the Commonwealth of Virginia designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-wa-sos-verify",
+      "authority": "us-wa-sos",
+      "order": 50,
+      "title": "Verify issuing office: Washington",
+      "detail": "Confirm the Washington Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-wv-sos-verify",
+      "authority": "us-wv-sos",
+      "order": 51,
+      "title": "Verify issuing office: West Virginia",
+      "detail": "Confirm the West Virginia Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-wi-sos-verify",
+      "authority": "us-wi-sos",
+      "order": 52,
+      "title": "Verify issuing office: Wisconsin",
+      "detail": "Confirm the Wisconsin Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-wy-sos-verify",
+      "authority": "us-wy-sos",
+      "order": 53,
+      "title": "Verify issuing office: Wyoming",
+      "detail": "Confirm the Wyoming Secretary of State designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-dc-sec-verify",
+      "authority": "us-dc-sec",
+      "order": 54,
+      "title": "Verify issuing office: District of Columbia",
+      "detail": "Confirm the Secretary of the District of Columbia designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-pr-dos-verify",
+      "authority": "us-pr-dos",
+      "order": 55,
+      "title": "Verify issuing office: Puerto Rico",
+      "detail": "Confirm the Secretary of State of Puerto Rico designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-gu-gov-verify",
+      "authority": "us-gu-gov",
+      "order": 56,
+      "title": "Verify issuing office: Guam",
+      "detail": "Confirm the Office of the Governor of Guam designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-vi-lg-verify",
+      "authority": "us-vi-lg",
+      "order": 57,
+      "title": "Verify issuing office: U.S. Virgin Islands",
+      "detail": "Confirm the Lieutenant Governor of the U.S. Virgin Islands designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-mp-ag-verify",
+      "authority": "us-mp-ag",
+      "order": 58,
+      "title": "Verify issuing office: Northern Mariana Islands",
+      "detail": "Confirm the Attorney General of the Northern Mariana Islands designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "us-as-gov-verify",
+      "authority": "us-as-gov",
+      "order": 59,
+      "title": "Verify issuing office: American Samoa",
+      "detail": "Confirm the American Samoa Government — designated apostille office designation and its official URL against a staff capture (deterministic).",
       "status": "needs_review",
       "validation": "W-7"
     }
   ],
   "observations": [
     {
-      "authority": "us-ca-1",
+      "authority": "us-dos-auth",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): United States of America is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
@@ -103,58 +1747,946 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-ca-1",
+      "authority": "us-dos-auth",
       "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Authentication Officer, Acting Authentication Officer and Assistant Authentication Officer, United States Department of State..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): U.S. Department of State — Office of Authentications is the designated apostille issuing office for United States of America.",
+      "source_uri": "https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "us-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The U.S. Department of State’s Office of Authentications issues Apostilles for documents issued by Federal agencies of the United States..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "us-ca-3",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The U.S. Department of State’s Bureau of Consular Affairs, Passport Services, Vital Records Section issues apostilles for Consular Reports of Birth, Death and Marriage..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "us-ca-4",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Clerks and Deputy Clerks of U.S. Federal Courts issue apostilles on documents issued by those courts..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "us-ca-5",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Public documents issued by U.S. states, the District of Columbia and other U.S. jurisdictions may be apostillized by designated competent authorities in their respective jurisdictions, generally the state Secretary of State's office..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "us-ca-1",
+      "authority": "us-dos-auth",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html is the official website of the U.S. Department of State — Office of Authentications.",
+      "source_uri": "https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "us-ca-2",
+      "authority": "us-dos-vital",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): U.S. Department of State — Passport Services, Vital Records Section is the designated apostille issuing office for United States of America.",
+      "source_uri": "https://travel.state.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-dos-vital",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.nass.org as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://travel.state.gov/ is the official website of the U.S. Department of State — Passport Services, Vital Records Section.",
+      "source_uri": "https://travel.state.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-fed-courts",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Clerks and Deputy Clerks of the U.S. Federal Courts is the designated apostille issuing office for United States of America.",
+      "source_uri": "https://www.uscourts.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-fed-courts",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.uscourts.gov/ is the official website of the Clerks and Deputy Clerks of the U.S. Federal Courts.",
+      "source_uri": "https://www.uscourts.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-al-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Alabama Secretary of State is the designated apostille issuing office for Alabama.",
+      "source_uri": "http://sos.alabama.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-al-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://sos.alabama.gov/ is the official website of the Alabama Secretary of State.",
+      "source_uri": "http://sos.alabama.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ak-lg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Lieutenant Governor of Alaska is the designated apostille issuing office for Alaska.",
+      "source_uri": "https://ltgov.alaska.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ak-lg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://ltgov.alaska.gov/ is the official website of the Lieutenant Governor of Alaska.",
+      "source_uri": "https://ltgov.alaska.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-az-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Arizona Secretary of State is the designated apostille issuing office for Arizona.",
+      "source_uri": "https://azsos.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-az-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://azsos.gov/ is the official website of the Arizona Secretary of State.",
+      "source_uri": "https://azsos.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ar-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Arkansas Secretary of State is the designated apostille issuing office for Arkansas.",
+      "source_uri": "http://www.sos.arkansas.gov/Pages/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ar-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.sos.arkansas.gov/Pages/default.aspx is the official website of the Arkansas Secretary of State.",
+      "source_uri": "http://www.sos.arkansas.gov/Pages/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ca-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): California Secretary of State is the designated apostille issuing office for California.",
+      "source_uri": "https://www.sos.ca.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ca-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sos.ca.gov/ is the official website of the California Secretary of State.",
+      "source_uri": "https://www.sos.ca.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-co-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Colorado Secretary of State is the designated apostille issuing office for Colorado.",
+      "source_uri": "https://www.coloradosos.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-co-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.coloradosos.gov/ is the official website of the Colorado Secretary of State.",
+      "source_uri": "https://www.coloradosos.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ct-sots",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Connecticut Secretary of the State is the designated apostille issuing office for Connecticut.",
+      "source_uri": "https://portal.ct.gov/sots",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ct-sots",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://portal.ct.gov/sots is the official website of the Connecticut Secretary of the State.",
+      "source_uri": "https://portal.ct.gov/sots",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-de-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Delaware Secretary of State is the designated apostille issuing office for Delaware.",
+      "source_uri": "https://sos.delaware.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-de-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.delaware.gov/ is the official website of the Delaware Secretary of State.",
+      "source_uri": "https://sos.delaware.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-fl-dos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Florida Department of State is the designated apostille issuing office for Florida.",
+      "source_uri": "https://dos.myflorida.com/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-fl-dos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://dos.myflorida.com/ is the official website of the Florida Department of State.",
+      "source_uri": "https://dos.myflorida.com/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ga-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Georgia Secretary of State is the designated apostille issuing office for Georgia.",
+      "source_uri": "https://sos.ga.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ga-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.ga.gov/ is the official website of the Georgia Secretary of State.",
+      "source_uri": "https://sos.ga.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-hi-lg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Lieutenant Governor of Hawaii is the designated apostille issuing office for Hawaii.",
+      "source_uri": "https://ltgov.hawaii.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-hi-lg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://ltgov.hawaii.gov/ is the official website of the Lieutenant Governor of Hawaii.",
+      "source_uri": "https://ltgov.hawaii.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-id-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Idaho Secretary of State is the designated apostille issuing office for Idaho.",
+      "source_uri": "http://www.sos.idaho.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-id-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.sos.idaho.gov/ is the official website of the Idaho Secretary of State.",
+      "source_uri": "http://www.sos.idaho.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-il-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Illinois Secretary of State is the designated apostille issuing office for Illinois.",
+      "source_uri": "https://www.ilsos.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-il-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.ilsos.gov/ is the official website of the Illinois Secretary of State.",
+      "source_uri": "https://www.ilsos.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-in-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Indiana Secretary of State is the designated apostille issuing office for Indiana.",
+      "source_uri": "https://www.in.gov/sos/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-in-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.in.gov/sos/ is the official website of the Indiana Secretary of State.",
+      "source_uri": "https://www.in.gov/sos/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ia-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Iowa Secretary of State is the designated apostille issuing office for Iowa.",
+      "source_uri": "https://sos.iowa.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ia-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.iowa.gov/ is the official website of the Iowa Secretary of State.",
+      "source_uri": "https://sos.iowa.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ks-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Kansas Secretary of State is the designated apostille issuing office for Kansas.",
+      "source_uri": "https://sos.ks.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ks-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.ks.gov/ is the official website of the Kansas Secretary of State.",
+      "source_uri": "https://sos.ks.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ky-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Kentucky Secretary of State is the designated apostille issuing office for Kentucky.",
+      "source_uri": "http://www.sos.ky.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ky-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.sos.ky.gov/ is the official website of the Kentucky Secretary of State.",
+      "source_uri": "http://www.sos.ky.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-la-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Louisiana Secretary of State is the designated apostille issuing office for Louisiana.",
+      "source_uri": "https://www.sos.la.gov/Pages/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-la-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sos.la.gov/Pages/default.aspx is the official website of the Louisiana Secretary of State.",
+      "source_uri": "https://www.sos.la.gov/Pages/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-me-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Maine Secretary of State is the designated apostille issuing office for Maine.",
+      "source_uri": "https://www.maine.gov/sos/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-me-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.maine.gov/sos/ is the official website of the Maine Secretary of State.",
+      "source_uri": "https://www.maine.gov/sos/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-md-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Maryland Secretary of State is the designated apostille issuing office for Maryland.",
+      "source_uri": "https://sos.maryland.gov/Pages/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-md-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.maryland.gov/Pages/default.aspx is the official website of the Maryland Secretary of State.",
+      "source_uri": "https://sos.maryland.gov/Pages/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ma-sec",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Secretary of the Commonwealth of Massachusetts is the designated apostille issuing office for Massachusetts.",
+      "source_uri": "https://www.sec.state.ma.us/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ma-sec",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sec.state.ma.us/ is the official website of the Secretary of the Commonwealth of Massachusetts.",
+      "source_uri": "https://www.sec.state.ma.us/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mi-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Michigan Secretary of State is the designated apostille issuing office for Michigan.",
+      "source_uri": "http://www.michigan.gov/sos",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mi-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.michigan.gov/sos is the official website of the Michigan Secretary of State.",
+      "source_uri": "http://www.michigan.gov/sos",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mn-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Minnesota Secretary of State is the designated apostille issuing office for Minnesota.",
+      "source_uri": "https://www.sos.mn.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mn-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sos.mn.gov/ is the official website of the Minnesota Secretary of State.",
+      "source_uri": "https://www.sos.mn.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ms-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Mississippi Secretary of State is the designated apostille issuing office for Mississippi.",
+      "source_uri": "https://www.sos.ms.gov",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ms-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sos.ms.gov is the official website of the Mississippi Secretary of State.",
+      "source_uri": "https://www.sos.ms.gov",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mo-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Missouri Secretary of State is the designated apostille issuing office for Missouri.",
+      "source_uri": "http://www.sos.mo.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mo-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.sos.mo.gov/ is the official website of the Missouri Secretary of State.",
+      "source_uri": "http://www.sos.mo.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mt-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Montana Secretary of State is the designated apostille issuing office for Montana.",
+      "source_uri": "https://sosmt.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mt-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sosmt.gov/ is the official website of the Montana Secretary of State.",
+      "source_uri": "https://sosmt.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ne-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Nebraska Secretary of State is the designated apostille issuing office for Nebraska.",
+      "source_uri": "http://www.sos.ne.gov/dyindex.html",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ne-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.sos.ne.gov/dyindex.html is the official website of the Nebraska Secretary of State.",
+      "source_uri": "http://www.sos.ne.gov/dyindex.html",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nv-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Nevada Secretary of State is the designated apostille issuing office for Nevada.",
+      "source_uri": "https://www.nvsos.gov/sos",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nv-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.nvsos.gov/sos is the official website of the Nevada Secretary of State.",
+      "source_uri": "https://www.nvsos.gov/sos",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nh-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): New Hampshire Secretary of State is the designated apostille issuing office for New Hampshire.",
+      "source_uri": "https://sos.nh.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nh-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.nh.gov/ is the official website of the New Hampshire Secretary of State.",
+      "source_uri": "https://sos.nh.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nj-dos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): New Jersey Department of State is the designated apostille issuing office for New Jersey.",
+      "source_uri": "https://www.nj.gov/state/index.shtml",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nj-dos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.nj.gov/state/index.shtml is the official website of the New Jersey Department of State.",
+      "source_uri": "https://www.nj.gov/state/index.shtml",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nm-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): New Mexico Secretary of State is the designated apostille issuing office for New Mexico.",
+      "source_uri": "https://www.sos.nm.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nm-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sos.nm.gov/ is the official website of the New Mexico Secretary of State.",
+      "source_uri": "https://www.sos.nm.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ny-dos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): New York Department of State is the designated apostille issuing office for New York.",
+      "source_uri": "https://dos.ny.gov",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ny-dos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://dos.ny.gov is the official website of the New York Department of State.",
+      "source_uri": "https://dos.ny.gov",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nc-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): North Carolina Secretary of State is the designated apostille issuing office for North Carolina.",
+      "source_uri": "https://www.sosnc.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nc-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sosnc.gov/ is the official website of the North Carolina Secretary of State.",
+      "source_uri": "https://www.sosnc.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nd-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): North Dakota Secretary of State is the designated apostille issuing office for North Dakota.",
+      "source_uri": "https://sos.nd.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-nd-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.nd.gov/ is the official website of the North Dakota Secretary of State.",
+      "source_uri": "https://sos.nd.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-oh-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Ohio Secretary of State is the designated apostille issuing office for Ohio.",
+      "source_uri": "https://www.ohiosos.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-oh-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.ohiosos.gov/ is the official website of the Ohio Secretary of State.",
+      "source_uri": "https://www.ohiosos.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ok-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Oklahoma Secretary of State is the designated apostille issuing office for Oklahoma.",
+      "source_uri": "https://www.sos.ok.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ok-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sos.ok.gov/ is the official website of the Oklahoma Secretary of State.",
+      "source_uri": "https://www.sos.ok.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-or-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Oregon Secretary of State is the designated apostille issuing office for Oregon.",
+      "source_uri": "https://sos.oregon.gov/Pages/index.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-or-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.oregon.gov/Pages/index.aspx is the official website of the Oregon Secretary of State.",
+      "source_uri": "https://sos.oregon.gov/Pages/index.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-pa-dos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Pennsylvania Department of State is the designated apostille issuing office for Pennsylvania.",
+      "source_uri": "http://www.dos.pa.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-pa-dos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.dos.pa.gov/ is the official website of the Pennsylvania Department of State.",
+      "source_uri": "http://www.dos.pa.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ri-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Rhode Island Secretary of State is the designated apostille issuing office for Rhode Island.",
+      "source_uri": "http://www.sos.ri.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ri-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.sos.ri.gov/ is the official website of the Rhode Island Secretary of State.",
+      "source_uri": "http://www.sos.ri.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-sc-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): South Carolina Secretary of State is the designated apostille issuing office for South Carolina.",
+      "source_uri": "https://www.scsos.com/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-sc-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.scsos.com/ is the official website of the South Carolina Secretary of State.",
+      "source_uri": "https://www.scsos.com/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-sd-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): South Dakota Secretary of State is the designated apostille issuing office for South Dakota.",
+      "source_uri": "https://sdsos.gov/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-sd-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sdsos.gov/default.aspx is the official website of the South Dakota Secretary of State.",
+      "source_uri": "https://sdsos.gov/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-tn-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Tennessee Secretary of State is the designated apostille issuing office for Tennessee.",
+      "source_uri": "https://sos.tn.gov",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-tn-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.tn.gov is the official website of the Tennessee Secretary of State.",
+      "source_uri": "https://sos.tn.gov",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-tx-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Texas Secretary of State is the designated apostille issuing office for Texas.",
+      "source_uri": "https://www.sos.texas.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-tx-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sos.texas.gov/ is the official website of the Texas Secretary of State.",
+      "source_uri": "https://www.sos.texas.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ut-lg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Lieutenant Governor of Utah is the designated apostille issuing office for Utah.",
+      "source_uri": "https://ltgovernor.utah.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ut-lg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://ltgovernor.utah.gov/ is the official website of the Lieutenant Governor of Utah.",
+      "source_uri": "https://ltgovernor.utah.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-vt-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Vermont Secretary of State is the designated apostille issuing office for Vermont.",
+      "source_uri": "https://sos.vermont.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-vt-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.vermont.gov/ is the official website of the Vermont Secretary of State.",
+      "source_uri": "https://sos.vermont.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-va-sec",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Secretary of the Commonwealth of Virginia is the designated apostille issuing office for Virginia.",
+      "source_uri": "http://www.commonwealth.virginia.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-va-sec",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.commonwealth.virginia.gov/ is the official website of the Secretary of the Commonwealth of Virginia.",
+      "source_uri": "http://www.commonwealth.virginia.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-wa-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Washington Secretary of State is the designated apostille issuing office for Washington.",
+      "source_uri": "http://www.secstate.wa.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-wa-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.secstate.wa.gov/ is the official website of the Washington Secretary of State.",
+      "source_uri": "http://www.secstate.wa.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-wv-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): West Virginia Secretary of State is the designated apostille issuing office for West Virginia.",
+      "source_uri": "https://sos.wv.gov/Pages/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-wv-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.wv.gov/Pages/default.aspx is the official website of the West Virginia Secretary of State.",
+      "source_uri": "https://sos.wv.gov/Pages/default.aspx",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-wi-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Wisconsin Secretary of State is the designated apostille issuing office for Wisconsin.",
+      "source_uri": "https://sos.wi.gov",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-wi-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.wi.gov is the official website of the Wisconsin Secretary of State.",
+      "source_uri": "https://sos.wi.gov",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-wy-sos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Wyoming Secretary of State is the designated apostille issuing office for Wyoming.",
+      "source_uri": "https://sos.wyo.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-wy-sos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sos.wyo.gov/ is the official website of the Wyoming Secretary of State.",
+      "source_uri": "https://sos.wyo.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-dc-sec",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Secretary of the District of Columbia is the designated apostille issuing office for District of Columbia.",
+      "source_uri": "http://os.dc.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-dc-sec",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://os.dc.gov/ is the official website of the Secretary of the District of Columbia.",
+      "source_uri": "http://os.dc.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-pr-dos",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Secretary of State of Puerto Rico is the designated apostille issuing office for Puerto Rico.",
+      "source_uri": "http://estado.pr.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-pr-dos",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://estado.pr.gov/ is the official website of the Secretary of State of Puerto Rico.",
+      "source_uri": "http://estado.pr.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-gu-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Office of the Governor of Guam is the designated apostille issuing office for Guam.",
+      "source_uri": "http://governor.guam.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-gu-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://governor.guam.gov/ is the official website of the Office of the Governor of Guam.",
+      "source_uri": "http://governor.guam.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-vi-lg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Lieutenant Governor of the U.S. Virgin Islands is the designated apostille issuing office for U.S. Virgin Islands.",
+      "source_uri": "http://ltg.gov.vi/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-vi-lg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://ltg.gov.vi/ is the official website of the Lieutenant Governor of the U.S. Virgin Islands.",
+      "source_uri": "http://ltg.gov.vi/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mp-ag",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Attorney General of the Northern Mariana Islands is the designated apostille issuing office for Northern Mariana Islands.",
+      "source_uri": "https://www.cnmioag.org/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-mp-ag",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.cnmioag.org/ is the official website of the Attorney General of the Northern Mariana Islands.",
+      "source_uri": "https://www.cnmioag.org/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-as-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): American Samoa Government — designated apostille office is the designated apostille issuing office for American Samoa.",
+      "source_uri": "https://www.americansamoa.gov/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-as-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.americansamoa.gov/ is the official website of the American Samoa Government — designated apostille office.",
+      "source_uri": "https://www.americansamoa.gov/",
       "status": "needs_review",
       "validation": "W-7"
     }

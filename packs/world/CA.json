@@ -1,165 +1,446 @@
 {
   "pack": "CA",
   "version": 1,
-  "title": "Canada — HCCH 1961 competent authorities (world index, needs review)",
+  "title": "Canada — apostille issuing offices, one per jurisdiction (SA-17 North-America slice, needs review)",
   "authorities": [
     {
-      "kind": "country",
+      "kind": "office",
       "country": "Canada",
       "region": "",
-      "name": "Department of Foreign Affairs, Trade and Development of Canada",
-      "slug": "ca-ca-1"
+      "name": "Global Affairs Canada — Authentication Services (federal apostille office)",
+      "slug": "ca-gac-fed"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "British Columbia",
+      "name": "Government of British Columbia — designated apostille office",
+      "slug": "ca-bc-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Alberta",
+      "name": "Government of Alberta — designated apostille office",
+      "slug": "ca-ab-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Saskatchewan",
+      "name": "Government of Saskatchewan — designated apostille office",
+      "slug": "ca-sk-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Manitoba",
+      "name": "Government of Manitoba — designated apostille office",
+      "slug": "ca-mb-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Ontario",
+      "name": "Government of Ontario — designated apostille office",
+      "slug": "ca-on-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Quebec",
+      "name": "Government of Quebec — designated apostille office",
+      "slug": "ca-qc-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "New Brunswick",
+      "name": "Government of New Brunswick — designated apostille office",
+      "slug": "ca-nb-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Newfoundland and Labrador",
+      "name": "Government of Newfoundland and Labrador — designated apostille office",
+      "slug": "ca-nl-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Nova Scotia",
+      "name": "Government of Nova Scotia — designated apostille office",
+      "slug": "ca-ns-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Prince Edward Island",
+      "name": "Government of Prince Edward Island — designated apostille office",
+      "slug": "ca-pe-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Yukon",
+      "name": "Government of Yukon — designated apostille office",
+      "slug": "ca-yt-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Northwest Territories",
+      "name": "Government of the Northwest Territories — designated apostille office",
+      "slug": "ca-nt-gov"
+    },
+    {
+      "kind": "province",
+      "country": "Canada",
+      "region": "Nunavut",
+      "name": "Government of Nunavut — designated apostille office",
+      "slug": "ca-nu-gov"
     }
   ],
   "domains": [
     {
-      "name": "www.hcch.net",
-      "authority": "ca-ca-1",
+      "name": "novascotia.ca",
+      "authority": "ca-ns-gov",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Canada (staff capture pending)."
-    },
-    {
-      "name": "www.canada.ca",
-      "authority": "ca-ca-1",
-      "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Canada (staff capture pending)."
-    },
-    {
-      "name": "www.international.gc.ca",
-      "authority": "ca-ca-1",
-      "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Canada (staff capture pending)."
-    },
-    {
-      "name": "www2.gov.bc.ca",
-      "authority": "ca-ca-1",
-      "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Canada (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
     },
     {
       "name": "www.alberta.ca",
-      "authority": "ca-ca-1",
+      "authority": "ca-ab-gov",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Canada (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
     },
     {
-      "name": "eservices.alberta.ca",
-      "authority": "ca-ca-1",
+      "name": "www.canada.ca",
+      "authority": "ca-gac-fed",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Canada (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
     },
     {
-      "name": "www.saskatchewan.ca",
-      "authority": "ca-ca-1",
+      "name": "www.gnb.ca",
+      "authority": "ca-nb-gov",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Canada (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
+    },
+    {
+      "name": "www.gov.nl.ca",
+      "authority": "ca-nl-gov",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
+    },
+    {
+      "name": "www.gov.nt.ca",
+      "authority": "ca-nt-gov",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
+    },
+    {
+      "name": "www.gov.nu.ca",
+      "authority": "ca-nu-gov",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
+    },
+    {
+      "name": "www.hcch.net",
+      "authority": "ca-gac-fed",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
+    },
+    {
+      "name": "www.manitoba.ca",
+      "authority": "ca-mb-gov",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
     },
     {
       "name": "www.ontario.ca",
-      "authority": "ca-ca-1",
+      "authority": "ca-on-gov",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Canada (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
+    },
+    {
+      "name": "www.princeedwardisland.ca",
+      "authority": "ca-pe-gov",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
     },
     {
       "name": "www.quebec.ca",
-      "authority": "ca-ca-1",
+      "authority": "ca-qc-gov",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Canada (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
+    },
+    {
+      "name": "www.saskatchewan.ca",
+      "authority": "ca-sk-gov",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
+    },
+    {
+      "name": "www2.gov.bc.ca",
+      "authority": "ca-bc-gov",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
+    },
+    {
+      "name": "yukon.ca",
+      "authority": "ca-yt-gov",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Canada (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-gac-fed",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Canada (citation page; staff capture pending)."
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-gac-fed",
       "kind": "website_official",
       "uri": "http://www.canada.ca/authentication-documents",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1199 (needs staff capture; W-7)."
+      "notes": "Official site of the Global Affairs Canada — Authentication Services (federal apostille office) (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "ca-ca-1",
-      "kind": "website_official",
-      "uri": "https://www.international.gc.ca/gac-amc/about-a_propos/services/authentication-authentification/apostille-convention.aspx?lang=eng",
-      "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41 (needs staff capture; W-7)."
-    },
-    {
-      "authority": "ca-ca-1",
-      "kind": "website_official",
-      "uri": "https://www.international.gc.ca/gac-amc/about-a_propos/services/authentication-authentification/faq.aspx?lang=eng",
-      "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41 (needs staff capture; W-7)."
-    },
-    {
-      "authority": "ca-ca-1",
+      "authority": "ca-bc-gov",
       "kind": "website_official",
       "uri": "https://www2.gov.bc.ca/gov/content/governments/government-id/guide-to-the-authentication-of-documents/about",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41 (needs staff capture; W-7)."
+      "notes": "Official site of the Government of British Columbia — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "ca-ca-1",
-      "kind": "website_official",
-      "uri": "https://www2.gov.bc.ca/gov/content/governments/government-id/guide-to-the-authentication-of-documents/fees",
-      "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41 (needs staff capture; W-7)."
-    },
-    {
-      "authority": "ca-ca-1",
+      "authority": "ca-ab-gov",
       "kind": "website_official",
       "uri": "https://www.alberta.ca/document-authentication-other-jurisdictions-countries",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41 (needs staff capture; W-7)."
+      "notes": "Official site of the Government of Alberta — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "ca-ca-1",
-      "kind": "website_official",
-      "uri": "https://eservices.alberta.ca/certificates-of-authentication.html",
-      "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41 (needs staff capture; W-7)."
-    },
-    {
-      "authority": "ca-ca-1",
+      "authority": "ca-sk-gov",
       "kind": "website_official",
       "uri": "https://www.saskatchewan.ca/government/notarized-documents-legislation-maps/authenticating-notarized-documents",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41 (needs staff capture; W-7)."
+      "notes": "Official site of the Government of Saskatchewan — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-mb-gov",
+      "kind": "website_official",
+      "uri": "https://www.manitoba.ca/",
+      "cadence": "weekly",
+      "notes": "Official site of the Government of Manitoba — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "ca-on-gov",
       "kind": "website_official",
       "uri": "https://www.ontario.ca/page/authenticate-document-use-outside-canada",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41 (needs staff capture; W-7)."
+      "notes": "Official site of the Government of Ontario — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-qc-gov",
       "kind": "website_official",
       "uri": "https://www.quebec.ca/en/justice-and-civil-status/services/applying-apostille",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41 (needs staff capture; W-7)."
+      "notes": "Official site of the Government of Quebec — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "ca-nb-gov",
+      "kind": "website_official",
+      "uri": "https://www.gnb.ca/",
+      "cadence": "weekly",
+      "notes": "Official site of the Government of New Brunswick — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "ca-nl-gov",
+      "kind": "website_official",
+      "uri": "https://www.gov.nl.ca/",
+      "cadence": "weekly",
+      "notes": "Official site of the Government of Newfoundland and Labrador — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "ca-ns-gov",
+      "kind": "website_official",
+      "uri": "https://novascotia.ca/",
+      "cadence": "weekly",
+      "notes": "Official site of the Government of Nova Scotia — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "ca-pe-gov",
+      "kind": "website_official",
+      "uri": "https://www.princeedwardisland.ca/",
+      "cadence": "weekly",
+      "notes": "Official site of the Government of Prince Edward Island — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "ca-yt-gov",
+      "kind": "website_official",
+      "uri": "https://yukon.ca/",
+      "cadence": "weekly",
+      "notes": "Official site of the Government of Yukon — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "ca-nt-gov",
+      "kind": "website_official",
+      "uri": "https://www.gov.nt.ca/",
+      "cadence": "weekly",
+      "notes": "Official site of the Government of the Northwest Territories — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "ca-nu-gov",
+      "kind": "website_official",
+      "uri": "https://www.gov.nu.ca/",
+      "cadence": "weekly",
+      "notes": "Official site of the Government of Nunavut — designated apostille office (SA-17 North-America roster; staff capture pending; W-7)."
     }
   ],
   "chain_steps": [
     {
       "id": "ca-index",
-      "authority": "ca-ca-1",
+      "authority": "ca-gac-fed",
       "order": 0,
-      "title": "Verify HCCH competent-authority index",
-      "detail": "Confirm the designated authorities and website URLs for Canada against a staff capture of the cited HCCH pages (deterministic).",
+      "title": "Verify North-America issuing-office roster",
+      "detail": "Confirm every listed issuing office and official URL for Canada against a staff capture of the cited pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-gac-fed-verify",
+      "authority": "ca-gac-fed",
+      "order": 1,
+      "title": "Verify issuing office: Global Affairs Canada — Authentication Services (federal apostille office)",
+      "detail": "Confirm the Global Affairs Canada — Authentication Services (federal apostille office) designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-bc-gov-verify",
+      "authority": "ca-bc-gov",
+      "order": 2,
+      "title": "Verify issuing office: British Columbia",
+      "detail": "Confirm the Government of British Columbia — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-ab-gov-verify",
+      "authority": "ca-ab-gov",
+      "order": 3,
+      "title": "Verify issuing office: Alberta",
+      "detail": "Confirm the Government of Alberta — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-sk-gov-verify",
+      "authority": "ca-sk-gov",
+      "order": 4,
+      "title": "Verify issuing office: Saskatchewan",
+      "detail": "Confirm the Government of Saskatchewan — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-mb-gov-verify",
+      "authority": "ca-mb-gov",
+      "order": 5,
+      "title": "Verify issuing office: Manitoba",
+      "detail": "Confirm the Government of Manitoba — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-on-gov-verify",
+      "authority": "ca-on-gov",
+      "order": 6,
+      "title": "Verify issuing office: Ontario",
+      "detail": "Confirm the Government of Ontario — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-qc-gov-verify",
+      "authority": "ca-qc-gov",
+      "order": 7,
+      "title": "Verify issuing office: Quebec",
+      "detail": "Confirm the Government of Quebec — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-nb-gov-verify",
+      "authority": "ca-nb-gov",
+      "order": 8,
+      "title": "Verify issuing office: New Brunswick",
+      "detail": "Confirm the Government of New Brunswick — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-nl-gov-verify",
+      "authority": "ca-nl-gov",
+      "order": 9,
+      "title": "Verify issuing office: Newfoundland and Labrador",
+      "detail": "Confirm the Government of Newfoundland and Labrador — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-ns-gov-verify",
+      "authority": "ca-ns-gov",
+      "order": 10,
+      "title": "Verify issuing office: Nova Scotia",
+      "detail": "Confirm the Government of Nova Scotia — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-pe-gov-verify",
+      "authority": "ca-pe-gov",
+      "order": 11,
+      "title": "Verify issuing office: Prince Edward Island",
+      "detail": "Confirm the Government of Prince Edward Island — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-yt-gov-verify",
+      "authority": "ca-yt-gov",
+      "order": 12,
+      "title": "Verify issuing office: Yukon",
+      "detail": "Confirm the Government of Yukon — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-nt-gov-verify",
+      "authority": "ca-nt-gov",
+      "order": 13,
+      "title": "Verify issuing office: Northwest Territories",
+      "detail": "Confirm the Government of the Northwest Territories — designated apostille office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "ca-nu-gov-verify",
+      "authority": "ca-nu-gov",
+      "order": 14,
+      "title": "Verify issuing office: Nunavut",
+      "detail": "Confirm the Government of Nunavut — designated apostille office designation and its official URL against a staff capture (deterministic).",
       "status": "needs_review",
       "validation": "W-7"
     }
   ],
   "observations": [
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-gac-fed",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Canada is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
@@ -167,90 +448,226 @@
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-gac-fed",
       "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Department of Foreign Affairs, Trade and Development of Canada.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1199",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Global Affairs Canada — Authentication Services (federal apostille office) is the designated apostille issuing office for Canada.",
+      "source_uri": "http://www.canada.ca/authentication-documents",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-gac-fed",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.canada.ca/authentication-documents as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1199",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.canada.ca/authentication-documents is the official website of the Global Affairs Canada — Authentication Services (federal apostille office).",
+      "source_uri": "http://www.canada.ca/authentication-documents",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
-      "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.international.gc.ca/gac-amc/about-a_propos/services/authentication-authentification/apostille-convention.aspx?lang=eng as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
+      "authority": "ca-bc-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of British Columbia — designated apostille office is the designated apostille issuing office for British Columbia.",
+      "source_uri": "https://www2.gov.bc.ca/gov/content/governments/government-id/guide-to-the-authentication-of-documents/about",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-bc-gov",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.international.gc.ca/gac-amc/about-a_propos/services/authentication-authentification/faq.aspx?lang=eng as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www2.gov.bc.ca/gov/content/governments/government-id/guide-to-the-authentication-of-documents/about is the official website of the Government of British Columbia — designated apostille office.",
+      "source_uri": "https://www2.gov.bc.ca/gov/content/governments/government-id/guide-to-the-authentication-of-documents/about",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
-      "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www2.gov.bc.ca/gov/content/governments/government-id/guide-to-the-authentication-of-documents/about as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
+      "authority": "ca-ab-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Alberta — designated apostille office is the designated apostille issuing office for Alberta.",
+      "source_uri": "https://www.alberta.ca/document-authentication-other-jurisdictions-countries",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-ab-gov",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www2.gov.bc.ca/gov/content/governments/government-id/guide-to-the-authentication-of-documents/fees as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.alberta.ca/document-authentication-other-jurisdictions-countries is the official website of the Government of Alberta — designated apostille office.",
+      "source_uri": "https://www.alberta.ca/document-authentication-other-jurisdictions-countries",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
-      "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.alberta.ca/document-authentication-other-jurisdictions-countries as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
+      "authority": "ca-sk-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Saskatchewan — designated apostille office is the designated apostille issuing office for Saskatchewan.",
+      "source_uri": "https://www.saskatchewan.ca/government/notarized-documents-legislation-maps/authenticating-notarized-documents",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-sk-gov",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://eservices.alberta.ca/certificates-of-authentication.html as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.saskatchewan.ca/government/notarized-documents-legislation-maps/authenticating-notarized-documents is the official website of the Government of Saskatchewan — designated apostille office.",
+      "source_uri": "https://www.saskatchewan.ca/government/notarized-documents-legislation-maps/authenticating-notarized-documents",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
-      "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.saskatchewan.ca/government/notarized-documents-legislation-maps/authenticating-notarized-documents as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
+      "authority": "ca-mb-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Manitoba — designated apostille office is the designated apostille issuing office for Manitoba.",
+      "source_uri": "https://www.manitoba.ca/",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-mb-gov",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.ontario.ca/page/authenticate-document-use-outside-canada as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.manitoba.ca/ is the official website of the Government of Manitoba — designated apostille office.",
+      "source_uri": "https://www.manitoba.ca/",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ca-ca-1",
+      "authority": "ca-on-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Ontario — designated apostille office is the designated apostille issuing office for Ontario.",
+      "source_uri": "https://www.ontario.ca/page/authenticate-document-use-outside-canada",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-on-gov",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.quebec.ca/en/justice-and-civil-status/services/applying-apostille as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=28&cid=41",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.ontario.ca/page/authenticate-document-use-outside-canada is the official website of the Government of Ontario — designated apostille office.",
+      "source_uri": "https://www.ontario.ca/page/authenticate-document-use-outside-canada",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-qc-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Quebec — designated apostille office is the designated apostille issuing office for Quebec.",
+      "source_uri": "https://www.quebec.ca/en/justice-and-civil-status/services/applying-apostille",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-qc-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.quebec.ca/en/justice-and-civil-status/services/applying-apostille is the official website of the Government of Quebec — designated apostille office.",
+      "source_uri": "https://www.quebec.ca/en/justice-and-civil-status/services/applying-apostille",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-nb-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of New Brunswick — designated apostille office is the designated apostille issuing office for New Brunswick.",
+      "source_uri": "https://www.gnb.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-nb-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.gnb.ca/ is the official website of the Government of New Brunswick — designated apostille office.",
+      "source_uri": "https://www.gnb.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-nl-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Newfoundland and Labrador — designated apostille office is the designated apostille issuing office for Newfoundland and Labrador.",
+      "source_uri": "https://www.gov.nl.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-nl-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.gov.nl.ca/ is the official website of the Government of Newfoundland and Labrador — designated apostille office.",
+      "source_uri": "https://www.gov.nl.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-ns-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Nova Scotia — designated apostille office is the designated apostille issuing office for Nova Scotia.",
+      "source_uri": "https://novascotia.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-ns-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://novascotia.ca/ is the official website of the Government of Nova Scotia — designated apostille office.",
+      "source_uri": "https://novascotia.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-pe-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Prince Edward Island — designated apostille office is the designated apostille issuing office for Prince Edward Island.",
+      "source_uri": "https://www.princeedwardisland.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-pe-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.princeedwardisland.ca/ is the official website of the Government of Prince Edward Island — designated apostille office.",
+      "source_uri": "https://www.princeedwardisland.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-yt-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Yukon — designated apostille office is the designated apostille issuing office for Yukon.",
+      "source_uri": "https://yukon.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-yt-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://yukon.ca/ is the official website of the Government of Yukon — designated apostille office.",
+      "source_uri": "https://yukon.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-nt-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of the Northwest Territories — designated apostille office is the designated apostille issuing office for Northwest Territories.",
+      "source_uri": "https://www.gov.nt.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-nt-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.gov.nt.ca/ is the official website of the Government of the Northwest Territories — designated apostille office.",
+      "source_uri": "https://www.gov.nt.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-nu-gov",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Government of Nunavut — designated apostille office is the designated apostille issuing office for Nunavut.",
+      "source_uri": "https://www.gov.nu.ca/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ca-nu-gov",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.gov.nu.ca/ is the official website of the Government of Nunavut — designated apostille office.",
+      "source_uri": "https://www.gov.nu.ca/",
       "status": "needs_review",
       "validation": "W-7"
     }

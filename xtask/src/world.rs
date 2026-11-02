@@ -524,8 +524,23 @@ fn designation_names(html: &str) -> Vec<String> {
             }
         }
     }
-    names.retain(|name| !is_meta_note(name));
+    names.retain(|name| !is_meta_note(name) && !is_meta_sentence(name));
     names
+}
+
+/// Sentences the page uses to talk *about* the designation list
+/// (counts, cross-references) are never designations themselves.
+/// (SA-17: an earlier Mexico world pack shipped "There are 32
+/// competent authorities…" and "for more information see below…"
+/// as authority names.)
+fn is_meta_sentence(name: &str) -> bool {
+    let text = name.to_lowercase();
+    text.starts_with("for more information")
+        || text.starts_with("see below")
+        || text.starts_with("see above")
+        || text.starts_with("please see")
+        || (text.starts_with("there are ") && text.contains("competent authorit"))
+        || (text.starts_with("there is ") && text.contains("competent authorit"))
 }
 
 /// Split an item segment on `;` separators outside parentheses, so
@@ -2157,6 +2172,28 @@ mod tests {
             <p>Some body with no sections after it";
         assert!(designation_block(html).is_none());
         assert!(designation_names(html).is_empty());
+    }
+
+    #[test]
+    fn meta_sentences_never_become_names() {
+        // SA-17 regression: the Mexico page's count/cross-reference
+        // sentences shipped as authority names in an earlier pack.
+        let html = "<p>Designated Competent Authority(ies):</p>\
+            <p><em>Apostille for Federal Documents</em><br />\
+            There are 32 competent authorities designated to issue Apostilles for state documents<br />\
+            for more information see below under Contact Details.</p>\
+            <p><strong>Contact details:</strong></p>";
+        let names = designation_names(html);
+        assert_eq!(names, vec!["Apostille for Federal Documents".to_string()]);
+        assert!(is_meta_sentence(
+            "There are 32 competent authorities designated to issue Apostilles"
+        ));
+        assert!(is_meta_sentence(
+            "for more information see below under Contact Details."
+        ));
+        assert!(!is_meta_sentence(
+            "The U.S. Department of State's Office of Authentications issues Apostilles"
+        ));
     }
 
     #[test]
