@@ -352,3 +352,27 @@ above verbatim).
   binary starts (P221 default is loopback-only). The 2 draft
   proposals from the live check sit in the staging queue
   (harmless synthetic data; approve or reject at will).
+
+## Run 12 (2026-11-02, 3836bfb) — 9/10 kept, P240–P250 stack accepted
+- Plant stamp `acceptance/3836bfb88b38.json` (`ci_green: true`,
+  run `20261102-010558-3836bfb`: setup 0 s, deps 3 s, gate 210 s,
+  package 134 s). First submit of the night failed the gate on
+  `clippy::items-after-test-module` (plant clippy 1.99 vs older
+  Mac toolchain — P250 moves `mod tests` to file end; plant is
+  the lint source of truth).
+- Exact checkout via xfer ref (`xfer-p250`), native release
+  rebuild (31 s incremental) + both SPAs, restart on 18318/18319
+  by verified PID (old 1583345, new 2498693; 18317 is a pipeline
+  artifact server — untouched). DB reused (vietnam 8 +
+  usa-wa-sos 9 accepted stand). `healthz` → `0.1.0+3836bfb`.
+- Scoreboard ON plant (Mac Chromium broken in sandbox):
+  `web/shots/staging-accept.json` 9/10, only S1 red
+  (licence/video/visibility, operator-owned). GP2-data, A1,
+  GP2-page, A2, A5 all pass on the reused stand.
+- Live demo take 3/3 on the exact SHA
+  (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`, run on
+  plant): desktop GP1→GP4, admin review+trace, mobile.
+- Monday deploy candidate: stamp + 9/10 + live demo 3/3 all on
+  3836bfb. Ship still needs the unit-file root step (item 1),
+  prod `admin.allow_ips`, and an explicit operator deploy order
+  (`--allow-today-overlap` only on order).

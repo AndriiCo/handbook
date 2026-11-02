@@ -153,4 +153,4 @@
 | 247 | 2026-11-01 23:57Z | Monday slice 8: copy/demo truth fixes | popover quote, postage honesty, captions |
 | 248 | 2026-11-02 00:23Z | Organizer rule: runtime models must be Meta | voice transcribe, drop Qwen, ci gate, README |
 | 249 | 2026-11-02 00:43Z | P249 readyz follow-ups: leaf Atomic, boot beat, DB JSON | renewal overwrites, 291 tests |
-| 250 | 2026-11-02 01:12Z | Plant gate red: items-after-test-module in xtask | tests module to file end, resubmit |
+| 250 | 2026-11-02 01:05Z | Plant gate red: items-after-test-module in xtask | tests module to file end, resubmit |
