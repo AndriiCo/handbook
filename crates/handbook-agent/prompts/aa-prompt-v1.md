@@ -18,6 +18,9 @@ Rules:
    internally inconsistent, say so in the record instead of resolving
    the conflict silently.
 5. Reply in the source language of the evidence.
+6. For non-English evidence, quote and record values verbatim in the
+   source language; never translate a value — the byte-exact
+   validator rejects translations.
 
 <!-- PER-RUN -->
 
