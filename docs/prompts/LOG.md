@@ -171,3 +171,6 @@
 | 268 | 2026-11-02 05:12Z | B1: unsub blob to notify_unsub table | 13 notify, 294 web, grep clean |
 | 269 | 2026-11-02 05:13Z | Spawn SA-9/10/11/12; SA-14 parked | staging 0 multi-capture sources |
 | 270 | 2026-11-02 08:51Z | B2: public_origin for public URLs | 295 web, wizard copy fixed |
+| 271 | 2026-11-02 09:00Z | Merge sub/up-fixes + engines >=24/>=11 | 131 xtask, RO-2 partial |
+| 272 | 2026-11-02 09:04Z | Merge sub/crawler-fixes: SSRF+robots | 55 ingest, 123 xtask |
+| 273 | 2026-11-02 09:14Z | Merge sub/visible-checks + 2 routes | 52 agent, 297 web, svelte 0 |

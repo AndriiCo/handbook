@@ -384,6 +384,14 @@ pub fn router(state: AppState) -> Router {
             get(crate::draft::draft_run),
         )
         .route(
+            "/apostille/api/v1/draft-runs/{id}/rejections",
+            get(crate::draft::draft_run_rejections),
+        )
+        .route(
+            "/apostille/api/v1/draft-runs/recent",
+            get(crate::draft::draft_rejections_recent),
+        )
+        .route(
             crate::MEDIA_UPLOAD_PATH,
             post(upload_media).layer(DefaultBodyLimit::max(MAX_UPLOAD_BODY_BYTES)),
         )

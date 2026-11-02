@@ -268,9 +268,6 @@ pub async fn draft_run(
 /// registry (404 when the run is unknown, e.g. after a restart — the
 /// durable copy lives in the `analyze.rejected` audit rows).
 ///
-/// NOTE (builder): wire this in `admin.rs` next to the `draft_run`
-/// route; the `dead_code` allowance below goes away with the route.
-#[allow(dead_code)]
 pub async fn draft_run_rejections(
     _auth: AdminAuth,
     State(state): State<AppState>,
@@ -289,7 +286,6 @@ pub async fn draft_run_rejections(
 /// One `analyze.rejected` audit row, as the recent-rejections endpoint
 /// serves it (the /review "Blocked by the verifier" section reads this).
 #[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
 pub struct StoredRejection {
     pub id: i64,
     pub at: i64,
@@ -306,8 +302,6 @@ pub struct StoredRejection {
 /// Latest `analyze.rejected` audit rows, newest first, capped at
 /// `limit`. Malformed reason JSON never fails the read — the row is
 /// skipped (audit is append-only; a bad row stays for forensics).
-/// (Only called from the not-yet-wired endpoint + tests for now.)
-#[allow(dead_code)]
 pub fn recent_rejections(conn: &rusqlite::Connection, limit: u64) -> Vec<StoredRejection> {
     let mut stmt = match conn.prepare(
         "SELECT a.id, a.at, au.slug, a.reason FROM audit a
@@ -352,10 +346,6 @@ pub fn recent_rejections(conn: &rusqlite::Connection, limit: u64) -> Vec<StoredR
 /// verifier rejections across runs (`analyze.rejected` audit rows),
 /// newest first, with the total blocked count.
 ///
-/// NOTE (builder): wire this in `admin.rs` next to the `draft_run`
-/// route (static segment wins over `{id}`); the `dead_code`
-/// allowance below goes away with the route.
-#[allow(dead_code)]
 pub async fn draft_rejections_recent(
     _auth: AdminAuth,
     State(state): State<AppState>,
@@ -382,7 +372,6 @@ pub async fn draft_rejections_recent(
 
 /// Query params for the recent-rejections endpoint.
 #[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
 pub struct RecentParams {
     pub limit: Option<u64>,
 }
