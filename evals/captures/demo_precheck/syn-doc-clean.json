@@ -1,0 +1,19 @@
+{
+  "verdict": "pass",
+  "issues": [],
+  "boxes": [
+    {
+      "label": "document page",
+      "object_id": 1,
+      "x": 0.08,
+      "y": 0.06,
+      "w": 0.84,
+      "h": 0.88,
+      "score": 1.0
+    }
+  ],
+  "models": ["sam-3.1", "muse-spark-1.3"],
+  "recorded_at": "2026-11-01T00:00:00Z",
+  "synthetic": true,
+  "note": "Synthetic stand-in authored for local `cargo xtask up` runs; the operator replaces it with a live-model recording via xtask/ops/a2-record.py."
+}
