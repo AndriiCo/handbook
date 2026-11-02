@@ -1211,6 +1211,13 @@ fn child_exited(child: &mut Child) -> bool {
 /// report it. Split for tests: the deadline is a parameter so the
 /// exited-child path proves it returns without waiting it out.
 fn wait_healthy_until(child: &mut Child, deadline: std::time::Instant) -> WaitOutcome {
+    wait_healthy_on(child, deadline, PUBLIC_PORT)
+}
+
+/// Port-parameterized core: tests pass a provably closed port, so a
+/// live server on the real `PUBLIC_PORT` (staging runs during the
+/// plant gate) can never flip the outcome.
+fn wait_healthy_on(child: &mut Child, deadline: std::time::Instant, port: u16) -> WaitOutcome {
     use std::time::Duration;
     loop {
         if child_exited(child) {
@@ -1220,7 +1227,7 @@ fn wait_healthy_until(child: &mut Child, deadline: std::time::Instant) -> WaitOu
         if std::time::Instant::now() >= deadline {
             return WaitOutcome::Timeout;
         }
-        match http_get("127.0.0.1", PUBLIC_PORT, "/apostille/healthz") {
+        match http_get("127.0.0.1", port, "/apostille/healthz") {
             Ok((200, _)) => return WaitOutcome::Healthy,
             _ => std::thread::sleep(Duration::from_millis(500)),
         }
@@ -1457,13 +1464,20 @@ mod tests {
         use std::time::{Duration, Instant};
         // An already-dead server must report Exited fast: the
         // deadline is long on purpose, so returning at all proves the
-        // early exit (a deadline-only wait would hang 30 s here).
+        // early exit (a deadline-only wait would hang 30 s here). The
+        // probe port is freshly closed, so a live server on the real
+        // port (staging serves during the plant gate) cannot flip it.
+        let closed = std::net::TcpListener::bind("127.0.0.1:0")
+            .expect("bind loopback")
+            .local_addr()
+            .expect("closed port")
+            .port();
         let mut dead = Command::new("sh")
             .args(["-c", "exit 1"])
             .spawn()
             .expect("spawn sh");
         assert_eq!(
-            wait_healthy_until(&mut dead, Instant::now() + Duration::from_secs(30)),
+            wait_healthy_on(&mut dead, Instant::now() + Duration::from_secs(30), closed),
             WaitOutcome::Exited
         );
     }

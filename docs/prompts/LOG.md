@@ -178,3 +178,4 @@
 | 275 | 2026-11-02 09:17Z | Spawn SA-13 agent-cites-us | slot freed by SA-10/11/12 |
 | 276 | 2026-11-02 09:31Z | Merge sub/gate + queue/attempt fix | 54 agent, 301 web, 132 xtask |
 | 277 | 2026-11-02 09:36Z | Merge sub/ask + wire ask arm | 143 xtask, replay verified |
+| 278 | 2026-11-02 09:44Z | wait_healthy test hermetic (plant red) | closed port, proven live |
