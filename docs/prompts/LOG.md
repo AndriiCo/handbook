@@ -175,3 +175,4 @@
 | 272 | 2026-11-02 09:04Z | Merge sub/crawler-fixes: SSRF+robots | 55 ingest, 123 xtask |
 | 273 | 2026-11-02 09:14Z | Merge sub/visible-checks + 2 routes | 52 agent, 297 web, svelte 0 |
 | 274 | 2026-11-02 09:16Z | B3 gitignore+build.rs, B4 recorder, B5 | build green, py compile ok |
+| 275 | 2026-11-02 09:17Z | Spawn SA-13 agent-cites-us | slot freed by SA-10/11/12 |
