@@ -146,6 +146,8 @@ pub fn run_analysis(
                 let base = resp.records.len();
                 resp.usage.input_tokens += retry.usage.input_tokens;
                 resp.usage.output_tokens += retry.usage.output_tokens;
+                resp.usage.cached_tokens += retry.usage.cached_tokens;
+                resp.usage.reasoning_tokens += retry.usage.reasoning_tokens;
                 if let Err(more) = validate_response(&retry, req.sources, &allowed) {
                     for e in more {
                         errors.push(format!("retry record {}: {:?}", e.record_index, e.kind));
@@ -202,6 +204,8 @@ pub fn run_analysis(
                     "usage": {
                         "input_tokens": resp.usage.input_tokens,
                         "output_tokens": resp.usage.output_tokens,
+                        "cached_tokens": resp.usage.cached_tokens,
+                        "reasoning_tokens": resp.usage.reasoning_tokens,
                     },
                 })
                 .to_string();
@@ -244,8 +248,11 @@ pub fn run_analysis(
         upsert_watermark(conn, req.slug, req.at, PROMPT_VERSION)?;
         advance_capture_watermark(conn, req.slug, req.capture_id)?;
         let reason = format!(
-            "proposed={proposed} rejected={rejected} suppressed={suppressed} input_tokens={} output_tokens={}",
-            resp.usage.input_tokens, resp.usage.output_tokens
+            "proposed={proposed} rejected={rejected} suppressed={suppressed} input_tokens={} output_tokens={} cached_tokens={} reasoning_tokens={}",
+            resp.usage.input_tokens,
+            resp.usage.output_tokens,
+            resp.usage.cached_tokens,
+            resp.usage.reasoning_tokens
         );
         insert_analysis_audit(conn, req.at, req.actor, authority_id, &reason)?;
         Ok((proposed, rejected, suppressed, resp.usage.clone()))
@@ -332,6 +339,8 @@ fn skip_unsupported_lang(
         usage: Usage {
             input_tokens: 0,
             output_tokens: 0,
+            cached_tokens: 0,
+            reasoning_tokens: 0,
         },
     })
 }
@@ -429,6 +438,8 @@ pub fn skip_missing_sidecar(
         usage: Usage {
             input_tokens: 0,
             output_tokens: 0,
+            cached_tokens: 0,
+            reasoning_tokens: 0,
         },
     })
 }
@@ -525,6 +536,81 @@ mod tests {
         assert_eq!(audits, 1);
     }
 
+    /// Client with a recorded usage block: prefix-cache hits plus
+    /// thinking spend, as the Meta wire reports them.
+    struct MeteredClient;
+    impl ModelClient for MeteredClient {
+        fn model_id(&self) -> &'static str {
+            "stub"
+        }
+
+        fn draft_records(&self, req: &DraftRequest) -> Result<DraftResponse, ModelError> {
+            let text = req.input_text.clone();
+            let cite = |value: &str| match text.find(value) {
+                Some(start) => (start as u32, (start + value.len()) as u32),
+                None => (0, 0),
+            };
+            let (start, end) = cite("PO Box 40220");
+            Ok(DraftResponse {
+                records: vec![ProposedRecord {
+                    topic: "address".to_string(),
+                    field: "po_box".to_string(),
+                    value: "PO Box 40220".to_string(),
+                    citation: CitationRef {
+                        doc_id: "fixture".to_string(),
+                        byte_start: start,
+                        byte_end: end,
+                    },
+                    confidence: 0.9,
+                }],
+                usage: Usage {
+                    input_tokens: 1200,
+                    output_tokens: 800,
+                    cached_tokens: 1100,
+                    reasoning_tokens: 640,
+                },
+                summary: String::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn report_and_audit_carry_cached_and_reasoning_tokens() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "PO Box 40220!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        let report = run_analysis(&conn, &MeteredClient, &req).unwrap();
+        assert_eq!(report.proposed, 1);
+        assert_eq!(
+            report.usage,
+            Usage {
+                input_tokens: 1200,
+                output_tokens: 800,
+                cached_tokens: 1100,
+                reasoning_tokens: 640,
+            }
+        );
+        let reason: String = conn
+            .query_row(
+                "SELECT reason FROM audit WHERE action = 'analysis_run'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(reason.contains("cached_tokens=1100"), "got: {reason}");
+        assert!(reason.contains("reasoning_tokens=640"), "got: {reason}");
+    }
+
     struct BadTopicClient;
 
     impl ModelClient for BadTopicClient {
@@ -544,6 +630,8 @@ mod tests {
                 usage: Usage {
                     input_tokens: 1,
                     output_tokens: 1,
+                    cached_tokens: 0,
+                    reasoning_tokens: 0,
                 },
                 summary: String::new(),
             })
@@ -573,7 +661,9 @@ mod tests {
             report.usage,
             Usage {
                 input_tokens: 1,
-                output_tokens: 1
+                output_tokens: 1,
+                cached_tokens: 0,
+                reasoning_tokens: 0,
             }
         );
         assert!(

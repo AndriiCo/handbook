@@ -69,6 +69,8 @@ impl ModelClient for StubClient {
             usage: Usage {
                 input_tokens: 0,
                 output_tokens: 0,
+                cached_tokens: 0,
+                reasoning_tokens: 0,
             },
             summary: "stub: two fixture records".to_string(),
         })
@@ -587,9 +589,24 @@ fn records_from_content(
             .map(|n| u32::try_from(n).unwrap_or(u32::MAX))
             .unwrap_or(0)
     };
+    // Prefix-cache hits and thinking spend ride in the details
+    // sub-objects (`docs/meta-api-shapes.md`); a flat key wins as a
+    // fallback so replay fixtures can spell them either way.
+    let nested = |group: &str, name: &str| {
+        usage[group]
+            .get(name)
+            .and_then(|n| n.as_u64())
+            .map(|n| u32::try_from(n).unwrap_or(u32::MAX))
+    };
     let counted = Usage {
         input_tokens: tokens("prompt_tokens"),
         output_tokens: tokens("completion_tokens"),
+        cached_tokens: nested("prompt_tokens_details", "cached_tokens")
+            .or_else(|| (tokens("cached_tokens") != 0).then_some(tokens("cached_tokens")))
+            .unwrap_or(0),
+        reasoning_tokens: nested("completion_tokens_details", "reasoning_tokens")
+            .or_else(|| (tokens("reasoning_tokens") != 0).then_some(tokens("reasoning_tokens")))
+            .unwrap_or(0),
     };
     // Required by the schema, but tolerate absence (a summary must
     // never fail a draft — it quarantines in the UI, unused here).
@@ -742,11 +759,60 @@ mod tests {
             resp.usage,
             Usage {
                 input_tokens: 25,
-                output_tokens: 19
+                output_tokens: 19,
+                cached_tokens: 5,
+                reasoning_tokens: 7,
             }
         );
         let _ = seen.recv_timeout(Duration::from_secs(5)).unwrap();
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn draft_replay_fixture_carries_cached_and_reasoning_tokens() {
+        // Recorded wire shape (`docs/meta-api-shapes.md`): the usage
+        // chunk carries prefix-cache hits and thinking spend in the
+        // details sub-objects. The console renders both per call.
+        let body = concat!(
+            "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"{\\\"summary\\\": \\\"s\\\", \\\"records\\\": []}\"}}]}\n\n",
+            "data: {\"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}],",
+            " \"usage\": {\"prompt_tokens\": 1200, \"completion_tokens\": 800, \"total_tokens\": 2000,",
+            " \"prompt_tokens_details\": {\"cached_tokens\": 1100},",
+            " \"completion_tokens_details\": {\"reasoning_tokens\": 640}}}\n\n",
+            "data: [DONE]\n",
+        );
+        let resp = parse_stream(body.as_bytes()).expect("replay parses");
+        assert_eq!(
+            resp.usage,
+            Usage {
+                input_tokens: 1200,
+                output_tokens: 800,
+                cached_tokens: 1100,
+                reasoning_tokens: 640,
+            }
+        );
+    }
+
+    #[test]
+    fn draft_replay_fixture_without_details_is_zero() {
+        // Older recordings carry no details blocks: both new counts
+        // read as zero, never a parse failure.
+        let body = concat!(
+            "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"{\\\"summary\\\": \\\"s\\\", \\\"records\\\": []}\"}}]}\n\n",
+            "data: {\"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}],",
+            " \"usage\": {\"prompt_tokens\": 25, \"completion_tokens\": 19, \"total_tokens\": 44}}\n\n",
+            "data: [DONE]\n",
+        );
+        let resp = parse_stream(body.as_bytes()).expect("replay parses");
+        assert_eq!(
+            resp.usage,
+            Usage {
+                input_tokens: 25,
+                output_tokens: 19,
+                cached_tokens: 0,
+                reasoning_tokens: 0,
+            }
+        );
     }
 
     #[test]
@@ -956,7 +1022,9 @@ mod tests {
             "data: {}\n\n",
             serde_json::json!({
                 "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}],
-                "usage": {"prompt_tokens": 25, "completion_tokens": 19, "total_tokens": 44},
+                "usage": {"prompt_tokens": 25, "completion_tokens": 19, "total_tokens": 44,
+                    "prompt_tokens_details": {"cached_tokens": 5},
+                    "completion_tokens_details": {"reasoning_tokens": 7}},
             })
         ));
         out.push_str("data: [DONE]\n");
