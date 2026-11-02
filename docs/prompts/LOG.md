@@ -196,3 +196,5 @@
 | 294 | 2026-11-02 12:10Z | Continue working toward the active session goal. Execute MISSION SUBMIT | SA-6 merge: sam3 open-weights code, 13 tests OK |
 | 295 | 2026-11-02 12:25Z | Continue working toward the active session goal. Execute MISSION SUBMIT | gold 26→30: web test, README planted 181/182 |
 | 296 | 2026-11-02 12:35Z | Continue working toward the active session goal. Execute MISSION SUBMIT | Run 17: 6e16ded stamped+staging-green; SA-14 parked |
+| 297 | 2026-11-02 12:45Z | Continue working toward the active session goal. Execute MISSION SUBMIT | operator page: Run 17 candidate, A5 window, SA-14 |
+| 298 | 2026-11-02 13:00Z | Continue working toward the active session goal. Execute MISSION SUBMIT | GP3 login py-10, full shots 48 green |

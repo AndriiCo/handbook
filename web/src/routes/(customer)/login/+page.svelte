@@ -264,7 +264,7 @@
 </svelte:head>
 
 <section
-	class="grid items-stretch gap-8 py-6 lg:grid-cols-2 lg:py-10 xl:py-16"
+	class="grid items-stretch gap-8 py-10 lg:grid-cols-2 xl:py-16"
 	aria-label={t.loginLabel}
 >
 	<div
