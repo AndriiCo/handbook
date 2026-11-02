@@ -4,12 +4,13 @@ MISSION "SUBMIT" runs (`docs/ops/push-plan.md`): S0.1 DONE —
 production runs `0.1.0+eb57cdc` (5/10 steady, re-checked just
 now; previous release `3836bfb` kept for rollback). Wave-1 merges
 are all on main (SA-D, SA-19 + wiring, SA-20 + wiring, SA-16,
-SA-6 code, gold set 30) and Run 17 stamped + staging-green on
-`6e16ded` (plant `ci_green`, scoreboard 9/10 with only S1 red,
-live demo 3/3). Say "deploy now" and the builder ships `6e16ded`
-(second Monday deploy, `--allow-today-overlap`; ready by 22:00
-PST, never after Mon 23:59 PST). SA-14 parked: max 1 capture per
-source on prod and staging, precondition needs ≥2.
+SA-6 code, gold set 30) and Run 18 stamped + staging-green on
+`2b4bc8d` (plant `ci_green`, scoreboard 9/10 with only S1 red,
+live demo 3/3; adds P298 login padding). Say "deploy now" and the
+builder ships `2b4bc8d` (second Monday deploy,
+`--allow-today-overlap`; ready by 22:00 PST, never after Mon
+23:59 PST). SA-14 parked: max 1 capture per source on prod and
+staging, precondition needs ≥2.
 Scoreboard **5/10** (P0, GP1, GP4, A2, A5 pass). First red:
 GP2-data (vietnam 0/8, usa-wa-sos 1/8 accepted — flips with your
 approvals below, no code needed). This deploy ships your
