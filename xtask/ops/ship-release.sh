@@ -56,7 +56,11 @@ check_stamp() {
 # pgrep from matching the remote shell running it.
 check_roots() {
     local out
-    out="$(ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "[a]postille/scripts/"')" \
+    # Trailing `true`: a clean machine makes the last pgrep exit 1
+    # (no match), which must not read as an ssh failure — ssh
+    # itself still fails closed (unreachable host, bad key), and
+    # any output at all still aborts below.
+    out="$(ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "[a]postille/scripts/"; true')" \
         || { echo "ABORT: root-probe ssh failed ($1)"; exit 1; }
     [ -z "$out" ] || { echo "ABORT: operator script may be running ($1):"; echo "$out"; exit 1; }
 }
