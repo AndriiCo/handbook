@@ -126,7 +126,7 @@ approvals are operator-owned.
 | Approved changes reach the handbook and MCP server | Delivered (repo) | Accepted-only publish; read-only MCP stub with one tool (`lookup_authority`, `crates/mcp`). |
 | A new country means new sources, not new code | Delivered (repo) | 106 authorities staged as data (`packs/world/US.json` 59 + `MX.json` 33 + `CA.json` 14, all `needs_review`); validated by `cargo xtask packs-validate` (SA-17). |
 | One source for every country, starting 106 US/CA/MX; prepaid labels and envelopes to your door | Partial | Authority data staged (above); 3 authorities loaded in production, more load as packs verify. No real mail, fees, or carrier charges anywhere. |
-| Success criterion: Viet Nam request → completed form + FedEx label, envelopes tomorrow | Roadmap | Live order timeline, form PDF fill and carrier postage are not wired. Live FedEx endpoints merged behind `labels.live` (off by default; caps 2/day, $60 max, ZIP allowlist, staff-only, audited — SA-19); credentials + allowlist are operator-owned. |
+| Success criterion: Viet Nam request → completed form + FedEx label, envelopes tomorrow | Roadmap | Live order timeline, form PDF fill and carrier postage are roadmap. Live FedEx endpoints merged behind `labels.live` (off by default; caps 2/day, $60 max, ZIP allowlist, staff-only, audited — SA-19); credentials + allowlist are operator-owned. |
 | Source-changed view (SA-14) | Parked | Needs ≥2 captures of one source; production holds at most one per source (carried from the slice report, not independently verified from this worktree). |
 
 Number provenance (measured this turn vs carried):

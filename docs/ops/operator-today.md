@@ -12,12 +12,14 @@ allowlisted IP. If your browser 403s, the page itself tells you
 which IP (or IPv6 /64) to add — then restart is needed (the
 list reads once at boot).
 Wave-2 merged since: SA-18 egypt-chain, SA-17 north-america-106
-(106/106 authorities), SA-21 walk-in reports + wiring (P305);
-P304 closed the release-train gap (no day gate, /healthz settle
-poll). New candidate builds on plant now (P304 run
-`20261102-172509-8cafecc`, P305 run `20261102-172905-bde970e`).
-SA-14 parked: max 1 capture per source on prod and staging,
-precondition needs ≥2.
+(106/106 authorities), SA-21 walk-in reports + wiring (P305),
+SA-15 promises-readme; P304 closed the release-train gap (no
+day gate, /healthz settle poll). Both stamped `ci_green`
+(P304 17:31Z, P305 17:37Z). Staging-green on `bde970e`
+(Run 19: 9/10, only S1 red, demo 3/3) — say "deploy now" and
+the builder ships it via `release-train.sh`. SA-14 parked:
+max 1 capture per source on prod and staging, precondition
+needs ≥2.
 
 Your top lines now (details in Still-open below):
 1. Approvals in `/review` (≥8 per slug, keep 2 per slug for the

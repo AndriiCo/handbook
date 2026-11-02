@@ -423,6 +423,28 @@ above verbatim).
   Mon 23:59 PST; still needs the unit-file root step + prod
   approvals + brand SVGs + S1.
 
+## Run 19 (2026-11-02, bde970e) — 9/10 kept, wave-2 stack accepted
+
+- Plant stamp `acceptance/bde970e5b921.json` (`ci_green: true`,
+  run `20261102-172905-bde970e`, stamp 17:37:11Z). P304
+  (`8cafecc`, release-train gap) stamped first
+  (`acceptance/8cafecc.json`, 17:31:10Z); P305 adds the
+  wave-2 merges + SA-21 wiring.
+- Exact checkout via xfer ref (`xfer-p305`), native release
+  rebuild 56 s + `npm --prefix web ci` + both SPAs, kill-by-PID
+  3587169 + `setsid -f` restart;
+  `healthz` → `0.1.0+bde970e`. DB reused (vietnam 8 +
+  usa-wa-sos 9 accepted stand).
+- Scoreboard 9/10 in `web/shots/staging-accept.json`
+  (17:45:45Z), only S1 red (operator-owned
+  licence/video/visibility). Live demo take 3/3 on the exact
+  SHA (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
+- Deploy candidate: stamp + 9/10 + demo 3/3 all on bde970e
+  (supersedes 2b4bc8d; adds SA-18 egypt-chain, SA-17
+  north-america-106, SA-21 walk-in reports + wiring, P304
+  release-train gap). Ships on the operator's next "deploy
+  now" via `release-train.sh` (no day gate anymore).
+
 ## Run 18 (2026-11-02, 2b4bc8d) — 9/10 kept, login-padding fix accepted
 
 - Plant stamp `acceptance/2b4bc8d5d5b7.json` (`ci_green: true`,
