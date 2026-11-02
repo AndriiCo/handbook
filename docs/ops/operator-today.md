@@ -6,7 +6,11 @@ now; previous release `3836bfb` kept for rollback). Wave-1 merges
 are all on main (SA-D, SA-19 + wiring, SA-20 + wiring, SA-16,
 SA-6 code, gold set 30) and Run 18 stamped + staging-green on
 `2b4bc8d` (plant `ci_green`, scoreboard 9/10 with only S1 red,
-live demo 3/3; adds P298 login padding). Say "deploy now" and the
+live demo 3/3; adds P298 login padding). P301 (`7eaf0df`, xtask-only) fixes the RO-2 judge dry run:
+`cargo xtask up --check` passes on a clean clone (bootstrap
+authorities for the pack-less `france-legalisation`/`mexico-sre`
+gold slugs); plant stamp queued as `20261102-123912-7eaf0df`.
+Say "deploy now" and the
 builder ships `2b4bc8d` (second Monday deploy,
 `--allow-today-overlap`; ready by 22:00 PST, never after Mon
 23:59 PST). SA-14 parked: max 1 capture per source on prod and
