@@ -1,0 +1,81 @@
+{
+  "pack": "BD",
+  "version": 1,
+  "title": "Bangladesh — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Bangladesh",
+      "region": "",
+      "name": "Ministry of Foreign Affairs of the Government of Bangladesh",
+      "slug": "bd-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "bd-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bangladesh (staff capture pending)."
+    },
+    {
+      "name": "mofa.gov.bd",
+      "authority": "bd-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bangladesh (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "bd-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=277&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Bangladesh (citation page; staff capture pending)."
+    },
+    {
+      "authority": "bd-ca-1",
+      "kind": "website_official",
+      "uri": "https://mofa.gov.bd/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1218 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "bd-index",
+      "authority": "bd-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Bangladesh against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "bd-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Bangladesh is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bd-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs of the Government of Bangladesh.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1218",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bd-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://mofa.gov.bd/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1218",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

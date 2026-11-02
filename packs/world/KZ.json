@@ -1,0 +1,336 @@
+{
+  "pack": "KZ",
+  "version": 1,
+  "title": "Kazakhstan — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "Ministry of Justice of the Republic of Kazakhstan – on official documents emanating from the justice authorities, civil registration and other government bodies, as well as notaries",
+      "slug": "kz-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "Ministry of Science and Higher Education of the Republic of Kazakhstan – on official documents emanating from organizations of higher and (or) postgraduate education",
+      "slug": "kz-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "Ministry of Education of the Republic of Kazakhstan – on official documents emanating from organizations of primary, basic secondary, general secondary, technical and vocational, post-secondary education",
+      "slug": "kz-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "Ministry of Internal Affairs of the Republic of Kazakhstan – on official documents coming from the structural units of the migration police, archival certificates and copies of archival documents coming from the special state archive of the Ministry of Internal Affairs of the Republic of Kazakhstan and its territorial divisions",
+      "slug": "kz-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "Ministry of Culture and Information of the Republic of Kazakhstan – on archival references and copies of archival documents originating from the state archives of the Republic of Kazakhstan",
+      "slug": "kz-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "Judicial Administration of the Republic of Kazakhstan (as agreed) – on official documents emanating from the judiciary",
+      "slug": "kz-ca-6"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "Ministry of Finance of the Republic of Kazakhstan – on official documents emanating from the structural divisions of the Ministry of Finance of the Republic of Kazakhstan and (or) their territorial divisions",
+      "slug": "kz-ca-7"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "General Prosecutor's Office of the Republic of Kazakhstan (as agreed) – on official documents emanating from the prosecutor’s office, investigation and inquiry",
+      "slug": "kz-ca-8"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "Ministry of Defense of the Republic of Kazakhstan – on archival certificates and copies of archival documents emanating from the Central Archive of the Ministry of Defense of the Republic of Kazakhstan",
+      "slug": "kz-ca-9"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "These bodies have the right to delegate the authority to affix an apostille to their territorial bodies.”",
+      "slug": "kz-ca-10"
+    },
+    {
+      "kind": "country",
+      "country": "Kazakhstan",
+      "region": "",
+      "name": "Attachment: The Hague Convention of 05.10.1961 abolishing the legalisation for foreign public documents stipulates the apostille of 9 x 9 cm in size.It is expedient to have a stamp of the apostille, which size is 13 x 13 cm. A script of the text can be enlarged for the comfort of its representation and reading. It is not allowed to change (translate) a language document, text and its order of placing on the stamp.The stamp can be fulfilled in the language of the Republic of Kazakhstan only.",
+      "slug": "kz-ca-11"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "kz-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
+    },
+    {
+      "name": "www.adilet.gov.kz",
+      "authority": "kz-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
+    },
+    {
+      "name": "mvd.gov.kz",
+      "authority": "kz-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
+    },
+    {
+      "name": "mks.gov.kz",
+      "authority": "kz-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
+    },
+    {
+      "name": "www.minfin.gov.kz",
+      "authority": "kz-ca-4",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
+    },
+    {
+      "name": "www.prokuror.gov.kz",
+      "authority": "kz-ca-5",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
+    },
+    {
+      "name": "www.mod.gov.kz",
+      "authority": "kz-ca-6",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "kz-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=102&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Kazakhstan (citation page; staff capture pending)."
+    },
+    {
+      "authority": "kz-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.adilet.gov.kz",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "kz-ca-2",
+      "kind": "website_official",
+      "uri": "http://mvd.gov.kz/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "kz-ca-3",
+      "kind": "website_official",
+      "uri": "http://mks.gov.kz",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "kz-ca-4",
+      "kind": "website_official",
+      "uri": "http://www.minfin.gov.kz",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "kz-ca-5",
+      "kind": "website_official",
+      "uri": "http://www.prokuror.gov.kz",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "kz-ca-6",
+      "kind": "website_official",
+      "uri": "https://www.mod.gov.kz",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "kz-index",
+      "authority": "kz-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Kazakhstan against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "kz-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Kazakhstan is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Justice of the Republic of Kazakhstan – on official documents emanating from the justice authorities, civil registration and other government bodies, as well as notaries.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Science and Higher Education of the Republic of Kazakhstan – on official documents emanating from organizations of higher and (or) postgraduate education.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Education of the Republic of Kazakhstan – on official documents emanating from organizations of primary, basic secondary, general secondary, technical and vocational, post-secondary education.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Internal Affairs of the Republic of Kazakhstan – on official documents coming from the structural units of the migration police, archival certificates and copies of archival documents coming from the special state archive of the Ministry of Internal Affairs of the Republic of Kazakhstan and its territorial divisions.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Culture and Information of the Republic of Kazakhstan – on archival references and copies of archival documents originating from the state archives of the Republic of Kazakhstan.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Judicial Administration of the Republic of Kazakhstan (as agreed) – on official documents emanating from the judiciary.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-7",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Finance of the Republic of Kazakhstan – on official documents emanating from the structural divisions of the Ministry of Finance of the Republic of Kazakhstan and (or) their territorial divisions.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-8",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: General Prosecutor's Office of the Republic of Kazakhstan (as agreed) – on official documents emanating from the prosecutor’s office, investigation and inquiry.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-9",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Defense of the Republic of Kazakhstan – on archival certificates and copies of archival documents emanating from the Central Archive of the Ministry of Defense of the Republic of Kazakhstan.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-10",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: These bodies have the right to delegate the authority to affix an apostille to their territorial bodies.”.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-11",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Attachment: The Hague Convention of 05.10.1961 abolishing the legalisation for foreign public documents stipulates the apostille of 9 x 9 cm in size.It is expedient to have a stamp of the apostille, which size is 13 x 13 cm. A script of the text can be enlarged for the comfort of its representation and reading. It is not allowed to change (translate) a language document, text and its order of placing on the stamp.The stamp can be fulfilled in the language of the Republic of Kazakhstan only..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.adilet.gov.kz as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://mvd.gov.kz/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://mks.gov.kz as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-4",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minfin.gov.kz as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-5",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.prokuror.gov.kz as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "kz-ca-6",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.mod.gov.kz as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

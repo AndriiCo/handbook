@@ -1,0 +1,192 @@
+{
+  "pack": "LC",
+  "version": 1,
+  "title": "Saint Lucia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Saint Lucia",
+      "region": "",
+      "name": "The Permanent Secretary, Ministry of Foreign Affairs and International Trade",
+      "slug": "lc-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Saint Lucia",
+      "region": "",
+      "name": "The Deputy Permanent Secretary, Ministry of Foreign Affairs and International Trade",
+      "slug": "lc-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Saint Lucia",
+      "region": "",
+      "name": "The Permanent Secretary, Ministry of Finance",
+      "slug": "lc-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Saint Lucia",
+      "region": "",
+      "name": "The Deputy Permanent Secretary, Ministry of Finance",
+      "slug": "lc-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Saint Lucia",
+      "region": "",
+      "name": "The Registrar of Companies and Intellectual Property",
+      "slug": "lc-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Saint Lucia",
+      "region": "",
+      "name": "The Registrar of the Supreme Court",
+      "slug": "lc-ca-6"
+    },
+    {
+      "kind": "country",
+      "country": "Saint Lucia",
+      "region": "",
+      "name": "The Solicitor General",
+      "slug": "lc-ca-7"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "lc-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Saint Lucia (staff capture pending)."
+    },
+    {
+      "name": "externalaffairs.gov.lc",
+      "authority": "lc-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Saint Lucia (staff capture pending)."
+    },
+    {
+      "name": "www.facebook.com",
+      "authority": "lc-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Saint Lucia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "lc-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=123&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Saint Lucia (citation page; staff capture pending)."
+    },
+    {
+      "authority": "lc-ca-1",
+      "kind": "website_official",
+      "uri": "https://externalaffairs.gov.lc/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=378 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "lc-ca-2",
+      "kind": "website_official",
+      "uri": "https://www.facebook.com/saintluciaexternalaffairs",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=378 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "lc-index",
+      "authority": "lc-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Saint Lucia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "lc-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Saint Lucia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lc-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Permanent Secretary, Ministry of Foreign Affairs and International Trade.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=378",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lc-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Deputy Permanent Secretary, Ministry of Foreign Affairs and International Trade.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=378",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lc-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Permanent Secretary, Ministry of Finance.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=378",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lc-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Deputy Permanent Secretary, Ministry of Finance.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=378",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lc-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Registrar of Companies and Intellectual Property.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=378",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lc-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Registrar of the Supreme Court.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=378",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lc-ca-7",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Solicitor General.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=378",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lc-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://externalaffairs.gov.lc/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=378",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lc-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.facebook.com/saintluciaexternalaffairs as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=378",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

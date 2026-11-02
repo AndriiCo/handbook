@@ -1,0 +1,162 @@
+{
+  "pack": "US",
+  "version": 1,
+  "title": "United States of America — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "United States of America",
+      "region": "",
+      "name": "Authentication Officer, Acting Authentication Officer and Assistant Authentication Officer, United States Department of State.",
+      "slug": "us-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "United States of America",
+      "region": "",
+      "name": "The U.S. Department of State’s Office of Authentications issues Apostilles for documents issued by Federal agencies of the United States.",
+      "slug": "us-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "United States of America",
+      "region": "",
+      "name": "The U.S. Department of State’s Bureau of Consular Affairs, Passport Services, Vital Records Section issues apostilles for Consular Reports of Birth, Death and Marriage.",
+      "slug": "us-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "United States of America",
+      "region": "",
+      "name": "The Clerks and Deputy Clerks of U.S. Federal Courts issue apostilles on documents issued by those courts.",
+      "slug": "us-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "United States of America",
+      "region": "",
+      "name": "Public documents issued by U.S. states, the District of Columbia and other U.S. jurisdictions may be apostillized by designated competent authorities in their respective jurisdictions, generally the state Secretary of State's office.",
+      "slug": "us-ca-5"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "us-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "travel.state.gov",
+      "authority": "us-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for United States of America (staff capture pending)."
+    },
+    {
+      "name": "www.nass.org",
+      "authority": "us-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for United States of America (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "us-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=76&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for United States of America (citation page; staff capture pending)."
+    },
+    {
+      "authority": "us-ca-1",
+      "kind": "website_official",
+      "uri": "https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=353 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "us-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.nass.org",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=353 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "us-index",
+      "authority": "us-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for United States of America against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "us-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): United States of America is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Authentication Officer, Acting Authentication Officer and Assistant Authentication Officer, United States Department of State..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The U.S. Department of State’s Office of Authentications issues Apostilles for documents issued by Federal agencies of the United States..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The U.S. Department of State’s Bureau of Consular Affairs, Passport Services, Vital Records Section issues apostilles for Consular Reports of Birth, Death and Marriage..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Clerks and Deputy Clerks of U.S. Federal Courts issue apostilles on documents issued by those courts..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Public documents issued by U.S. states, the District of Columbia and other U.S. jurisdictions may be apostillized by designated competent authorities in their respective jurisdictions, generally the state Secretary of State's office..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "us-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.nass.org as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=353",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

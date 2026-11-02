@@ -1,0 +1,81 @@
+{
+  "pack": "CK",
+  "version": 1,
+  "title": "Cook Islands — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Cook Islands",
+      "region": "",
+      "name": "The Ministry of Foreign Affairs and Immigration",
+      "slug": "ck-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ck-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Cook Islands (staff capture pending)."
+    },
+    {
+      "name": "www.mfai.gov.ck",
+      "authority": "ck-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Cook Islands (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ck-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=211&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Cook Islands (citation page; staff capture pending)."
+    },
+    {
+      "authority": "ck-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mfai.gov.ck/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=632 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ck-index",
+      "authority": "ck-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Cook Islands against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ck-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Cook Islands is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ck-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Foreign Affairs and Immigration.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=632",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ck-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mfai.gov.ck/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=632",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

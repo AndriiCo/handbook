@@ -1,0 +1,81 @@
+{
+  "pack": "LI",
+  "version": 1,
+  "title": "Liechtenstein — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Liechtenstein",
+      "region": "",
+      "name": "Regierungskanzlei der Fürstlichen Regierung",
+      "slug": "li-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "li-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Liechtenstein (staff capture pending)."
+    },
+    {
+      "name": "www.rk.llv.li",
+      "authority": "li-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Liechtenstein (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "li-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=108&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Liechtenstein (citation page; staff capture pending)."
+    },
+    {
+      "authority": "li-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.rk.llv.li/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=371 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "li-index",
+      "authority": "li-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Liechtenstein against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "li-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Liechtenstein is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "li-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Regierungskanzlei der Fürstlichen Regierung.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=371",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "li-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.rk.llv.li/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=371",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

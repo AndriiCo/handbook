@@ -1,0 +1,168 @@
+{
+  "pack": "IL",
+  "version": 1,
+  "title": "Israel — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Israel",
+      "region": "",
+      "name": "The Ministry of Foreign Affairs of the State of Israel",
+      "slug": "il-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Israel",
+      "region": "",
+      "name": "Registrars of Magistrates' Courts and Civil Servants appointed by the Minister of Justice under Notaries Law, 1976",
+      "slug": "il-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "il-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Israel (staff capture pending)."
+    },
+    {
+      "name": "mfa.gov.il",
+      "authority": "il-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Israel (staff capture pending)."
+    },
+    {
+      "name": "www.gov.il",
+      "authority": "il-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Israel (staff capture pending)."
+    },
+    {
+      "name": "www.court.gov.il",
+      "authority": "il-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Israel (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "il-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Israel (citation page; staff capture pending)."
+    },
+    {
+      "authority": "il-ca-1",
+      "kind": "website_official",
+      "uri": "https://mfa.gov.il/ConsularService/Certification/Pages/imut_mismachim.aspx",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=326 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "il-ca-2",
+      "kind": "website_official",
+      "uri": "https://mfa.gov.il/MFA/ConsularServices/Pages/PublicDocumentsEng.aspx",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=326 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "il-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.gov.il/he/Departments/General/apostille",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "il-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.gov.il/he/service/electronic-apostille",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "il-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.court.gov.il/heb/home.htm",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "il-index",
+      "authority": "il-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Israel against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "il-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Israel is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "il-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Foreign Affairs of the State of Israel.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=326",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "il-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Registrars of Magistrates' Courts and Civil Servants appointed by the Minister of Justice under Notaries Law, 1976.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=326",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "il-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://mfa.gov.il/ConsularService/Certification/Pages/imut_mismachim.aspx as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=326",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "il-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://mfa.gov.il/MFA/ConsularServices/Pages/PublicDocumentsEng.aspx as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=326",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "il-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.il/he/Departments/General/apostille as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "il-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.il/he/service/electronic-apostille as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "il-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.court.gov.il/heb/home.htm as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

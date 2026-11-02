@@ -1,0 +1,138 @@
+{
+  "pack": "AM",
+  "version": 1,
+  "title": "Armenia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Armenia",
+      "region": "",
+      "name": "The Ministry of Foreign Affairs and International Trade",
+      "slug": "am-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Armenia",
+      "region": "",
+      "name": "The Ministry of Justice",
+      "slug": "am-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "am-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Armenia (staff capture pending)."
+    },
+    {
+      "name": "www.mfa.am",
+      "authority": "am-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Armenia (staff capture pending)."
+    },
+    {
+      "name": "www.justice.am",
+      "authority": "am-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Armenia (staff capture pending)."
+    },
+    {
+      "name": "www.e-verify.am",
+      "authority": "am-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Armenia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "am-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=81&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Armenia (citation page; staff capture pending)."
+    },
+    {
+      "authority": "am-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mfa.am",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=357 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "am-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.justice.am/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=357 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "am-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.e-verify.am",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=81&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "am-index",
+      "authority": "am-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Armenia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "am-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Armenia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "am-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Foreign Affairs and International Trade.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=357",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "am-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Justice.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=357",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "am-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mfa.am as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=357",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "am-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.justice.am/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=357",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "am-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.e-verify.am as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=81&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "pack": "GB",
+  "version": 1,
+  "title": "United Kingdom of Great Britain and Northern Ireland — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "United Kingdom of Great Britain and Northern Ireland",
+      "region": "",
+      "name": "Foreign, Commonwealth and Development Office",
+      "slug": "gb-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "United Kingdom of Great Britain and Northern Ireland",
+      "region": "",
+      "name": "The Legalisation Office",
+      "slug": "gb-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "United Kingdom of Great Britain and Northern Ireland",
+      "region": "",
+      "name": "For the UK Overseas Territories, see below, under Contact Details:",
+      "slug": "gb-ca-3"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "gb-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for United Kingdom of Great Britain and Northern Ireland (staff capture pending)."
+    },
+    {
+      "name": "www.gov.uk",
+      "authority": "gb-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for United Kingdom of Great Britain and Northern Ireland (staff capture pending)."
+    },
+    {
+      "name": "www.elections.gov.bm",
+      "authority": "gb-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for United Kingdom of Great Britain and Northern Ireland (staff capture pending)."
+    },
+    {
+      "name": "www.britishantarcticterritory.org.uk",
+      "authority": "gb-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for United Kingdom of Great Britain and Northern Ireland (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "gb-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=75&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for United Kingdom of Great Britain and Northern Ireland (citation page; staff capture pending)."
+    },
+    {
+      "authority": "gb-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.gov.uk/get-document-legalised",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=352 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "gb-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.elections.gov.bm/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=352 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "gb-ca-3",
+      "kind": "website_official",
+      "uri": "https://www.britishantarcticterritory.org.uk/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=352 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "gb-index",
+      "authority": "gb-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for United Kingdom of Great Britain and Northern Ireland against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "gb-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): United Kingdom of Great Britain and Northern Ireland is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gb-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Foreign, Commonwealth and Development Office.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=352",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gb-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Legalisation Office.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=352",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gb-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: For the UK Overseas Territories, see below, under Contact Details:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=352",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gb-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.uk/get-document-legalised as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=352",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gb-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.elections.gov.bm/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=352",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gb-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.britishantarcticterritory.org.uk/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=352",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

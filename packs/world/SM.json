@@ -1,0 +1,81 @@
+{
+  "pack": "SM",
+  "version": 1,
+  "title": "San Marino — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "San Marino",
+      "region": "",
+      "name": "The Minister of Foreign Affairs",
+      "slug": "sm-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "sm-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for San Marino (staff capture pending)."
+    },
+    {
+      "name": "www.esteri.sm",
+      "authority": "sm-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for San Marino (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "sm-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=126&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for San Marino (citation page; staff capture pending)."
+    },
+    {
+      "authority": "sm-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.esteri.sm/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=381 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "sm-index",
+      "authority": "sm-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for San Marino against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "sm-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): San Marino is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "sm-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Minister of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=381",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "sm-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.esteri.sm/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=381",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

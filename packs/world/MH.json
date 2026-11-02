@@ -1,0 +1,285 @@
+{
+  "pack": "MH",
+  "version": 1,
+  "title": "Marshall Islands — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Minister of Foreign Affairs of the Marshall Islands,",
+      "slug": "mh-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Attorney General and Acting Attorney General,",
+      "slug": "mh-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Clerk and Deputy Clerk of the High Court,",
+      "slug": "mh-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Registrars and Deputy Registrars of Corporations,",
+      "slug": "mh-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Maritime Administrator and Special Agents thereof, and",
+      "slug": "mh-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Commissioner and Deputy Commissioners of Maritime Affairs or Special Agents thereof.",
+      "slug": "mh-ca-6"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Additional information (5 October 2007):",
+      "slug": "mh-ca-7"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Authority in accordance with Article 6 of the Convention:",
+      "slug": "mh-ca-8"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "IRI Corporate and Maritime Services (Switzerland) A.G.",
+      "slug": "mh-ca-9"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Office of the Deputy Registrar",
+      "slug": "mh-ca-10"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Limmatquai 50",
+      "slug": "mh-ca-11"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "CH-8001 Zurich",
+      "slug": "mh-ca-12"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Switzerland",
+      "slug": "mh-ca-13"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "[email protected]",
+      "slug": "mh-ca-14"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Telephone: +41-44-268-2211",
+      "slug": "mh-ca-15"
+    },
+    {
+      "kind": "country",
+      "country": "Marshall Islands",
+      "region": "",
+      "name": "Fax: +41-44-268-2212",
+      "slug": "mh-ca-16"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "mh-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Marshall Islands (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "mh-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=110&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Marshall Islands (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "mh-index",
+      "authority": "mh-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Marshall Islands against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "mh-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Marshall Islands is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Minister of Foreign Affairs of the Marshall Islands,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Attorney General and Acting Attorney General,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Clerk and Deputy Clerk of the High Court,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Registrars and Deputy Registrars of Corporations,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Maritime Administrator and Special Agents thereof, and.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Commissioner and Deputy Commissioners of Maritime Affairs or Special Agents thereof..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-7",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Additional information (5 October 2007):.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-8",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Authority in accordance with Article 6 of the Convention:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-9",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: IRI Corporate and Maritime Services (Switzerland) A.G..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-10",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Office of the Deputy Registrar.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-11",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Limmatquai 50.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-12",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: CH-8001 Zurich.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-13",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Switzerland.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-14",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: [email protected].",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-15",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Telephone: +41-44-268-2211.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mh-ca-16",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Fax: +41-44-268-2212.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

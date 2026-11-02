@@ -1,0 +1,126 @@
+{
+  "pack": "AU",
+  "version": 1,
+  "title": "Australia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Australia",
+      "region": "",
+      "name": "The Secretary to the Department of Foreign Affairs and Trade of the Commonwealth of Australia",
+      "slug": "au-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Australia",
+      "region": "",
+      "name": "Australian Embassies, High Commissions and Consulate (except Consulates headed by an Honorary Consul) are empowered",
+      "slug": "au-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Australia",
+      "region": "",
+      "name": "Within Australia, the Australian Passport Office in capital cities issues Apostilles",
+      "slug": "au-ca-3"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "au-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Australia (staff capture pending)."
+    },
+    {
+      "name": "www.smartraveller.gov.au",
+      "authority": "au-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Australia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "au-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=8&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Australia (citation page; staff capture pending)."
+    },
+    {
+      "authority": "au-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.smartraveller.gov.au/consular-services#notarials",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=307 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "au-ca-2",
+      "kind": "website_official",
+      "uri": "https://www.smartraveller.gov.au/consular-services/notarial-services",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=307 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "au-index",
+      "authority": "au-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Australia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "au-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Australia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "au-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Secretary to the Department of Foreign Affairs and Trade of the Commonwealth of Australia.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=307",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "au-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Australian Embassies, High Commissions and Consulate (except Consulates headed by an Honorary Consul) are empowered.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=307",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "au-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Within Australia, the Australian Passport Office in capital cities issues Apostilles.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=307",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "au-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.smartraveller.gov.au/consular-services#notarials as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=307",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "au-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.smartraveller.gov.au/consular-services/notarial-services as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=307",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

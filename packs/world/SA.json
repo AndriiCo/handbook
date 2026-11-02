@@ -1,0 +1,81 @@
+{
+  "pack": "SA",
+  "version": 1,
+  "title": "Saudi Arabia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Saudi Arabia",
+      "region": "",
+      "name": "The Minister of Foreign Affairs",
+      "slug": "sa-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "sa-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Saudi Arabia (staff capture pending)."
+    },
+    {
+      "name": "ratification.mofa.gov.sa",
+      "authority": "sa-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Saudi Arabia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "sa-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=268&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Saudi Arabia (citation page; staff capture pending)."
+    },
+    {
+      "authority": "sa-ca-1",
+      "kind": "website_official",
+      "uri": "https://ratification.mofa.gov.sa/ApostilleRatification/Search",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1173 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "sa-index",
+      "authority": "sa-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Saudi Arabia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "sa-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Saudi Arabia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "sa-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Minister of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1173",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "sa-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://ratification.mofa.gov.sa/ApostilleRatification/Search as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1173",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

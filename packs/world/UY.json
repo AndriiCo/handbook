@@ -1,0 +1,73 @@
+{
+  "pack": "UY",
+  "version": 1,
+  "title": "Uruguay — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Uruguay",
+      "region": "",
+      "name": "Uruguay — Competent Authority (Art. 6)",
+      "slug": "uy-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "uy-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Uruguay (staff capture pending)."
+    },
+    {
+      "name": "www.mrree.gub.uy",
+      "authority": "uy-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Uruguay (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "uy-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=77&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Uruguay (citation page; staff capture pending)."
+    },
+    {
+      "authority": "uy-ca",
+      "kind": "website_official",
+      "uri": "http://www.mrree.gub.uy/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=77&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "uy-index",
+      "authority": "uy-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Uruguay against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "uy-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Uruguay is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "uy-ca",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mrree.gub.uy/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=77&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

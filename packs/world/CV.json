@@ -1,0 +1,52 @@
+{
+  "pack": "CV",
+  "version": 1,
+  "title": "Cabo Verde — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Cabo Verde",
+      "region": "",
+      "name": "Cabo Verde — Competent Authority (Art. 6)",
+      "slug": "cv-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "cv-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Cabo Verde (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "cv-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=232&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Cabo Verde (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "cv-index",
+      "authority": "cv-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Cabo Verde against a staff capture of the cited HCCH pages (none).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "cv-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Cabo Verde is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

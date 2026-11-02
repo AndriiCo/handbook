@@ -1,0 +1,52 @@
+{
+  "pack": "TN",
+  "version": 1,
+  "title": "Tunisia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Tunisia",
+      "region": "",
+      "name": "Tunisia — Competent Authority (Art. 6)",
+      "slug": "tn-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "tn-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Tunisia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "tn-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=262&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Tunisia (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "tn-index",
+      "authority": "tn-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Tunisia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "tn-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Tunisia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

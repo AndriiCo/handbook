@@ -1,0 +1,96 @@
+{
+  "pack": "BH",
+  "version": 1,
+  "title": "Bahrain — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Bahrain",
+      "region": "",
+      "name": "Ministry of Foreign Affairs",
+      "slug": "bh-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "bh-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bahrain (staff capture pending)."
+    },
+    {
+      "name": "www.mofa.gov.bh",
+      "authority": "bh-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bahrain (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "bh-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=258&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Bahrain (citation page; staff capture pending)."
+    },
+    {
+      "authority": "bh-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mofa.gov.bh",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=954 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "bh-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mofa.gov.bh/Default.aspx?tabid=151&language=en-US",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=258&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "bh-index",
+      "authority": "bh-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Bahrain against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "bh-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Bahrain is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bh-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=954",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bh-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mofa.gov.bh as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=954",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bh-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mofa.gov.bh/Default.aspx?tabid=151&language=en-US as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=258&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

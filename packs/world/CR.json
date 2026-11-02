@@ -1,0 +1,60 @@
+{
+  "pack": "CR",
+  "version": 1,
+  "title": "Costa Rica — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Costa Rica",
+      "region": "",
+      "name": "Ministerio de Relaciones Exteriores y Culto de Costa Rica, Departamento de Autenticaciones",
+      "slug": "cr-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "cr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Costa Rica (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "cr-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=91&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Costa Rica (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "cr-index",
+      "authority": "cr-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Costa Rica against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "cr-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Costa Rica is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cr-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministerio de Relaciones Exteriores y Culto de Costa Rica, Departamento de Autenticaciones.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=903",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

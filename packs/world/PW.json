@@ -1,0 +1,52 @@
+{
+  "pack": "PW",
+  "version": 1,
+  "title": "Palau — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Palau",
+      "region": "",
+      "name": "Palau — Competent Authority (Art. 6)",
+      "slug": "pw-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "pw-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Palau (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "pw-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=273&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Palau (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "pw-index",
+      "authority": "pw-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Palau against a staff capture of the cited HCCH pages (none).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "pw-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Palau is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

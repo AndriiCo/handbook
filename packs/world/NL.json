@@ -1,0 +1,130 @@
+{
+  "pack": "NL",
+  "version": 1,
+  "title": "Netherlands (Kingdom of the) — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Netherlands (Kingdom of the)",
+      "region": "",
+      "name": "Netherlands (Kingdom of the) — Competent Authority (Art. 6)",
+      "slug": "nl-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "nl-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Netherlands (Kingdom of the) (staff capture pending)."
+    },
+    {
+      "name": "www.minbuza.nl",
+      "authority": "nl-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Netherlands (Kingdom of the) (staff capture pending)."
+    },
+    {
+      "name": "www.rechtspraak.nl",
+      "authority": "nl-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Netherlands (Kingdom of the) (staff capture pending)."
+    },
+    {
+      "name": "www.ib-groep.nl",
+      "authority": "nl-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Netherlands (Kingdom of the) (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "nl-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=3&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Netherlands (Kingdom of the) (citation page; staff capture pending)."
+    },
+    {
+      "authority": "nl-ca",
+      "kind": "website_official",
+      "uri": "http://www.minbuza.nl/en/services/consular-services/legalisation-of-documents",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=3&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "nl-ca",
+      "kind": "website_official",
+      "uri": "http://www.rechtspraak.nl/Organisatie/Rechtbanken/Den-Haag/Bezoekinformatie/Centrale_Balie/Pages/Apostillesenlegalisatie.aspx",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=3&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "nl-ca",
+      "kind": "website_official",
+      "uri": "http://www.ib-groep.nl/International_visitors/Diploma_assessment/Going_abroad/s20_legalizing.asp",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=3&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "nl-ca",
+      "kind": "website_official",
+      "uri": "http://www.rechtspraak.nl/Gerechten/Rechtbanken/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=3&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "nl-index",
+      "authority": "nl-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Netherlands (Kingdom of the) against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "nl-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Netherlands (Kingdom of the) is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "nl-ca",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minbuza.nl/en/services/consular-services/legalisation-of-documents as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=3&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "nl-ca",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.rechtspraak.nl/Organisatie/Rechtbanken/Den-Haag/Bezoekinformatie/Centrale_Balie/Pages/Apostillesenlegalisatie.aspx as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=3&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "nl-ca",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.ib-groep.nl/International_visitors/Diploma_assessment/Going_abroad/s20_legalizing.asp as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=3&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "nl-ca",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.rechtspraak.nl/Gerechten/Rechtbanken/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=3&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

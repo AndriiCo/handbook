@@ -1,0 +1,438 @@
+{
+  "pack": "PL",
+  "version": 1,
+  "title": "Poland — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "Ministry of Foreign Affairs",
+      "slug": "pl-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "Legalisation Section",
+      "slug": "pl-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "Ministry of Culture and National Heritage, The Department of Art and Culture Education",
+      "slug": "pl-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "The following documents are subject to its competence:",
+      "slug": "pl-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "certificates, diplomas, indexes or authentications issued by art schools",
+      "slug": "pl-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "documents issued by schools, other than mentioned above, intended for legal transactions with foreign countries.",
+      "slug": "pl-ca-6"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "National Agency for Academic Exchange",
+      "slug": "pl-ca-7"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "diplomas of graduation with supplements,",
+      "slug": "pl-ca-8"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "copies of diplomas of graduation,",
+      "slug": "pl-ca-9"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "certificates of diplomas and post-graduate certificates,",
+      "slug": "pl-ca-10"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "duplicates of diplomas and post-graduate certificates,",
+      "slug": "pl-ca-11"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "certificates of graduation,",
+      "slug": "pl-ca-12"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "doctoral and postdoctoral diplomas, as well as their duplicates and copies - in the case of doctoral and post-doctoral degrees awarded by the authorized organizational units of the university.",
+      "slug": "pl-ca-13"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "Ministry of National Education",
+      "slug": "pl-ca-14"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "certificates issued by schools and vocational schools in Poland, mentioned in Article 8 para. 2 letter c of the Educational Law (Consolidated text: Journal of Laws of 2018 position no. 996) and by schools, vocational schools and school consultation points at the diplomatic representations, consular offices and military representations of the Republic of Poland.",
+      "slug": "pl-ca-15"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "School superintendents appropriate for the seat of the school",
+      "slug": "pl-ca-16"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "promotion certificates and certificates of graduation as well as indexes issued by schools",
+      "slug": "pl-ca-17"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "documents issued by schools, continuing education facilities and practical educational facilities, other than mentioned above, intended for legal transactions with foreign countries.",
+      "slug": "pl-ca-18"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "Directors of regional exam commissions:",
+      "slug": "pl-ca-19"
+    },
+    {
+      "kind": "country",
+      "country": "Poland",
+      "region": "",
+      "name": "certificates of completion of primary and secondary education at the level of external exams, certificates of secondary education, annexes to the secondary education certificates, certificates confirming professional qualifications, diplomas and certificates issued by regional exam commissions.",
+      "slug": "pl-ca-20"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "pl-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Poland (staff capture pending)."
+    },
+    {
+      "name": "www.gov.pl",
+      "authority": "pl-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Poland (staff capture pending)."
+    },
+    {
+      "name": "www.nawa.gov.pl",
+      "authority": "pl-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Poland (staff capture pending)."
+    },
+    {
+      "name": "www.men.gov.pl",
+      "authority": "pl-ca-4",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Poland (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "pl-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=61&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Poland (citation page; staff capture pending)."
+    },
+    {
+      "authority": "pl-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.gov.pl/web/dyplomacja",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=650 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "pl-ca-2",
+      "kind": "website_official",
+      "uri": "https://www.gov.pl/kultura",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=650 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "pl-ca-3",
+      "kind": "website_official",
+      "uri": "http://www.nawa.gov.pl",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=650 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "pl-ca-4",
+      "kind": "website_official",
+      "uri": "http://www.men.gov.pl",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=650 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "pl-ca-5",
+      "kind": "website_official",
+      "uri": "https://www.gov.pl/web/dyplomacja/apostille-legalizacja-dokumentow",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=650 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "pl-index",
+      "authority": "pl-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Poland against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "pl-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Poland is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Legalisation Section.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Culture and National Heritage, The Department of Art and Culture Education.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The following documents are subject to its competence:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: certificates, diplomas, indexes or authentications issued by art schools.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: documents issued by schools, other than mentioned above, intended for legal transactions with foreign countries..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-7",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: National Agency for Academic Exchange.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-8",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: diplomas of graduation with supplements,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-9",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: copies of diplomas of graduation,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-10",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: certificates of diplomas and post-graduate certificates,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-11",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: duplicates of diplomas and post-graduate certificates,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-12",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: certificates of graduation,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-13",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: doctoral and postdoctoral diplomas, as well as their duplicates and copies - in the case of doctoral and post-doctoral degrees awarded by the authorized organizational units of the university..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-14",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of National Education.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-15",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: certificates issued by schools and vocational schools in Poland, mentioned in Article 8 para. 2 letter c of the Educational Law (Consolidated text: Journal of Laws of 2018 position no. 996) and by schools, vocational schools and school consultation points at the diplomatic representations, consular offices and military representations of the Republic of Poland..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-16",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: School superintendents appropriate for the seat of the school.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-17",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: promotion certificates and certificates of graduation as well as indexes issued by schools.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-18",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: documents issued by schools, continuing education facilities and practical educational facilities, other than mentioned above, intended for legal transactions with foreign countries..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-19",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Directors of regional exam commissions:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-20",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: certificates of completion of primary and secondary education at the level of external exams, certificates of secondary education, annexes to the secondary education certificates, certificates confirming professional qualifications, diplomas and certificates issued by regional exam commissions..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.pl/web/dyplomacja as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.pl/kultura as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.nawa.gov.pl as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-4",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.men.gov.pl as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pl-ca-5",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.pl/web/dyplomacja/apostille-legalizacja-dokumentow as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=650",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

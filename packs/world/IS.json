@@ -1,0 +1,81 @@
+{
+  "pack": "IS",
+  "version": 1,
+  "title": "Iceland — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Iceland",
+      "region": "",
+      "name": "Ministry for Foreign Affairs (Utanríkisrá&eth;uneyti&eth;)",
+      "slug": "is-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "is-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Iceland (staff capture pending)."
+    },
+    {
+      "name": "www.mfa.is",
+      "authority": "is-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Iceland (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "is-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=100&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Iceland (citation page; staff capture pending)."
+    },
+    {
+      "authority": "is-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mfa.is/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=649 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "is-index",
+      "authority": "is-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Iceland against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "is-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Iceland is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "is-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry for Foreign Affairs (Utanríkisrá&eth;uneyti&eth;).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=649",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "is-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mfa.is/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=649",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

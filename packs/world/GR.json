@@ -1,0 +1,171 @@
+{
+  "pack": "GR",
+  "version": 1,
+  "title": "Greece — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Greece",
+      "region": "",
+      "name": "The Regions for all documents issued by the services/ offices of the Regional Self Government",
+      "slug": "gr-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Greece",
+      "region": "",
+      "name": "The Decentralized Administrations, for all documents issued by:",
+      "slug": "gr-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Greece",
+      "region": "",
+      "name": "The public civil services of the Regions that do not fall under the competence of the Regional Self Governement",
+      "slug": "gr-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Greece",
+      "region": "",
+      "name": "Legal Entities of Public Law",
+      "slug": "gr-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Greece",
+      "region": "",
+      "name": "First degree Local Governement Organizations",
+      "slug": "gr-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Greece",
+      "region": "",
+      "name": "The Registry Offices.",
+      "slug": "gr-ca-6"
+    },
+    {
+      "kind": "country",
+      "country": "Greece",
+      "region": "",
+      "name": "For judicial documents, the First Instance Court of the region where the issuing authority is seated.",
+      "slug": "gr-ca-7"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "gr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Greece (staff capture pending)."
+    },
+    {
+      "name": "www.apdattikis.gov.gr",
+      "authority": "gr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Greece (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "gr-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=42&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Greece (citation page; staff capture pending)."
+    },
+    {
+      "authority": "gr-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.apdattikis.gov.gr/citizen/Pages/Hagueseal.aspx",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=323 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "gr-index",
+      "authority": "gr-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Greece against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "gr-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Greece is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gr-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Regions for all documents issued by the services/ offices of the Regional Self Government.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gr-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Decentralized Administrations, for all documents issued by:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gr-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The public civil services of the Regions that do not fall under the competence of the Regional Self Governement.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gr-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Legal Entities of Public Law.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gr-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: First degree Local Governement Organizations.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gr-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Registry Offices..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gr-ca-7",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: For judicial documents, the First Instance Court of the region where the issuing authority is seated..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gr-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.apdattikis.gov.gr/citizen/Pages/Hagueseal.aspx as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

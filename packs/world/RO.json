@@ -1,0 +1,168 @@
+{
+  "pack": "RO",
+  "version": 1,
+  "title": "Romania — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Romania",
+      "region": "",
+      "name": "Tribunals",
+      "slug": "ro-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Romania",
+      "region": "",
+      "name": "Chambers of Notaries Public",
+      "slug": "ro-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Romania",
+      "region": "",
+      "name": "Offices of the Prefect",
+      "slug": "ro-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Romania",
+      "region": "",
+      "name": "The aforementioned changes were operated by Law no. 202/2010 for accelerating judicial proceedings (article V), published in the Official Journal no. 178/26 October 2010 (...)\"",
+      "slug": "ro-ca-4"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ro-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Romania (staff capture pending)."
+    },
+    {
+      "name": "www.just.ro",
+      "authority": "ro-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Romania (staff capture pending)."
+    },
+    {
+      "name": "www.apostile.ro",
+      "authority": "ro-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Romania (staff capture pending)."
+    },
+    {
+      "name": "www.uniuneanotarilor.ro",
+      "authority": "ro-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Romania (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ro-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=63&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Romania (citation page; staff capture pending)."
+    },
+    {
+      "authority": "ro-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.just.ro",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=340 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ro-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.apostile.ro",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=340 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ro-ca-3",
+      "kind": "website_official",
+      "uri": "http://www.uniuneanotarilor.ro/?p=4.3",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=340 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ro-index",
+      "authority": "ro-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Romania against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ro-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Romania is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ro-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Tribunals.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=340",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ro-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Chambers of Notaries Public.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=340",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ro-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Offices of the Prefect.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=340",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ro-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The aforementioned changes were operated by Law no. 202/2010 for accelerating judicial proceedings (article V), published in the Official Journal no. 178/26 October 2010 (...)\".",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=340",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ro-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.just.ro as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=340",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ro-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.apostile.ro as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=340",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ro-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.uniuneanotarilor.ro/?p=4.3 as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=340",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

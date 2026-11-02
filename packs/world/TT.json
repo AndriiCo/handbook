@@ -1,0 +1,135 @@
+{
+  "pack": "TT",
+  "version": 1,
+  "title": "Trinidad and Tobago — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Trinidad and Tobago",
+      "region": "",
+      "name": "Permanent Secretary",
+      "slug": "tt-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Trinidad and Tobago",
+      "region": "",
+      "name": "Deputy Permanent Secretary",
+      "slug": "tt-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Trinidad and Tobago",
+      "region": "",
+      "name": "Director, Consular Affairs Division",
+      "slug": "tt-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Trinidad and Tobago",
+      "region": "",
+      "name": "Senior Foreign Service Officer, Consular Affairs Division",
+      "slug": "tt-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Trinidad and Tobago",
+      "region": "",
+      "name": "the Registrar General (in Port of Spain)",
+      "slug": "tt-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Trinidad and Tobago",
+      "region": "",
+      "name": "the Ministry of Foreign and CARICOM Affairs:",
+      "slug": "tt-ca-6"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "tt-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Trinidad and Tobago (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "tt-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=132&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Trinidad and Tobago (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "tt-index",
+      "authority": "tt-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Trinidad and Tobago against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "tt-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Trinidad and Tobago is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "tt-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Permanent Secretary.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=385",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "tt-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Deputy Permanent Secretary.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=385",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "tt-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Director, Consular Affairs Division.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=385",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "tt-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Senior Foreign Service Officer, Consular Affairs Division.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=385",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "tt-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Registrar General (in Port of Spain).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=385",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "tt-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Ministry of Foreign and CARICOM Affairs:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=385",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

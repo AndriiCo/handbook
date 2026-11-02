@@ -1,0 +1,52 @@
+{
+  "pack": "ST",
+  "version": 1,
+  "title": "Sao Tome and Principe — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Sao Tome and Principe",
+      "region": "",
+      "name": "Sao Tome and Principe — Competent Authority (Art. 6)",
+      "slug": "st-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "st-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Sao Tome and Principe (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "st-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=223&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Sao Tome and Principe (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "st-index",
+      "authority": "st-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Sao Tome and Principe against a staff capture of the cited HCCH pages (none).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "st-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Sao Tome and Principe is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

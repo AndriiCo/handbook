@@ -1,0 +1,111 @@
+{
+  "pack": "LV",
+  "version": 1,
+  "title": "Latvia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Latvia",
+      "region": "",
+      "name": "Council of Sworn Notaries of Latvia",
+      "slug": "lv-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "lv-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Latvia (staff capture pending)."
+    },
+    {
+      "name": "notary.lv",
+      "authority": "lv-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Latvia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "lv-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=49&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Latvia (citation page; staff capture pending)."
+    },
+    {
+      "authority": "lv-ca-1",
+      "kind": "website_official",
+      "uri": "https://notary.lv",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=329 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "lv-ca-1",
+      "kind": "website_official",
+      "uri": "https://notary.lv/apostille",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=49&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "lv-ca-1",
+      "kind": "website_official",
+      "uri": "https://notary.lv/notaries_map",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=49&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "lv-index",
+      "authority": "lv-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Latvia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "lv-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Latvia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lv-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Council of Sworn Notaries of Latvia.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=329",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lv-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://notary.lv as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=329",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lv-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://notary.lv/apostille as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=49&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lv-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://notary.lv/notaries_map as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=49&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

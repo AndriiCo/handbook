@@ -1,0 +1,111 @@
+{
+  "pack": "BR",
+  "version": 1,
+  "title": "Brazil — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Brazil",
+      "region": "",
+      "name": "Pursuant to Article 6 of the Convention, the Government of the Federative Republic of Brazil states that, according to the applicable Brazilian legislation, the Judiciary is responsible for supervising and regulating notarial activities in Brazil. Therefore, legal, notarial and registration authorities will have competence to issue certificates by the Brazilian Government.",
+      "slug": "br-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "br-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Brazil (staff capture pending)."
+    },
+    {
+      "name": "www.cnj.jus.br",
+      "authority": "br-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Brazil (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "br-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=27&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Brazil (citation page; staff capture pending)."
+    },
+    {
+      "authority": "br-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.cnj.jus.br/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1043 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "br-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.cnj.jus.br/poder-judiciario/relacoes-internacionais/convencao-da-apostila-da-haia",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=27&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "br-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.cnj.jus.br/poder-judiciario/relacoes-internacionais/apostila-da-haia/modelo-do-carimbo/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=27&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "br-index",
+      "authority": "br-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Brazil against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "br-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Brazil is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "br-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Pursuant to Article 6 of the Convention, the Government of the Federative Republic of Brazil states that, according to the applicable Brazilian legislation, the Judiciary is responsible for supervising and regulating notarial activities in Brazil. Therefore, legal, notarial and registration authorities will have competence to issue certificates by the Brazilian Government..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1043",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "br-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.cnj.jus.br/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1043",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "br-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.cnj.jus.br/poder-judiciario/relacoes-internacionais/convencao-da-apostila-da-haia as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=27&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "br-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.cnj.jus.br/poder-judiciario/relacoes-internacionais/apostila-da-haia/modelo-do-carimbo/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=27&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

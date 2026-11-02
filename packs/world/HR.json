@@ -1,0 +1,117 @@
+{
+  "pack": "HR",
+  "version": 1,
+  "title": "Croatia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Croatia",
+      "region": "",
+      "name": "Municipal courts or the Ministry of Justice, Public Administration and Digital Transformation of the Republic of Croatia",
+      "slug": "hr-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "hr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Croatia (staff capture pending)."
+    },
+    {
+      "name": "mpudt.gov.hr",
+      "authority": "hr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Croatia (staff capture pending)."
+    },
+    {
+      "name": "sudovi.hr",
+      "authority": "hr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Croatia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "hr-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=31&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Croatia (citation page; staff capture pending)."
+    },
+    {
+      "authority": "hr-ca-1",
+      "kind": "website_official",
+      "uri": "https://mpudt.gov.hr/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=315 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "hr-ca-1",
+      "kind": "website_official",
+      "uri": "https://mpudt.gov.hr/authentication-legalisation-of-documents/25392",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=31&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "hr-ca-1",
+      "kind": "website_official",
+      "uri": "https://sudovi.hr/en/node/4",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=31&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "hr-index",
+      "authority": "hr-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Croatia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "hr-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Croatia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hr-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Municipal courts or the Ministry of Justice, Public Administration and Digital Transformation of the Republic of Croatia.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=315",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hr-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://mpudt.gov.hr/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=315",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hr-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://mpudt.gov.hr/authentication-legalisation-of-documents/25392 as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=31&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hr-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://sudovi.hr/en/node/4 as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=31&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

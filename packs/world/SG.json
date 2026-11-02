@@ -1,0 +1,81 @@
+{
+  "pack": "SG",
+  "version": 1,
+  "title": "Singapore — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Singapore",
+      "region": "",
+      "name": "Singapore Academy of Law",
+      "slug": "sg-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "sg-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Singapore (staff capture pending)."
+    },
+    {
+      "name": "legalisation.sal.sg",
+      "authority": "sg-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Singapore (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "sg-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=128&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Singapore (citation page; staff capture pending)."
+    },
+    {
+      "authority": "sg-ca-1",
+      "kind": "website_official",
+      "uri": "https://legalisation.sal.sg/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1156 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "sg-index",
+      "authority": "sg-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Singapore against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "sg-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Singapore is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "sg-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Singapore Academy of Law.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1156",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "sg-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://legalisation.sal.sg/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1156",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

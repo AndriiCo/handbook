@@ -1,0 +1,117 @@
+{
+  "pack": "PT",
+  "version": 1,
+  "title": "Portugal — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Portugal",
+      "region": "",
+      "name": "The Attorney General of the Republic",
+      "slug": "pt-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Portugal",
+      "region": "",
+      "name": "The Attorneys General on behalf of [...] Porto, Coimbra and Évora and the Assistant Attorneys General with the Representants of the Republic of the Autonomic Regions of Madeira and Açores, The Court of Appeal of Guimarães (Tribunal da Relação de Guimarães)",
+      "slug": "pt-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "pt-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Portugal (staff capture pending)."
+    },
+    {
+      "name": "www.pgr.pt",
+      "authority": "pt-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Portugal (staff capture pending)."
+    },
+    {
+      "name": "www.trp.pt",
+      "authority": "pt-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Portugal (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "pt-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=62&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Portugal (citation page; staff capture pending)."
+    },
+    {
+      "authority": "pt-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.pgr.pt/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=339 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "pt-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.trp.pt",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=339 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "pt-index",
+      "authority": "pt-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Portugal against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "pt-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Portugal is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pt-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Attorney General of the Republic.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=339",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pt-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Attorneys General on behalf of [...] Porto, Coimbra and Évora and the Assistant Attorneys General with the Representants of the Republic of the Autonomic Regions of Madeira and Açores, The Court of Appeal of Guimarães (Tribunal da Relação de Guimarães).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=339",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pt-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.pgr.pt/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=339",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pt-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.trp.pt as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=339",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

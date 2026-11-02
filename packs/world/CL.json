@@ -1,0 +1,249 @@
+{
+  "pack": "CL",
+  "version": 1,
+  "title": "Chile — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Chile",
+      "region": "",
+      "name": "Subsecretario de Justicia, Secretarios Regionales Ministeriales de Justicia",
+      "slug": "cl-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Chile",
+      "region": "",
+      "name": "(Under-Secretary of Justice, Regional Ministerial Secretaries of Justice)",
+      "slug": "cl-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Chile",
+      "region": "",
+      "name": "Secretarios Regionales del Ministerio de Educación",
+      "slug": "cl-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Chile",
+      "region": "",
+      "name": "(Regional Secretaries of the Ministry of Education)",
+      "slug": "cl-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Chile",
+      "region": "",
+      "name": "Secretarios Regionales Ministeriales de Salud, Directores de Servicios de Salud, Intendente de Prestadores de Salud",
+      "slug": "cl-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Chile",
+      "region": "",
+      "name": "(Regional Ministerial Secretaries of Health, Health Service Directors, Intendent of Health Providers)",
+      "slug": "cl-ca-6"
+    },
+    {
+      "kind": "country",
+      "country": "Chile",
+      "region": "",
+      "name": "Director Nacional, Directores Regionales del Servicio de Registro Civil e Identificación",
+      "slug": "cl-ca-7"
+    },
+    {
+      "kind": "country",
+      "country": "Chile",
+      "region": "",
+      "name": "(National Director, Regional Directors of the Civil and Identification Registration Service)",
+      "slug": "cl-ca-8"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "cl-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Chile (staff capture pending)."
+    },
+    {
+      "name": "www.minjusticia.gob.cl",
+      "authority": "cl-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Chile (staff capture pending)."
+    },
+    {
+      "name": "www.ayudamineduc.cl",
+      "authority": "cl-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Chile (staff capture pending)."
+    },
+    {
+      "name": "www.minsal.cl",
+      "authority": "cl-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Chile (staff capture pending)."
+    },
+    {
+      "name": "www.registrocivil.cl",
+      "authority": "cl-ca-4",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Chile (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "cl-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=29&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Chile (citation page; staff capture pending)."
+    },
+    {
+      "authority": "cl-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.minjusticia.gob.cl/conoce-mas-sobre-nuestro-servicio-de-apostilla/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1047 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "cl-ca-2",
+      "kind": "website_official",
+      "uri": "https://www.ayudamineduc.cl/ficha/apostilla-mineduc",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1047 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "cl-ca-3",
+      "kind": "website_official",
+      "uri": "https://www.minsal.cl/secretarias-regionales-ministeriales-de-salud/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1047 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "cl-ca-4",
+      "kind": "website_official",
+      "uri": "https://www.registrocivil.cl/principal/canal-tramites/apostilla",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1047 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "cl-index",
+      "authority": "cl-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Chile against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "cl-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Chile is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Subsecretario de Justicia, Secretarios Regionales Ministeriales de Justicia.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: (Under-Secretary of Justice, Regional Ministerial Secretaries of Justice).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Secretarios Regionales del Ministerio de Educación.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: (Regional Secretaries of the Ministry of Education).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Secretarios Regionales Ministeriales de Salud, Directores de Servicios de Salud, Intendente de Prestadores de Salud.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: (Regional Ministerial Secretaries of Health, Health Service Directors, Intendent of Health Providers).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-7",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Director Nacional, Directores Regionales del Servicio de Registro Civil e Identificación.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-8",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: (National Director, Regional Directors of the Civil and Identification Registration Service).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.minjusticia.gob.cl/conoce-mas-sobre-nuestro-servicio-de-apostilla/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.ayudamineduc.cl/ficha/apostilla-mineduc as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.minsal.cl/secretarias-regionales-ministeriales-de-salud/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cl-ca-4",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.registrocivil.cl/principal/canal-tramites/apostilla as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1047",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

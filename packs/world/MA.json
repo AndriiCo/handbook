@@ -1,0 +1,52 @@
+{
+  "pack": "MA",
+  "version": 1,
+  "title": "Morocco — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Morocco",
+      "region": "",
+      "name": "Morocco — Competent Authority (Art. 6)",
+      "slug": "ma-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ma-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Morocco (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ma-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=56&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Morocco (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ma-index",
+      "authority": "ma-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Morocco against a staff capture of the cited HCCH pages (none).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ma-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Morocco is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

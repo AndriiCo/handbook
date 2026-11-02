@@ -1,0 +1,96 @@
+{
+  "pack": "XK",
+  "version": 1,
+  "title": "Kosovo — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Kosovo",
+      "region": "",
+      "name": "Ministry of Foreign Affairs (Department for Consular Affairs)",
+      "slug": "xk-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Kosovo",
+      "region": "",
+      "name": "Ministry of Internal Affairs (Civil Registration Agency)",
+      "slug": "xk-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "xk-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Kosovo (staff capture pending)."
+    },
+    {
+      "name": "eapp.rks-gov.net",
+      "authority": "xk-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Kosovo (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "xk-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=266&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Kosovo (citation page; staff capture pending)."
+    },
+    {
+      "authority": "xk-ca-1",
+      "kind": "website_official",
+      "uri": "https://eapp.rks-gov.net/Default.aspx",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=1040 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "xk-index",
+      "authority": "xk-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Kosovo against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "xk-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Kosovo is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "xk-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs (Department for Consular Affairs).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1040",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "xk-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Internal Affairs (Civil Registration Agency).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1040",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "xk-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://eapp.rks-gov.net/Default.aspx as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1040",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

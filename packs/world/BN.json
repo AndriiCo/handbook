@@ -1,0 +1,96 @@
+{
+  "pack": "BN",
+  "version": 1,
+  "title": "Brunei Darussalam — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Brunei Darussalam",
+      "region": "",
+      "name": "Chief Registrar, Deputy Chief Registrar and Registrars of the Supreme Court of Brunei Darussalam",
+      "slug": "bn-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Brunei Darussalam",
+      "region": "",
+      "name": "Chief Magistrate, Magistrates and Registrars of Subordinate Courts of Brunei Darussalam.",
+      "slug": "bn-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "bn-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Brunei Darussalam (staff capture pending)."
+    },
+    {
+      "name": "www.judiciary.gov.bn",
+      "authority": "bn-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Brunei Darussalam (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "bn-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=87&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Brunei Darussalam (citation page; staff capture pending)."
+    },
+    {
+      "authority": "bn-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.judiciary.gov.bn/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=362 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "bn-index",
+      "authority": "bn-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Brunei Darussalam against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "bn-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Brunei Darussalam is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bn-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Chief Registrar, Deputy Chief Registrar and Registrars of the Supreme Court of Brunei Darussalam.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=362",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bn-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Chief Magistrate, Magistrates and Registrars of Subordinate Courts of Brunei Darussalam..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=362",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bn-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.judiciary.gov.bn/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=362",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

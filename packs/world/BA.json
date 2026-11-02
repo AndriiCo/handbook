@@ -1,0 +1,105 @@
+{
+  "pack": "BA",
+  "version": 1,
+  "title": "Bosnia and Herzegovina — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Bosnia and Herzegovina",
+      "region": "",
+      "name": "Courts of First Instance of Bosnia and Herzegovina",
+      "slug": "ba-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Bosnia and Herzegovina",
+      "region": "",
+      "name": "Municipal Courts of the Federation of Bosnia and Herzegovina",
+      "slug": "ba-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Bosnia and Herzegovina",
+      "region": "",
+      "name": "Basic Courts of Republika Srpska",
+      "slug": "ba-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Bosnia and Herzegovina",
+      "region": "",
+      "name": "Basic Court of Brcko District of Bosnia and Herzegovina.",
+      "slug": "ba-ca-4"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ba-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bosnia and Herzegovina (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ba-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=26&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Bosnia and Herzegovina (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ba-index",
+      "authority": "ba-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Bosnia and Herzegovina against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ba-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Bosnia and Herzegovina is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ba-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Courts of First Instance of Bosnia and Herzegovina.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=311",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ba-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Municipal Courts of the Federation of Bosnia and Herzegovina.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=311",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ba-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Basic Courts of Republika Srpska.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=311",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ba-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Basic Court of Brcko District of Bosnia and Herzegovina..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=311",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

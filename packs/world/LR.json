@@ -1,0 +1,141 @@
+{
+  "pack": "LR",
+  "version": 1,
+  "title": "Liberia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Liberia",
+      "region": "",
+      "name": "the Minister of Foreign Affairs, Deputies and Assistant Ministers",
+      "slug": "lr-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Liberia",
+      "region": "",
+      "name": "the Minister of Justice, the Deputies and Assistant Ministers",
+      "slug": "lr-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Liberia",
+      "region": "",
+      "name": "the Clerk and Deputy Clerk(s) of the Supreme and Circuit Court(s)",
+      "slug": "lr-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Liberia",
+      "region": "",
+      "name": "the Registrars and Deputy Registrars of Corporations",
+      "slug": "lr-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Liberia",
+      "region": "",
+      "name": "the Commissioner and Deputy Commissioners of Maritime Affairs or Special Agents thereof.",
+      "slug": "lr-ca-5"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "lr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Liberia (staff capture pending)."
+    },
+    {
+      "name": "www.mofa.gov.lr",
+      "authority": "lr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Liberia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "lr-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=107&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Liberia (citation page; staff capture pending)."
+    },
+    {
+      "authority": "lr-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mofa.gov.lr/index.php",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=370 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "lr-index",
+      "authority": "lr-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Liberia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "lr-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Liberia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lr-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Minister of Foreign Affairs, Deputies and Assistant Ministers.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=370",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lr-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Minister of Justice, the Deputies and Assistant Ministers.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=370",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lr-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Clerk and Deputy Clerk(s) of the Supreme and Circuit Court(s).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=370",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lr-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Registrars and Deputy Registrars of Corporations.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=370",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lr-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Commissioner and Deputy Commissioners of Maritime Affairs or Special Agents thereof..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=370",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lr-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mofa.gov.lr/index.php as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=370",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}
