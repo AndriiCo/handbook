@@ -29,6 +29,11 @@ use handbook_store::db::{
 /// Version of `prompts/aa-prompt-v1.md`, recorded in watermarks and `created_by`.
 pub const PROMPT_VERSION: &str = "aa-prompt-v1";
 
+/// Evidence languages the runner analyzes (`es`/`fr` read natively off
+/// the source page; anything else skips via [`skip_unsupported_lang`]).
+/// Day-2 was EN-only; SA-16 adds Spanish (Mexico SRE) and French.
+pub const SUPPORTED_LANGS: [&str; 3] = ["en", "es", "fr"];
+
 /// Cap on records requested per draft call (the runner takes no caller budget yet).
 /// Records per draft call. Spark reasons per record, so 32 blows past
 /// even a 32k completion budget (`finish_reason = length` on staging);
@@ -154,7 +159,7 @@ fn rejected_record(
 #[derive(Debug)]
 pub struct RunRequest<'a> {
     pub slug: &'a str,
-    /// Evidence language tag (`"en"` analyzed; anything else skipped).
+    /// Evidence language tag (`SUPPORTED_LANGS` analyzed; anything else skipped).
     pub lang: &'a str,
     pub input_text: &'a str,
     /// Citation `doc_id` → source text for byte-exact validation.
@@ -167,8 +172,8 @@ pub struct RunRequest<'a> {
 
 /// Draft records for one authority and store the valid ones as `proposed` facts.
 ///
-/// EN-only for the Day-2 slice: any `req.lang` but `"en"` skips analysis
-/// (no model call) and opens a `correction` task instead. Always upserts
+/// Any `req.lang` outside [`SUPPORTED_LANGS`] skips analysis (no model
+/// call) and opens a `correction` task instead. Always upserts
 /// the authority watermark and appends one `action='analysis_run'` audit
 /// row on the success path (including fully-rejected, empty, and skipped
 /// runs); returns `Err` untouched-storage on client or database failure.
@@ -179,9 +184,10 @@ pub fn run_analysis(
 ) -> Result<RunReport, ModelError> {
     let authority_id = authority_id(conn, req.slug)?;
 
-    // EN-only + unknown-skip (roadmap item 5): never guess-translate a
-    // fact out of an unsupported language. The model is not called.
-    if req.lang != "en" {
+    // Supported-langs + unknown-skip (roadmap item 5): never
+    // guess-translate a fact out of an unsupported language. The model
+    // is not called. `es`/`fr` evidence drafts natively (SA-16).
+    if !SUPPORTED_LANGS.contains(&req.lang) {
         return skip_unsupported_lang(conn, req, authority_id);
     }
 
@@ -499,7 +505,7 @@ fn skip_unsupported_lang(
             rusqlite::params![
                 authority_id,
                 format!("unsupported evidence language: {}", req.lang),
-                "EN-only slice: evidence needs translation before analysis; no fact drafted",
+                "evidence needs translation before analysis; no fact drafted (supported: en, es, fr)",
                 dedup_key,
                 req.actor,
                 req.at,
@@ -522,7 +528,7 @@ fn skip_unsupported_lang(
             req.at,
             req.actor,
             authority_id,
-            &format!("skipped: unsupported lang {} (EN-only slice)", req.lang),
+            &format!("skipped: unsupported lang {0} (supported: en, es, fr)", req.lang),
         )?;
         Ok(())
     })
@@ -1526,14 +1532,14 @@ mod tests {
     }
 
     #[test]
-    fn non_en_skip_advances_capture_watermark_without_facts() {
+    fn unsupported_lang_skip_advances_capture_watermark_without_facts() {
         let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
         let id = seed_capture(&conn, "usa-wa-sos", "official");
         let mut sources = HashMap::new();
         sources.insert("fixture".to_string(), "x".to_string());
         let req = RunRequest {
             slug: "usa-wa-sos",
-            lang: "es",
+            lang: "de",
             input_text: "x",
             sources: &sources,
             actor: "test",
@@ -1548,6 +1554,51 @@ mod tests {
             .unwrap();
         assert_eq!(facts, 0);
         assert_eq!(get_capture_watermark(&conn, "usa-wa-sos").unwrap(), id);
+    }
+
+    /// SA-16: Spanish evidence drafts natively instead of skipping. The
+    /// stub's fixture values ride inside Spanish prose, so a successful
+    /// run proves the model was called and the quotes validated.
+    #[test]
+    fn es_evidence_is_analyzed_not_skipped() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "Envíe su solicitud al PO Box 40220. Horario de atención: Mon-Fri 9-5.";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "es",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        let report = run_analysis(&conn, &StubClient, &req).unwrap();
+        assert!(!report.skipped);
+        assert_eq!((report.proposed, report.rejected), (2, 0));
+    }
+
+    /// SA-16: French evidence drafts natively instead of skipping (same
+    /// shape as the Spanish case above).
+    #[test]
+    fn fr_evidence_is_analyzed_not_skipped() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "Envoyez votre dossier au PO Box 40220. Heures d'ouverture : Mon-Fri 9-5.";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "fr",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        let report = run_analysis(&conn, &StubClient, &req).unwrap();
+        assert!(!report.skipped);
+        assert_eq!((report.proposed, report.rejected), (2, 0));
     }
 
     #[test]
