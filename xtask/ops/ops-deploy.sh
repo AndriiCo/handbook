@@ -24,9 +24,13 @@ set -u
 
 STAGE="${1:?usage: $0 <staging-dir> [--skip-accept] [--allow-today-overlap] (e.g. /home/hal/apostille/staging/69480d3)}"
 SKIP_ACCEPT=""
-[ "${2:-}" = "--skip-accept" ] && SKIP_ACCEPT="--skip-accept"
 OVERLAP=""
-[ "${2:-}" = "--allow-today-overlap" ] || [ "${3:-}" = "--allow-today-overlap" ] && OVERLAP="--allow-today-overlap"
+for flag in "$@"; do
+    case "$flag" in
+        --skip-accept) SKIP_ACCEPT="--skip-accept" ;;
+        --allow-today-overlap) OVERLAP="--allow-today-overlap" ;;
+    esac
+done
 [ -n "$OVERLAP" ] && echo "WARNING: day gate OVERRIDDEN by explicit flag (cap lifted until 2026-11-10; operator-ordered only after)"
 # sudo -n fails fast when a grant is missing (never hangs on a
 # prompt); root passes everything through.

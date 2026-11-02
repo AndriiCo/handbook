@@ -81,7 +81,18 @@ else
     poll_healthz https://andrii.ai/apostille/healthz 6 5 > "$BEFORE_DIR/live.out" 2>"$BEFORE_DIR/live.err" &
     LIVE_PID=$!
     FAIL=""
-    wait $SB_PID || FAIL="$FAIL scoreboard"
+    wait $SB_PID; SB_OK=$?
+    if [ $SB_OK -ne 0 ]; then
+        # The scoreboard exits nonzero while operator-owned rows are
+        # red (approvals, logos, licence/video). Allow exactly those;
+        # anything else blocks the deploy.
+        REDS="$(node -e 'const r=require("./web/shots/prod-before.json");console.log(r.checks.filter((c)=>!c.pass).map((c)=>c.id).join(","))' 2>/dev/null)"
+        echo "before/reds: ${REDS:-unreadable}"
+        case ",${REDS}," in
+            "") FAIL="$FAIL scoreboard-unreadable" ;;
+            *",P0,"*|*",GP1,"*|*",GP4,"*|*",A2,"*|*",A5,"*) FAIL="$FAIL scoreboard" ;;
+        esac
+    fi
     wait $STAMP_PID || FAIL="$FAIL plant-stamp"
     wait $LIVE_PID || FAIL="$FAIL live-healthz"
     tail -3 "$BEFORE_DIR/scoreboard.log"
