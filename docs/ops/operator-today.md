@@ -1,16 +1,19 @@
 # Operator — Monday 2026-11-02 (Pacific; updated ~04:10 PST)
 
-DEPLOYED 09:23 PST on your "deploy now": production runs
-`0.1.0+2b4bc8d` (previous `eb57cdc` kept for rollback; flags
+DEPLOYED ~10:35 PST on your "deploy now": production runs
+`0.1.0+4dcd234` (previous `2b4bc8d` kept for rollback; flags
 `--skip-accept --allow-today-overlap` announced per §7).
 Prod-after **5/10**, zero regressions vs prod-before (P0, GP1,
 GP4, A2, A5 pass; every red row identical). First red still
 GP2-data (vietnam 0/8, usa-wa-sos 1/8 accepted — flips with your
-approvals below, no code needed). This deploy ships your
-P-ADMIN-IP fix: 403s name the IP, no admin UI without an
-allowlisted IP. If your browser 403s, the page itself tells you
-which IP (or IPv6 /64) to add — then restart is needed (the
-list reads once at boot).
+approvals below, no code needed). This deploy ships wave-2
+(SA-18 egypt-chain, SA-17 106 authorities, SA-21 walk-in
+reports, SA-15 promises-readme) plus the release-train gap
+fix. Train fixes en route: prod-before red-allowlist (P312)
+and any-order deploy flags (staged server-side). If your
+browser 403s, the page itself tells you which IP (or IPv6 /64)
+to add — then restart is needed (the list reads once at
+boot).
 Wave-2 merged since: SA-18 egypt-chain, SA-17 north-america-106
 (106/106 authorities), SA-21 walk-in reports + wiring (P305),
 SA-15 promises-readme; P304 closed the release-train gap (no

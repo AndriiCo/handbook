@@ -212,3 +212,4 @@
 | 310 | 2026-11-02 18:20Z | Continue working toward the active session goal. MISSION SUBMIT | RO-M4 conflict seeded on staging |
 | 311 | 2026-11-02 18:22Z | Continue working toward the active session goal. MISSION SUBMIT | rescore 9/10 with seeded conflict |
 | 312 | 2026-11-02 18:30Z | deploy now | train red-allowlist + flag-order fixes |
+| 313 | 2026-11-02 18:37Z | deploy now | 4dcd234 live, train green, no regressions |
