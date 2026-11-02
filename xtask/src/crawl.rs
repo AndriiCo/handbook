@@ -12,12 +12,18 @@
 //!
 //! - UA `handbook-crawl/0.1 (+https://andrii.ai/apostille)`;
 //! - robots FAILS CLOSED per URL (unreachable robots.txt skips the
-//!   fetch), logged to `robots.csv`;
+//!   fetch), judged per RFC 9309 in `ingest::warc`, cached per origin
+//!   (one fetch per scheme://host:port), logged to `robots.csv`;
 //! - `businessexpress.ny.gov` and `egypt-nyc.com` (and subdomains) are
 //!   always skipped (`Disallow: /` per the rights review), logged as
 //!   `disallowed-static`;
+//! - SSRF guard on every hop (`ingest::warc` resolves + pins vetted
+//!   IPs; loopback and private ranges rejected);
 //! - 1 request / 2 s per host; `hcch.net` floors at 10 s; a robots
 //!   `Crawl-delay` raises the floor;
+//! - a redirect to a NEW ORIGIN re-checks robots (cached) and waits
+//!   the politeness budget before following; refusal aborts the fetch
+//!   as `disallowed`;
 //! - HTTP 429 honours `Retry-After` (once per URL, in the fetch core);
 //! - up to 32 host worker threads; 25 MiB body cap; at most 50
 //!   depth-1 URLs per page; redirect chains recorded hop by hop
@@ -29,14 +35,19 @@
 //! - `warc/<ISO2>/<slug>-NNNNN.warc.gz` — the captures;
 //! - `robots.csv` — every crawl-time robots verdict;
 //! - `seeds.json` — one object per seed/depth-1 URL (status, bytes,
-//!   record pointers; the input to `archive-package`);
+//!   record pointers incl. `warc_offset`/`warc_length` of the final
+//!   response record; the input to `archive-package`);
 //! - `t1-urls.txt` — deduped depth-0 seeds + discovered depth-1 URLs
 //!   for the operator's wget T0–T1 pass (wget re-enforces robots=on).
 //!
 //! `robots.csv` columns: `url,host,verdict,reason,crawl_delay_s,
 //! checked_at,source` where `verdict` is `allowed|disallowed`,
 //! `reason` is the `ingest::warc` verdict text, and `source` is
-//! `robots-txt|static-denylist`.
+//! `robots-txt|robots-txt-redirect|static-denylist`.
+//!
+//! Flags: `--packs <dir> --out <dir>`; `--allow-loopback` opens the
+//! SSRF guard for `127.0.0.0/8` + `::1` fixture servers (tests and
+//! local fixtures only — production runs never pass it).
 //!
 //! No live crawling in tests: fixtures are loopback servers only.
 
@@ -94,8 +105,11 @@ struct PackWatch {
     uri: Option<String>,
 }
 
-/// One crawl outcome (a `seeds.json` row; also feeds `authorities.csv`).
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
+/// One crawl outcome (a `seeds.json` row; also feeds `manifest.csv`
+/// and `authorities.csv`). `warc_offset`/`warc_length` locate the
+/// final response record inside `warc_file` (0 when nothing was
+/// archived).
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 struct SeedOutcome {
     pack: String,
     slug: String,
@@ -109,6 +123,10 @@ struct SeedOutcome {
     bytes: u64,
     warc_file: String,
     record_id: String,
+    #[serde(default)]
+    warc_offset: u64,
+    #[serde(default)]
+    warc_length: u64,
     note: String,
     fetched_at: String,
 }
@@ -135,6 +153,10 @@ struct Seed {
 pub fn run(args: &[String]) {
     let packs_dir = flag(args, "packs").unwrap_or_else(|| "packs/world".to_string());
     let out_dir = required(args, "out");
+    // Fixture switch: loopback servers for tests / local fixtures.
+    // Production runs never pass it (the SSRF guard then rejects
+    // loopback and private ranges on every hop).
+    let allow_loopback = args.iter().any(|a| a == "--allow-loopback");
     let started = Instant::now();
     let out = std::path::PathBuf::from(&out_dir);
 
@@ -185,7 +207,7 @@ pub fn run(args: &[String]) {
         }
     }
 
-    let shared = Shared::new(&out);
+    let shared = Shared::new(&out, allow_loopback);
     // Depth-0 outcomes (missing/denylisted decided inline; the rest
     // are grouped by host for the parallel crawl).
     let mut by_host: HashMap<String, Vec<Seed>> = HashMap::new();
@@ -307,6 +329,8 @@ fn missing_outcome(seed: &Seed, depth: u8, note: &str) -> SeedOutcome {
         bytes: 0,
         warc_file: String::new(),
         record_id: String::new(),
+        warc_offset: 0,
+        warc_length: 0,
         note: note.to_string(),
         fetched_at: warc_now(),
     }
@@ -326,6 +350,8 @@ fn disallowed_outcome(seed: &Seed, depth: u8, row: &RobotsRow, note: &str) -> Se
         bytes: 0,
         warc_file: String::new(),
         record_id: String::new(),
+        warc_offset: 0,
+        warc_length: 0,
         note: note.to_string(),
         fetched_at: warc_now(),
     }
@@ -351,13 +377,29 @@ fn host_floor_secs(host: &str) -> u64 {
     }
 }
 
+/// Cached robots fetch for one origin (the per-path verdict is
+/// still judged per URL with `ingest::warc::parse_robots`).
+#[derive(Clone)]
+enum CachedRobots {
+    /// 404/410/empty body: no rules.
+    Missing,
+    /// Raw `robots.txt` body to judge per path.
+    Body(String),
+    /// Fetch failed: fail-closed reason text (`robots-*-closed*`).
+    Failed(String),
+}
+
 /// Shared crawl state behind one mutex each (hosts only meet here).
 struct Shared {
     out: std::path::PathBuf,
+    allow_loopback: bool,
     robots: Mutex<Vec<RobotsRow>>,
+    robots_cache: Mutex<HashMap<String, CachedRobots>>,
     outcomes: Mutex<Vec<SeedOutcome>>,
     writers: Mutex<HashMap<(String, String), WriterSlot>>,
     fetched: Mutex<HashMap<String, SeedOutcome>>,
+    polite: Mutex<HashMap<String, Instant>>,
+    delays: Mutex<HashMap<String, u64>>,
 }
 
 struct WriterSlot {
@@ -367,13 +409,17 @@ struct WriterSlot {
 }
 
 impl Shared {
-    fn new(out: &std::path::Path) -> Self {
+    fn new(out: &std::path::Path, allow_loopback: bool) -> Self {
         Self {
             out: out.to_path_buf(),
+            allow_loopback,
             robots: Mutex::new(Vec::new()),
+            robots_cache: Mutex::new(HashMap::new()),
             outcomes: Mutex::new(Vec::new()),
             writers: Mutex::new(HashMap::new()),
             fetched: Mutex::new(HashMap::new()),
+            polite: Mutex::new(HashMap::new()),
+            delays: Mutex::new(HashMap::new()),
         }
     }
 
@@ -395,9 +441,76 @@ impl Shared {
         rows
     }
 
-    /// Record one fetch's request/response/metadata triple, rotating
+    /// Fail-closed robots verdict for `url`, fetching the origin's
+    /// `robots.txt` at most once per run (cached per origin).
+    fn robots_verdict(&self, url: &str) -> ingest::warc::RobotsVerdict {
+        let Some(parts) = ingest::warc::split_url(url) else {
+            return ingest::warc::RobotsVerdict {
+                allowed: false,
+                text: "unparseable-uri-closed".to_string(),
+                crawl_delay_secs: 0,
+            };
+        };
+        let origin = parts.origin();
+        let cached = lock(&self.robots_cache).get(&origin).cloned();
+        let cached = match cached {
+            Some(cached) => cached,
+            None => {
+                let fresh = match ingest::warc::fetch_robots_body(
+                    &origin,
+                    ROBOTS_TIMEOUT,
+                    self.allow_loopback,
+                ) {
+                    Err(reason) => CachedRobots::Failed(reason),
+                    Ok(None) => CachedRobots::Missing,
+                    Ok(Some(body)) => CachedRobots::Body(body),
+                };
+                lock(&self.robots_cache).insert(origin.clone(), fresh.clone());
+                fresh
+            }
+        };
+        match cached {
+            CachedRobots::Missing => ingest::warc::RobotsVerdict {
+                allowed: true,
+                text: "no-robots".to_string(),
+                crawl_delay_secs: 0,
+            },
+            CachedRobots::Body(body) => ingest::warc::parse_robots(&body, &parts.path),
+            CachedRobots::Failed(reason) => ingest::warc::RobotsVerdict {
+                allowed: false,
+                text: reason,
+                crawl_delay_secs: 0,
+            },
+        }
+    }
+
+    /// Raise the politeness floor for `host` (robots `Crawl-delay`).
+    fn note_delay(&self, host: &str, secs: u64) {
+        if secs == 0 {
+            return;
+        }
+        let mut delays = lock(&self.delays);
+        let entry = delays.entry(host.to_string()).or_insert(0);
+        *entry = (*entry).max(secs);
+    }
+
+    /// Sleep until `host` is due (static floor, hcch.net floor, and
+    /// any noted `Crawl-delay`), then stamp it.
+    fn polite_wait(&self, host: &str) {
+        let floor = host_floor_secs(host).max(lock(&self.delays).get(host).copied().unwrap_or(0));
+        let wait = lock(&self.polite)
+            .get(host)
+            .map(|last| Duration::from_secs(floor).saturating_sub(last.elapsed()));
+        if let Some(wait) = wait.filter(|wait| !wait.is_zero()) {
+            std::thread::sleep(wait);
+        }
+        lock(&self.polite).insert(host.to_string(), Instant::now());
+    }
+
+    /// Record one fetch's request/response/metadata triples, rotating
     /// the per-(pack, slug) WARC file at 1 GB. Returns the relative
-    /// warc path and the metadata record id.
+    /// warc path, the final metadata record id, and the final
+    /// response record's `(offset, length)` in the warc file.
     fn archive_fetch(
         &self,
         pack: &str,
@@ -405,7 +518,7 @@ impl Shared {
         fetch: &ingest::warc::FetchResult,
         robots_text: &str,
         depth: u8,
-    ) -> (String, String) {
+    ) -> (String, String, u64, u64) {
         let mut writers = lock(&self.writers);
         let key = (pack.to_string(), slug.to_string());
         let slot = writers
@@ -417,6 +530,7 @@ impl Shared {
             let _ = finished.writer.finish();
         }
         let mut meta_id = String::new();
+        let (mut final_offset, mut final_length) = (0, 0);
         for (index, hop) in fetch.hops.iter().enumerate() {
             let request = slot
                 .writer
@@ -451,9 +565,11 @@ impl Shared {
                 .expect("write metadata");
             if index == fetch.hops.len() - 1 {
                 meta_id = meta.id.clone();
+                final_offset = response.offset;
+                final_length = response.length;
             }
         }
-        (slot.rel.clone(), meta_id)
+        (slot.rel.clone(), meta_id, final_offset, final_length)
     }
 
     fn finish_writers(&self) {
@@ -500,25 +616,12 @@ fn crawl_host(seeds: &[Seed], shared: &Shared) {
     let host = ingest::warc::split_url(&seeds[0].uri)
         .expect("grouped by parseable host")
         .host;
-    let mut interval = host_floor_secs(&host);
-    let mut last: Option<Instant> = None;
     for seed in seeds {
-        // One robots verdict per seed URL (fail closed, CSV-logged).
-        let verdict = ingest::warc::check_robots_closed(&seed.uri, ROBOTS_TIMEOUT);
-        interval = interval.max(verdict.crawl_delay_secs);
-        let row = RobotsRow {
-            url: seed.uri.clone(),
-            host: host.clone(),
-            verdict: if verdict.allowed {
-                "allowed".to_string()
-            } else {
-                "disallowed".to_string()
-            },
-            reason: verdict.text.clone(),
-            crawl_delay_s: verdict.crawl_delay_secs,
-            checked_at: unix_now(),
-            source: "robots-txt".to_string(),
-        };
+        // One robots verdict per seed URL (fail closed, origin-cached,
+        // CSV-logged).
+        let verdict = shared.robots_verdict(&seed.uri);
+        shared.note_delay(&host, verdict.crawl_delay_secs);
+        let row = robots_row(&seed.uri, &host, &verdict, "robots-txt");
         shared.push_robots(row.clone());
         if !verdict.allowed {
             shared.push_outcome(disallowed_outcome(
@@ -529,9 +632,8 @@ fn crawl_host(seeds: &[Seed], shared: &Shared) {
             ));
             continue;
         }
-        polite_wait(&mut last, interval);
+        shared.polite_wait(&host);
         let outcome = fetch_and_archive(seed, 0, &verdict.text, shared);
-        last = Some(Instant::now());
         let links = match &outcome.links {
             Some(links) => links.clone(),
             None => {
@@ -542,8 +644,30 @@ fn crawl_host(seeds: &[Seed], shared: &Shared) {
         shared.push_outcome(outcome.outcome);
         // Depth 1: same-host keyword links only.
         for link in links.into_iter().take(MAX_DEPTH1_PER_PAGE) {
-            crawl_depth1(seed, &link, shared, &mut last, &mut interval);
+            crawl_depth1(seed, &link, shared);
         }
+    }
+}
+
+/// One `robots.csv` row for a verdict (also re-pushable for lookup).
+fn robots_row(
+    url: &str,
+    host: &str,
+    verdict: &ingest::warc::RobotsVerdict,
+    source: &str,
+) -> RobotsRow {
+    RobotsRow {
+        url: url.to_string(),
+        host: host.to_string(),
+        verdict: if verdict.allowed {
+            "allowed".to_string()
+        } else {
+            "disallowed".to_string()
+        },
+        reason: verdict.text.clone(),
+        crawl_delay_s: verdict.crawl_delay_secs,
+        checked_at: unix_now(),
+        source: source.to_string(),
     }
 }
 
@@ -554,6 +678,11 @@ struct FetchOutcome {
 }
 
 /// Fetch one URL and archive its hops; never panics on fetch errors.
+///
+/// A redirect to a new origin re-checks robots (cached) and waits the
+/// politeness budget through the fetch hook before following; refusal
+/// (or an SSRF-blocked hop) ends the fetch with a `disallowed` /
+/// `failed` outcome instead of records.
 fn fetch_and_archive(seed: &Seed, depth: u8, robots_text: &str, shared: &Shared) -> FetchOutcome {
     // Exact-duplicate URLs reuse the earlier capture (politeness: no
     // refetch; the outcome still points at real records).
@@ -569,31 +698,61 @@ fn fetch_and_archive(seed: &Seed, depth: u8, robots_text: &str, shared: &Shared)
             links: None,
         };
     }
-    let fetched = match ingest::warc::fetch_with_hops(&seed.uri, FETCH_TIMEOUT) {
-        Err(e) => {
-            return FetchOutcome {
-                outcome: SeedOutcome {
-                    pack: seed.pack.clone(),
-                    slug: seed.slug.clone(),
-                    authority: seed.authority.clone(),
-                    uri: seed.uri.clone(),
-                    depth,
-                    robots_verdict: "allowed".to_string(),
-                    robots_reason: robots_text.to_string(),
-                    status: "failed".to_string(),
-                    http_status: 0,
-                    bytes: 0,
-                    warc_file: String::new(),
-                    record_id: String::new(),
-                    note: format!("fetch: {e}"),
-                    fetched_at: warc_now(),
-                },
-                links: None,
-            };
+    let failed_outcome = |note: String| FetchOutcome {
+        outcome: SeedOutcome {
+            pack: seed.pack.clone(),
+            slug: seed.slug.clone(),
+            authority: seed.authority.clone(),
+            uri: seed.uri.clone(),
+            depth,
+            robots_verdict: "allowed".to_string(),
+            robots_reason: robots_text.to_string(),
+            status: "failed".to_string(),
+            http_status: 0,
+            bytes: 0,
+            warc_file: String::new(),
+            record_id: String::new(),
+            warc_offset: 0,
+            warc_length: 0,
+            note,
+            fetched_at: warc_now(),
+        },
+        links: None,
+    };
+    let mut redirect_hook = |next_url: &str| -> Result<(), ingest::warc::FetchError> {
+        let parts = ingest::warc::split_url(next_url).ok_or_else(|| {
+            ingest::warc::FetchError::Transport(format!("unparseable redirect: {next_url}"))
+        })?;
+        let verdict = shared.robots_verdict(next_url);
+        shared.note_delay(&parts.host, verdict.crawl_delay_secs);
+        let row = robots_row(next_url, &parts.host, &verdict, "robots-txt-redirect");
+        shared.push_robots(row);
+        if !verdict.allowed {
+            return Err(ingest::warc::FetchError::RedirectDisallowed(format!(
+                "{next_url}: {}",
+                verdict.text
+            )));
         }
+        shared.polite_wait(&parts.host);
+        Ok(())
+    };
+    let fetched = match ingest::warc::fetch_with_hops_opt(
+        &seed.uri,
+        FETCH_TIMEOUT,
+        shared.allow_loopback,
+        Some(&mut redirect_hook),
+    ) {
+        Err(ingest::warc::FetchError::RedirectDisallowed(note)) => {
+            let mut failed = failed_outcome(format!("redirect: {note}"));
+            failed.outcome.status = "disallowed".to_string();
+            failed.outcome.robots_verdict = "disallowed".to_string();
+            failed.outcome.robots_reason = note;
+            return failed;
+        }
+        Err(e) => return failed_outcome(format!("fetch: {e}")),
         Ok(fetched) => fetched,
     };
-    let (warc_file, record_id) =
+    let (warc_file, record_id, warc_offset, warc_length) =
         shared.archive_fetch(&seed.pack, &seed.slug, &fetched, robots_text, depth);
     let last = fetched.hops.last().expect("fetch has hops");
     let bytes: u64 = fetched.hops.iter().map(|h| h.body.len() as u64).sum();
@@ -620,6 +779,8 @@ fn fetch_and_archive(seed: &Seed, depth: u8, robots_text: &str, shared: &Shared)
         bytes,
         warc_file,
         record_id: record_id.clone(),
+        warc_offset,
+        warc_length,
         note: if ok {
             String::new()
         } else {
@@ -631,13 +792,7 @@ fn fetch_and_archive(seed: &Seed, depth: u8, robots_text: &str, shared: &Shared)
     FetchOutcome { outcome, links }
 }
 
-fn crawl_depth1(
-    seed: &Seed,
-    link: &str,
-    shared: &Shared,
-    last: &mut Option<Instant>,
-    interval: &mut u64,
-) {
+fn crawl_depth1(seed: &Seed, link: &str, shared: &Shared) {
     let parts = match ingest::warc::split_url(link) {
         Some(parts) => parts,
         None => return,
@@ -646,21 +801,9 @@ fn crawl_depth1(
     if parts.host != seed_host || static_denied(&parts.host) {
         return;
     }
-    let verdict = ingest::warc::check_robots_closed(link, ROBOTS_TIMEOUT);
-    *interval = (*interval).max(verdict.crawl_delay_secs);
-    let row = RobotsRow {
-        url: link.to_string(),
-        host: parts.host.clone(),
-        verdict: if verdict.allowed {
-            "allowed".to_string()
-        } else {
-            "disallowed".to_string()
-        },
-        reason: verdict.text.clone(),
-        crawl_delay_s: verdict.crawl_delay_secs,
-        checked_at: unix_now(),
-        source: "robots-txt".to_string(),
-    };
+    let verdict = shared.robots_verdict(link);
+    shared.note_delay(&parts.host, verdict.crawl_delay_secs);
+    let row = robots_row(link, &parts.host, &verdict, "robots-txt");
     shared.push_robots(row.clone());
     if !verdict.allowed {
         shared.push_outcome(disallowed_outcome(
@@ -676,7 +819,7 @@ fn crawl_depth1(
         ));
         return;
     }
-    polite_wait(last, *interval);
+    shared.polite_wait(&parts.host);
     let child = Seed {
         pack: seed.pack.clone(),
         slug: seed.slug.clone(),
@@ -684,18 +827,7 @@ fn crawl_depth1(
         uri: link.to_string(),
     };
     let fetched = fetch_and_archive(&child, 1, &verdict.text, shared);
-    *last = Some(Instant::now());
     shared.push_outcome(fetched.outcome);
-}
-
-/// Sleep until `interval` seconds passed since `last` request.
-fn polite_wait(last: &mut Option<Instant>, interval: u64) {
-    if let Some(when) = *last {
-        let wait = Duration::from_secs(interval).saturating_sub(when.elapsed());
-        if !wait.is_zero() {
-            std::thread::sleep(wait);
-        }
-    }
 }
 
 /// True for HTML payloads (declared `*html*` content type, or no
@@ -841,6 +973,9 @@ mod tests {
             dir.join("packs").to_string_lossy().into_owned(),
             "--out".to_string(),
             dir.join("run").to_string_lossy().into_owned(),
+            // Fixture switch: the loopback servers below are denied by
+            // the production SSRF default.
+            "--allow-loopback".to_string(),
         ];
         run(&args);
     }
@@ -882,10 +1017,11 @@ mod tests {
         let robots_closed = reply("HTTP/1.0 200 OK", &[], b"User-agent: *\nDisallow: /\n");
         let not_found = reply("HTTP/1.0 404 Missing", &[], b"nope");
 
-        // Seed host: robots + seed page + robots + depth-1 page.
+        // Seed host: robots (once — cached per origin) + seed page +
+        // depth-1 page.
         let (listener_a, port_a) = bind();
         let not_found_a = not_found.clone();
-        let server_a = serve_on(listener_a, 4, move |target| match target {
+        let server_a = serve_on(listener_a, 3, move |target| match target {
             "/robots.txt" => robots_open.clone(),
             "/a" => {
                 let page = format!(
@@ -1001,6 +1137,102 @@ mod tests {
         assert_eq!(seeds[0].robots_reason, "disallowed-static");
         let robots = std::fs::read_to_string(dir.join("run/robots.csv")).expect("robots.csv");
         assert!(robots.contains(",static-denylist"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn robots_cached_per_origin() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let hits2 = hits.clone();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let port = listener.local_addr().unwrap().port();
+        // robots + two seed pages: exactly 3 connections when the
+        // robots body is fetched once and reused.
+        let server = std::thread::spawn(move || {
+            for _ in 0..3 {
+                let (mut stream, _) = listener.accept().expect("accept");
+                let mut buf = [0u8; 8192];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]);
+                let target = head
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .unwrap_or("/");
+                let response = if target == "/robots.txt" {
+                    hits2.fetch_add(1, Ordering::SeqCst);
+                    reply("HTTP/1.0 200 OK", &[], b"User-agent: *\nDisallow: /admin\n")
+                } else {
+                    reply(
+                        "HTTP/1.0 200 OK",
+                        &[("Content-Type", "text/html")],
+                        b"<html>page</html>",
+                    )
+                };
+                stream.write_all(&response).expect("write reply");
+            }
+        });
+        let dir = temp_case("cache");
+        let pack = format!(
+            r#"{{"pack": "XX", "authorities": [],
+                "watch": [{{"authority": "a", "uri": "http://127.0.0.1:{port}/one"}},
+                          {{"authority": "a", "uri": "http://127.0.0.1:{port}/two"}}]}}"#
+        );
+        std::fs::write(dir.join("packs/XX.json"), pack).expect("pack");
+        run_crawl(&dir);
+        server.join().unwrap();
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "one robots fetch per origin"
+        );
+        let seeds: Vec<SeedOutcome> = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("run/seeds.json")).expect("seeds.json"),
+        )
+        .expect("parse seeds");
+        assert!(seeds.iter().all(|s| s.status == "ok"), "{seeds:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cross_origin_redirect_rechecks_robots() {
+        let robots_open = reply("HTTP/1.0 200 OK", &[], b"User-agent: *\nDisallow: /admin\n");
+        let robots_closed = reply("HTTP/1.0 200 OK", &[], b"User-agent: *\nDisallow: /\n");
+        // Host B disallows everything; host A redirects into it.
+        let (listener_b, port_b) = bind();
+        let server_b = serve_on(listener_b, 1, move |target| match target {
+            "/robots.txt" => robots_closed.clone(),
+            _ => reply("HTTP/1.0 200 OK", &[], b"should never be fetched"),
+        });
+        let (listener_a, port_a) = bind();
+        let server_a = serve_on(listener_a, 2, move |target| match target {
+            "/robots.txt" => robots_open.clone(),
+            _ => reply(
+                "HTTP/1.0 302 Found",
+                &[("Location", &format!("http://127.0.0.1:{port_b}/landing"))],
+                b"",
+            ),
+        });
+        let dir = temp_case("redir");
+        let pack = format!(
+            r#"{{"pack": "XX", "authorities": [],
+                "watch": [{{"authority": "a", "uri": "http://127.0.0.1:{port_a}/start"}}]}}"#
+        );
+        std::fs::write(dir.join("packs/XX.json"), pack).expect("pack");
+        run_crawl(&dir);
+        server_a.join().unwrap();
+        server_b.join().unwrap();
+
+        let seeds: Vec<SeedOutcome> = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("run/seeds.json")).expect("seeds.json"),
+        )
+        .expect("parse seeds");
+        assert_eq!(seeds.len(), 1);
+        assert_eq!(seeds[0].status, "disallowed", "{seeds:?}");
+        assert!(seeds[0].warc_file.is_empty());
+        let robots = std::fs::read_to_string(dir.join("run/robots.csv")).expect("robots.csv");
+        assert!(robots.contains(",robots-txt-redirect"), "{robots}");
         std::fs::remove_dir_all(&dir).ok();
     }
 
