@@ -26,9 +26,6 @@ pub const DEFAULT_SMOKE_URL: &str = "https://andrii.ai/apostille/healthz";
 /// Release dirs kept after a successful deploy; older pruned oldest-first.
 pub const MAX_RELEASES: usize = 10;
 
-/// Seconds to wait after restart before smoking.
-const SETTLE_SECS: u64 = 3;
-
 /// Migrations old code cannot run against: table rebuilds,
 /// renames, drops, column type changes, or STRICT added to an
 /// existing table. Purely additive migrations (new tables, new
@@ -349,24 +346,43 @@ pub fn smoke(url: &str) -> Result<(), String> {
     }
 }
 
-/// Minimum gap between production deploys, in seconds (AGENTS.md §7).
-const DEPLOY_GAP_SECS: i64 = 28_800;
-
-/// Deploy-day gate (AGENTS.md §7: one deploy a day, never two within
-/// 8h). Pure predicate over release-dir mtimes so `ship-release.sh`
-/// and this crate share one tested semantic: any line returned means
-/// ABORT. `pt_midnight_secs` is 00:00 America/Los_Angeles today.
-pub fn day_gate_blockers(mtimes: &[i64], now_secs: i64, pt_midnight_secs: i64) -> Vec<String> {
-    let mut out = Vec::new();
-    for m in mtimes {
-        if *m >= pt_midnight_secs {
-            out.push("SPENT-TODAY".to_string());
+/// Poll a health endpoint until it answers `"status":"ok"`: one
+/// `curl -fsS --max-time 2` per try, `interval_ms` between tries,
+/// at most `tries` tries. Replaces the old fixed settle sleeps: a
+/// restarted service is used as soon as it answers instead of after
+/// a blind wait.
+///
+/// # Errors
+///
+/// Returns a message when no try answers ok (curl missing counts
+/// as an immediate error).
+pub fn poll_health_with(url: &str, interval_ms: u64, tries: u32) -> Result<(), String> {
+    let mut last = "no tries".to_string();
+    for _ in 0..tries.max(1) {
+        let out = std::process::Command::new("curl")
+            .args(["-fsS", "--max-time", "2", url])
+            .output()
+            .map_err(|_| "health poll: curl missing (install curl)".to_string())?;
+        if out.status.success() {
+            let body: String = String::from_utf8_lossy(&out.stdout)
+                .split_whitespace()
+                .collect();
+            if body.contains(r#""status":"ok""#) {
+                return Ok(());
+            }
+            last = "body lacks status ok".to_string();
+        } else {
+            last = format!("curl exit {}", out.status);
         }
-        if now_secs - *m < DEPLOY_GAP_SECS {
-            out.push("WITHIN-8H".to_string());
-        }
+        std::thread::sleep(std::time::Duration::from_millis(interval_ms));
     }
-    out
+    Err(format!("health poll {url} never ok: {last}"))
+}
+
+/// [`poll_health_with`] with the release-train settle budget:
+/// every 250 ms, up to 15 s total.
+pub fn poll_health(url: &str) -> Result<(), String> {
+    poll_health_with(url, 250, 60)
 }
 
 /// Smoke a health endpoint AND pin the build: like [`smoke`], plus the
@@ -441,14 +457,13 @@ pub struct DeployOptions {
     pub restart: bool,
     /// Health URL to smoke after the swap.
     pub smoke_url: String,
-    /// 00:00 America/Los_Angeles today for the deploy-day gate
-    /// (`None` skips the gate; tests use `None`).
+    /// Unused since the day gate was removed (deploys are instant
+    /// per operator order): kept so callers and tests do not churn.
+    /// `None` is the normal value.
     pub pt_midnight_secs: Option<i64>,
-    /// Explicit same-day override (`--allow-today-overlap`): skips the
-    /// day gate and logs the override. Until 2026-11-10 the daily cap
-    /// is lifted (operator order `0e9c8c4`), so every deploy passes
-    /// it; after that, operator-ordered same-day deploys only. The
-    /// default is false; there is no env knob.
+    /// Accepted as a silent no-op (`--allow-today-overlap`): kept so
+    /// existing deploy lines keep working. The default is false;
+    /// there is no env knob.
     pub allow_today_overlap: bool,
 }
 
@@ -463,34 +478,10 @@ pub struct DeployOptions {
 /// step fails (after best-effort revert on smoke failure).
 pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
     validate_version(&opts.version)?;
-    if opts.allow_today_overlap {
-        eprintln!("deploy: DAY GATE OVERRIDDEN (--allow-today-overlap; lifted until 2026-11-10)");
-    }
-    if let Some(midnight) = opts.pt_midnight_secs.filter(|_| !opts.allow_today_overlap) {
-        let now = crate::unix_now();
-        let mut mtimes = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(opts.root.join("releases")) {
-            for entry in entries.flatten() {
-                let mtime = entry
-                    .metadata()
-                    .and_then(|m| m.modified())
-                    .map(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs() as i64)
-                            .unwrap_or(0)
-                    })
-                    .unwrap_or(0);
-                mtimes.push(mtime);
-            }
-        }
-        let blockers = day_gate_blockers(&mtimes, now, midnight);
-        if !blockers.is_empty() {
-            return Err(format!(
-                "deploy-day gate refused (one a day, 8h gap): {}",
-                blockers.join(", ")
-            ));
-        }
-    }
+    // No day gate: deploys are instant (operator order; the flag
+    // below stays accepted as a silent no-op). `pt_midnight_secs`
+    // is ignored for the same reason.
+    let _ = (opts.allow_today_overlap, opts.pt_midnight_secs.as_ref());
     if let Some(dir) = &opts.packs_dir {
         let errors = crate::packs::validate_dir(dir);
         if !errors.is_empty() {
@@ -547,7 +538,12 @@ pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
     let prev = atomic_swap(&opts.root, &opts.version)?;
     if opts.restart {
         systemctl("restart")?;
-        std::thread::sleep(std::time::Duration::from_secs(SETTLE_SECS));
+        // Settle by polling, not sleeping: `smoke_sha` below is the
+        // verdict, so a still-starting service only costs its real
+        // startup time here.
+        if let Err(e) = poll_health(&opts.smoke_url) {
+            eprintln!("deploy: settle poll: {e}");
+        }
     }
     match smoke_sha(&opts.smoke_url, &opts.version) {
         Ok(()) => {
@@ -587,7 +583,9 @@ fn revert_to_prev(root: &Path, prev: Option<&str>, restart: bool, smoke_url: &st
                     eprintln!("revert: restart of {p} FAILED");
                     return;
                 }
-                std::thread::sleep(std::time::Duration::from_secs(SETTLE_SECS));
+                if let Err(e) = poll_health(smoke_url) {
+                    eprintln!("revert: settle poll: {e}");
+                }
             }
             match smoke(smoke_url) {
                 Ok(()) => eprintln!("revert: {p} live again"),
@@ -649,7 +647,9 @@ pub fn rollback(opts: &RollbackOptions) -> Result<String, String> {
     atomic_swap(&opts.root, &opts.to)?;
     if opts.restart {
         systemctl("restart")?;
-        std::thread::sleep(std::time::Duration::from_secs(SETTLE_SECS));
+        if let Err(e) = poll_health(&opts.smoke_url) {
+            eprintln!("rollback: settle poll: {e}");
+        }
     }
     match smoke_sha(&opts.smoke_url, &opts.to) {
         Ok(()) => Ok(format!("rolled back {live} -> {}", opts.to)),
@@ -706,26 +706,9 @@ pub fn run_deploy(args: &[String]) {
         actor: crate::flag(args, "actor").unwrap_or_else(|| "xtask".to_string()),
         restart: !has(args, "no-restart"),
         smoke_url: crate::flag(args, "smoke-url").unwrap_or_else(|| DEFAULT_SMOKE_URL.to_string()),
-        // Prod runs GNU date; fail closed when PT midnight is unknowable.
-        pt_midnight_secs: Some(
-            String::from_utf8_lossy(
-                &std::process::Command::new("date")
-                    .env("TZ", "America/Los_Angeles")
-                    .args(["-d", "00:00", "+%s"])
-                    .output()
-                    .unwrap_or_else(|e| {
-                        eprintln!("deploy: cannot read PT midnight: {e}");
-                        std::process::exit(2);
-                    })
-                    .stdout,
-            )
-            .trim()
-            .parse()
-            .unwrap_or_else(|_| {
-                eprintln!("deploy: cannot parse PT midnight (need GNU date)");
-                std::process::exit(2);
-            }),
-        ),
+        // No day gate: deploys are instant per operator order, so PT
+        // midnight is never read (the field stays for struct shape).
+        pt_midnight_secs: None,
         allow_today_overlap: has(args, "allow-today-overlap"),
     };
     match deploy(&opts) {
@@ -836,20 +819,43 @@ mod tests {
         (url, handle)
     }
 
-    #[test]
-    fn day_gate_aborts_on_today_or_recent() {
-        // Fixed clock: now = 1_000_000, PT midnight = 990_000.
-        // A release stamped after midnight aborts (SPENT-TODAY);
-        // one 3h55m ago aborts (WITHIN-8H) — the 70960d4/e5cc372 case.
-        assert!(day_gate_blockers(&[], 1_000_000, 990_000).is_empty());
-        assert!(
-            day_gate_blockers(&[995_000], 1_000_000, 990_000).contains(&"SPENT-TODAY".to_string())
+    /// Health stub: serves one `{"status":"ok"}` then exits.
+    fn health_server_once() -> (String, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "http://{}/apostille/healthz",
+            listener.local_addr().unwrap()
         );
-        let recent = 1_000_000 - (3 * 3600 + 55 * 60);
-        let blockers = day_gate_blockers(&[recent], 1_000_000, 990_000 - 100_000);
-        assert!(blockers.contains(&"WITHIN-8H".to_string()), "{blockers:?}");
-        // A release from yesterday, 9h ago, blocks nothing.
-        assert!(day_gate_blockers(&[1_000_000 - 9 * 3600], 1_000_000, 999_000).is_empty());
+        let handle = std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else {
+                return;
+            };
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let body = r#"{"status":"ok"}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        });
+        (url, handle)
+    }
+
+    #[test]
+    fn health_poll_passes_when_server_answers() {
+        let (url, handle) = health_server_once();
+        poll_health_with(&url, 10, 5).unwrap();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn health_poll_fails_on_dead_port() {
+        let url = dead_url();
+        let err = poll_health_with(&url, 10, 3).expect_err("dead port");
+        assert!(err.contains("never ok"), "{err}");
     }
 
     #[test]
@@ -1086,10 +1092,11 @@ mod tests {
     }
 
     #[test]
-    fn deploy_refuses_when_day_spent() {
+    fn deploy_ignores_day_fields() {
+        // No day gate: even a "spent" setup (fresh stub mtime, PT
+        // midnight an hour ago) sails past gating — smoke then fails
+        // on the dead URL and the link reverts to the previous live.
         let (dir, root) = fake_root(Some("ddddddd"));
-        // Fresh stub: mtime is now, so both SPENT-TODAY (midnight an
-        // hour ago) and WITHIN-8H fire through the real deploy path.
         let err = deploy(&DeployOptions {
             root: root.clone(),
             src: staged(dir.path()),
@@ -1107,15 +1114,15 @@ mod tests {
             pt_midnight_secs: Some(crate::unix_now() - 3600),
         })
         .unwrap_err();
-        assert!(err.contains("deploy-day gate refused"), "{err}");
+        assert!(err.contains("smoke FAILED"), "{err}");
         assert_eq!(read_current(&root).as_deref(), Some("ddddddd"));
     }
 
     #[test]
-    fn deploy_override_skips_day_gate() {
+    fn deploy_overlap_flag_is_silent_noop() {
+        // `--allow-today-overlap` is accepted but changes nothing:
+        // the same spent setup behaves exactly like the unflagged one.
         let (dir, root) = fake_root(Some("ddddddd"));
-        // Same spent-day setup as above, but the explicit override
-        // carries past the gate (smoke then fails on the dead URL).
         let err = deploy(&DeployOptions {
             root: root.clone(),
             src: staged(dir.path()),
@@ -1133,7 +1140,9 @@ mod tests {
             allow_today_overlap: true,
         })
         .unwrap_err();
-        assert!(!err.contains("deploy-day gate refused"), "{err}");
+        assert!(err.contains("smoke FAILED"), "{err}");
+        assert!(!err.contains("day gate"), "{err}");
+        assert_eq!(read_current(&root).as_deref(), Some("ddddddd"));
     }
 
     #[test]

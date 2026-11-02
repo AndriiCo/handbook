@@ -2,7 +2,7 @@
 
 Every Muse Code session in this repo since 2026-10-30 has one file here, written after each turn by `.muse/hooks/session-log.mjs` from Muse's own redacted session log: the builder, the judge, their side chats and any other session. Earlier prompts are the per-prompt files in `docs/prompts/`.
 
-16 sessions, 791 turns (144 typed by the operator, 529 driven by the goal, 118 other), 237 commits.
+16 sessions, 975 turns (144 typed by the operator, 707 driven by the goal, 124 other), 240 commits.
 
 | Session | Kind | Start (UTC) | End (UTC) | Turns | Operator | Goal | Other | Commits | Session id |
 |---|---|---|---|---|---|---|---|---|---|
@@ -19,6 +19,6 @@ Every Muse Code session in this repo since 2026-10-30 has one file here, written
 | [builder side chat](2026-10-31-builder-side-01a1939a-ad78-7d30-9845-1b1bb4f6d078.md) | side chat of builder | 2026-10-31 20:15 | 2026-10-31 20:16 | 1 | 1 | 0 | 0 | 0 | `01a1939a-ad78-7d30-9845-1b1bb4f6d078` |
 | [meta](2026-11-01-meta-01a19798-66eb-72b0-8ce7-3e80f3958724.md) | worktree | 2026-11-01 14:53 | 2026-11-01 16:17 | 12 | 10 | 2 | 0 | 14 | `01a19798-66eb-72b0-8ce7-3e80f3958724` |
 | [judge-2](2026-11-01-judge-2-01a1979d-7aa0-7113-834e-03e23401e74c.md) | worktree | 2026-11-01 14:58 | 2026-11-01 15:05 | 3 | 2 | 0 | 1 | 0 | `01a1979d-7aa0-7113-834e-03e23401e74c` |
-| [builder-2](2026-11-01-builder-2-01a197e2-87f4-78a3-bfeb-bbce48ac93c5.md) | session | 2026-11-01 16:13 | 2026-11-02 12:23 | 251 | 24 | 192 | 35 | 125 | `01a197e2-87f4-78a3-bfeb-bbce48ac93c5` |
+| [builder-2](2026-11-01-builder-2-01a197e2-87f4-78a3-bfeb-bbce48ac93c5.md) | session | 2026-11-01 16:13 | 2026-11-02 13:11 | 430 | 24 | 370 | 36 | 128 | `01a197e2-87f4-78a3-bfeb-bbce48ac93c5` |
 | [meta](2026-11-01-meta-01a197f4-d772-7413-a55f-160ab8c0a2ea.md) | worktree | 2026-11-01 16:33 | 2026-11-01 16:33 | 2 | 2 | 0 | 0 | 0 | `01a197f4-d772-7413-a55f-160ab8c0a2ea` |
-| [judge-3](2026-11-02-judge-3-01a19c1b-1055-7453-8f06-45364493024e.md) | worktree | 2026-11-02 11:53 | 2026-11-02 12:26 | 3 | 1 | 0 | 2 | 0 | `01a19c1b-1055-7453-8f06-45364493024e` |
+| [judge-3](2026-11-02-judge-3-01a19c1b-1055-7453-8f06-45364493024e.md) | worktree | 2026-11-02 11:53 | 2026-11-02 17:19 | 8 | 1 | 0 | 7 | 0 | `01a19c1b-1055-7453-8f06-45364493024e` |
