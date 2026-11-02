@@ -25,6 +25,14 @@ pub fn peer_ip<T>(req: &Request<T>) -> Option<IpAddr> {
         .map(|info| info.0.ip())
 }
 
+/// `tcp` / `quic` as stamped by the serving path, `unknown` when
+/// the marker is missing (never fail on it — the denial names it).
+pub fn transport_of(ext: &axum::http::Extensions) -> &'static str {
+    ext.get::<crate::RequestTransport>()
+        .map(|marked| marked.0)
+        .unwrap_or("unknown")
+}
+
 /// True when `ip` falls in any configured range (`None` never is).
 pub fn ip_allowed(allow_ips: &[config::IpNet], ip: Option<IpAddr>) -> bool {
     match ip {
@@ -33,26 +41,148 @@ pub fn ip_allowed(allow_ips: &[config::IpNet], ip: Option<IpAddr>) -> bool {
     }
 }
 
-/// 403 for an out-of-range (or unknown) peer: names the detected IP
-/// and points at the config section that owns the range.
-pub fn denied_response(ip: Option<IpAddr>) -> Response {
-    let seen = ip.map_or_else(|| "unknown".to_string(), |a| a.to_string());
+/// Machine-readable denial codes: every admin-branch 403 carries
+/// one, so the UI can show the server's answer instead of guessing.
+pub const CODE_IP_NOT_ALLOWED: &str = "ip_not_allowed";
+pub const CODE_STAFF_ROLE_REQUIRED: &str = "staff_role_required";
+pub const CODE_CSRF_FAILED: &str = "csrf_failed";
+pub const CODE_ADMIN_HOST_REQUIRED: &str = "admin_host_required";
+
+/// Canonical display form: a v4-mapped peer prints as dotted quad.
+pub fn seen_ip(ip: Option<IpAddr>) -> String {
+    ip.map(|a| a.to_canonical().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// "IPv4" / "IPv6" / "unknown" for the denial text.
+pub fn family_name(ip: Option<IpAddr>) -> &'static str {
+    match ip.map(|a| a.to_canonical()) {
+        Some(IpAddr::V4(_)) => "IPv4",
+        Some(IpAddr::V6(_)) => "IPv6",
+        None => "unknown",
+    }
+}
+
+/// The `/64` covering an IPv6 peer (allowlisting one privacy address
+/// at a time is hopeless: they rotate per connection).
+pub fn slash64(ip: std::net::Ipv6Addr) -> String {
+    let s = ip.segments();
+    std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0).to_string() + "/64"
+}
+
+/// One structured denial shape for every admin-branch 403: human
+/// text (kept backward-compatible), the machine `code`, and the
+/// detected peer `ip`.
+pub fn denial(code: &str, ip: Option<IpAddr>, error: String) -> Response {
     (
         StatusCode::FORBIDDEN,
         Json(json!({
-            "error": format!(
-                "admin access is limited to the configured IP range (admin.allow_ips) — \
-                 your IP is {seen}; see \"Admin IP allowlist\" in docs/specs/config-db.md \
-                 to change it"
-            ),
+            "error": error,
+            "code": code,
+            "ip": seen_ip(ip),
         })),
     )
         .into_response()
 }
 
+/// 403 for an out-of-range (or unknown) peer: names the detected IP,
+/// its family, the transport it arrived on, and the exact fix (bare
+/// IPv4, or the /64 for IPv6), and points at the config section that
+/// owns the range.
+pub fn denied_response(ip: Option<IpAddr>, transport: &str) -> Response {
+    let seen = seen_ip(ip);
+    let fix = match ip.map(|a| a.to_canonical()) {
+        Some(IpAddr::V4(_)) => format!("Add {seen} to admin.allow_ips, then restart apostille."),
+        Some(IpAddr::V6(v6)) => format!(
+            "Add {seen} or its /64 {} to admin.allow_ips, then restart apostille.",
+            slash64(v6)
+        ),
+        None => "No peer address was detected for this request. ".to_string(),
+    };
+    denial(
+        CODE_IP_NOT_ALLOWED,
+        ip,
+        format!(
+            "admin access is limited to the configured IP range (admin.allow_ips) — \
+             your IP is {seen}; see \"Admin IP allowlist\" in docs/specs/config-db.md \
+             to change it. Detected {} {} over {}. {}",
+            family_name(ip),
+            seen,
+            transport,
+            fix
+        ),
+    )
+}
+
+/// Tiny static 403 page for browser navigations (`/`, `/config`,
+/// `/review`, …): no SPA, no JS, no admin asset. Names the refused
+/// peer, its family, the arriving transport, and the fix. Peer
+/// strings are dotted quads / colon hex only, so no escaping is
+/// needed.
+pub fn denied_html(ip: Option<IpAddr>, transport: &str) -> String {
+    let seen = seen_ip(ip);
+    let fix = match ip.map(|a| a.to_canonical()) {
+        Some(IpAddr::V4(_)) => format!("Add {seen} to admin.allow_ips, then restart apostille."),
+        Some(IpAddr::V6(v6)) => format!(
+            "Add {seen} or its /64 {} to admin.allow_ips, then restart apostille.",
+            slash64(v6)
+        ),
+        None => "No peer address was detected for this request. ".to_string(),
+    };
+    format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <title>403 - Admin access refused</title></head><body>\
+         <h1>Admin access refused (403)</h1>\
+         <p>Your IP address is {seen} ({}), over {transport}.</p>\
+         <p>{fix} See \"Admin IP allowlist\" in docs/specs/config-db.md to change it.</p>\
+         </body></html>",
+        family_name(ip),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn denied_body(res: Response) -> serde_json::Value {
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        serde_json::from_slice(&bytes).expect("json")
+    }
+
+    #[tokio::test]
+    async fn denial_shape_names_ip_family_and_fix() {
+        let v4: IpAddr = "203.0.113.7".parse().unwrap();
+        let body = denied_body(denied_response(Some(v4), "tcp")).await;
+        assert_eq!(body["code"], "ip_not_allowed");
+        assert_eq!(body["ip"], "203.0.113.7");
+        let text = body["error"].as_str().unwrap();
+        assert!(text.contains("IPv4 203.0.113.7 over tcp"), "{text}");
+        assert!(
+            text.contains("Add 203.0.113.7 to admin.allow_ips"),
+            "{text}"
+        );
+        assert!(text.contains("your IP is 203.0.113.7"), "{text}");
+
+        let v6: IpAddr = "2001:db8:1:2:3:4:5:6".parse().unwrap();
+        let body = denied_body(denied_response(Some(v6), "quic")).await;
+        assert_eq!(body["code"], "ip_not_allowed");
+        assert!(body["error"].as_str().unwrap().contains("IPv6"), "family");
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap()
+                .contains("2001:db8:1:2::/64"),
+            "slash64 fix: {}",
+            body["error"]
+        );
+
+        let mapped: IpAddr = "::ffff:203.0.113.7".parse().unwrap();
+        assert_eq!(seen_ip(Some(mapped)), "203.0.113.7");
+        assert_eq!(family_name(Some(mapped)), "IPv4");
+        assert_eq!(seen_ip(None), "unknown");
+    }
 
     #[test]
     fn loopback_passes_unknown_fails() {

@@ -51,8 +51,15 @@ impl FromRequestParts<AppState> for AdminAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let forbidden =
-            |msg: &str| (StatusCode::FORBIDDEN, Json(json!({"error": msg}))).into_response();
+        let peer_of = |parts: &Parts| {
+            parts
+                .extensions
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                .map(|info| info.0.ip())
+        };
+        let forbidden = |code: &str, msg: &str, peer: Option<std::net::IpAddr>| {
+            crate::admin_ip::denial(code, peer, msg.to_string())
+        };
         let unauthorized = || {
             (
                 StatusCode::UNAUTHORIZED,
@@ -79,18 +86,20 @@ impl FromRequestParts<AppState> for AdminAuth {
         if !session.valid(now) {
             return Err(unauthorized());
         }
+        let peer = peer_of(parts);
+        let transport = crate::admin_ip::transport_of(&parts.extensions);
         if !session.role.meets(auth::Role::Staff) {
-            return Err(forbidden("staff role required"));
+            return Err(forbidden(
+                crate::admin_ip::CODE_STAFF_ROLE_REQUIRED,
+                "staff role required",
+                peer,
+            ));
         }
         // IP allowlist replaces the client-cert requirement: session +
         // staff role + listed peer IP, or a 403 naming the detected IP
         // and the config section that owns the range.
-        let peer = parts
-            .extensions
-            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-            .map(|info| info.0.ip());
         if !crate::admin_ip::ip_allowed(&state.admin_allow_ips, peer) {
-            return Err(crate::admin_ip::denied_response(peer));
+            return Err(crate::admin_ip::denied_response(peer, transport));
         }
         let fingerprint = cert_fingerprint(parts, state);
         let _ = auth::touch_session(&conn, &session.id, now);
@@ -189,43 +198,64 @@ pub async fn admin_host_guard(
     let ok = bare == auth::ADMIN_HOST
         || (state.admin_mtls_off && (bare == "localhost" || bare == "127.0.0.1"));
     if !ok {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "admin host required"})),
-        )
-            .into_response();
+        let peer = crate::admin_ip::peer_ip(&req);
+        return crate::admin_ip::denial(
+            crate::admin_ip::CODE_ADMIN_HOST_REQUIRED,
+            peer,
+            "admin host required".to_string(),
+        );
     }
     next.run(req).await
 }
 
 /// Whole-host IP gate (`admin.allow_ips`): every admin-branch
-/// request (API, HTML, JS) must arrive from a listed peer IP,
-/// except the setup surface (first boot is loopback-only by
-/// default: the setup API, the `/config` wizard page, and the
-/// hashed `/_app/` assets it needs) and the Telnyx webhook
+/// request (API, HTML, JS, the setup surface) must arrive from a
+/// listed peer IP — no exemptions. First boot works because an
+/// unset allowlist means loopback only, and `xtask up` stays on
+/// loopback; set the list with `xtask config-set` before opening
+/// `/config` from elsewhere. The Telnyx webhook
 /// (server-to-server, signature-authenticated — its router
-/// carries no such layer by construction). Session + staff role
-/// stay enforced per API route by [`AdminAuth`]. Denials are 403s
-/// naming the detected IP and the config section that owns the
-/// range (the access log keeps the ID/route; no audit row per
-/// asset fetch).
+/// carries no such layer by construction) stays reachable.
+/// Session + staff role stay enforced per API route by
+/// [`AdminAuth`]. Denials are 403s naming the detected IP and the
+/// config section that owns the range (the access log keeps the
+/// ID/route; no audit row per asset fetch).
 pub async fn require_admin_ip(
     State(state): State<AppState>,
     req: axum::http::Request<axum::body::Body>,
     next: Next,
 ) -> impl IntoResponse {
-    let path = req.uri().path();
-    if path.starts_with("/apostille/api/v1/setup/")
-        || path == "/config"
-        || path.starts_with("/_app/")
-    {
+    let path = req.uri().path().to_owned();
+    let peer = crate::admin_ip::peer_ip(&req);
+    let transport = crate::admin_ip::transport_of(req.extensions());
+    if crate::admin_ip::ip_allowed(&state.admin_allow_ips, peer) {
         return next.run(req).await;
     }
-    let peer = crate::admin_ip::peer_ip(&req);
-    if !crate::admin_ip::ip_allowed(&state.admin_allow_ips, peer) {
-        return crate::admin_ip::denied_response(peer);
+    // F2: every admin-branch denial logs one WARN line (admin
+    // branch only — public-branch IPs stay out of logs). The
+    // request-id span from the outer log layer carries the ID.
+    tracing::warn!(
+        code = crate::admin_ip::CODE_IP_NOT_ALLOWED,
+        peer = %crate::admin_ip::seen_ip(peer),
+        transport = %transport,
+        route = %path,
+        "admin request refused: peer not allowlisted"
+    );
+    if path.starts_with("/apostille/api/") {
+        return crate::admin_ip::denied_response(peer, transport);
     }
-    next.run(req).await
+    if path.starts_with("/_app/") {
+        // Assets: plain 403, no body detail to mine.
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    // Browser navigations (/, /config, /review, …): a tiny static
+    // 403 page — no SPA, no JS, no admin asset.
+    (
+        StatusCode::FORBIDDEN,
+        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        crate::admin_ip::denied_html(peer, transport),
+    )
+        .into_response()
 }
 
 /// CSRF guard for admin mutations: allowed `Origin` plus the
@@ -255,11 +285,12 @@ pub async fn csrf_guard(
         return next.run(req).await;
     }
     let fail = || {
-        (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "csrf check failed"})),
+        let peer = crate::admin_ip::peer_ip(&req);
+        crate::admin_ip::denial(
+            crate::admin_ip::CODE_CSRF_FAILED,
+            peer,
+            "csrf check failed".to_string(),
         )
-            .into_response()
     };
     let origin = req
         .headers()
@@ -1058,23 +1089,42 @@ mod tests {
     async fn require_ip_denies_unlisted_page_and_api() {
         let tmp = tempfile::tempdir().unwrap();
         let app = router(listed_ip_state(&tmp));
-        for uri in ["/review", "/apostille/api/v1/me"] {
-            let res = app
-                .clone()
-                .oneshot(ip_request(uri, Some("198.51.100.9")))
-                .await
-                .unwrap();
-            assert_eq!(res.status(), StatusCode::FORBIDDEN, "uri: {uri}");
-            let body = axum::body::to_bytes(res.into_body(), 2048).await.unwrap();
-            let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-            let msg = v["error"].as_str().unwrap();
-            assert!(msg.contains("198.51.100.9"), "names the peer: {msg}");
-            assert!(msg.contains("admin.allow_ips"), "points at the key: {msg}");
-            assert!(
-                msg.contains("docs/specs/config-db.md"),
-                "points at the docs: {msg}"
-            );
-        }
+        // API paths keep the structured JSON denial.
+        let res = app
+            .clone()
+            .oneshot(ip_request("/apostille/api/v1/me", Some("198.51.100.9")))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(res.into_body(), 2048).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["code"], "ip_not_allowed");
+        assert_eq!(v["ip"], "198.51.100.9");
+        let msg = v["error"].as_str().unwrap();
+        assert!(msg.contains("198.51.100.9"), "names the peer: {msg}");
+        assert!(msg.contains("admin.allow_ips"), "points at the key: {msg}");
+        assert!(
+            msg.contains("docs/specs/config-db.md"),
+            "points at the docs: {msg}"
+        );
+        // Browser navigations get the static HTML page, not the SPA.
+        let res = app
+            .clone()
+            .oneshot(ip_request("/review", Some("198.51.100.9")))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert!(
+            res.headers()["content-type"]
+                .to_str()
+                .unwrap()
+                .starts_with("text/html"),
+            "html denial"
+        );
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        let page = std::str::from_utf8(&body).unwrap();
+        assert!(page.contains("198.51.100.9"), "names the peer: {page}");
+        assert!(!page.contains("vite"), "no SPA shell leaks: {page}");
         // Unknown peer (no ConnectInfo) fails closed too.
         let res = app.oneshot(ip_request("/console", None)).await.unwrap();
         assert_eq!(res.status(), StatusCode::FORBIDDEN);
@@ -1100,20 +1150,69 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn require_ip_exempts_setup_and_assets() {
+    async fn require_ip_refuses_everything_unlisted() {
         let tmp = tempfile::tempdir().unwrap();
         let app = router(listed_ip_state(&tmp));
+        // Browser navigations (incl. the old exemptions) get the
+        // static HTML denial, never the SPA shell.
+        for uri in ["/", "/config", "/review", "/staff-login", "/enrol"] {
+            let res = app
+                .clone()
+                .oneshot(ip_request(uri, Some("198.51.100.9")))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::FORBIDDEN, "uri: {uri}");
+            assert!(
+                res.headers()["content-type"]
+                    .to_str()
+                    .unwrap()
+                    .starts_with("text/html"),
+                "html denial: {uri}"
+            );
+        }
+        // Assets get a plain 403 with no body detail.
+        let res = app
+            .clone()
+            .oneshot(ip_request("/_app/immutable/x.js", Some("198.51.100.9")))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        // Every API path (incl. the setup surface) gets the JSON
+        // denial with the detected peer IP.
         for uri in [
+            "/apostille/api/v1/me",
             "/apostille/api/v1/setup/status",
-            "/config",
-            "/_app/immutable/x.js",
+            "/apostille/api/v1/queue",
         ] {
             let res = app
                 .clone()
                 .oneshot(ip_request(uri, Some("198.51.100.9")))
                 .await
                 .unwrap();
-            assert_eq!(res.status(), StatusCode::OK, "uri: {uri}");
+            assert_eq!(res.status(), StatusCode::FORBIDDEN, "uri: {uri}");
+            let body = axum::body::to_bytes(res.into_body(), 2048).await.unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(v["code"], "ip_not_allowed", "uri: {uri}");
+            assert_eq!(v["ip"], "198.51.100.9", "uri: {uri}");
         }
+        // A refused admin WS upgrade is a 403, not a handshake.
+        let res = app
+            .clone()
+            .oneshot(ip_request(
+                "/apostille/ws/bus?topic=proposals",
+                Some("198.51.100.9"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        // Loopback still works for `xtask up` (unset list).
+        let mut loopback = state_with_spa(&tmp);
+        loopback.admin_allow_ips = config::loopback_allow_ips();
+        let local = router(loopback);
+        let res = local
+            .oneshot(ip_request("/review", Some("127.0.0.1")))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
     }
 }

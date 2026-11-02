@@ -1207,6 +1207,14 @@ impl IpNet {
     }
 }
 
+impl std::fmt::Display for IpNet {
+    /// Canonical `addr/prefix` form for log lines (the boot line
+    /// and the admin 403 text both render through here).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.addr, self.prefix)
+    }
+}
+
 /// Loopback-only allowlist: the fail-closed default (first boot can
 /// still reach setup over localhost).
 pub fn loopback_allow_ips() -> Vec<IpNet> {

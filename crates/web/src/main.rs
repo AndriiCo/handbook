@@ -1087,6 +1087,21 @@ async fn main() {
         notify_base: format!("{pub_origin}/apostille"),
         meta_delete_status_base: format!("{pub_origin}/auth/meta/delete-status"),
     };
+    // F2: the effective allowlist lands in the boot log at INFO, so
+    // "which ranges are live" never needs a config dump to answer.
+    // An explicitly-set loopback value reads the same as unset: in
+    // both cases only loopback reaches the admin branch.
+    let allow_summary = if state.admin_allow_ips == config::loopback_allow_ips() {
+        "loopback only (unset)".to_string()
+    } else {
+        state
+            .admin_allow_ips
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    tracing::info!(admin_allow_ips = %allow_summary, "admin.allow_ips effective");
     // Follower notifications (phase 1 email): in-process worker
     // (the ACME-renewal precedent), poke-woken plus a 60 s tick for
     // backoff rows. Disabled by default; sends need the master
