@@ -1,13 +1,13 @@
-# Operator — Sunday 2026-11-01 (Pacific; updated ~01:15 PST)
+# Operator — Monday 2026-11-02 (Pacific; updated ~02:35 PST)
 
 Production runs `0.1.0+3836bfb` (deployed 2026-11-02 ~02:35Z on your
 "deploy now" order, `--allow-today-overlap --skip-accept`) — scoreboard
-**5/10** (P0, GP1, GP4, A2, A5 pass; `web/shots/prod-before.json` →
-`web/shots/prod-after.json` identical 5/10, no regression; re-checked
-03:32Z `prod-now.json`, still 5/10). First red: GP2-data (vietnam 0/8,
-usa-wa-sos 1/8 accepted). Staging 9/10 (only S1 red) on a39495a
-(stamp + live demo 3/3 — Monday's candidate); tunnel live during
-builder turns.
+**5/10** (P0, GP1, GP4, A2, A5 pass; re-checked 10:30Z
+`prod-now.json`, still 5/10). First red: GP2-data (vietnam 0/8,
+usa-wa-sos 1/8 accepted). Staging **9/10** (only S1 red) on
+`eb57cdc` (plant stamp `ci_green: true`, live demo 3/3 — Run 16;
+ships your P-ADMIN-IP fix: 403s name the IP, no UI without an
+allowlisted IP, proven on staging with screenshots).
 
 Your lines that flip production rows now (all code is already live):
 1. Approve the proposed facts for vietnam + usa-wa-sos in `/review`
@@ -55,39 +55,19 @@ group-read pre-step from this morning is done — A2 reads prove it.
 
 ## Still open (in order)
 
-1. DEPLOY BLOCKER (root, one comment line, no restart): Sunday's
-   staging-green candidate `5bb462a` (stamp `ci_green: true`, staging
-   9/10 + live demo 3/3) cannot ship until the installed unit file
-   matches the repo — `ship-release.sh` aborts on any drift, and a
-   rollback would not restore the unit (AGENTS.md §7). The whole
-   difference is line 6, comment-only:
-   `runbook-release.md` → `staging.md § Steps` (P180 doc retarget).
-   From your checkout, as hal: `scp docs/ops/apostille.service
-   andrii.ai:/tmp/apostille.service.new` and check
-   `sha256sum /tmp/apostille.service.new` =
-   `a5c416fb67ccafa52a5730627d057e77030b2eebe8f5ff0b85c5f116e809f964`.
-   Then as root: `diff /etc/systemd/system/apostille.service
-   /tmp/apostille.service.new` (expect only line 6),
-   `install -m 644 /tmp/apostille.service.new
-   /etc/systemd/system/apostille.service && systemctl daemon-reload`
-   (no restart, no downtime), then `systemctl cat apostille | diff -
-   /tmp/apostille.service.new` (expect empty) and
-   `systemctl is-active apostille`. Paste back: the first diff, the
-   empty second diff, is-active. Monday 11-02 is the last code-deploy
-   day — this gates it. Then, BEFORE the deploy (old binaries
-   ignore the unknown row; the new binary reads it at boot), set
-   prod `admin.allow_ips` to cover the IP you approve from — the
-   default is loopback-only and would 403 you the moment the new
-   binary starts. As hal on the server (same KEK-staging pattern
-   as `ops-gp2-proposals.sh`: copy `/etc/apostille/handbook-kek`
-   to a mktemp dir, `trap` cleanup):
-   `/srv/apostille/current/xtask config-set --store
-   /var/lib/apostille --kek-file <staged-kek> --key
-   admin.allow_ips --type text --value "<your-ip-or-range>"`
-   (find your IP in any 403 message, or `curl ifconfig.me`).
-   Verify with the readback the command prints, then tell the
-   builder: it re-runs ship + deploy, and the new binary logs a
-   WARNING at boot if the value ever goes bad (loopback-only).
+1. You said "deployed unit file and allow_ips" — paste back the
+   evidence so the blocker closes: the first diff (expect only
+   line 6), the empty second diff, `is-active`, and the
+   `config-set admin.allow_ips` readback. Until that lands here,
+   the builder treats both as done-but-unverified: `ship-release.sh`
+   re-checks the unit drift itself and aborts safely on any
+   mismatch, and Monday 11-02 is the last code-deploy day. If the
+   unit drifted again (a new commit touched
+   `docs/ops/apostille.service`), the original line-6 procedure
+   stands — ask the builder for it. Note the new binary logs
+   `admin.allow_ips effective: …` at INFO on every boot (or
+   `loopback only (unset)`), so the journal always answers which
+   ranges are live.
 2. Approvals — no script: open the admin `/review` (no client
    cert needed anymore — session + your IP in `admin.allow_ips`;
    do the allow_ips step inside item 1 first or you will 403),
