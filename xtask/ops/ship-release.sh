@@ -5,11 +5,10 @@
 #
 #   xtask/ops/ship-release.sh [<sha>] [--allow-today-overlap]   # default: HEAD
 #
-# --allow-today-overlap skips the day gate and announces the override
-# (same meaning as on ops-deploy.sh and xtask deploy). Until 2026-11-10
-# the daily cap is lifted (operator order 0e9c8c4), so every deploy
-# passes it; after that, operator-ordered same-day deploys only.
-# There is no env knob.
+# --allow-today-overlap is an accepted no-op (kept so old orders and
+# wrapper scripts keep parsing; D1 removed the day gate from this
+# script entirely). Deploys are operator-ordered; xtask deploy and
+# ops-deploy.sh keep their own gates.
 #
 # Zero placeholders: every input is derived or refused with ABORT.
 set -u
@@ -19,25 +18,27 @@ SHA="${1:-$(git rev-parse HEAD)}"
 OVERLAP=""
 [ "${2:-}" = "--allow-today-overlap" ] && OVERLAP="--allow-today-overlap"
 [ -z "$OVERLAP" ] && [ -n "${2:-}" ] && { echo "ABORT: unknown flag: $2 (only --allow-today-overlap)"; exit 2; }
-[ -n "$OVERLAP" ] && echo "WARNING: day gate OVERRIDDEN by explicit flag (cap lifted until 2026-11-10; operator-ordered only after)"
+[ -n "$OVERLAP" ] && echo "NOTE: --allow-today-overlap accepted (no-op: no day gate in this script)"
 git cat-file -e "$SHA^{commit}" 2>/dev/null || { echo "ABORT: not a commit: $SHA"; exit 2; }
 VERSION="$(git rev-parse --short=7 "$SHA")"
 [[ "$VERSION" =~ ^[0-9a-f]{7}$ ]] || { echo "ABORT: bad short SHA: $VERSION"; exit 2; }
 echo "== ship $VERSION ($SHA)"
 
-# Deploy-day gate (AGENTS.md §7: one deploy a day, never two within
-# 8h). Same semantic as day_gate_blockers in xtask/src/release.rs
-# (tested there): any output line means ABORT. Directory names lie
-# (SHA-named); only mtimes count. Skipped under --allow-today-overlap.
-check_day() {
-    if [ -n "$OVERLAP" ]; then
-        echo "day gate SKIPPED (--allow-today-overlap; lifted until 2026-11-10)"
-        return 0
-    fi
-    local out
-    out="$(ssh andrii.ai 'T=$(TZ=America/Los_Angeles date -d 00:00 +%s); N=$(date +%s); for d in /srv/apostille/releases/*/; do [ -d "$d" ] || continue; m=$(stat -c %Y "$d"); [ "$m" -ge "$T" ] && echo "SPENT-TODAY $d"; [ $((N-m)) -lt 28800 ] && echo "WITHIN-8H $d"; done; true')" \
-        || { echo "ABORT: day-gate ssh failed ($1)"; exit 1; }
-    [ -z "$out" ] || { echo "ABORT: deploy day spent or within 8h ($1):"; echo "$out"; exit 1; }
+# Bounded /healthz poll (D2: no bare sleeps, no single-shot curls on
+# load-bearing reads). Prints the body on success; ABORTs with a
+# clear timeout message after $2 tries $3 seconds apart.
+poll_healthz() {
+    local url="$1" tries="${2:-12}" interval="${3:-5}" body i
+    for ((i = 1; i <= tries; i++)); do
+        body="$(curl -fsS --max-time 15 "$url" 2>/dev/null || true)"
+        if [ -n "$body" ]; then
+            printf '%s' "$body"
+            return 0
+        fi
+        [ "$i" -lt "$tries" ] && sleep "$interval"
+    done
+    echo "ABORT: $url unreachable after $tries tries (${interval}s apart)" >&2
+    return 1
 }
 
 # Plant stamp gate (AGENTS.md §8: no stamp with ci_green, no ship).
@@ -69,7 +70,7 @@ echo "== 0. plant stamp"
 check_stamp
 
 echo "== 1. rails (schema, migrations, unit)"
-LIVE_VER="$(curl -fsS --max-time 15 https://andrii.ai/apostille/healthz)" \
+LIVE_VER="$(poll_healthz https://andrii.ai/apostille/healthz 12 5)" \
     || { echo "ABORT: production /healthz unreachable"; exit 1; }
 LIVE_SHA="$(printf '%s' "$LIVE_VER" | grep -o '"version":"0.1.0+[0-9a-f][0-9a-f]*"' | sed 's/.*+//;s/"//')"
 [[ "${LIVE_SHA:-?}" =~ ^[0-9a-f]{7,40}$ ]] || { echo "ABORT: unparseable live version: $LIVE_VER"; exit 1; }
@@ -82,7 +83,6 @@ HITS="$(git diff "$LIVE_SHA" "$SHA" -- crates xtask \
     || { echo "ABORT: migrations differ from live $LIVE_SHA — take the migration path with the author"; exit 1; }
 git show "$SHA:docs/ops/apostille.service" | ssh andrii.ai 'diff /etc/systemd/system/apostille.service - >/dev/null' \
     || { echo "ABORT: unit file drifted — sync docs/ops/apostille.service first"; exit 1; }
-check_day rails
 check_roots rails
 echo "rails OK"
 
@@ -127,7 +127,6 @@ done
 echo "stage OK"
 
 echo "== 5-6. repeat rails + pre-flight"
-check_day pre-flight
 check_roots pre-flight
 ssh andrii.ai 'touch /srv/apostille/releases/.w && rm /srv/apostille/releases/.w && echo WRITE-OK'
 ssh andrii.ai 'touch /srv/apostille/.w && rm /srv/apostille/.w && echo FLIP-OK'

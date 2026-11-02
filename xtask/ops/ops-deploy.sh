@@ -110,15 +110,27 @@ fi
     exit 1
 }
 
-echo "=== 3. verify stamp"
-STAMP="$(curl -s -m 10 https://andrii.ai/apostille/healthz)"; echo "$STAMP"
-case "$STAMP" in
-    *"\"version\":\"0.1.0+$VERSION\""*)
-        echo "stamp OK: serving $VERSION" ;;
-    *)  echo "ABORT: serving stamp does not name $VERSION (stale binary or stale process?)"
-        echo "remedy: check for orphan web procs: ps -o pid,user,lstart,cmd -C web"
-        exit 1 ;;
-esac
+echo "=== 3. verify stamp (bounded /healthz poll, no bare sleeps)"
+TRIES="${VERIFY_TRIES:-18}"
+INTERVAL="${VERIFY_INTERVAL:-5}"
+STAMP=""
+for ((i = 1; i <= TRIES; i++)); do
+    STAMP="$(curl -s -m 10 https://andrii.ai/apostille/healthz 2>/dev/null || true)"
+    case "$STAMP" in
+        *"\"version\":\"0.1.0+$VERSION\""*)
+            echo "$STAMP"
+            echo "stamp OK: serving $VERSION (try $i/$TRIES)"
+            STAMP_OK=1
+            break ;;
+    esac
+    [ "$i" -lt "$TRIES" ] && sleep "$INTERVAL"
+done
+[ "${STAMP_OK:-0}" = 1 ] || {
+    echo "ABORT: serving stamp does not name $VERSION after $TRIES tries (${INTERVAL}s apart; stale binary or stale process?)"
+    echo "last body: $STAMP"
+    echo "remedy: check for orphan web procs: ps -o pid,user,lstart,cmd -C web"
+    exit 1
+}
 echo "=== 4. prune old releases (keep live + newest 3)"
 LIVE="$(readlink /srv/apostille/current)"
 # shellcheck disable=SC2012
