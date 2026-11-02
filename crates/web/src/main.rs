@@ -35,6 +35,7 @@ mod passkey;
 mod queue;
 mod quic;
 mod readyz;
+mod reports;
 mod setup;
 mod staff_passkey;
 mod translate;
@@ -470,6 +471,13 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route(
             "/api/v1/authorities/{slug}/translations",
             get(translate::public_translations),
+        )
+        // SA-21 walk-in reports: signed-in submit (401 anonymous),
+        // masked public list per authority.
+        .route("/api/v1/reports", post(reports::submit))
+        .route(
+            "/api/v1/authorities/{slug}/reports",
+            get(reports::list_for_authority),
         )
         // Crawler surface: shell with injected head (slug routes
         // sort before the SPA fallback below, so unfurls render
@@ -976,6 +984,10 @@ async fn main() {
     // only (fact_translation).
     crate::translate::migrate_translate_tables(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate translate tables: {e}"));
+    // SA-21 walk-in reports: lane-owned DDL, CREATE TABLE IF NOT
+    // EXISTS only (report, report_photo, report_promotion).
+    crate::reports::migrate_report_tables(&conn)
+        .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate report tables: {e}"));
     drop(conn);
     // config-db: the KEK is mandatory now — runtime config lives in
     // sealed rows, so without it there is nothing to serve with.

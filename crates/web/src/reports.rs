@@ -96,6 +96,7 @@ pub fn migrate_report_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()
            id INTEGER PRIMARY KEY,
            report_id INTEGER NOT NULL REFERENCES report(id),
            kind TEXT NOT NULL DEFAULT '',
+           filename TEXT NOT NULL DEFAULT '',
            bytes BLOB NOT NULL,
            sha256_hex TEXT NOT NULL DEFAULT '',
            exif_stripped INTEGER NOT NULL DEFAULT 0,
@@ -125,10 +126,7 @@ pub fn classify_photo(bytes: &[u8]) -> Option<PhotoKind> {
     if bytes.len() >= 8 && bytes[0..8] == [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A] {
         return Some(PhotoKind::Png);
     }
-    if bytes.len() >= 12
-        && bytes[0..4] == [b'R', b'I', b'F', b'F']
-        && bytes[8..12] == [b'W', b'E', b'B', b'P']
-    {
+    if bytes.len() >= 12 && bytes[0..4] == *b"RIFF" && bytes[8..12] == *b"WEBP" {
         return Some(PhotoKind::Webp);
     }
     if bytes.len() >= 6 && (bytes[0..6] == *b"GIF87a" || bytes[0..6] == *b"GIF89a") {
@@ -373,10 +371,13 @@ pub fn submit_report(
             PhotoKind::Webp => "webp",
             PhotoKind::Gif => "gif",
         };
+        // Staff reference only: bounded client-supplied name, never
+        // a path and never rendered to readers.
+        let name: String = photo.filename.chars().take(128).collect();
         conn.execute(
-            "INSERT INTO report_photo(report_id, kind, bytes, sha256_hex, exif_stripped, masked)
-             VALUES (?1, ?2, ?3, ?4, ?5, 0)",
-            rusqlite::params![report_id, kind_str, clean, digest, i32::from(stripped)],
+            "INSERT INTO report_photo(report_id, kind, filename, bytes, sha256_hex, exif_stripped, masked)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+            rusqlite::params![report_id, kind_str, name, clean, digest, i32::from(stripped)],
         )
         .map_err(|_| "store unavailable")?;
     }

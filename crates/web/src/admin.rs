@@ -364,6 +364,12 @@ pub fn router(state: AppState) -> Router {
             "/apostille/api/v1/translations/status",
             get(crate::translate::translation_status),
         )
+        // SA-21: staff turns a masked report into a cited
+        // "visitor report" fact proposal (409 while unmasked).
+        .route(
+            "/apostille/api/v1/reports/{id}/promote",
+            post(crate::reports::promote),
+        )
         .route("/apostille/api/v1/queue", get(queue::queue_items))
         .route("/apostille/api/v1/queue/{id}", get(queue::queue_item))
         .route(

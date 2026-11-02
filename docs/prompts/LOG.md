@@ -204,3 +204,4 @@
 | 302 | 2026-11-02 12:42Z | Continue working toward the active session goal. Execute MISSION SUBMIT | operator page: RO-2 green, stamp queued |
 | 303 | 2026-11-02 12:50Z | Continue working toward the active session goal. Execute MISSION SUBMIT | P301 stamped ci_green, binary identical |
 | 304 | 2026-11-02 17:24Z | deploy now. Continue MISSION SUBMIT now; do not wait idle on me. | release-train gap: no day gate, healthz poll |
+| 305 | 2026-11-02 17:28Z | deploy now. Continue MISSION SUBMIT now; do not wait idle on me. | SA-21 wiring: reports routes+migrate live |

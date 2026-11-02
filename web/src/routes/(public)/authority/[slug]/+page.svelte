@@ -361,7 +361,7 @@
 				Start an order for {authorityRegion ?? authorityCountry ?? displayName}
 			</a>
 			<a
-				href={resolve('/(customer)/login')}
+				href={resolve('/(customer)/report')}
 				class="inline-flex min-h-11 items-center rounded-sm border border-line bg-bg px-5 font-medium text-ink no-underline transition-colors hover:border-focus"
 			>
 				Report a change
