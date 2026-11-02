@@ -155,3 +155,5 @@
 | 249 | 2026-11-02 00:43Z | P249 readyz follow-ups: leaf Atomic, boot beat, DB JSON | renewal overwrites, 291 tests |
 | 250 | 2026-11-02 01:05Z | Plant gate red: items-after-test-module in xtask | tests module to file end, resubmit |
 | 252 | 2026-11-02 02:31Z | Merge sub/tokens: cached+reasoning tokens to trace | 344 tests, eval unchanged |
+| 253 | 2026-11-02 02:50Z | Merge sub/unsubscribe: RFC 8058 + stable token | 306 tests, shots gate pending |
+| 254 | 2026-11-02 02:56Z | Access log records path only, token stays out | clippy+306 tests, pushed |
