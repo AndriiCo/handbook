@@ -376,3 +376,30 @@ above verbatim).
   3836bfb. Ship still needs the unit-file root step (item 1),
   prod `admin.allow_ips`, and an explicit operator deploy order
   (`--allow-today-overlap` only on order).
+
+## Run 13 (2026-11-02, 1992959) — 9/10 kept, SA-1/SA-2/SA-3 stack accepted, timed
+
+- Plant stamp `acceptance/19929594dcde.json` (`ci_green: true`,
+  run `20261102-030206-1992959`): submit 03:02:06Z, claimed
+  03:02:22Z (queue 16 s), setup 0 s, deps 4 s, gate 209 s,
+  package 134 s, stamp 03:08:09Z. Plant total 363 s — within
+  2 s of the 3836bfb run (210/134), so the gate is stable.
+- Exact checkout via xfer ref (`xfer-p256`): push <1 s,
+  `git checkout -f` 0 s. Native release rebuild
+  (`cargo build --release -p web -p xtask`) 33 s incremental;
+  both SPAs 12 s (SA-2 touched unsubscribe + trace pages, so
+  no skip). Kill-by-PID 2498693 + `setsid -f` restart 3 s;
+  `healthz` → `0.1.0+1992959`. DB reused (vietnam/usa-wa-sos
+  stand). Staging total push→serving ≈ 48 s of work.
+- Scoreboard ON plant 9/10 in 17 s, only S1 red
+  (licence/video/visibility, operator-owned — untouched per
+  standing rules). GP2-data, A1, GP2-page, A2, A5 pass.
+- Live demo take 3/3 in 5 s on the exact SHA.
+- Deploy candidate: stamp + 9/10 + demo 3/3 all on 1992959.
+  Second Monday deploy only on explicit operator order
+  (`--allow-today-overlap`), ready by 22:00 PST, never after
+  23:59 PST; needs the unit-file root step + prod approvals.
+- Timing notes (see builder report): gate 58% of plant time;
+  xfer push + staging build can overlap the gate (saves
+  ~6 min wall); staging rebuilds are incremental already;
+  sccache on plant is the open expedite for the gate.

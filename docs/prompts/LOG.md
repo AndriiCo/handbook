@@ -158,3 +158,4 @@
 | 253 | 2026-11-02 02:50Z | Merge sub/unsubscribe: RFC 8058 + stable token | 306 tests, shots gate pending |
 | 254 | 2026-11-02 02:56Z | Access log records path only, token stays out | clippy+306 tests, pushed |
 | 255 | 2026-11-02 03:05Z | Merge sub/judge-run: xtask up loopback boot | 120 tests, up --check 3/3 |
+| 256 | 2026-11-02 03:20Z | Staging accept 1992959: 9/10 + demo 3/3 | timed gate 209s, staging 48s |
