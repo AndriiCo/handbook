@@ -423,6 +423,23 @@ above verbatim).
   Mon 23:59 PST; still needs the unit-file root step + prod
   approvals + brand SVGs + S1.
 
+## Run 18 (2026-11-02, 2b4bc8d) — 9/10 kept, login-padding fix accepted
+
+- Plant stamp `acceptance/2b4bc8d5d5b7.json` (`ci_green: true`,
+  run `20261102-120244-2b4bc8d`, stamp 12:08:44Z).
+- Exact checkout via pre-pushed xfer ref (`xfer-p298`), native
+  release rebuild 23 s + `npm --prefix web ci` + both SPAs,
+  kill-by-listening-PID + `setsid -f` restart;
+  `healthz` → `0.1.0+2b4bc8d`. DB reused.
+- Scoreboard ON plant 9/10 in `web/shots/staging-accept.json`,
+  only S1 red (operator-owned licence/video/visibility).
+  Live demo take 3/3 on the exact SHA.
+- Deploy candidate: stamp + 9/10 + demo 3/3 all on 2b4bc8d
+  (supersedes 6e16ded; adds P297 operator page + P298 login
+  padding). Second Monday deploy only on an explicit operator
+  order with `--allow-today-overlap`, ready by 22:00 PST, never
+  after Mon 23:59 PST.
+
 ## Run 17 (2026-11-02, 6e16ded) — 9/10 kept, wave-1 stack accepted
 
 - Plant stamp `acceptance/6e16dedb18f1.json` (`ci_green: true`,
