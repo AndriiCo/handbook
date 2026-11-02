@@ -6,6 +6,8 @@
 // SECRET values are write-only: the server never returns them and this
 // module never renders or stores one — set-new-only.
 
+import { authError, readErrorBody } from './http-errors.js';
+
 /**
  * Normalized row for the config page. Secret rows carry `set`, never a value.
  * @typedef {object} ConfigRow
@@ -104,11 +106,14 @@ export function csrfHeaders(jar = undefined) {
  */
 export async function fetchConfig(apiBase, fetchFn = fetch) {
 	const res = await fetchFn(`${apiBase}/config`, { credentials: 'same-origin' });
-	if (res.status === 401) {
-		throw new Error('Staff session missing or expired — log in on the admin host again.');
-	}
-	if (res.status === 403) {
-		throw new Error('Logged in, but the admin host refused the request — the browser must present your enrolled client certificate.');
+	// Auth failures show the server's answer verbatim (the 403
+	// body names the detected IP) via the shared helper. The guard
+	// above makes the `??` fallback unreachable; it only satisfies
+	// the helper's nullable type.
+	if (res.status === 401 || res.status === 403) {
+		throw new Error(
+			authError(res.status, await readErrorBody(res)) ?? 'The admin host refused the request.'
+		);
 	}
 	if (res.status === 404) {
 		throw new Error('Config API not found (404) — the server lane has not landed yet.');
@@ -139,7 +144,9 @@ export async function saveConfigKey(apiBase, row, fetchFn = fetch) {
 		body: JSON.stringify(putBody(row))
 	});
 	if (res.status === 401 || res.status === 403) {
-		throw new Error('Staff session expired — log in again, then retry.');
+		throw new Error(
+			authError(res.status, await readErrorBody(res)) ?? 'The admin host refused the request.'
+		);
 	}
 	if (res.status === 404) {
 		throw new Error(`Unknown key “${row.key}” (404).`);

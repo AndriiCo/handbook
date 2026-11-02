@@ -116,17 +116,16 @@ export function validSetupKeyShape(value) {
 }
 
 /**
- * True when a fetch threw at the network layer (TLS handshake
- * failure — the missing-client-cert case — surfaces as a
- * TypeError, same as the machine being offline).
+ * True when a fetch threw at the network layer (the machine is
+ * offline or the admin host is unreachable — surfaces as a
+ * TypeError). There is no client certificate anymore: the IP
+ * allowlist gate answers with a 403 body instead.
  * @param {any} err
  */
 export function isTransportFailure(err) {
 	return err instanceof TypeError;
 }
 
-export const CERT_MISSING_COPY =
-	'Could not connect — this page needs your staff client certificate. Install it, then reload.';
 export const CANCELLED_COPY = 'Cancelled — no changes were made.';
 
 /**
@@ -176,8 +175,9 @@ export async function loginPasskey(account, io) {
 }
 
 /**
- * Friendly copy for enrol failures (status + server error mapped,
- * never raw). `serverError` is the exact `error` string.
+ * Friendly copy for enrol failures (status + server error mapped).
+ * `serverError` is the exact `error` string; denial bodies pass
+ * through verbatim (they name the refused IP by design).
  * @param {number} status
  * @param {string} serverError
  */
@@ -187,10 +187,12 @@ export function enrolErrorCopy(status, serverError, setupMode = false) {
 			? 'Start over from the setup page — the request was malformed.'
 			: 'This invite link is malformed — ask your admin for a new one.';
 	}
-	if (status === 403 && serverError === 'client cert required') return CERT_MISSING_COPY;
 	if (status === 403 && serverError === 'certificate does not match invitation') {
 		return 'This device certificate does not match the invite — enrol on the device holding the invited certificate.';
 	}
+	// Denial bodies (IP allowlist, host guard) are written to be
+	// shown: carry them verbatim, IP included.
+	if (status === 403 && serverError) return serverError;
 	if (status === 403) return 'Session expired — reload and try again.';
 	if (status === 409) return 'This security key is already registered — use a different key or ask your admin.';
 	if (status === 410) {
@@ -204,17 +206,20 @@ export function enrolErrorCopy(status, serverError, setupMode = false) {
 }
 
 /**
- * Friendly copy for login failures (status + server error mapped,
- * never raw).
+ * Friendly copy for login failures (status + server error mapped).
+ * Denial bodies pass through verbatim (they name the refused IP
+ * by design).
  * @param {number} status
  * @param {string} serverError
  */
 export function loginErrorCopy(status, serverError) {
 	if (status === 401) return 'Unknown account or no passkeys — check the user ID or ask your admin.';
-	if (status === 403 && serverError === 'client cert required') return CERT_MISSING_COPY;
 	if (status === 403 && serverError === 'use the customer login') {
 		return 'This branch is for staff — use the customer login.';
 	}
+	// Denial bodies (IP allowlist, host guard) are written to be
+	// shown: carry them verbatim, IP included.
+	if (status === 403 && serverError) return serverError;
 	if (status === 403) return 'Session expired — reload and try again.';
 	if (status === 404) return 'Credential unknown — ask your admin for a fresh invite link.';
 	if (status === 410) return 'The sign-in expired — try again.';

@@ -87,9 +87,12 @@ describe('staff-auth shapes', () => {
 		assert.equal(isTransportFailure(new Error('HTTP 500')), false);
 	});
 
-	it('maps enrol failures without leaking raw text', () => {
+	it('maps enrol failures, carrying denial bodies verbatim', () => {
 		assert.match(enrolErrorCopy(410, 'invite invalid or expired'), /ask your admin/);
-		assert.match(enrolErrorCopy(403, 'client cert required'), /client certificate/);
+		assert.match(
+			enrolErrorCopy(403, 'admin access is limited — your IP is 198.51.100.9'),
+			/198\.51\.100\.9/
+		);
 		assert.match(
 			enrolErrorCopy(403, 'certificate does not match invitation'),
 			/does not match/
@@ -108,9 +111,13 @@ describe('staff-auth shapes', () => {
 		assert.match(enrolErrorCopy(429, 'rate limited', true), /wait a minute/);
 	});
 
-	it('maps login failures without leaking raw text', () => {
+	it('maps login failures, carrying denial bodies verbatim', () => {
 		assert.match(loginErrorCopy(401, 'unknown account or no passkeys'), /Unknown account/);
 		assert.match(loginErrorCopy(403, 'use the customer login'), /customer login/);
+		assert.match(
+			loginErrorCopy(403, 'admin access is limited — your IP is 198.51.100.9'),
+			/198\.51\.100\.9/
+		);
 		assert.match(loginErrorCopy(404, 'credential unknown'), /fresh invite/);
 		assert.match(loginErrorCopy(410, 'challenge invalid or expired'), /expired/);
 		assert.match(loginErrorCopy(500, '<script>'), /Sign-in failed/);

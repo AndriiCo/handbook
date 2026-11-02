@@ -14,11 +14,12 @@
 	import { fetchSetupStatus } from '../../../lib/admin/setup-client.js';
 
 	// Staff enrolment (spec customer-auth.md §5.2): single-use
-	// invite URL + live client cert + UV ceremony. The invite
+	// invite URL + passkey UV ceremony (no client cert: the IP
+	// allowlist gates the branch instead). The invite
 	// token is never rendered, logged, or stored — it lives in
 	// this closure and the two POST bodies only. With ?setup=1
-	// (secure-config.md §9.2) the setup key replaces invite +
-	// cert for the first staffer — and burns on success.
+	// (secure-config.md §9.2) the setup key replaces the invite
+	// for the first staffer — and burns on success.
 	const api = (path: string) => `/apostille/api/v1${path}`;
 
 	let linkState = $state<'checking' | 'invalid' | 'setup' | 'closed' | 'ready'>('checking');
@@ -93,7 +94,7 @@
 				error = CANCELLED_COPY;
 			} else if (isTransportFailure(err)) {
 				error =
-					'Could not connect — this page needs your staff client certificate. Install it, then reload.';
+					'Could not reach the admin host — check the connection and reload. (Refused networks answer with a 403 page naming the address instead.)';
 			} else {
 				error = 'Enrolment failed — try again.';
 			}

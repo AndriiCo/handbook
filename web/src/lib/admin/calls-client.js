@@ -12,6 +12,7 @@
 // and list/detail payloads carry no dial target.
 
 import { csrfHeaders } from './config-client.js';
+import { authError, readErrorBody } from './http-errors.js';
 
 /**
  * @typedef {object} CallSummary
@@ -168,14 +169,17 @@ async function readJson(res, what) {
 /**
  * @param {Response} res
  * @param {string} what
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function throwForStatus(res, what) {
-	if (res.status === 401) {
-		throw new Error('Staff session missing or expired — log in on the admin host again.');
-	}
-	if (res.status === 403) {
-		throw new Error('Logged in, but the admin host refused the request — the browser must present your enrolled client certificate.');
+async function throwForStatus(res, what) {
+	// Auth failures show the server's answer verbatim (the 403
+	// body names the detected IP) via the shared helper. The guard
+	// above makes the `??` fallback unreachable; it only satisfies
+	// the helper's nullable type.
+	if (res.status === 401 || res.status === 403) {
+		throw new Error(
+			authError(res.status, await readErrorBody(res)) ?? 'The admin host refused the request.'
+		);
 	}
 	if (res.status === 404) throw new Error(`${what} not found (404).`);
 	if (res.status === 422) throw new Error('The server refused the request (422) — check the number and consent.');
@@ -192,7 +196,7 @@ function throwForStatus(res, what) {
  */
 export async function fetchCalls(apiBase, fetchFn = fetch) {
 	const res = await fetchFn(`${apiBase}/calls`, { credentials: 'same-origin' });
-	throwForStatus(res, 'Call list');
+	await throwForStatus(res, 'Call list');
 	const data = await readJson(res, 'Call list');
 	const calls = data?.calls;
 	if (!Array.isArray(calls)) throw new Error('Call list returned an unexpected shape.');
@@ -209,7 +213,7 @@ export async function fetchCall(apiBase, id, fetchFn = fetch) {
 	const res = await fetchFn(`${apiBase}/calls/${encodeURIComponent(id)}`, {
 		credentials: 'same-origin'
 	});
-	throwForStatus(res, 'Call detail');
+	await throwForStatus(res, 'Call detail');
 	const detail = normalizeCallDetail(await readJson(res, 'Call detail'));
 	if (!detail) throw new Error('Call detail returned an unexpected shape.');
 	return detail;
@@ -230,7 +234,7 @@ async function postCall(apiBase, path, body, what, fetchFn) {
 		credentials: 'same-origin',
 		body: body === undefined ? undefined : JSON.stringify(body)
 	});
-	throwForStatus(res, what);
+	await throwForStatus(res, what);
 	return readJson(res, what);
 }
 

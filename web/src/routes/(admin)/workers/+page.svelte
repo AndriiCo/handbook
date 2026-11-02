@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import { csrfHeaders } from '../../../lib/admin/config-client.js';
+	import { authError, readErrorBody } from '../../../lib/admin/http-errors.js';
 
 	// Workers management against the admin workers API (admin-workers.md
 	// §8): status, per-authority ingest state, capture list with retry,
@@ -158,10 +159,10 @@
 				fetch(api(`/workers/captures${query}`), { credentials: 'same-origin' })
 			]);
 			if ([statusRes, authRes, capRes].some(authFailed)) {
-				const forbidden = [statusRes, authRes, capRes].some((r) => r.status === 403);
-				loadError = forbidden
-					? 'Logged in, but the admin host refused the request — the browser must present your enrolled client certificate.'
-					: 'Staff session missing or expired — log in on the admin host again.';
+				// Auth failures show the server's answer verbatim (the
+				// 403 body names the detected IP) via the shared helper.
+				const first = [statusRes, authRes, capRes].find((r) => authFailed(r)) ?? statusRes;
+				loadError = authError(first.status, await readErrorBody(first));
 			} else if (!statusRes.ok || !authRes.ok || !capRes.ok) {
 				throw new Error('one section failed to load');
 			} else {

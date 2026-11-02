@@ -49,7 +49,15 @@
 			}
 			const check = await fetch(api('/me'), { credentials: 'same-origin' });
 			if (!check.ok) {
-				error = loginErrorCopy(check.status, '');
+				// Carry the denial text (it names the refused IP) into the copy.
+				const detail = await check
+					.clone()
+					.json()
+					.catch(() => null);
+				error = loginErrorCopy(
+					check.status,
+					typeof detail?.error === 'string' ? detail.error : ''
+				);
 				return;
 			}
 			me = await check.json();
@@ -59,7 +67,7 @@
 				error = CANCELLED_COPY;
 			} else if (isTransportFailure(err)) {
 				error =
-					'Could not connect — this page needs your staff client certificate. Install it, then reload.';
+					'Could not reach the admin host — check the connection and reload. (Refused networks answer with a 403 page naming the address instead.)';
 			} else {
 				error = 'Sign-in failed — try again.';
 			}

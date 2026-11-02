@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import { csrfHeaders } from '../../../lib/admin/config-client.js';
+	import { authError, readErrorBody } from '../../../lib/admin/http-errors.js';
 
 	// Proposed-fact triage against the approval API: list proposed
 	// facts with conflict banners, accept (banner policy: conflicts do
@@ -59,11 +60,10 @@
 			const res = await fetch(api('/facts?status=proposed&limit=100'), {
 				credentials: 'same-origin'
 			});
-			if (res.status === 401) {
-				loadError = 'Staff session missing or expired — log in on the admin host again.';
-			} else if (res.status === 403) {
-				loadError =
-					'Logged in, but the admin host refused the request — the browser must present your enrolled client certificate.';
+			if (res.status === 401 || res.status === 403) {
+				// Auth failures show the server's answer verbatim (the
+				// 403 body names the detected IP) via the shared helper.
+				loadError = authError(res.status, await readErrorBody(res));
 			} else if (!res.ok) {
 				throw new Error(`HTTP ${res.status}`);
 			} else {
@@ -95,7 +95,7 @@
 				body: JSON.stringify({ reason: item.reason.trim() || null })
 			});
 			if (res.status === 401 || res.status === 403) {
-				item.note = 'Staff session expired — log in again, then retry.';
+				item.note = authError(res.status, await readErrorBody(res));
 			} else if (res.status === 422) {
 				item.note = 'Rejected by the server (422) — reason or state invalid.';
 			} else if (!res.ok) {

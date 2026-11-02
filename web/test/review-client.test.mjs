@@ -251,23 +251,30 @@ test('review round-trips against a stub admin API', async () => {
 	}
 });
 
-test('review tells expired sessions apart from missing client certs', async () => {
+test('review shows the server denial verbatim, IP included', async () => {
 	const server = createServer((req, res) => {
-		res.writeHead(req.url.includes('cert') ? 403 : 401, {
-			'content-type': 'application/json'
-		});
-		res.end(JSON.stringify({ error: 'denied' }));
+		if (req.url.includes('denied')) {
+			res.writeHead(403, { 'content-type': 'application/json' });
+			res.end(
+				JSON.stringify({
+					error: 'admin access is limited to the configured IP range (admin.allow_ips) — your IP is 198.51.100.9',
+					code: 'ip_not_allowed',
+					ip: '198.51.100.9'
+				})
+			);
+			return;
+		}
+		res.writeHead(401, { 'content-type': 'application/json' });
+		res.end(JSON.stringify({ error: 'unauthorized' }));
 	});
 	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 	const base = `http://127.0.0.1:${server.address().port}/api/v1`;
 	try {
 		// 401: no/invalid session — the fix is logging in again.
 		await assert.rejects(fetchQueue(base, { limit: 50 }), /log in on the admin host again/);
-		// 403 with a session: IP allowlist, staff role, or CSRF said no.
-		await assert.rejects(
-			fetchQueueItem(base, 'cert'),
-			/admin\.allow_ips/
-		);
+		// 403: the server's answer carries the refused IP — it must reach the user.
+		await assert.rejects(fetchQueueItem(base, 'denied'), /198\.51\.100\.9/);
+		await assert.rejects(fetchQueueItem(base, 'denied'), /admin\.allow_ips/);
 	} finally {
 		server.close();
 	}

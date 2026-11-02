@@ -14,6 +14,7 @@
 // do-not-trust label: it is untrusted model output, never evidence.
 
 import { csrfHeaders } from './config-client.js';
+import { authError, readErrorBody } from './http-errors.js';
 
 /**
  * @typedef {object} QueueDiff
@@ -310,11 +311,14 @@ async function errorDetail(res) {
  * @returns {Promise<void>}
  */
 async function throwForStatus(res, what) {
-	if (res.status === 401) {
-		throw new Error('Staff session missing or expired — log in on the admin host again.');
-	}
-	if (res.status === 403) {
-		throw new Error('Logged in, but the admin host refused the request — the client IP may be outside admin.allow_ips, or the session lacks the staff role.');
+	// Auth failures show the server's answer verbatim (the 403
+	// body names the detected IP) via the shared helper. The guard
+	// above makes the `??` fallback unreachable; it only satisfies
+	// the helper's nullable type.
+	if (res.status === 401 || res.status === 403) {
+		throw new Error(
+			authError(res.status, await readErrorBody(res)) ?? 'The admin host refused the request.'
+		);
 	}
 	if (res.status === 404) throw new Error(`${what} not found (404).`);
 	if (res.status === 409) {
