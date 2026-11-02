@@ -175,6 +175,7 @@ setup key:
 ```sh
 cargo xtask up --check   # boot, probe /healthz + authorities + setup status, exit
 cargo xtask up           # same setup, then serve in the foreground
+cargo xtask up --check --from-archive <url|dir> [--country ISO2]  # import a crawl package first
 ```
 
 `up` prints the public/admin URLs, the one-time setup key (paste it at

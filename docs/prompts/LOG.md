@@ -164,3 +164,5 @@
 | 260 | 2026-11-02 03:44Z | Merge sub/rights: world-archive rights | 1 doc, HCCH terms + robots |
 | 261 | 2026-11-02 04:02Z | SA-8 crawler spawned on SA-7 sample | 8-country schema, dep facts |
 | 262 | 2026-11-02 04:20Z | Merge sub/crawler + wire crawl/archive | ingest 44, xtask 88, gate clean |
+| 264 | 2026-11-02 04:40Z | Merge sub/world-index: 130 parties | 27 world tests, 130 packs valid |
+| 265 | 2026-11-02 04:45Z | up --from-archive: import sha256 WARC | E2E crawl/pkg/import green |

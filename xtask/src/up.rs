@@ -15,6 +15,10 @@
 //! drafts/scores through the Meta Model API (`META_API_KEY`).
 //! `--fresh` wipes `.local/` first. `--check` boots, probes the health,
 //! authorities, and setup-status endpoints, then exits without serving.
+//! `--from-archive <url|dir> [--country ISO2]` additionally imports
+//! response records from a crawl package (sha256-verified against its
+//! SHA256SUMS) as `kind='warc'` captures for authorities the loaded
+//! packs already know; records with no matching source URI are skipped.
 //!
 //! Release binaries never see real credentials here: the KEK is a fresh
 //! local file key, the evidence is synthetic, and every bind stays on
@@ -40,11 +44,8 @@ pub fn run(args: &[String]) {
     let live = has(args, "--live");
     let fresh = has(args, "--fresh");
     let check = has(args, "--check");
-    for arg in args {
-        if arg.starts_with("--") && !["--live", "--fresh", "--check"].contains(&arg.as_str()) {
-            usage();
-        }
-    }
+    let archive = archive_arg(args).unwrap_or_else(|| usage());
+    check_flags(args);
     assert_repo_root();
     check_toolchain();
     if fresh && Path::new(".local").exists() {
@@ -82,6 +83,9 @@ pub fn run(args: &[String]) {
     } else {
         seed_captures(&slugs);
     }
+    if let Some((src, country)) = &archive {
+        import_from_archive(src, country.as_deref());
+    }
     for slug in &slugs {
         let mut step = vec![
             "analyze".to_string(),
@@ -117,8 +121,62 @@ pub fn run(args: &[String]) {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: cargo xtask up [--live] [--fresh] [--check]");
+    eprintln!(
+        "usage: cargo xtask up [--live] [--fresh] [--check] [--from-archive <url|dir> [--country ISO2]]"
+    );
     std::process::exit(2);
+}
+
+/// Value-taking flags. `--from-archive` takes the package URL or
+/// directory; `--country` takes an ISO2 code and requires
+/// `--from-archive`. Unknown `--` flags fail closed in
+/// [`check_flags`]; a missing value here is a usage error.
+fn archive_arg(args: &[String]) -> Option<Option<(String, Option<String>)>> {
+    let mut src: Option<String> = None;
+    let mut country: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--from-archive" => {
+                i += 1;
+                src = args.get(i).cloned();
+                if src.as_deref().is_none_or(|s| s.starts_with("--")) {
+                    return None;
+                }
+            }
+            "--country" => {
+                i += 1;
+                country = args.get(i).cloned();
+                if country.as_deref().is_none_or(|s| s.starts_with("--")) {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if country.is_some() && src.is_none() {
+        return None;
+    }
+    Some(src.map(|s| (s, country)))
+}
+
+fn check_flags(args: &[String]) {
+    const VALUE_FLAGS: [&str; 2] = ["--from-archive", "--country"];
+    let mut skip_next = false;
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if VALUE_FLAGS.contains(&arg.as_str()) {
+            skip_next = true;
+            continue;
+        }
+        if arg.starts_with("--") && !["--live", "--fresh", "--check"].contains(&arg.as_str()) {
+            usage();
+        }
+    }
 }
 
 fn has(args: &[String], flag: &str) -> bool {
@@ -525,6 +583,283 @@ fn unix_now() -> i64 {
         .expect("unix time exceeds i64")
 }
 
+/// Import crawl-package response records as `kind='warc'` captures.
+/// `src` is a package directory or base URL; every `.warc.gz` under
+/// its `warc/` tree is sha256-verified against the package SHA256SUMS
+/// (fail closed when the sums file or an entry is missing) and each
+/// 2xx response body is ingested for the authority whose loaded source
+/// URI matches the record URL exactly (trailing slash aside). Records
+/// with no matching authority are skipped and counted. Bodies are
+/// stored as blobs through the normal ingest path, so `path` is the
+/// blob address; the `warc/<file>#r<index>` provenance rides in the
+/// audit `origin` (no schema change).
+fn import_from_archive(src: &str, country: Option<&str>) {
+    let pkg = package_dir(src);
+    let sums = read_sums(&pkg);
+    let files = warc_files(&pkg, country);
+    if files.is_empty() {
+        fail(&format!("no .warc.gz drops under {}", pkg.display()));
+    }
+    let store = handbook_store::store::Store::new(STORE_DIR);
+    let conn =
+        handbook_store::db::open(&store).unwrap_or_else(|e| fail(&format!("open store: {e}")));
+    let sources = load_source_uris(&conn);
+    let now = unix_now();
+    let mut created = 0u32;
+    let mut dupes = 0u32;
+    let mut skipped = 0u32;
+    let mut bytes = 0u64;
+    for file in &files {
+        let rel = file
+            .strip_prefix(&pkg)
+            .unwrap_or(file)
+            .to_str()
+            .unwrap_or("?")
+            .to_string();
+        verify_sha256(file, &rel, &sums);
+        let records = ingest::warc::read_records(file)
+            .unwrap_or_else(|e| fail(&format!("read {}: {e}", file.display())));
+        for (idx, record) in records.iter().enumerate() {
+            if !record_type_is(record, "response") {
+                continue;
+            }
+            let Some(url) = record.header("WARC-Target-URI") else {
+                skipped += 1;
+                continue;
+            };
+            let body = http_body(&record.block);
+            if body.is_none_or(|b| b.is_empty()) || !http_status_ok(&record.block) {
+                skipped += 1;
+                continue;
+            }
+            let body = body.unwrap_or_default();
+            let Some(authority) = match_source(&sources, url) else {
+                skipped += 1;
+                continue;
+            };
+            let text = ingest::capture::extract_text(body);
+            let origin = format!("warc:{rel}#r{idx} {url}");
+            match ingest::capture::ingest_bytes(
+                &conn,
+                &store,
+                &ingest::capture::IngestInput {
+                    authority_id: authority,
+                    source_id: None,
+                    kind: "warc",
+                    trust: "staff_verified",
+                    bytes: body,
+                    text: &text,
+                    captured_at: now,
+                    actor: "xtask-up",
+                    origin: &origin,
+                },
+            )
+            .unwrap_or_else(|e| fail(&format!("ingest {origin}: {e}")))
+            {
+                ingest::capture::IngestOutcome::Created { .. } => {
+                    created += 1;
+                    bytes += body.len() as u64;
+                }
+                ingest::capture::IngestOutcome::Duplicate { .. } => dupes += 1,
+            }
+        }
+    }
+    println!(
+        "up: archive: {} file(s), {created} captures, {dupes} dupes, {skipped} skipped, {bytes} bytes",
+        files.len()
+    );
+}
+
+/// Resolve the package directory: a local dir is used as-is, otherwise
+/// `src` is a base URL and every file named by its SHA256SUMS is
+/// downloaded into `.local/archive/<host-path-tail>/` first.
+fn package_dir(src: &str) -> PathBuf {
+    let local = Path::new(src);
+    if local.is_dir() {
+        return local.to_path_buf();
+    }
+    let base = src.trim_end_matches('/');
+    let dest: PathBuf = [
+        ".local",
+        "archive",
+        &base
+            .rsplit('/')
+            .next()
+            .unwrap_or("remote")
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>(),
+    ]
+    .iter()
+    .collect();
+    std::fs::create_dir_all(&dest)
+        .unwrap_or_else(|e| fail(&format!("mkdir {}: {e}", dest.display())));
+    download(&format!("{base}/SHA256SUMS"), &dest.join("SHA256SUMS"));
+    let text = std::fs::read_to_string(dest.join("SHA256SUMS"))
+        .unwrap_or_else(|e| fail(&format!("read SHA256SUMS: {e}")));
+    for (_, file) in parse_sums(&text) {
+        let out = dest.join(&file);
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent)
+                .unwrap_or_else(|e| fail(&format!("mkdir {}: {e}", parent.display())));
+        }
+        download(&format!("{base}/{file}"), &out);
+    }
+    dest
+}
+
+fn download(url: &str, dest: &Path) {
+    println!("up: + curl -fsSL {url}");
+    let status = Command::new("curl")
+        .args([
+            "-fsSL",
+            "--max-time",
+            "300",
+            "--retry",
+            "2",
+            "-o",
+            &dest.to_string_lossy(),
+            url,
+        ])
+        .status()
+        .unwrap_or_else(|e| fail(&format!("spawn curl: {e}")));
+    if !status.success() {
+        fail(&format!("download {url} failed"));
+    }
+}
+
+/// Parse `SHA256SUMS` (`<64-hex> <path>` per line); junk lines never
+/// read as valid entries.
+fn parse_sums(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let mut parts = line.split_whitespace();
+        let (Some(hash), Some(file)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        if hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+            out.push((hash.to_lowercase(), file.to_string()));
+        }
+    }
+    out
+}
+
+fn read_sums(pkg: &Path) -> Vec<(String, String)> {
+    let path = pkg.join("SHA256SUMS");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+        fail(&format!(
+            "{} is missing: packages verify against SHA256SUMS",
+            path.display()
+        ))
+    });
+    let sums = parse_sums(&text);
+    if sums.is_empty() {
+        fail(&format!("{} names no files", path.display()));
+    }
+    sums
+}
+
+/// `.warc.gz` drops under `<pkg>/warc/`, optionally limited to one
+/// `warc/<ISO2>/` country directory (sorted for determinism).
+fn warc_files(pkg: &Path, country: Option<&str>) -> Vec<PathBuf> {
+    let root = pkg.join("warc");
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(dir) = stack.pop() {
+        let entries = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| fail(&format!("read {}: {e}", dir.display())));
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "gz")
+                && path
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().ends_with(".warc.gz"))
+            {
+                out.push(path);
+            }
+        }
+    }
+    if let Some(cc) = country {
+        let want = format!("warc/{}/", cc.to_uppercase());
+        out.retain(|p| p.to_string_lossy().contains(&want as &str));
+    }
+    out.sort();
+    out
+}
+
+fn verify_sha256(file: &Path, rel: &str, sums: &[(String, String)]) {
+    let want = sums
+        .iter()
+        .find(|(_, f)| f == rel)
+        .unwrap_or_else(|| fail(&format!("{rel} is not named in SHA256SUMS")))
+        .0
+        .clone();
+    let bytes =
+        std::fs::read(file).unwrap_or_else(|e| fail(&format!("read {}: {e}", file.display())));
+    let got = handbook_store::store::sha256_hex(&bytes);
+    if got != want {
+        fail(&format!("sha256 mismatch for {rel}"));
+    }
+}
+
+/// `(authority_id, uri)` for every loaded source (pure match over the
+/// vec, so the matching rule unit-tests without a database).
+fn load_source_uris(conn: &rusqlite::Connection) -> Vec<(i64, String)> {
+    let mut stmt = conn
+        .prepare("SELECT authority_id, uri FROM source")
+        .unwrap_or_else(|e| fail(&format!("load sources: {e}")));
+    stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap_or_else(|e| fail(&format!("load sources: {e}")))
+        .filter_map(|r| r.ok())
+        .collect()
+}
+
+/// Exact source-URI match, trailing slash aside.
+fn match_source(sources: &[(i64, String)], url: &str) -> Option<i64> {
+    sources
+        .iter()
+        .find(|(_, uri)| uri == url || uri.trim_end_matches('/') == url.trim_end_matches('/'))
+        .map(|(id, _)| *id)
+}
+
+/// True when the record's `WARC-Type` is `kind` (case-insensitive).
+fn record_type_is(record: &ingest::warc::WarcRecord, kind: &str) -> bool {
+    record
+        .header("WARC-Type")
+        .is_some_and(|t| t.eq_ignore_ascii_case(kind))
+}
+
+/// HTTP status line of the response block is 2xx.
+fn http_status_ok(block: &[u8]) -> bool {
+    let line = match block.iter().position(|b| *b == b'\n') {
+        Some(pos) => &block[..pos],
+        None => block,
+    };
+    let line = std::str::from_utf8(line).unwrap_or("");
+    let mut parts = line.split_whitespace();
+    parts.next();
+    parts
+        .next()
+        .is_some_and(|code| code.len() == 3 && code.starts_with('2'))
+}
+
+/// Body after the first blank line of the HTTP head; `None` when the
+/// block carries no header terminator at all.
+fn http_body(block: &[u8]) -> Option<&[u8]> {
+    block
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|pos| &block[pos + 4..])
+}
+
 /// Copy the recorded A2 verdicts into the store (the precheck endpoint
 /// serves `<store>/demo_precheck/<sample>.json` verbatim).
 fn install_verdicts() {
@@ -809,6 +1144,92 @@ mod tests {
         );
         assert_eq!(parse_setup_key("no key here"), None);
         assert_eq!(parse_setup_key("setup_short"), None);
+    }
+
+    #[test]
+    fn archive_flags_parse() {
+        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(archive_arg(&args(&[])), Some(None));
+        assert_eq!(
+            archive_arg(&args(&["--check"])),
+            Some(None),
+            "other flags leave archive unset"
+        );
+        assert_eq!(
+            archive_arg(&args(&["--from-archive", "archive/run-1"])),
+            Some(Some(("archive/run-1".to_string(), None)))
+        );
+        assert_eq!(
+            archive_arg(&args(&[
+                "--from-archive",
+                "https://x/y/",
+                "--country",
+                "vn"
+            ])),
+            Some(Some(("https://x/y/".to_string(), Some("vn".to_string()))))
+        );
+        assert_eq!(archive_arg(&args(&["--from-archive"])), None);
+        assert_eq!(
+            archive_arg(&args(&["--from-archive", "--check"])),
+            None,
+            "a flag is not a value"
+        );
+        assert_eq!(
+            archive_arg(&args(&["--country", "US"])),
+            None,
+            "--country needs --from-archive"
+        );
+        // Valid inputs never trip the unknown-flag gate.
+        check_flags(&args(&[]));
+        check_flags(&args(&[
+            "--check",
+            "--from-archive",
+            "archive/run-1",
+            "--country",
+            "US",
+        ]));
+    }
+
+    #[test]
+    fn sums_parse_strict() {
+        let good = "a".repeat(64);
+        let text =
+            format!("{good}  warc/US/x-00000.warc.gz\njunk line\nshort  warc/ZZ/y.warc.gz\n");
+        let sums = parse_sums(&text);
+        assert_eq!(sums.len(), 1);
+        assert_eq!(sums[0].1, "warc/US/x-00000.warc.gz");
+        assert!(parse_sums("no hashes here\n").is_empty());
+    }
+
+    #[test]
+    fn source_match_slash_insensitive() {
+        let sources = vec![(7, "https://www.sos.wa.gov/apostille".to_string())];
+        assert_eq!(
+            match_source(&sources, "https://www.sos.wa.gov/apostille"),
+            Some(7)
+        );
+        assert_eq!(
+            match_source(&sources, "https://www.sos.wa.gov/apostille/"),
+            Some(7)
+        );
+        assert_eq!(match_source(&sources, "https://example.com/"), None);
+    }
+
+    #[test]
+    fn response_shape_checks() {
+        let ok = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html>hi";
+        assert!(http_status_ok(ok));
+        assert_eq!(http_body(ok), Some(b"<html>hi".as_slice()));
+        assert!(!http_status_ok(b"HTTP/1.1 404 Not Found\r\n\r\nnope"));
+        assert!(!http_status_ok(b"not http at all"));
+        assert_eq!(http_body(b"no headers here"), None);
+        let rec = ingest::warc::WarcRecord {
+            version: "WARC/1.1".to_string(),
+            headers: vec![("WARC-Type".to_string(), "Response".to_string())],
+            block: vec![],
+        };
+        assert!(record_type_is(&rec, "response"));
+        assert!(!record_type_is(&rec, "request"));
     }
 
     #[test]
