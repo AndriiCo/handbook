@@ -423,6 +423,35 @@ above verbatim).
   Mon 23:59 PST; still needs the unit-file root step + prod
   approvals + brand SVGs + S1.
 
+## Run 16 (2026-11-02, eb57cdc) — 9/10 kept, P-ADMIN-IP staged + proven
+
+- Plant stamp `acceptance/eb57cdc05648.json` (`ci_green: true`,
+  run `20261102-101340-eb57cdc`): setup 1 s, deps 3 s,
+  gate 215 s, package 137 s. (An earlier run for 1dd14b0 also
+  gated green; P284's e2e spec is web-only, Rust identical, so
+  the tip re-stamped and staged.)
+- Exact checkout via xfer ref (`xfer-p284`), native release
+  rebuild 25 s + both SPAs + release xtask, kill-by-verified-PID
+  + `setsid -f` restart; `healthz` → `0.1.0+eb57cdc`. DB reused.
+- P-ADMIN-IP staging proof (temporary `admin.allow_ips`
+  `203.0.113.7`, row deleted after — `config-get` confirms
+  unset): boot log `admin.allow_ips effective = 203.0.113.7/32`;
+  refused loopback peer got 403 JSON (`code ip_not_allowed`,
+  `ip 127.0.0.1`, family + transport + fix named) and the static
+  403 HTML page (no SPA/JS, Chromium screenshot
+  `web/shots/p-admin-ip-403-1440.png`); UI error screenshot
+  `web/shots/p-admin-ip-ui-1440.png`. Restored to unset
+  (`loopback only (unset)` in boot log); loopback allowed again
+  (`/me` 401, `/review` 200).
+- Scoreboard 9/10 in `web/shots/staging-accept.json`, only S1 red
+  (operator-owned licence/video/visibility). Live demo take 3/3
+  on the exact SHA.
+- Deploy candidate: stamp + 9/10 + demo 3/3 all on eb57cdc
+  (supersedes f861e44). Contains B1-B5 + SA-7..SA-13 + P-ADMIN-IP
+  (F1-F5). Second Monday deploy only on an explicit operator
+  order with `--allow-today-overlap`, ready by 22:00 PST, never
+  after Mon 23:59 PST.
+
 ## Run 15 (2026-11-02, f861e44) — 9/10 kept, B1-B5 + all lanes
 
 - First stamp attempt for a27f13d failed the plant gate on

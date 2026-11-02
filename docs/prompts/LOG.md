@@ -185,3 +185,4 @@
 | 282 | 2026-11-02 10:10Z | BUG P-ADMIN-IP: admin access refused with a message that hides the IP, and admin | F3 web: http-errors helper, 123 unit green |
 | 283 | 2026-11-02 10:10Z | BUG P-ADMIN-IP: admin access refused with a message that hides the IP, and admin | F5 docs: allowlist /64, wizard, 403 guide |
 | 284 | 2026-11-02 10:10Z | BUG P-ADMIN-IP: admin access refused with a message that hides the IP, and admin | F3 e2e: triage shows refused IP, 1 green |
+| 285 | 2026-11-02 10:30Z | BUG P-ADMIN-IP: admin access refused with a message that hides the IP, and admin | staging accept eb57cdc 9/10 + demo 3/3 |
