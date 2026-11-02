@@ -1,13 +1,17 @@
-# Operator — Monday 2026-11-02 (Pacific; updated ~02:35 PST)
+# Operator — Monday 2026-11-02 (Pacific; updated ~03:00 PST)
 
-Production runs `0.1.0+3836bfb` (deployed 2026-11-02 ~02:35Z on your
-"deploy now" order, `--allow-today-overlap --skip-accept`) — scoreboard
-**5/10** (P0, GP1, GP4, A2, A5 pass; re-checked 10:30Z
-`prod-now.json`, still 5/10). First red: GP2-data (vietnam 0/8,
-usa-wa-sos 1/8 accepted). Staging **9/10** (only S1 red) on
-`eb57cdc` (plant stamp `ci_green: true`, live demo 3/3 — Run 16;
-ships your P-ADMIN-IP fix: 403s name the IP, no UI without an
-allowlisted IP, proven on staging with screenshots).
+Production runs `0.1.0+eb57cdc` (deployed 2026-11-02 ~10:50Z:
+stamp + staging 9/10 + demo 3/3 on `eb57cdc`, ship rails green,
+`ops-deploy.sh --skip-accept`, no `--allow-today-overlap` — the
+8 h window had cleared; prod-before → prod-after identical 5/10,
+no regression; previous release `3836bfb` kept for rollback).
+Scoreboard **5/10** (P0, GP1, GP4, A2, A5 pass). First red:
+GP2-data (vietnam 0/8, usa-wa-sos 1/8 accepted — flips with your
+approvals below, no code needed). This deploy ships your
+P-ADMIN-IP fix: 403s name the IP, no admin UI without an
+allowlisted IP. If your browser 403s, the page itself tells you
+which IP (or IPv6 /64) to add — then restart is needed (the
+list reads once at boot).
 
 Your lines that flip production rows now (all code is already live):
 1. Approve the proposed facts for vietnam + usa-wa-sos in `/review`

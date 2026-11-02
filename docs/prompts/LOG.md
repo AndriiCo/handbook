@@ -188,3 +188,4 @@
 | 285 | 2026-11-02 10:30Z | BUG P-ADMIN-IP: admin access refused with a message that hides the IP, and admin | staging accept eb57cdc 9/10 + demo 3/3 |
 | 286 | 2026-11-02 10:35Z | Continue: follow .agents/roles/builder.md | operator page: eb57cdc candidate, evidence ask |
 | 287 | 2026-11-02 10:55Z | Continue: follow .agents/roles/builder.md | ship probe: clean pgrep read as ssh fail, fixed |
+| 288 | 2026-11-02 11:00Z | Continue: follow .agents/roles/builder.md | deploy eb57cdc: 5/10 kept, no regression |
