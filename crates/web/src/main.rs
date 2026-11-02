@@ -107,11 +107,15 @@ async fn request_id_and_log(
         .get::<MatchedPath>()
         .map(|matched| matched.as_str().to_owned())
         .unwrap_or_else(|| "unmatched".to_string());
+    // Path only, never the query: secrets ride in query strings
+    // (the stable notify-unsubscribe token), and they must not
+    // land in logs.
+    let path = req.uri().path().to_owned();
     let span = tracing::info_span!(
         "request",
         id = %id,
         method = %req.method(),
-        uri = %req.uri(),
+        uri = %path,
         transport = %transport,
         branch = %branch,
         route = %route,
