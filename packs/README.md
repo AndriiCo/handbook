@@ -82,3 +82,16 @@ rm -rf /tmp/pack-accept && cargo xtask packs-load --store /tmp/pack-accept
 The admin UI config-acceptance (admin track, G4) runs the same two
 commands against its staging store and asserts the same shape before
 any pack-derived value is displayable.
+
+## North-America slice (SA-17: 106 issuing offices)
+
+`packs/world/US.json` (59), `packs/world/MX.json` (33) and
+`packs/world/CA.json` (14) hold **106 authorities, one per issuing
+office**: US 50 states + DC + 5 territories + 3 federal units (DOS
+Authentications, DOS Vital Records, federal court clerks); Mexico 32
+federal entities + SEGOB/DICOPPU federal; Canada 13
+provinces/territories + Global Affairs Canada federal. Every
+authority cites its official site in `watch[]` + `observations[]`;
+every `chain_steps[]`/`observations[]` entry is `needs_review`
+(staff capture pending). Validate with
+`cargo xtask packs-validate --packs packs/world`.

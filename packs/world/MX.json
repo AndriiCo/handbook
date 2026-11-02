@@ -1,128 +1,997 @@
 {
   "pack": "MX",
   "version": 1,
-  "title": "Mexico — HCCH 1961 competent authorities (world index, needs review)",
+  "title": "Mexico — apostille issuing offices, one per jurisdiction (SA-17 North-America slice, needs review)",
   "authorities": [
     {
-      "kind": "country",
+      "kind": "office",
       "country": "Mexico",
       "region": "",
-      "name": "Apostille for Federal Documents",
-      "slug": "mx-ca-1"
+      "name": "Secretaría de Gobernación — Dirección de Coordinación Política con los Poderes de la Unión",
+      "slug": "mx-segob-fed"
     },
     {
-      "kind": "country",
+      "kind": "state",
       "country": "Mexico",
-      "region": "",
-      "name": "Apostille for State Documents",
-      "slug": "mx-ca-2"
+      "region": "Aguascalientes",
+      "name": "Gobierno del Estado de Aguascalientes — apostille issuing office",
+      "slug": "mx-aguascalientes-sg"
     },
     {
-      "kind": "country",
+      "kind": "state",
       "country": "Mexico",
-      "region": "",
-      "name": "Dirección de Coordinación Política con los Poderes de la Unión",
-      "slug": "mx-ca-3"
+      "region": "Baja California",
+      "name": "Gobierno del Estado de Baja California — apostille issuing office",
+      "slug": "mx-bajacalifornia-sg"
     },
     {
-      "kind": "country",
+      "kind": "state",
       "country": "Mexico",
-      "region": "",
-      "name": "Subdirección de Formalización y Control",
-      "slug": "mx-ca-4"
+      "region": "Baja California Sur",
+      "name": "Gobierno del Estado de Baja California Sur — apostille issuing office",
+      "slug": "mx-bajacaliforniasur-sg"
     },
     {
-      "kind": "country",
+      "kind": "state",
       "country": "Mexico",
-      "region": "",
-      "name": "There are 32 competent authorities designated to issue Apostilles for state documents",
-      "slug": "mx-ca-5"
+      "region": "Campeche",
+      "name": "Gobierno del Estado de Campeche — apostille issuing office",
+      "slug": "mx-campeche-sg"
     },
     {
-      "kind": "country",
+      "kind": "state",
       "country": "Mexico",
-      "region": "",
-      "name": "for more information see below under “Contact Details”.",
-      "slug": "mx-ca-6"
+      "region": "Chiapas",
+      "name": "Gobierno del Estado de Chiapas — apostille issuing office",
+      "slug": "mx-chiapas-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Chihuahua",
+      "name": "Gobierno del Estado de Chihuahua — apostille issuing office",
+      "slug": "mx-chihuahua-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Coahuila",
+      "name": "Gobierno del Estado de Coahuila — apostille issuing office",
+      "slug": "mx-coahuila-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Colima",
+      "name": "Gobierno del Estado de Colima — apostille issuing office",
+      "slug": "mx-colima-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Durango",
+      "name": "Gobierno del Estado de Durango — apostille issuing office",
+      "slug": "mx-durango-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Guanajuato",
+      "name": "Gobierno del Estado de Guanajuato — apostille issuing office",
+      "slug": "mx-guanajuato-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Guerrero",
+      "name": "Gobierno del Estado de Guerrero — apostille issuing office",
+      "slug": "mx-guerrero-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Hidalgo",
+      "name": "Gobierno del Estado de Hidalgo — apostille issuing office",
+      "slug": "mx-hidalgo-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Jalisco",
+      "name": "Gobierno del Estado de Jalisco — apostille issuing office",
+      "slug": "mx-jalisco-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "México",
+      "name": "Gobierno del Estado de México — apostille issuing office",
+      "slug": "mx-mexico-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Michoacán",
+      "name": "Gobierno del Estado de Michoacán — apostille issuing office",
+      "slug": "mx-michoacan-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Morelos",
+      "name": "Gobierno del Estado de Morelos — apostille issuing office",
+      "slug": "mx-morelos-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Nayarit",
+      "name": "Gobierno del Estado de Nayarit — apostille issuing office",
+      "slug": "mx-nayarit-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Nuevo León",
+      "name": "Gobierno del Estado de Nuevo León — apostille issuing office",
+      "slug": "mx-nuevoleon-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Oaxaca",
+      "name": "Gobierno del Estado de Oaxaca — apostille issuing office",
+      "slug": "mx-oaxaca-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Puebla",
+      "name": "Gobierno del Estado de Puebla — apostille issuing office",
+      "slug": "mx-puebla-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Querétaro",
+      "name": "Gobierno del Estado de Querétaro — apostille issuing office",
+      "slug": "mx-queretaro-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Quintana Roo",
+      "name": "Gobierno del Estado de Quintana Roo — apostille issuing office",
+      "slug": "mx-quintanaroo-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "San Luis Potosí",
+      "name": "Gobierno del Estado de San Luis Potosí — apostille issuing office",
+      "slug": "mx-sanluispotosi-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Sinaloa",
+      "name": "Gobierno del Estado de Sinaloa — apostille issuing office",
+      "slug": "mx-sinaloa-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Sonora",
+      "name": "Gobierno del Estado de Sonora — apostille issuing office",
+      "slug": "mx-sonora-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Tabasco",
+      "name": "Gobierno del Estado de Tabasco — apostille issuing office",
+      "slug": "mx-tabasco-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Tamaulipas",
+      "name": "Gobierno del Estado de Tamaulipas — apostille issuing office",
+      "slug": "mx-tamaulipas-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Tlaxcala",
+      "name": "Gobierno del Estado de Tlaxcala — apostille issuing office",
+      "slug": "mx-tlaxcala-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Veracruz",
+      "name": "Gobierno del Estado de Veracruz — apostille issuing office",
+      "slug": "mx-veracruz-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Yucatán",
+      "name": "Gobierno del Estado de Yucatán — apostille issuing office",
+      "slug": "mx-yucatan-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Zacatecas",
+      "name": "Gobierno del Estado de Zacatecas — apostille issuing office",
+      "slug": "mx-zacatecas-sg"
+    },
+    {
+      "kind": "state",
+      "country": "Mexico",
+      "region": "Ciudad de México",
+      "name": "Gobierno de la Ciudad de México — apostille issuing office",
+      "slug": "mx-ciudaddemexico-sg"
     }
   ],
   "domains": [
     {
-      "name": "www.hcch.net",
-      "authority": "mx-ca-1",
+      "name": "aguascalientes.gob.mx",
+      "authority": "mx-aguascalientes-sg",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Mexico (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "bajacalifornia.gob.mx",
+      "authority": "mx-bajacalifornia-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "bcs.gob.mx",
+      "authority": "mx-bajacaliforniasur-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "campeche.gob.mx",
+      "authority": "mx-campeche-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "cdmx.gob.mx",
+      "authority": "mx-ciudaddemexico-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "chiapas.gob.mx",
+      "authority": "mx-chiapas-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "chihuahua.gob.mx",
+      "authority": "mx-chihuahua-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "coahuila.gob.mx",
+      "authority": "mx-coahuila-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "colima.gob.mx",
+      "authority": "mx-colima-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
     },
     {
       "name": "dicoppu.segob.gob.mx",
-      "authority": "mx-ca-1",
+      "authority": "mx-segob-fed",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Mexico (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
     },
     {
-      "name": "www.gob.mx",
-      "authority": "mx-ca-2",
+      "name": "durango.gob.mx",
+      "authority": "mx-durango-sg",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Mexico (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
     },
     {
-      "name": "assets.hcch.net",
-      "authority": "mx-ca-4",
+      "name": "edomex.gob.mx",
+      "authority": "mx-mexico-sg",
       "status": "unverified",
-      "notes": "Seen on HCCH competent-authority pages for Mexico (staff capture pending)."
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "guanajuato.gob.mx",
+      "authority": "mx-guanajuato-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "guerrero.gob.mx",
+      "authority": "mx-guerrero-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "hidalgo.gob.mx",
+      "authority": "mx-hidalgo-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "jalisco.gob.mx",
+      "authority": "mx-jalisco-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "michoacan.gob.mx",
+      "authority": "mx-michoacan-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "morelos.gob.mx",
+      "authority": "mx-morelos-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "nayarit.gob.mx",
+      "authority": "mx-nayarit-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "nl.gob.mx",
+      "authority": "mx-nuevoleon-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "oaxaca.gob.mx",
+      "authority": "mx-oaxaca-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "puebla.gob.mx",
+      "authority": "mx-puebla-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "qroo.gob.mx",
+      "authority": "mx-quintanaroo-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "queretaro.gob.mx",
+      "authority": "mx-queretaro-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "sinaloa.gob.mx",
+      "authority": "mx-sinaloa-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "slp.gob.mx",
+      "authority": "mx-sanluispotosi-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "sonora.gob.mx",
+      "authority": "mx-sonora-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "tabasco.gob.mx",
+      "authority": "mx-tabasco-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "tamaulipas.gob.mx",
+      "authority": "mx-tamaulipas-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "tlaxcala.gob.mx",
+      "authority": "mx-tlaxcala-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "veracruz.gob.mx",
+      "authority": "mx-veracruz-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "www.hcch.net",
+      "authority": "mx-segob-fed",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "yucatan.gob.mx",
+      "authority": "mx-yucatan-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "zacatecas.gob.mx",
+      "authority": "mx-zacatecas-sg",
+      "status": "unverified",
+      "notes": "Seen on SA-17 North-America roster pages for Mexico (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "mx-ca-1",
+      "authority": "mx-segob-fed",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=54&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Mexico (citation page; staff capture pending)."
     },
     {
-      "authority": "mx-ca-1",
+      "authority": "mx-segob-fed",
       "kind": "website_official",
       "uri": "http://dicoppu.segob.gob.mx/es/DICOPPU/Apostille",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=333 (needs staff capture; W-7)."
+      "notes": "Official site of the Secretaría de Gobernación — Dirección de Coordinación Política con los Poderes de la Unión (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "mx-ca-2",
+      "authority": "mx-aguascalientes-sg",
       "kind": "website_official",
-      "uri": "https://www.gob.mx/segob",
+      "uri": "https://aguascalientes.gob.mx/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=333 (needs staff capture; W-7)."
+      "notes": "Official site of the Gobierno del Estado de Aguascalientes — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "mx-ca-3",
+      "authority": "mx-bajacalifornia-sg",
       "kind": "website_official",
-      "uri": "http://dicoppu.segob.gob.mx/",
+      "uri": "https://bajacalifornia.gob.mx/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=333 (needs staff capture; W-7)."
+      "notes": "Official site of the Gobierno del Estado de Baja California — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "mx-ca-4",
+      "authority": "mx-bajacaliforniasur-sg",
       "kind": "website_official",
-      "uri": "https://assets.hcch.net/docs/06c0ad47-4098-4ef2-adb4-a257f41e4fa3.pdf",
+      "uri": "https://bcs.gob.mx/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=333 (needs staff capture; W-7)."
+      "notes": "Official site of the Gobierno del Estado de Baja California Sur — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-campeche-sg",
+      "kind": "website_official",
+      "uri": "https://campeche.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Campeche — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-chiapas-sg",
+      "kind": "website_official",
+      "uri": "https://chiapas.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Chiapas — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-chihuahua-sg",
+      "kind": "website_official",
+      "uri": "https://chihuahua.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Chihuahua — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-coahuila-sg",
+      "kind": "website_official",
+      "uri": "https://coahuila.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Coahuila — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-colima-sg",
+      "kind": "website_official",
+      "uri": "https://colima.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Colima — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-durango-sg",
+      "kind": "website_official",
+      "uri": "https://durango.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Durango — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-guanajuato-sg",
+      "kind": "website_official",
+      "uri": "https://guanajuato.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Guanajuato — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-guerrero-sg",
+      "kind": "website_official",
+      "uri": "https://guerrero.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Guerrero — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-hidalgo-sg",
+      "kind": "website_official",
+      "uri": "https://hidalgo.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Hidalgo — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-jalisco-sg",
+      "kind": "website_official",
+      "uri": "https://jalisco.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Jalisco — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-mexico-sg",
+      "kind": "website_official",
+      "uri": "https://edomex.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de México — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-michoacan-sg",
+      "kind": "website_official",
+      "uri": "https://michoacan.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Michoacán — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-morelos-sg",
+      "kind": "website_official",
+      "uri": "https://morelos.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Morelos — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-nayarit-sg",
+      "kind": "website_official",
+      "uri": "https://nayarit.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Nayarit — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-nuevoleon-sg",
+      "kind": "website_official",
+      "uri": "https://nl.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Nuevo León — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-oaxaca-sg",
+      "kind": "website_official",
+      "uri": "https://oaxaca.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Oaxaca — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-puebla-sg",
+      "kind": "website_official",
+      "uri": "https://puebla.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Puebla — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-queretaro-sg",
+      "kind": "website_official",
+      "uri": "https://queretaro.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Querétaro — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-quintanaroo-sg",
+      "kind": "website_official",
+      "uri": "https://qroo.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Quintana Roo — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-sanluispotosi-sg",
+      "kind": "website_official",
+      "uri": "https://slp.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de San Luis Potosí — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-sinaloa-sg",
+      "kind": "website_official",
+      "uri": "https://sinaloa.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Sinaloa — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-sonora-sg",
+      "kind": "website_official",
+      "uri": "https://sonora.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Sonora — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-tabasco-sg",
+      "kind": "website_official",
+      "uri": "https://tabasco.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Tabasco — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-tamaulipas-sg",
+      "kind": "website_official",
+      "uri": "https://tamaulipas.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Tamaulipas — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-tlaxcala-sg",
+      "kind": "website_official",
+      "uri": "https://tlaxcala.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Tlaxcala — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-veracruz-sg",
+      "kind": "website_official",
+      "uri": "https://veracruz.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Veracruz — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-yucatan-sg",
+      "kind": "website_official",
+      "uri": "https://yucatan.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Yucatán — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-zacatecas-sg",
+      "kind": "website_official",
+      "uri": "https://zacatecas.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno del Estado de Zacatecas — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
+    },
+    {
+      "authority": "mx-ciudaddemexico-sg",
+      "kind": "website_official",
+      "uri": "https://cdmx.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Official site of the Gobierno de la Ciudad de México — apostille issuing office (SA-17 North-America roster; staff capture pending; W-7)."
     }
   ],
   "chain_steps": [
     {
       "id": "mx-index",
-      "authority": "mx-ca-1",
+      "authority": "mx-segob-fed",
       "order": 0,
-      "title": "Verify HCCH competent-authority index",
-      "detail": "Confirm the designated authorities and website URLs for Mexico against a staff capture of the cited HCCH pages (deterministic).",
+      "title": "Verify North-America issuing-office roster",
+      "detail": "Confirm every listed issuing office and official URL for Mexico against a staff capture of the cited pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-segob-fed-verify",
+      "authority": "mx-segob-fed",
+      "order": 1,
+      "title": "Verify issuing office: Secretaría de Gobernación — Dirección de Coordinación Política con los Poderes de la Unión",
+      "detail": "Confirm the Secretaría de Gobernación — Dirección de Coordinación Política con los Poderes de la Unión designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-aguascalientes-sg-verify",
+      "authority": "mx-aguascalientes-sg",
+      "order": 2,
+      "title": "Verify issuing office: Aguascalientes",
+      "detail": "Confirm the Gobierno del Estado de Aguascalientes — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-bajacalifornia-sg-verify",
+      "authority": "mx-bajacalifornia-sg",
+      "order": 3,
+      "title": "Verify issuing office: Baja California",
+      "detail": "Confirm the Gobierno del Estado de Baja California — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-bajacaliforniasur-sg-verify",
+      "authority": "mx-bajacaliforniasur-sg",
+      "order": 4,
+      "title": "Verify issuing office: Baja California Sur",
+      "detail": "Confirm the Gobierno del Estado de Baja California Sur — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-campeche-sg-verify",
+      "authority": "mx-campeche-sg",
+      "order": 5,
+      "title": "Verify issuing office: Campeche",
+      "detail": "Confirm the Gobierno del Estado de Campeche — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-chiapas-sg-verify",
+      "authority": "mx-chiapas-sg",
+      "order": 6,
+      "title": "Verify issuing office: Chiapas",
+      "detail": "Confirm the Gobierno del Estado de Chiapas — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-chihuahua-sg-verify",
+      "authority": "mx-chihuahua-sg",
+      "order": 7,
+      "title": "Verify issuing office: Chihuahua",
+      "detail": "Confirm the Gobierno del Estado de Chihuahua — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-coahuila-sg-verify",
+      "authority": "mx-coahuila-sg",
+      "order": 8,
+      "title": "Verify issuing office: Coahuila",
+      "detail": "Confirm the Gobierno del Estado de Coahuila — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-colima-sg-verify",
+      "authority": "mx-colima-sg",
+      "order": 9,
+      "title": "Verify issuing office: Colima",
+      "detail": "Confirm the Gobierno del Estado de Colima — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-durango-sg-verify",
+      "authority": "mx-durango-sg",
+      "order": 10,
+      "title": "Verify issuing office: Durango",
+      "detail": "Confirm the Gobierno del Estado de Durango — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-guanajuato-sg-verify",
+      "authority": "mx-guanajuato-sg",
+      "order": 11,
+      "title": "Verify issuing office: Guanajuato",
+      "detail": "Confirm the Gobierno del Estado de Guanajuato — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-guerrero-sg-verify",
+      "authority": "mx-guerrero-sg",
+      "order": 12,
+      "title": "Verify issuing office: Guerrero",
+      "detail": "Confirm the Gobierno del Estado de Guerrero — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-hidalgo-sg-verify",
+      "authority": "mx-hidalgo-sg",
+      "order": 13,
+      "title": "Verify issuing office: Hidalgo",
+      "detail": "Confirm the Gobierno del Estado de Hidalgo — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-jalisco-sg-verify",
+      "authority": "mx-jalisco-sg",
+      "order": 14,
+      "title": "Verify issuing office: Jalisco",
+      "detail": "Confirm the Gobierno del Estado de Jalisco — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-mexico-sg-verify",
+      "authority": "mx-mexico-sg",
+      "order": 15,
+      "title": "Verify issuing office: México",
+      "detail": "Confirm the Gobierno del Estado de México — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-michoacan-sg-verify",
+      "authority": "mx-michoacan-sg",
+      "order": 16,
+      "title": "Verify issuing office: Michoacán",
+      "detail": "Confirm the Gobierno del Estado de Michoacán — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-morelos-sg-verify",
+      "authority": "mx-morelos-sg",
+      "order": 17,
+      "title": "Verify issuing office: Morelos",
+      "detail": "Confirm the Gobierno del Estado de Morelos — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-nayarit-sg-verify",
+      "authority": "mx-nayarit-sg",
+      "order": 18,
+      "title": "Verify issuing office: Nayarit",
+      "detail": "Confirm the Gobierno del Estado de Nayarit — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-nuevoleon-sg-verify",
+      "authority": "mx-nuevoleon-sg",
+      "order": 19,
+      "title": "Verify issuing office: Nuevo León",
+      "detail": "Confirm the Gobierno del Estado de Nuevo León — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-oaxaca-sg-verify",
+      "authority": "mx-oaxaca-sg",
+      "order": 20,
+      "title": "Verify issuing office: Oaxaca",
+      "detail": "Confirm the Gobierno del Estado de Oaxaca — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-puebla-sg-verify",
+      "authority": "mx-puebla-sg",
+      "order": 21,
+      "title": "Verify issuing office: Puebla",
+      "detail": "Confirm the Gobierno del Estado de Puebla — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-queretaro-sg-verify",
+      "authority": "mx-queretaro-sg",
+      "order": 22,
+      "title": "Verify issuing office: Querétaro",
+      "detail": "Confirm the Gobierno del Estado de Querétaro — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-quintanaroo-sg-verify",
+      "authority": "mx-quintanaroo-sg",
+      "order": 23,
+      "title": "Verify issuing office: Quintana Roo",
+      "detail": "Confirm the Gobierno del Estado de Quintana Roo — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-sanluispotosi-sg-verify",
+      "authority": "mx-sanluispotosi-sg",
+      "order": 24,
+      "title": "Verify issuing office: San Luis Potosí",
+      "detail": "Confirm the Gobierno del Estado de San Luis Potosí — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-sinaloa-sg-verify",
+      "authority": "mx-sinaloa-sg",
+      "order": 25,
+      "title": "Verify issuing office: Sinaloa",
+      "detail": "Confirm the Gobierno del Estado de Sinaloa — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-sonora-sg-verify",
+      "authority": "mx-sonora-sg",
+      "order": 26,
+      "title": "Verify issuing office: Sonora",
+      "detail": "Confirm the Gobierno del Estado de Sonora — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-tabasco-sg-verify",
+      "authority": "mx-tabasco-sg",
+      "order": 27,
+      "title": "Verify issuing office: Tabasco",
+      "detail": "Confirm the Gobierno del Estado de Tabasco — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-tamaulipas-sg-verify",
+      "authority": "mx-tamaulipas-sg",
+      "order": 28,
+      "title": "Verify issuing office: Tamaulipas",
+      "detail": "Confirm the Gobierno del Estado de Tamaulipas — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-tlaxcala-sg-verify",
+      "authority": "mx-tlaxcala-sg",
+      "order": 29,
+      "title": "Verify issuing office: Tlaxcala",
+      "detail": "Confirm the Gobierno del Estado de Tlaxcala — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-veracruz-sg-verify",
+      "authority": "mx-veracruz-sg",
+      "order": 30,
+      "title": "Verify issuing office: Veracruz",
+      "detail": "Confirm the Gobierno del Estado de Veracruz — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-yucatan-sg-verify",
+      "authority": "mx-yucatan-sg",
+      "order": 31,
+      "title": "Verify issuing office: Yucatán",
+      "detail": "Confirm the Gobierno del Estado de Yucatán — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-zacatecas-sg-verify",
+      "authority": "mx-zacatecas-sg",
+      "order": 32,
+      "title": "Verify issuing office: Zacatecas",
+      "detail": "Confirm the Gobierno del Estado de Zacatecas — apostille issuing office designation and its official URL against a staff capture (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "id": "mx-ciudaddemexico-sg-verify",
+      "authority": "mx-ciudaddemexico-sg",
+      "order": 33,
+      "title": "Verify issuing office: Ciudad de México",
+      "detail": "Confirm the Gobierno de la Ciudad de México — apostille issuing office designation and its official URL against a staff capture (deterministic).",
       "status": "needs_review",
       "validation": "W-7"
     }
   ],
   "observations": [
     {
-      "authority": "mx-ca-1",
+      "authority": "mx-segob-fed",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Mexico is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
@@ -130,82 +999,530 @@
       "validation": "W-7"
     },
     {
-      "authority": "mx-ca-1",
+      "authority": "mx-segob-fed",
       "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Apostille for Federal Documents.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Secretaría de Gobernación — Dirección de Coordinación Política con los Poderes de la Unión is the designated apostille issuing office for Mexico.",
+      "source_uri": "http://dicoppu.segob.gob.mx/es/DICOPPU/Apostille",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "mx-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Apostille for State Documents.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mx-ca-3",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Dirección de Coordinación Política con los Poderes de la Unión.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mx-ca-4",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Subdirección de Formalización y Control.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mx-ca-5",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: There are 32 competent authorities designated to issue Apostilles for state documents.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mx-ca-6",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: for more information see below under “Contact Details”..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mx-ca-1",
+      "authority": "mx-segob-fed",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://dicoppu.segob.gob.mx/es/DICOPPU/Apostille as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://dicoppu.segob.gob.mx/es/DICOPPU/Apostille is the official website of the Secretaría de Gobernación — Dirección de Coordinación Política con los Poderes de la Unión.",
+      "source_uri": "http://dicoppu.segob.gob.mx/es/DICOPPU/Apostille",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "mx-ca-2",
-      "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gob.mx/segob as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "authority": "mx-aguascalientes-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Aguascalientes — apostille issuing office is the designated apostille issuing office for Aguascalientes.",
+      "source_uri": "https://aguascalientes.gob.mx/",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "mx-ca-3",
+      "authority": "mx-aguascalientes-sg",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://dicoppu.segob.gob.mx/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://aguascalientes.gob.mx/ is the official website of the Gobierno del Estado de Aguascalientes — apostille issuing office.",
+      "source_uri": "https://aguascalientes.gob.mx/",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "mx-ca-4",
+      "authority": "mx-bajacalifornia-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Baja California — apostille issuing office is the designated apostille issuing office for Baja California.",
+      "source_uri": "https://bajacalifornia.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-bajacalifornia-sg",
       "topic": "website",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://assets.hcch.net/docs/06c0ad47-4098-4ef2-adb4-a257f41e4fa3.pdf as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://bajacalifornia.gob.mx/ is the official website of the Gobierno del Estado de Baja California — apostille issuing office.",
+      "source_uri": "https://bajacalifornia.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-bajacaliforniasur-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Baja California Sur — apostille issuing office is the designated apostille issuing office for Baja California Sur.",
+      "source_uri": "https://bcs.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-bajacaliforniasur-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://bcs.gob.mx/ is the official website of the Gobierno del Estado de Baja California Sur — apostille issuing office.",
+      "source_uri": "https://bcs.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-campeche-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Campeche — apostille issuing office is the designated apostille issuing office for Campeche.",
+      "source_uri": "https://campeche.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-campeche-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://campeche.gob.mx/ is the official website of the Gobierno del Estado de Campeche — apostille issuing office.",
+      "source_uri": "https://campeche.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-chiapas-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Chiapas — apostille issuing office is the designated apostille issuing office for Chiapas.",
+      "source_uri": "https://chiapas.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-chiapas-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://chiapas.gob.mx/ is the official website of the Gobierno del Estado de Chiapas — apostille issuing office.",
+      "source_uri": "https://chiapas.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-chihuahua-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Chihuahua — apostille issuing office is the designated apostille issuing office for Chihuahua.",
+      "source_uri": "https://chihuahua.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-chihuahua-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://chihuahua.gob.mx/ is the official website of the Gobierno del Estado de Chihuahua — apostille issuing office.",
+      "source_uri": "https://chihuahua.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-coahuila-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Coahuila — apostille issuing office is the designated apostille issuing office for Coahuila.",
+      "source_uri": "https://coahuila.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-coahuila-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://coahuila.gob.mx/ is the official website of the Gobierno del Estado de Coahuila — apostille issuing office.",
+      "source_uri": "https://coahuila.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-colima-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Colima — apostille issuing office is the designated apostille issuing office for Colima.",
+      "source_uri": "https://colima.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-colima-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://colima.gob.mx/ is the official website of the Gobierno del Estado de Colima — apostille issuing office.",
+      "source_uri": "https://colima.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-durango-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Durango — apostille issuing office is the designated apostille issuing office for Durango.",
+      "source_uri": "https://durango.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-durango-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://durango.gob.mx/ is the official website of the Gobierno del Estado de Durango — apostille issuing office.",
+      "source_uri": "https://durango.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-guanajuato-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Guanajuato — apostille issuing office is the designated apostille issuing office for Guanajuato.",
+      "source_uri": "https://guanajuato.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-guanajuato-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://guanajuato.gob.mx/ is the official website of the Gobierno del Estado de Guanajuato — apostille issuing office.",
+      "source_uri": "https://guanajuato.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-guerrero-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Guerrero — apostille issuing office is the designated apostille issuing office for Guerrero.",
+      "source_uri": "https://guerrero.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-guerrero-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://guerrero.gob.mx/ is the official website of the Gobierno del Estado de Guerrero — apostille issuing office.",
+      "source_uri": "https://guerrero.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-hidalgo-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Hidalgo — apostille issuing office is the designated apostille issuing office for Hidalgo.",
+      "source_uri": "https://hidalgo.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-hidalgo-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://hidalgo.gob.mx/ is the official website of the Gobierno del Estado de Hidalgo — apostille issuing office.",
+      "source_uri": "https://hidalgo.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-jalisco-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Jalisco — apostille issuing office is the designated apostille issuing office for Jalisco.",
+      "source_uri": "https://jalisco.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-jalisco-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://jalisco.gob.mx/ is the official website of the Gobierno del Estado de Jalisco — apostille issuing office.",
+      "source_uri": "https://jalisco.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-mexico-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de México — apostille issuing office is the designated apostille issuing office for México.",
+      "source_uri": "https://edomex.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-mexico-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://edomex.gob.mx/ is the official website of the Gobierno del Estado de México — apostille issuing office.",
+      "source_uri": "https://edomex.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-michoacan-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Michoacán — apostille issuing office is the designated apostille issuing office for Michoacán.",
+      "source_uri": "https://michoacan.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-michoacan-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://michoacan.gob.mx/ is the official website of the Gobierno del Estado de Michoacán — apostille issuing office.",
+      "source_uri": "https://michoacan.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-morelos-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Morelos — apostille issuing office is the designated apostille issuing office for Morelos.",
+      "source_uri": "https://morelos.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-morelos-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://morelos.gob.mx/ is the official website of the Gobierno del Estado de Morelos — apostille issuing office.",
+      "source_uri": "https://morelos.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-nayarit-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Nayarit — apostille issuing office is the designated apostille issuing office for Nayarit.",
+      "source_uri": "https://nayarit.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-nayarit-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://nayarit.gob.mx/ is the official website of the Gobierno del Estado de Nayarit — apostille issuing office.",
+      "source_uri": "https://nayarit.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-nuevoleon-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Nuevo León — apostille issuing office is the designated apostille issuing office for Nuevo León.",
+      "source_uri": "https://nl.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-nuevoleon-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://nl.gob.mx/ is the official website of the Gobierno del Estado de Nuevo León — apostille issuing office.",
+      "source_uri": "https://nl.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-oaxaca-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Oaxaca — apostille issuing office is the designated apostille issuing office for Oaxaca.",
+      "source_uri": "https://oaxaca.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-oaxaca-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://oaxaca.gob.mx/ is the official website of the Gobierno del Estado de Oaxaca — apostille issuing office.",
+      "source_uri": "https://oaxaca.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-puebla-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Puebla — apostille issuing office is the designated apostille issuing office for Puebla.",
+      "source_uri": "https://puebla.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-puebla-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://puebla.gob.mx/ is the official website of the Gobierno del Estado de Puebla — apostille issuing office.",
+      "source_uri": "https://puebla.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-queretaro-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Querétaro — apostille issuing office is the designated apostille issuing office for Querétaro.",
+      "source_uri": "https://queretaro.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-queretaro-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://queretaro.gob.mx/ is the official website of the Gobierno del Estado de Querétaro — apostille issuing office.",
+      "source_uri": "https://queretaro.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-quintanaroo-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Quintana Roo — apostille issuing office is the designated apostille issuing office for Quintana Roo.",
+      "source_uri": "https://qroo.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-quintanaroo-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://qroo.gob.mx/ is the official website of the Gobierno del Estado de Quintana Roo — apostille issuing office.",
+      "source_uri": "https://qroo.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-sanluispotosi-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de San Luis Potosí — apostille issuing office is the designated apostille issuing office for San Luis Potosí.",
+      "source_uri": "https://slp.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-sanluispotosi-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://slp.gob.mx/ is the official website of the Gobierno del Estado de San Luis Potosí — apostille issuing office.",
+      "source_uri": "https://slp.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-sinaloa-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Sinaloa — apostille issuing office is the designated apostille issuing office for Sinaloa.",
+      "source_uri": "https://sinaloa.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-sinaloa-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sinaloa.gob.mx/ is the official website of the Gobierno del Estado de Sinaloa — apostille issuing office.",
+      "source_uri": "https://sinaloa.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-sonora-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Sonora — apostille issuing office is the designated apostille issuing office for Sonora.",
+      "source_uri": "https://sonora.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-sonora-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://sonora.gob.mx/ is the official website of the Gobierno del Estado de Sonora — apostille issuing office.",
+      "source_uri": "https://sonora.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-tabasco-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Tabasco — apostille issuing office is the designated apostille issuing office for Tabasco.",
+      "source_uri": "https://tabasco.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-tabasco-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://tabasco.gob.mx/ is the official website of the Gobierno del Estado de Tabasco — apostille issuing office.",
+      "source_uri": "https://tabasco.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-tamaulipas-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Tamaulipas — apostille issuing office is the designated apostille issuing office for Tamaulipas.",
+      "source_uri": "https://tamaulipas.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-tamaulipas-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://tamaulipas.gob.mx/ is the official website of the Gobierno del Estado de Tamaulipas — apostille issuing office.",
+      "source_uri": "https://tamaulipas.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-tlaxcala-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Tlaxcala — apostille issuing office is the designated apostille issuing office for Tlaxcala.",
+      "source_uri": "https://tlaxcala.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-tlaxcala-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://tlaxcala.gob.mx/ is the official website of the Gobierno del Estado de Tlaxcala — apostille issuing office.",
+      "source_uri": "https://tlaxcala.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-veracruz-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Veracruz — apostille issuing office is the designated apostille issuing office for Veracruz.",
+      "source_uri": "https://veracruz.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-veracruz-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://veracruz.gob.mx/ is the official website of the Gobierno del Estado de Veracruz — apostille issuing office.",
+      "source_uri": "https://veracruz.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-yucatan-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Yucatán — apostille issuing office is the designated apostille issuing office for Yucatán.",
+      "source_uri": "https://yucatan.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-yucatan-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://yucatan.gob.mx/ is the official website of the Gobierno del Estado de Yucatán — apostille issuing office.",
+      "source_uri": "https://yucatan.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-zacatecas-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno del Estado de Zacatecas — apostille issuing office is the designated apostille issuing office for Zacatecas.",
+      "source_uri": "https://zacatecas.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-zacatecas-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://zacatecas.gob.mx/ is the official website of the Gobierno del Estado de Zacatecas — apostille issuing office.",
+      "source_uri": "https://zacatecas.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ciudaddemexico-sg",
+      "topic": "contacts",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Gobierno de la Ciudad de México — apostille issuing office is the designated apostille issuing office for Ciudad de México.",
+      "source_uri": "https://cdmx.gob.mx/",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ciudaddemexico-sg",
+      "topic": "website",
+      "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://cdmx.gob.mx/ is the official website of the Gobierno de la Ciudad de México — apostille issuing office.",
+      "source_uri": "https://cdmx.gob.mx/",
       "status": "needs_review",
       "validation": "W-7"
     }
