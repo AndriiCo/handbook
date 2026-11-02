@@ -36,6 +36,11 @@ mod quic;
 mod readyz;
 mod setup;
 mod staff_passkey;
+// SA-20 translate lane: module lands first; the builder wires the
+// migrate call, routes and accept hook (snippets in docs/lanes/sa-20.md),
+// then removes this allow.
+#[allow(dead_code)]
+mod translate;
 mod unfurl;
 mod ws_bus;
 

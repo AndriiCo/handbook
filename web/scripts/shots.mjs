@@ -21,6 +21,8 @@ const BASE = '/apostille';
 const ROUTES = {
 	'/': { name: 'gp1-home', ready: 'Apostille rules' },
 	'/authority/vietnam': { name: 'gp2-dossier', ready: 'Authority dossier' },
+	'/authority/vietnam?lang=es': { name: 'gp2-dossier-es', ready: 'Authority dossier' },
+	'/authority/vietnam?lang=fr': { name: 'gp2-dossier-fr', ready: 'Authority dossier' },
 	'/authority/usa-wa-sos': { name: 'gp2-dossier-wa', ready: 'Authority dossier' },
 	'/authority/hcch': { name: 'gp2-dossier-hcch', ready: 'Authority dossier' },
 	'/login': { name: 'gp3-login', ready: 'Log in' },
@@ -111,6 +113,20 @@ try {
 						return r.fulfill({
 							status: body ? 200 : 404,
 							json: body ?? { error: 'unknown authority' }
+						});
+					}
+					// SA-20 ?lang views: no stored rows in the static
+					// fixture run, so the dossier renders English —
+					// deterministic, and the lang chips still capture.
+					if (/\/api\/v1\/authorities\/[^/]+\/translations$/.test(path)) {
+						const url = new URL(r.request().url());
+						return r.fulfill({
+							json: {
+								authority: 'vietnam',
+								lang: url.searchParams.get('lang') ?? 'es',
+								translations: [],
+								count: 0
+							}
 						});
 					}
 					if (path.endsWith('/api/v1/quality')) {

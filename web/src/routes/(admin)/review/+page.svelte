@@ -16,6 +16,7 @@
 		ruleBody
 	} from '../../../lib/admin/review-client.js';
 	import { subscribe } from '../../../lib/live.svelte.js';
+	import { csrfHeaders } from '../../../lib/admin/config-client.js';
 
 	interface QueueItem {
 		id: number;
@@ -109,6 +110,129 @@
 	let suppressions = $state<Suppression[]>([]);
 	let skipsState = $state<'loading' | 'ready' | 'failed'>('loading');
 	let skipsError = $state<string | null>(null);
+
+	// Translations tab (SA-20): Muse Spark renders accepted facts into
+	// es/fr after approval. The guard (digits/fees/addresses) holds
+	// failures back as `guard_ok = 0` — staff-visible, never public.
+	let tab = $state<'queue' | 'translations'>('queue');
+	interface AcceptedFact {
+		id: number;
+		topic: string;
+		statement: string;
+		status: string;
+	}
+	interface TranslationRow {
+		fact_id: number;
+		lang: string;
+		statement: string;
+		model: string;
+		guard_ok: boolean;
+		created_at: number;
+	}
+	let acceptedFacts = $state<AcceptedFact[]>([]);
+	let acceptedState = $state<'loading' | 'ready' | 'failed'>('loading');
+	let acceptedError = $state<string | null>(null);
+	let trRows = $state<TranslationRow[]>([]);
+	let trState = $state<'loading' | 'ready' | 'failed'>('loading');
+	let trError = $state<string | null>(null);
+	let trNote = $state<string | null>(null);
+	let trActing = $state<Record<string, boolean>>({});
+
+	function trKey(factId: number, lang: string): string {
+		return `${factId}:${lang}`;
+	}
+
+	function trFor(factId: number, lang: string): TranslationRow | null {
+		return trRows.find((r) => r.fact_id === factId && r.lang === lang) ?? null;
+	}
+
+	function trLabel(row: TranslationRow | null): string {
+		if (!row) return 'Missing';
+		if (!row.statement) return 'Pending';
+		return row.guard_ok ? 'Done' : 'Held by guard';
+	}
+
+	async function readJson(res: Response, what: string) {
+		if (!res.ok) {
+			const body = await res.json().catch(() => ({}));
+			throw new Error(body?.error ? `${what} -> ${body.error}` : `${what} -> ${res.status}`);
+		}
+		return res.json();
+	}
+
+	async function loadAccepted() {
+		acceptedState = 'loading';
+		acceptedError = null;
+		try {
+			const res = await fetch(`${api()}/facts?status=accepted&limit=100`);
+			const body = await readJson(res, 'accepted facts');
+			acceptedFacts = Array.isArray(body?.facts) ? body.facts : [];
+			acceptedState = 'ready';
+		} catch (err) {
+			acceptedError = err instanceof Error ? err.message : 'Accepted facts failed.';
+			acceptedState = 'failed';
+		}
+	}
+
+	async function loadTranslations() {
+		trState = 'loading';
+		trError = null;
+		try {
+			const res = await fetch(`${api()}/translations/status`);
+			const body = await readJson(res, 'translations');
+			trRows = Array.isArray(body?.translations) ? body.translations : [];
+			trState = 'ready';
+		} catch (err) {
+			trError = err instanceof Error ? err.message : 'Translations failed.';
+			trState = 'failed';
+		}
+	}
+
+	function openTranslations() {
+		tab = 'translations';
+		if (acceptedState === 'loading') void loadAccepted();
+		void loadTranslations();
+	}
+
+	async function translateOne(factId: number, lang: string) {
+		const key = trKey(factId, lang);
+		if (trActing[key]) return;
+		trActing[key] = true;
+		trNote = null;
+		try {
+			const res = await fetch(`${api()}/facts/${factId}/translate`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', ...csrfHeaders() },
+				body: JSON.stringify({ lang })
+			});
+			const body = await readJson(res, `translate #${factId}`);
+			trNote =
+				body?.guard_ok === false
+					? `Fact #${factId} (${lang}): held by the number/fee/address guard — English stays live.`
+					: `Fact #${factId} (${lang}): translated.`;
+			await loadTranslations();
+		} catch (err) {
+			trNote = err instanceof Error ? err.message : `Translate #${factId} failed.`;
+		} finally {
+			trActing[key] = false;
+		}
+	}
+
+	async function backfill() {
+		trNote = null;
+		try {
+			const res = await fetch(`${api()}/translations/backfill`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', ...csrfHeaders() },
+				body: JSON.stringify({ limit: 20 })
+			});
+			const body = await readJson(res, 'backfill');
+			trNote = `Backfill: ${body?.queued ?? 0} queued, ${body?.rendered ?? 0} rendered, ${body?.guard_failed ?? 0} held by guard.`;
+			await loadTranslations();
+		} catch (err) {
+			trNote = err instanceof Error ? err.message : 'Backfill failed.';
+		}
+	}
 
 	function cardUi(id: number): CardUi {
 		let card = ui[id];
@@ -473,6 +597,28 @@
 	<p class="font-bold" role="status">{refreshNote}</p>
 {/if}
 
+<div role="tablist" aria-label="Review sections" class="flex flex-wrap gap-2">
+		<button
+			type="button"
+			role="tab"
+			aria-selected={tab === 'queue'}
+			disabled={tab === 'queue'}
+			onclick={() => (tab = 'queue')}
+		>
+			Queue
+		</button>
+		<button
+			type="button"
+			role="tab"
+			aria-selected={tab === 'translations'}
+			disabled={tab === 'translations'}
+			onclick={openTranslations}
+		>
+			Translations
+		</button>
+	</div>
+
+{#if tab === 'queue'}
 <section aria-labelledby="filters">
 	<h2 id="filters">Queue</h2>
 	<form class="flex flex-wrap items-end gap-3" onsubmit={applyFilters}>
@@ -787,6 +933,79 @@
 		{/if}
 	{/if}
 </section>
+{:else}
+<section aria-labelledby="translations">
+	<h2 id="translations">Translations</h2>
+	<p class="max-w-[60rem] text-sm text-ink-muted">
+		Muse Spark renders each accepted fact into Spanish and French. A deterministic
+		guard holds back any render that drops or rewrites digits, currency amounts, or
+		addresses — held rows stay English on the public dossier.
+	</p>
+	<p class="flex flex-wrap gap-2">
+		<button type="button" onclick={backfill}>Backfill missing (20)</button>
+		<button type="button" onclick={() => { void loadAccepted(); void loadTranslations(); }}>
+			Refresh
+		</button>
+	</p>
+	{#if trNote}
+		<p class="font-bold" role="status">{trNote}</p>
+	{/if}
+	{#if acceptedState === 'loading' || trState === 'loading'}
+		<p>Loading…</p>
+	{:else if acceptedState === 'failed'}
+		<p class="font-bold text-error" role="alert">{acceptedError}</p>
+		<p><button type="button" onclick={() => loadAccepted()}>Retry</button></p>
+	{:else if trState === 'failed'}
+		<p class="font-bold text-error" role="alert">{trError}</p>
+		<p><button type="button" onclick={() => loadTranslations()}>Retry</button></p>
+	{:else if acceptedFacts.length === 0}
+		<p class="text-ink-muted">No accepted facts yet — accept from the queue first.</p>
+	{:else}
+		<p class="text-sm text-ink-muted">{acceptedFacts.length} accepted · {trRows.length} rows</p>
+		<ol class="m-0 mt-4 list-none p-0 pb-8">
+			{#each acceptedFacts as fact (fact.id)}
+				<li class="border-b border-line py-4">
+					<article aria-label={`Accepted fact ${fact.id}`}>
+						<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+							<h3 class="m-0 text-lg">Fact #{fact.id}</h3>
+							<span class="inline-block rounded border border-line bg-surface-2 px-2 py-0.5 text-sm font-bold">
+								{fact.topic}
+							</span>
+						</header>
+						<p class="m-0 font-bold">{fact.statement}</p>
+						<ul class="m-0 mt-2 list-none p-0">
+							{#each ['es', 'fr'] as lang (lang)}
+								{@const row = trFor(fact.id, lang)}
+								<li class="mb-1 flex flex-wrap items-center gap-2 text-sm">
+									<span class="font-mono">{lang}</span>
+									<span
+										class="inline-block rounded border border-line bg-surface-2 px-2 py-0.5 text-sm font-bold"
+									>
+										{trLabel(row)}
+									</span>
+									{#if row?.statement}
+										<span class="max-w-[60rem] break-words text-ink-muted">{row.statement}</span>
+									{/if}
+									{#if row?.model}
+										<span class="font-mono text-xs text-ink-muted">{row.model}</span>
+									{/if}
+									<button
+										type="button"
+										disabled={trActing[trKey(fact.id, lang)]}
+										onclick={() => translateOne(fact.id, lang)}
+									>
+										{trActing[trKey(fact.id, lang)] ? 'Working…' : 'Translate'}
+									</button>
+								</li>
+							{/each}
+						</ul>
+					</article>
+				</li>
+			{/each}
+		</ol>
+	{/if}
+</section>
+{/if}
 
 <section aria-labelledby="blocked">
 	<h2 id="blocked">Blocked by the verifier</h2>
