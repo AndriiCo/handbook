@@ -591,9 +591,11 @@ pub trait Translator {
 /// Deterministic test double: wraps the statement with a language tag
 /// while keeping every protected span byte-identical, so the guard
 /// passes. Synthetic only — never served publicly.
+#[cfg(test)]
 #[derive(Debug, Clone, Default)]
 pub struct StubTranslator;
 
+#[cfg(test)]
 impl Translator for StubTranslator {
     fn translate(&self, statement: &str, lang: &str) -> Result<TranslateOutcome, TranslateError> {
         Ok(TranslateOutcome {
@@ -1505,6 +1507,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fedex_live: crate::fedex_live::FedexLiveState::default(),
         }
     }
 

@@ -649,7 +649,7 @@ mod tests {
     #[tokio::test]
     async fn purchase_rejects_bad_leg_and_bad_payload() {
         let (_tmp, state) = state();
-        let (status, v) = json(
+        let (status, _v) = json(
             router(state.clone())
                 .oneshot(request(
                     "POST",

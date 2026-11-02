@@ -352,6 +352,18 @@ pub fn router(state: AppState) -> Router {
             "/apostille/api/v1/facts/{id}/reject",
             post(approval::reject_fact),
         )
+        .route(
+            "/apostille/api/v1/facts/{id}/translate",
+            post(crate::translate::translate_fact),
+        )
+        .route(
+            "/apostille/api/v1/translations/backfill",
+            post(crate::translate::backfill_translations),
+        )
+        .route(
+            "/apostille/api/v1/translations/status",
+            get(crate::translate::translation_status),
+        )
         .route("/apostille/api/v1/queue", get(queue::queue_items))
         .route("/apostille/api/v1/queue/{id}", get(queue::queue_item))
         .route(

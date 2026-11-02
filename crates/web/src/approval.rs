@@ -702,6 +702,9 @@ fn decide_inner(
                    "fact_id": id, "at": decision.now})
             .to_string(),
         );
+        // SA-20: queue es/fr translation rows (best-effort;
+        // staff-triggered render).
+        let _ = crate::translate::request_after_accept(conn, id, decision.now);
     }
     let view = fact_view(conn, &state.store_root, &fact, false);
     if let Some((rule_id, deduped)) = rule {

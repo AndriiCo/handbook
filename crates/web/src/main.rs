@@ -37,10 +37,6 @@ mod quic;
 mod readyz;
 mod setup;
 mod staff_passkey;
-// SA-20 translate lane: module lands first; the builder wires the
-// migrate call, routes and accept hook (snippets in docs/lanes/sa-20.md),
-// then removes this allow.
-#[allow(dead_code)]
 mod translate;
 mod unfurl;
 mod ws_bus;
@@ -470,6 +466,10 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route(
             "/api/v1/authorities/{slug}/facts",
             get(approval::public_facts),
+        )
+        .route(
+            "/api/v1/authorities/{slug}/translations",
+            get(translate::public_translations),
         )
         // Crawler surface: shell with injected head (slug routes
         // sort before the SPA fallback below, so unfurls render
@@ -972,6 +972,10 @@ async fn main() {
         conn.execute_batch(ddl)
             .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate fedex-live tables: {e}"));
     }
+    // SA-20 translate: lane-owned DDL, CREATE TABLE IF NOT EXISTS
+    // only (fact_translation).
+    crate::translate::migrate_translate_tables(&conn)
+        .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate translate tables: {e}"));
     drop(conn);
     // config-db: the KEK is mandatory now — runtime config lives in
     // sealed rows, so without it there is nothing to serve with.
