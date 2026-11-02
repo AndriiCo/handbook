@@ -180,3 +180,4 @@
 | 277 | 2026-11-02 09:36Z | Merge sub/ask + wire ask arm | 143 xtask, replay verified |
 | 278 | 2026-11-02 09:44Z | wait_healthy test hermetic (plant red) | closed port, proven live |
 | 279 | 2026-11-02 09:54Z | Staging accept f861e44: 9/10 + demo | stamp 366s, Run 15 record |
+| 280 | 2026-11-02 09:56Z | SA-13 live leg: Spark cites fact 9 | 5191ms, 2426/778 tokens |
