@@ -403,3 +403,22 @@ above verbatim).
   xfer push + staging build can overlap the gate (saves
   ~6 min wall); staging rebuilds are incremental already;
   sccache on plant is the open expedite for the gate.
+
+## Run 14 (2026-11-02, a39495a) — 9/10 kept, archive stack accepted
+
+- Plant stamp `acceptance/a39495ab0c61.json` (`ci_green: true`,
+  run `20261102-050130-a39495a`): submit 05:01:30Z, setup 1 s,
+  deps 3 s, gate 225 s (longer: world.rs + warc.rs + crawl.rs +
+  archive.rs are big new modules), package 147 s, stamp
+  05:07:54Z. Plant total 384 s.
+- Exact checkout via xfer ref (`xfer-p265`), native release
+  rebuild 42 s (new flate2/sha1/data-encoding/webpki-roots edges
+  in ingest) + both SPAs, kill-by-PID 2573024 + `setsid -f`
+  restart 3 s; `healthz` → `0.1.0+a39495a`. DB reused.
+- Scoreboard ON plant 9/10 in 16 s, only S1 red
+  (operator-owned). Live demo take 3/3 in 5 s on the exact SHA.
+- Deploy candidate: stamp + 9/10 + demo 3/3 all on a39495a
+  (supersedes the 1992959 candidate). Second Monday deploy only
+  on an explicit operator order, ready by 22:00 PST, never after
+  Mon 23:59 PST; still needs the unit-file root step + prod
+  approvals + brand SVGs + S1.
