@@ -1,3 +1,194 @@
+MISSION "SUBMIT" — one orchestration order for the builder session. Operator order,
+2026-11-02. It supersedes addenda 1-4 and appendices G-J as the single plan; their slice
+texts stay the specs it points to.
+
+=== 0. FIRST TWO ACTIONS ===
+A. Write this message verbatim to docs/ops/push-plan.md (replacing its body; keep the old text
+   under "## History"), commit it (P285), then set the session goal:
+     /goal Execute docs/ops/push-plan.md MISSION "SUBMIT" until the tag submission-2026-11-04 exists
+   Re-read push-plan.md at the start of every turn and after every compaction. It is the plan.
+B. Keep the 30-minute builder loop running (`/loop "*/30 * * * *" Continue: follow
+   docs/ops/push-plan.md MISSION "SUBMIT"`); never idle while a workflow below has open
+   work.
+
+=== 1. OPERATOR DECISIONS (fixed; I edit AGENTS.md/.agents to match) ===
+- DEPLOYS: instant. No cap, no gap, no per-deploy order (AGENTS.md §7 as I edit it).
+- FREEZE: <LIFTED | KEPT>. If LIFTED, deploys continue through judging under the gates and
+  the automatic rollback. If KEPT, the last deploy is Mon 23:59 PST and Waves after that are
+  repo + staging only.
+- SAM 3 open weights on plant: YES (self-hosted model serving authorized).
+- LIVE FedEx labels: YES, within SA-19's caps.
+- Machine translation es/fr of accepted facts by Muse Spark: YES, within SA-20's guards.
+- Exception: the 3 synthetic A2 recordings made on plant may be installed on production by
+  me.
+- media.terms_read (hosted SAM 3.1 masking of real customer photos): <YES | NO>. If NO,
+  walk-in photos stay private, marked "awaiting masking".
+- LICENSE: stays proprietary. Do not change it.
+Unchanged AGENTS.md §7 rails:
+- no secret values anywhere (credentials only via admin /config, sealed);
+- new tables only (CREATE TABLE IF NOT EXISTS; no ALTER, DROP, RENAME or SCHEMA_VERSION);
+- only Meta models at runtime (model-gate green);
+- synthetic or public data only in fixtures, staging and the video;
+- staging never holds production credentials;
+- admin code never ships in the public build;
+- every public AI surface rate-limited and cost-capped.
+
+=== 2. GOAL (definition of done, Wed 11-04 10:00 PST) ===
+G1 A judge clones the repo, runs `cargo xtask up` (or `--from-archive`), and gets the
+   handbook with data, the guide in en/es/fr, admin review, the trace and the precheck, with
+   nothing to install beyond Rust and Node.
+G2 Production (andrii.ai/apostille) serves the latest green SHA:
+   - Viet Nam and Washington with ≥8 approved facts each;
+   - es/fr translations;
+   - precheck replays with real SAM 3 boxes;
+   - the prod scoreboard at 9/10 or better (S1 per the licence decision);
+   - A5 fresh.
+G3 Every row of review §14 is "delivered" or honestly scoped in the README's "Promised →
+   delivered" table.
+G4 The video assets exist: a production live take with captions, a real token/latency trace
+   line, the conflict beat, the agent-cites-us beat, the FedEx label beat (or its honest
+   substitute).
+G5 Tag submission-2026-11-04 on the SHA that passes RO-2 (the clean-clone judge dry run).
+
+=== 3. ORCHESTRATION ===
+Roles:
+- YOU are the orchestrator and integrator. You plan, brief, merge, gate, ship and report.
+- SUBAGENTS do the slices. At most 6 write-capable subagents at once (operator order; raises
+  the AGENTS.md §6 limit until the tag). Read-only subagents are unlimited.
+Every write subagent:
+- works in its own isolated worktree on branch sub/<name>;
+- owns ONLY the paths you list in its brief (never two owners for one file);
+- runs the gates for what it touched (cargo test + clippy -D warnings on plant's 1.99 + fmt;
+  the web gates of AGENTS.md §4 for web/);
+- returns: branch, SHA, tests with counts, live proof (if any), what it could not do.
+Shared files only you edit:
+- xtask/src/main.rs subcommand arms;
+- crates/web/src/main.rs router, access log and boot;
+- crates/config/src/lib.rs registry entries (subagents send you the exact key list);
+- web/package*.json, app.css, any +layout.svelte, vite.config.ts;
+- LOG.md, operator-today.md, push-plan.md.
+Merge protocol:
+- one branch at a time (--no-ff);
+- before every push: a clean-worktree build (web + xtask) and the touched crates' tests;
+- a red branch goes back to its subagent with the failing output (never fixed on main);
+- commit numbering P<NNN>, a LOG line each.
+Workflows below are pipelines. If your Muse build has a workflow/orchestration tool, encode
+each WF as one workflow with these stages; otherwise run them as procedures. Run WF-0 first,
+then WF-1..WF-4 in parallel as slots allow.
+
+=== WF-0 SHIP TRAIN (start now; blocks nothing else) ===
+- S0.1: ship what is already green NOW. Take the newest stamped, staging-green SHA
+  containing P281-P284 (admin IP) plus B1-B5 and SA-9..13 (latest staging accept: f861e44;
+  submit eb57cdc if it is newer). Deploy it with today's tools (ship-release.sh +
+  ops-deploy.sh, --allow-today-overlap) the moment I paste "unit + allow_ips ready" (or now
+  if the operator page shows them done).
+- S0.2 (subagent SA-D "release-train", owns xtask/src/release.rs, xtask/ops/{ship-release,
+  ops-deploy,promote,release-train,staging-accept,ship-when-green}.sh,
+  ops/plant-pipeline/worker.sh): Appendix J items D1-D5 exactly:
+  - remove the day gate (flag kept as a no-op);
+  - /healthz polling instead of sleeps;
+  - plant artifact promotion with SHA256SUMS + GLIBC + BUILD_SHA checks (Mac-relayed; plant
+    never touches production);
+  - release-train.sh with the parallel prod-before and automatic rollback;
+  - staging-accept.sh;
+  - ship-when-green.sh.
+  Rollback drill on staging. From the moment it merges, every green SHA ships via
+  ship-when-green.sh with no wait.
+- Report push→prod minutes and stamp→live seconds for every deploy.
+
+=== WF-1 PRODUCT WAVE (Not-done rows; specs = review §15 / Appendix I) ===
+Start the first 4 now; the next ones start as slots free up.
+- SA-19 "fedex-live": live FedEx (OAuth, rate quote, outbound + return label, void) behind
+  labels.live, with these caps:
+  - live_daily_cap=2, live_max_usd=60;
+  - live_ship_to_allow ZIP list;
+  - staff-only purchase, idempotent per order leg;
+  - a full audit trail;
+  - the prefilled form PDF in the packet.
+  Sandbox proof on staging.
+- SA-20 "translate": a fact_translation table, translation into es/fr by Muse Spark after
+  approval (plus a backfill), a deterministic number/fee/address guard, the "machine
+  translation · see original" chip, static es/fr catalogs, a /review Translations tab, and
+  ?lang=es|fr shots.
+- SA-16 "es-fr reading": the runner drafts from es/fr source pages, 4 new gold cases, eval no
+  worse by more than one case, live staging proof (Mexico SRE page + one French page).
+- SA-6 "sam3-plant": SAM 3 open weights on plant's RTX 3060 (home venv, CUDA-bundled
+  PyTorch):
+  - sam3_boxes.py for the A2 recorder (Muse Spark still judges), plus `--mask faces,license
+    plates`;
+  - report latency, VRAM and the weights revision/licence;
+  - the README Models row;
+  - model-gate allowlists sam3.
+- SA-21 "walk-in reports": signed-in report form (≤3 photos, magic bytes, EXIF stripped),
+  new report tables, masking before display (staging: SAM 3 on plant; production: hosted SAM
+  3.1 only if media.terms_read=YES), and staff turn a report into a cited "visitor report"
+  fact. It replaces the dossier's "Report a change" link.
+- SA-17 "north-america-106": one authority per issuing office (US 50 + DC + territories +
+  DOS; Mexico 32 + federal; Canada federal + provinces), official URLs cited, needs_review,
+  world-pack parse artifacts fixed. Report the count against 106.
+- SA-18 "egypt-chain": a read-only chain view from packs/egypt-consular.json (needs_review
+  chip per step) + the DS-4194 prefill from the synthetic order.
+- SA-14 "source-changed": only if production or staging has ≥2 captures of a source (report
+  the counts first; else park with the reason).
+
+=== WF-2 EVIDENCE OF META AI (runs in parallel; read-only unless noted) ===
+- RO-M1 Live trace proof: after each deploy, one staff Draft on a usa-wa-sos capture in
+  production /trace. Screenshot attempts, rejections, tokens (cached + reasoning) and
+  latency for the video. Replace the mocked trace scene in web/e2e/demo.spec.mjs with the
+  recorded real values (builder edit).
+- RO-M2 Eval freshness: the operator page always shows the exact `ops-a5-eval.sh` line and
+  the time the A5 window expires (current: Tue 20:29 PST).
+- RO-M3 Planted-eval and honest eval card: verify README numbers match quality.json after
+  every eval.
+- RO-M4 Conflict beat: seed the Washington two-PO-Box conflict on staging from accepted facts
+  and record a 10 s take.
+
+=== WF-3 JUDGE PATH (repo; continuous) ===
+- RO-2 "judge dry run" after every merge batch: a fresh clone on Node 24/npm 11 AND Node
+  22/npm 10, default rustup, README followed literally, `xtask up --check` and `xtask up
+  --from-archive` (with a small sample archive committed or downloadable). Report every
+  stumble; the owning subagent fixes it.
+- SA-15 "promises-readme": LAST, after WF-1 reports. The "Promised in our application →
+  delivered" table (application words, status, reason for each descope), current numbers,
+  the Models table with where each runs (Meta Model API / plant RTX 3060), and no claim the
+  production SHA doesn't serve.
+
+=== WF-4 SUBMISSION (Wed) ===
+- Wed 08:00 PST: merge freeze for features; only fixes.
+- Wed 09:00: final train to production (if FREEZE=LIFTED) and the production demo take with
+  captions.
+- Wed 10:00: RO-2 passes on main → tag submission-2026-11-04 → hand me the tag, the README
+  video line to fill, and the final checklist (G1-G5 with evidence).
+
+=== 4. WAITING ON THE OPERATOR (keep it exact on docs/ops/operator-today.md; each an exact
+command with its staged script sha256, in this order) ===
+1. Unit file + admin.allow_ips (IPv4 + IPv6 /64) → I paste "ready".
+2. As hal: ops-gp2-proposals.sh (Viet Nam proposals); then /review approvals (≥8 per slug,
+   keep 2 for the video).
+3. HF licence for facebook/sam3 on the account whose token is on plant.
+4. After SA-6: ops-a2-record.sh with SAM 3 → install the 3 synthetic recordings on
+   production.
+5. After the deploy with SA-19: FedEx production credentials in admin /config; ZIP
+   allowlist; labels.live=true; one real overnight label pair to my address; void if unused.
+6. media.terms_read decision (if YES).
+7. ops-a5-eval.sh: Mon evening, Wed morning, Fri.
+8. Brand SVGs (GP3) if still missing; the video recording; the README video line; the
+   submission form.
+Never wait idle on these: keep every workflow moving, and list what each one unblocks.
+
+=== 5. REPORT (every 2 hours and at each deploy) ===
+- A table: workflow | slice | subagent | state | branch/SHA | tests | live proof.
+- Production version + scoreboard; staging SHA + score; push→prod and stamp→live timings.
+- The §14 promise table with updated statuses.
+- The operator queue (top 3 only).
+Final message every turn: what changed (commit links), scores, what waits on me, anything
+assumed ("Assumed: …").
+
+## History
+
+(Prior plan text preserved 2026-11-02 ~11:00Z; MISSION "SUBMIT" supersedes addenda 1-4 and
+appendices G-J, whose slice texts stay the specs it points to.)
+
 OPERATOR ORDER 2026-11-02 — "push to submission". It overrides AGENTS.md §6's subagent limits until
 Wed 11-04 12:00 PST. Everything else in AGENTS.md §7 (secrets, production, deploy rails) stands.
 
@@ -304,3 +495,4 @@ same source.
 
 REPORT every 2 hours: subagent | state | branch/SHA | tests; staging SHA + score; production
 version + scoreboard; what waits on me.
+
