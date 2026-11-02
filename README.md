@@ -162,6 +162,29 @@ cargo test
 cargo xtask ci
 ```
 
+## Run it yourself
+
+One command boots the whole handbook on loopback with synthetic data —
+pinned toolchains (`rust-toolchain.toml`, `.nvmrc`), both web builds, the
+release binaries, a fresh `.local/` store with a file KEK, loopback
+config (public `18318`, admin `18319`), every pack, captures from the
+eval gold plus one stub-fixture capture per authority with drafted
+proposals, recorded precheck verdicts, an eval grade, and a minted
+setup key:
+
+```sh
+cargo xtask up --check   # boot, probe /healthz + authorities + setup status, exit
+cargo xtask up           # same setup, then serve in the foreground
+```
+
+`up` prints the public/admin URLs, the one-time setup key (paste it at
+`/config` to enrol staff), the loopback-only staff link for `/review`,
+and try-this steps. Flags: `--fresh` wipes `.local/` first; `--live`
+fetches real watch URLs and drafts/grades through the Meta Model API
+with `META_API_KEY` instead of the stub. Reruns are idempotent
+(lockfile-hash `npm ci` skip, capture dedup, kept KEK) except
+`setup-key-mint`, which re-mints every run.
+
 ## Design
 
 See [docs/design.md](docs/design.md) — the proposed evidence-store design

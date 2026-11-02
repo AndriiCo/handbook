@@ -645,12 +645,6 @@ fn dev_kek_from(var: &str, source: KekSource, is_path: bool) -> Result<Option<(K
     let Ok(raw) = std::env::var(var) else {
         return Ok(None);
     };
-    if !cfg!(debug_assertions) {
-        return Err(ConfigError::KekUnavailable(format!(
-            "{var}: dev KEK refused in a release build"
-        )));
-    }
-    eprintln!("DEV CRYPTO — {var}-backed dev KEK, NOT TPM-sealed, synthetic data only");
     let text = if is_path {
         std::fs::read_to_string(&raw)
             .map_err(|e| ConfigError::KekUnavailable(format!("{var}={raw}: {e}")))?
@@ -659,7 +653,72 @@ fn dev_kek_from(var: &str, source: KekSource, is_path: bool) -> Result<Option<(K
     };
     let bytes =
         parse_dev_kek(&text).map_err(|why| ConfigError::KekUnavailable(format!("{var}: {why}")))?;
-    Ok(Some((Kek::from_bytes(bytes), source)))
+    let kek = Kek::from_bytes(bytes);
+    if !cfg!(debug_assertions) && !dev_kek_loopback_holds(&kek) {
+        return Err(ConfigError::KekUnavailable(format!(
+            "{var}: dev KEK refused in a release build unless every bind IP is loopback"
+        )));
+    }
+    if cfg!(debug_assertions) {
+        eprintln!("DEV CRYPTO — {var}-backed dev KEK, NOT TPM-sealed, synthetic data only");
+    } else {
+        eprintln!(
+            "DEV CRYPTO — {var}-backed dev KEK in a release build, allowed only because every bind IP is loopback; synthetic data only"
+        );
+    }
+    Ok(Some((kek, source)))
+}
+
+/// Release-mode dev-KEK gate: a dev KEK may boot a release binary ONLY
+/// when every sealed bind IP is loopback. Opens the store read-only via
+/// `STORE_DIR` (default `store`) and decrypts just the bind rows with
+/// the candidate key. Unreadable state refuses (false): a missing DB,
+/// missing tables, or undecryptable rows never read as loopback.
+/// Missing bind rows count as loopback — the loader defaults an unset
+/// bind to 127.0.0.1 and an unset bind6 to nothing, so that is what
+/// the server would actually bind.
+fn dev_kek_loopback_holds(kek: &Kek) -> bool {
+    let dir = std::env::var("STORE_DIR").unwrap_or_else(|_| "store".to_string());
+    let db = std::path::Path::new(&dir).join("handbook.sqlite");
+    let conn = match Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) {
+        Ok(conn) => conn,
+        Err(_) => return false,
+    };
+    binds_loopback_in(&conn, kek)
+}
+
+/// True when the sealed binds decrypt to an all-loopback listener set
+/// (pure over the connection, so both directions unit-test without
+/// env or filesystem state).
+fn binds_loopback_in(conn: &Connection, kek: &Kek) -> bool {
+    let bind_text = match get_text_for_job(conn, kek, keys::NET_BIND) {
+        Ok(None) => None,
+        Ok(Some(v)) if v.trim().is_empty() => None,
+        Ok(Some(v)) => Some(v),
+        // Wrong type, bad ciphertext, missing table: refuse.
+        Err(_) => return false,
+    };
+    let bind6_text = match get_text_for_job(conn, kek, keys::NET_BIND6) {
+        Ok(None) => None,
+        Ok(Some(v)) if v.trim().is_empty() => None,
+        Ok(Some(v)) => Some(v),
+        Err(_) => return false,
+    };
+    let bind: std::net::IpAddr = match bind_text {
+        None => std::net::IpAddr::from([127, 0, 0, 1]),
+        Some(text) => match text.trim().parse() {
+            Ok(ip) => ip,
+            Err(_) => return false,
+        },
+    };
+    let bind6: Option<std::net::IpAddr> = match bind6_text {
+        None => None,
+        Some(text) => match text.trim().parse() {
+            Ok(ip) => Some(ip),
+            Err(_) => return false,
+        },
+    };
+    RuntimeConfig::dev_seam_allowed(true, bind, bind6)
 }
 
 #[cfg(test)]
@@ -1984,10 +2043,13 @@ impl RuntimeConfig {
             &mut cfg.notify_postal_address,
         )?;
         // H6 fix baked into the migration: a persistent dev-bypass
-        // flag must never boot a release binary (spec §3).
-        if cfg.admin_mtls_off && !cfg!(debug_assertions) {
+        // flag must never boot a release binary (spec §3) — except on
+        // a loopback-only host, where local `up` runs keep the seam.
+        if cfg.admin_mtls_off
+            && !Self::dev_seam_allowed(!cfg!(debug_assertions), cfg.bind, cfg.bind6)
+        {
             return Err(ConfigError::BadValue(
-                "admin.mtls_off is dev-only; refusing release boot",
+                "admin.mtls_off is dev-only; refusing release boot on non-loopback binds",
             ));
         }
         // A required cert cannot be verified without a CA: refuse
@@ -2007,6 +2069,22 @@ impl RuntimeConfig {
             ips.push(v6);
         }
         ips
+    }
+
+    /// Release-mode dev-seam gate: dev bypasses (a dev KEK, or
+    /// `admin.mtls_off`) may boot a release binary ONLY when every
+    /// bind IP is loopback. Pure over explicit inputs so both
+    /// directions unit-test on any profile; production passes
+    /// `!cfg!(debug_assertions)` as `is_release`.
+    pub fn dev_seam_allowed(
+        is_release: bool,
+        bind: std::net::IpAddr,
+        bind6: Option<std::net::IpAddr>,
+    ) -> bool {
+        if !is_release {
+            return true;
+        }
+        bind.is_loopback() && bind6.is_none_or(|ip| ip.is_loopback())
     }
 }
 
@@ -2119,6 +2197,71 @@ mod runtime_tests {
         assert!(nets.iter().any(|n| n.contains(&plain)));
         assert!(!nets.iter().any(|n| n.contains(&other)));
         assert!(parse_allow_ips("not-an-ip").is_err());
+    }
+
+    #[test]
+    fn dev_seam_gate_both_directions() {
+        use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+        let loopback = IpAddr::from([127, 0, 0, 1]);
+        let lan: IpAddr = "192.168.1.2".parse().unwrap();
+        let any = IpAddr::from(Ipv4Addr::UNSPECIFIED);
+        let v6loop = IpAddr::from(Ipv6Addr::LOCALHOST);
+        let v6wan: IpAddr = "2001:db8::1".parse().unwrap();
+        // Dev profile: everything boots (existing behavior).
+        assert!(RuntimeConfig::dev_seam_allowed(false, loopback, None));
+        assert!(RuntimeConfig::dev_seam_allowed(false, lan, None));
+        assert!(RuntimeConfig::dev_seam_allowed(false, any, Some(v6wan)));
+        // Release profile: loopback-only hosts keep the seam …
+        assert!(RuntimeConfig::dev_seam_allowed(true, loopback, None));
+        assert!(RuntimeConfig::dev_seam_allowed(
+            true,
+            loopback,
+            Some(v6loop)
+        ));
+        // … anything else refuses.
+        assert!(!RuntimeConfig::dev_seam_allowed(true, lan, None));
+        assert!(!RuntimeConfig::dev_seam_allowed(true, any, None));
+        assert!(!RuntimeConfig::dev_seam_allowed(
+            true,
+            loopback,
+            Some(v6wan)
+        ));
+        assert!(!RuntimeConfig::dev_seam_allowed(true, any, Some(v6loop)));
+    }
+
+    #[test]
+    fn sealed_binds_loopback_both_directions() {
+        let kek = Kek::generate();
+        // No rows yet: loader defaults (127.0.0.1, no v6) read loopback.
+        assert!(super::binds_loopback_in(&memory(), &kek));
+        // Explicit loopback rows hold.
+        let conn = memory();
+        put(&conn, &kek, keys::NET_BIND, ConfigType::Text, b"127.0.0.1");
+        assert!(super::binds_loopback_in(&conn, &kek));
+        put(&conn, &kek, keys::NET_BIND6, ConfigType::Text, b"::1");
+        assert!(super::binds_loopback_in(&conn, &kek));
+        // A LAN/WAN bind refuses …
+        put(&conn, &kek, keys::NET_BIND, ConfigType::Text, b"0.0.0.0");
+        assert!(!super::binds_loopback_in(&conn, &kek));
+        put(&conn, &kek, keys::NET_BIND, ConfigType::Text, b"127.0.0.1");
+        put(
+            &conn,
+            &kek,
+            keys::NET_BIND6,
+            ConfigType::Text,
+            b"2001:db8::1",
+        );
+        assert!(!super::binds_loopback_in(&conn, &kek));
+        // … as does garbage the loader would only warn over (fail closed).
+        put(&conn, &kek, keys::NET_BIND, ConfigType::Text, b"not-an-ip");
+        assert!(!super::binds_loopback_in(&conn, &kek));
+        // A wrong KEK never reads as loopback.
+        let conn = memory();
+        put(&conn, &kek, keys::NET_BIND, ConfigType::Text, b"127.0.0.1");
+        assert!(!super::binds_loopback_in(&conn, &Kek::generate()));
+        // Missing tables refuse (never loopback by default).
+        let bare = Connection::open_in_memory().expect("open memory db");
+        assert!(!super::binds_loopback_in(&bare, &kek));
     }
 
     #[test]
