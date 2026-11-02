@@ -169,3 +169,4 @@
 | 266 | 2026-11-02 05:10Z | Staging accept a39495a: 9/10 + demo | gate 225s, staging 58s |
 | 267 | 2026-11-02 05:11Z | ADDENDUM 2 verbatim: B1-B5 + SA-9/13 | deploy order, stop-the-line |
 | 268 | 2026-11-02 05:12Z | B1: unsub blob to notify_unsub table | 13 notify, 294 web, grep clean |
+| 269 | 2026-11-02 05:20Z | Spawn SA-9/10/11/12; SA-14 parked | staging 0 multi-capture sources |
