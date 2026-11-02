@@ -166,4 +166,4 @@
 | 262 | 2026-11-02 04:20Z | Merge sub/crawler + wire crawl/archive | ingest 44, xtask 88, gate clean |
 | 264 | 2026-11-02 04:40Z | Merge sub/world-index: 130 parties | 27 world tests, 130 packs valid |
 | 265 | 2026-11-02 04:45Z | up --from-archive: import sha256 WARC | E2E crawl/pkg/import green |
-| 266 | 2026-11-02 05:12Z | Staging accept a39495a: 9/10 + demo | gate 225s, staging 58s |
+| 266 | 2026-11-02 05:10Z | Staging accept a39495a: 9/10 + demo | gate 225s, staging 58s |
