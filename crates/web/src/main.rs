@@ -40,7 +40,7 @@ mod unfurl;
 mod ws_bus;
 
 use axum::{
-    BoxError, Router,
+    Router,
     extract::{
         ConnectInfo, MatchedPath, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -1613,6 +1613,7 @@ async fn supervise(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::BoxError;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;

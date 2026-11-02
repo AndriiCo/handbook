@@ -133,10 +133,11 @@ group-read pre-step from this morning is done — A2 reads prove it.
 - New goal (memory `goals-queue.md`, handed over in chat — paste it
   into `.agents/goal.md` yourself; builder never edits it): Muse
   Glimmer self-hosted documents/facts evaluator on plant.
-- Inference workstream (full design at docs/ops/plant-inference.md):
-  `cargo xtask plant-run` + `ops/plant-inference/` Qwen2.5-VL-7B
-  pilot (uncompiled/unproven — needs `cargo clippy -p xtask`, a live
-  `setup`, and the `job-001` run with its three numbers).
+- Inference workstream: REMOVED under the organizer rule (P248 —
+  `cargo xtask plant-run` + `ops/plant-inference/` Qwen2.5-VL-7B pilot
+  deleted; see docs/ops/plant-inference.md). Its Meta open-weight
+  replacement (N6) starts only on your order — say so and the builder
+  scaffolds it.
 
 ## Queued (Meta API follow-ups — not today, builder slices)
 

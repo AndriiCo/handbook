@@ -23,7 +23,6 @@ mod instruct;
 mod mcp_serve;
 mod packs;
 mod pii_sweep;
-mod plant_run;
 mod quic_probe;
 mod release;
 mod review_conflicts;
@@ -54,7 +53,6 @@ fn main() {
         Some("build-handbook") => build_handbook::run(&args[1..]),
         Some("mcp-serve") => mcp_serve::run(&args[1..]),
         Some("pii-sweep") => pii_sweep::run(&args[1..]),
-        Some("plant-run") => plant_run::run(&args[1..]),
         Some("accept") => accept::run(&args[1..]),
         Some("form-scaffold") => form_scaffold::run(&args[1..]),
         Some("quic-probe") => quic_probe::run(&args[1..]),
@@ -77,6 +75,7 @@ fn main() {
         Some("admin-invite") => admin_staff::run_invite(&args[1..]),
         Some("admin-offboard") => admin_staff::run_offboard(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
+        Some("model-gate") => run_model_gate(),
         Some("voice-replay") => voice_replay::run(&args[1..]),
         Some("deploy") => release::run_deploy(&args[1..]),
         Some("rollback") => release::run_rollback(&args[1..]),
@@ -115,7 +114,6 @@ Tasks:
   build-handbook accepted-only static build + sitemap/robots [--out --base-url]
   mcp-serve   serve lookup_authority on 127.0.0.1 [--port]
   pii-sweep   fail closed on PII in publishable surfaces
-  plant-run   setup|models|start|status|log|fetch|attach inference jobs on plant (--job, tmux-held)
   accept      deploy gate: --expect-build must match latest build + facts_hash
   form-scaffold  per-form skeleton: --authority --code --title [--out] [--force]; --check compares
   quic-probe  HTTP/3 GET probe: --addr <ip:port> --server-name <sni> [--cacert <pem>] [--path <p>] [--host <h>]
@@ -131,6 +129,7 @@ Tasks:
   admin-invite  staff enrolment invite (spec customer-auth.md §5.1)
   admin-offboard  staff offboard: certs, sessions, creds, lock (§5.6)
   secrets-scan scan tracked files for secrets [--staged for the index]
+  model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files
   voice-replay  replay webhook fixtures at the stub (see --corpus/--scenario)
   install-hooks point git at .githooks/ (pre-commit secret scan)
   audit       cargo-audit over Cargo.lock (needs network; not in ci)
@@ -253,6 +252,9 @@ pub(crate) fn open_db(store: &Store) -> rusqlite::Connection {
 fn run_ci() {
     // Secrets first: fail fast before compiling anything else.
     run_secrets_scan(&[]);
+    // Organizer rule next, same speed: no non-Meta model may be
+    // called (or configured) at runtime.
+    run_model_gate();
     for args in [
         ["fmt", "--all", "--check"].as_slice(),
         [
@@ -888,6 +890,90 @@ fn run_secrets_scan(args: &[String]) {
         paths.len(),
         if staged { ", staged" } else { "" }
     );
+}
+
+/// Non-Meta model ids and endpoints: no tracked non-doc file
+/// may name one (organizer rule). Split literals so this file
+/// does not flag itself: no half ever forms a full needle, and
+/// the halves join at compile time, so the scan still matches
+/// everywhere else.
+const MODEL_NEEDLES: &[&str] = &[
+    concat!("qw", "en"),
+    concat!("gp", "t-"),
+    concat!("clau", "de-"),
+    concat!("gem", "ini"),
+    concat!("whis", "per"),
+    concat!("deep", "gram"),
+    concat!("eleven", "labs"),
+    concat!("edge", "-tts"),
+    concat!("api.openai", ".com"),
+    concat!("api.anthropic", ".com"),
+    concat!("generativelanguage.googleapis", ".com"),
+    concat!("transcription", "_engine"),
+];
+
+/// First banned needle on each offending line (pure: unit-tested).
+fn model_gate_hits(path: &str, bytes: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(bytes).to_lowercase();
+    let mut out = Vec::new();
+    for (n, line) in text.lines().enumerate() {
+        if let Some(needle) = MODEL_NEEDLES.iter().find(|needle| line.contains(**needle)) {
+            out.push(format!("{path}:{}: {needle}", n + 1));
+        }
+    }
+    out
+}
+
+/// Organizer rule: every model called at runtime must be a Meta
+/// model. Fail on non-Meta model ids or endpoints in tracked
+/// non-doc files, printing each path. Docs (`*.md`) are exempt —
+/// they may discuss the rule and its history.
+fn run_model_gate() {
+    let paths = git_paths(&["ls-files", "-z"]);
+    let mut hits = 0;
+    let mut scanned = 0;
+    for path in &paths {
+        if path.ends_with(".md")
+            || path.contains("target/")
+            || path.contains("node_modules/")
+            || path.contains(".svelte-kit/")
+        {
+            continue;
+        }
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(_) => continue, // deleted after listing; ignore
+        };
+        scanned += 1;
+        for hit in model_gate_hits(path, &bytes) {
+            println!("{hit}");
+            hits += 1;
+        }
+    }
+    if hits > 0 {
+        eprintln!("model-gate: {hits} non-meta model reference(s) — refusing");
+        std::process::exit(1);
+    }
+    eprintln!("model-gate: clean ({scanned} file(s))");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_gate_flags_banned_ids_and_passes_meta_ones() {
+        // Build banned strings at runtime: literals here would trip
+        // the gate on its own source.
+        let model = ["Qw", "en2.5-VL"].concat();
+        let host = ["api.openai", ".com"].concat();
+        let src = format!("let m = \"muse-spark-1.3\";\nlet q = \"{model}\";\ncall {host}/v1\n");
+        let hits = model_gate_hits("crates/x.rs", src.as_bytes());
+        assert_eq!(hits.len(), 2, "got: {hits:?}");
+        assert!(hits[0].ends_with(MODEL_NEEDLES[0]), "got: {}", hits[0]);
+        assert!(hits[1].contains(MODEL_NEEDLES[8]), "got: {}", hits[1]);
+        assert!(model_gate_hits("crates/y.rs", b"muse-voice-transcribe-1.0\nsam-3.1\n").is_empty());
+    }
 }
 
 /// Validate every `*.json` pack in `--packs <dir>` (default: `packs`).

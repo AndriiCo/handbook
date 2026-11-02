@@ -36,6 +36,7 @@
 		authority: string | null;
 		questions: Question[];
 		transcript: Segment[];
+		transcript_status: string;
 		recording_status: string;
 		ended_at: number | null;
 	}
@@ -171,7 +172,11 @@
 			<h2 class="m-0 mb-2 text-base" id="transcript">Transcript</h2>
 			{#if detail.transcript.length === 0}
 				<p class="text-ink-muted">
-					{isLive(detail.status) ? 'Listening — segments appear as they arrive.' : 'No transcript captured.'}
+					{detail.transcript_status === 'untranscribed-terms'
+						? 'Not transcribed — call audio stays untouched until the Meta API data-handling terms are read.'
+						: isLive(detail.status)
+							? 'Listening — the recording is transcribed after hangup.'
+							: 'No transcript captured.'}
 				</p>
 			{:else}
 				<ol class="m-0 grid list-none gap-2 p-0">

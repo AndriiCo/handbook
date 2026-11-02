@@ -77,11 +77,13 @@ test('normalizeCallDetail types questions and transcript', () => {
 		authority: null,
 		questions: [{ text: 'Fee?', asked: true }],
 		transcript: [{ seq: 0, speaker: null, text: 'hello', at: 5 }],
+		transcript_status: 'untranscribed-terms',
 		recording_status: 'recording',
 		ended_at: null
 	});
 	assert.equal(detail?.questions[0].asked, true);
 	assert.equal(detail?.transcript[0].text, 'hello');
+	assert.equal(detail?.transcript_status, 'untranscribed-terms');
 	assert.equal(normalizeCallDetail({ call_id: 'c-1', status: 'x' }), null);
 	assert.equal(
 		normalizeCallDetail({

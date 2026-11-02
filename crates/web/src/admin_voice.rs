@@ -317,6 +317,7 @@ async fn get_call(
             "transcript": segments.iter().map(|s| json!({
                 "seq": s.seq, "speaker": s.speaker, "text": s.text, "at": s.at,
             })).collect::<Vec<_>>(),
+            "transcript_status": transcript_status(segments.len(), state.media_terms_read),
             "recording_status": call.recording_status,
             "created_at": call.created_at,
             "ended_at": call.ended_at,
@@ -361,6 +362,7 @@ async fn hangup(
         Some("staff hangup"),
         now,
     );
+    spawn_transcribe_recording(state.clone(), id.clone());
     audit(
         &conn,
         now,
@@ -374,6 +376,183 @@ async fn hangup(
         Json(json!({"call_id": id, "status": "completed"})),
     )
         .into_response()
+}
+
+/// Meta voice-transcribe client: `$META_API_KEY` first (staging,
+/// one-shot runs), else the admin-sealed `meta.api_key` — the same
+/// precedence the draft runner uses. Base URL likewise sealed or
+/// the compiled Meta default. `None` fails closed, never a stub.
+fn meta_transcribe_client(
+    state: &AppState,
+) -> Option<media::VoiceFileClient<media::UreqTransport>> {
+    let store = Store::new(&state.store_root);
+    let conn = db::open(&store).ok()?;
+    if let Ok(key) = std::env::var("META_API_KEY")
+        && !key.is_empty()
+    {
+        let base = sealed_meta_base(&conn, state.kek.as_deref())
+            .unwrap_or_else(|| media::redact::META_API_BASE.to_string());
+        return Some(media::VoiceFileClient::new(
+            &base,
+            Some(key),
+            media::UreqTransport::new(),
+        ));
+    }
+    let kek = state.kek.as_deref()?;
+    let (cfg, _warnings) = config::RuntimeConfig::load(&conn, kek).ok()?;
+    let key = cfg.meta_api_key?;
+    if key.as_str().is_empty() {
+        return None;
+    }
+    let base = if cfg.meta_base_url.is_empty() {
+        media::redact::META_API_BASE.to_string()
+    } else {
+        cfg.meta_base_url
+    };
+    Some(media::VoiceFileClient::new(
+        &base,
+        Some(key.as_str().to_string()),
+        media::UreqTransport::new(),
+    ))
+}
+
+/// Sealed `meta.base_url` when sealed config loads and names one,
+/// else `None` (the caller falls back to the compiled default).
+fn sealed_meta_base(conn: &rusqlite::Connection, kek: Option<&config::Kek>) -> Option<String> {
+    let kek = kek?;
+    let (cfg, _warnings) = config::RuntimeConfig::load(conn, kek).ok()?;
+    (!cfg.meta_base_url.is_empty()).then(|| cfg.meta_base_url.clone())
+}
+
+/// Fire-and-forget Meta transcription after staff hangup: the
+/// `recording.saved` download may land after the hangup ack, so
+/// wait for the recording blob (up to ~90 s), then transcribe it
+/// with muse-voice-transcribe-1.0 and fan the turns out as
+/// `call.transcript` events. Calls without a key — or with the
+/// media terms unread — stay untranscribed (`transcript_status`
+/// says so in `/calls`); the blocking HTTP runs off the runtime.
+fn spawn_transcribe_recording(state: AppState, call_id: String) {
+    tokio::spawn(async move {
+        let mut sha = None;
+        for _ in 0..30 {
+            let store = Store::new(&state.store_root);
+            if let Ok(conn) = db::open(&store)
+                && let Ok(Some(call)) = voice::store::get_call(&conn, &call_id)
+                && let Some(s) = call.recording_sha.clone()
+            {
+                sha = Some(s);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+        let Some(sha) = sha else {
+            tracing::warn!(
+                call_id = %call_id,
+                "no recording landed after hangup; call stays untranscribed"
+            );
+            return;
+        };
+        if !state.media_terms_read {
+            tracing::info!(
+                call_id = %call_id,
+                "call stays untranscribed (media terms unread)"
+            );
+            return;
+        }
+        let Some(client) = meta_transcribe_client(&state) else {
+            tracing::warn!(
+                call_id = %call_id,
+                "call stays untranscribed (meta api key not configured)"
+            );
+            return;
+        };
+        let store = Store::new(&state.store_root);
+        let audio = match store.read_blob(&sha) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::warn!(call_id = %call_id, error = %e, "recording blob unreadable");
+                return;
+            }
+        };
+        let terms_read = state.media_terms_read;
+        let outcome = tokio::task::spawn_blocking(move || {
+            let policy = if terms_read {
+                media::MediaPolicy::terms_read()
+            } else {
+                media::MediaPolicy::synthetic_only()
+            };
+            client.transcribe(
+                &policy,
+                media::MediaSource::RealUpload,
+                "call.wav",
+                &audio,
+                &media::transcribe::TranscribeOptions::default(),
+            )
+        })
+        .await;
+        match outcome {
+            Ok(Ok(transcript)) => {
+                let stored = ingest_transcript(&state, &call_id, &transcript);
+                tracing::info!(
+                    call_id = %call_id,
+                    turns = stored,
+                    "call transcribed with muse-voice-transcribe-1.0"
+                );
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(call_id = %call_id, error = %e, "call transcription failed")
+            }
+            Err(join) => {
+                tracing::warn!(call_id = %call_id, error = %join, "call transcription task failed")
+            }
+        }
+    });
+}
+
+/// Store Meta-transcribed turns as segments and fan them out as
+/// `call.transcript` events (the P201 shape the live path used).
+/// Returns segments stored.
+fn ingest_transcript(
+    state: &AppState,
+    call_id: &str,
+    transcript: &media::transcribe::Transcript,
+) -> usize {
+    let store = Store::new(&state.store_root);
+    let Ok(conn) = db::open(&store) else {
+        return 0;
+    };
+    let now = unix_now();
+    let mut stored = 0;
+    for turn in &transcript.turns {
+        let text: String = turn.text.chars().take(2000).collect();
+        if text.trim().is_empty() {
+            continue;
+        }
+        if voice::store::append_transcript(&conn, call_id, turn.speaker.as_deref(), &text, now)
+            .is_ok()
+        {
+            stored += 1;
+            publish_call(
+                state,
+                call_id,
+                json!({"type": "call.transcript", "text": text, "at": now}),
+            );
+        }
+    }
+    stored
+}
+
+/// Computed transcript state for `/calls` (no migration): segments
+/// present → transcribed; terms unread → untranscribed with the
+/// reason; otherwise none (pending, failed, or no recording).
+fn transcript_status(segments: usize, terms_read: bool) -> &'static str {
+    if segments > 0 {
+        "transcribed"
+    } else if !terms_read {
+        "untranscribed-terms"
+    } else {
+        "none"
+    }
 }
 
 /// Start recording a live leg (staff-initiated; consent was
@@ -596,19 +775,10 @@ fn apply_event(
             let _ = voice::store::set_recording(conn, &call.id, None, "recording", now);
             spawn_auto_record(state, &call.call_control_id);
         }
-        voice::EventType::Transcription => {
-            if let Some(text) = payload.segment_text()
-                && !text.trim().is_empty()
-            {
-                let text: String = text.chars().take(2000).collect();
-                let _ = voice::store::append_transcript(conn, &call.id, None, &text, now);
-                publish_call(
-                    state,
-                    &call.id,
-                    json!({"type": "call.transcript", "text": text, "at": now}),
-                );
-            }
-        }
+        // `call.transcription` events are acked but never ingested:
+        // Telnyx's live engine is not a Meta model, so its segments
+        // must not enter transcripts. Post-hangup transcription with
+        // muse-voice-transcribe-1.0 (below) is the only writer.
         voice::EventType::RecordingSaved => {
             if let Some(url) = pick_recording_url(payload) {
                 spawn_download(state, &call.id, &url);
@@ -632,7 +802,10 @@ fn apply_event(
     tracing::info!(call_id = %call.id, event = event.as_str(), "voice webhook applied");
 }
 
-/// Fire-and-forget `record_start` + `transcription_start` at answer.
+/// Fire-and-forget `record_start` at answer. Record only: the
+/// Telnyx live-transcription engine is not a Meta model, so
+/// `transcription_start` is never sent — transcripts come solely
+/// from the post-hangup muse-voice-transcribe-1.0 pass below.
 /// Failures land in `recording_status` for staff to retry; the
 /// webhook itself already acked.
 fn spawn_auto_record(state: &AppState, leg: &str) {
@@ -646,11 +819,7 @@ fn spawn_auto_record(state: &AppState, leg: &str) {
         let outcome = tokio::task::spawn_blocking({
             let leg = call_leg.clone();
             let command_id = command_id.clone();
-            move || {
-                client
-                    .record_start(&leg, &command_id)
-                    .and_then(|()| client.transcription_start(&leg, &command_id))
-            }
+            move || client.record_start(&leg, &command_id)
         })
         .await;
         if !matches!(outcome, Ok(Ok(()))) {
@@ -1913,7 +2082,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        // Transcript segments append.
+        // Telnyx live-transcription segments are acked but never
+        // ingested (not a Meta model): zero segments stored.
         let body = event_body(
             "wh-10",
             "call.transcription",
@@ -1927,8 +2097,10 @@ mod tests {
         let store = Store::new(&fx.state.store_root);
         let conn = db::open(&store).unwrap();
         let segments = voice::store::list_transcripts(&conn, "c-9").unwrap();
-        assert_eq!(segments.len(), 1);
-        assert_eq!(segments[0].text, "the fee is eight dollars");
+        assert!(
+            segments.is_empty(),
+            "telnyx segments must not enter transcripts"
+        );
     }
 
     #[tokio::test]
@@ -1976,6 +2148,9 @@ mod tests {
         assert_eq!(value["status"], "in_progress");
         assert_eq!(value["topic"], format!("call:{id}"));
 
+        // Telnyx transcription events publish nothing: the retired
+        // live path's `call.transcript` now comes only from the
+        // post-hangup Meta pass.
         let body = event_body(
             "wh-2",
             "call.transcription",
@@ -1986,14 +2161,105 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+        let silent = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv()).await;
+        assert!(
+            silent.is_err(),
+            "no call.transcript may fan out from telnyx events"
+        );
+    }
+
+    #[test]
+    fn transcript_status_names_the_untranscribed_reason() {
+        assert_eq!(transcript_status(2, false), "transcribed");
+        assert_eq!(transcript_status(2, true), "transcribed");
+        assert_eq!(transcript_status(0, false), "untranscribed-terms");
+        assert_eq!(transcript_status(0, true), "none");
+    }
+
+    #[tokio::test]
+    async fn ingest_transcript_stores_segments_and_fans_out() {
+        // The post-hangup Meta pass writes the same rows and events
+        // the retired live path wrote (P201 shape).
+        let fx = fixture(voice::VoiceConfig::default());
+        seed_call(&fx);
+        let mut rx = fx.state.bus.subscribe("call:c-9");
+        let transcript = media::transcribe::Transcript {
+            turns: vec![
+                media::transcribe::TranscriptTurn {
+                    index: 0,
+                    speaker: Some("agent".to_string()),
+                    text: "The fee?".to_string(),
+                    start_ms: 0,
+                    end_ms: 900,
+                },
+                media::transcribe::TranscriptTurn {
+                    index: 1,
+                    speaker: None,
+                    text: "   ".to_string(),
+                    start_ms: 900,
+                    end_ms: 1000,
+                },
+                media::transcribe::TranscriptTurn {
+                    index: 2,
+                    speaker: Some("them".to_string()),
+                    text: "Eight dollars.".to_string(),
+                    start_ms: 1000,
+                    end_ms: 2100,
+                },
+            ],
+        };
+        assert_eq!(ingest_transcript(&fx.state, "c-9", &transcript), 2);
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        let segments = voice::store::list_transcripts(&conn, "c-9").unwrap();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].speaker.as_deref(), Some("agent"));
+        assert_eq!(segments[1].text, "Eight dollars.");
+        for want in ["The fee?", "Eight dollars."] {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+                .await
+                .expect("call.transcript within 2s")
+                .expect("bus open");
+            let value: serde_json::Value = serde_json::from_str(&event).unwrap();
+            assert_eq!(value["type"], "call.transcript");
+            assert_eq!(value["text"], want);
+            assert_eq!(value["topic"], "call:c-9");
+        }
+    }
+
+    #[tokio::test]
+    async fn get_call_reports_transcript_status() {
+        let fx = fixture(voice::VoiceConfig::default());
+        seed_call(&fx);
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "GET",
+                "/apostille/api/v1/calls/c-9",
+                true,
+                false,
+                None,
+            ))
             .await
-            .unwrap()
             .unwrap();
-        let value: serde_json::Value = serde_json::from_str(&event).unwrap();
-        assert_eq!(value["type"], "call.transcript");
-        assert_eq!(value["text"], "the fee is eight dollars");
-        assert_eq!(value["topic"], format!("call:{id}"));
+        assert_eq!(res.status(), StatusCode::OK);
+        let detail = json_body(res).await;
+        // Fixture terms are unread: the empty transcript says why.
+        assert_eq!(detail["transcript_status"], "untranscribed-terms");
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        voice::store::append_transcript(&conn, "c-9", None, "hello", 2).unwrap();
+        drop(conn);
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "GET",
+                "/apostille/api/v1/calls/c-9",
+                true,
+                false,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(json_body(res).await["transcript_status"], "transcribed");
     }
 
     #[tokio::test]

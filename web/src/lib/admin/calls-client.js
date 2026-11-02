@@ -107,7 +107,7 @@ export function normalizeCallSummary(row) {
 /**
  * Normalize a detail payload. Returns null for unknown shapes. Pure (tested).
  * @param {any} data
- * @returns {{ call_id: string, status: string, status_detail: string | null, authority: string | null, questions: { text: string, asked: boolean }[], transcript: { seq: number, speaker: string | null, text: string, at: number }[], recording_status: string, ended_at: number | null } | null}
+ * @returns {{ call_id: string, status: string, status_detail: string | null, authority: string | null, questions: { text: string, asked: boolean }[], transcript: { seq: number, speaker: string | null, text: string, at: number }[], transcript_status: string, recording_status: string, ended_at: number | null } | null}
  */
 export function normalizeCallDetail(data) {
 	if (!data || typeof data.call_id !== 'string' || typeof data.status !== 'string') return null;
@@ -134,6 +134,8 @@ export function normalizeCallDetail(data) {
 		authority: typeof data.authority === 'string' ? data.authority : null,
 		questions,
 		transcript,
+		transcript_status:
+			typeof data.transcript_status === 'string' ? data.transcript_status : 'none',
 		recording_status: typeof data.recording_status === 'string' ? data.recording_status : 'none',
 		ended_at: typeof data.ended_at === 'number' ? data.ended_at : null
 	};

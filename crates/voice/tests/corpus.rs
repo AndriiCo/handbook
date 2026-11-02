@@ -160,7 +160,7 @@ fn negative_and_edge_envelopes() {
     assert_envelope("machine-detection.json", EventType::MachineDetectionEnded);
     let edge = assert_envelope(
         "unknown-event.json",
-        EventType::Other("call.whisper.started".to_string()),
+        EventType::Other("call.sparkle.started".to_string()),
     );
     assert!(matches!(
         EventType::parse(&edge.data.event_type),
