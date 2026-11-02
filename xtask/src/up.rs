@@ -105,6 +105,7 @@ pub fn run(args: &[String]) {
         xtask_cmd(&xtask, &["eval", "--store", STORE_DIR, "--live"]);
     } else {
         xtask_cmd(&xtask, &["eval", "--store", STORE_DIR]);
+        install_recorded_quality();
     }
     let setup_key = setup_key_mint(&xtask);
     let cfg = load_runtime_config();
@@ -203,9 +204,21 @@ fn assert_repo_root() {
     }
 }
 
+/// Minimum accepted Node major (SA-11: judges arrive on Node 24 LTS,
+/// 25, or the pinned 26 — all build the SPAs. Anything older fails
+/// closed: a build under Node 22 or earlier is never "close enough").
+const NODE_MIN_MAJOR: u64 = 24;
+
+/// Minimum accepted npm major (`web/package.json` engines: npm >= 11).
+/// Older npm falls back to `npm ci --legacy-peer-deps` with a printed
+/// note instead of failing the boot.
+const NPM_MIN_MAJOR: u64 = 11;
+
 /// Toolchain pin check: `rustc` must carry the `rust-toolchain.toml`
-/// channel, `node` the `.nvmrc` major. A mismatch fails closed — a
-/// build under the wrong toolchain is never "close enough".
+/// channel; `node` must be >= [`NODE_MIN_MAJOR`] (the `.nvmrc` pin
+/// names the preferred major and is still required to be present and
+/// sane). A mismatch fails closed — a build under the wrong toolchain
+/// is never "close enough".
 fn check_toolchain() {
     let channel = rust_channel();
     let out = command_output("rustc", &["--version"]);
@@ -217,9 +230,13 @@ fn check_toolchain() {
     let want = node_want();
     let out = command_output("node", &["--version"]);
     if !node_matches(&want, &out) {
-        fail(&format!("node {out:?} does not match .nvmrc {want:?}"));
+        fail(&format!(
+            "node {out:?} is below the Node >={NODE_MIN_MAJOR} floor (.nvmrc prefers {want:?}); fix: install Node 24+ (nvm install 24)"
+        ));
     }
-    println!("up: toolchain ok (rust {channel}, node {want})");
+    println!(
+        "up: toolchain ok (rust {channel}, node {out}; floor Node >={NODE_MIN_MAJOR}, .nvmrc prefers {want})"
+    );
 }
 
 fn rust_channel() -> String {
@@ -250,11 +267,41 @@ fn rust_matches(channel: &str, rustc_version: &str) -> bool {
     rustc_version.contains(channel)
 }
 
-/// Pure: `node --version` output (`v26.10.0`) satisfies the `.nvmrc`
-/// pin (`26` or `26.10.0`).
+/// Pure: numeric major of a `node --version` / `.nvmrc` string
+/// (`v26.10.0` → 26, `26` → 26). `None` on garbage — unparseable
+/// versions fail closed at the call site.
+fn node_major(version: &str) -> Option<u64> {
+    version
+        .trim()
+        .trim_start_matches('v')
+        .split('.')
+        .next()?
+        .parse::<u64>()
+        .ok()
+}
+
+/// Pure: `node --version` output (`v26.10.0`) is accepted when its
+/// major is >= [`NODE_MIN_MAJOR`] (24 LTS, 25, the pinned 26, later).
+/// The `.nvmrc` pin must still parse (a garbage pin fails closed);
+/// anything older than the floor — Node 22/20/18 — is refused.
 fn node_matches(want: &str, node_version: &str) -> bool {
-    let got = node_version.trim().trim_start_matches('v');
-    got == want || got.starts_with(&format!("{want}."))
+    if node_major(want).is_none() {
+        return false;
+    }
+    node_major(node_version).is_some_and(|got| got >= NODE_MIN_MAJOR)
+}
+
+/// Pure: numeric major of `npm --version` output (`11.19.1` → 11).
+/// `None` on garbage.
+fn npm_major(npm_version: &str) -> Option<u64> {
+    npm_version.trim().split('.').next()?.parse::<u64>().ok()
+}
+
+/// Pure: whether this npm needs the `--legacy-peer-deps` fallback.
+/// `None` when the version is unparseable (fail closed at the call
+/// site); `Some(false)` on npm >= [`NPM_MIN_MAJOR`].
+fn npm_needs_legacy(npm_version: &str) -> Option<bool> {
+    npm_major(npm_version).map(|got| got < NPM_MIN_MAJOR)
 }
 
 /// Run one command in the foreground; exit 1 with the failing line.
@@ -294,7 +341,23 @@ fn npm_ci_if_needed() {
         println!("up: npm ci skipped (lockfile unchanged)");
         return;
     }
-    run_cmd("npm", &["ci", "--prefix", "web"]);
+    // `web/package.json` engines want npm >= 11. On npm 10 the boot
+    // still works: print the one-line fix, then fall back to
+    // `--legacy-peer-deps` with a note instead of failing the judge.
+    let npm_version = command_output("npm", &["--version"]);
+    match npm_needs_legacy(&npm_version) {
+        Some(false) => run_cmd("npm", &["ci", "--prefix", "web"]),
+        Some(true) => {
+            println!(
+                "up: npm {npm_version} predates the engines floor (npm >={NPM_MIN_MAJOR}); one-line fix: npm install -g npm@{NPM_MIN_MAJOR}"
+            );
+            println!(
+                "up: continuing with `npm ci --legacy-peer-deps` (npm {npm_version} fallback)"
+            );
+            run_cmd("npm", &["ci", "--legacy-peer-deps", "--prefix", "web"]);
+        }
+        None => fail(&format!("npm --version gave garbage {npm_version:?}")),
+    }
     if let Some(parent) = Path::new(NCI_HASH_FILE).parent() {
         std::fs::create_dir_all(parent).unwrap_or_else(|e| fail(&format!("mkdir .local: {e}")));
     }
@@ -366,18 +429,26 @@ fn enroll_if_needed(xtask: &Path) {
     );
 }
 
-/// Seal the loopback config: 127.0.0.1 binds, local ports, localhost
-/// WebAuthn origin, the freshly built SPA/static directories, and the
-/// local-dev admin seam. `admin.mtls_off` is what lets the admin host
-/// guard accept loopback browsers; the release dev-seam gate only
-/// honors it while every bind stays loopback.
+/// Seal the loopback config: 127.0.0.1 binds, local ports, the staff
+/// WebAuthn origin on the admin port, the freshly built SPA/static
+/// directories, and the local-dev admin seam. `auth.origin` is the
+/// staff WebAuthn origin (the wizard says so: it must describe the
+/// admin origin exactly, or enrol/log-in ceremonies fail) — the
+/// WebAuthn handle admits this origin (plus the production admin
+/// host), so it must be the loopback admin port for staff passkeys
+/// to verify there. Loopback-only: the header-level origin gate
+/// (`origin_allowed`) admits http localhost/127.0.0.1 solely under
+/// the dev seam, and the staff link below is refused past loopback.
+/// `admin.mtls_off` is what lets the admin host guard accept loopback
+/// browsers; the release dev-seam gate only honors it while every
+/// bind stays loopback.
 fn config_set_all(xtask: &Path) {
     const SETTINGS: &[(&str, &str, &str)] = &[
         ("net.bind", "text", "127.0.0.1"),
         ("net.port", "text", "18318"),
         ("net.admin_port", "text", "18319"),
         ("auth.rp_id", "text", "localhost"),
-        ("auth.origin", "text", "http://localhost:18318"),
+        ("auth.origin", "text", "http://localhost:18319"),
         ("paths.static_dir", "text", "crates/web/static"),
         ("paths.spa_dir", "text", "web/build"),
         ("paths.admin_spa_dir", "text", "web/build-admin"),
@@ -860,6 +931,45 @@ fn http_body(block: &[u8]) -> Option<&[u8]> {
         .map(|pos| &block[pos + 4..])
 }
 
+/// Recorded production eval (README "Eval numbers", 2026-11-01,
+/// production, live key): the stub grades ~0% on the gold set because
+/// its two fixture records cite `doc_id "fixture"`, never `"gold"`.
+/// Serving that file would publish a 0% quality chip mislabeled as a
+/// Muse Spark eval, so stub boots install these labelled recorded
+/// numbers instead. `--live` keeps its fresh eval output untouched.
+fn recorded_quality() -> serde_json::Value {
+    serde_json::json!({
+        "run_at": "2026-11-01T00:00:00Z",
+        "gold_count": 26,
+        "quote_found_rate": 1.0,
+        "value_in_quote_rate": 0.969,
+        "topic_accuracy": 0.641,
+        "model": "muse-spark-1.3",
+        "recorded_note": "recorded production eval, 2026-11-01",
+    })
+}
+
+/// Overwrite the stub eval's `quality.json` with the recorded
+/// production eval (see [`recorded_quality`]). The home-page chip
+/// reads this file, so a stub boot shows the labelled recorded
+/// numbers — never a 0% chip.
+fn install_recorded_quality() {
+    let dest = Path::new(STORE_DIR).join("quality.json");
+    write_recorded_quality(&dest);
+    println!(
+        "up: stub eval replaced by recorded production eval, 2026-11-01 (home page never shows a 0% chip)"
+    );
+}
+
+/// Pure write half of [`install_recorded_quality`] (split out so
+/// tests can point it at a scratch file instead of the live store).
+fn write_recorded_quality(dest: &Path) {
+    let text = serde_json::to_string_pretty(&recorded_quality())
+        .unwrap_or_else(|e| fail(&format!("encode recorded quality: {e}")));
+    std::fs::write(dest, format!("{text}\n"))
+        .unwrap_or_else(|e| fail(&format!("write {}: {e}", dest.display())));
+}
+
 /// Copy the recorded A2 verdicts into the store (the precheck endpoint
 /// serves `<store>/demo_precheck/<sample>.json` verbatim).
 fn install_verdicts() {
@@ -946,7 +1056,9 @@ fn load_runtime_config() -> sealed_config::RuntimeConfig {
 
 /// One-time staff login link for `/review`. Refused unless EVERY bind
 /// IP is loopback — a login link is never printed for a host that
-/// listens past localhost.
+/// listens past localhost. The link always names `localhost`, never a
+/// numeric loopback: the bind is proven loopback-only above, and every
+/// printed URL in `up` uses the same host form judges type.
 fn staff_review_link(
     bind: std::net::IpAddr,
     bind6: Option<std::net::IpAddr>,
@@ -955,10 +1067,7 @@ fn staff_review_link(
     if !sealed_config::RuntimeConfig::dev_seam_allowed(true, bind, bind6) {
         return Err("every bind IP must be loopback (refusing to mint a staff link)".to_string());
     }
-    Ok(match bind {
-        std::net::IpAddr::V4(_) => format!("http://{bind}:{admin_port}/review"),
-        std::net::IpAddr::V6(_) => format!("http://[{bind}]:{admin_port}/review"),
-    })
+    Ok(format!("http://localhost:{admin_port}/review"))
 }
 
 /// Release `web` environment: the store plus the file KEK in
@@ -1043,8 +1152,14 @@ fn probe(host: &str, port: u16, path: &str, want: &str) -> Result<(), String> {
 fn run_check(web: &Path, setup_key: &str, review_link: &str) {
     let mut child = spawn_web(web);
     let mut failure: Option<String> = None;
-    if !wait_healthy() {
-        failure = Some("web did not answer /healthz in time".to_string());
+    match wait_healthy(&mut child) {
+        WaitOutcome::Healthy => {}
+        WaitOutcome::Exited => {
+            failure = Some("web exited before answering /healthz".to_string());
+        }
+        WaitOutcome::Timeout => {
+            failure = Some("web did not answer /healthz in time".to_string());
+        }
     }
     for (host, port, path, want) in [
         ("127.0.0.1", PUBLIC_PORT, "/apostille/healthz", "ok"),
@@ -1076,16 +1191,47 @@ fn run_check(web: &Path, setup_key: &str, review_link: &str) {
     println!("up: staff review link (loopback only): {review_link}");
 }
 
-fn wait_healthy() -> bool {
-    use std::time::{Duration, Instant};
-    let deadline = Instant::now() + Duration::from_secs(180);
-    while Instant::now() < deadline {
+/// Why the health wait ended (an enum, not a second `try_wait` at
+/// the call site: the first reap consumes the status, so the reason
+/// must travel with the return).
+#[derive(Debug, PartialEq, Eq)]
+enum WaitOutcome {
+    Healthy,
+    Exited,
+    Timeout,
+}
+
+/// True when the child has already exited (reaps its status).
+fn child_exited(child: &mut Child) -> bool {
+    child.try_wait().ok().flatten().is_some()
+}
+
+/// Wait for `/healthz`, but stop the moment the server exits: a
+/// crashed `web` used to burn the whole 180 s before `--check` could
+/// report it. Split for tests: the deadline is a parameter so the
+/// exited-child path proves it returns without waiting it out.
+fn wait_healthy_until(child: &mut Child, deadline: std::time::Instant) -> WaitOutcome {
+    use std::time::Duration;
+    loop {
+        if child_exited(child) {
+            println!("up: --check: web exited while waiting for /healthz");
+            return WaitOutcome::Exited;
+        }
+        if std::time::Instant::now() >= deadline {
+            return WaitOutcome::Timeout;
+        }
         match http_get("127.0.0.1", PUBLIC_PORT, "/apostille/healthz") {
-            Ok((200, _)) => return true,
+            Ok((200, _)) => return WaitOutcome::Healthy,
             _ => std::thread::sleep(Duration::from_millis(500)),
         }
     }
-    false
+}
+
+fn wait_healthy(child: &mut Child) -> WaitOutcome {
+    wait_healthy_until(
+        child,
+        std::time::Instant::now() + std::time::Duration::from_secs(180),
+    )
 }
 
 fn kill(child: &mut Child) {
@@ -1103,7 +1249,7 @@ fn print_banner(setup_key: &str, review_link: &str) {
     println!("    {setup_key}");
     println!("try this:");
     println!("  - open the review queue and approve a proposed fact");
-    println!("  - curl -s http://127.0.0.1:{PUBLIC_PORT}/apostille/api/v1/authorities");
+    println!("  - curl -s http://localhost:{PUBLIC_PORT}/apostille/api/v1/authorities");
     println!("  - POST {{\"sample\":\"syn-doc-clean\"}} to /apostille/api/v1/demo/precheck");
     println!();
 }
@@ -1129,10 +1275,61 @@ mod tests {
             "rustc 1.99.0 (b940084d7 2026-09-28)"
         ));
         assert!(!rust_matches("1.99.0", "rustc 1.78.0 (abc 2024-01-01)"));
+        // SA-11 floor: Node >= 24 accepted (24 LTS, 25, pinned 26);
+        // anything older — or unparseable — fails closed.
         assert!(node_matches("26", "v26.10.0\n"));
-        assert!(node_matches("26.10.0", "v26.10.0"));
-        assert!(!node_matches("26", "v24.1.0"));
-        assert!(!node_matches("26", "v260.0.0"));
+        assert!(node_matches("26", "v24.1.0"));
+        assert!(node_matches("26", "v25.0.0"));
+        assert!(node_matches("24", "v26.10.0"));
+        assert!(!node_matches("26", "v22.0.0"));
+        assert!(!node_matches("26", "v20.19.0"));
+        assert!(!node_matches("26", "v18.20.8"));
+        assert!(!node_matches("26", "not node at all"));
+        assert!(!node_matches("26", ""));
+        assert!(!node_matches("garbage", "v26.10.0"));
+        assert!(!node_matches("", "v26.10.0"));
+        assert_eq!(node_major("v26.10.0"), Some(26));
+        assert_eq!(node_major("26"), Some(26));
+        assert_eq!(node_major("v24.1.0\n"), Some(24));
+        assert_eq!(node_major("garbage"), None);
+    }
+
+    #[test]
+    fn npm_legacy_fallback_boundary() {
+        assert_eq!(npm_needs_legacy("11.19.1"), Some(false));
+        assert_eq!(npm_needs_legacy("11.0.0"), Some(false));
+        assert_eq!(npm_needs_legacy("12.0.0"), Some(false));
+        assert_eq!(npm_needs_legacy("10.9.0"), Some(true));
+        assert_eq!(npm_needs_legacy("10.0.0"), Some(true));
+        assert_eq!(npm_needs_legacy("9.8.1"), Some(true));
+        assert_eq!(npm_needs_legacy("garbage"), None);
+        assert_eq!(npm_needs_legacy(""), None);
+    }
+
+    #[test]
+    fn recorded_quality_is_labelled_production() {
+        let q = recorded_quality();
+        assert_eq!(q["model"], "muse-spark-1.3");
+        assert_eq!(q["gold_count"], 26);
+        assert_eq!(q["quote_found_rate"], 1.0);
+        assert_eq!(q["value_in_quote_rate"], 0.969);
+        assert_eq!(q["topic_accuracy"], 0.641);
+        assert_eq!(q["recorded_note"], "recorded production eval, 2026-11-01");
+        // A 0% chip must be impossible from this document.
+        assert!(q["quote_found_rate"].as_f64().unwrap_or(0.0) > 0.0);
+        let dir = tempfile::tempdir().expect("scratch dir");
+        let dest = dir.path().join("quality.json");
+        write_recorded_quality(&dest);
+        let round: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&dest).expect("read back"))
+                .expect("valid json");
+        assert_eq!(round, q);
+        assert!(
+            round["run_at"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("2026-11-01")
+        );
     }
 
     #[test]
@@ -1237,19 +1434,37 @@ mod tests {
         use std::net::{IpAddr, Ipv6Addr};
         let loopback = IpAddr::from([127, 0, 0, 1]);
         let lan: IpAddr = "192.168.1.2".parse().unwrap();
+        // Every printed link names localhost — never a numeric loopback.
         assert_eq!(
             staff_review_link(loopback, None, 18319).as_deref(),
-            Ok("http://127.0.0.1:18319/review")
+            Ok("http://localhost:18319/review")
         );
         assert_eq!(
             staff_review_link(loopback, Some(IpAddr::from(Ipv6Addr::LOCALHOST)), 18319).as_deref(),
-            Ok("http://127.0.0.1:18319/review")
+            Ok("http://localhost:18319/review")
         );
         assert_eq!(
             staff_review_link(IpAddr::from(Ipv6Addr::LOCALHOST), None, 18319).as_deref(),
-            Ok("http://[::1]:18319/review")
+            Ok("http://localhost:18319/review")
         );
         assert!(staff_review_link(lan, None, 18319).is_err());
         assert!(staff_review_link(loopback, Some(lan), 18319).is_err());
+    }
+
+    #[test]
+    fn wait_stops_when_web_exits() {
+        use std::process::Command;
+        use std::time::{Duration, Instant};
+        // An already-dead server must report Exited fast: the
+        // deadline is long on purpose, so returning at all proves the
+        // early exit (a deadline-only wait would hang 30 s here).
+        let mut dead = Command::new("sh")
+            .args(["-c", "exit 1"])
+            .spawn()
+            .expect("spawn sh");
+        assert_eq!(
+            wait_healthy_until(&mut dead, Instant::now() + Duration::from_secs(30)),
+            WaitOutcome::Exited
+        );
     }
 }
