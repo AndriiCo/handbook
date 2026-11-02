@@ -436,8 +436,10 @@ above verbatim).
   `healthz` → `0.1.0+bde970e`. DB reused (vietnam 8 +
   usa-wa-sos 9 accepted stand).
 - Scoreboard 9/10 in `web/shots/staging-accept.json`
-  (17:45:45Z), only S1 red (operator-owned
-  licence/video/visibility). Live demo take 3/3 on the exact
+  (17:45:45Z; rescored 18:21Z after the RO-M4 seed — still
+  9/10, only S1 red; A1 holds 19 facts with both seeded
+  citations), operator-owned licence/video/visibility. Live
+  demo take 3/3 on the exact
   SHA (`DEMO_BASE_URL=http://127.0.0.1:18318/apostille`).
 - Deploy candidate: stamp + 9/10 + demo 3/3 all on bde970e
   (supersedes 2b4bc8d; adds SA-18 egypt-chain, SA-17

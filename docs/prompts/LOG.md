@@ -210,3 +210,4 @@
 | 308 | 2026-11-02 17:53Z | Continue: follow docs/ops/push-plan.md MISSION SUBMIT | tip stamped, candidate 4dcd234, RO-2 green |
 | 309 | 2026-11-02 18:05Z | Continue working toward the active session goal. MISSION SUBMIT | RO-2 Node 22+24 installed, recipe noted |
 | 310 | 2026-11-02 18:20Z | Continue working toward the active session goal. MISSION SUBMIT | RO-M4 conflict seeded on staging |
+| 311 | 2026-11-02 18:22Z | Continue working toward the active session goal. MISSION SUBMIT | rescore 9/10 with seeded conflict |
