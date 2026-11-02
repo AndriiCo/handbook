@@ -188,3 +188,119 @@ RUN (operator-run; prepared, never run against production):
    (+https://andrii.ai/apostille)"`, then archive-package.
 2. Mon/Tue: Rust crawler over T0–T2, then archive-package.
 3. Hand the operator files/ + SHA256SUMS for the hermes site.
+
+ADDENDUM 2 (operator order 2026-11-02, verbatim). The subagent rules of
+push-plan.md still apply: disjoint paths, the builder alone merges, gates,
+submits and deploys.
+
+STOP-THE-LINE (builder, before any other merge)
+B1 Deploy blocker: crates/notify/src/lib.rs:38-40 runs `ALTER TABLE notify_subscription ADD
+   COLUMN unsub_blob`, and xtask/ops/ship-release.sh:74-76 aborts on any added ALTER against
+   live 3836bfb.
+   - Move the sealed token into `CREATE TABLE IF NOT EXISTS notify_unsub(sub_id INTEGER
+     PRIMARY KEY, blob BLOB NOT NULL)` and delete the ALTER.
+   - Test: a DB created by 3836bfb's notify schema opens, mints and stores tokens without
+     ALTER.
+   - Run ship-release.sh's schema grep locally against 3836bfb and show it passes.
+B2 Public URLs: everything built from cfg.auth_origin (crates/web/src/main.rs:1018-1092) uses
+   https://admin.andrii.ai in production, because the setup wizard says auth.origin = the admin
+   origin (web/src/lib/admin/setup-guides.js:90-98). Live today: dossier canonical, og:url,
+   JSON-LD url and every sitemap URL point at the IP-gated admin host.
+   - Add one public_origin() = "https://{net.public_host}" and use it for: unfurl
+     canonical/og/JSON-LD, sitemap, the Google/Apple/Meta OAuth redirect URIs (the callbacks
+     are served on the public host), magic-link base, notify base, Meta delete-status base.
+   - auth.origin stays the staff WebAuthn origin only. Fix the wizard copy.
+   - Tests: auth.origin=https://admin.andrii.ai + net.public_host=andrii.ai → every public URL
+     on andrii.ai.
+   - Ask me, don't guess, whether production customer OAuth/passkey sign-in works today.
+B3 .gitignore: /.local/ (it holds a raw KEK) and /archive/. Make crates/web/build.rs fall back
+   to "unknown" when .git is absent.
+B4 Tweak xtask/ops/a2-record.py (unless SA-6 open-weights owns it):
+   - record per-model seconds and usage in each verdict JSON;
+   - fail loudly when SAM returns 0 boxes on the clean sample.
+   I re-run ops-a2-record.sh after the deploy: production replays carry boxes: [] today.
+B5 Truth fixes:
+   - README "approvals run against the Meta API" (they don't call a model);
+   - operator-today.md header (still says 69ca7fa; production is 3836bfb) plus the missing
+     prod-after record for that deploy.
+DEPLOY ORDER (given now): ship the first stamped, staging-green SHA that contains B1-B5 plus
+whatever below merged by Mon 20:00 PST, with --allow-today-overlap, by Mon 22:00 PST. No
+deploy after 23:59.
+
+SUBAGENTS, start now, disjoint paths
+SA-9 "gate" (ideas 2, 12, 14, 1). Owns crates/handbook-agent/src/analyze.rs, the `value` schema
+in crates/handbook-agent/src/model.rs (~330), xtask/src/eval.rs, the accept-with-edit check in
+crates/web/src/approval.rs (~347-356), web/src/lib/public-ui/{guide.js,CitationMark.svelte},
+the dossier Evidence popover in web/src/routes/(public)/authority/[slug]/+page.svelte, and their
+tests.
+- Reject empty, whitespace-only or <2-character values (validator + schema minLength).
+- Accept-with-edit: when the edited statement is `field: value`, its value must be in the
+  citation quote (same normalization); else 422 with the reason.
+- markQuote highlights the exact value span (normalized match keeping digits and $/:/-); unit
+  test over all 26 gold cases: 26/26 marked (today 14/26).
+- "Source" links open the page at our quote with a text fragment #:~:text=<start>,<end>
+  (percent-encode, escape - & ,); plain URL for .pdf.
+- `cargo xtask eval --planted`: deterministic mutations of the gold set (value swap, span
+  moved, digit change, empty value, truncated value, dropped "not"/"only", wrong topic) → a
+  caught/missed table; after the fixes, report before → after.
+- Add `planted` and `misses[]` to quality.json (new fields only; home reads quote_found_rate).
+- README eval card: n=26 synthetic; planted N/N caught; the misses; why topic_accuracy
+  understates (one gold topic per case, several drafts per case).
+SA-10 "visible-checks" (ideas 23, 3, 22, 6). Owns crates/handbook-agent/src/runner.rs (attempt
+recording), crates/web/src/draft.rs, web/src/routes/(admin)/trace/+page.svelte,
+web/src/routes/(admin)/review/+page.svelte, the dossier ledger "approved Ns ago" in
+web/src/lib/public-ui/handbook.js, and their tests.
+- Record every attempt (n, refused/truncated/validation error kinds) in RunReport → run view
+  → run_finished event. The trace shows e.g. "attempt 1: 2 rejected (value not in quote) →
+  retry → attempt 2: 3 proposed", with cached and reasoning tokens.
+- One `analyze.rejected` audit row per rejected record (kind, topic, field, value ≤200 chars,
+  span) inside the existing transaction; staff GET /draft-runs/{id}/rejections.
+- /review gains "Blocked by the verifier" with a counter.
+- /review sorts riskiest first (changed value vs live sibling, conflict, missing citation,
+  low-trust source) with a one-word badge saying why.
+- The dossier ledger says "approved Ns ago".
+- Keep the demo's exact strings ("Review queue", "Accept", "Fact #7 decided: accepted.",
+  "Trace console").
+SA-11 "up-fixes" (judges). Owns xtask/src/up.rs, rust-toolchain.toml, .nvmrc. The builder applies
+web/package.json and its lock.
+- Accept Node >=24.
+- engines {"node": ">=24", "npm": ">=11"}; with npm 10, print the one-line fix or fall back to
+  `npm ci --legacy-peer-deps` with a note.
+- Stub mode must not publish a 0% quality chip: either install the recorded production
+  quality.json, labelled "recorded production eval, 2026-11-01", or hide the chip when model
+  is stub.
+- The staff passkey works on the loopback admin port: allow http://localhost:18319 as a
+  WebAuthn origin under the dev seam only; print localhost URLs, never 127.0.0.1.
+- wait_healthy stops when web exits.
+- rust-toolchain.toml targets += x86_64-unknown-linux-gnu.
+- Then RO-2 (read-only judge dry run): a fresh clone on Node 24/npm 11 AND Node 22/npm 10,
+  README followed literally; report every stumble.
+SA-12 "crawler-fixes" (repo-only; by Wed 10:00). Owns crates/ingest/src/warc.rs,
+xtask/src/crawl.rs, xtask/src/archive.rs.
+- SSRF: on every hop resolve and reject loopback, RFC 1918, link-local, CGNAT, ULA, metadata;
+  pin the resolved IP.
+- robots.txt per RFC 9309 (group matching, * and $ wildcards), cached per host, Crawl-delay
+  honoured; a redirect to a new host re-checks robots and politeness.
+- Wire fidelity: no transparent gzip (or record the real request headers); Host with port;
+  drop Transfer-Encoding for de-chunked bodies; UUID v4 bits.
+- CSVs exactly per review §13: manifest per URL with warc_offset/warc_length; authorities per
+  authority; coverage per party with hague_status and coverage_pct.
+- Standard CDXJ (SURT key; url, offset, length, filename).
+- WACZ 1.1: datapackage.json hash+bytes, pages.jsonl header, ZIP64, streamed, not in memory.
+- Validate with `warcio check` and `wacz validate`; attach the output.
+SA-13 "agent-cites-us" (idea 11; Meta tooling breadth; repo-only by Wed). Owns xtask/src/ask.rs
+(new) and examples/agent-cites/**.
+- `cargo xtask ask "<question>" --slug usa-wa-sos`: Muse Spark with function calling and ONE
+  tool, lookup_authority(slug), backed by GET /api/v1/authorities/{slug}/facts on a base URL
+  (production, staging or localhost).
+- The answer must quote verbatim and cite source_url + captured_at; refuse when no fact covers
+  the question.
+- Record one live staging run as a fixture plus a 10-second demo beat. model-gate stays green.
+OPTIONAL SA-14 "source-changed" (idea 25), only if staging or production has ≥2 captures of the
+same source.
+- Per fact: "re-confirmed on <date>" when the quote is in the newest capture, amber "source
+  changed" when not.
+- Additive public field; dossier badge. Check the data first and report the counts.
+
+REPORT every 2 hours: subagent | state | branch/SHA | tests; staging SHA + score; production
+version + scoreboard; what waits on me.
