@@ -179,3 +179,4 @@
 | 276 | 2026-11-02 09:31Z | Merge sub/gate + queue/attempt fix | 54 agent, 301 web, 132 xtask |
 | 277 | 2026-11-02 09:36Z | Merge sub/ask + wire ask arm | 143 xtask, replay verified |
 | 278 | 2026-11-02 09:44Z | wait_healthy test hermetic (plant red) | closed port, proven live |
+| 279 | 2026-11-02 09:55Z | Staging accept f861e44: 9/10 + demo | stamp 366s, Run 15 record |

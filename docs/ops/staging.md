@@ -422,3 +422,25 @@ above verbatim).
   on an explicit operator order, ready by 22:00 PST, never after
   Mon 23:59 PST; still needs the unit-file root step + prod
   approvals + brand SVGs + S1.
+
+## Run 15 (2026-11-02, f861e44) — 9/10 kept, B1-B5 + all lanes
+
+- First stamp attempt for a27f13d failed the plant gate on
+  `up::tests::wait_stops_when_web_exits` (expected Exited, got
+  Healthy): the test probes fixed port 18318 and staging serves
+  200 there during the gate — a Mac-green/plant-red race. Fixed
+  in P278 (port-parameterized `wait_healthy_on`, test uses a
+  freshly closed port; proven with a live 200-server on 18318).
+- Plant stamp `acceptance/f861e44ae32e.json` (`ci_green: true`,
+  run `20261102-094502-f861e44`): setup 1 s, deps 6 s,
+  gate 217 s, package 138 s, stamp 09:51:15Z. Plant total 366 s.
+- Exact checkout via xfer ref (`xfer-p278`), native release
+  rebuild 35 s + both SPAs, kill-by-PID 2768464 + `setsid -f`
+  restart 3 s; `healthz` → `0.1.0+f861e44`. DB reused.
+- Scoreboard ON plant 9/10 in 16 s, only S1 red
+  (operator-owned). Live demo take 3/3 in 9 s on the exact SHA.
+- Deploy candidate: stamp + 9/10 + demo 3/3 all on f861e44
+  (supersedes a39495a). Contains B1-B5 + SA-7..SA-13. Second
+  Monday deploy only on an explicit operator order, ready by
+  22:00 PST, never after Mon 23:59 PST; still needs the unit-file
+  root step + prod approvals + brand SVGs + S1.
