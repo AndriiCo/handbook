@@ -14,12 +14,15 @@ list reads once at boot).
 Wave-2 merged since: SA-18 egypt-chain, SA-17 north-america-106
 (106/106 authorities), SA-21 walk-in reports + wiring (P305),
 SA-15 promises-readme; P304 closed the release-train gap (no
-day gate, /healthz settle poll). Both stamped `ci_green`
-(P304 17:31Z, P305 17:37Z). Staging-green on `bde970e`
-(Run 19: 9/10, only S1 red, demo 3/3) — say "deploy now" and
-the builder ships it via `release-train.sh`. SA-14 parked:
-max 1 capture per source on prod and staging, precondition
-needs ≥2.
+day gate, /healthz settle poll). All stamped `ci_green`
+(P304 17:31Z, P305 17:37Z, tip `4dcd234` 17:52Z). Staging-green
+on `bde970e` (Run 19: 9/10, only S1 red, demo 3/3); the tip
+adds README/docs only, so the binary + SPAs are identical —
+deploy candidate is `4dcd234`. Say "deploy now" and the builder
+ships it via `release-train.sh`. RO-2 `up --check` green on the
+tip in a fresh clone (Node v26 here; the 24/22 matrix pending).
+SA-14 parked: max 1 capture per source on prod and staging,
+precondition needs ≥2.
 
 Your top lines now (details in Still-open below):
 1. Approvals in `/review` (≥8 per slug, keep 2 per slug for the

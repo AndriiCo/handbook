@@ -444,6 +444,14 @@ above verbatim).
   north-america-106, SA-21 walk-in reports + wiring, P304
   release-train gap). Ships on the operator's next "deploy
   now" via `release-train.sh` (no day gate anymore).
+- Tip `4dcd234` stamped `ci_green: true` (run
+  `20261102-174624-4dcd234`, 17:52:29Z; SA-15 merge
+  `294c5c2` also queued). README/docs-only since bde970e, so
+  the serving bits are identical — candidate moves to the tip.
+  RO-2 `up --check` green on the tip in a fresh local clone
+  (healthz + authorities + setup/status 200; Node v26, the
+  24/22 matrix still pending; `--from-archive` still needs a
+  crawl package).
 
 ## Run 18 (2026-11-02, 2b4bc8d) — 9/10 kept, login-padding fix accepted
 
