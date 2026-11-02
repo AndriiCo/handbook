@@ -139,6 +139,63 @@
 		return `${Math.floor(hours / 24)}d ago`;
 	}
 
+	// Riskiest first: changed value vs live sibling, conflict, missing
+	// citation, low-trust source. The one-word badge says why.
+	const TRUSTED = new Set(['official', 'staff_verified']);
+
+	function riskOf(item: QueueItem): { rank: number; badge: string | null } {
+		if (item.diff) return { rank: 0, badge: 'Changed' };
+		if (item.blast_radius?.conflict) return { rank: 1, badge: 'Conflict' };
+		if (!item.citations || item.citations.length === 0) return { rank: 2, badge: 'Uncited' };
+		if (!TRUSTED.has(item.provenance?.trust)) return { rank: 3, badge: 'Low-trust' };
+		return { rank: 4, badge: null };
+	}
+
+	let sorted = $derived(
+		items
+			.map((item, index) => ({ item, index }))
+			.sort((a, b) => riskOf(a.item).rank - riskOf(b.item).rank || a.index - b.index)
+			.map((row) => row.item)
+	);
+
+	interface BlockedItem {
+		id: number;
+		at: number;
+		authority_slug: string;
+		attempt: number;
+		kind: string;
+		topic: string;
+		field: string;
+		value: string;
+		span_start: number;
+		span_end: number;
+	}
+
+	let blocked = $state<BlockedItem[]>([]);
+	let blockedCount = $state(0);
+	let blockedState = $state<'loading' | 'ready' | 'failed'>('loading');
+	let blockedError = $state<string | null>(null);
+
+	// Records the verifier refused (the staff
+	// `/draft-runs/recent` endpoint reads the `analyze.rejected` audit
+	// rows). Failed reads keep the queue usable — this section alone
+	// reports the error.
+	async function loadBlocked() {
+		blockedState = 'loading';
+		blockedError = null;
+		try {
+			const res = await fetch(`${api()}/draft-runs/recent?limit=20`);
+			if (!res.ok) throw new Error(`blocked -> ${res.status}`);
+			const body = await res.json();
+			blocked = Array.isArray(body?.rejections) ? body.rejections : [];
+			blockedCount = typeof body?.count === 'number' ? body.count : blocked.length;
+			blockedState = 'ready';
+		} catch (err) {
+			blockedError = err instanceof Error ? err.message : 'Blocked list failed.';
+			blockedState = 'failed';
+		}
+	}
+
 	// Word-level change marks via common prefix/suffix trim (page
 	// display only — the server stores the verbatim statements).
 	interface DiffSeg {
@@ -264,6 +321,7 @@
 		void loadQueue();
 		void loadRules();
 		void loadSuppressions();
+		void loadBlocked();
 		const unsub = subscribe('proposals', (msg) => {
 			void onProposal(msg);
 		});
@@ -468,9 +526,10 @@
 	{:else}
 		<p class="text-sm text-ink-muted">{queueCount} proposed</p>
 		<ol class="m-0 mt-4 list-none p-0 pb-8">
-			{#each items as item (item.id)}
+			{#each sorted as item (item.id)}
 				{@const card = ui[item.id]}
 				{@const decision = decided[item.id]}
+				{@const risk = riskOf(item)}
 				<li class="border-b border-line py-4">
 					{#if decision}
 						<p class="m-0 font-bold" role="status">
@@ -486,6 +545,11 @@
 								<span class="inline-block rounded border border-line bg-surface-2 px-2 py-0.5 text-sm font-bold">
 									{item.topic}
 								</span>
+								{#if risk.badge}
+									<span class="inline-block rounded border border-warning bg-warning-bg px-2 py-0.5 text-sm font-bold">
+										{risk.badge}
+									</span>
+								{/if}
 								<span class="text-sm text-ink-muted">
 									by {item.created_by} · {age(item.created_at)}
 								</span>
@@ -721,6 +785,42 @@
 				</button>
 			</p>
 		{/if}
+	{/if}
+</section>
+
+<section aria-labelledby="blocked">
+	<h2 id="blocked">Blocked by the verifier</h2>
+	{#if blockedState === 'ready'}
+		<p class="text-sm text-ink-muted">{blockedCount} blocked</p>
+	{/if}
+	<p class="max-w-[60rem] text-sm text-ink-muted">
+		Records the verifier refused — unknown topic, bad span, or a value outside its
+		quote. Fix the evidence and re-draft; nothing here reaches the dossier.
+	</p>
+	{#if blockedState === 'failed'}
+		<p class="font-bold text-error" role="alert">{blockedError}</p>
+		<p><button type="button" onclick={loadBlocked}>Retry</button></p>
+	{:else if blockedState === 'ready' && blocked.length === 0}
+		<p class="text-ink-muted">Nothing blocked — every recent draft passed the verifier.</p>
+	{:else if blockedState === 'ready'}
+		<ul class="m-0 mt-4 list-none p-0 pb-8">
+			{#each blocked as row (row.id)}
+				<li class="border-b border-line py-[0.7rem]">
+					<p class="m-0">
+						<span class="font-mono text-sm">{row.authority_slug}</span>
+						<span class="inline-block rounded border border-line bg-surface-2 px-2 py-0.5 text-sm font-bold">
+							{row.topic}
+						</span>
+						<span class="text-sm text-ink-muted">
+							attempt {row.attempt} · bytes {row.span_start}–{row.span_end}
+						</span>
+					</p>
+					<p class="m-0 text-sm">
+						<span class="font-bold">{row.kind}</span> — {row.field}: {row.value}
+					</p>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 </section>
 
