@@ -68,11 +68,15 @@ run_build() { # $1=run $2=srcdir
     cp -r web/build-admin/. \"\$OUT/spa-admin/\"
     cp -r packs/. \"\$OUT/packs/\" 2>/dev/null || mkdir -p \"\$OUT/packs\"
     cp -r crates/web/static/. \"\$OUT/static/\" 2>/dev/null || mkdir -p \"\$OUT/static\"
+    GLIBC=\$(ldd --version 2>/dev/null | head -n 1); GLIBC=\${GLIBC:-no-ldd}
+    printf '%s\n' \"\$GLIBC\" >\"\$OUT/glibc.txt\"
     jq -n --arg run '$run' --arg sha \"\$(jq -r .sha '$ROOT/running/$run.json')\" \
       --arg cargo \"\$(cargo --version)\" --arg rustc \"\$(rustc --version)\" \
       --arg node \"\$(node --version)\" --arg pw \"\${PW_CHANNEL:-bundled}\" \
-      '{run:\$run,sha:\$sha,cargo:\$cargo,rustc:\$rustc,node:\$node,playwright:\$pw}' \
+      --arg glibc \"\$GLIBC\" \
+      '{run:\$run,sha:\$sha,cargo:\$cargo,rustc:\$rustc,node:\$node,playwright:\$pw,glibc:\$glibc}' \
       >\"\$OUT/build-info.json\"
+    (cd \"\$OUT\" && sha256sum web xtask build-info.json glibc.txt >SHA256SUMS)
     SHAX=\$(jq -r .sha '$ROOT/running/$run.json')
     STAMP=\$(printf %s \"\$SHAX\" | cut -c1-12)
     jq -n --arg sha \"\$SHAX\" --arg run '$run' --arg out \"\$OUT\" \
