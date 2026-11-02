@@ -89,11 +89,11 @@ export const STEPS = [
 		keys: [
 			{ key: 'auth.rp_id', type: 'text', label: 'RP ID', hint: 'Required. The effective domain of the admin host (no scheme, no port).', placeholder: 'admin.andrii.ai' },
 			{ key: 'auth.rp_name', type: 'text', label: 'RP name', hint: 'Required. Human name shown by authenticators during ceremonies.', placeholder: 'Apostille Handbook (staff)' },
-			{ key: 'auth.origin', type: 'text', label: 'Origin', hint: 'Required. Exact admin origin served over TLS.', placeholder: 'https://admin.andrii.ai' },
+			{ key: 'auth.origin', type: 'text', label: 'Origin', hint: 'Required. Staff WebAuthn origin ONLY (exact admin origin over TLS) — public links use net.public_host.', placeholder: 'https://admin.andrii.ai' },
 			{ key: 'admin.mtls_off', type: 'bool', label: 'Disable staff mTLS', hint: 'Keep OFF (mTLS on). Break-glass only — enrol and sessions normally require certs.', placeholder: '' }
 		],
 		guide: {
-			intro: 'Three strings, no console: they must describe the admin origin precisely. The wizard cannot check them — a typo fails at enrolment.',
+			intro: 'Three strings, no console: they must describe the staff WebAuthn origin precisely (never the public host). The wizard cannot check them — a typo fails at enrolment.',
 			steps: [
 				'Set the RP ID to the admin host bare domain and the origin to its full https URL (trailing slash never).',
 				'Pick an RP display name your staff will recognize on their authenticator prompts.',

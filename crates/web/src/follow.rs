@@ -310,7 +310,7 @@ pub struct WorkerCfg {
     pub kek: Option<Arc<config::Kek>>,
     /// `{origin}/apostille` (confirm/unsubscribe links).
     pub base: String,
-    /// Bare `{origin}` (`build_digest` adds `/apostille/authority/…`
+    /// Bare public origin (`build_digest` adds `/apostille/authority/…`
     /// itself — passing `base` here doubled the segment on staging).
     pub origin: String,
 }

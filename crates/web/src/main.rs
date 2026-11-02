@@ -891,6 +891,14 @@ fn reload_admin_tls(
 /// over plain HTTP, and on first issuance there is no certificate
 /// yet to complete a redirected HTTPS fetch — so the redirector
 /// answers challenges itself instead of bouncing them.
+/// Customer-facing origin: `https://{net.public_host}`. Unfurl
+/// canonical/og/JSON-LD, the sitemap, OAuth callbacks, magic links,
+/// notify links and the Meta delete-status base all build from this.
+/// `auth.origin` stays the staff WebAuthn origin only.
+fn public_origin(public_host: &str) -> String {
+    format!("https://{}", public_host.trim_end_matches('/'))
+}
+
 fn redirect_router(public_host: String, acme_dir: &str) -> Router {
     Router::new()
         .nest_service("/.well-known/acme-challenge", ServeDir::new(acme_dir))
@@ -984,6 +992,10 @@ async fn main() {
             "WARNING: admin.mtls_off — local-dev seams on (loopback admin hosts, test cert header; local dev only)"
         );
     }
+    // B2: every customer-facing URL builds from the public origin,
+    // never from the staff WebAuthn origin (`auth.origin` feeds only
+    // `build_webauthn` below).
+    let pub_origin = public_origin(&cfg.public_host);
     let state = AppState {
         spa_index: std::path::Path::new(&cfg.spa_dir).join("index.html"),
         static_dir: PathBuf::from(&cfg.static_dir),
@@ -1021,10 +1033,7 @@ async fn main() {
             (Some(id), Some(secret)) => Some(oauth::GoogleCfg::from_values(
                 id,
                 secret.clone(),
-                &format!(
-                    "{}/auth/google/callback",
-                    cfg.auth_origin.trim_end_matches('/')
-                ),
+                &format!("{pub_origin}/auth/google/callback"),
             )),
             _ => {
                 eprintln!(
@@ -1045,10 +1054,7 @@ async fn main() {
                     team,
                     kid,
                     key.clone(),
-                    &format!(
-                        "{}/auth/apple/callback",
-                        cfg.auth_origin.trim_end_matches('/')
-                    ),
+                    &format!("{pub_origin}/auth/apple/callback"),
                 ))
             }
             _ => {
@@ -1062,10 +1068,7 @@ async fn main() {
             (Some(id), Some(secret)) => Some(oauth_meta::MetaCfg::from_values(
                 id,
                 secret.clone(),
-                &format!(
-                    "{}/auth/meta/callback",
-                    cfg.auth_origin.trim_end_matches('/')
-                ),
+                &format!("{pub_origin}/auth/meta/callback"),
             )),
             _ => {
                 eprintln!(
@@ -1075,17 +1078,14 @@ async fn main() {
             }
         },
         mailer: magic::mailer_from_config(&cfg, std::path::Path::new(store_dir.as_str())),
-        magic_link_base: format!("{}/apostille/login", cfg.auth_origin.trim_end_matches('/')),
+        magic_link_base: format!("{pub_origin}/apostille/login"),
         notify_poke: std::sync::Arc::new(tokio::sync::Notify::new()),
         notify_enabled: cfg.notify_enabled,
         notify_daily_cap: cfg.notify_daily_cap,
         notify_postal: cfg.notify_postal_address.clone(),
         notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
-        notify_base: format!("{}/apostille", cfg.auth_origin.trim_end_matches('/')),
-        meta_delete_status_base: format!(
-            "{}/auth/meta/delete-status",
-            cfg.auth_origin.trim_end_matches('/')
-        ),
+        notify_base: format!("{pub_origin}/apostille"),
+        meta_delete_status_base: format!("{pub_origin}/auth/meta/delete-status"),
     };
     // Follower notifications (phase 1 email): in-process worker
     // (the ACME-renewal precedent), poke-woken plus a 60 s tick for
@@ -1100,7 +1100,7 @@ async fn main() {
             mailer: state.mailer.clone(),
             kek: state.kek.clone(),
             base: state.notify_base.clone(),
-            origin: cfg.auth_origin.trim_end_matches('/').to_string(),
+            origin: pub_origin.clone(),
         },
         state.notify_poke.clone(),
     );
@@ -2472,6 +2472,31 @@ mod tests {
             .unwrap()
             .to_string();
         assert_eq!(location, "https://example.test/apostille/order?q=1");
+    }
+
+    /// B2: with `auth.origin=https://admin.andrii.ai` (staff WebAuthn)
+    /// and `net.public_host=andrii.ai`, every customer-facing URL the
+    /// state build composes must land on the public host — never the
+    /// IP-gated admin host.
+    #[test]
+    fn public_urls_use_public_host() {
+        let pub_origin = public_origin("andrii.ai");
+        assert_eq!(pub_origin, "https://andrii.ai");
+        for url in [
+            format!("{pub_origin}/auth/google/callback"),
+            format!("{pub_origin}/auth/apple/callback"),
+            format!("{pub_origin}/auth/meta/callback"),
+            format!("{pub_origin}/auth/meta/delete-status"),
+            format!("{pub_origin}/apostille/login"),
+            format!("{pub_origin}/apostille"),
+            format!("{pub_origin}/apostille/authority/vietnam"),
+        ] {
+            assert!(
+                url.starts_with("https://andrii.ai/"),
+                "public URL on admin host: {url}"
+            );
+            assert!(!url.contains("admin.andrii.ai"), "admin leak: {url}");
+        }
     }
 
     /// Regression (2026-10-27 prod incident): the pre-issuance
