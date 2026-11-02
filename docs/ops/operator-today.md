@@ -9,7 +9,10 @@ SA-6 code, gold set 30) and Run 18 stamped + staging-green on
 live demo 3/3; adds P298 login padding). P301 (`7eaf0df`, xtask-only) fixes the RO-2 judge dry run:
 `cargo xtask up --check` passes on a clean clone (bootstrap
 authorities for the pack-less `france-legalisation`/`mexico-sre`
-gold slugs); plant stamp queued as `20261102-123912-7eaf0df`.
+gold slugs); plant stamp `acceptance/7eaf0df863c8.json`
+(`ci_green: true`, run `20261102-123912-7eaf0df`, 12:45Z).
+Only `xtask/src/up.rs` changed since `2b4bc8d`, so the production
+binary + SPAs are identical — `2b4bc8d` stays the deploy candidate.
 Say "deploy now" and the
 builder ships `2b4bc8d` (second Monday deploy,
 `--allow-today-overlap`; ready by 22:00 PST, never after Mon
