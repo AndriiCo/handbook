@@ -24,22 +24,6 @@ pub const CURSOR_FACT_ACCEPT: &str = "fact_accept";
 /// `auth::migrate_auth_tables`): no older binary opens a migrated DB,
 /// so a migration here never strands a rollback.
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
-    let has_unsub_blob: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('notify_subscription')
-         WHERE name = 'unsub_blob'",
-        [],
-        |row| row.get(0),
-    )?;
-    if has_unsub_blob == 0 {
-        // `CREATE TABLE` above already carries the column for fresh
-        // DBs; this backfills pre-existing ones (the voice
-        // `script_id` precedent). Existing rows keep their hash and
-        // mint the sealed blob on first use (`stable_unsub_token`).
-        let _ = conn.execute(
-            "ALTER TABLE notify_subscription ADD COLUMN unsub_blob BLOB",
-            [],
-        );
-    }
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS notify_subscription(
            id INTEGER PRIMARY KEY,
@@ -50,10 +34,13 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
            confirm_hash TEXT,
            confirm_expires_at INTEGER,
            unsub_hash TEXT NOT NULL,
-           unsub_blob BLOB,
            created_at INTEGER NOT NULL,
            confirmed_at INTEGER,
            UNIQUE(authority_slug, email_hash)
+         );
+         CREATE TABLE IF NOT EXISTS notify_unsub(
+           sub_id INTEGER PRIMARY KEY REFERENCES notify_subscription(id),
+           blob BLOB NOT NULL
          );
          CREATE TABLE IF NOT EXISTS notify_outbox(
            id INTEGER PRIMARY KEY,
@@ -168,12 +155,11 @@ pub fn subscribe(
         }
         None => {
             let unsub = mint_token();
-            let unsub_blob = config::encrypt_value(kek, "notify.unsub", 1, unsub.as_bytes());
             conn.execute(
                 "INSERT INTO notify_subscription(authority_slug, email_hash, email_blob,
-                     status, confirm_hash, confirm_expires_at, unsub_hash, unsub_blob,
+                     status, confirm_hash, confirm_expires_at, unsub_hash,
                      created_at)
-                 VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?6, ?7, ?8)",
+                 VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?6, ?7)",
                 rusqlite::params![
                     authority_slug,
                     hash,
@@ -181,12 +167,19 @@ pub fn subscribe(
                     token_hash(&confirm_token),
                     now + CONFIRM_TTL_SECS,
                     token_hash(&unsub),
-                    unsub_blob,
                     now
                 ],
             )?;
+            let sub_id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO notify_unsub(sub_id, blob) VALUES (?1, ?2)",
+                rusqlite::params![
+                    sub_id,
+                    config::encrypt_value(kek, "notify.unsub", 1, unsub.as_bytes()),
+                ],
+            )?;
             Ok(SubscribeOutcome {
-                sub_id: conn.last_insert_rowid(),
+                sub_id,
                 confirm_token: Some(confirm_token),
             })
         }
@@ -265,19 +258,22 @@ pub fn unsubscribe(conn: &Connection, token: &str) -> rusqlite::Result<bool> {
 
 /// One stable one-click token per subscription: every digest
 /// footer carries the same URL, so a saved footer link keeps
-/// working. The plaintext is KEK-sealed at rest (the email-blob
-/// precedent); only its hash is indexed. Rows minted before the
-/// sealed blob existed backfill once, on first use.
+/// working. The plaintext is KEK-sealed at rest in `notify_unsub`
+/// (the email-blob precedent); only its hash is indexed.
+/// Subscriptions minted before the sealed blob existed backfill
+/// once, on first use — no table reshape, just a new row.
 pub fn stable_unsub_token(
     conn: &Connection,
     kek: &config::Kek,
     sub_id: i64,
 ) -> rusqlite::Result<String> {
-    let (_hash, blob): (String, Option<Vec<u8>>) = conn.query_row(
-        "SELECT unsub_hash, unsub_blob FROM notify_subscription WHERE id = ?1",
-        [sub_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )?;
+    let blob: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT blob FROM notify_unsub WHERE sub_id = ?1",
+            [sub_id],
+            |row| row.get(0),
+        )
+        .optional()?;
     if let Some(blob) = blob
         && let Ok(bytes) = config::decrypt_value(kek, "notify.unsub", 1, &blob)
         && let Ok(token) = String::from_utf8(bytes)
@@ -288,11 +284,14 @@ pub fn stable_unsub_token(
     }
     let token = mint_token();
     conn.execute(
-        "UPDATE notify_subscription SET unsub_hash = ?1, unsub_blob = ?2 WHERE id = ?3",
+        "UPDATE notify_subscription SET unsub_hash = ?1 WHERE id = ?2",
+        rusqlite::params![token_hash(&token), sub_id],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO notify_unsub(sub_id, blob) VALUES (?1, ?2)",
         rusqlite::params![
-            token_hash(&token),
+            sub_id,
             config::encrypt_value(kek, "notify.unsub", 1, token.as_bytes()),
-            sub_id
         ],
     )?;
     Ok(token)
@@ -901,6 +900,67 @@ mod tests {
         assert_eq!(stable_unsub_token(&conn, &kek, id).expect("stable"), first);
         assert!(unsub_known(&conn, &first).expect("known"));
         assert!(!unsub_known(&conn, &unsub).expect("rotated away"));
+    }
+
+    /// Deploy-blocker regression (B1): a database carrying the live
+    /// 3836bfb notify schema — `notify_subscription` with no blob
+    /// column — opens under the new `migrate`, mints and stores
+    /// stable tokens, and never gains a reshaped column. The live
+    /// DDL below matches 3836bfb's `migrate` shape.
+    #[test]
+    fn live_3836bfb_schema_mints_tokens_without_reshape() {
+        let conn = Connection::open_in_memory().expect("memory db");
+        conn.execute_batch(
+            "CREATE TABLE notify_subscription(
+               id INTEGER PRIMARY KEY,
+               authority_slug TEXT NOT NULL,
+               email_hash TEXT NOT NULL,
+               email_blob BLOB NOT NULL,
+               status TEXT NOT NULL DEFAULT 'pending',
+               confirm_hash TEXT,
+               confirm_expires_at INTEGER,
+               unsub_hash TEXT NOT NULL,
+               created_at INTEGER NOT NULL,
+               confirmed_at INTEGER,
+               UNIQUE(authority_slug, email_hash)
+             );",
+        )
+        .expect("live schema");
+        let kek = kek();
+        let (blob, hash) = seal_email(&kek, "a@example.com");
+        let unsub = mint_token();
+        conn.execute(
+            "INSERT INTO notify_subscription(authority_slug, email_hash, email_blob,
+                 status, unsub_hash, created_at, confirmed_at)
+             VALUES ('vietnam', ?1, ?2, 'active', ?3, 100, 101)",
+            rusqlite::params![hash, blob, token_hash(&unsub)],
+        )
+        .expect("legacy row");
+        let id = conn.last_insert_rowid();
+        migrate(&conn).expect("new migrate opens the live DB");
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('notify_subscription')")
+            .expect("pragma")
+            .query_map([], |row| row.get(0))
+            .expect("cols")
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(
+            !cols.iter().any(|c| c == "unsub_blob"),
+            "no reshaped column on the live table: {cols:?}"
+        );
+        let first = stable_unsub_token(&conn, &kek, id).expect("mint");
+        assert_eq!(stable_unsub_token(&conn, &kek, id).expect("stable"), first);
+        assert!(unsub_known(&conn, &first).expect("known"));
+        assert!(unsubscribe(&conn, &first).expect("unsub"));
+        let stored: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM notify_unsub WHERE sub_id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .expect("blob row");
+        assert_eq!(stored, 1);
     }
 
     #[test]

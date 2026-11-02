@@ -167,4 +167,5 @@
 | 264 | 2026-11-02 04:40Z | Merge sub/world-index: 130 parties | 27 world tests, 130 packs valid |
 | 265 | 2026-11-02 04:45Z | up --from-archive: import sha256 WARC | E2E crawl/pkg/import green |
 | 266 | 2026-11-02 05:10Z | Staging accept a39495a: 9/10 + demo | gate 225s, staging 58s |
-| 267 | 2026-11-02 05:15Z | ADDENDUM 2 verbatim: B1-B5 + SA-9/13 | deploy order, stop-the-line |
+| 267 | 2026-11-02 05:11Z | ADDENDUM 2 verbatim: B1-B5 + SA-9/13 | deploy order, stop-the-line |
+| 268 | 2026-11-02 05:12Z | B1: unsub blob to notify_unsub table | 13 notify, 294 web, grep clean |
