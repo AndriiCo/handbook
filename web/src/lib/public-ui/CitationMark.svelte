@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Popover from '../components/ui/popover/index.js';
-	import { domain, markQuote } from './guide.js';
+	import { domain, markQuote, sourceUrl } from './guide.js';
 
 	type Citation = { quote?: string; source_url?: string; captured_at?: string };
 
@@ -13,6 +13,7 @@
 	const host = $derived(typeof citation?.source_url === 'string' ? domain(citation.source_url) : null);
 	const when = $derived(typeof citation?.captured_at === 'string' ? String(citation.captured_at).split('T')[0] : '');
 	const quote = $derived(String(citation?.quote ?? ''));
+	const src = $derived(sourceUrl(citation?.source_url, quote));
 </script>
 
 {#if citation && quote}
@@ -30,6 +31,9 @@
 				{#if host}<span class="font-mono">{host}</span> · {/if}
 				{#if when}<span>captured {when}</span> · {/if}
 				<span>Drafted by {draftedBy} · approved by staff</span>
+				{#if src} ·
+					<a href={src} target="_blank" rel="noopener noreferrer">Source</a>
+				{/if}
 			</p>
 		</Popover.Content>
 	</Popover.Root>

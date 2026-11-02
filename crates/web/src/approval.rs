@@ -328,6 +328,27 @@ pub struct DecisionBody {
     pub suppress: Option<SuppressBody>,
 }
 
+/// Split an accept-with-edit statement of the analyser's
+/// `{field}: {value}` shape into its edited value: `Some(value)` only
+/// when the key matches the guide's field-key grammar
+/// (`[a-z][a-z0-9_]*`, colon, whitespace). Anything else is an
+/// unkeyed statement and skips the value-in-quote gate.
+fn edited_value(statement: &str) -> Option<&str> {
+    let (key, rest) = statement.split_once(':')?;
+    if !key.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        || !key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    {
+        return None;
+    }
+    let value = rest.trim_start_matches(|c: char| c.is_whitespace());
+    if rest.len() == value.len() || value.is_empty() {
+        return None;
+    }
+    Some(value)
+}
+
 /// Accept one proposed fact (banner policy: conflicts do not block).
 /// Audited as `fact_accept`, then fanned out as `fact_accepted` on
 /// the authority channel.
@@ -355,6 +376,37 @@ pub async fn accept_fact(
         }
         Some(s) => Some(s),
     };
+    // Accept-with-edit value-in-quote gate: a `field: value`
+    // replacement must keep its value inside the fact's cited quote
+    // (same normalization as the analysis validator), else the edit
+    // publishes unquoted text. A missing fact or a down store falls
+    // through to `decide`, which answers 404/503 for those.
+    if let Some(s) = statement
+        && let Some(value) = edited_value(s)
+    {
+        let inside = open(&state).and_then(|conn| {
+            let bounds: Option<(i64, i64, i64)> = conn
+                .query_row(
+                    "SELECT capture_id, citation_start, citation_end FROM fact WHERE id = ?1",
+                    rusqlite::params![id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()
+                .unwrap_or(None);
+            bounds.map(|(capture_id, start, end)| {
+                let quote = sidecar_slice(&state.store_root, capture_id, start, end);
+                handbook_agent::analyze::normalize(&quote)
+                    .contains(&handbook_agent::analyze::normalize(value))
+            })
+        });
+        if inside == Some(false) {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({"error": "edited value not in citation quote"})),
+            )
+                .into_response();
+        }
+    }
     decide(
         &state,
         &auth,
@@ -769,4 +821,44 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
         })
         .unwrap_or_default();
     (StatusCode::OK, Json(json!({"authorities": rows}))).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn edited_value_splits_keyed_statements() {
+        assert_eq!(edited_value("per_document: $8"), Some("$8"));
+        assert_eq!(edited_value("weekday: Mon-Fri 8-5"), Some("Mon-Fri 8-5"));
+        // Trailing prose after the value is part of the value.
+        assert_eq!(edited_value("a:  b with spaces"), Some("b with spaces"));
+    }
+
+    #[test]
+    fn edited_value_skips_unkeyed_statements() {
+        assert_eq!(edited_value("plain statement, no key"), None);
+        assert_eq!(edited_value("UPPER: not a key"), None);
+        assert_eq!(edited_value("no colon at all"), None);
+        assert_eq!(edited_value("field:nospace"), None);
+        assert_eq!(edited_value("field:   "), None);
+        assert_eq!(edited_value(": value"), None);
+    }
+
+    #[test]
+    fn edited_value_uses_validator_normalization() {
+        // The gate compares with the analysis validator's
+        // normalization, so case and whitespace drift still match.
+        let quote = "Walk-in customers go to Town Center 3, Tumwater.";
+        let value = edited_value("counter: town center 3, tumwater").unwrap();
+        assert!(
+            handbook_agent::analyze::normalize(quote)
+                .contains(&handbook_agent::analyze::normalize(value))
+        );
+        let estranged = edited_value("counter: $15 per document").unwrap();
+        assert!(
+            !handbook_agent::analyze::normalize(quote)
+                .contains(&handbook_agent::analyze::normalize(estranged))
+        );
+    }
 }

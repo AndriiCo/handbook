@@ -327,7 +327,7 @@ fn response_format_for(doc_ids: &[String]) -> serde_json::Value {
                             "properties": {
                                 "topic": {"type": "string", "enum": topics},
                                 "field": {"type": "string"},
-                                "value": {"type": "string"},
+                                "value": {"type": "string", "minLength": 2},
                                 "citation": {
                                     "type": "object",
                                     "properties": {
@@ -726,6 +726,13 @@ mod tests {
                 v["response_format"]["json_schema"]["schema"]["properties"]["records"]["items"]["properties"]
                     ["citation"]["properties"]["doc_id"],
                 serde_json::json!({"type": "string", "enum": ["fixture"]})
+            );
+            // Gate: single-character and empty values are refused by
+            // the API before our own BadValue validator runs.
+            assert_eq!(
+                v["response_format"]["json_schema"]["schema"]["properties"]["records"]["items"]["properties"]
+                    ["value"],
+                serde_json::json!({"type": "string", "minLength": 2})
             );
             assert!(v.get("temperature").is_none(), "sampling untouched");
             assert_eq!(v["reasoning_effort"], "medium");
