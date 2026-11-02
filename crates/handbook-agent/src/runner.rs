@@ -118,6 +118,7 @@ fn kind_label(kind: &crate::analyze::ValidationErrorKind) -> &'static str {
         ShortQuote => "short quote",
         LongQuote => "long quote",
         ValueNotInQuote => "value not in quote",
+        BadValue => "bad value",
     }
 }
 

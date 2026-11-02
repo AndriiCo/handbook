@@ -1019,13 +1019,13 @@ mod tests {
             .oneshot(request(
                 "POST",
                 "/apostille/api/v1/facts/1/accept",
-                Some(json!({"reason": "fix", "statement": "po_box: PO Box 40234, Olympia"})),
+                Some(json!({"reason": "fix", "statement": "po_box: Box 40234"})),
             ))
             .await
             .unwrap();
         let (status, v) = json(res).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(v["statement"], "po_box: PO Box 40234, Olympia");
+        assert_eq!(v["statement"], "po_box: Box 40234");
         let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
         let (statement, reason): (String, String) = conn
             .query_row(
@@ -1036,10 +1036,28 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
-        assert_eq!(statement, "po_box: PO Box 40234, Olympia");
+        assert_eq!(statement, "po_box: Box 40234");
         let envelope: serde_json::Value = serde_json::from_str(&reason).unwrap();
         assert_eq!(envelope["note"], "fix");
         assert_eq!(envelope["edit_before"], "po_box: PO Box 40234");
+    }
+
+    /// The accept-with-edit gate (SA-9): an edited value outside the
+    /// citation quote is 422, not an accept.
+    #[tokio::test]
+    async fn accept_with_edit_outside_quote_is_422() {
+        let fx = fixture();
+        let res = router(fx.state.clone())
+            .oneshot(request(
+                "POST",
+                "/apostille/api/v1/facts/1/accept",
+                Some(json!({"reason": "fix", "statement": "po_box: PO Box 40234, Olympia"})),
+            ))
+            .await
+            .unwrap();
+        let (status, v) = json(res).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(v["error"], "edited value not in citation quote");
     }
 
     #[tokio::test]
