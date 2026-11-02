@@ -40,6 +40,9 @@ pub enum ValidationErrorKind {
     LongQuote,
     /// The record value is not found inside its cited quote.
     ValueNotInQuote,
+    /// The record value is empty, whitespace-only, or a single
+    /// character: too short to anchor a verifiable claim.
+    BadValue,
 }
 
 /// Minimum cited-quote length in characters: a shorter slice cannot
@@ -49,6 +52,11 @@ pub const MIN_QUOTE_CHARS: usize = 8;
 /// Maximum cited-quote length in characters: the oracle (A1) requires
 /// `quote <= 400`, and a longer slice is evidence-dump, not a citation.
 pub const MAX_QUOTE_CHARS: usize = 400;
+
+/// Minimum record-value length in characters: an empty,
+/// whitespace-only, or single-character value cannot carry a
+/// verifiable claim (gate: values under this are [`ValidationErrorKind::BadValue`]).
+pub const MIN_VALUE_CHARS: usize = 2;
 
 /// Normalize evidence text for containment checks: lowercase with all
 /// whitespace runs collapsed to single spaces.
@@ -75,6 +83,12 @@ pub fn validate_response(
             errors.push(ValidationError {
                 record_index,
                 kind: ValidationErrorKind::UnknownTopic,
+            });
+        }
+        if record.value.trim().chars().count() < MIN_VALUE_CHARS {
+            errors.push(ValidationError {
+                record_index,
+                kind: ValidationErrorKind::BadValue,
             });
         }
         match sources.get(&record.citation.doc_id) {
@@ -397,6 +411,32 @@ mod tests {
         let errs = validate_response(&resp, &sources, &["walkin"]).expect_err("value not in quote");
         assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].kind, ValidationErrorKind::ValueNotInQuote);
+    }
+
+    #[test]
+    fn validator_rejects_short_values() {
+        let mut sources = HashMap::new();
+        sources.insert("d1".to_string(), "PO Box 40220 open late".to_string());
+        for bad in ["", "   ", "\t\n ", "x", " P "] {
+            let mut rec = record("address", "d1", 0, 20, 0.9);
+            rec.value = bad.to_string();
+            let resp = response(vec![rec]);
+            let errs = validate_response(&resp, &sources, &["address"]).expect_err("short value");
+            assert!(
+                errs.iter().any(|e| e.kind == ValidationErrorKind::BadValue),
+                "value={bad:?}: {errs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validator_accepts_two_char_value_in_quote() {
+        let mut sources = HashMap::new();
+        sources.insert("d1".to_string(), "suite 8a upstairs ok".to_string());
+        let mut rec = record("address", "d1", 0, 20, 0.9);
+        rec.value = "8a".to_string();
+        let resp = response(vec![rec]);
+        assert_eq!(validate_response(&resp, &sources, &["address"]), Ok(()));
     }
 
     #[test]

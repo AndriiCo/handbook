@@ -44,10 +44,25 @@ Model muse-spark-1.3, written to the live store, shown on the home page:
 | `value_in_quote_rate` | Share of records whose fact value appears inside its own quote | 0.969 |
 | `topic_accuracy` | Share of records filed under the correct frozen topic | 0.641 |
 
+Planted faults (`cargo xtask eval --planted`; deterministic, no
+model): **157/158 caught** after the verifier gates (105/158
+before). Per class over the 26 gold cases: value swap 26/26, span
+moved 26/26, digit change 26/26, empty value 26/26 (before 0/26),
+truncated value 26/26 (before 0/26), dropped "not"/"only" 1/2,
+wrong topic 26/26. The one miss is `dropped_negation:vn-04`:
+dropping trailing "only" from "8 Le Van Huu, Hanoi, mornings
+only" leaves a string still contained in the quote, so no
+substring gate can see it — that edit needs a human (or a judge
+model) to catch.
+
 Honest note: the gold set is 26 synthetic passages in
 `evals/authorities/`, not live government pages — it grades the
 drafter in isolation, before the quote-checker and human review add
-their own gates.
+their own gates. `topic_accuracy` understates by construction: each
+gold case carries one topic, but every case drafts several records
+(two from the stub, up to eight live), so at most one record per
+case can match — the other drafted records count as misses even
+when correctly cited.
 
 ## The problem
 

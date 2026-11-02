@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
 	GUIDE_STEPS,
 	buildGuide,
@@ -7,6 +10,7 @@ import {
 	fieldLabel,
 	markQuote,
 	parseStatement,
+	sourceUrl,
 	staleMark
 } from '../src/lib/public-ui/guide.js';
 
@@ -141,6 +145,83 @@ test('markQuote keeps source line breaks as breaks', () => {
 	const html = markQuote('Town Center 3\n243 Israel Rd SE', '243 Israel Rd SE');
 	assert.ok(html.includes('<br>'));
 	assert.ok(!html.includes('\n'));
+});
+
+test('markQuote marks the exact value span for all 26 gold cases', () => {
+	const dir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'evals', 'authorities');
+	const files = readdirSync(dir)
+		.filter((f) => f.endsWith('.json'))
+		.sort();
+	let total = 0;
+	let marked = 0;
+	const missed = [];
+	for (const f of files) {
+		const gold = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+		for (const c of gold.cases) {
+			total++;
+			const html = markQuote(c.evidence, `${c.field}: ${c.value}`);
+			const span = html.match(/<mark>(.*?)<\/mark>/s)?.[1] ?? '';
+			// The marked span, cleaned like the matcher, is the value.
+			const clean = (s) =>
+				String(s)
+					.toLowerCase()
+					.split(/\s+/)
+					.map((w) => w.replace(/^[^a-z0-9$:/-]+|[^a-z0-9$:/-]+$/g, ''))
+					.filter(Boolean)
+					.join(' ');
+			if (html.includes('<mark>') && clean(span) === clean(c.value)) marked++;
+			else missed.push(`${f} ${c.id} [${c.value}]`);
+		}
+	}
+	assert.equal(total, 26);
+	assert.deepEqual(missed, []);
+	assert.equal(marked, 26);
+});
+
+test('markQuote keeps digits and $/:/- in the span', () => {
+	assert.ok(
+		markQuote('The fee table shows $15 per document.', 'per_document: $15 per document').includes(
+			'<mark>$15 per document</mark>'
+		)
+	);
+	assert.ok(
+		markQuote('Authentication questions go to (360) 725-0344.', 'line: (360) 725-0344').includes(
+			'<mark>(360) 725-0344</mark>'
+		)
+	);
+	assert.ok(
+		markQuote('Counter hours are Mon-Fri 8-11:30 for filing.', 'weekday: Mon-Fri 8-11:30').includes(
+			'<mark>Mon-Fri 8-11:30</mark>'
+		)
+	);
+});
+
+test('sourceUrl opens the quote with a text fragment', () => {
+	const url = sourceUrl(
+		'https://example.gov/office',
+		'Walk-in customers go to Town Center 3, Tumwater, appointments preferred.'
+	);
+	assert.ok(url.startsWith('https://example.gov/office#:~:text='), url);
+	assert.ok(url.includes(','), url);
+	// `-` is escaped so the fragment parser does not split on it.
+	const frag = url.split('#:~:text=')[1];
+	assert.ok(frag.includes('%2D'), url);
+	assert.ok(!frag.replace(/%2D/g, '').includes('-'), url);
+	// `&` and `,` inside the quote are percent-encoded, not delimiters.
+	const tricky = sourceUrl('https://example.gov/x', 'one & two, three four five six seven');
+	assert.ok(tricky.includes('%26'), tricky);
+	assert.ok(tricky.includes('%2C'), tricky);
+});
+
+test('sourceUrl degrades for pdf, anchors and non-https', () => {
+	assert.equal(sourceUrl('https://example.gov/fees.pdf', 'some quote words here now'), 'https://example.gov/fees.pdf');
+	assert.equal(
+		sourceUrl('https://example.gov/fees.PDF?dl=1', 'some quote words here now'),
+		'https://example.gov/fees.PDF?dl=1'
+	);
+	assert.equal(sourceUrl('https://example.gov/x#page', 'some quote words here now'), 'https://example.gov/x#page');
+	assert.equal(sourceUrl('http://example.gov/x', 'some quote words here now'), null);
+	assert.equal(sourceUrl('https://example.gov/x', '   '), null);
 });
 
 test('domain shortens hosts, degrades gracefully', () => {

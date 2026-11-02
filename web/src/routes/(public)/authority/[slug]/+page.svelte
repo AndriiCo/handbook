@@ -23,7 +23,7 @@
 		seedLedgerEvents,
 		topicLabel
 	} from '../../../../lib/public-ui/handbook.js';
-	import { buildGuide, domain, markQuote } from '../../../../lib/public-ui/guide.js';
+	import { buildGuide, domain, markQuote, sourceUrl } from '../../../../lib/public-ui/guide.js';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -412,10 +412,11 @@
 													<blockquote class="font-quote m-0 border-l-2 border-verified pl-3 italic">
 														{@html markQuote(cite.quote, fact.statement)}
 													</blockquote>
+													{@const src = sourceUrl(cite.source_url, cite.quote)}
 													<p class="mt-2 mb-0 text-xs text-ink-muted">
-														{#if typeof cite.source_url === 'string' && cite.source_url.startsWith('https://')}
+														{#if src}
 															<a
-																href={cite.source_url}
+																href={src}
 																target="_blank"
 																rel="noopener noreferrer">Source</a
 															>

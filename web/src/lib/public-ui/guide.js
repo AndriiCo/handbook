@@ -85,46 +85,128 @@ export function domain(url) {
 }
 
 /**
- * Mark the longest statement phrase found in the quote, so the
- * citation shows which span the fact rests on. Returns HTML with
- * one `<mark>` (caller renders with `{@html}`).
+ * Escape text for the citation popover. Source quotes carry the
+ * page's line breaks (office addresses especially); HTML would
+ * collapse them into one run-on line, so they render as breaks.
+ * @param {string} s
+ */
+function escQuote(s) {
+	return String(s ?? '')
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/\n/g, '<br>');
+}
+
+/**
+ * Clean one whitespace-separated token for value matching:
+ * lowercase, strip edge punctuation, but keep digits and `$`, `/`,
+ * `:`, `-` (fees, phones, hours all hinge on them).
+ * @param {string} raw
+ */
+function cleanToken(raw) {
+	return String(raw ?? '')
+		.toLowerCase()
+		.replace(/^[^a-z0-9$:/-]+|[^a-z0-9$:/-]+$/g, '');
+}
+
+/**
+ * Mark the exact value span inside the quote, so the citation shows
+ * which span the fact rests on. The statement's value (after its
+ * `field:` key, when keyed) is tokenized with {@link cleanToken};
+ * the first contiguous token run in the quote is wrapped in one
+ * `<mark>` at its original offsets (case and punctuation kept).
+ * Falls back to the longest 2+ token sub-run, else no mark.
+ * Returns HTML (caller renders with `{@html}`).
  * @param {string} quote
  * @param {string} statement
  */
 export function markQuote(quote, statement) {
-	// Source quotes carry the page's line breaks (office addresses
-	// especially); HTML would collapse them into one run-on line, so
-	// they render as breaks in the popover.
-	const esc = (/** @type {string} */ s) =>
-		String(s ?? '')
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;')
-			.replace(/\n/g, '<br>');
-	const words = String(statement ?? '')
-		.toLowerCase()
-		.replace(/[^a-z0-9\s]/g, ' ')
+	const q = String(quote ?? '');
+	const { value } = parseStatement(statement);
+	const wanted = String(value ?? '')
 		.split(/\s+/)
-		.filter((w) => w.length > 2);
-	const ql = String(quote ?? '').toLowerCase();
-	for (let len = Math.min(12, words.length); len >= 3; len--) {
-		for (let i = 0; i + len <= words.length; i++) {
-			const phrase = words.slice(i, i + len).join(' ');
-			const idx = ql.indexOf(phrase);
-			if (idx >= 0) {
-				const q = String(quote ?? '');
-				return (
-					esc(q.slice(0, idx)) +
-					'<mark>' +
-					esc(q.slice(idx, idx + phrase.length)) +
-					'</mark>' +
-					esc(q.slice(idx + phrase.length))
-				);
+		.map(cleanToken)
+		.filter(Boolean);
+	if (wanted.length === 0) return escQuote(q);
+	/** @type {{ t: string, start: number, end: number }[]} */
+	const have = [];
+	const re = /\S+/g;
+	let m;
+	while ((m = re.exec(q)) !== null) {
+		const t = cleanToken(m[0]);
+		if (t) have.push({ t, start: m.index, end: m.index + m[0].length });
+	}
+	/**
+	 * @param {number} at
+	 * @param {string[]} run
+	 * @returns {boolean}
+	 */
+	const same = (at, run) => {
+		if (at + run.length > have.length) return false;
+		for (let k = 0; k < run.length; k++) if (have[at + k].t !== run[k]) return false;
+		return true;
+	};
+	let at = -1;
+	let len = wanted.length;
+	for (let i = 0; i + wanted.length <= have.length; i++) {
+		if (same(i, wanted)) {
+			at = i;
+			break;
+		}
+	}
+	if (at < 0 && wanted.length > 2) {
+		for (let l = wanted.length - 1; l >= 2 && at < 0; l--) {
+			for (let s = 0; s + l <= wanted.length && at < 0; s++) {
+				const sub = wanted.slice(s, s + l);
+				for (let i = 0; i + l <= have.length; i++) {
+					if (same(i, sub)) {
+						at = i;
+						len = l;
+						break;
+					}
+				}
 			}
 		}
 	}
-	return esc(String(quote ?? ''));
+	if (at < 0) return escQuote(q);
+	// The span covers the matched raw tokens; trailing edge
+	// punctuation (a sentence period, comma) is not part of the
+	// value, so it stays outside the mark. Leading characters
+	// stay: `(`, `$`, `+` usually belong to the value itself.
+	const lastRaw = q.slice(have[at + len - 1].start, have[at + len - 1].end);
+	const tail = lastRaw.match(/[^a-z0-9$:/-]+$/);
+	const span = [have[at].start, have[at + len - 1].end - (tail ? tail[0].length : 0)];
+	return escQuote(q.slice(0, span[0])) + '<mark>' + escQuote(q.slice(span[0], span[1])) + '</mark>' + escQuote(q.slice(span[1]));
+}
+
+/**
+ * A "Source" link that opens the cited page at our quote via a
+ * text fragment (`#:~:text=<start>,<end>`): the first and last five
+ * quote words, percent-encoded (`-`, `&` and `,` escaped, since
+ * they delimit the fragment). PDFs get the plain URL — most
+ * viewers jump to fragments unreliably there. Returns null for a
+ * non-https URL or an empty quote (caller renders "unavailable").
+ * @param {unknown} url
+ * @param {unknown} quote
+ * @returns {string|null}
+ */
+export function sourceUrl(url, quote) {
+	const u = String(url ?? '');
+	if (!u.startsWith('https://')) return null;
+	if (/\.pdf($|[?#])/i.test(u)) return u;
+	if (u.includes('#')) return u;
+	const words = String(quote ?? '').split(/\s+/).filter(Boolean);
+	if (words.length === 0) return null;
+	// `encodeURIComponent` already escapes `&` and `,`; `-` needs
+	// an explicit escape or the fragment parser splits on it.
+	/** @param {string} s */
+	const frag = (s) => encodeURIComponent(s).replace(/-/g, '%2D');
+	const start = words.slice(0, 5).join(' ');
+	if (words.length <= 5) return `${u}#:~:text=${frag(start)}`;
+	const end = words.slice(-5).join(' ');
+	return `${u}#:~:text=${frag(start)},${frag(end)}`;
 }
 
 /**
