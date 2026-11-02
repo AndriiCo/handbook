@@ -1,0 +1,132 @@
+{
+  "pack": "AZ",
+  "version": 1,
+  "title": "Azerbaijan — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Azerbaijan",
+      "region": "",
+      "name": "Ministry of Justice - for documents emanating from courts, public prosecutors and justice authorities, including documents certified in notarial order and state civil acts registration documents",
+      "slug": "az-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Azerbaijan",
+      "region": "",
+      "name": "Ministry of Foreign Affairs - for other documents",
+      "slug": "az-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Azerbaijan",
+      "region": "",
+      "name": "The Department of the Ministry of Foreign Affairs of the Republic of Azerbaijan in the Nakhchivan Autonomous Republic has been authorized to issue apostilles to the documents executed in the territory of Nakhchivan Autonomous Republic of the Republic of Azerbaijan",
+      "slug": "az-ca-3"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "az-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Azerbaijan (staff capture pending)."
+    },
+    {
+      "name": "www.mfa.gov.az",
+      "authority": "az-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Azerbaijan (staff capture pending)."
+    },
+    {
+      "name": "www.justice.gov.az",
+      "authority": "az-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Azerbaijan (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "az-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=198&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Azerbaijan (citation page; staff capture pending)."
+    },
+    {
+      "authority": "az-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mfa.gov.az",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=664 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "az-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.justice.gov.az",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=664 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "az-index",
+      "authority": "az-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Azerbaijan against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "az-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Azerbaijan is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "az-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Justice - for documents emanating from courts, public prosecutors and justice authorities, including documents certified in notarial order and state civil acts registration documents.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=664",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "az-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs - for other documents.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=664",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "az-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Department of the Ministry of Foreign Affairs of the Republic of Azerbaijan in the Nakhchivan Autonomous Republic has been authorized to issue apostilles to the documents executed in the territory of Nakhchivan Autonomous Republic of the Republic of Azerbaijan.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=664",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "az-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mfa.gov.az as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=664",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "az-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.justice.gov.az as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=664",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

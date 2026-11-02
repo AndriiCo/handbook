@@ -1,0 +1,117 @@
+{
+  "pack": "CO",
+  "version": 1,
+  "title": "Colombia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Colombia",
+      "region": "",
+      "name": "Ministry of Foreign Affairs, Apostille Coordination and Legalizations",
+      "slug": "co-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "co-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Colombia (staff capture pending)."
+    },
+    {
+      "name": "www.cancilleria.gov.co",
+      "authority": "co-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Colombia (staff capture pending)."
+    },
+    {
+      "name": "assets.hcch.net",
+      "authority": "co-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Colombia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "co-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=90&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Colombia (citation page; staff capture pending)."
+    },
+    {
+      "authority": "co-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.cancilleria.gov.co/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=363 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "co-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.cancilleria.gov.co/tramites_servicios/apostilla_legalizacion_en_linea",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=90&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "co-ca-1",
+      "kind": "website_official",
+      "uri": "https://assets.hcch.net/docs/bc0a0817-d312-4466-978a-29a252fb983b.pdf",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=90&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "co-index",
+      "authority": "co-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Colombia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "co-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Colombia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "co-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs, Apostille Coordination and Legalizations.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=363",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "co-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.cancilleria.gov.co/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=363",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "co-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.cancilleria.gov.co/tramites_servicios/apostilla_legalizacion_en_linea as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=90&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "co-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://assets.hcch.net/docs/bc0a0817-d312-4466-978a-29a252fb983b.pdf as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=90&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

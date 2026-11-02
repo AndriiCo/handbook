@@ -1,0 +1,94 @@
+{
+  "pack": "ME",
+  "version": 1,
+  "title": "Montenegro — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Montenegro",
+      "region": "",
+      "name": "Montenegro — Competent Authority (Art. 6)",
+      "slug": "me-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "me-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Montenegro (staff capture pending)."
+    },
+    {
+      "name": "www.pravda.gov.me",
+      "authority": "me-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Montenegro (staff capture pending)."
+    },
+    {
+      "name": "sudovi.me",
+      "authority": "me-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Montenegro (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "me-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=219&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Montenegro (citation page; staff capture pending)."
+    },
+    {
+      "authority": "me-ca",
+      "kind": "website_official",
+      "uri": "http://www.pravda.gov.me/ministarstvo",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=219&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "me-ca",
+      "kind": "website_official",
+      "uri": "http://sudovi.me/ospg",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=219&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "me-index",
+      "authority": "me-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Montenegro against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "me-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Montenegro is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "me-ca",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.pravda.gov.me/ministarstvo as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=219&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "me-ca",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://sudovi.me/ospg as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=219&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

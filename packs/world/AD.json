@@ -1,0 +1,198 @@
+{
+  "pack": "AD",
+  "version": 1,
+  "title": "Andorra — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Andorra",
+      "region": "",
+      "name": "El/la ministre/a d’Afers Exteriors (The Minister of Foreign Affairs)",
+      "slug": "ad-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Andorra",
+      "region": "",
+      "name": "El/la director/a general (The General Director of the Ministry of Foreign Affairs)",
+      "slug": "ad-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Andorra",
+      "region": "",
+      "name": "El/la director/a d’Afers Jurídics Internacionals i Recursos Humans (The Director of International Legal Affairs and Human Resources)",
+      "slug": "ad-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Andorra",
+      "region": "",
+      "name": "El/la director/a d’Afers Bilaterals i Consulars (The Director of Bilateral and Consular Affairs)",
+      "slug": "ad-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Andorra",
+      "region": "",
+      "name": "El/la director/a d’Afers Multilaterals i Cooperació (The Director of Multilateral Affairs and Cooperation)",
+      "slug": "ad-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Andorra",
+      "region": "",
+      "name": "El/la cap de l’Àrea d’Afers Generals i Jurídics (The Head of the General and Legal Affairs).",
+      "slug": "ad-ca-6"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ad-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Andorra (staff capture pending)."
+    },
+    {
+      "name": "www.mae.ad",
+      "authority": "ad-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Andorra (staff capture pending)."
+    },
+    {
+      "name": "www.amb-andorre.ad",
+      "authority": "ad-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Andorra (staff capture pending)."
+    },
+    {
+      "name": "www.tramits.ad",
+      "authority": "ad-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Andorra (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ad-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=79&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Andorra (citation page; staff capture pending)."
+    },
+    {
+      "authority": "ad-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mae.ad",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=355 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ad-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.amb-andorre.ad/legalitzaciosig.pdf",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=355 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ad-ca-3",
+      "kind": "website_official",
+      "uri": "http://www.tramits.ad/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=355 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ad-index",
+      "authority": "ad-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Andorra against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ad-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Andorra is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ad-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: El/la ministre/a d’Afers Exteriors (The Minister of Foreign Affairs).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ad-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: El/la director/a general (The General Director of the Ministry of Foreign Affairs).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ad-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: El/la director/a d’Afers Jurídics Internacionals i Recursos Humans (The Director of International Legal Affairs and Human Resources).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ad-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: El/la director/a d’Afers Bilaterals i Consulars (The Director of Bilateral and Consular Affairs).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ad-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: El/la director/a d’Afers Multilaterals i Cooperació (The Director of Multilateral Affairs and Cooperation).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ad-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: El/la cap de l’Àrea d’Afers Generals i Jurídics (The Head of the General and Legal Affairs)..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ad-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mae.ad as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ad-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.amb-andorre.ad/legalitzaciosig.pdf as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ad-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.tramits.ad/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "pack": "VN",
+  "version": 1,
+  "title": "Viet Nam — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Viet Nam",
+      "region": "",
+      "name": "The Ministry of Foreign Affairs of the Socialist Republic of Viet Nam:",
+      "slug": "vn-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Viet Nam",
+      "region": "",
+      "name": "The Consular Department (Headquarters in Hanoi)",
+      "slug": "vn-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Viet Nam",
+      "region": "",
+      "name": "Ho Chi Minh City’s Department for External Relations.",
+      "slug": "vn-ca-3"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "vn-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Viet Nam (staff capture pending)."
+    },
+    {
+      "name": "dichvucong.mofa.gov.vn",
+      "authority": "vn-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Viet Nam (staff capture pending)."
+    },
+    {
+      "name": "www.mofahcm.gov.vn",
+      "authority": "vn-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Viet Nam (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "vn-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=230&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Viet Nam (citation page; staff capture pending)."
+    },
+    {
+      "authority": "vn-ca-1",
+      "kind": "website_official",
+      "uri": "https://dichvucong.mofa.gov.vn",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1240 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "vn-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.mofahcm.gov.vn",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1240 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "vn-index",
+      "authority": "vn-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Viet Nam against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "vn-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Viet Nam is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "vn-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Foreign Affairs of the Socialist Republic of Viet Nam:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1240",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "vn-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Consular Department (Headquarters in Hanoi).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1240",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "vn-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ho Chi Minh City’s Department for External Relations..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1240",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "vn-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://dichvucong.mofa.gov.vn as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1240",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "vn-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mofahcm.gov.vn as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1240",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

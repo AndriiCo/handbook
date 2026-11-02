@@ -1,0 +1,213 @@
+{
+  "pack": "MX",
+  "version": 1,
+  "title": "Mexico — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Mexico",
+      "region": "",
+      "name": "Apostille for Federal Documents",
+      "slug": "mx-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Mexico",
+      "region": "",
+      "name": "Apostille for State Documents",
+      "slug": "mx-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Mexico",
+      "region": "",
+      "name": "Dirección de Coordinación Política con los Poderes de la Unión",
+      "slug": "mx-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Mexico",
+      "region": "",
+      "name": "Subdirección de Formalización y Control",
+      "slug": "mx-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Mexico",
+      "region": "",
+      "name": "There are 32 competent authorities designated to issue Apostilles for state documents",
+      "slug": "mx-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Mexico",
+      "region": "",
+      "name": "for more information see below under “Contact Details”.",
+      "slug": "mx-ca-6"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "mx-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "dicoppu.segob.gob.mx",
+      "authority": "mx-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "www.gob.mx",
+      "authority": "mx-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Mexico (staff capture pending)."
+    },
+    {
+      "name": "assets.hcch.net",
+      "authority": "mx-ca-4",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Mexico (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "mx-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=54&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Mexico (citation page; staff capture pending)."
+    },
+    {
+      "authority": "mx-ca-1",
+      "kind": "website_official",
+      "uri": "http://dicoppu.segob.gob.mx/es/DICOPPU/Apostille",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=333 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "mx-ca-2",
+      "kind": "website_official",
+      "uri": "https://www.gob.mx/segob",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=333 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "mx-ca-3",
+      "kind": "website_official",
+      "uri": "http://dicoppu.segob.gob.mx/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=333 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "mx-ca-4",
+      "kind": "website_official",
+      "uri": "https://assets.hcch.net/docs/06c0ad47-4098-4ef2-adb4-a257f41e4fa3.pdf",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=333 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "mx-index",
+      "authority": "mx-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Mexico against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "mx-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Mexico is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Apostille for Federal Documents.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Apostille for State Documents.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Dirección de Coordinación Política con los Poderes de la Unión.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Subdirección de Formalización y Control.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: There are 32 competent authorities designated to issue Apostilles for state documents.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: for more information see below under “Contact Details”..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://dicoppu.segob.gob.mx/es/DICOPPU/Apostille as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gob.mx/segob as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://dicoppu.segob.gob.mx/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mx-ca-4",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://assets.hcch.net/docs/06c0ad47-4098-4ef2-adb4-a257f41e4fa3.pdf as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=333",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

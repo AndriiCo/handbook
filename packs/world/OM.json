@@ -1,0 +1,52 @@
+{
+  "pack": "OM",
+  "version": 1,
+  "title": "Oman — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Oman",
+      "region": "",
+      "name": "Oman — Competent Authority (Art. 6)",
+      "slug": "om-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "om-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Oman (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "om-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=254&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Oman (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "om-index",
+      "authority": "om-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Oman against a staff capture of the cited HCCH pages (none).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "om-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Oman is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

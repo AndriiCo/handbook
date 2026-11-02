@@ -1,0 +1,60 @@
+{
+  "pack": "TH",
+  "version": 1,
+  "title": "Thailand — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Thailand",
+      "region": "",
+      "name": "Department of Consular Affairs of the Ministry of Foreign Affairs",
+      "slug": "th-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "th-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Thailand (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "th-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=130&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Thailand (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "th-index",
+      "authority": "th-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Thailand against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "th-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Thailand is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "th-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Department of Consular Affairs of the Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1244",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

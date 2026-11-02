@@ -1,0 +1,96 @@
+{
+  "pack": "IN",
+  "version": 1,
+  "title": "India — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "India",
+      "region": "",
+      "name": "Ministry of External Affairs of the Government of India",
+      "slug": "in-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "in-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for India (staff capture pending)."
+    },
+    {
+      "name": "www.mea.gov.in",
+      "authority": "in-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for India (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "in-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=101&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for India (citation page; staff capture pending)."
+    },
+    {
+      "authority": "in-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.mea.gov.in/apostille-menu.htm",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=643 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "in-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mea.gov.in/legalization-of-documents.htm",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=101&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "in-index",
+      "authority": "in-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for India against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "in-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): India is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "in-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of External Affairs of the Government of India.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=643",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "in-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.mea.gov.in/apostille-menu.htm as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=643",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "in-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mea.gov.in/legalization-of-documents.htm as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=101&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

@@ -1,0 +1,105 @@
+{
+  "pack": "BG",
+  "version": 1,
+  "title": "Bulgaria — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Bulgaria",
+      "region": "",
+      "name": "The Ministry of Justice - for acts of the courts and notaries",
+      "slug": "bg-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Bulgaria",
+      "region": "",
+      "name": "The National Center for Information and Documentation - for educational and certification documents, issued by the higher schools, by the institutions in the system of pre-school, school and vocational education and training and by the Ministry of Education and Science and its units",
+      "slug": "bg-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Bulgaria",
+      "region": "",
+      "name": "The regional administrations - for documents issued by the mayors and the municipal administrations",
+      "slug": "bg-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Bulgaria",
+      "region": "",
+      "name": "The Ministry of Foreign Affairs - for all other acts.",
+      "slug": "bg-ca-4"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "bg-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bulgaria (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "bg-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=7&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Bulgaria (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "bg-index",
+      "authority": "bg-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Bulgaria against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "bg-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Bulgaria is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bg-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Justice - for acts of the courts and notaries.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=312",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bg-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The National Center for Information and Documentation - for educational and certification documents, issued by the higher schools, by the institutions in the system of pre-school, school and vocational education and training and by the Ministry of Education and Science and its units.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=312",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bg-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The regional administrations - for documents issued by the mayors and the municipal administrations.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=312",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bg-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Foreign Affairs - for all other acts..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=312",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

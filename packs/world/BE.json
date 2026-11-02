@@ -1,0 +1,126 @@
+{
+  "pack": "BE",
+  "version": 1,
+  "title": "Belgium — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Belgium",
+      "region": "",
+      "name": "Service public fédéral des Affaires étrangères, du Commerce extérieur et de la Coopération au Développement",
+      "slug": "be-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "be-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Belgium (staff capture pending)."
+    },
+    {
+      "name": "diplomatie.belgium.be",
+      "authority": "be-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Belgium (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "be-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=24&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Belgium (citation page; staff capture pending)."
+    },
+    {
+      "authority": "be-ca-1",
+      "kind": "website_official",
+      "uri": "https://diplomatie.belgium.be/fr",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=310 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "be-ca-1",
+      "kind": "website_official",
+      "uri": "https://diplomatie.belgium.be/en",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=24&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "be-ca-1",
+      "kind": "website_official",
+      "uri": "https://diplomatie.belgium.be/fr/Services/Legalisation_de_documents",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=24&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "be-ca-1",
+      "kind": "website_official",
+      "uri": "https://diplomatie.belgium.be/en/services/legalisation_of_documents",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=24&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "be-index",
+      "authority": "be-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Belgium against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "be-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Belgium is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "be-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Service public fédéral des Affaires étrangères, du Commerce extérieur et de la Coopération au Développement.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=310",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "be-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://diplomatie.belgium.be/fr as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=310",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "be-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://diplomatie.belgium.be/en as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=24&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "be-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://diplomatie.belgium.be/fr/Services/Legalisation_de_documents as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=24&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "be-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://diplomatie.belgium.be/en/services/legalisation_of_documents as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=24&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

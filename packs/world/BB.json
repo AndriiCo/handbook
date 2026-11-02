@@ -1,0 +1,177 @@
+{
+  "pack": "BB",
+  "version": 1,
+  "title": "Barbados — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Barbados",
+      "region": "",
+      "name": "Solicitor-General",
+      "slug": "bb-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Barbados",
+      "region": "",
+      "name": "Deputy Solicitor General",
+      "slug": "bb-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Barbados",
+      "region": "",
+      "name": "Registrar of the Supreme Court",
+      "slug": "bb-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Barbados",
+      "region": "",
+      "name": "Registrar of Corporate Affairs",
+      "slug": "bb-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Barbados",
+      "region": "",
+      "name": "Permanent Secretary in the Ministry responsible for Foreign Affairs",
+      "slug": "bb-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Barbados",
+      "region": "",
+      "name": "Chief of Protocol",
+      "slug": "bb-ca-6"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "bb-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Barbados (staff capture pending)."
+    },
+    {
+      "name": "www.foreign.gov.bb",
+      "authority": "bb-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Barbados (staff capture pending)."
+    },
+    {
+      "name": "www.lawcourts.gov.bb",
+      "authority": "bb-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Barbados (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "bb-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=83&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Barbados (citation page; staff capture pending)."
+    },
+    {
+      "authority": "bb-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.foreign.gov.bb/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=359 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "bb-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.lawcourts.gov.bb/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=359 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "bb-index",
+      "authority": "bb-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Barbados against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "bb-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Barbados is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bb-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Solicitor-General.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=359",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bb-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Deputy Solicitor General.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=359",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bb-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Registrar of the Supreme Court.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=359",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bb-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Registrar of Corporate Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=359",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bb-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Permanent Secretary in the Ministry responsible for Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=359",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bb-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Chief of Protocol.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=359",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bb-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.foreign.gov.bb/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=359",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bb-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.lawcourts.gov.bb/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=359",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

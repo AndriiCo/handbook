@@ -1,0 +1,102 @@
+{
+  "pack": "SV",
+  "version": 1,
+  "title": "El Salvador — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "El Salvador",
+      "region": "",
+      "name": "Ministry of Foreign Affairs",
+      "slug": "sv-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "sv-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for El Salvador (staff capture pending)."
+    },
+    {
+      "name": "www.rree.gob.sv",
+      "authority": "sv-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for El Salvador (staff capture pending)."
+    },
+    {
+      "name": "rree.gob.sv",
+      "authority": "sv-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for El Salvador (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "sv-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=93&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for El Salvador (citation page; staff capture pending)."
+    },
+    {
+      "authority": "sv-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.rree.gob.sv",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=365 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "sv-ca-1",
+      "kind": "website_official",
+      "uri": "https://rree.gob.sv/autenticas-y-apostillas/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=93&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "sv-index",
+      "authority": "sv-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for El Salvador against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "sv-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): El Salvador is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "sv-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=365",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "sv-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.rree.gob.sv as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=365",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "sv-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://rree.gob.sv/autenticas-y-apostillas/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=93&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

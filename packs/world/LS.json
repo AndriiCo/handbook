@@ -1,0 +1,135 @@
+{
+  "pack": "LS",
+  "version": 1,
+  "title": "Lesotho — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Lesotho",
+      "region": "",
+      "name": "The Attorney-General",
+      "slug": "ls-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Lesotho",
+      "region": "",
+      "name": "The Permanent Secretary of a Ministry or Department",
+      "slug": "ls-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Lesotho",
+      "region": "",
+      "name": "The Registrar of the High Court",
+      "slug": "ls-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Lesotho",
+      "region": "",
+      "name": "A Resident Magistrate",
+      "slug": "ls-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Lesotho",
+      "region": "",
+      "name": "A Magistrate of the First Class",
+      "slug": "ls-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Lesotho",
+      "region": "",
+      "name": "Such other person as the Minister may appoint and whose appointment notice has been published in the Gazette",
+      "slug": "ls-ca-6"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ls-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Lesotho (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ls-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=106&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Lesotho (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ls-index",
+      "authority": "ls-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Lesotho against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ls-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Lesotho is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ls-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Attorney-General.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=369",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ls-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Permanent Secretary of a Ministry or Department.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=369",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ls-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Registrar of the High Court.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=369",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ls-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: A Resident Magistrate.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=369",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ls-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: A Magistrate of the First Class.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=369",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ls-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Such other person as the Minister may appoint and whose appointment notice has been published in the Gazette.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=369",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

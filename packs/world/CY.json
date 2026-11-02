@@ -1,0 +1,117 @@
+{
+  "pack": "CY",
+  "version": 1,
+  "title": "Cyprus — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Cyprus",
+      "region": "",
+      "name": "The Ministry of Justice and Public Order of the Republic of Cyprus",
+      "slug": "cy-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "cy-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Cyprus (staff capture pending)."
+    },
+    {
+      "name": "www.gov.cy",
+      "authority": "cy-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Cyprus (staff capture pending)."
+    },
+    {
+      "name": "apostille-validation.mjpo.gov.cy",
+      "authority": "cy-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Cyprus (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "cy-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=2&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Cyprus (citation page; staff capture pending)."
+    },
+    {
+      "authority": "cy-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.gov.cy/mjpo/en/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=316 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "cy-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.gov.cy/en/service/apostille/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=2&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "cy-ca-1",
+      "kind": "website_official",
+      "uri": "https://apostille-validation.mjpo.gov.cy/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=2&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "cy-index",
+      "authority": "cy-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Cyprus against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "cy-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Cyprus is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cy-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Justice and Public Order of the Republic of Cyprus.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=316",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cy-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.cy/mjpo/en/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=316",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cy-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.cy/en/service/apostille/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=2&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cy-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://apostille-validation.mjpo.gov.cy/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=2&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

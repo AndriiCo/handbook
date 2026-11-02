@@ -1,0 +1,96 @@
+{
+  "pack": "DK",
+  "version": 1,
+  "title": "Denmark — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Denmark",
+      "region": "",
+      "name": "Ministry of Foreign Affairs",
+      "slug": "dk-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "dk-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Denmark (staff capture pending)."
+    },
+    {
+      "name": "um.dk",
+      "authority": "dk-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Denmark (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "dk-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=25&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Denmark (citation page; staff capture pending)."
+    },
+    {
+      "authority": "dk-ca-1",
+      "kind": "website_official",
+      "uri": "https://um.dk/en/travel-and-residence/legalisation-frontpage/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=708 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "dk-ca-1",
+      "kind": "website_official",
+      "uri": "https://um.dk/en/travel-and-residence/legalisation-frontpage/legalisation%20danish/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=25&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "dk-index",
+      "authority": "dk-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Denmark against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "dk-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Denmark is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "dk-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=708",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "dk-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://um.dk/en/travel-and-residence/legalisation-frontpage/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=708",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "dk-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://um.dk/en/travel-and-residence/legalisation-frontpage/legalisation%20danish/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=25&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

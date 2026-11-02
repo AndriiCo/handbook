@@ -1,0 +1,117 @@
+{
+  "pack": "SE",
+  "version": 1,
+  "title": "Sweden — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Sweden",
+      "region": "",
+      "name": "Sweden has decentralised the issuance of Apostilles and designated all notaries public as Competent Authorities according to the Convention. Notaries public are appointed by the local Country Administrative Board (Länsstyrelsen).",
+      "slug": "se-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Sweden",
+      "region": "",
+      "name": "There is no centralised register of all notaries public. However, contact details of notaries public may be available from the relevant Country Administrative Board.",
+      "slug": "se-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "se-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Sweden (staff capture pending)."
+    },
+    {
+      "name": "www.government.se",
+      "authority": "se-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Sweden (staff capture pending)."
+    },
+    {
+      "name": "www.lansstyrelsen.se",
+      "authority": "se-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Sweden (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "se-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=72&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Sweden (citation page; staff capture pending)."
+    },
+    {
+      "authority": "se-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.government.se/government-of-sweden/ministry-for-foreign-affairs/legalisations/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=348 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "se-ca-2",
+      "kind": "website_official",
+      "uri": "https://www.lansstyrelsen.se",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=348 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "se-index",
+      "authority": "se-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Sweden against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "se-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Sweden is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "se-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Sweden has decentralised the issuance of Apostilles and designated all notaries public as Competent Authorities according to the Convention. Notaries public are appointed by the local Country Administrative Board (Länsstyrelsen)..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=348",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "se-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: There is no centralised register of all notaries public. However, contact details of notaries public may be available from the relevant Country Administrative Board..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=348",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "se-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.government.se/government-of-sweden/ministry-for-foreign-affairs/legalisations/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=348",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "se-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.lansstyrelsen.se as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=348",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

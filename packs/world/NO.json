@@ -1,0 +1,132 @@
+{
+  "pack": "NO",
+  "version": 1,
+  "title": "Norway — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Norway",
+      "region": "",
+      "name": "The County Governors",
+      "slug": "no-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Norway",
+      "region": "",
+      "name": "Royal Norwegian Ministry of Foreign Affairs",
+      "slug": "no-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "no-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Norway (staff capture pending)."
+    },
+    {
+      "name": "www.statsforvalteren.no",
+      "authority": "no-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Norway (staff capture pending)."
+    },
+    {
+      "name": "www.regjeringen.no",
+      "authority": "no-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Norway (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "no-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=58&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Norway (citation page; staff capture pending)."
+    },
+    {
+      "authority": "no-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.statsforvalteren.no/en/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=337 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "no-ca-2",
+      "kind": "website_official",
+      "uri": "https://www.regjeringen.no/en/dep/ud/id833/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=337 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "no-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.regjeringen.no/en/dokumenter/legalisation-mfa/id752911/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=58&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "no-index",
+      "authority": "no-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Norway against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "no-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Norway is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "no-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The County Governors.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=337",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "no-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Royal Norwegian Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=337",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "no-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.statsforvalteren.no/en/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=337",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "no-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.regjeringen.no/en/dep/ud/id833/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=337",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "no-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.regjeringen.no/en/dokumenter/legalisation-mfa/id752911/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=58&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

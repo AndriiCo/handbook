@@ -1,0 +1,147 @@
+{
+  "pack": "LT",
+  "version": 1,
+  "title": "Lithuania — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Lithuania",
+      "region": "",
+      "name": "Notaries",
+      "slug": "lt-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Lithuania",
+      "region": "",
+      "name": "The Consular Department of the Ministry of Foreign Affairs",
+      "slug": "lt-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "lt-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Lithuania (staff capture pending)."
+    },
+    {
+      "name": "www.notarurumai.lt",
+      "authority": "lt-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Lithuania (staff capture pending)."
+    },
+    {
+      "name": "keliauk.urm.lt",
+      "authority": "lt-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Lithuania (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "lt-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=50&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Lithuania (citation page; staff capture pending)."
+    },
+    {
+      "authority": "lt-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.notarurumai.lt",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=330 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "lt-ca-2",
+      "kind": "website_official",
+      "uri": "https://www.notarurumai.lt/notary/by-employees",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=330 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "lt-ca-1",
+      "kind": "website_official",
+      "uri": "http://keliauk.urm.lt/en/consular-services",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=50&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "lt-ca-1",
+      "kind": "website_official",
+      "uri": "https://keliauk.urm.lt/en/consular-services/legalisation",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=50&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "lt-index",
+      "authority": "lt-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Lithuania against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "lt-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Lithuania is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lt-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Notaries.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=330",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lt-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Consular Department of the Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=330",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lt-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.notarurumai.lt as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=330",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lt-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.notarurumai.lt/notary/by-employees as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=330",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lt-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://keliauk.urm.lt/en/consular-services as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=50&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "lt-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://keliauk.urm.lt/en/consular-services/legalisation as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=50&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

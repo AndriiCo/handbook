@@ -1,0 +1,204 @@
+{
+  "pack": "BY",
+  "version": 1,
+  "title": "Belarus — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Belarus",
+      "region": "",
+      "name": "Ministry of Justice of the Republic of Belarus",
+      "slug": "by-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Belarus",
+      "region": "",
+      "name": "Regional Justice Administrations and Minsk City Executive Committee Justice Administration",
+      "slug": "by-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Belarus",
+      "region": "",
+      "name": "Ministry of Education of the Republic of Belarus",
+      "slug": "by-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Belarus",
+      "region": "",
+      "name": "Department of Archives and Records Management of the Ministry of Justice",
+      "slug": "by-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Belarus",
+      "region": "",
+      "name": "Ministry of Foreign Affairs of the Republic of Belarus",
+      "slug": "by-ca-5"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "by-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Belarus (staff capture pending)."
+    },
+    {
+      "name": "www.minjust.by",
+      "authority": "by-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Belarus (staff capture pending)."
+    },
+    {
+      "name": "www.minedu.unibel.by",
+      "authority": "by-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Belarus (staff capture pending)."
+    },
+    {
+      "name": "archives.gov.by",
+      "authority": "by-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Belarus (staff capture pending)."
+    },
+    {
+      "name": "www.mfa.gov.by",
+      "authority": "by-ca-4",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Belarus (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "by-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=10&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Belarus (citation page; staff capture pending)."
+    },
+    {
+      "authority": "by-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.minjust.by/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=309 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "by-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.minedu.unibel.by/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=309 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "by-ca-3",
+      "kind": "website_official",
+      "uri": "http://archives.gov.by/eindex.htm",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=309 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "by-ca-4",
+      "kind": "website_official",
+      "uri": "http://www.mfa.gov.by/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=309 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "by-index",
+      "authority": "by-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Belarus against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "by-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Belarus is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "by-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Justice of the Republic of Belarus.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "by-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Regional Justice Administrations and Minsk City Executive Committee Justice Administration.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "by-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Education of the Republic of Belarus.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "by-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Department of Archives and Records Management of the Ministry of Justice.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "by-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs of the Republic of Belarus.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "by-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minjust.by/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "by-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minedu.unibel.by/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "by-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://archives.gov.by/eindex.htm as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "by-ca-4",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mfa.gov.by/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

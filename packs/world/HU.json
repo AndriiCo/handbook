@@ -1,0 +1,189 @@
+{
+  "pack": "HU",
+  "version": 1,
+  "title": "Hungary — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Hungary",
+      "region": "",
+      "name": "The Ministry of Justice of Hungary, Department of Private International Law,",
+      "slug": "hu-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Hungary",
+      "region": "",
+      "name": "Hungarian Chamber of Civil Law Notaries",
+      "slug": "hu-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Hungary",
+      "region": "",
+      "name": "Ministry for Foreign Affairs of the Republic of Hungary",
+      "slug": "hu-ca-3"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "hu-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Hungary (staff capture pending)."
+    },
+    {
+      "name": "igazsagugyiinformaciok.kormany.hu",
+      "authority": "hu-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Hungary (staff capture pending)."
+    },
+    {
+      "name": "mokk.hu",
+      "authority": "hu-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Hungary (staff capture pending)."
+    },
+    {
+      "name": "www.mokk.hu",
+      "authority": "hu-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Hungary (staff capture pending)."
+    },
+    {
+      "name": "konzinfo.mfa.gov.hu",
+      "authority": "hu-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Hungary (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "hu-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=43&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Hungary (citation page; staff capture pending)."
+    },
+    {
+      "authority": "hu-ca-1",
+      "kind": "website_official",
+      "uri": "https://igazsagugyiinformaciok.kormany.hu/kulfoldi-felhasznalasra-szant-okiratok-hitelesitese",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=324 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "hu-ca-2",
+      "kind": "website_official",
+      "uri": "https://mokk.hu/ugyfeleknek/apostille_en.php",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=324 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "hu-ca-3",
+      "kind": "website_official",
+      "uri": "https://www.mokk.hu/ugyfeleknek/tajekoztato-a-kulfoldre-szant-kozjegyzoi-okiratok-hitelesiteserol.php",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=324 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "hu-ca-1",
+      "kind": "website_official",
+      "uri": "https://konzinfo.mfa.gov.hu/felulhitelesites",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=43&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "hu-ca-1",
+      "kind": "website_official",
+      "uri": "https://konzinfo.mfa.gov.hu/en/legalisation-procedure-documents-be-used-abroad",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=43&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "hu-index",
+      "authority": "hu-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Hungary against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "hu-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Hungary is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hu-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Justice of Hungary, Department of Private International Law,.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=324",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hu-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Hungarian Chamber of Civil Law Notaries.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=324",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hu-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry for Foreign Affairs of the Republic of Hungary.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=324",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hu-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://igazsagugyiinformaciok.kormany.hu/kulfoldi-felhasznalasra-szant-okiratok-hitelesitese as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=324",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hu-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://mokk.hu/ugyfeleknek/apostille_en.php as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=324",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hu-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.mokk.hu/ugyfeleknek/tajekoztato-a-kulfoldre-szant-kozjegyzoi-okiratok-hitelesiteserol.php as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=324",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hu-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://konzinfo.mfa.gov.hu/felulhitelesites as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=43&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "hu-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://konzinfo.mfa.gov.hu/en/legalisation-procedure-documents-be-used-abroad as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=43&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

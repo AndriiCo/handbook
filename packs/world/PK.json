@@ -1,0 +1,156 @@
+{
+  "pack": "PK",
+  "version": 1,
+  "title": "Pakistan — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Pakistan",
+      "region": "",
+      "name": "At Ministry of Foreign Affairs Headquarters, Islamabad:",
+      "slug": "pk-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Pakistan",
+      "region": "",
+      "name": "At Foreign Affairs' Liaison OIIices in Karachi, Lahore, Quetta, Peshawar and Gujrat:",
+      "slug": "pk-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Pakistan",
+      "region": "",
+      "name": "Assistant Director (Consular), Ministry of Foreign Affairs",
+      "slug": "pk-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Pakistan",
+      "region": "",
+      "name": "Assistant Director (Apostille), Ministry of Foreign Affairs",
+      "slug": "pk-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Pakistan",
+      "region": "",
+      "name": "Deputy Chief of Protocol, Foreign Affairs Liaison Office",
+      "slug": "pk-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Pakistan",
+      "region": "",
+      "name": "Assistant Chief of Protocol, Foreigr Affairs Liaison Office",
+      "slug": "pk-ca-6"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "pk-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Pakistan (staff capture pending)."
+    },
+    {
+      "name": "apostille.mofa.gov.pk",
+      "authority": "pk-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Pakistan (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "pk-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=119&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Pakistan (citation page; staff capture pending)."
+    },
+    {
+      "authority": "pk-ca-1",
+      "kind": "website_official",
+      "uri": "https://apostille.mofa.gov.pk/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=1179 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "pk-index",
+      "authority": "pk-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Pakistan against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "pk-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Pakistan is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pk-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: At Ministry of Foreign Affairs Headquarters, Islamabad:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1179",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pk-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: At Foreign Affairs' Liaison OIIices in Karachi, Lahore, Quetta, Peshawar and Gujrat:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1179",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pk-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Assistant Director (Consular), Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1179",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pk-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Assistant Director (Apostille), Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1179",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pk-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Deputy Chief of Protocol, Foreign Affairs Liaison Office.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1179",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pk-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Assistant Chief of Protocol, Foreigr Affairs Liaison Office.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1179",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "pk-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://apostille.mofa.gov.pk/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1179",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

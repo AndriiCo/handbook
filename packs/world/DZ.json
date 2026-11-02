@@ -1,0 +1,120 @@
+{
+  "pack": "DZ",
+  "version": 1,
+  "title": "Algeria — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Algeria",
+      "region": "",
+      "name": "The Ministry of the Interior, Local Authorities and Transports",
+      "slug": "dz-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Algeria",
+      "region": "",
+      "name": "The Ministry of Justice",
+      "slug": "dz-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Algeria",
+      "region": "",
+      "name": "The Ministry of Higher Education and Scientific Research",
+      "slug": "dz-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Algeria",
+      "region": "",
+      "name": "The Ministry of National Education",
+      "slug": "dz-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Algeria",
+      "region": "",
+      "name": "The Ministry of Vocational Training and Education",
+      "slug": "dz-ca-5"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "dz-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Algeria (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "dz-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=278&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Algeria (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "dz-index",
+      "authority": "dz-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Algeria against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "dz-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Algeria is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "dz-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of the Interior, Local Authorities and Transports.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1238",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "dz-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Justice.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1238",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "dz-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Higher Education and Scientific Research.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1238",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "dz-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of National Education.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1238",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "dz-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Vocational Training and Education.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1238",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "pack": "GY",
+  "version": 1,
+  "title": "Guyana — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Guyana",
+      "region": "",
+      "name": "Ministry of Foreign Affairs, Protocol and Consular Affairs Department",
+      "slug": "gy-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "gy-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Guyana (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "gy-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=272&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Guyana (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "gy-index",
+      "authority": "gy-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Guyana against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "gy-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Guyana is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gy-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs, Protocol and Consular Affairs Department.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1109",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

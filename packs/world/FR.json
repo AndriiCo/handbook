@@ -1,0 +1,192 @@
+{
+  "pack": "FR",
+  "version": 1,
+  "title": "France — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "France",
+      "region": "",
+      "name": "Pour les actes dont les signataires sont établis dans les territoires suivants : France métropolitaine, Guadeloupe, Guyane française, La Réunion, Martinique, Mayotte, Saint-Barthélemy, Saint-Martin et Saint-Pierre-et-Miquelon : conseil régionaux et chambres interdépartementales de notaires compétents",
+      "slug": "fr-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "France",
+      "region": "",
+      "name": "Pour les actes dont les signataires sont établis en Nouvelle-Calédonie : le procureur général près la cour d’appel de Nouméa",
+      "slug": "fr-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "France",
+      "region": "",
+      "name": "Pour les actes dont les signataires sont établis en Polynésie française : le procureur général près la cour d’appel de Papeete",
+      "slug": "fr-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "France",
+      "region": "",
+      "name": "Pour les actes dont les signataires sont établis à Wallis-et-Futuna : le président du tribunal de première instance de Mata Utu",
+      "slug": "fr-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "France",
+      "region": "",
+      "name": "Pour les actes dont les signataires sont établis dans les Terres australes et antarctiques françaises : le procureur général près la cour d’appel de Saint-Denis de la Réunion",
+      "slug": "fr-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "France",
+      "region": "",
+      "name": "Lorsque l’apostille est délivrée dans le cadre d’une demande d’entraide judiciaire en matière pénale, l’apostille est délivrée par le procureur général près la cour d’appel dans le ressort de laquelle est établi le signataire de l’acte.",
+      "slug": "fr-ca-6"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "fr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for France (staff capture pending)."
+    },
+    {
+      "name": "www.service-public.fr",
+      "authority": "fr-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for France (staff capture pending)."
+    },
+    {
+      "name": "apostille.notaires.fr",
+      "authority": "fr-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for France (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "fr-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=39&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for France (citation page; staff capture pending)."
+    },
+    {
+      "authority": "fr-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.service-public.fr/particuliers/vosdroits/F1400",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=321 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "fr-ca-2",
+      "kind": "website_official",
+      "uri": "https://apostille.notaires.fr/accueil",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=321 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "fr-ca-3",
+      "kind": "website_official",
+      "uri": "http://www.service-public.fr/particuliers/vosdroits/R47867",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=321 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "fr-index",
+      "authority": "fr-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for France against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "fr-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): France is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "fr-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Pour les actes dont les signataires sont établis dans les territoires suivants : France métropolitaine, Guadeloupe, Guyane française, La Réunion, Martinique, Mayotte, Saint-Barthélemy, Saint-Martin et Saint-Pierre-et-Miquelon : conseil régionaux et chambres interdépartementales de notaires compétents.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "fr-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Pour les actes dont les signataires sont établis en Nouvelle-Calédonie : le procureur général près la cour d’appel de Nouméa.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "fr-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Pour les actes dont les signataires sont établis en Polynésie française : le procureur général près la cour d’appel de Papeete.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "fr-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Pour les actes dont les signataires sont établis à Wallis-et-Futuna : le président du tribunal de première instance de Mata Utu.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "fr-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Pour les actes dont les signataires sont établis dans les Terres australes et antarctiques françaises : le procureur général près la cour d’appel de Saint-Denis de la Réunion.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "fr-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Lorsque l’apostille est délivrée dans le cadre d’une demande d’entraide judiciaire en matière pénale, l’apostille est délivrée par le procureur général près la cour d’appel dans le ressort de laquelle est établi le signataire de l’acte..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "fr-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.service-public.fr/particuliers/vosdroits/F1400 as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "fr-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://apostille.notaires.fr/accueil as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "fr-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.service-public.fr/particuliers/vosdroits/R47867 as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

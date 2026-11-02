@@ -1,0 +1,117 @@
+{
+  "pack": "BO",
+  "version": 1,
+  "title": "Bolivia (Plurinational State of) — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Bolivia (Plurinational State of)",
+      "region": "",
+      "name": "Ministry of Foreign Affairs",
+      "slug": "bo-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "bo-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bolivia (Plurinational State of) (staff capture pending)."
+    },
+    {
+      "name": "www.cancilleria.gob.bo",
+      "authority": "bo-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bolivia (Plurinational State of) (staff capture pending)."
+    },
+    {
+      "name": "apostilla.rree.gob.bo",
+      "authority": "bo-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bolivia (Plurinational State of) (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "bo-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=85&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Bolivia (Plurinational State of) (citation page; staff capture pending)."
+    },
+    {
+      "authority": "bo-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.cancilleria.gob.bo/apostilla/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1089 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "bo-ca-1",
+      "kind": "website_official",
+      "uri": "http://apostilla.rree.gob.bo",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=85&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "bo-ca-1",
+      "kind": "website_official",
+      "uri": "http://apostilla.rree.gob.bo/#/verificar",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=85&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "bo-index",
+      "authority": "bo-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Bolivia (Plurinational State of) against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "bo-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Bolivia (Plurinational State of) is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bo-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1089",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bo-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.cancilleria.gob.bo/apostilla/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1089",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bo-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://apostilla.rree.gob.bo as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=85&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bo-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://apostilla.rree.gob.bo/#/verificar as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=85&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

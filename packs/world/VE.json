@@ -1,0 +1,117 @@
+{
+  "pack": "VE",
+  "version": 1,
+  "title": "Venezuela (Bolivarian Republic of) — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Venezuela (Bolivarian Republic of)",
+      "region": "",
+      "name": "Ministerio del Poder Popular Para Relaciones Exteriores",
+      "slug": "ve-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ve-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Venezuela (Bolivarian Republic of) (staff capture pending)."
+    },
+    {
+      "name": "mppre.gob.ve",
+      "authority": "ve-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Venezuela (Bolivarian Republic of) (staff capture pending)."
+    },
+    {
+      "name": "legalizacionve.mppre.gob.ve",
+      "authority": "ve-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Venezuela (Bolivarian Republic of) (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ve-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=78&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Venezuela (Bolivarian Republic of) (citation page; staff capture pending)."
+    },
+    {
+      "authority": "ve-ca-1",
+      "kind": "website_official",
+      "uri": "http://mppre.gob.ve/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=354 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ve-ca-1",
+      "kind": "website_official",
+      "uri": "http://mppre.gob.ve/consulares/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=78&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ve-ca-1",
+      "kind": "website_official",
+      "uri": "http://legalizacionve.mppre.gob.ve/cal/static/legalizacionve/index.html?idkey=2&key=d0cf89cba4d3db2ae9b511d10209f766e8b76bda&key2=legalizacionve.mppre.gob.ve&key3=a4d3db2a",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=78&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ve-index",
+      "authority": "ve-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Venezuela (Bolivarian Republic of) against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ve-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Venezuela (Bolivarian Republic of) is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ve-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministerio del Poder Popular Para Relaciones Exteriores.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=354",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ve-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://mppre.gob.ve/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=354",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ve-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://mppre.gob.ve/consulares/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=78&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ve-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://legalizacionve.mppre.gob.ve/cal/static/legalizacionve/index.html?idkey=2&key=d0cf89cba4d3db2ae9b511d10209f766e8b76bda&key2=legalizacionve.mppre.gob.ve&key3=a4d3db2a as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=78&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

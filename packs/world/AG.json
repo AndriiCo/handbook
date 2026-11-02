@@ -1,0 +1,105 @@
+{
+  "pack": "AG",
+  "version": 1,
+  "title": "Antigua and Barbuda — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Antigua and Barbuda",
+      "region": "",
+      "name": "Permanent Secretary, Ministry of Foreign Affairs",
+      "slug": "ag-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Antigua and Barbuda",
+      "region": "",
+      "name": "Deputy Permanent Secretary, Ministry of Foreign Affairs",
+      "slug": "ag-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Antigua and Barbuda",
+      "region": "",
+      "name": "High Commissioner, High Commission for Antigua and Barbuda, London, United Kingdom",
+      "slug": "ag-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Antigua and Barbuda",
+      "region": "",
+      "name": "Minister Counsellor, High Commission for Antigua and Barbuda, London, United Kingdom",
+      "slug": "ag-ca-4"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ag-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Antigua and Barbuda (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ag-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=80&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Antigua and Barbuda (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ag-index",
+      "authority": "ag-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Antigua and Barbuda against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ag-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Antigua and Barbuda is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ag-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Permanent Secretary, Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=356",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ag-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Deputy Permanent Secretary, Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=356",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ag-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: High Commissioner, High Commission for Antigua and Barbuda, London, United Kingdom.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=356",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ag-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Minister Counsellor, High Commission for Antigua and Barbuda, London, United Kingdom.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=356",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

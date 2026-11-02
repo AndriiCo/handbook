@@ -1,0 +1,96 @@
+{
+  "pack": "VU",
+  "version": 1,
+  "title": "Vanuatu — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Vanuatu",
+      "region": "",
+      "name": "The Department of Foreign Affairs",
+      "slug": "vu-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Vanuatu",
+      "region": "",
+      "name": "The Vanuatu Financial Services Commission for public documents falling under its jurisdiction",
+      "slug": "vu-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "vu-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Vanuatu (staff capture pending)."
+    },
+    {
+      "name": "www.vfsc.vu",
+      "authority": "vu-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Vanuatu (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "vu-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=225&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Vanuatu (citation page; staff capture pending)."
+    },
+    {
+      "authority": "vu-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.vfsc.vu/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=765 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "vu-index",
+      "authority": "vu-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Vanuatu against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "vu-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Vanuatu is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "vu-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Department of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=765",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "vu-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Vanuatu Financial Services Commission for public documents falling under its jurisdiction.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=765",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "vu-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.vfsc.vu/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=765",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

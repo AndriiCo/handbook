@@ -1,0 +1,96 @@
+{
+  "pack": "RS",
+  "version": 1,
+  "title": "Serbia — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Serbia",
+      "region": "",
+      "name": "Courts of first instance",
+      "slug": "rs-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Serbia",
+      "region": "",
+      "name": "Ministry responsible for the administration of justice",
+      "slug": "rs-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "rs-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Serbia (staff capture pending)."
+    },
+    {
+      "name": "www.mpravde.gov.rs",
+      "authority": "rs-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Serbia (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "rs-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=65&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Serbia (citation page; staff capture pending)."
+    },
+    {
+      "authority": "rs-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mpravde.gov.rs",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=342 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "rs-index",
+      "authority": "rs-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Serbia against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "rs-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Serbia is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "rs-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Courts of first instance.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=342",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "rs-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry responsible for the administration of justice.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=342",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "rs-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mpravde.gov.rs as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=342",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

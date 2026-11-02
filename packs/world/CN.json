@@ -1,0 +1,147 @@
+{
+  "pack": "CN",
+  "version": 1,
+  "title": "China (the People's Republic of) — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "China (the People's Republic of)",
+      "region": "",
+      "name": "the Secretary for Administration and Justice",
+      "slug": "cn-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "China (the People's Republic of)",
+      "region": "",
+      "name": "the Director and the Deputy Directors of Justice Affairs Department",
+      "slug": "cn-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "cn-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for China (the People's Republic of) (staff capture pending)."
+    },
+    {
+      "name": "www.dsaj.gov.mo",
+      "authority": "cn-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for China (the People's Republic of) (staff capture pending)."
+    },
+    {
+      "name": "www.judiciary.hk",
+      "authority": "cn-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for China (the People's Republic of) (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "cn-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=30&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for China (the People's Republic of) (citation page; staff capture pending)."
+    },
+    {
+      "authority": "cn-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.dsaj.gov.mo",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=634 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "cn-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.dsaj.gov.mo/ContentFrame_pt.aspx?ModuleName=Content/pt/dj/dj01_pt.ascx",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=634 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "cn-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.judiciary.hk",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=30&cid=41 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "cn-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.judiciary.hk/en/court_services_facilities/apostille.html",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=30&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "cn-index",
+      "authority": "cn-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for China (the People's Republic of) against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "cn-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): China (the People's Republic of) is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cn-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Secretary for Administration and Justice.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=634",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cn-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Director and the Deputy Directors of Justice Affairs Department.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=634",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cn-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.dsaj.gov.mo as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=634",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cn-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.dsaj.gov.mo/ContentFrame_pt.aspx?ModuleName=Content/pt/dj/dj01_pt.ascx as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=634",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cn-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.judiciary.hk as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=30&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "cn-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.judiciary.hk/en/court_services_facilities/apostille.html as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=30&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

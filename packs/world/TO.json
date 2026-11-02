@@ -1,0 +1,60 @@
+{
+  "pack": "TO",
+  "version": 1,
+  "title": "Tonga — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Tonga",
+      "region": "",
+      "name": "Ministry of Foreign Affairs & Immigration & Citizenship, including certain Diplomatic Missions of the Government of Tonga",
+      "slug": "to-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "to-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Tonga (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "to-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=131&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Tonga (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "to-index",
+      "authority": "to-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Tonga against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "to-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Tonga is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "to-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs & Immigration & Citizenship, including certain Diplomatic Missions of the Government of Tonga.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=384",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

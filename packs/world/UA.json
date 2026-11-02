@@ -1,0 +1,279 @@
+{
+  "pack": "UA",
+  "version": 1,
+  "title": "Ukraine — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "Ministry of Internal Affairs: official documents issued by the Ministry, its territorial service centers and separate registration points for a qualified electronic trust service provider - the accredited key certification center of the Ministry of Internal Affairs",
+      "slug": "ua-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "Ministry of Education and Science: official documents issued by the Ministry, its central bodies of executive power, the activities of which are directed and coordinated by the Cabinet of Ministers through the Minister of Education and Science, their territorial bodies, educational institutions, enterprises, institutions and organizations that provide services in the field of education and sciences or conduct other activities related to the provision of such services",
+      "slug": "ua-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "Ministry of Justice: official documents issued by courts of Ukraine",
+      "slug": "ua-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "official documents emanating from justice and state bodies archival institutions",
+      "slug": "ua-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "execution of sentences and probation bodies",
+      "slug": "ua-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "official documents drawn up by public and private notaries",
+      "slug": "ua-ca-6"
+    },
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "official certificates executed on documents signed by persons in their private capacity, such as official certificates of registration of a document or fact that existed on a certain date, and official and notarized signatures",
+      "slug": "ua-ca-7"
+    },
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "State Migration Service: official documents issued by the State Migration Service, its territorial bodies and territorial subdivisions related to the field of migration (immigration and emigration), including combating illegal migration, citizenship, refugees and other legally defined categories of migrants",
+      "slug": "ua-ca-8"
+    },
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "State Tax Service: official documents issued by the State Tax Service and its territorial bodies",
+      "slug": "ua-ca-9"
+    },
+    {
+      "kind": "country",
+      "country": "Ukraine",
+      "region": "",
+      "name": "Ministry of Foreign Affairs: other official documents",
+      "slug": "ua-ca-10"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ua-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Ukraine (staff capture pending)."
+    },
+    {
+      "name": "www.mon.gov.ua",
+      "authority": "ua-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Ukraine (staff capture pending)."
+    },
+    {
+      "name": "apostille.in.ua",
+      "authority": "ua-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Ukraine (staff capture pending)."
+    },
+    {
+      "name": "www.minjust.gov.ua",
+      "authority": "ua-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Ukraine (staff capture pending)."
+    },
+    {
+      "name": "mfa.gov.ua",
+      "authority": "ua-ca-4",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Ukraine (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ua-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=134&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Ukraine (citation page; staff capture pending)."
+    },
+    {
+      "authority": "ua-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.mon.gov.ua/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=351 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ua-ca-2",
+      "kind": "website_official",
+      "uri": "https://apostille.in.ua",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=351 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ua-ca-3",
+      "kind": "website_official",
+      "uri": "http://www.minjust.gov.ua/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=351 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ua-ca-4",
+      "kind": "website_official",
+      "uri": "http://mfa.gov.ua",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=351 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ua-index",
+      "authority": "ua-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Ukraine against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ua-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Ukraine is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Internal Affairs: official documents issued by the Ministry, its territorial service centers and separate registration points for a qualified electronic trust service provider - the accredited key certification center of the Ministry of Internal Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Education and Science: official documents issued by the Ministry, its central bodies of executive power, the activities of which are directed and coordinated by the Cabinet of Ministers through the Minister of Education and Science, their territorial bodies, educational institutions, enterprises, institutions and organizations that provide services in the field of education and sciences or conduct other activities related to the provision of such services.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Justice: official documents issued by courts of Ukraine.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: official documents emanating from justice and state bodies archival institutions.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: execution of sentences and probation bodies.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: official documents drawn up by public and private notaries.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-7",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: official certificates executed on documents signed by persons in their private capacity, such as official certificates of registration of a document or fact that existed on a certain date, and official and notarized signatures.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-8",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: State Migration Service: official documents issued by the State Migration Service, its territorial bodies and territorial subdivisions related to the field of migration (immigration and emigration), including combating illegal migration, citizenship, refugees and other legally defined categories of migrants.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-9",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: State Tax Service: official documents issued by the State Tax Service and its territorial bodies.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-10",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs: other official documents.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mon.gov.ua/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://apostille.in.ua as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minjust.gov.ua/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ua-ca-4",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://mfa.gov.ua as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=351",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

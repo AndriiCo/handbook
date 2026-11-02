@@ -1,0 +1,162 @@
+{
+  "pack": "ZA",
+  "version": 1,
+  "title": "South Africa — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "South Africa",
+      "region": "",
+      "name": "Any magistrate or additional magistrate",
+      "slug": "za-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "South Africa",
+      "region": "",
+      "name": "Any registrar or assistant registrar of the Supreme Court of South Africa",
+      "slug": "za-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "South Africa",
+      "region": "",
+      "name": "Any person designated by the Director-General: Justice",
+      "slug": "za-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "South Africa",
+      "region": "",
+      "name": "Director-General: International Relations and Cooperation",
+      "slug": "za-ca-4"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "za-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for South Africa (staff capture pending)."
+    },
+    {
+      "name": "www.justice.gov.za",
+      "authority": "za-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for South Africa (staff capture pending)."
+    },
+    {
+      "name": "www.dirco.gov.za",
+      "authority": "za-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for South Africa (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "za-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=68&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for South Africa (citation page; staff capture pending)."
+    },
+    {
+      "authority": "za-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.justice.gov.za",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=345 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "za-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.dirco.gov.za",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=345 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "za-ca-3",
+      "kind": "website_official",
+      "uri": "http://www.dirco.gov.za/legalisation-services/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=345 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "za-index",
+      "authority": "za-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for South Africa against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "za-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): South Africa is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "za-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Any magistrate or additional magistrate.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=345",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "za-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Any registrar or assistant registrar of the Supreme Court of South Africa.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=345",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "za-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Any person designated by the Director-General: Justice.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=345",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "za-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Director-General: International Relations and Cooperation.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=345",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "za-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.justice.gov.za as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=345",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "za-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.dirco.gov.za as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=345",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "za-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.dirco.gov.za/legalisation-services/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=345",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

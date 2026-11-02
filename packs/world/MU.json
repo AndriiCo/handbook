@@ -1,0 +1,81 @@
+{
+  "pack": "MU",
+  "version": 1,
+  "title": "Mauritius — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Mauritius",
+      "region": "",
+      "name": "Apostille Section, Defence and Home Affairs Division of the Prime Minister's Office",
+      "slug": "mu-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "mu-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Mauritius (staff capture pending)."
+    },
+    {
+      "name": "pmo.govmu.org",
+      "authority": "mu-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Mauritius (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "mu-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=111&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Mauritius (citation page; staff capture pending)."
+    },
+    {
+      "authority": "mu-ca-1",
+      "kind": "website_official",
+      "uri": "http://pmo.govmu.org/English/Pages/Legalisation-of-Documents.aspx",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=374 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "mu-index",
+      "authority": "mu-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Mauritius against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "mu-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Mauritius is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mu-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Apostille Section, Defence and Home Affairs Division of the Prime Minister's Office.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=374",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "mu-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://pmo.govmu.org/English/Pages/Legalisation-of-Documents.aspx as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=374",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "pack": "GT",
+  "version": 1,
+  "title": "Guatemala — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Guatemala",
+      "region": "",
+      "name": "Ministry of Foreign Affairs of the Republic of Guatemala, Department of Authentication of the Directorate of Legal Affairs of the General Directorate of Legal Affairs, International Treaties and Translations",
+      "slug": "gt-ca-1"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "gt-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Guatemala (staff capture pending)."
+    },
+    {
+      "name": "www.minex.gob.gt",
+      "authority": "gt-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Guatemala (staff capture pending)."
+    },
+    {
+      "name": "apostilla.minex.gob.gt",
+      "authority": "gt-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Guatemala (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "gt-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=97&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Guatemala (citation page; staff capture pending)."
+    },
+    {
+      "authority": "gt-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.minex.gob.gt",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1074 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "gt-ca-1",
+      "kind": "website_official",
+      "uri": "https://apostilla.minex.gob.gt",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=97&cid=41 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "gt-index",
+      "authority": "gt-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Guatemala against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "gt-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Guatemala is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gt-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministry of Foreign Affairs of the Republic of Guatemala, Department of Authentication of the Directorate of Legal Affairs of the General Directorate of Legal Affairs, International Treaties and Translations.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1074",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gt-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.minex.gob.gt as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1074",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "gt-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://apostilla.minex.gob.gt as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=97&cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

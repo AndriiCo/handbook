@@ -1,0 +1,52 @@
+{
+  "pack": "JM",
+  "version": 1,
+  "title": "Jamaica — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Jamaica",
+      "region": "",
+      "name": "Jamaica — Competent Authority (Art. 6)",
+      "slug": "jm-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "jm-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Jamaica (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "jm-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=270&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Jamaica (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "jm-index",
+      "authority": "jm-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Jamaica against a staff capture of the cited HCCH pages (none).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "jm-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Jamaica is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

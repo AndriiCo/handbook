@@ -1,0 +1,52 @@
+{
+  "pack": "NU",
+  "version": 1,
+  "title": "Niue — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Niue",
+      "region": "",
+      "name": "Niue — Competent Authority (Art. 6)",
+      "slug": "nu-ca"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "nu-ca",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Niue (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "nu-ca",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=117&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Niue (citation page; staff capture pending)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "nu-index",
+      "authority": "nu-ca",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Niue against a staff capture of the cited HCCH pages (none).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "nu-ca",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Niue is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

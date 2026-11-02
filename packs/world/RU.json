@@ -1,0 +1,327 @@
+{
+  "pack": "RU",
+  "version": 1,
+  "title": "Russian Federation — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Russian Federation",
+      "region": "",
+      "name": "Categories of public documents for which Apostilles can be issued:",
+      "slug": "ru-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Russian Federation",
+      "region": "",
+      "name": "The Ministry of Justice of the Russian Federation",
+      "slug": "ru-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Russian Federation",
+      "region": "",
+      "name": "documents of federal bodies of executive power, natural and juridical persons, which were notarial evidence",
+      "slug": "ru-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Russian Federation",
+      "region": "",
+      "name": "The General Prosecutor's Office of the Russian Federation",
+      "slug": "ru-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Russian Federation",
+      "region": "",
+      "name": "The Ministry of the Internal Affairs of the Russian Federation",
+      "slug": "ru-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Russian Federation",
+      "region": "",
+      "name": "The Register Offices of the executive bodies in subjects of the Russian Federation",
+      "slug": "ru-ca-6"
+    },
+    {
+      "kind": "country",
+      "country": "Russian Federation",
+      "region": "",
+      "name": "The Federal Archives Agency and the authorised bodies for archives of the executive power in subjects of the Russian Federation",
+      "slug": "ru-ca-7"
+    },
+    {
+      "kind": "country",
+      "country": "Russian Federation",
+      "region": "",
+      "name": "Executive bodies of constituent entities (\"federal subjects\") of the Russian Federation",
+      "slug": "ru-ca-8"
+    },
+    {
+      "kind": "country",
+      "country": "Russian Federation",
+      "region": "",
+      "name": "The Ministry of Defense of the Russian Federation on official archive documents on military service (employment) in the Armed Forces of the Russian Federation, the Armed Forces of the USSR and the Joint Armed Forces of the Commonwealth of Independent States (CIS), issued in the Russian Federation.",
+      "slug": "ru-ca-9"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "ru-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Russian Federation (staff capture pending)."
+    },
+    {
+      "name": "www.minjust.ru",
+      "authority": "ru-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Russian Federation (staff capture pending)."
+    },
+    {
+      "name": "genproc.gov.ru",
+      "authority": "ru-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Russian Federation (staff capture pending)."
+    },
+    {
+      "name": "eng.mvdrf.ru",
+      "authority": "ru-ca-3",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Russian Federation (staff capture pending)."
+    },
+    {
+      "name": "www.rusarchives.ru",
+      "authority": "ru-ca-4",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Russian Federation (staff capture pending)."
+    },
+    {
+      "name": "obrnadzor.gov.ru",
+      "authority": "ru-ca-5",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Russian Federation (staff capture pending)."
+    },
+    {
+      "name": "www.mil.ru",
+      "authority": "ru-ca-6",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Russian Federation (staff capture pending)."
+    },
+    {
+      "name": "www.ed.gov.ru",
+      "authority": "ru-ca-7",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Russian Federation (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "ru-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=64&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Russian Federation (citation page; staff capture pending)."
+    },
+    {
+      "authority": "ru-ca-1",
+      "kind": "website_official",
+      "uri": "http://www.minjust.ru",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=341 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ru-ca-2",
+      "kind": "website_official",
+      "uri": "http://genproc.gov.ru/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=341 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ru-ca-3",
+      "kind": "website_official",
+      "uri": "http://eng.mvdrf.ru/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=341 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ru-ca-4",
+      "kind": "website_official",
+      "uri": "http://www.rusarchives.ru/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=341 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ru-ca-5",
+      "kind": "website_official",
+      "uri": "http://obrnadzor.gov.ru/ru/about/interaction_with_subjects/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=341 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ru-ca-6",
+      "kind": "website_official",
+      "uri": "http://www.mil.ru/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=341 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "ru-ca-7",
+      "kind": "website_official",
+      "uri": "http://www.ed.gov.ru/int-coop/tema/adapt/374/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=341 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "ru-index",
+      "authority": "ru-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Russian Federation against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "ru-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Russian Federation is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Categories of public documents for which Apostilles can be issued:.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Justice of the Russian Federation.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: documents of federal bodies of executive power, natural and juridical persons, which were notarial evidence.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The General Prosecutor's Office of the Russian Federation.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of the Internal Affairs of the Russian Federation.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Register Offices of the executive bodies in subjects of the Russian Federation.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-7",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Federal Archives Agency and the authorised bodies for archives of the executive power in subjects of the Russian Federation.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-8",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Executive bodies of constituent entities (\"federal subjects\") of the Russian Federation.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-9",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Defense of the Russian Federation on official archive documents on military service (employment) in the Armed Forces of the Russian Federation, the Armed Forces of the USSR and the Joint Armed Forces of the Commonwealth of Independent States (CIS), issued in the Russian Federation..",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minjust.ru as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://genproc.gov.ru/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-3",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://eng.mvdrf.ru/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-4",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.rusarchives.ru/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-5",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://obrnadzor.gov.ru/ru/about/interaction_with_subjects/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-6",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mil.ru/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "ru-ca-7",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.ed.gov.ru/int-coop/tema/adapt/374/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=341",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

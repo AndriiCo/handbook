@@ -1,0 +1,156 @@
+{
+  "pack": "BS",
+  "version": 1,
+  "title": "Bahamas — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Bahamas",
+      "region": "",
+      "name": "Permanent Secretary, Ministry of Foreign Affairs",
+      "slug": "bs-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Bahamas",
+      "region": "",
+      "name": "Director General, Ministry of Foreign Affairs",
+      "slug": "bs-ca-2"
+    },
+    {
+      "kind": "country",
+      "country": "Bahamas",
+      "region": "",
+      "name": "Under Secretary, Ministry of Foreign Affairs",
+      "slug": "bs-ca-3"
+    },
+    {
+      "kind": "country",
+      "country": "Bahamas",
+      "region": "",
+      "name": "Senior Assistant Secretary, Ministry of Foreign Affairs",
+      "slug": "bs-ca-4"
+    },
+    {
+      "kind": "country",
+      "country": "Bahamas",
+      "region": "",
+      "name": "Deputy Permanent Secretary, Ministry of Foreign Affairs",
+      "slug": "bs-ca-5"
+    },
+    {
+      "kind": "country",
+      "country": "Bahamas",
+      "region": "",
+      "name": "First Assistant Secretary, Ministry of Foreign Affairs",
+      "slug": "bs-ca-6"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "bs-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bahamas (staff capture pending)."
+    },
+    {
+      "name": "mofa.gov.bs",
+      "authority": "bs-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Bahamas (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "bs-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=82&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Bahamas (citation page; staff capture pending)."
+    },
+    {
+      "authority": "bs-ca-1",
+      "kind": "website_official",
+      "uri": "http://mofa.gov.bs/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=358 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "bs-index",
+      "authority": "bs-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Bahamas against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "bs-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Bahamas is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bs-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Permanent Secretary, Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=358",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bs-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Director General, Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=358",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bs-ca-3",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Under Secretary, Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=358",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bs-ca-4",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Senior Assistant Secretary, Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=358",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bs-ca-5",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Deputy Permanent Secretary, Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=358",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bs-ca-6",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: First Assistant Secretary, Ministry of Foreign Affairs.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=358",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "bs-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://mofa.gov.bs/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=358",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}

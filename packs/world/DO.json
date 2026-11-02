@@ -1,0 +1,117 @@
+{
+  "pack": "DO",
+  "version": 1,
+  "title": "Dominican Republic — HCCH 1961 competent authorities (world index, needs review)",
+  "authorities": [
+    {
+      "kind": "country",
+      "country": "Dominican Republic",
+      "region": "",
+      "name": "Ministerio de Relaciones Exteriores de la República Dominicana (MIREX)",
+      "slug": "do-ca-1"
+    },
+    {
+      "kind": "country",
+      "country": "Dominican Republic",
+      "region": "",
+      "name": "Dirección de Legalización de Documentos de la Sede Central de la Cancillería",
+      "slug": "do-ca-2"
+    }
+  ],
+  "domains": [
+    {
+      "name": "www.hcch.net",
+      "authority": "do-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Dominican Republic (staff capture pending)."
+    },
+    {
+      "name": "mirex.gob.do",
+      "authority": "do-ca-1",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Dominican Republic (staff capture pending)."
+    },
+    {
+      "name": "www.mirex.gob.do",
+      "authority": "do-ca-2",
+      "status": "unverified",
+      "notes": "Seen on HCCH competent-authority pages for Dominican Republic (staff capture pending)."
+    }
+  ],
+  "watch": [
+    {
+      "authority": "do-ca-1",
+      "kind": "website_official",
+      "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=212&cid=41",
+      "cadence": "weekly",
+      "notes": "HCCH competent-authority index for Dominican Republic (citation page; staff capture pending)."
+    },
+    {
+      "authority": "do-ca-1",
+      "kind": "website_official",
+      "uri": "https://mirex.gob.do/",
+      "cadence": "weekly",
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=810 (needs staff capture; W-7)."
+    },
+    {
+      "authority": "do-ca-2",
+      "kind": "website_official",
+      "uri": "http://www.mirex.gob.do/",
+      "cadence": "weekly",
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=810 (needs staff capture; W-7)."
+    }
+  ],
+  "chain_steps": [
+    {
+      "id": "do-index",
+      "authority": "do-ca-1",
+      "order": 0,
+      "title": "Verify HCCH competent-authority index",
+      "detail": "Confirm the designated authorities and website URLs for Dominican Republic against a staff capture of the cited HCCH pages (deterministic).",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ],
+  "observations": [
+    {
+      "authority": "do-ca-1",
+      "topic": "jurisdiction",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Dominican Republic is a listed Contracting Party.",
+      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "do-ca-1",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Ministerio de Relaciones Exteriores de la República Dominicana (MIREX).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=810",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "do-ca-2",
+      "topic": "contacts",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Dirección de Legalización de Documentos de la Sede Central de la Cancillería.",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=810",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "do-ca-1",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://mirex.gob.do/ as an official website link (under General website).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=810",
+      "status": "needs_review",
+      "validation": "W-7"
+    },
+    {
+      "authority": "do-ca-2",
+      "topic": "website",
+      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mirex.gob.do/ as an official website link (under Useful Links).",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=810",
+      "status": "needs_review",
+      "validation": "W-7"
+    }
+  ]
+}
