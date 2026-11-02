@@ -42,7 +42,13 @@
 		model: string;
 		input_tokens: number;
 		output_tokens: number;
+		cached_tokens: number;
+		reasoning_tokens: number;
 		error: string;
+	}
+
+	function tokenCount(src: any, name: string): number {
+		return typeof src?.[name] === 'number' ? src[name] : 0;
 	}
 
 	// Live draft runs by capture id. The server streams steps to
@@ -71,8 +77,10 @@
 			proposed: typeof src?.proposed === 'number' ? src.proposed : 0,
 			rejected: typeof src?.rejected === 'number' ? src.rejected : 0,
 			model: typeof src?.model === 'string' ? src.model : '',
-			input_tokens: typeof src?.input_tokens === 'number' ? src.input_tokens : 0,
-			output_tokens: typeof src?.output_tokens === 'number' ? src.output_tokens : 0,
+			input_tokens: tokenCount(src, 'input_tokens'),
+			output_tokens: tokenCount(src, 'output_tokens'),
+			cached_tokens: tokenCount(src, 'cached_tokens'),
+			reasoning_tokens: tokenCount(src, 'reasoning_tokens'),
 			error: ''
 		};
 		clearRunWatch(captureId);
@@ -119,6 +127,8 @@
 			model: '',
 			input_tokens: 0,
 			output_tokens: 0,
+			cached_tokens: 0,
+			reasoning_tokens: 0,
 			error
 		};
 		clearRunWatch(captureId);
@@ -190,6 +200,8 @@
 				model: '',
 				input_tokens: 0,
 				output_tokens: 0,
+				cached_tokens: 0,
+				reasoning_tokens: 0,
 				error: e instanceof Error ? e.message : 'draft failed'
 			};
 		}
@@ -201,7 +213,7 @@
 		if (d.status === 'starting' || d.status === 'running') return 'Drafting…';
 		if (d.status === 'finished') {
 			const r = d as DraftRun;
-			return `Done — ${r.proposed} proposed, ${r.rejected} rejected (${r.model || 'model?'}, ${r.input_tokens ?? 0}/${r.output_tokens ?? 0} tok)`;
+			return `Done — ${r.proposed} proposed, ${r.rejected} rejected (${r.model || 'model?'}, ${r.input_tokens ?? 0}/${r.output_tokens ?? 0} tok, ${r.cached_tokens ?? 0} cached, ${r.reasoning_tokens ?? 0} reasoning)`;
 		}
 		return `Draft failed — ${(d as DraftRun).error || 'retry'}`;
 	}

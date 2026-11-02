@@ -42,6 +42,11 @@ pub struct ProposedRecord {
 pub struct Usage {
     pub input_tokens: u32,
     pub output_tokens: u32,
+    /// Prompt prefix hits (`usage.prompt_tokens_details.cached_tokens`).
+    pub cached_tokens: u32,
+    /// Thinking spend (`usage.completion_tokens_details.reasoning_tokens`,
+    /// billed as output).
+    pub reasoning_tokens: u32,
 }
 
 /// Model reply: proposed records plus usage.

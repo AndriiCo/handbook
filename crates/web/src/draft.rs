@@ -44,6 +44,8 @@ pub struct RunView {
     pub model: String,
     pub input_tokens: u32,
     pub output_tokens: u32,
+    pub cached_tokens: u32,
+    pub reasoning_tokens: u32,
     pub error: String,
     pub started_at: i64,
     pub finished_at: i64,
@@ -76,6 +78,8 @@ impl DraftRuns {
                 model: String::new(),
                 input_tokens: 0,
                 output_tokens: 0,
+                cached_tokens: 0,
+                reasoning_tokens: 0,
                 error: String::new(),
                 started_at: now,
                 finished_at: 0,
@@ -93,6 +97,8 @@ impl DraftRuns {
             run.model = outcome.model.clone();
             run.input_tokens = outcome.input_tokens;
             run.output_tokens = outcome.output_tokens;
+            run.cached_tokens = outcome.cached_tokens;
+            run.reasoning_tokens = outcome.reasoning_tokens;
             run.finished_at = now;
         }
     }
@@ -252,6 +258,8 @@ impl DraftTask {
                         "model": report.model,
                         "input_tokens": report.input_tokens,
                         "output_tokens": report.output_tokens,
+                        "cached_tokens": report.cached_tokens,
+                        "reasoning_tokens": report.reasoning_tokens,
                         "elapsed_ms": started.elapsed().as_millis() as u64,
                     }),
                 );
@@ -335,6 +343,8 @@ impl DraftTask {
             model: client.model_id().to_string(),
             input_tokens: report.usage.input_tokens,
             output_tokens: report.usage.output_tokens,
+            cached_tokens: report.usage.cached_tokens,
+            reasoning_tokens: report.usage.reasoning_tokens,
             proposed_ids,
         })
     }
@@ -347,6 +357,8 @@ pub struct DraftOutcome {
     model: String,
     input_tokens: u32,
     output_tokens: u32,
+    cached_tokens: u32,
+    reasoning_tokens: u32,
     /// Ids this run inserted (for the `proposals` fan-out below).
     proposed_ids: Vec<i64>,
 }
@@ -417,6 +429,8 @@ mod tests {
                 model: "muse-spark-1.3".to_string(),
                 input_tokens: 100,
                 output_tokens: 50,
+                cached_tokens: 80,
+                reasoning_tokens: 30,
                 proposed_ids: vec![11, 12],
             },
             200,
@@ -426,6 +440,11 @@ mod tests {
         assert_eq!(done.proposed, 2);
         assert_eq!(done.model, "muse-spark-1.3");
         assert_eq!((done.input_tokens, done.output_tokens), (100, 50));
+        assert_eq!((done.cached_tokens, done.reasoning_tokens), (80, 30));
+        // The GET view serializes the per-call usage for the console.
+        let body = serde_json::to_value(&done).expect("view serializes");
+        assert_eq!(body["cached_tokens"], 80);
+        assert_eq!(body["reasoning_tokens"], 30);
         assert!(runs.get(999).is_none());
     }
 

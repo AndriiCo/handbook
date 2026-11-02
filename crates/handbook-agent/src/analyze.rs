@@ -205,6 +205,8 @@ mod tests {
             usage: Usage {
                 input_tokens: 1,
                 output_tokens: 1,
+                cached_tokens: 0,
+                reasoning_tokens: 0,
             },
             summary: String::new(),
         }
