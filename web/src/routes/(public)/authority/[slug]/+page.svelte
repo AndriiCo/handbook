@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
 	import VerifiedChip from '../../../../lib/public-ui/VerifiedChip.svelte';
+	import TranslationChip from '../../../../lib/public-ui/TranslationChip.svelte';
 	import GuideStep from '../../../../lib/public-ui/GuideStep.svelte';
 	import GuideEmpty from '../../../../lib/public-ui/GuideEmpty.svelte';
 	import FollowCard from '../../../../lib/public-ui/FollowCard.svelte';
@@ -24,6 +25,12 @@
 		topicLabel
 	} from '../../../../lib/public-ui/handbook.js';
 	import { buildGuide, domain, markQuote, sourceUrl } from '../../../../lib/public-ui/guide.js';
+	import {
+		CHROME,
+		indexTranslations,
+		parseLangParam,
+		translateHref
+	} from '../../../../lib/public-ui/translate.js';
 
 	const slug = $derived(page.params.slug ?? '');
 
@@ -55,6 +62,13 @@
 	let facts = $state<any[] | null>(null);
 	let loadError = $state<string | null>(null);
 	let notFound = $state(false);
+	// Machine-translation view (SA-20): `?lang=es|fr` swaps accepted
+	// fact statements for stored guard-passing rows; anything missing
+	// stays in English. Never a model call from this page.
+	const lang = $derived(parseLangParam(page.url.search));
+	const target = $derived(lang === 'es' || lang === 'fr' ? lang : null);
+	const LANG_CODES = ['es', 'fr'] as const;
+	let translatedById = $state<Record<number, { statement: string; model: string }>>({});
 	let authorityName = $state<string | null>(null);
 	let authorityCountry = $state<string | null>(null);
 	let authorityRegion = $state<string | null>(null);
@@ -204,6 +218,30 @@
 		});
 	});
 
+	// Machine translations follow the same reload cycle: refetch
+	// whenever the slug or `?lang` changes; failures fall back to
+	// English silently (the endpoint 404s unknown slugs the same way).
+	$effect(() => {
+		const current = slug;
+		const want = target;
+		if (!want) {
+			translatedById = {};
+			return;
+		}
+		let cancelled = false;
+		get(`/authorities/${encodeURIComponent(current)}/translations?lang=${want}`)
+			.then((res) => {
+				if (cancelled || current !== slug) return;
+				translatedById = res.ok ? indexTranslations(res.body?.translations) : {};
+			})
+			.catch(() => {
+				if (!cancelled) translatedById = {};
+			});
+		return () => {
+			cancelled = true;
+		};
+	});
+
 	const guideSteps = $derived(buildGuide(facts ?? [], Date.now()));
 
 	// WS flash: the last accepted fact's step lights up after reload.
@@ -329,6 +367,33 @@
 				Report a change
 			</a>
 		</div>
+		<nav aria-label="Dossier language" class="mt-6 flex flex-wrap items-center gap-2 text-sm">
+			<span class="text-ink-muted">{CHROME[lang ?? 'en']?.readIn ?? 'Read in'}:</span>
+			<a
+				href={translateHref(page.url.pathname, null)}
+				aria-current={!lang ? 'true' : undefined}
+				class={`inline-flex min-h-11 items-center rounded-full px-3 no-underline transition-colors ${
+					!lang
+						? 'bg-accent-fill font-medium text-accent-ink'
+						: 'text-ink-muted hover:bg-surface hover:text-ink'
+				}`}
+			>
+				English
+			</a>
+			{#each LANG_CODES as code (code)}
+				<a
+					href={translateHref(page.url.pathname, code)}
+					aria-current={lang === code ? 'true' : undefined}
+					class={`inline-flex min-h-11 items-center rounded-full px-3 no-underline transition-colors ${
+						lang === code
+							? 'bg-accent-fill font-medium text-accent-ink'
+							: 'text-ink-muted hover:bg-surface hover:text-ink'
+					}`}
+				>
+					{CHROME[code]?.langName ?? code}
+				</a>
+			{/each}
+		</nav>
 	</header>
 
 	<section aria-labelledby="howto" class="border-y border-line bg-surface py-10 xl:py-16">
@@ -386,8 +451,21 @@
 						<div class="flex flex-col gap-4">
 							{#each g.facts as fact (fact.id ?? fact.statement)}
 								{@const cite = firstCapture(fact)}
+								{@const view =
+									target && typeof fact?.id === 'number' && translatedById[fact.id]
+										? { lang: target, ...translatedById[fact.id] }
+										: null}
 								<article class="rounded-xl border border-line bg-bg p-5">
-									<p class="text-body-lg m-0 break-words text-ink">{fact.statement}</p>
+									{#if view}
+										<TranslationChip
+											lang={view.lang}
+											translated={view.statement}
+											original={fact.statement}
+											model={view.model}
+										/>
+									{:else}
+										<p class="text-body-lg m-0 break-words text-ink">{fact.statement}</p>
+									{/if}
 									<div class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
 										{#if cite}
 											<VerifiedChip tier="Staff approved" verified={shortDate(cite.captured_at)} />
