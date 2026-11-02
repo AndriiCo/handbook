@@ -136,3 +136,55 @@ REPORT every 2 hours and at the end:
 WED 11-04 10:00 PST
 - Stop merging. RO-2 once more on main. Tag submission-2026-11-04 on the SHA that passes.
 - Hand me the tag, the README video line to fill, and the final checklist.
+
+ADDENDUM 2026-11-02 (operator order): world archive of apostille authorities as
+WARC files + CSVs for judges (review §13). Repo-and-files work only: no production
+store load, no deploy, no schema change. Model rule unchanged: only Meta models
+(Muse Spark) anywhere in it; model-gate stays green. Every Meta call follows
+`.agents/meta-api-findings.md` and the ai-slice skill (public HCCH text only;
+quote-check every extracted name/URL against the cited page, reuse the
+analyze.rs/runner.rs byte-exact pattern; recorded fixtures, replay tests).
+
+- SA-7 "world-index" (write-capable, branch `sub/world-index`). Owns
+  xtask/src/world.rs (new), packs/world/** (new), evals/world/** (new).
+  `cargo xtask world-index`: fetch HCCH 1961 status table (cid=41) + every
+  Contracting Party competent-authority page (EN); deterministic table parse;
+  Muse Spark only for irregular pages with the facts quote check; write
+  packs/world/<ISO2>.json (authorities[], watch[] all `needs_review`, each
+  citing its HCCH URL) + archive/<run>/authorities.csv. Tests on recorded
+  HCCH fixtures (public text). Report: parties found (expect 130),
+  authorities, URLs, parties with zero URLs. Never touches xtask/src/main.rs,
+  Cargo.toml/lock, LOG.md (builder wires CLI + commits those).
+- SA-8 "crawler" (write-capable, branch `sub/crawler`; starts when SA-7 has a
+  first packs/world). Owns crates/ingest/src/warc.rs (new), xtask/src/crawl.rs
+  (new), xtask/src/archive.rs (new). `cargo xtask crawl --packs packs/world
+  --out archive/<run>/`: WARC/1.1 .warc.gz, per-record gzip; warcinfo, request
+  + response per redirect hop, metadata (slug, pack, robots verdict, TLS peer
+  chain); sha1-base32 payload + block digests, Record-ID, Date, Target-URI,
+  Concurrent-To; robots FAILS CLOSED (disallow logged in CSV); politeness
+  1 req/2 s per host, 429/Retry-After honoured, 32 hosts parallel, 25 MiB PDF
+  cap; UA "handbook-crawl/0.1 (+https://andrii.ai/apostille)"; depth 0 plus
+  same-host apostille|legaliz|authentic|fee|form links (depth 1); files
+  ≤ 1 GB at warc/<ISO2>/<slug>-NNNNN.warc.gz. `cargo xtask archive-package
+  --run <run>`: manifest.csv, authorities.csv, coverage.csv (exact review §13
+  columns), cdx/index.cdxj, WACZ 1.1 (world + per country), text/<sha256>.txt,
+  SHA256SUMS, index.html. Validate WARCs with an independent reader + WACZ
+  with `wacz validate` if available; report results. Same no-touch shared
+  files as SA-7. Report: parties/authorities/URLs; ok/failed/disallowed/
+  missing; bytes; crawl time; validation output.
+- RO-4 "rights-and-access" (read-only, branch `sub/rights`). Commits only
+  docs/ops/world-archive-rights.md: per-country governing terms/copyright
+  note + robots status, HCCH terms, what publishes openly (CSVs, coverage,
+  quotes) vs behind a judges-only token (warc/, wacz/).
+- Builder after SA-7/SA-8 merge: wire `cargo xtask up --from-archive <url|dir>
+  [--country ISO2]` into up.rs (sha256 verify, import response records as
+  kind='warc' captures for analyze). Builder merges one branch at a time.
+
+RUN (operator-run; prepared, never run against production):
+1. Tonight: wget T0–T1 pass from the operator-chosen crawl origin (/24 or
+   plant): `wget --input-file archive/<run>/t1-urls.txt --warc-file
+   archive/<run>/warc/t1 --warc-cdx --wait=2 --random-wait -e robots=on
+   --timeout=30 --tries=2 --user-agent "handbook-crawl/0.1
+   (+https://andrii.ai/apostille)"`, then archive-package.
+2. Mon/Tue: Rust crawler over T0–T2, then archive-package.
+3. Hand the operator files/ + SHA256SUMS for the hermes site.
