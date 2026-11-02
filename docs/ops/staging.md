@@ -83,10 +83,16 @@ matching `rustc --version`, never by relaxing lints.
 ## Watch (monitoring, backup, posture)
 
 - Liveness: `GET /apostille/healthz` → 200 + `{"status":"ok"}`;
-  alert on 3 consecutive failures. Certs renew in-binary
+  alert on 3 consecutive failures. The deploy smoke stays on
+  `/healthz`. Certs renew in-binary
   (ARI); weekly check `notAfter - now > 21 days`. Disk alert
   80%. Daily: 5xx count over the last hour; any spike →
   check, then roll back per § Steps 7.
+- Readiness: `GET /apostille/readyz` reports per-check JSON
+  (`database`, `tls_certificate`, `kek`, `timers`) — 200 ready,
+  503 with the failed checks named. Plain-HTTP boots (staging,
+  `xtask up`) record no serving leaf and never report ready, so
+  monitoring targets `/readyz` on production only.
 - Backup: nightly SQLite backup API (never raw-copy WAL) +
   `tar` of `store/`, offsite, 7 daily + 4 weekly. Quarterly
   restore drill onto staging. Secrets backed up separately,

@@ -12,10 +12,10 @@
 //!    just the notify worker; the ACME loop's long sleeps are
 //!    covered by check 2 instead).
 //!
-//! Process statics (no `AppState` field): the leaf is recorded
-//! once per serving pair, heartbeats by the loops themselves.
-//! Tests never set them, so handler tests observe the
-//! fail-closed shape hermetically.
+//! Process statics (no `AppState` field): the leaf is
+//! re-recorded on every renewal, heartbeats by the loops
+//! themselves. Tests pin only long-expired leaf values, so
+//! handler tests keep observing the fail-closed shape.
 
 use axum::{
     extract::State,
@@ -24,10 +24,13 @@ use axum::{
 };
 use serde_json::json;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    Mutex,
+    atomic::{AtomicI64, Ordering},
+};
 
 use super::passkey;
-use super::{AppState, store_unavailable, unix_now};
+use super::{AppState, unix_now};
 
 /// Refuse traffic this far out from expiry (21 days: inside the
 /// ACME renewal window with margin for a failed attempt).
@@ -35,16 +38,36 @@ pub const CERT_MIN_DAYS_LEFT: i64 = 21;
 /// The notify worker ticks every 60 s; silence past 5× is death.
 pub const NOTIFY_MAX_BEAT_AGE_SECS: i64 = 300;
 
-static SERVING_LEAF_NOT_AFTER: OnceLock<Option<i64>> = OnceLock::new();
+/// Serving leaf expiry as unix seconds (0 = none recorded).
+/// Atomic, not first-write-wins: every ACME renewal overwrites it.
+/// A stuck old value would 503 the process ~21 days before the OLD
+/// leaf expires while a renewed leaf is already serving.
+static SERVING_LEAF_NOT_AFTER: AtomicI64 = AtomicI64::new(0);
 static HEARTBEATS: std::sync::LazyLock<Mutex<HashMap<&'static str, i64>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Store one leaf expiry (the overwrite half of
+/// [`record_serving_leaf`], factored so tests can pin values
+/// without minting certificates).
+fn store_leaf_not_after(not_after: i64) {
+    SERVING_LEAF_NOT_AFTER.store(not_after, Ordering::SeqCst);
+}
+
 /// Record the serving leaf's expiry (boot + every ACME renewal).
-/// First write wins per process; a renewal is always later, and a
-/// process never serves two pairs.
+/// Every successful parse overwrites; unparsable input keeps the
+/// old value — a bad read must never blank a good leaf.
 pub fn record_serving_leaf(cert_pem: &[u8]) {
-    let not_after = super::mtls::cert_not_after_unix(cert_pem).ok();
-    let _ = SERVING_LEAF_NOT_AFTER.set(not_after);
+    if let Ok(not_after) = super::mtls::cert_not_after_unix(cert_pem) {
+        store_leaf_not_after(not_after);
+    }
+}
+
+/// Last recorded leaf expiry (None = no leaf recorded yet).
+pub fn serving_leaf_not_after() -> Option<i64> {
+    match SERVING_LEAF_NOT_AFTER.load(Ordering::SeqCst) {
+        0 => None,
+        not_after => Some(not_after),
+    }
 }
 
 /// One loop tick (`last` in unix seconds, 0 = never).
@@ -106,7 +129,7 @@ pub async fn readyz(State(state): State<AppState>) -> Response {
                 .ok()
         })
         .is_some();
-    let leaf = SERVING_LEAF_NOT_AFTER.get().copied().flatten();
+    let leaf = serving_leaf_not_after();
     let beats = [("notify", last_beat("notify"), NOTIFY_MAX_BEAT_AGE_SECS)];
     let verdict = assess(db_ok, leaf, state.kek.is_some(), &beats, now);
     let timers: serde_json::Map<String, serde_json::Value> = verdict
@@ -114,6 +137,9 @@ pub async fn readyz(State(state): State<AppState>) -> Response {
         .iter()
         .map(|(name, ok)| (name.to_string(), json!(ok)))
         .collect();
+    // Every outcome carries the same per-check body (a dead
+    // database reports `database: false` with 503, never a bare
+    // 500), so the balancer sees WHICH check failed.
     let body = json!({
         "status": if verdict.ready { "ready" } else { "not-ready" },
         "checks": {
@@ -123,9 +149,6 @@ pub async fn readyz(State(state): State<AppState>) -> Response {
             "timers": timers,
         },
     });
-    if !db_ok {
-        return store_unavailable();
-    }
     if verdict.ready {
         (StatusCode::OK, axum::Json(body)).into_response()
     } else {
@@ -151,6 +174,21 @@ mod tests {
         );
         assert!(verdict.ready);
         assert!(verdict.timers.iter().all(|(_, ok)| *ok));
+    }
+
+    #[test]
+    fn renewal_overwrites_the_recorded_leaf() {
+        // Long-expired values only: the shared static must never
+        // flip the process assessment green from a test (the
+        // fail-closed handler test pins `tls_certificate: false`).
+        store_leaf_not_after(100);
+        assert_eq!(serving_leaf_not_after(), Some(100));
+        store_leaf_not_after(200);
+        assert_eq!(serving_leaf_not_after(), Some(200));
+        // Unparsable input keeps the old value: a bad read never
+        // blanks a good leaf.
+        record_serving_leaf(b"not a pem file");
+        assert_eq!(serving_leaf_not_after(), Some(200));
     }
 
     #[test]

@@ -324,13 +324,22 @@ pub fn run_pass(cfg: &WorkerCfg) {
 /// thread (rusqlite is `!Send`).
 pub fn spawn_worker(cfg: WorkerCfg, poke: Arc<tokio::sync::Notify>) {
     tokio::spawn(async move {
+        // First pass runs at boot, not after the first 60 s tick:
+        // the pass beats (on a healthy store), so `/readyz` clears
+        // its timer check within seconds of every boot.
+        run_pass_blocking(&cfg).await;
         loop {
             tokio::select! {
                 _ = poke.notified() => {},
                 _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {},
             }
-            let step = cfg.clone();
-            let _ = tokio::task::spawn_blocking(move || run_pass(&step)).await;
+            run_pass_blocking(&cfg).await;
         }
     });
+}
+
+/// One [`run_pass`] off the async runtime.
+async fn run_pass_blocking(cfg: &WorkerCfg) {
+    let step = cfg.clone();
+    let _ = tokio::task::spawn_blocking(move || run_pass(&step)).await;
 }
