@@ -1,7 +1,7 @@
 //! `xtask analyze --scan-captures`: Option-B watermark scan.
 //!
 //! Drives the real binary against a temp store with seeded captures
-//! (sidecar present/missing, pre-watermarked ids, non-EN slug).
+//! (sidecar present/missing, pre-watermarked ids, unsupported-lang skip).
 
 use std::process::Command;
 
@@ -150,7 +150,7 @@ fn scan_analyzes_new_skips_missing_and_respects_watermark() {
 }
 
 #[test]
-fn scan_with_non_en_lang_skips_without_facts() {
+fn scan_with_unsupported_lang_skips_without_facts() {
     let dir = tempfile::tempdir().unwrap();
     let store = init_store(&dir);
     let id = seed_capture(&store, "usa-or-sos", true);
@@ -163,7 +163,7 @@ fn scan_with_non_en_lang_skips_without_facts() {
             "usa-or-sos",
             "--scan-captures",
             "--lang",
-            "es",
+            "de",
         ])
         .output()
         .unwrap();
