@@ -100,6 +100,45 @@ authorities (`packs/`, 9 packs); 3 authorities are loaded in production,
 not 500+. What is demo-only: document photos are synthetic
 samples, and there is no real mail, fees, or carrier charges anywhere.
 
+## Promised in our application → delivered
+
+Promise words are quoted from the hackathon application text
+([001 — Initial scaffolding](docs/prompts/2026-10-26-001-initial-scaffolding.md),
+2026-10-26). No separate "review §14" promise file exists in the
+repo — the push-plan's §14 list points back to this application
+text, so it is the source used here. Statuses marked "live" are
+served by the production SHA; "(repo)" means merged, not claimed
+live. Production is `0.1.0+2b4bc8d`, scoreboard **5/10** measured
+2026-11-02T17:32Z (`node .agents/scoreboard/scoreboard.mjs`).
+GP2-data is red: Vietnam 0/8, usa-wa-sos 1/8 accepted facts —
+approvals are operator-owned.
+
+| Promised (application words) | Status | Reason / where it stands |
+|---|---|---|
+| Watch 500+ cited URLs, HCCH feed, inbox for authority notices | Partial | Thin slice live: `packs/` define 24 source URLs across 15 authorities (9 packs, HCCH pack included); 3 authorities loaded in production. Full 500-URL crawl + F3 inbox are roadmap (Week 3+). |
+| Muse Spark turns only changes into cited records I approve | Delivered (repo) | Draft → validate → store-as-proposed; staff approve in /review with audit + conflict banner; approvals publish live. Production approvals pending (see GP2-data above). |
+| Reading English, Spanish or French pages and forms | Partial | Runner drafts from es/fr pages (SA-16); gold set grew 26 → 30 with 4 es/fr cases. Es/fr machine translation after approval is merged (SA-20) but roadmap until wired — not claimed live. Live-model rates below were measured on the 26 English-only cases; full-30 re-measure pending. |
+| Flag contradictions like Washington's two PO Boxes | Delivered (repo) | Conflict policy is the banner (`crates/web/src/approval.rs`); canonical PO-Box fixtures seed the case in tests. |
+| One consular legalization chain (Egypt in USA) with pre-filled authority forms | Partial (repo) | Read-only chain view (`ChainView`, `needs_review` chip per step, `packs/egypt-consular.json`) + DS-4194 prefill from the synthetic order (SA-18). Step validation (V-1…V-19) is roadmap. |
+| Walk-in reports (route photos, parking tips, rejections) update the handbook | Partial (repo) | Signed-in report form (≤3 photos, EXIF stripped) + report tables merged; staff turn reports into cited facts (SA-21). |
+| SAM 3.1 masking faces and plates | Delivered | Hosted SAM 3.1 via the Meta Model API on the precheck path; open-weights SAM 3 drop-in on the plant RTX 3060 for the A2 recorder (+ optional face/plate mask). Weights licence-gated, never committed (SA-6). |
+| Self-hosted Muse Glimmer pre-checks document photos | Descoped | Honest substitute: the public precheck serves recorded verdict JSONs verbatim — zero marginal model cost. Glimmer self-hosting not built. |
+| Approved changes reach the handbook and MCP server | Delivered (repo) | Accepted-only publish; read-only MCP stub with one tool (`lookup_authority`, `crates/mcp`). |
+| A new country means new sources, not new code | Delivered (repo) | 106 authorities staged as data (`packs/world/US.json` 59 + `MX.json` 33 + `CA.json` 14, all `needs_review`); validated by `cargo xtask packs-validate` (SA-17). |
+| One source for every country, starting 106 US/CA/MX; prepaid labels and envelopes to your door | Partial | Authority data staged (above); 3 authorities loaded in production, more load as packs verify. No real mail, fees, or carrier charges anywhere. |
+| Success criterion: Viet Nam request → completed form + FedEx label, envelopes tomorrow | Roadmap | Live order timeline, form PDF fill and carrier postage are not wired. Live FedEx endpoints merged behind `labels.live` (off by default; caps 2/day, $60 max, ZIP allowlist, staff-only, audited — SA-19); credentials + allowlist are operator-owned. |
+| Source-changed view (SA-14) | Parked | Needs ≥2 captures of one source; production holds at most one per source (carried from the slice report, not independently verified from this worktree). |
+
+Number provenance (measured this turn vs carried):
+
+- Production `0.1.0+2b4bc8d`, 5/10 — measured (`scoreboard.mjs` full run, 2026-11-02T17:32Z).
+- Eval rates — measured from live `/api/v1/quality` this turn: model `muse-spark-1.3`, run `2026-11-01T04:29:10Z`, 26 gold cases at run time, `quote_found_rate` 1.0, `value_in_quote_rate` 0.96875 (shown 0.969), `topic_accuracy` 0.640625 (shown 0.641). Match the README's cited measurement.
+- Gold set now 30 (13 vietnam + 13 usa-wa-sos + 2 mexico-sre + 2 france-legalisation) — counted this turn.
+- 106 authorities = 59 + 33 + 14 — parsed from the pack files this turn.
+- FedEx caps (2/day, $60, off by default) — read from `crates/config/src/lib.rs` defaults this turn.
+- Planted faults 181/182 — carried from the README's cited 2026-11-02 re-measurement; not re-run this turn.
+- S1 submission row is still red and stays honest: proprietary LICENSE kept (never MIT), repo visibility private per scoreboard, video line operator-owned (lands 11-03).
+
 ## What's next
 
 The live order timeline, the form PDF, and the carrier label are roadmap.
