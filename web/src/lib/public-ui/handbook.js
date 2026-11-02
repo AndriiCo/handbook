@@ -99,6 +99,28 @@ export function relativeDay(iso, nowMs = Date.now()) {
 }
 
 /**
+ * `created_at` (unix seconds) -> `approved 42s ago` / `approved 5m ago` /
+ * `approved 3h ago` / `approved 4d ago`. Empty when the stamp is missing
+ * or in the future. The public facts API carries no accept timestamp,
+ * so the draft stamp is the approval proxy (facts are accepted shortly
+ * after they are drafted).
+ * @param {number} createdAtSec
+ * @param {number} [nowMs]
+ */
+export function approvedAgo(createdAtSec, nowMs = Date.now()) {
+	if (typeof createdAtSec !== 'number' || !Number.isFinite(createdAtSec) || createdAtSec <= 0)
+		return '';
+	const secs = Math.floor(nowMs / 1000 - createdAtSec);
+	if (secs < 0) return '';
+	if (secs < 60) return `approved ${secs}s ago`;
+	const mins = Math.floor(secs / 60);
+	if (mins < 60) return `approved ${mins}m ago`;
+	const hours = Math.floor(mins / 60);
+	if (hours < 48) return `approved ${hours}h ago`;
+	return `approved ${Math.floor(hours / 24)}d ago`;
+}
+
+/**
  * Seed the dossier evidence ledger from accepted facts: one `verified`
  * event per fact, one `changed` event per conflict banner. Sibling ids
  * repeat across parents (conflict cliques reference each other), so
@@ -113,10 +135,11 @@ export function seedLedgerEvents(facts) {
 		const f = list[i];
 		const cites = Array.isArray(f?.citations) ? f.citations : [];
 		const parent = f?.id ?? `row-${i}`;
+		const ago = approvedAgo(f?.created_at);
 		events.push({
 			id: `fact-${parent}`,
 			kind: 'verified',
-			text: `${topicLabel(f?.topic)} — verified quote`,
+			text: ago ? `${topicLabel(f?.topic)} — verified quote · ${ago}` : `${topicLabel(f?.topic)} — verified quote`,
 			at: cites.length > 0 ? (cites[0]?.captured_at ?? '') : '',
 			fresh: false
 		});

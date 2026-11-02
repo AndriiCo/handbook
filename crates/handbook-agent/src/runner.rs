@@ -57,6 +57,96 @@ pub struct RunReport {
     /// Billed tokens for the draft call(s), retry included; zero when
     /// no model call ran (skipped paths).
     pub usage: Usage,
+    /// Every draft call in order (the refused-quote retry is attempt 2).
+    /// Empty on skipped paths, which make no model call.
+    pub attempts: Vec<AttemptRecord>,
+    /// Every rejected record in chronological order (attempt 1 first).
+    /// Each one also lands as an `analyze.rejected` audit row inside
+    /// the run's transaction.
+    pub rejections: Vec<RejectedRecord>,
+}
+
+/// One draft call's recorded outcome (visible-checks): every model
+/// call lands here with its own usage split, so the trace console can
+/// show `attempt 1: 2 rejected (…) → retry → attempt 2: 3 proposed`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttemptRecord {
+    /// 1-based attempt number within the run.
+    pub n: u32,
+    /// Records the model drafted in this call.
+    pub drafted: usize,
+    pub proposed: usize,
+    pub rejected: usize,
+    /// Unique human labels for this attempt's failures, in first-seen
+    /// order: validation kinds (`value not in quote`, …), or
+    /// `call failed` when the draft call itself errored. A `truncated`
+    /// label is reserved but never emitted: the current
+    /// [`ModelClient`](contracts::model::ModelClient) contract carries
+    /// no truncation signal.
+    pub kinds: Vec<String>,
+    pub usage: Usage,
+}
+
+/// One rejected record, as the `analyze.rejected` audit row and the
+/// staff rejections endpoint serve it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RejectedRecord {
+    /// 1-based attempt that drafted the record.
+    pub attempt: u32,
+    /// [`ValidationErrorKind`](crate::analyze::ValidationErrorKind)
+    /// debug name (e.g. `ValueNotInQuote`).
+    pub kind: String,
+    pub topic: String,
+    pub field: String,
+    /// Record value, truncated to 200 chars.
+    pub value: String,
+    /// Claimed citation span (`byte_start`, `byte_end`).
+    pub span: (u32, u32),
+}
+
+/// Cap on stored rejection values (chars, not bytes).
+pub const MAX_REJECTION_VALUE_CHARS: usize = 200;
+
+/// Human label for a validation failure kind (trace display).
+fn kind_label(kind: &crate::analyze::ValidationErrorKind) -> &'static str {
+    use crate::analyze::ValidationErrorKind::*;
+    match kind {
+        UnknownTopic => "unknown topic",
+        MissingDoc => "missing doc",
+        BadRange => "bad range",
+        BadConfidence => "bad confidence",
+        ShortQuote => "short quote",
+        LongQuote => "long quote",
+        ValueNotInQuote => "value not in quote",
+    }
+}
+
+/// Truncate a rejection value to [`MAX_REJECTION_VALUE_CHARS`] chars.
+fn truncate_value(value: &str) -> String {
+    value.chars().take(MAX_REJECTION_VALUE_CHARS).collect()
+}
+
+/// Push a failure label once, in first-seen order.
+fn push_kind(kinds: &mut Vec<String>, label: &str) {
+    if !kinds.iter().any(|k| k == label) {
+        kinds.push(label.to_string());
+    }
+}
+
+/// Build the [`RejectedRecord`] for one validation failure.
+fn rejected_record(
+    attempt: u32,
+    kind: &str,
+    record: &contracts::model::ProposedRecord,
+) -> RejectedRecord {
+    RejectedRecord {
+        attempt,
+        kind: kind.to_string(),
+        topic: record.topic.clone(),
+        field: record.field.clone(),
+        value: truncate_value(&record.value),
+        span: (record.citation.byte_start, record.citation.byte_end),
+    }
 }
 
 /// One [`run_analysis`] call's caller-owned inputs.
@@ -117,6 +207,26 @@ pub fn run_analysis(
     let validation_errors = validate_response(&resp, req.sources, &allowed)
         .err()
         .unwrap_or_default();
+    // Attempt 1's kinds + rejections (built before the retry extends
+    // `resp.records`, so indices below stay attempt-local).
+    // `rejection_idx` parallels `rejections` with each record's global
+    // index in the merged response (for the audit `after_ref`).
+    let mut kinds1 = Vec::new();
+    let mut rejections1 = Vec::new();
+    let mut rejection_idx = Vec::new();
+    for e in &validation_errors {
+        push_kind(&mut kinds1, kind_label(&e.kind));
+        if let Some(record) = resp.records.get(e.record_index) {
+            rejection_idx.push(e.record_index);
+            rejections1.push(rejected_record(1, &format!("{:?}", e.kind), record));
+        }
+    }
+    // Per-attempt global index ranges plus kinds/usage, assembled into
+    // `attempts` after validation (ranges let proposed/rejected split
+    // across the refused-quote retry).
+    let mut attempt_meta: Vec<(u32, usize, usize, Vec<String>, Usage)> =
+        vec![(1, 0, resp.records.len(), kinds1, resp.usage.clone())];
+    let mut rejections = rejections1;
     // Refused-quote retry (operator fix `live-draft-first`): every record
     // failed on its quote and none is usable — ask once more with fewer
     // records and the refusal reasons attached. The note is appended
@@ -144,25 +254,54 @@ pub fn run_analysis(
         match client.draft_records(&narrowed) {
             Ok(retry) => {
                 let base = resp.records.len();
+                // Attempt 1's usage was snapshotted before the merge
+                // below; the merged total still lands in `resp.usage`
+                // (audit + report, unchanged).
                 resp.usage.input_tokens += retry.usage.input_tokens;
                 resp.usage.output_tokens += retry.usage.output_tokens;
                 resp.usage.cached_tokens += retry.usage.cached_tokens;
                 resp.usage.reasoning_tokens += retry.usage.reasoning_tokens;
+                let mut kinds2 = Vec::new();
                 if let Err(more) = validate_response(&retry, req.sources, &allowed) {
                     for e in more {
                         errors.push(format!("retry record {}: {:?}", e.record_index, e.kind));
                         failed.insert(base + e.record_index);
+                        push_kind(&mut kinds2, kind_label(&e.kind));
+                        if let Some(record) = retry.records.get(e.record_index) {
+                            rejection_idx.push(base + e.record_index);
+                            rejections.push(rejected_record(2, &format!("{:?}", e.kind), record));
+                        }
                     }
                 }
+                let usage2 = retry.usage.clone();
+                let drafted2 = retry.records.len();
                 resp.records.extend(retry.records);
+                attempt_meta.push((2, base, base + drafted2, kinds2, usage2));
             }
-            Err(e) => errors.push(format!("retry: {e}")),
+            Err(e) => {
+                errors.push(format!("retry: {e}"));
+                let end = resp.records.len();
+                attempt_meta.push((
+                    2,
+                    end,
+                    end,
+                    vec!["call failed".to_string()],
+                    Usage {
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        cached_tokens: 0,
+                        reasoning_tokens: 0,
+                    },
+                ));
+            }
         }
     }
     for e in &validation_errors {
         errors.push(format!("record {}: {:?}", e.record_index, e.kind));
         failed.insert(e.record_index);
     }
+    // `rejections` is already chronological: attempt 1's rows were
+    // collected above and the retry appended attempt 2's after them.
 
     // The fact table has no field/confidence columns: field folds
     // into the statement (see insert_proposed_fact docs). The model id
@@ -171,9 +310,13 @@ pub fn run_analysis(
     let capture_sha = capture_sha256(conn, req.capture_id);
     // B1: facts + watermark + audit commit atomically — a mid-run
     // failure never leaves content rows without their audit row.
-    let (proposed, rejected, suppressed, usage) = in_transaction(conn, || {
+    // Rejection rows ride the same transaction: one `analyze.rejected`
+    // audit row per rejected record (kind, topic, field, value ≤200
+    // chars, span).
+    let (proposed, rejected, suppressed, suppressed_idx, usage) = in_transaction(conn, || {
         let mut proposed = 0;
         let mut suppressed = 0;
+        let mut suppressed_idx = HashSet::new();
         for (index, record) in resp.records.iter().enumerate() {
             if failed.contains(&index) {
                 continue;
@@ -221,6 +364,7 @@ pub fn run_analysis(
                     &reason,
                 )?;
                 suppressed += 1;
+                suppressed_idx.insert(index);
                 continue;
             }
             // Citations index the capture sidecar — but only when the
@@ -255,9 +399,61 @@ pub fn run_analysis(
             resp.usage.reasoning_tokens
         );
         insert_analysis_audit(conn, req.at, req.actor, authority_id, &reason)?;
-        Ok((proposed, rejected, suppressed, resp.usage.clone()))
+        // One `analyze.rejected` row per rejected record, same
+        // transaction: the audit trail survives even when every record
+        // was rejected (no fact rows to join against later).
+        for (index, r) in rejection_idx.iter().zip(rejections.iter()) {
+            let reason = serde_json::json!({
+                "attempt": r.attempt,
+                "kind": r.kind,
+                "topic": r.topic,
+                "field": r.field,
+                "value": r.value,
+                "span": [r.span.0, r.span.1],
+            })
+            .to_string();
+            insert_audit(
+                conn,
+                req.at,
+                req.actor,
+                "analyze.rejected",
+                "authority",
+                authority_id,
+                &capture_sha,
+                &format!("attempt {} record {index}", r.attempt),
+                &reason,
+            )?;
+        }
+        Ok((
+            proposed,
+            rejected,
+            suppressed,
+            suppressed_idx,
+            resp.usage.clone(),
+        ))
     })
     .map_err(db_err)?;
+
+    // Split proposed across attempts: each attempt's records minus its
+    // failed and suppressed indices.
+    let attempts = attempt_meta
+        .into_iter()
+        .map(|(n, start, end, kinds, usage)| {
+            let rejected = failed.iter().filter(|i| start <= **i && **i < end).count();
+            let suppressed_here = suppressed_idx
+                .iter()
+                .filter(|i| start <= **i && **i < end)
+                .count();
+            AttemptRecord {
+                n,
+                drafted: end - start,
+                proposed: (end - start) - rejected - suppressed_here,
+                rejected,
+                kinds,
+                usage,
+            }
+        })
+        .collect();
 
     Ok(RunReport {
         authority_slug: req.slug.to_string(),
@@ -267,6 +463,8 @@ pub fn run_analysis(
         skipped: false,
         errors,
         usage,
+        attempts,
+        rejections,
     })
 }
 
@@ -342,6 +540,9 @@ fn skip_unsupported_lang(
             cached_tokens: 0,
             reasoning_tokens: 0,
         },
+        // Skipped paths make no model call: no attempts, no rejections.
+        attempts: Vec::new(),
+        rejections: Vec::new(),
     })
 }
 
@@ -441,6 +642,9 @@ pub fn skip_missing_sidecar(
             cached_tokens: 0,
             reasoning_tokens: 0,
         },
+        // Skipped paths make no model call: no attempts, no rejections.
+        attempts: Vec::new(),
+        rejections: Vec::new(),
     })
 }
 
@@ -655,6 +859,29 @@ mod tests {
         let report = run_analysis(&conn, &BadTopicClient, &req).unwrap();
         assert_eq!((report.proposed, report.rejected), (0, 1));
         assert!(!report.skipped);
+        // Single attempt, one rejection with record detail.
+        assert_eq!(report.attempts.len(), 1);
+        assert_eq!(
+            (
+                report.attempts[0].n,
+                report.attempts[0].drafted,
+                report.attempts[0].proposed,
+                report.attempts[0].rejected
+            ),
+            (1, 1, 0, 1)
+        );
+        assert_eq!(report.attempts[0].kinds, vec!["unknown topic".to_string()]);
+        assert_eq!(report.rejections.len(), 1);
+        assert_eq!(report.rejections[0].kind, "UnknownTopic");
+        assert_eq!(report.rejections[0].value, "PO Box 99999");
+        let rejected_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'analyze.rejected'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(rejected_rows, 1);
         assert_eq!(report.errors.len(), 1);
         // Usage rides along even when every record is rejected.
         assert_eq!(
@@ -811,6 +1038,281 @@ mod tests {
         let err = run_analysis(&conn, &StubClient, &req).expect_err("unknown slug must fail");
         assert!(matches!(err, ModelError::Transport(_)), "got: {err}");
         assert_eq!(storage_counts(&conn), (0, 0, false));
+    }
+
+    /// First call drafts two quote-refused records (attempt 1), the
+    /// narrowed retry drafts one valid record (attempt 2).
+    struct RefuseThenSucceed;
+    impl ModelClient for RefuseThenSucceed {
+        fn model_id(&self) -> &'static str {
+            "stub"
+        }
+
+        fn draft_records(&self, req: &DraftRequest) -> Result<DraftResponse, ModelError> {
+            if req.input_text.contains("Validator refused") {
+                return Ok(DraftResponse {
+                    records: vec![ProposedRecord {
+                        topic: "address".to_string(),
+                        field: "po_box".to_string(),
+                        value: "PO Box 40220".to_string(),
+                        citation: CitationRef {
+                            doc_id: "fixture".to_string(),
+                            byte_start: 0,
+                            byte_end: 12,
+                        },
+                        confidence: 0.9,
+                    }],
+                    usage: Usage {
+                        input_tokens: 10,
+                        output_tokens: 20,
+                        cached_tokens: 5,
+                        reasoning_tokens: 5,
+                    },
+                    summary: String::new(),
+                });
+            }
+            // Values absent from their quotes: every record refused.
+            let refused = |value: &str| ProposedRecord {
+                topic: "address".to_string(),
+                field: "po_box".to_string(),
+                value: value.to_string(),
+                citation: CitationRef {
+                    doc_id: "fixture".to_string(),
+                    byte_start: 0,
+                    byte_end: 12,
+                },
+                confidence: 0.9,
+            };
+            Ok(DraftResponse {
+                records: vec![refused("PO Box 11111"), refused("PO Box 22222")],
+                usage: Usage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cached_tokens: 80,
+                    reasoning_tokens: 30,
+                },
+                summary: String::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn retry_records_both_attempts_and_rejection_audit_rows() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "PO Box 40220, Mon-Fri 9-5!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        let report = run_analysis(&conn, &RefuseThenSucceed, &req).unwrap();
+        assert_eq!((report.proposed, report.rejected), (1, 2));
+        // Both attempts recorded, usage split per call.
+        assert_eq!(report.attempts.len(), 2);
+        let first = &report.attempts[0];
+        assert_eq!(
+            (first.n, first.drafted, first.proposed, first.rejected),
+            (1, 2, 0, 2)
+        );
+        assert_eq!(first.kinds, vec!["value not in quote".to_string()]);
+        assert_eq!(
+            first.usage,
+            Usage {
+                input_tokens: 100,
+                output_tokens: 50,
+                cached_tokens: 80,
+                reasoning_tokens: 30,
+            }
+        );
+        let second = &report.attempts[1];
+        assert_eq!(
+            (second.n, second.drafted, second.proposed, second.rejected),
+            (2, 1, 1, 0)
+        );
+        assert!(second.kinds.is_empty());
+        // Totals still merge across the retry (audit + report unchanged).
+        assert_eq!(
+            report.usage,
+            Usage {
+                input_tokens: 110,
+                output_tokens: 70,
+                cached_tokens: 85,
+                reasoning_tokens: 35,
+            }
+        );
+        // Chronological rejections with record detail.
+        assert_eq!(report.rejections.len(), 2);
+        for r in &report.rejections {
+            assert_eq!(r.attempt, 1);
+            assert_eq!(r.kind, "ValueNotInQuote");
+            assert_eq!((r.topic.as_str(), r.field.as_str()), ("address", "po_box"));
+            assert_eq!(r.span, (0, 12));
+        }
+        assert_eq!(report.rejections[0].value, "PO Box 11111");
+        assert_eq!(report.rejections[1].value, "PO Box 22222");
+        // One `analyze.rejected` audit row per rejected record, inside
+        // the run's transaction (plus the single `analysis_run` row).
+        let rows: Vec<(String, String, String)> = conn
+            .prepare(
+                "SELECT action, after_ref, reason FROM audit WHERE action = 'analyze.rejected' ORDER BY id",
+            )
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].1, "attempt 1 record 0");
+        assert_eq!(rows[1].1, "attempt 1 record 1");
+        for (action, _, reason) in &rows {
+            assert_eq!(action, "analyze.rejected");
+            let body: serde_json::Value = serde_json::from_str(reason).unwrap();
+            assert_eq!(body["kind"], "ValueNotInQuote");
+            assert_eq!(body["topic"], "address");
+            assert_eq!(body["field"], "po_box");
+            assert!(body["value"].as_str().unwrap().starts_with("PO Box"));
+            assert_eq!(body["span"], serde_json::json!([0, 12]));
+            assert_eq!(body["attempt"], 1);
+        }
+        let runs: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'analysis_run'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(runs, 1);
+    }
+
+    /// Refused attempt 1, then the retry call itself fails: attempt 2 is
+    /// still recorded (nothing drafted, call failed).
+    struct RefuseThenFail;
+    impl ModelClient for RefuseThenFail {
+        fn model_id(&self) -> &'static str {
+            "stub"
+        }
+
+        fn draft_records(&self, req: &DraftRequest) -> Result<DraftResponse, ModelError> {
+            if req.input_text.contains("Validator refused") {
+                return Err(ModelError::Transport("retry boom".to_string()));
+            }
+            Ok(DraftResponse {
+                records: vec![ProposedRecord {
+                    topic: "address".to_string(),
+                    field: "po_box".to_string(),
+                    value: "PO Box 11111".to_string(),
+                    citation: CitationRef {
+                        doc_id: "fixture".to_string(),
+                        byte_start: 0,
+                        byte_end: 12,
+                    },
+                    confidence: 0.9,
+                }],
+                usage: Usage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cached_tokens: 0,
+                    reasoning_tokens: 0,
+                },
+                summary: String::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn failed_retry_call_still_records_attempt_two() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "PO Box 40220!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        let report = run_analysis(&conn, &RefuseThenFail, &req).unwrap();
+        assert_eq!((report.proposed, report.rejected), (0, 1));
+        assert_eq!(report.attempts.len(), 2);
+        assert_eq!((report.attempts[1].n, report.attempts[1].drafted), (2, 0));
+        assert_eq!(report.attempts[1].kinds, vec!["call failed".to_string()]);
+        assert!(report.errors.iter().any(|e| e.contains("retry: ")));
+    }
+
+    /// A 300-char rejected value stores at most 200 chars, in both the
+    /// report and the audit row.
+    struct LongBadValue;
+    impl ModelClient for LongBadValue {
+        fn model_id(&self) -> &'static str {
+            "stub"
+        }
+
+        fn draft_records(&self, _req: &DraftRequest) -> Result<DraftResponse, ModelError> {
+            Ok(DraftResponse {
+                records: vec![ProposedRecord {
+                    topic: "not_a_topic".to_string(),
+                    field: "po_box".to_string(),
+                    value: "v".repeat(300),
+                    citation: CitationRef {
+                        doc_id: "fixture".to_string(),
+                        byte_start: 0,
+                        byte_end: 12,
+                    },
+                    confidence: 0.9,
+                }],
+                usage: Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cached_tokens: 0,
+                    reasoning_tokens: 0,
+                },
+                summary: String::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn rejection_values_cap_at_200_chars() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), "PO Box 99999!".to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: "PO Box 99999!",
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_200,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        let report = run_analysis(&conn, &LongBadValue, &req).unwrap();
+        // One record, two failures (unknown topic + value not in quote):
+        // both rejections cap the value.
+        assert_eq!(report.rejections.len(), 2);
+        for r in &report.rejections {
+            assert_eq!(r.value.chars().count(), 200);
+        }
+        let reasons: Vec<String> = conn
+            .prepare("SELECT reason FROM audit WHERE action = 'analyze.rejected' ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(reasons.len(), 2);
+        for reason in &reasons {
+            let body: serde_json::Value = serde_json::from_str(reason).unwrap();
+            assert_eq!(body["value"].as_str().unwrap().chars().count(), 200);
+        }
     }
 
     fn seed_capture(conn: &Connection, authority_slug: &str, trust: &str) -> i64 {

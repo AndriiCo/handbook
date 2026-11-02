@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+	approvedAgo,
 	factCount,
 	filterAuthorities,
 	groupFactsByTopic,
@@ -123,6 +124,30 @@ test('seedLedgerEvents keeps unique ids on conflict cliques', () => {
 	assert.equal(ids.length, new Set(ids).size);
 	assert.equal(events.filter((e) => e.kind === 'verified').length, 3);
 	assert.equal(events.filter((e) => e.kind === 'changed').length, 6);
+});
+
+test('approvedAgo formats seconds through days, empty on bad stamps', () => {
+	const nowMs = new Date(2026, 10, 1, 12, 0, 0).getTime();
+	const nowSec = Math.floor(nowMs / 1000);
+	assert.equal(approvedAgo(nowSec - 42, nowMs), 'approved 42s ago');
+	assert.equal(approvedAgo(nowSec - 5 * 60, nowMs), 'approved 5m ago');
+	assert.equal(approvedAgo(nowSec - 3 * 3600, nowMs), 'approved 3h ago');
+	assert.equal(approvedAgo(nowSec - 4 * 86400, nowMs), 'approved 4d ago');
+	assert.equal(approvedAgo(undefined, nowMs), '');
+	assert.equal(approvedAgo(0, nowMs), '');
+	assert.equal(approvedAgo('yesterday', nowMs), '');
+	assert.equal(approvedAgo(nowSec + 60, nowMs), '');
+});
+
+test('seedLedgerEvents says approved Ns ago on verified facts', () => {
+	const nowSec = Math.floor(Date.now() / 1000);
+	const events = seedLedgerEvents([
+		{ id: 1, topic: 'fees', created_at: nowSec - 90, citations: [], conflicts: [] }
+	]);
+	assert.equal(events[0].text, 'Fees — verified quote · approved 1m ago');
+	// Facts without a stamp keep the old line (older fixtures, no crash).
+	const legacy = seedLedgerEvents([{ id: 2, topic: 'fees', citations: [], conflicts: [] }]);
+	assert.equal(legacy[0].text, 'Fees — verified quote');
 });
 
 test('seedLedgerEvents labels accepted conflicts as conflicting reports', () => {

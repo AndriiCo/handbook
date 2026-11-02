@@ -45,10 +45,60 @@
 		cached_tokens: number;
 		reasoning_tokens: number;
 		error: string;
+		attempts: Attempt[];
+	}
+
+	interface Attempt {
+		n: number;
+		drafted: number;
+		proposed: number;
+		rejected: number;
+		kinds: string[];
+		input_tokens: number;
+		output_tokens: number;
+		cached_tokens: number;
+		reasoning_tokens: number;
 	}
 
 	function tokenCount(src: any, name: string): number {
 		return typeof src?.[name] === 'number' ? src[name] : 0;
+	}
+
+	// Attempts from a `run_finished` step or the run registry read-back
+	// (the demo socket sends none — the chain simply stays hidden).
+	function attemptList(src: any): Attempt[] {
+		if (!Array.isArray(src?.attempts)) return [];
+		const out: Attempt[] = [];
+		for (const a of src.attempts) {
+			if (!a || typeof a?.n !== 'number') continue;
+			out.push({
+				n: a.n,
+				drafted: tokenCount(a, 'drafted'),
+				proposed: tokenCount(a, 'proposed'),
+				rejected: tokenCount(a, 'rejected'),
+				kinds: Array.isArray(a?.kinds)
+					? a.kinds.filter((k: unknown): k is string => typeof k === 'string')
+					: [],
+				input_tokens: tokenCount(a, 'input_tokens'),
+				output_tokens: tokenCount(a, 'output_tokens'),
+				cached_tokens: tokenCount(a, 'cached_tokens'),
+				reasoning_tokens: tokenCount(a, 'reasoning_tokens')
+			});
+		}
+		return out.sort((x, y) => x.n - y.n);
+	}
+
+	// "attempt 1: 2 rejected (value not in quote) → retry → attempt 2:
+	// 3 proposed" — null when the run predates attempt recording.
+	function attemptLine(run: DraftRun): string | null {
+		if (!run.attempts || run.attempts.length === 0) return null;
+		return run.attempts
+			.map((a) =>
+				a.rejected > 0
+					? `attempt ${a.n}: ${a.rejected} rejected${a.kinds.length ? ` (${a.kinds.join(', ')})` : ''}`
+					: `attempt ${a.n}: ${a.proposed} proposed`
+			)
+			.join(' → retry → ');
 	}
 
 	// Live draft runs by capture id. The server streams steps to
@@ -81,7 +131,8 @@
 			output_tokens: tokenCount(src, 'output_tokens'),
 			cached_tokens: tokenCount(src, 'cached_tokens'),
 			reasoning_tokens: tokenCount(src, 'reasoning_tokens'),
-			error: ''
+			error: '',
+			attempts: attemptList(src)
 		};
 		clearRunWatch(captureId);
 	}
@@ -129,7 +180,8 @@
 			output_tokens: 0,
 			cached_tokens: 0,
 			reasoning_tokens: 0,
-			error
+			error,
+			attempts: []
 		};
 		clearRunWatch(captureId);
 	}
@@ -202,7 +254,8 @@
 				output_tokens: 0,
 				cached_tokens: 0,
 				reasoning_tokens: 0,
-				error: e instanceof Error ? e.message : 'draft failed'
+				error: e instanceof Error ? e.message : 'draft failed',
+				attempts: []
 			};
 		}
 	}
@@ -336,6 +389,10 @@
 {:else}
 	<ul class="m-0 list-none p-0">
 		{#each traces as t (t.id)}
+			{@const chain =
+				drafts[t.id] && drafts[t.id].status === 'finished'
+					? attemptLine(drafts[t.id] as DraftRun)
+					: null}
 			<li class="border-b border-line py-3">
 				<p class="m-0 mb-1 font-bold">
 					#{t.id} · {t.authority_slug} · {day(t.captured_at)}
@@ -355,6 +412,9 @@
 						{draftLabel(t.id)}
 					</button>
 				</p>
+				{#if chain}
+					<p class="m-0 mt-1 font-mono text-sm text-ink-muted">{chain}</p>
+				{/if}
 			</li>
 		{/each}
 	</ul>
