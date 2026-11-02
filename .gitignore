@@ -27,3 +27,6 @@ rustc-ice-*.txt
 !.muse/session-log.scrub.example.json
 !.muse/hooks/
 web/shots/
+# B3: local boot scratch (holds a raw KEK) and crawl drops — never committed.
+/.local/
+/archive/

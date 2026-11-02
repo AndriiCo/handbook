@@ -15,12 +15,14 @@ fn main() {
     let manifest_dir =
         std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     // Walk up to the dir holding `.git` (workspace root; the
-    // crate may sit several levels down, e.g. `crates/web`).
-    let workspace = manifest_dir
-        .ancestors()
-        .find(|a| a.join(".git").exists())
-        .expect("workspace root with .git")
-        .to_path_buf();
+    // crate may sit several levels down, e.g. `crates/web`). No
+    // `.git` (exported tarball, judge clone without history):
+    // stamp `unknown`, never panic — the binary must build.
+    let Some(workspace) = manifest_dir.ancestors().find(|a| a.join(".git").exists()) else {
+        println!("cargo:rustc-env=BUILD_SHA=unknown");
+        return;
+    };
+    let workspace = workspace.to_path_buf();
     let mut git_dir = workspace.join(".git");
     // Worktrees (like our isolated builders) keep a `.git` FILE
     // pointing at the real dir.

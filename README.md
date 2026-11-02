@@ -27,9 +27,10 @@ value in quote, topic match) — no model grades anything.
 
 ## What is live and what is replayed
 
-Live: drafts, eval, and approvals run against the Meta API. The public
-precheck endpoint serves recorded verdict JSONs verbatim — zero marginal
-model cost, no key on the serving path. Replays and fixtures:
+Live: drafts and eval run against the Meta API; approvals are staff
+decisions in /review (deterministic quote checks only — no model call).
+The public precheck endpoint serves recorded verdict JSONs verbatim —
+zero marginal model cost, no key on the serving path. Replays and fixtures:
 `evals/authorities/` (26-case gold set), `web/e2e/fixtures/`, crate unit
 tests.
 

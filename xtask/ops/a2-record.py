@@ -324,9 +324,16 @@ def main():
         image_b64 = base64.b64encode(png.read_bytes()).decode()
         boxes, sam_secs, counts = sam_boxes(args.base, key, image_b64)
         print(f"  sam: {len(boxes)} box(es) {counts} in {sam_secs:.1f}s", flush=True)
+        if sample == "syn-doc-clean" and not boxes:
+            print("ABORT: SAM returned 0 boxes on the clean sample "
+                  f"(counts={counts}) — the model or the image changed; "
+                  "fix the prompt/image before recording", file=sys.stderr)
+            return 1
         verdict, usage, spark_secs = spark_verdict(args.base, key, sample, sample.replace("-", " "), boxes, image_b64)
-        total_in += int(usage.get("prompt_tokens", 0) or 0)
-        total_out += int(usage.get("completion_tokens", 0) or 0)
+        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+        completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+        total_in += prompt_tokens
+        total_out += completion_tokens
         print(f"  spark: {verdict['verdict']} {verdict['issues']} in {spark_secs:.1f}s "
               f"(in={usage.get('prompt_tokens', '?')} out={usage.get('completion_tokens', '?')})", flush=True)
         record = {
@@ -334,6 +341,10 @@ def main():
             "issues": [str(i) for i in verdict["issues"]][:8],
             "boxes": boxes,
             "models": [SAM_MODEL, SPARK_MODEL],
+            "seconds": {SAM_MODEL: round(sam_secs, 1), SPARK_MODEL: round(spark_secs, 1)},
+            "usage": {"prompt_tokens": prompt_tokens,
+                      "completion_tokens": completion_tokens},
+            "sam_counts": counts,
             "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         dest = out / f"{sample}.json"

@@ -174,3 +174,4 @@
 | 271 | 2026-11-02 09:00Z | Merge sub/up-fixes + engines >=24/>=11 | 131 xtask, RO-2 partial |
 | 272 | 2026-11-02 09:04Z | Merge sub/crawler-fixes: SSRF+robots | 55 ingest, 123 xtask |
 | 273 | 2026-11-02 09:14Z | Merge sub/visible-checks + 2 routes | 52 agent, 297 web, svelte 0 |
+| 274 | 2026-11-02 09:16Z | B3 gitignore+build.rs, B4 recorder, B5 | build green, py compile ok |
