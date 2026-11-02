@@ -523,7 +523,7 @@ fn seed_captures(slugs: &[String]) {
     let mut created = 0;
     let mut dupes = 0;
     for slug in slugs {
-        let authority = authority_id(&conn, slug);
+        let authority = ensure_authority(&conn, slug, now);
         for (file, id, evidence) in gold_cases(slug) {
             ingest_one(
                 &conn,
@@ -635,14 +635,61 @@ fn gold_cases(slug: &str) -> Vec<(String, String, String)> {
     out
 }
 
-fn authority_id(conn: &rusqlite::Connection, slug: &str) -> i64 {
+/// Row id for a gold slug, creating a loudly-logged bootstrap authority
+/// when no pack defines it (SA-16's eval-only slugs `france-legalisation`
+/// and `mexico-sre` have gold files but no packs). Judge-local `up` only:
+/// the store lives in git-ignored `.local/`, the audit row names
+/// `xtask-up`, and every seeded capture is labeled synthetic.
+fn ensure_authority(conn: &rusqlite::Connection, slug: &str, now: i64) -> i64 {
     use rusqlite::OptionalExtension as _;
-    conn.query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |row| {
-        row.get(0)
-    })
-    .optional()
-    .unwrap_or_else(|e| fail(&format!("authority lookup: {e}")))
-    .unwrap_or_else(|| fail(&format!("packs did not create authority {slug}")))
+    let found: Option<i64> = conn
+        .query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |row| {
+            row.get(0)
+        })
+        .optional()
+        .unwrap_or_else(|e| fail(&format!("authority lookup: {e}")));
+    if let Some(id) = found {
+        return id;
+    }
+    let (kind, country, name) = bootstrap_identity(slug);
+    println!(
+        "up: no pack defines authority {slug}; creating bootstrap authority (judge-local only)"
+    );
+    handbook_store::db::add_authority(
+        conn,
+        &handbook_store::db::NewAuthority {
+            kind: &kind,
+            country: &country,
+            region: "",
+            name: &name,
+            slug,
+            actor: "xtask-up",
+            at: now,
+        },
+    )
+    .unwrap_or_else(|e| fail(&format!("bootstrap authority {slug}: {e}")))
+}
+
+/// Mechanical display identity for a pack-less gold slug: kind is always
+/// `office` (a guess scoped to judge-local bootstrap, never production),
+/// country is the first slug token, name is the humanised slug. Short
+/// words (<=3 chars) read as acronyms and stay uppercase.
+fn bootstrap_identity(slug: &str) -> (String, String, String) {
+    fn word(s: &str) -> String {
+        if s.len() <= 3 {
+            s.to_ascii_uppercase()
+        } else {
+            let mut c = s.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => format!("{f}{rest}", f = f.to_ascii_uppercase(), rest = c.as_str()),
+            }
+        }
+    }
+    let words: Vec<String> = slug.split('-').map(word).collect();
+    let country = words.first().cloned().unwrap_or_else(|| slug.to_string());
+    let name = words.join(" ");
+    ("office".to_string(), country, name)
 }
 
 fn unix_now() -> i64 {
@@ -1392,6 +1439,35 @@ mod tests {
             "--country",
             "US",
         ]));
+    }
+
+    #[test]
+    fn bootstrap_identity_for_packless_slugs() {
+        assert_eq!(
+            bootstrap_identity("france-legalisation"),
+            (
+                "office".to_string(),
+                "France".to_string(),
+                "France Legalisation".to_string()
+            )
+        );
+        assert_eq!(
+            bootstrap_identity("mexico-sre"),
+            (
+                "office".to_string(),
+                "Mexico".to_string(),
+                "Mexico SRE".to_string()
+            )
+        );
+        // Packed slugs never reach the bootstrap, but the shape holds anyway.
+        assert_eq!(
+            bootstrap_identity("usa-wa-sos"),
+            (
+                "office".to_string(),
+                "USA".to_string(),
+                "USA WA SOS".to_string()
+            )
+        );
     }
 
     #[test]
