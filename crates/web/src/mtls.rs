@@ -172,6 +172,26 @@ pub fn cert_has_dns_san(cert_pem: &[u8], dns_name: &str) -> Result<bool, String>
     }))
 }
 
+/// Serving leaf's expiry as unix seconds (for `/readyz`: refuse
+/// traffic before the certificate gets close, not after).
+///
+/// # Errors
+///
+/// No PEM certificate block, or the leaf is not valid X.509.
+/// Never echoes bytes (labels only, like the SAN check).
+pub fn cert_not_after_unix(cert_pem: &[u8]) -> Result<i64, String> {
+    let mut reader = std::io::BufReader::new(cert_pem);
+    let certs = rustls_pemfile::certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("TLS cert expiry check: parse PEM: {e}"))?;
+    let Some(first) = certs.first() else {
+        return Err("TLS cert expiry check: no CERTIFICATE blocks".to_string());
+    };
+    let (_, cert) = x509_parser::parse_x509_certificate(first.as_ref())
+        .map_err(|e| format!("TLS cert expiry check: parse DER: {e}"))?;
+    Ok(cert.validity().not_after.to_datetime().unix_timestamp())
+}
+
 /// axum-server acceptor for the single-443 listener:
 /// TLS-handshakes via the stock [`axum_server`] rustls acceptor,
 /// then wraps the per-connection service so every request carries
@@ -375,6 +395,33 @@ mod tests {
             let err = cert_has_dns_san(bad, "admin.andrii.ai").expect_err("must fail");
             assert!(err.contains("TLS cert SAN check"), "{err}");
             assert!(!err.contains("not a pem"), "{err}");
+        }
+    }
+
+    #[test]
+    fn expiry_reads_leaf_not_after_as_unix() {
+        let both = rcgen::generate_simple_self_signed(vec!["andrii.ai".to_string()]).unwrap();
+        let pem = both.cert.pem().into_bytes();
+        let not_after = cert_not_after_unix(&pem).unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        // Parse correctness, not rcgen's validity policy (its
+        // self-signed default runs far past any real leaf).
+        assert!(not_after > now, "leaf must not be expired");
+        assert_eq!(
+            cert_not_after_unix(&pem).unwrap(),
+            not_after,
+            "reads are stable"
+        );
+
+        for bad in [b"".as_slice(), b"not a pem file".as_slice()] {
+            let err = cert_not_after_unix(bad).expect_err("must fail");
+            assert!(
+                err.starts_with("TLS cert expiry check:"),
+                "redacted label, got: {err}"
+            );
         }
     }
 
