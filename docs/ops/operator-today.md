@@ -1,6 +1,7 @@
 # Operator — Monday 2026-11-02 (Pacific; updated ~03:00 PST)
 
-Production runs `0.1.0+eb57cdc` (deployed 2026-11-02 ~10:50Z:
+MISSION "SUBMIT" runs (`docs/ops/push-plan.md`): S0.1 DONE —
+production runs `0.1.0+eb57cdc` (deployed 2026-11-02 ~10:50Z:
 stamp + staging 9/10 + demo 3/3 on `eb57cdc`, ship rails green,
 `ops-deploy.sh --skip-accept`, no `--allow-today-overlap` — the
 8 h window had cleared; prod-before → prod-after identical 5/10,
@@ -97,10 +98,11 @@ group-read pre-step from this morning is done — A2 reads prove it.
    `bash ~/apostille/scripts/ops-a5-eval.sh` (evals path + mktemp +
    store-writability preflight). Paste back: the proposals counts,
    the quality.json lines. Flips A5; proposals feed item 2.
-4. S1: switch LICENSE to MIT, make the repo public, link the demo
-   video in README (video lands 11-03). Video: record the production
-   admin approve scene yourself (session login from your allowlisted
-   IP, no cert; builder takes desktop/mobile), upload to YouTube,
+4. S1 (MISSION SUBMIT decision: LICENSE stays proprietary — do
+   not change it): make the repo public, link the demo video in
+   README (video lands 11-03). Video: record the production admin
+   approve scene yourself (session login from your allowlisted IP,
+   no cert; builder takes desktop/mobile), upload to YouTube,
    paste the URL back.
    Full-history secret scan 11-01 ~16:20Z: clean (gitleaks 8.30.1,
    385 commits, no leaks; working-tree `secrets-scan` clean, 690 files).
