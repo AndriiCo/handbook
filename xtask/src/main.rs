@@ -11,6 +11,7 @@ mod accept;
 mod admin_cert;
 mod admin_staff;
 mod archive;
+mod ask;
 mod atlas;
 mod backup;
 mod brand_assets;
@@ -78,6 +79,7 @@ fn main() {
         Some("admin-cert-revoke") => admin_cert::run_revoke(&args[1..]),
         Some("admin-invite") => admin_staff::run_invite(&args[1..]),
         Some("admin-offboard") => admin_staff::run_offboard(&args[1..]),
+        Some("ask") => ask::run(&args[1..]),
         Some("archive-package") => archive::run_package(&args[1..]),
         Some("world-index") => world::run(&args[1..]),
         Some("crawl") => crawl::run(&args[1..]),
@@ -139,6 +141,7 @@ Tasks:
   secrets-scan scan tracked files for secrets [--staged for the index]
   crawl   fetch packs/world seeds into WARC/1.1 drops [--packs --out]
   archive-package  bundle a crawl run into WACZ/CSVs/index [--run]
+  ask     answer one question with cited authority facts [<question> --slug --base --replay]
   world-index  build packs/world from HCCH status table [--live] [--out]
   up    boot the handbook on loopback with synthetic data [--check] [--fresh] [--live] [--from-archive <url|dir>]
   model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files
