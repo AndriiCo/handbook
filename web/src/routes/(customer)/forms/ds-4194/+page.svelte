@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
+	import ChainView from '../../../../lib/public-ui/ChainView.svelte';
 	import AddressBlock from '../../../../lib/forms/AddressBlock.svelte';
 	import CountrySelect from '../../../../lib/forms/CountrySelect.svelte';
 	import PhoneInput from '../../../../lib/forms/PhoneInput.svelte';
@@ -89,11 +90,49 @@
 		return '';
 	}
 
+	// Synthetic order draft (SA-18): clearly fake contact + Egypt
+	// document details, used only to prefill this draft. Every field
+	// stays editable, and nothing here is a real customer.
+	const SYNTHETIC_ORDER = {
+		name: 'Alex Sample',
+		street: '123 Sample St',
+		city: 'Olympia',
+		state: 'WA',
+		zip: '98501',
+		phone: '+1 360-555-0142',
+		email: 'alex.sample@example.com',
+		destination: 'Egypt',
+		documentType: 'Birth certificate',
+		documents: 1
+	};
+
+	const PREFILL: Record<string, unknown> = {
+		requester_name: SYNTHETIC_ORDER.name,
+		requester_address: {
+			name: SYNTHETIC_ORDER.name,
+			street: SYNTHETIC_ORDER.street,
+			city: SYNTHETIC_ORDER.city,
+			state: SYNTHETIC_ORDER.state,
+			zip: SYNTHETIC_ORDER.zip
+		},
+		requester_phone: SYNTHETIC_ORDER.phone,
+		requester_email: SYNTHETIC_ORDER.email,
+		on_behalf: 'no',
+		countries_of_use: SYNTHETIC_ORDER.destination,
+		number_of_documents: SYNTHETIC_ORDER.documents,
+		document_type: SYNTHETIC_ORDER.documentType
+	};
+
 	// Dynamic per-field state: `any` lets the generic section loop
 	// bind each key to its typed component. Validation still runs
 	// through the typed validateSubmission over this record.
 	let values = $state<Record<string, any>>(
-		Object.fromEntries(template.fields.map((field) => [field.key, initialValue(field)]))
+		Object.fromEntries(
+			template.fields.map((field) => [
+				field.key,
+				field.key in PREFILL ? PREFILL[field.key] : initialValue(field)
+			])
+		)
 	);
 
 	const errors = $derived(validateSubmission(template.fields, values));
@@ -143,6 +182,18 @@
 			</p>
 		</Notice>
 	</div>
+
+	<div class="print:hidden">
+		<Notice variant="info" heading="Prefilled from the synthetic order draft">
+			<p>
+				Egypt · {SYNTHETIC_ORDER.documentType} · {SYNTHETIC_ORDER.documents}
+				document. Every field stays editable — fix any value that is wrong.
+				General information, not legal advice.
+			</p>
+		</Notice>
+	</div>
+
+	<ChainView />
 
 	{#if step === 'fill'}
 		<form
