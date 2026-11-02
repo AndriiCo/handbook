@@ -24,6 +24,22 @@ pub const CURSOR_FACT_ACCEPT: &str = "fact_accept";
 /// `auth::migrate_auth_tables`): no older binary opens a migrated DB,
 /// so a migration here never strands a rollback.
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    let has_unsub_blob: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('notify_subscription')
+         WHERE name = 'unsub_blob'",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_unsub_blob == 0 {
+        // `CREATE TABLE` above already carries the column for fresh
+        // DBs; this backfills pre-existing ones (the voice
+        // `script_id` precedent). Existing rows keep their hash and
+        // mint the sealed blob on first use (`stable_unsub_token`).
+        let _ = conn.execute(
+            "ALTER TABLE notify_subscription ADD COLUMN unsub_blob BLOB",
+            [],
+        );
+    }
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS notify_subscription(
            id INTEGER PRIMARY KEY,
@@ -34,6 +50,7 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
            confirm_hash TEXT,
            confirm_expires_at INTEGER,
            unsub_hash TEXT NOT NULL,
+           unsub_blob BLOB,
            created_at INTEGER NOT NULL,
            confirmed_at INTEGER,
            UNIQUE(authority_slug, email_hash)
@@ -151,10 +168,12 @@ pub fn subscribe(
         }
         None => {
             let unsub = mint_token();
+            let unsub_blob = config::encrypt_value(kek, "notify.unsub", 1, unsub.as_bytes());
             conn.execute(
                 "INSERT INTO notify_subscription(authority_slug, email_hash, email_blob,
-                     status, confirm_hash, confirm_expires_at, unsub_hash, created_at)
-                 VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?6, ?7)",
+                     status, confirm_hash, confirm_expires_at, unsub_hash, unsub_blob,
+                     created_at)
+                 VALUES (?1, ?2, ?3, 'pending', ?4, ?5, ?6, ?7, ?8)",
                 rusqlite::params![
                     authority_slug,
                     hash,
@@ -162,6 +181,7 @@ pub fn subscribe(
                     token_hash(&confirm_token),
                     now + CONFIRM_TTL_SECS,
                     token_hash(&unsub),
+                    unsub_blob,
                     now
                 ],
             )?;
@@ -213,39 +233,83 @@ pub fn confirm(
     Ok(None)
 }
 
-/// Unsubscribe by long-lived token (one-click URL or page form).
-/// Idempotent: a known token reports done even on repeat; only a
-/// truly unknown token reports missing.
-pub fn unsubscribe(conn: &Connection, token: &str) -> rusqlite::Result<bool> {
+/// Read-only token lookup (the GET form page checks before
+/// rendering; only `unsubscribe` mutates).
+pub fn unsub_known(conn: &Connection, token: &str) -> rusqlite::Result<bool> {
     let hash = token_hash(token);
-    let known: bool = conn
+    Ok(conn
         .query_row(
             "SELECT 1 FROM notify_subscription WHERE unsub_hash = ?1",
             [&hash],
             |_| Ok(()),
         )
         .optional()?
-        .is_some();
-    if known {
+        .is_some())
+}
+
+/// Unsubscribe by long-lived token (one-click URL or page form).
+/// Idempotent: a known token reports done even on repeat; only a
+/// truly unknown token reports missing.
+pub fn unsubscribe(conn: &Connection, token: &str) -> rusqlite::Result<bool> {
+    let hash = token_hash(token);
+    if unsub_known(conn, token)? {
         conn.execute(
             "UPDATE notify_subscription SET status = 'unsubscribed'
              WHERE unsub_hash = ?1",
             [&hash],
         )?;
+        return Ok(true);
     }
-    Ok(known)
+    Ok(false)
 }
 
-/// Rotate the one-click unsubscribe token (each digest mints a
-/// fresh one, so a leaked footer link dies at the next send).
-/// Returns the plaintext for the URL; only the hash rests.
-pub fn rotate_unsub(conn: &Connection, sub_id: i64) -> rusqlite::Result<String> {
+/// One stable one-click token per subscription: every digest
+/// footer carries the same URL, so a saved footer link keeps
+/// working. The plaintext is KEK-sealed at rest (the email-blob
+/// precedent); only its hash is indexed. Rows minted before the
+/// sealed blob existed backfill once, on first use.
+pub fn stable_unsub_token(
+    conn: &Connection,
+    kek: &config::Kek,
+    sub_id: i64,
+) -> rusqlite::Result<String> {
+    let (_hash, blob): (String, Option<Vec<u8>>) = conn.query_row(
+        "SELECT unsub_hash, unsub_blob FROM notify_subscription WHERE id = ?1",
+        [sub_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if let Some(blob) = blob
+        && let Ok(bytes) = config::decrypt_value(kek, "notify.unsub", 1, &blob)
+        && let Ok(token) = String::from_utf8(bytes)
+        && token.len() == 64
+        && token.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return Ok(token);
+    }
     let token = mint_token();
     conn.execute(
-        "UPDATE notify_subscription SET unsub_hash = ?1 WHERE id = ?2",
-        rusqlite::params![token_hash(&token), sub_id],
+        "UPDATE notify_subscription SET unsub_hash = ?1, unsub_blob = ?2 WHERE id = ?3",
+        rusqlite::params![
+            token_hash(&token),
+            config::encrypt_value(kek, "notify.unsub", 1, token.as_bytes()),
+            sub_id
+        ],
     )?;
     Ok(token)
+}
+
+/// Lease timeout: a `leased` row untouched this long belongs to a
+/// dead worker pass — hand it back to `queued` (attempts untouched:
+/// a lease is never a send attempt).
+pub const LEASE_STALE_SECS: i64 = 600;
+
+/// Reclaim stale leases (crashed passes). Returns rows requeued.
+pub fn reclaim_stale_leases(conn: &Connection, now: i64) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE notify_outbox SET state = 'queued', leased_at = NULL
+         WHERE state = 'leased' AND leased_at IS NOT NULL AND leased_at <= ?1",
+        [now - LEASE_STALE_SECS],
+    )
 }
 
 /// Global suppression (bounces, complaints, abuse): blocked from
@@ -349,8 +413,9 @@ pub struct DigestGroup {
 }
 
 /// Lease due rows and group them into digests. Skips: unconfirmed or
-/// suppressed followers, rows over the daily cap, and any
-/// (subscriber, authority) with a digest inside the hour window.
+/// suppressed followers, subscribers past the daily email cap, and
+/// any (subscriber, authority) with a digest inside the hour
+/// window. Stale leases from dead passes requeue first.
 /// Single-writer (the worker loop owns it); routes never touch the
 /// outbox.
 pub fn lease_due_groups(
@@ -359,6 +424,7 @@ pub fn lease_due_groups(
     daily_cap: u64,
     limit: usize,
 ) -> rusqlite::Result<Vec<DigestGroup>> {
+    reclaim_stale_leases(conn, now)?;
     let rows: Vec<(i64, i64, i64)> = conn
         .prepare(
             "SELECT o.id, o.sub_id, o.fact_id FROM notify_outbox o
@@ -368,7 +434,7 @@ pub fn lease_due_groups(
                AND s.status = 'active'
                AND NOT EXISTS (SELECT 1 FROM notify_suppression x
                                WHERE x.email_hash = s.email_hash)
-               AND (SELECT COUNT(*) FROM notify_outbox s2
+               AND (SELECT COUNT(DISTINCT s2.sent_at) FROM notify_outbox s2
                     WHERE s2.sub_id = o.sub_id AND s2.state = 'sent'
                       AND s2.sent_at > ?3) < ?4
                AND NOT EXISTS (SELECT 1 FROM notify_outbox s3
@@ -791,6 +857,136 @@ mod tests {
         )
         .unwrap();
         assert_eq!(enqueue_from_audit(&conn, 200).expect("enqueue"), 0);
+    }
+
+    #[test]
+    fn unsub_token_is_stable_per_subscription() {
+        let conn = memory();
+        let kek = kek();
+        seed_authority(&conn);
+        let out = subscribe(&conn, 100, "vietnam", "a@example.com", &kek).expect("sub");
+        confirm(&conn, 101, &out.confirm_token.unwrap()).expect("confirm");
+        let first = stable_unsub_token(&conn, &kek, out.sub_id).expect("stable");
+        let second = stable_unsub_token(&conn, &kek, out.sub_id).expect("stable");
+        assert_eq!(first, second, "same URL in every digest footer");
+        assert!(unsub_known(&conn, &first).expect("known"));
+        assert!(unsubscribe(&conn, &first).expect("unsub"));
+        // Resubscribe keeps the token: saved footer links survive.
+        let out = subscribe(&conn, 200, "vietnam", "a@example.com", &kek).expect("resub");
+        confirm(&conn, 201, &out.confirm_token.unwrap()).expect("confirm");
+        assert_eq!(
+            stable_unsub_token(&conn, &kek, out.sub_id).expect("stable"),
+            first
+        );
+    }
+
+    #[test]
+    fn stable_unsub_backfills_legacy_rows_once() {
+        let conn = memory();
+        let kek = kek();
+        seed_authority(&conn);
+        // Pre-blob row shape (hash only, plaintext lost).
+        let (blob, hash) = seal_email(&kek, "a@example.com");
+        let unsub = mint_token();
+        conn.execute(
+            "INSERT INTO notify_subscription(authority_slug, email_hash, email_blob,
+                 status, unsub_hash, created_at, confirmed_at)
+             VALUES ('vietnam', ?1, ?2, 'active', ?3, 100, 101)",
+            rusqlite::params![hash, blob, token_hash(&unsub)],
+        )
+        .unwrap();
+        let id = conn.last_insert_rowid();
+        let first = stable_unsub_token(&conn, &kek, id).expect("backfill");
+        assert_ne!(token_hash(&first), token_hash(&unsub));
+        assert_eq!(stable_unsub_token(&conn, &kek, id).expect("stable"), first);
+        assert!(unsub_known(&conn, &first).expect("known"));
+        assert!(!unsub_known(&conn, &unsub).expect("rotated away"));
+    }
+
+    #[test]
+    fn reclaim_returns_stale_leases_only() {
+        let conn = memory();
+        let kek = kek();
+        seed_authority(&conn);
+        let (blob, hash) = seal_email(&kek, "a@example.com");
+        conn.execute(
+            "INSERT INTO notify_subscription(id, authority_slug, email_hash, email_blob,
+                 status, unsub_hash, created_at) VALUES (1, 'vietnam', ?1, ?2, 'active', 'u', 100)",
+            rusqlite::params![hash, blob],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO notify_outbox(id, sub_id, fact_id, channel, state, leased_at, created_at)
+             VALUES (1, 1, 7, 'email', 'leased', 100, 100),
+                    (2, 1, 8, 'email', 'leased', 5800, 100)",
+            [],
+        )
+        .unwrap();
+        // Row 1 leased 5900 s ago (stale); row 2 leased 200 s ago.
+        assert_eq!(reclaim_stale_leases(&conn, 6000).expect("reclaim"), 1);
+        let state1: String = conn
+            .query_row("SELECT state FROM notify_outbox WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let state2: String = conn
+            .query_row("SELECT state FROM notify_outbox WHERE id = 2", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!((state1.as_str(), state2.as_str()), ("queued", "leased"));
+        // Attempts untouched: a lease is never a send attempt.
+        let attempts: i64 = conn
+            .query_row("SELECT attempts FROM notify_outbox WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(attempts, 0);
+    }
+
+    #[test]
+    fn daily_cap_counts_emails_not_fact_rows() {
+        let conn = memory();
+        let kek = kek();
+        seed_authority(&conn);
+        let (blob, hash) = seal_email(&kek, "a@example.com");
+        conn.execute(
+            "INSERT INTO notify_subscription(id, authority_slug, email_hash, email_blob,
+                 status, unsub_hash, created_at) VALUES (1, 'vietnam', ?1, ?2, 'active', 'u', 100)",
+            rusqlite::params![hash, blob],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO fact(id, authority_id, topic, statement, status, capture_id,
+                              citation_start, citation_end)
+             VALUES (8, 1, 'fees', '-nine dollars-', 'accepted', 0, -1, -1)",
+            [],
+        )
+        .unwrap();
+        // Two facts, one digest, one send: two `sent` rows, one email.
+        for (id, fact) in [(1, 7), (2, 8)] {
+            conn.execute(
+                "INSERT INTO notify_outbox(id, sub_id, fact_id, channel, state, created_at)
+                 VALUES (?1, 1, ?2, 'email', 'queued', 100)",
+                [id, fact],
+            )
+            .unwrap();
+        }
+        let groups = lease_due_groups(&conn, 1000, 10, 10).expect("lease");
+        assert_eq!(groups.len(), 1);
+        mark_sent(&conn, 1000, &groups[0].row_ids).expect("sent");
+        // Cap 2: two sent rows but one email — a fresh row still leases.
+        conn.execute(
+            "INSERT INTO notify_outbox(id, sub_id, fact_id, channel, state, created_at)
+             VALUES (3, 1, 9, 'email', 'queued', 1001)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            lease_due_groups(&conn, 5000, 2, 10).expect("lease").len(),
+            1,
+            "one email sent, cap is two emails"
+        );
     }
 
     #[test]
