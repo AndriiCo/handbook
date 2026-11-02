@@ -10,11 +10,13 @@ use handbook_store::store::Store;
 mod accept;
 mod admin_cert;
 mod admin_staff;
+mod archive;
 mod atlas;
 mod backup;
 mod brand_assets;
 mod build_handbook;
 mod config;
+mod crawl;
 mod demo_vietnam;
 mod eval;
 mod fetch_slug;
@@ -75,6 +77,8 @@ fn main() {
         Some("admin-cert-revoke") => admin_cert::run_revoke(&args[1..]),
         Some("admin-invite") => admin_staff::run_invite(&args[1..]),
         Some("admin-offboard") => admin_staff::run_offboard(&args[1..]),
+        Some("archive-package") => archive::run_package(&args[1..]),
+        Some("crawl") => crawl::run(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("up") => up::run(&args[1..]),
         Some("model-gate") => run_model_gate(),
@@ -131,6 +135,8 @@ Tasks:
   admin-invite  staff enrolment invite (spec customer-auth.md §5.1)
   admin-offboard  staff offboard: certs, sessions, creds, lock (§5.6)
   secrets-scan scan tracked files for secrets [--staged for the index]
+  crawl   fetch packs/world seeds into WARC/1.1 drops [--packs --out]
+  archive-package  bundle a crawl run into WACZ/CSVs/index [--run]
   up    boot the handbook on loopback with synthetic data [--check] [--fresh] [--live]
   model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files
   voice-replay  replay webhook fixtures at the stub (see --corpus/--scenario)

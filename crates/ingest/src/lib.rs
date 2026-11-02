@@ -12,3 +12,4 @@ pub mod hcch;
 pub mod seed;
 pub mod simhash;
 pub mod sweep;
+pub mod warc;

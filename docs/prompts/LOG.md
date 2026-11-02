@@ -163,3 +163,4 @@
 | 259 | 2026-11-02 03:45Z | Addendum: world archive SA-7/SA-8/RO-4 | spawned SA-7 + RO-4 |
 | 260 | 2026-11-02 03:44Z | Merge sub/rights: world-archive rights | 1 doc, HCCH terms + robots |
 | 261 | 2026-11-02 04:02Z | SA-8 crawler spawned on SA-7 sample | 8-country schema, dep facts |
+| 262 | 2026-11-02 04:20Z | Merge sub/crawler + wire crawl/archive | ingest 44, xtask 88, gate clean |

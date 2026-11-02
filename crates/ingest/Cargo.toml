@@ -17,6 +17,10 @@ ureq = { version = "3", default-features = false, features = [
     "gzip",
 ] }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
+flate2 = "1.1.10"
+sha1 = "0.10.7"
+data-encoding = "2.11.1"
+webpki-roots = "1.0.11"
 
 [dev-dependencies]
 tempfile = "3"
