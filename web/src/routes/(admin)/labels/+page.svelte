@@ -5,7 +5,9 @@
 	// Staff-only live FedEx purchase (SA-19). This route ships in the
 	// admin build only (never the public build). The staff API keeps
 	// the /apostille prefix on the admin origin, so the root is
-	// literal (same as the config/calls pages).
+	// literal (same as the config/calls pages). Quote and purchase
+	// post the full carrier payload: a live buy needs real
+	// ship-from/ship-to addresses, never a ZIP alone.
 	const api = () => `/apostille/api/v1/fedex-live`;
 
 	interface Caps {
@@ -15,14 +17,34 @@
 		max_usd: number;
 	}
 
+	interface Address {
+		name: string;
+		street1: string;
+		city: string;
+		state_province: string;
+		postal: string;
+		country: string;
+	}
+
+	const blankAddress = (): Address => ({
+		name: '',
+		street1: '',
+		city: '',
+		state_province: '',
+		postal: '',
+		country: 'US'
+	});
+
 	let caps = $state<Caps | null>(null);
 	let capsState = $state<'working' | 'ready' | 'failed'>('working');
 	let capsError = $state<string | null>(null);
 
 	let orderId = $state('');
 	let leg = $state<'outbound' | 'return'>('outbound');
-	let service = $state('two_day');
-	let zip = $state('');
+	let service = $state<'overnight' | 'two_day' | 'ground'>('two_day');
+	let parcel = $state<'letter_envelope' | 'flat_envelope'>('flat_envelope');
+	let from = $state<Address>(blankAddress());
+	let to = $state<Address>(blankAddress());
 
 	let quoteCents = $state<number | null>(null);
 	let quoteState = $state<'idle' | 'working' | 'done' | 'failed'>('idle');
@@ -38,6 +60,23 @@
 
 	const idemKey = $derived(
 		orderId.trim() ? `${orderId.trim()}:${leg}` : ''
+	);
+
+	function payload() {
+		return {
+			from,
+			to,
+			parcel: { preset: parcel },
+			service,
+			pairing_id: orderId.trim()
+		};
+	}
+
+	const addressReady = (a: Address) =>
+		a.name.trim() && a.street1.trim() && a.city.trim() && a.state_province.trim() && a.postal.trim();
+
+	const formReady = $derived(
+		orderId.trim().length > 0 && !!addressReady(from) && !!addressReady(to)
 	);
 
 	async function loadCaps() {
@@ -64,7 +103,7 @@
 			const res = await fetch(`${api()}/quote`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ order_id: orderId.trim(), leg, service, zip: zip.trim() })
+				body: JSON.stringify({ payload: payload() })
 			});
 			if (!res.ok) throw new Error(`quote failed (${res.status})`);
 			const data = (await res.json()) as { quoted_cents: number };
@@ -84,7 +123,12 @@
 			const res = await fetch(`${api()}/purchase`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ order_id: orderId.trim(), leg, service, zip: zip.trim() })
+				body: JSON.stringify({
+					order_id: orderId.trim(),
+					leg,
+					payload: payload(),
+					quoted_cents: quoteCents
+				})
 			});
 			if (!res.ok) throw new Error(`purchase failed (${res.status})`);
 			const data = (await res.json()) as { tracking_no: string };
@@ -117,8 +161,6 @@
 			voidState = 'failed';
 		}
 	}
-
-	const formReady = $derived(orderId.trim().length > 0 && zip.trim().length > 0);
 </script>
 
 <svelte:head>
@@ -181,22 +223,49 @@
 					<option value="ground">Ground</option>
 				</select>
 			</div>
-			<div class="flex-1">
-				<label for="fedex-zip" class="block text-sm font-bold">Destination ZIP</label>
-				<input
-					id="fedex-zip"
-					class="mt-1 w-full rounded border p-2"
-					type="text"
-					inputmode="numeric"
-					autocomplete="off"
-					bind:value={zip}
-				/>
+			<div>
+				<label for="fedex-parcel" class="block text-sm font-bold">Parcel</label>
+				<select id="fedex-parcel" class="mt-1 rounded border p-2" bind:value={parcel}>
+					<option value="letter_envelope">Letter envelope</option>
+					<option value="flat_envelope">Flat envelope</option>
+				</select>
 			</div>
 		</div>
 		{#if idemKey}
 			<p class="text-sm">Idempotency key: <code>{idemKey}</code></p>
 		{/if}
 	</section>
+
+	{#snippet addressFields(id: string, title: string, a: Address)}
+		<fieldset class="space-y-3 rounded border p-4">
+			<legend class="px-1 font-bold">{title}</legend>
+			<div>
+				<label for={`${id}-name`} class="block text-sm font-bold">Name</label>
+				<input id={`${id}-name`} class="mt-1 w-full rounded border p-2" type="text" autocomplete="off" bind:value={a.name} />
+			</div>
+			<div>
+				<label for={`${id}-street`} class="block text-sm font-bold">Street</label>
+				<input id={`${id}-street`} class="mt-1 w-full rounded border p-2" type="text" autocomplete="off" bind:value={a.street1} />
+			</div>
+			<div class="flex gap-4">
+				<div class="flex-1">
+					<label for={`${id}-city`} class="block text-sm font-bold">City</label>
+					<input id={`${id}-city`} class="mt-1 w-full rounded border p-2" type="text" autocomplete="off" bind:value={a.city} />
+				</div>
+				<div>
+					<label for={`${id}-state`} class="block text-sm font-bold">State</label>
+					<input id={`${id}-state`} class="mt-1 w-24 rounded border p-2" type="text" autocomplete="off" bind:value={a.state_province} />
+				</div>
+				<div>
+					<label for={`${id}-zip`} class="block text-sm font-bold">ZIP</label>
+					<input id={`${id}-zip`} class="mt-1 w-32 rounded border p-2" type="text" inputmode="numeric" autocomplete="off" bind:value={a.postal} />
+				</div>
+			</div>
+		</fieldset>
+	{/snippet}
+
+	{@render addressFields('fedex-from', 'Ship from', from)}
+	{@render addressFields('fedex-to', 'Ship to', to)}
 
 	<section aria-label="Quote" class="space-y-3 rounded border p-4">
 		<h2 class="font-bold">Rate quote</h2>

@@ -20,6 +20,7 @@ mod config;
 mod crawl;
 mod demo_vietnam;
 mod eval;
+mod fedex;
 mod fetch_slug;
 mod form_scaffold;
 mod instruct;
@@ -83,6 +84,7 @@ fn main() {
         Some("archive-package") => archive::run_package(&args[1..]),
         Some("world-index") => world::run(&args[1..]),
         Some("crawl") => crawl::run(&args[1..]),
+        Some("fedex") => fedex::run(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("up") => up::run(&args[1..]),
         Some("model-gate") => run_model_gate(),

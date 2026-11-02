@@ -21,6 +21,7 @@ mod admin_workers;
 mod approval;
 mod demo_precheck;
 mod draft;
+mod fedex_live;
 mod follow;
 mod host;
 mod magic;
@@ -227,6 +228,10 @@ struct AppState {
     // redacting `SecretText` so state dumps can never leak it.
     voice_cfg: voice::VoiceConfig,
     voice_api_key: Option<config::SecretText>,
+    /// Live FedEx buys (SA-19): gated staff purchase state built
+    /// from `labels.*` DB rows at boot. Disabled until staff opts
+    /// in; the endpoints 503 while any piece is missing.
+    fedex_live: fedex_live::FedexLiveState,
     /// Passkey ceremonies (spec `customer-auth.md`): process-wide
     /// crate handle built from `auth.*` DB rows at boot.
     webauthn: std::sync::Arc<webauthn_rs::Webauthn>,
@@ -391,6 +396,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             label_cfg: p2_labels::LabelCfg::default(),
             voice_cfg: voice::VoiceConfig::default(),
             voice_api_key: None,
+            fedex_live: fedex_live::FedexLiveState::default(),
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
@@ -955,6 +961,12 @@ async fn main() {
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate voice tables: {e}"));
     notify::migrate(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate notify tables: {e}"));
+    // SA-19 live FedEx: lane-owned DDL, CREATE TABLE IF NOT EXISTS
+    // only (idempotency ledger + audit trail).
+    for ddl in labels::live::ddl_statements() {
+        conn.execute_batch(ddl)
+            .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate fedex-live tables: {e}"));
+    }
     drop(conn);
     // config-db: the KEK is mandatory now — runtime config lives in
     // sealed rows, so without it there is nothing to serve with.
@@ -1017,6 +1029,17 @@ async fn main() {
         // `Option::clone` spelling: keeps the secrets-scan
         // `generic-secret-assignment` run under its length floor.
         voice_api_key: Option::clone(&cfg.telnyx_api_key),
+        // SA-19 live FedEx: secrets ride as `SecretText` (never
+        // logged, never rendered); the routes 503 until all set.
+        fedex_live: fedex_live::FedexLiveState {
+            enabled: cfg.labels_live,
+            daily_cap: cfg.labels_live_daily_cap,
+            max_usd_cents: cfg.labels_live_max_usd_cents,
+            ship_to_allow: cfg.labels_live_ship_to_allow.clone(),
+            client_id: Option::clone(&cfg.labels_fedex_client_id),
+            client_secret: Option::clone(&cfg.labels_fedex_client_secret),
+            account: cfg.labels_fedex_account.clone(),
+        },
         webauthn: std::sync::Arc::new(
             passkey::build_webauthn(&cfg.auth_rp_id, &cfg.auth_rp_name, &cfg.auth_origin)
                 .unwrap_or_else(|| {
@@ -1148,6 +1171,7 @@ async fn main() {
     let admin = guardrails(
         admin::router(state.clone())
             .merge(admin_workers::router(state.clone()))
+            .merge(fedex_live::router(state.clone()))
             .merge(admin_voice::staff_router(state.clone()))
             .merge(admin_voice::webhook_router(state)),
     )
@@ -2967,6 +2991,7 @@ mod tests {
             label_cfg: p2_labels::LabelCfg::default(),
             voice_cfg: voice::VoiceConfig::default(),
             voice_api_key: None,
+            fedex_live: fedex_live::FedexLiveState::default(),
             webauthn: std::sync::Arc::new(passkey::test_webauthn()),
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
@@ -4957,6 +4982,7 @@ mod tests {
         let admin = guardrails(
             admin::router(state.clone())
                 .merge(admin_workers::router(state.clone()))
+                .merge(fedex_live::router(state.clone()))
                 .merge(admin_voice::staff_router(state.clone()))
                 .merge(admin_voice::webhook_router(state.clone())),
         )

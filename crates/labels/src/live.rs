@@ -296,6 +296,14 @@ impl MemLedger {
         self.bought.get(key)
     }
 
+    /// Insert a historical buy hydrated from `fedex_live_ledger`
+    /// rows without counting it toward today (route hydration: only
+    /// rows created after today's UTC midnight count via
+    /// [`MemLedger::record_buy`]).
+    pub fn record_history(&mut self, key: &str, label: StoredLabel) {
+        self.bought.insert(key.to_string(), label);
+    }
+
     pub fn record_buy(&mut self, key: &str, label: StoredLabel) {
         self.bought.insert(key.to_string(), label);
         self.bought_today += 1;

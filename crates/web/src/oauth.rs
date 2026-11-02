@@ -860,6 +860,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fedex_live: crate::fedex_live::FedexLiveState::default(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
         (tmp, app)

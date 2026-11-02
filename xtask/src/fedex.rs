@@ -19,8 +19,8 @@
 //! Usage: `cargo xtask fedex`.
 
 use labels::live::{
-    BuyParams, FixtureSet, Leg, LiveConfig, LiveShipment, MemLedger, SandboxTransport,
-    VoidParams, idempotency_key, oauth_token_url, parse_token_response,
+    BuyParams, FixtureSet, Leg, LiveConfig, LiveShipment, MemLedger, SandboxTransport, VoidParams,
+    idempotency_key, oauth_token_url, parse_token_response,
 };
 use labels::{BuyRequest, Direction, ServiceClass};
 

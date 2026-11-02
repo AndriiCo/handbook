@@ -209,6 +209,28 @@ export const STEPS = [
 				'After USPS certifies the integration, switch to production and set Certified — the labels client refuses live purchases otherwise.'
 			]
 		}
+	},
+	{
+		id: 'fedex-live',
+		title: 'FedEx live buys (gated)',
+		blurb: 'Real FedEx label purchases. Off until every cap below is set — sandbox fixtures only.',
+		keys: [
+			{ key: 'labels.live', type: 'bool', label: 'Enable live buys', hint: 'Keep OFF until credentials, ZIP allowlist and caps are set. Purchases fail closed while off.', placeholder: '' },
+			{ key: 'labels.live_daily_cap', type: 'text', label: 'Max buys per day', hint: 'Integer 1-10. Default 2.', placeholder: '2' },
+			{ key: 'labels.live_max_usd', type: 'text', label: 'Max USD per label', hint: 'Dollars 1-10000. Default 60.', placeholder: '60' },
+			{ key: 'labels.live_ship_to_allow', type: 'text', label: 'Destination ZIP allowlist', hint: 'Comma-separated ZIPs. Empty means nothing is buyable.', placeholder: '90210, 10001' },
+			{ key: 'labels.fedex_client_id', type: 'secret', label: 'FedEx OAuth client ID', hint: 'From the FedEx developer console. Shown once at creation. Write-only.', placeholder: '' },
+			{ key: 'labels.fedex_client_secret', type: 'secret', label: 'FedEx OAuth client secret', hint: 'From the FedEx developer console. Shown once at creation. Write-only.', placeholder: '' },
+			{ key: 'labels.fedex_account', type: 'text', label: 'FedEx account number', hint: 'Shipper account charged for live labels. Empty until set.', placeholder: '' }
+		],
+		guide: {
+			intro: 'Live money moves only after all seven rows are set: enable last, buy one overnight label pair to the operator address, void it if unused.',
+			steps: [
+				'Create the OAuth app in the FedEx developer console (sandbox first) and paste the client ID + secret + account number.',
+				'List the destination ZIPs staff may buy for, then the daily cap and per-label max.',
+				'Set Enable live buys last. The /admin/labels page shows caps first; quote before every purchase.'
+			]
+		}
 	}
 ];
 

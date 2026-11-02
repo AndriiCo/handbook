@@ -989,6 +989,22 @@ pub mod keys {
     pub const TELNYX_CONNECTION_ID: &str = "telnyx.connection_id";
     pub const TELNYX_WEBHOOK_PUBLIC_KEY: &str = "telnyx.webhook_public_key";
     pub const TELNYX_API_KEY: &str = "telnyx.api_key";
+    /// Live FedEx buys (SA-19): master switch. Default false —
+    /// sandbox fixtures only until staff opts in.
+    pub const LABELS_LIVE: &str = "labels.live";
+    /// Max live buys per UTC day. Default 2.
+    pub const LABELS_LIVE_DAILY_CAP: &str = "labels.live_daily_cap";
+    /// Max USD per label. Default 60.
+    pub const LABELS_LIVE_MAX_USD: &str = "labels.live_max_usd";
+    /// Comma-separated allowlisted destination ZIPs. Default empty
+    /// (nothing buyable until staff lists ZIPs).
+    pub const LABELS_LIVE_SHIP_TO_ALLOW: &str = "labels.live_ship_to_allow";
+    /// FedEx OAuth client id. Secret: presence-only in UI.
+    pub const LABELS_FEDEX_CLIENT_ID: &str = "labels.fedex_client_id";
+    /// FedEx OAuth client secret. Secret: presence-only in UI.
+    pub const LABELS_FEDEX_CLIENT_SECRET: &str = "labels.fedex_client_secret";
+    /// FedEx account number (shipper account). Default empty.
+    pub const LABELS_FEDEX_ACCOUNT: &str = "labels.fedex_account";
     /// Native QUIC/HTTP-3 listener (single-443 spec §2): bind UDP
     /// on `net.https_port`, serve h3, send Alt-Svc. Default false.
     pub const QUIC_ENABLED: &str = "quic.enabled";
@@ -1070,6 +1086,13 @@ pub mod keys {
         (TELNYX_CONNECTION_ID, super::ConfigType::Text),
         (TELNYX_WEBHOOK_PUBLIC_KEY, super::ConfigType::Text),
         (TELNYX_API_KEY, super::ConfigType::Secret),
+        (LABELS_LIVE, super::ConfigType::Bool),
+        (LABELS_LIVE_DAILY_CAP, super::ConfigType::Text),
+        (LABELS_LIVE_MAX_USD, super::ConfigType::Text),
+        (LABELS_LIVE_SHIP_TO_ALLOW, super::ConfigType::Text),
+        (LABELS_FEDEX_CLIENT_ID, super::ConfigType::Secret),
+        (LABELS_FEDEX_CLIENT_SECRET, super::ConfigType::Secret),
+        (LABELS_FEDEX_ACCOUNT, super::ConfigType::Text),
         (QUIC_ENABLED, super::ConfigType::Bool),
         (AUTH_RP_ID, super::ConfigType::Text),
         (AUTH_RP_NAME, super::ConfigType::Text),
@@ -1307,6 +1330,15 @@ pub struct RuntimeConfig {
     pub telnyx_connection_id: Option<String>,
     pub telnyx_webhook_public_key: Option<String>,
     pub telnyx_api_key: Option<SecretText>,
+    pub labels_live: bool,
+    pub labels_live_daily_cap: u32,
+    /// Max USD per label, in cents.
+    pub labels_live_max_usd_cents: i64,
+    /// Allowlisted destination ZIPs (CSV parsed at load).
+    pub labels_live_ship_to_allow: Vec<String>,
+    pub labels_fedex_client_id: Option<SecretText>,
+    pub labels_fedex_client_secret: Option<SecretText>,
+    pub labels_fedex_account: Option<String>,
     pub auth_rp_id: String,
     pub auth_rp_name: String,
     pub auth_origin: String,
@@ -1383,6 +1415,13 @@ impl Default for RuntimeConfig {
             telnyx_connection_id: None,
             telnyx_webhook_public_key: None,
             telnyx_api_key: None,
+            labels_live: false,
+            labels_live_daily_cap: 2,
+            labels_live_max_usd_cents: 6_000,
+            labels_live_ship_to_allow: Vec::new(),
+            labels_fedex_client_id: None,
+            labels_fedex_client_secret: None,
+            labels_fedex_account: None,
             auth_rp_id: "andrii.ai".to_string(),
             auth_rp_name: "Apostille Handbook".to_string(),
             auth_origin: "https://andrii.ai".to_string(),
@@ -1968,6 +2007,85 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.telnyx_api_key,
         )?;
+        // Live FedEx buys (SA-19): off by default; caps parse
+        // leniently (garbage warns + keeps defaults, mirroring the
+        // notify-cap overlay).
+        overlay_bool(
+            conn,
+            kek,
+            keys::LABELS_LIVE,
+            &mut warnings,
+            &mut cfg.labels_live,
+        )?;
+        match get_text_for_job(conn, kek, keys::LABELS_LIVE_DAILY_CAP) {
+            Ok(None) => {}
+            Ok(Some(v)) => match v.trim().parse::<u32>() {
+                Ok(n) if (1..=10).contains(&n) => cfg.labels_live_daily_cap = n,
+                _ => warnings.push(format!(
+                    "{}: {v:?} is not 1-10; using default 2",
+                    keys::LABELS_LIVE_DAILY_CAP
+                )),
+            },
+            Err(ConfigError::BadValue(why)) => warnings.push(format!(
+                "{}: {why}; using default 2",
+                keys::LABELS_LIVE_DAILY_CAP
+            )),
+            Err(e) => return Err(e),
+        }
+        match get_text_for_job(conn, kek, keys::LABELS_LIVE_MAX_USD) {
+            Ok(None) => {}
+            Ok(Some(v)) => match v.trim().parse::<f64>() {
+                Ok(usd) if (1.0..=10_000.0).contains(&usd) => {
+                    cfg.labels_live_max_usd_cents = (usd * 100.0).round() as i64;
+                }
+                _ => warnings.push(format!(
+                    "{}: {v:?} is not 1-10000 USD; using default 60",
+                    keys::LABELS_LIVE_MAX_USD
+                )),
+            },
+            Err(ConfigError::BadValue(why)) => warnings.push(format!(
+                "{}: {why}; using default 60",
+                keys::LABELS_LIVE_MAX_USD
+            )),
+            Err(e) => return Err(e),
+        }
+        match get_text_for_job(conn, kek, keys::LABELS_LIVE_SHIP_TO_ALLOW) {
+            Ok(None) => {}
+            Ok(Some(v)) => {
+                cfg.labels_live_ship_to_allow = v
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect();
+            }
+            Err(ConfigError::BadValue(why)) => warnings.push(format!(
+                "{}: {why}; using empty allowlist",
+                keys::LABELS_LIVE_SHIP_TO_ALLOW
+            )),
+            Err(e) => return Err(e),
+        }
+        overlay_secret(
+            conn,
+            kek,
+            keys::LABELS_FEDEX_CLIENT_ID,
+            &mut warnings,
+            &mut cfg.labels_fedex_client_id,
+        )?;
+        overlay_secret(
+            conn,
+            kek,
+            keys::LABELS_FEDEX_CLIENT_SECRET,
+            &mut warnings,
+            &mut cfg.labels_fedex_client_secret,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::LABELS_FEDEX_ACCOUNT,
+            &mut warnings,
+            &mut cfg.labels_fedex_account,
+        )?;
         overlay_secret(
             conn,
             kek,
@@ -2123,17 +2241,17 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_62_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 62);
+    fn registry_holds_69_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 69);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
-        // Ten secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
+        // Twelve secrets (EAB HMAC, Telnyx API key, Google/Apple/Meta
         // client secrets, Meta Model API key, Gmail client secret +
-        // refresh token, mailer password, setup key hash); seven
-        // bools (notify.enabled is the seventh); rest text (auth.*
-        // adds three, google/apple/meta ids six, mailer.* six,
-        // meta.* one, mail.* three, notify.* two).
+        // refresh token, mailer password, setup key hash, FedEx client
+        // id + secret); eight bools (labels.live is the eighth); rest
+        // text (auth.* adds three, google/apple/meta ids six, mailer.*
+        // six, meta.* one, mail.* three, notify.* two, labels.* four).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -2142,7 +2260,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (7, 45, 10));
+        assert_eq!(counts, (8, 49, 12));
     }
 
     #[test]
