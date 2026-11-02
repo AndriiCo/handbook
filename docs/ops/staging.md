@@ -448,6 +448,17 @@ above verbatim).
   `20261102-174624-4dcd234`, 17:52:29Z; SA-15 merge
   `294c5c2` also queued). README/docs-only since bde970e, so
   the serving bits are identical — candidate moves to the tip.
+- RO-M4 conflict beat seeded (staging DB only, no code): capture
+  11 + accepted facts 25/26 (`po_box: PO Box 40220` vs `po_box:
+  PO BOX 40228`), quotes verbatim from a contiguous excerpt of
+  the official contact page (fetched 2026-11-02,
+  `source_id` 1), sidecar `store/text/11.txt`, `created_by`
+  `staff-seed: ro-m4 conflict beat`. Facts API serves 11 with
+  both citations resolving; `buildGuide` flags both
+  `conflict: true` under "Submit by mail". Stills (not viewed
+  by builder): `web/shots/ro-m4-conflict.png` (gitignored).
+  Staging facts now usa-wa-sos 11 + vietnam 8 — rescore before
+  the next accept run.
   RO-2 `up --check` green on the tip in a fresh local clone
   (healthz + authorities + setup/status 200). Node matrix
   ready on the Mac: Node 22/npm 10 and Node 24/npm 11 via
