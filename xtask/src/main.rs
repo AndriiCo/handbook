@@ -27,6 +27,7 @@ mod quic_probe;
 mod release;
 mod review_conflicts;
 mod secrets;
+mod up;
 mod voice_replay;
 mod watch;
 
@@ -75,6 +76,7 @@ fn main() {
         Some("admin-invite") => admin_staff::run_invite(&args[1..]),
         Some("admin-offboard") => admin_staff::run_offboard(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
+        Some("up") => up::run(&args[1..]),
         Some("model-gate") => run_model_gate(),
         Some("voice-replay") => voice_replay::run(&args[1..]),
         Some("deploy") => release::run_deploy(&args[1..]),
@@ -129,6 +131,7 @@ Tasks:
   admin-invite  staff enrolment invite (spec customer-auth.md §5.1)
   admin-offboard  staff offboard: certs, sessions, creds, lock (§5.6)
   secrets-scan scan tracked files for secrets [--staged for the index]
+  up    boot the handbook on loopback with synthetic data [--check] [--fresh] [--live]
   model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files
   voice-replay  replay webhook fixtures at the stub (see --corpus/--scenario)
   install-hooks point git at .githooks/ (pre-commit secret scan)
