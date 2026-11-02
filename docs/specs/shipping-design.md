@@ -430,4 +430,61 @@ buy path — staff-manual recommended), OQ-7 (PII retention), OQ-8
 6. P3-gated: §§1, 3, 4, 8-push, 10, 11-photo (each needs its SHP +
    OQ-1/OQ-7 first).
 
+## 18. Live FedEx (SA-19, implemented in-branch)
+
+Live FedEx buys (OAuth, rate quote, outbound + return label, void)
+behind the `labels.live` master switch. Code: `crates/labels/src/live.rs`
+(gate checks, OAuth/rate shapes, idempotent buy-pair + void, sandbox
+fixtures, packet cover renderer); proof: `xtask/src/fedex.rs`
+(`cargo xtask fedex`, recorded synthetic fixtures only); staff UI:
+`web/src/routes/(admin)/labels/+page.svelte` (admin build only).
+
+1. Gates (checked in this order, fail closed): `labels.live` on,
+   staff session, destination ZIP on `live_ship_to_allow`, day count
+   under `live_daily_cap` (default 2), quote under `live_max_usd`
+   (default USD 60). Quote is read-only and uncapped so staff can see
+   the over-cap number; the buy path enforces the cost cap.
+2. Idempotency: ledger key `order_id:leg` (`fedex_live_ledger`,
+   `CREATE TABLE IF NOT EXISTS` only — see `live.rs` `LEDGER_DDL`).
+   Re-buying a bought leg replays the stored label without touching
+   the carrier and without consuming day cap. Voids keep the leg
+   closed (re-issue under a new order id). Every attempt appends a
+   `fedex_live_audit` row (`AUDIT_DDL`); audit rows are append-only.
+3. Sandbox discipline: `SandboxTransport` replays recorded synthetic
+   fixtures (USD 12.50 rate, `SYNTHETIC…` tracking, `%PDF-` stub
+   bytes). No live credentials anywhere in repo, fixtures, or logs;
+   OAuth/client-secret/account values arrive per call from
+   secure-config at runtime.
+4. Packet: `render_packet_cover` renders the prefilled packet form
+   (shipper/recipient blocks, both tracking numbers, staff sign-off;
+   deterministic, no price by construction) — print to PDF from the
+   browser alongside the two label PDFs.
+5. Resolves §12.3: FedEx cancel stays `POST …/ship/v1/shipments/cancel`
+   (the `PUT` variant from public docs is unverified; confirm against
+   the sandbox before the first real cancel).
+
+## 19. Config keys for live FedEx (builder: register these)
+
+| Key | Type | Hint |
+|---|---|---|
+| `labels.live` | bool | Master switch, default false. |
+| `labels.live_daily_cap` | int | Max live labels per UTC day, default 2. |
+| `labels.live_max_usd` | number | Max quoted cost per label in USD, default 60. |
+| `labels.live_ship_to_allow` | text | CSV of allowed destination ZIPs (exact match; empty allows nothing). |
+| `labels.fedex_client_id` | secret | FedEx OAuth client id (write-only, Set/Unset display). |
+| `labels.fedex_client_secret` | secret | FedEx OAuth client secret (write-only). |
+| `labels.fedex_account` | text | FedEx account number billed for labels (server-side only). |
+
+`xtask/src/main.rs` wiring (builder applies — SA-19 does not edit it):
+
+```rust,ignore
+mod fedex; // alongside the other `mod` lines at the top
+// inside the match in `main()`:
+Some("fedex") => fedex::run(&args[1..]),
+```
+
+Backend routes for the staff UI (builder wires under the staff API —
+SA-19 ships the page only): `GET /fedex-live/caps`, `POST
+/fedex-live/quote`, `POST /fedex-live/purchase`, `POST /fedex-live/void`.
+
 

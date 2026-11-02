@@ -22,6 +22,7 @@ pub mod carrier;
 pub mod client;
 pub mod display;
 pub mod format;
+pub mod live;
 pub mod manual;
 pub mod payload;
 pub mod printable;
@@ -35,6 +36,7 @@ pub use client::{
 };
 pub use display::{LabelSummary, tracking_url};
 pub use format::{PaperSize, PrintFormat};
+pub use live::render_packet_cover;
 pub use manual::{FallbackOutcome, LabelStatus, ManualError, ManualLabelTask, buy_with_fallback};
 pub use payload::{
     Direction, Parcel, ParcelDims, PayloadError, PostalAddress, ServiceClass, ShipmentPayload,
