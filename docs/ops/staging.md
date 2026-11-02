@@ -449,9 +449,11 @@ above verbatim).
   `294c5c2` also queued). README/docs-only since bde970e, so
   the serving bits are identical — candidate moves to the tip.
   RO-2 `up --check` green on the tip in a fresh local clone
-  (healthz + authorities + setup/status 200; Node v26, the
-  24/22 matrix still pending; `--from-archive` still needs a
-  crawl package).
+  (healthz + authorities + setup/status 200). Node matrix
+  ready on the Mac: Node 22/npm 10 and Node 24/npm 11 via
+  Homebrew keg-only (`PATH=/opt/homebrew/opt/node@22/bin:$PATH`
+  or `node@24`; bare `npm` abort-traps — the paired node must
+  lead PATH). `--from-archive` still needs a crawl package.
 
 ## Run 18 (2026-11-02, 2b4bc8d) — 9/10 kept, login-padding fix accepted
 
