@@ -23,8 +23,9 @@ pub const SERVICE: &str = "apostille";
 /// Prod smoke URL (also validates the TLS chain).
 pub const DEFAULT_SMOKE_URL: &str = "https://andrii.ai/apostille/healthz";
 
-/// Release dirs kept after a successful deploy; older pruned oldest-first.
-pub const MAX_RELEASES: usize = 10;
+/// Release dirs kept after a successful deploy (the live one plus the
+/// newest 3); older ones are pruned oldest-first.
+pub const MAX_RELEASES: usize = 4;
 
 /// Migrations old code cannot run against: table rebuilds,
 /// renames, drops, column type changes, or STRICT added to an
@@ -1022,7 +1023,7 @@ mod tests {
     #[test]
     fn deploy_installs_manifest_and_prunes_to_cap() {
         let (dir, root) = fake_root(None);
-        // 12 pre-existing + the new one = prune 3 oldest (13 -> 10).
+        // 12 pre-existing + the new one = prune the 9 oldest (13 -> 4).
         for n in 0..11 {
             install_stub(&root, &format!("abc12{n:02}"), 7, true);
         }

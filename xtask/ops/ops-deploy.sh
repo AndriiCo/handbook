@@ -135,13 +135,7 @@ done
     echo "remedy: check for orphan web procs: ps -o pid,user,lstart,cmd -C web"
     exit 1
 }
-echo "=== 4. prune old releases (keep live + newest 3)"
+echo "=== 4. releases (xtask deploy keeps the live one plus the newest 3)"
 LIVE="$(readlink /srv/apostille/current)"
-# shellcheck disable=SC2012
-ls -t /srv/apostille/releases/ | tail -n +4 | while IFS= read -r old; do
-    if [ -n "$old" ] && [ "/srv/apostille/releases/$old" != "$LIVE" ]; then
-        rm -rf "/srv/apostille/releases/$old" && echo "pruned $old"
-    fi
-done
 echo "releases now: $(ls /srv/apostille/releases/ | tr '\n' ' ')(live: $LIVE)"
 echo "DONE deploy $VERSION — paste this whole output back to the agent"

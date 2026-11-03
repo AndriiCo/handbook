@@ -2,12 +2,22 @@
 //!
 //! Tasks: `admin-invite --role <staff|admin> --cn <name>` (mints a
 //! single-use enrolment URL, stores the token hash only) and
-//! `admin-offboard --user <id> --cn <name>` (cert-first,
-//! per-step transactions, idempotent). Spec
+//! `admin-offboard --user <id> --cn <name>` (per-step transactions,
+//! idempotent). Spec
 //! `customer-auth.md` §§5.1/5.6.
 
 /// Enrol-page origin default (staging passes `--origin`).
 const DEFAULT_ORIGIN: &str = "https://admin.andrii.ai";
+
+/// Staff names: ASCII word characters, dots and dashes, 1 to 64 bytes
+/// (`jdoe`, `ops.bot`, `admin-2`; not emails).
+pub(crate) fn valid_cn(cn: &str) -> bool {
+    !cn.is_empty()
+        && cn.len() <= 64
+        && cn
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
 
 /// `admin-invite --role <staff|admin> --cn <name> [--days <n>]
 /// [--actor <a>] [--store <path>] [--origin <url>]`.
@@ -20,23 +30,8 @@ pub fn run_invite(args: &[String]) {
         fail("--role must be staff or admin");
     }
     let cn = crate::required(args, "cn");
-    if !crate::admin_cert::valid_cn(&cn) {
+    if !valid_cn(&cn) {
         fail("invalid --cn (ascii word chars, dots, dashes; max 64)");
-    }
-    // Mint order (spec §5.1): the invite binds to an ISSUED cert,
-    // never to a future one.
-    let live: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM admin_cert
-             WHERE cn = ?1 AND revoked_at IS NULL AND expires_at > ?2",
-            rusqlite::params![cn, crate::unix_now()],
-            |r| r.get(0),
-        )
-        .unwrap_or_else(|e| fail(&e.to_string()));
-    if live == 0 {
-        fail(&format!(
-            "no live certificate for cn {cn:?}; run admin-cert-issue first"
-        ));
     }
     let days: i64 = crate::flag(args, "days")
         .and_then(|d| d.parse().ok())
@@ -88,7 +83,7 @@ pub fn run_offboard(args: &[String]) {
     auth::migrate_auth_tables(&conn).unwrap_or_else(|e| fail(&e.to_string()));
     let user_id = crate::required(args, "user");
     let cn = crate::required(args, "cn");
-    if !crate::admin_cert::valid_cn(&cn) {
+    if !valid_cn(&cn) {
         fail("invalid --cn (ascii word chars, dots, dashes; max 64)");
     }
     let actor = crate::flag(args, "actor").unwrap_or_else(|| "xtask".to_string());

@@ -54,25 +54,6 @@ pub fn accept(
     Ok(format!("ACCEPT build_no={build_no} facts_hash={stored}"))
 }
 
-/// CLI entry.
-pub fn run(args: &[String]) {
-    let store = crate::open_store(args);
-    let expect: i64 = crate::flag(args, "expect-build")
-        .and_then(|b| b.parse().ok())
-        .unwrap_or_else(|| {
-            eprintln!("missing required flag: --expect-build <n>");
-            std::process::exit(2);
-        });
-    let actor = crate::flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
-    match accept(&store, expect, &actor) {
-        Ok(summary) => println!("{summary}"),
-        Err(reason) => {
-            eprintln!("accept: REFUSED: {reason}");
-            std::process::exit(1);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

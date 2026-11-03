@@ -8,7 +8,6 @@ use std::process::Command;
 use handbook_store::store::Store;
 
 mod accept;
-mod admin_cert;
 mod admin_staff;
 mod archive;
 mod ask;
@@ -20,7 +19,6 @@ mod config;
 mod crawl;
 mod demo_vietnam;
 mod eval;
-mod fedex;
 mod fetch_slug;
 mod form_scaffold;
 mod instruct;
@@ -28,9 +26,7 @@ mod judge;
 mod mcp_serve;
 mod packs;
 mod pii_sweep;
-mod quic_probe;
 mod release;
-mod review_conflicts;
 mod secrets;
 mod up;
 mod voice_replay;
@@ -45,8 +41,6 @@ fn main() {
         Some("init") => run_init(&args[1..]),
         Some("add-authority") => run_add_authority(&args[1..]),
         Some("retention-sweep") => run_retention_sweep(&args[1..]),
-        Some("web-budget") => run_web_budget(),
-        Some("serve") => run_serve(),
         Some("analyze") => run_analyze(&args[1..]),
         Some("fetch-url") => run_fetch_url(&args[1..]),
         Some("fetch-slug") => fetch_slug::run(&args[1..]),
@@ -56,13 +50,10 @@ fn main() {
         Some("watch-sweep") => watch::run_sweep(&args[1..]),
         Some("hcch-poll") => watch::run_hcch(&args[1..]),
         Some("mail-poll") => watch::run_mail(&args[1..]),
-        Some("review-conflicts") => review_conflicts::run(&args[1..]),
         Some("build-handbook") => build_handbook::run(&args[1..]),
         Some("mcp-serve") => mcp_serve::run(&args[1..]),
         Some("pii-sweep") => pii_sweep::run(&args[1..]),
-        Some("accept") => accept::run(&args[1..]),
         Some("form-scaffold") => form_scaffold::run(&args[1..]),
-        Some("quic-probe") => quic_probe::run(&args[1..]),
         Some("demo-vietnam") => demo_vietnam::run(&args[1..]),
         Some("eval") => eval::run(&args[1..]),
         Some("backup") => backup::run(&args[1..]),
@@ -76,16 +67,12 @@ fn main() {
         Some("config-verify") => config::run_verify(&args[1..]),
         Some("config-rotate") => config::run_rotate(&args[1..]),
         Some("setup-key-mint") => config::run_setup_key_mint(&args[1..]),
-        Some("admin-cert-issue") => admin_cert::run_issue(&args[1..]),
-        Some("admin-cert-verify") => admin_cert::run_verify(&args[1..]),
-        Some("admin-cert-revoke") => admin_cert::run_revoke(&args[1..]),
         Some("admin-invite") => admin_staff::run_invite(&args[1..]),
         Some("admin-offboard") => admin_staff::run_offboard(&args[1..]),
         Some("ask") => ask::run(&args[1..]),
         Some("archive-package") => archive::run_package(&args[1..]),
         Some("world-index") => world::run(&args[1..]),
         Some("crawl") => crawl::run(&args[1..]),
-        Some("fedex") => fedex::run(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("up") => up::run(&args[1..]),
         Some("judge") => judge::run(&args[1..]),
@@ -94,7 +81,6 @@ fn main() {
         Some("deploy") => release::run_deploy(&args[1..]),
         Some("rollback") => release::run_rollback(&args[1..]),
         Some("install-hooks") => run_install_hooks(),
-        Some("audit") => run_audit(),
         Some(unknown) => {
             eprintln!("unknown task: {unknown}\n");
             print_help();
@@ -112,8 +98,6 @@ Tasks:
   init   create a store and apply migrations [--store <path>]
   add-authority   add an office/jurisdiction (see flags below)
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
-  web-budget  report web/build JS+CSS size (advisory, no gate)
-  serve       run the dev API server (cargo run -p web)
   analyze     draft proposed facts for an authority (stub default, --live for Meta API, --live --record <corpus>, --replay <corpus>)
   eval        grade drafts on evals/authorities/*.json [--live [--record <corpus>]] [--replay <corpus>] [--store <path>] [--evals <dir>] (writes quality.json)
   fetch-url   fetch one URL into a warc capture (thin watch)
@@ -124,13 +108,10 @@ Tasks:
   watch-sweep poll due watch URLs across authorities (timer runs this)
   hcch-poll   poll the HCCH status table, task on change (timer runs this)
   mail-poll   poll Gmail into email captures (timer runs this)
-  review-conflicts print F6 conflicts with citations
   build-handbook accepted-only static build + sitemap/robots [--out --base-url]
   mcp-serve   serve lookup_authority on 127.0.0.1 [--port]
   pii-sweep   fail closed on PII in publishable surfaces
-  accept      deploy gate: --expect-build must match latest build + facts_hash
   form-scaffold  per-form skeleton: --authority --code --title [--out] [--force]; --check compares
-  quic-probe  HTTP/3 GET probe: --addr <ip:port> --server-name <sni> [--cacert <pem>] [--path <p>] [--host <h>]
   demo-vietnam  frozen VN drill on a temp store (never prod)
   backup   nightly backup: SQLite backup API + tar (see flags below)
   backup-verify  restore-to-scratch + checks (drill-3 engine)
@@ -139,9 +120,8 @@ Tasks:
   packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)
   setup-key-mint  mint the first-boot setup key (§9; prints once)
-  admin-cert-issue|verify|revoke  admin mTLS client certs
   admin-invite  staff enrolment invite (spec customer-auth.md §5.1)
-  admin-offboard  staff offboard: certs, sessions, creds, lock (§5.6)
+  admin-offboard  staff offboard: sessions, credentials, lock (§5.6)
   secrets-scan scan tracked files for secrets [--staged for the index]
   crawl   fetch packs/world seeds into WARC/1.1 drops [--packs --out]
   archive-package  bundle a crawl run into WACZ/CSVs/index [--run]
@@ -152,13 +132,12 @@ Tasks:
   model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files
   voice-replay  replay webhook fixtures at the stub (see --corpus/--scenario)
   install-hooks point git at .githooks/ (pre-commit secret scan)
-  audit       cargo-audit over Cargo.lock (needs network; not in ci)
-  deploy      ship a release (see flags below; runbook: docs/ops/runbook-release.md)
+  deploy      install a staged release on this host (see flags below; docs/ops/deploy.md)
   rollback    roll back to a kept release (see flags below)
 
 deploy flags:
   --version <sha>  release dir name, 7..=64 lowercase hex (required)
-  --src <dir>   staged dir holding web + spa/ (required)
+  --src <dir>   staged dir holding web, xtask, spa/, spa-admin/, static/ (+ packs/, evals/) (required)
   --root <path> releases root (default: /srv/apostille)
   --sha <sha>   full sha for the manifest (default: git rev-parse HEAD)
   --packs <dir> packs dir for the packs-validate gate (default: packs)
@@ -170,6 +149,7 @@ deploy flags:
   --rollback-unsafe  mark the release rollback-unsafe in the manifest
   --smoke-url <url>  health URL to smoke (default: https://andrii.ai/apostille/healthz)
   --no-restart  skip systemctl restart (tests only, never prod)
+  --allow-today-overlap  accepted for old orders; no day gate exists
   --actor <a>   audit actor (default: xtask)
 
 rollback flags:
@@ -384,66 +364,6 @@ fn run_retention_sweep(args: &[String]) {
             eprintln!("retention-sweep: {e}");
             std::process::exit(1);
         }
-    }
-}
-
-/// Advisory size report: raw JS+CSS bytes in `web/build` (top 8 +
-/// total). History: this was a Day-1 budget gate (150KB, raised to
-/// 200→220→221→223KB as P2 routes, form-framework, OAuth UI, and
-/// magic-link UI landed). The author removed the gate on 2026-10-28:
-/// JS/HTML/image sizes are unlimited until the initial-page
-/// optimization pass; this command only reports, never fails on size.
-fn run_web_budget() {
-    let mut sized: Vec<(u64, String)> = Vec::new();
-    let mut stack = vec![std::path::PathBuf::from("web/build")];
-    if !stack[0].is_dir() {
-        eprintln!("web-budget: web/build missing (run `npm run build` in web/ first)");
-        std::process::exit(1);
-    }
-    while let Some(dir) = stack.pop() {
-        let entries = std::fs::read_dir(&dir).unwrap_or_else(|e| {
-            eprintln!("web-budget: read {}: {e}", dir.display());
-            std::process::exit(1);
-        });
-        for entry in entries {
-            let entry = entry.unwrap_or_else(|e| {
-                eprintln!("web-budget: entry: {e}");
-                std::process::exit(1);
-            });
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if matches!(
-                path.extension().and_then(|e| e.to_str()),
-                Some("js" | "css")
-            ) {
-                let bytes = entry
-                    .metadata()
-                    .unwrap_or_else(|e| {
-                        eprintln!("web-budget: stat {}: {e}", path.display());
-                        std::process::exit(1);
-                    })
-                    .len();
-                sized.push((bytes, path.display().to_string()));
-            }
-        }
-    }
-    sized.sort();
-    sized.reverse();
-    let total: u64 = sized.iter().map(|(b, _)| b).sum();
-    for (bytes, path) in sized.iter().take(8) {
-        println!("{bytes:>8}  {path}");
-    }
-    println!("total JS+CSS: {total} bytes (advisory, no gate)");
-}
-
-fn run_serve() {
-    let status = Command::new("cargo")
-        .args(["run", "-p", "web"])
-        .status()
-        .expect("failed to run cargo");
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
     }
 }
 
@@ -1128,20 +1048,6 @@ fn run_install_hooks() {
         });
     }
     println!("hooks installed: core.hooksPath=.githooks");
-}
-
-/// Surface `cargo audit` as a task. Deliberately NOT part of `ci`
-/// (needs the network + the plugin); run before releases.
-fn run_audit() {
-    let status = Command::new("cargo").args(["audit"]).status();
-    match status {
-        Ok(s) if s.success() => println!("audit: clean"),
-        Ok(s) => std::process::exit(s.code().unwrap_or(1)),
-        Err(e) => {
-            eprintln!("audit: cargo-audit not installed ({e}); run `cargo install cargo-audit`");
-            std::process::exit(1);
-        }
-    }
 }
 
 #[cfg(test)]

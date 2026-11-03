@@ -205,6 +205,24 @@ fn seal_with_systemd(kek_path: &str, cred_path: &str) -> Result<(), String> {
     }
 }
 
+/// Only registered keys, with their registered type (the web admin PUT
+/// and the setup wizard refuse the same things).
+pub(crate) fn check_registered(key: &str, kind: &str) -> Result<(), String> {
+    if sealed_config::keys::REMOVED.contains(&key) {
+        return Err(format!(
+            "{key} was removed from the registry; nothing reads it"
+        ));
+    }
+    match sealed_config::keys::ALL.iter().find(|(k, _)| *k == key) {
+        Some((_, registered)) if registered.as_str() == kind => Ok(()),
+        Some((_, registered)) => Err(format!(
+            "{key} is registered as {}, not {kind}",
+            registered.as_str()
+        )),
+        None => Err(format!("{key} is not a registered config key")),
+    }
+}
+
 /// `config-set --key <k> --type bool|text|secret (--value <v> | --value-from-stdin)`.
 pub fn run_set(args: &[String]) {
     let store = crate::open_store(args);
@@ -217,6 +235,7 @@ pub fn run_set(args: &[String]) {
     if !["bool", "text", "secret"].contains(&kind.as_str()) {
         fail("invalid --type (bool | text | secret)");
     }
+    check_registered(&key, &kind).unwrap_or_else(|e| fail(&e));
     let value = if args.iter().any(|a| a == "--value-from-stdin") {
         use std::io::Read as _;
         let mut buf = String::new();
@@ -635,12 +654,38 @@ mod tests {
     }
 
     #[test]
+    fn only_registered_keys_with_their_type_are_sealed() {
+        assert!(check_registered("net.port", "text").is_ok());
+        assert!(check_registered("meta.api_key", "secret").is_ok());
+        assert!(
+            check_registered("net.port", "secret")
+                .unwrap_err()
+                .contains("registered as text")
+        );
+        assert!(
+            check_registered("flag.true", "bool")
+                .unwrap_err()
+                .contains("not a registered")
+        );
+        assert!(
+            check_registered("tls.client_ca_file", "text")
+                .unwrap_err()
+                .contains("removed")
+        );
+    }
+
+    #[test]
     fn bool_values_normalize_to_canonical_bytes() {
         let (_dir, store, conn, kek_path) = setup();
         enroll_v1(&conn);
         let root = store.root().to_string_lossy().into_owned();
-        for (input, canonical) in [("true", b"1"), ("false", b"0"), ("1", b"1"), ("0", b"0")] {
-            let key = format!("flag.{input}");
+        for (key, input, canonical) in [
+            ("quic.enabled", "true", b"1"),
+            ("notify.enabled", "false", b"0"),
+            ("orders.enabled", "1", b"1"),
+            ("acme.enabled", "0", b"0"),
+        ] {
+            let key = key.to_string();
             run_set(&[
                 "config-set".to_string(),
                 "--store".to_string(),
