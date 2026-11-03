@@ -1320,6 +1320,31 @@ mod live {
         crate::telemetry::migrate_tables(&conn).unwrap();
         migrate_tables(&conn).unwrap();
         crate::offices::migrate_tables(&conn).unwrap();
+        crate::factcheck::migrate_tables(&conn).unwrap();
+        // M3: cross-check every capture of each slug first, so the plan
+        // provenance carries real Wonder verdicts.
+        for slug in slugs.split(',') {
+            let captures: Vec<i64> = conn
+                .prepare(
+                    "SELECT DISTINCT f.capture_id FROM fact f JOIN authority a ON a.id = f.authority_id
+                     WHERE a.slug = ?1 AND f.status IN ('proposed', 'accepted')",
+                )
+                .unwrap()
+                .query_map([slug], |r| r.get(0))
+                .unwrap()
+                .flatten()
+                .collect();
+            for (j, capture) in captures.into_iter().enumerate() {
+                match crate::factcheck::run_blocking(&root, None, capture, 9_200 + j as u64) {
+                    Ok(summary) => println!("LIVE-CHECK {slug} {summary}"),
+                    Err(e) => println!("LIVE-CHECK {slug} capture {capture} FAILED {e}"),
+                }
+            }
+            println!(
+                "CHECKS {slug} {}",
+                serde_json::Value::Array(crate::factcheck::latest_for_slug(&conn, slug).unwrap())
+            );
+        }
         for (i, slug) in slugs.split(',').enumerate() {
             match crate::offices::compose_blocking(&root, None, slug, 9_100 + i as u64) {
                 Ok(summary) => {

@@ -21,6 +21,17 @@ Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
 
 ## Open now, in order
 
+**Blocker for every deploy (new, ~17:40 PST):** `ssh andrii.ai` fails —
+`connect to host fd57:4700::1 port 53534: No route to host`. The Mac has
+no `fd57:4700::` address on any tunnel interface, so the VPN to the
+production host is down (the public site itself answers 200 over HTTPS).
+Bring the VPN up, then paste back the output of:
+`ssh andrii.ai 'echo prod-ok; ls -1t /srv/apostille/releases | head -3'`.
+T1 is ready to ship the moment it answers: `e25fd3e` is plant-stamped
+(`acceptance/e25fd3ef612d.json`) and staging-green (9/10, only S1 red;
+live demo take 3/3) — see the train report below.
+
+
 0. **Your edits (agents never touch these files).** Commit, then tell
    the builder "step 0 done":
    - `AGENTS.md` §7 Freeze: replace "the last code deploy is Mon 11-02"
