@@ -245,3 +245,4 @@
 | 336 | 2026-11-03 02:19Z | CR1 slice (SA-25, builder): labels.fedex_base_url, allowlisted to the two FedEx roots | fedex tests 7 green, clippy clean |
 | 337 | 2026-11-03 02:28Z | VPN is up, ship T1 | e25fd3e live (prev 4dcd234); prod 5/10 → 5/10, no regressions |
 | 338 | 2026-11-03 02:42Z | Hotfix (review #0 critical): non-ASCII ZIP / address text aborted the process; overflow-safe hours | web 352 green, clippy clean |
+| 339 | 2026-11-03 02:56Z | Hotfix deploy cfb625b (review #0 critical) | live (prev e25fd3e); prod 5/10 → 5/10 |

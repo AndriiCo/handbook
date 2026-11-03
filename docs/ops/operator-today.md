@@ -21,6 +21,16 @@ Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
 
 ## Open now, in order
 
+**HOTFIX DEPLOYED (~19:00 PST):** production runs `0.1.0+cfb625b`
+(previous `e25fd3e`). The post-T1 adversarial review found a remote abort:
+a non-ASCII ZIP from any anonymous demo session panicked the server
+(release builds abort; systemd gives up after 12 restarts/10 min). Fixed
+with the two related slicing/overflow panics; stamped, staging-green
+(9/10 + demo 3/3), prod-before 5/10 → prod-after 5/10 (only P0's version
+changed). Flags: `--skip-accept --allow-today-overlap`. 57 more confirmed
+findings (none remotely aborting the deployed build) are being fixed on
+`main` for T2.
+
 **T1 DEPLOYED (~18:35 PST, on your "VPN is up, ship T1"):** production
 runs `0.1.0+e25fd3e` (previous `4dcd234`, kept for rollback; pruned
 `eb57cdc`). Flags announced per §7: `--skip-accept --allow-today-overlap`.
