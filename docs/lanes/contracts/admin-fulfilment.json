@@ -1,0 +1,27 @@
+{
+  "columns": [
+    {
+      "id": "to_pack",
+      "label": "To pack",
+      "orders": []
+    },
+    {
+      "id": "awaiting_label",
+      "label": "Awaiting label",
+      "orders": []
+    },
+    {
+      "id": "shipped",
+      "label": "Shipped",
+      "orders": [
+        {
+          "id": "ord_q7Hm2xR4kP",
+          "authority_slug": "usa-wa-sos",
+          "packet_url": "/apostille/api/v1/fulfilment/ord_q7Hm2xR4kP/packet.pdf",
+          "legs": 3,
+          "since": 1793754000
+        }
+      ]
+    }
+  ]
+}

@@ -30,16 +30,22 @@ pub enum WsTopic {
     /// New-proposal feed for the `/review` queue; staff-only. One
     /// channel for all authorities — the event names its own.
     Proposals,
+    /// Admin dashboard activity feed (orders, compile runs, model-call
+    /// errors, fulfilment); staff-only. Bare `ops`, like `proposals`.
+    Ops,
 }
 
 impl WsTopic {
     /// Parse `authority:{slug}` / `call:{id}` / `submission:{id}` /
     /// `shipment:{id}` / `billing:{customer_ref}` / `run:{id}` /
-    /// bare `proposals`. Anything else — unknown nouns, empty args,
+    /// bare `proposals` / `ops`. Anything else — unknown nouns, empty args,
     /// traversal-looking slugs — is `None`.
     pub fn parse(input: &str) -> Option<Self> {
         if input == "proposals" {
             return Some(WsTopic::Proposals);
+        }
+        if input == "ops" {
+            return Some(WsTopic::Ops);
         }
         let (noun, arg) = input.split_once(':')?;
         if arg.is_empty() || arg.len() > 128 {
@@ -76,6 +82,7 @@ impl WsTopic {
             WsTopic::Billing { customer_ref } => format!("billing:{customer_ref}"),
             WsTopic::Run { id } => format!("run:{id}"),
             WsTopic::Proposals => "proposals".to_string(),
+            WsTopic::Ops => "ops".to_string(),
         }
     }
 }
@@ -161,6 +168,9 @@ pub fn authorize(
         // Proposal events name authority + statement text (unpublished
         // drafts) — staff-only, never anonymous.
         WsTopic::Proposals => role.meets(Role::Staff),
+        // Ops events name customers' orders and staff actions —
+        // staff-only, never anonymous or customer.
+        WsTopic::Ops => role.meets(Role::Staff),
     }
 }
 
@@ -211,6 +221,7 @@ mod tests {
             ),
             ("run:7", WsTopic::Run { id: 7 }),
             ("proposals", WsTopic::Proposals),
+            ("ops", WsTopic::Ops),
         ] {
             let parsed = WsTopic::parse(text).expect("parse");
             assert_eq!(parsed, expected);

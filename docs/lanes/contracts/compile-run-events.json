@@ -1,0 +1,109 @@
+{
+  "run_id": 88,
+  "topic": "run:88",
+  "events": [
+    {
+      "type": "compile.step",
+      "topic": "run:88",
+      "run_id": 88,
+      "step": "discover",
+      "status": "done",
+      "at": 1793750400,
+      "counts": {
+        "candidates": 14,
+        "picked": 5
+      },
+      "model": "muse-spark-1.3",
+      "latency_ms": 2100,
+      "tokens": {
+        "input": 2900,
+        "output": 120,
+        "cached": 0,
+        "reasoning": 300
+      }
+    },
+    {
+      "type": "compile.step",
+      "topic": "run:88",
+      "run_id": 88,
+      "step": "capture",
+      "status": "done",
+      "at": 1793750420,
+      "counts": {
+        "captured": 4,
+        "blocked": 1
+      }
+    },
+    {
+      "type": "compile.step",
+      "topic": "run:88",
+      "run_id": 88,
+      "step": "extract",
+      "status": "done",
+      "at": 1793750480,
+      "counts": {
+        "proposed": 9,
+        "rejected": 2
+      },
+      "model": "muse-spark-1.3",
+      "latency_ms": 31000,
+      "tokens": {
+        "input": 41000,
+        "output": 5100,
+        "cached": 22000,
+        "reasoning": 6100
+      }
+    },
+    {
+      "type": "compile.step",
+      "topic": "run:88",
+      "run_id": 88,
+      "step": "cross_check",
+      "status": "done",
+      "at": 1793750510,
+      "counts": {
+        "supported": 8,
+        "contradicted": 0,
+        "not_found": 1
+      },
+      "model": "muse-wonder-1.0",
+      "latency_ms": 14000
+    },
+    {
+      "type": "compile.step",
+      "topic": "run:88",
+      "run_id": 88,
+      "step": "offices",
+      "status": "done",
+      "at": 1793750530,
+      "counts": {
+        "proposed": 1
+      }
+    },
+    {
+      "type": "compile.step",
+      "topic": "run:88",
+      "run_id": 88,
+      "step": "compose",
+      "status": "done",
+      "at": 1793750550,
+      "counts": {
+        "blocks": 7,
+        "dropped": 0
+      }
+    },
+    {
+      "type": "compile.done",
+      "topic": "run:88",
+      "run_id": 88,
+      "at": 1793750551,
+      "status": "ok",
+      "summary": {
+        "facts_proposed": 9,
+        "offices_proposed": 1,
+        "plans_proposed": 1,
+        "latency_ms": 151000
+      }
+    }
+  ]
+}

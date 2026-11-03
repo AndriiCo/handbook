@@ -69,6 +69,42 @@ impl Drop for WsConnGuard {
     }
 }
 
+/// Event kinds anonymous `authority:{slug}` subscribers may receive.
+/// Each carries ids only (the client re-reads the public API), so no
+/// unpublished text ever reaches an anonymous socket.
+pub const AUTHORITY_KINDS: &[&str] = &["fact_accepted", "plan_accepted", "offices_accepted"];
+
+/// Publish one ids-only event on `authority:{slug}`. Kinds outside
+/// [`AUTHORITY_KINDS`] are dropped (debug builds panic), so a lane can
+/// never fan unpublished drafts out to anonymous subscribers.
+#[allow(dead_code)] // B0 seam: SA-22 plan accept + SA-23 offices accept.
+pub fn publish_authority_event(bus: &Bus, slug: &str, kind: &str, ids: serde_json::Value, at: i64) {
+    debug_assert!(AUTHORITY_KINDS.contains(&kind), "authority kind {kind}");
+    if !AUTHORITY_KINDS.contains(&kind) {
+        return;
+    }
+    let topic = format!("authority:{slug}");
+    let mut msg = serde_json::json!({"type": kind, "topic": topic, "at": at});
+    if let (Some(obj), Some(extra)) = (msg.as_object_mut(), ids.as_object()) {
+        for (k, v) in extra {
+            obj.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+    }
+    bus.publish(&topic, msg.to_string());
+}
+
+/// Publish one event on the staff-only `ops` feed (dashboard activity).
+#[allow(dead_code)] // B0 seam: SA-24 orders, SA-22 compile, SA-26 dashboard.
+pub fn publish_ops(bus: &Bus, kind: &str, body: serde_json::Value, at: i64) {
+    let mut msg = serde_json::json!({"type": kind, "topic": "ops", "at": at});
+    if let (Some(obj), Some(extra)) = (msg.as_object_mut(), body.as_object()) {
+        for (k, v) in extra {
+            obj.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+    }
+    bus.publish("ops", msg.to_string());
+}
+
 /// One broadcast channel per topic, created on first use.
 #[derive(Clone, Debug, Default)]
 pub struct Bus {
@@ -382,6 +418,7 @@ fn topic_noun(topic: &auth::ws::WsTopic) -> &'static str {
         auth::ws::WsTopic::Billing { .. } => "billing",
         auth::ws::WsTopic::Run { .. } => "run",
         auth::ws::WsTopic::Proposals => "proposals",
+        auth::ws::WsTopic::Ops => "ops",
     }
 }
 

@@ -24,6 +24,7 @@ mod fedex;
 mod fetch_slug;
 mod form_scaffold;
 mod instruct;
+mod judge;
 mod mcp_serve;
 mod packs;
 mod pii_sweep;
@@ -87,6 +88,7 @@ fn main() {
         Some("fedex") => fedex::run(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("up") => up::run(&args[1..]),
+        Some("judge") => judge::run(&args[1..]),
         Some("model-gate") => run_model_gate(),
         Some("voice-replay") => voice_replay::run(&args[1..]),
         Some("deploy") => release::run_deploy(&args[1..]),
@@ -146,6 +148,7 @@ Tasks:
   ask     answer one question with cited authority facts [<question> --slug --base --replay]
   world-index  build packs/world from HCCH status table [--live] [--out]
   up    boot the handbook on loopback with synthetic data [--check] [--fresh] [--live] [--from-archive <url|dir>]
+  judge one-command local copy for hackathon judges: prerequisite doctor, fresh boot, staff sign-in link [--live] [--check]
   model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files
   voice-replay  replay webhook fixtures at the stub (see --corpus/--scenario)
   install-hooks point git at .githooks/ (pre-commit secret scan)

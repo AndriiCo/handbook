@@ -1,0 +1,84 @@
+{
+  "authority": [
+    {
+      "type": "fact_accepted",
+      "topic": "authority:usa-wa-sos",
+      "fact_id": 201,
+      "at": 1793750400
+    },
+    {
+      "type": "plan_accepted",
+      "topic": "authority:usa-wa-sos",
+      "plan_id": 12,
+      "version": 3,
+      "at": 1793750400
+    },
+    {
+      "type": "offices_accepted",
+      "topic": "authority:usa-wa-sos",
+      "office_ids": [
+        31
+      ],
+      "at": 1793750400
+    }
+  ],
+  "billing": [
+    {
+      "type": "order.created",
+      "topic": "billing:cust_demo01",
+      "order_id": "ord_q7Hm2xR4kP",
+      "at": 1793750400
+    },
+    {
+      "type": "order.paid",
+      "topic": "billing:cust_demo01",
+      "order_id": "ord_q7Hm2xR4kP",
+      "at": 1793750460
+    },
+    {
+      "type": "label.ready",
+      "topic": "billing:cust_demo01",
+      "order_id": "ord_q7Hm2xR4kP",
+      "leg": "outbound",
+      "at": 1793750520
+    },
+    {
+      "type": "tracking.update",
+      "topic": "billing:cust_demo01",
+      "order_id": "ord_q7Hm2xR4kP",
+      "leg": "kit_to_customer",
+      "at": 1793757600
+    }
+  ],
+  "shipment": [
+    {
+      "type": "tracking.update",
+      "topic": "shipment:51",
+      "shipment_id": 51,
+      "status": "in_transit",
+      "at": 1793757600
+    }
+  ],
+  "ops": [
+    {
+      "type": "order.paid",
+      "topic": "ops",
+      "order_id": "ord_q7Hm2xR4kP",
+      "at": 1793750460
+    },
+    {
+      "type": "compile.done",
+      "topic": "ops",
+      "run_id": 88,
+      "at": 1793750551
+    },
+    {
+      "type": "model_call.error",
+      "topic": "ops",
+      "model": "muse-spark-1.3",
+      "pipeline": "draft",
+      "outcome": "timeout",
+      "at": 1793750200
+    }
+  ]
+}

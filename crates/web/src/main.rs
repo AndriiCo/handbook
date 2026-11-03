@@ -16,28 +16,40 @@
 
 mod admin;
 mod admin_ip;
+mod admin_orders;
 mod admin_voice;
 mod admin_workers;
 mod approval;
+mod compile;
 mod demo_precheck;
 mod draft;
+mod factcheck;
 mod fedex_live;
 mod follow;
+mod forms_map;
+mod fulfilment;
 mod host;
 mod magic;
 mod mtls;
 mod oauth;
 mod oauth_apple;
 mod oauth_meta;
+mod offices;
+mod orders;
 mod p2;
 mod p2_labels;
 mod passkey;
+mod plan;
 mod queue;
 mod quic;
 mod readyz;
+mod reconcile;
 mod reports;
 mod setup;
 mod staff_passkey;
+mod stripe;
+mod telemetry;
+mod tracking;
 mod translate;
 mod unfurl;
 mod ws_bus;
@@ -245,6 +257,10 @@ struct AppState {
     /// Live draft-run registry (operator finding 12): staff-triggered
     /// model drafts and their step state, keyed by server-allocated id.
     draft_runs: std::sync::Arc<draft::DraftRuns>,
+    /// Runtime switches and caps (`orders.enabled`, `usps.live`, daily
+    /// caps) read per request through a 30 s cache; the admin config
+    /// PUT invalidates it, so installing keys needs no restart.
+    config_cache: std::sync::Arc<config::CachedReader>,
     /// Google OAuth client (spec `customer-auth.md` §9): `None`
     /// until `google.client_id` + `google.client_secret` rows are
     /// set — the endpoints 503, the boot never refuses.
@@ -403,6 +419,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             draft_runs: std::sync::Arc::new(draft::DraftRuns::default()),
+            config_cache: std::sync::Arc::new(config::CachedReader::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,
@@ -420,6 +437,50 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
         spa_dir,
         acme_dir,
     )
+}
+
+// ===== MISSION WIN lane hooks (B0, docs/ops/mission-win.md) =====
+// One place for every lane-owned module's DDL and routes, so lanes
+// never edit this file and prod + test routers stay identical. The
+// builder adds a line here when a lane needs a new hook.
+
+/// Lane-owned metadata-DB DDL (`CREATE TABLE IF NOT EXISTS` only).
+fn migrate_mission_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    telemetry::migrate_tables(conn)?;
+    plan::migrate_tables(conn)?;
+    compile::migrate_tables(conn)?;
+    factcheck::migrate_tables(conn)?;
+    offices::migrate_tables(conn)?;
+    forms_map::migrate_tables(conn)
+}
+
+/// Lane-owned P2-DB DDL (`CREATE TABLE IF NOT EXISTS` only).
+fn migrate_mission_p2(p2: &rusqlite::Connection) -> rusqlite::Result<()> {
+    orders::migrate_p2_tables(p2)?;
+    p2_labels::migrate_p2_tables(p2)?;
+    tracking::migrate_p2_tables(p2)
+}
+
+/// Lane-owned public routes (merged into the `/apostille` API).
+fn mission_public_routes() -> Router<AppState> {
+    plan::public_routes().merge(stripe::public_routes())
+}
+
+/// Lane-owned customer routes (merged into the `/api/v1/p2` nest).
+fn mission_p2_routes() -> Router<AppState> {
+    orders::p2_routes().merge(forms_map::p2_routes())
+}
+
+/// Lane-owned staff routers (ADMIN listener only).
+fn mission_admin_routers(state: &AppState) -> Router {
+    telemetry::admin_router(state.clone())
+        .merge(plan::admin_router(state.clone()))
+        .merge(compile::admin_router(state.clone()))
+        .merge(factcheck::admin_router(state.clone()))
+        .merge(offices::admin_router(state.clone()))
+        .merge(forms_map::admin_router(state.clone()))
+        .merge(fulfilment::admin_router(state.clone()))
+        .merge(admin_orders::admin_router(state.clone()))
 }
 
 /// Public router with explicit state (admin routes are NEVER here —
@@ -494,7 +555,9 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
             "/api/v1/notify/unsubscribe",
             post(follow::unsubscribe_post).get(follow::unsubscribe_get),
         )
-        .nest("/api/v1/p2", p2::router())
+        .nest("/api/v1/p2", p2::router().merge(mission_p2_routes()))
+        // MISSION WIN lanes (B0): public plan read, Stripe webhook.
+        .merge(mission_public_routes())
         // Unknown API paths must 404 as JSON, not fall through to
         // the SPA shell (static routes above still win over this
         // wildcard, so real endpoints are unaffected).
@@ -962,6 +1025,10 @@ async fn main() {
     let p2conn =
         db::open_p2(&store).unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: open P2 DB: {e}"));
     db::migrate_p2(&p2conn).unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate P2 DB: {e}"));
+    // MISSION WIN lanes (B0): lane-owned P2 DDL, CREATE TABLE IF NOT
+    // EXISTS only (orders, ledger, tracking). Must run before the drop.
+    migrate_mission_p2(&p2conn)
+        .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate mission P2 tables: {e}"));
     drop(p2conn);
     auth::migrate_auth_tables(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate auth tables: {e}"));
@@ -988,6 +1055,10 @@ async fn main() {
     // EXISTS only (report, report_photo, report_promotion).
     crate::reports::migrate_report_tables(&conn)
         .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate report tables: {e}"));
+    // MISSION WIN lanes (B0): lane-owned DDL, CREATE TABLE IF NOT
+    // EXISTS only (model_call, page_plan, office_record, …).
+    migrate_mission_tables(&conn)
+        .unwrap_or_else(|e| panic!("STORE_DIR={store_dir}: migrate mission tables: {e}"));
     drop(conn);
     // config-db: the KEK is mandatory now — runtime config lives in
     // sealed rows, so without it there is nothing to serve with.
@@ -1073,6 +1144,7 @@ async fn main() {
         auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
         demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
         draft_runs: std::sync::Arc::new(draft::DraftRuns::default()),
+        config_cache: std::sync::Arc::new(config::CachedReader::default()),
         google_cfg: match (&cfg.google_client_id, &cfg.google_client_secret) {
             (Some(id), Some(secret)) => Some(oauth::GoogleCfg::from_values(
                 id,
@@ -1163,6 +1235,10 @@ async fn main() {
         },
         state.notify_poke.clone(),
     );
+    // MISSION WIN lanes (B0): order reconciler + tracking poller
+    // (each off unless its config switch is on).
+    reconcile::spawn(&state);
+    tracking::spawn(&state);
     let public = public_router(
         state.clone(),
         &cfg.static_dir,
@@ -1194,7 +1270,8 @@ async fn main() {
             .merge(admin_workers::router(state.clone()))
             .merge(fedex_live::router(state.clone()))
             .merge(admin_voice::staff_router(state.clone()))
-            .merge(admin_voice::webhook_router(state)),
+            .merge(admin_voice::webhook_router(state.clone()))
+            .merge(mission_admin_routers(&state)),
     )
     .layer(axum::middleware::from_fn(mtls::inject_verified_cert));
     // Explicit files always win: ACME stays off when the
@@ -3017,6 +3094,7 @@ mod tests {
             auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             draft_runs: std::sync::Arc::new(draft::DraftRuns::default()),
+            config_cache: std::sync::Arc::new(config::CachedReader::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,
@@ -3902,7 +3980,8 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
 
-        // Authority channels carry fact_accepted only.
+        // Authority channels carry the accepted-content kinds only
+        // (`ws_bus::AUTHORITY_KINDS`): a draft is refused …
         let res = admin_router_for(&fx.state)
             .oneshot(admin_request(
                 "POST",
@@ -3916,6 +3995,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        // … and an accepted page plan passes.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                Some(serde_json::json!({"topic": "authority:x", "kind": "plan_accepted", "body": {}})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -5005,7 +5098,8 @@ mod tests {
                 .merge(admin_workers::router(state.clone()))
                 .merge(fedex_live::router(state.clone()))
                 .merge(admin_voice::staff_router(state.clone()))
-                .merge(admin_voice::webhook_router(state.clone())),
+                .merge(admin_voice::webhook_router(state.clone()))
+                .merge(mission_admin_routers(state)),
         )
         .layer(axum::middleware::from_fn(mtls::inject_verified_cert));
         let cfg = config::RuntimeConfig {

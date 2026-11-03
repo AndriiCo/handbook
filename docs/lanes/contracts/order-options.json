@@ -1,0 +1,40 @@
+{
+  "slug": "usa-wa-sos",
+  "mode": "test",
+  "paid_enabled": true,
+  "currency": "usd",
+  "options": [
+    {
+      "kind": "label_fedex",
+      "enabled": false,
+      "title": "FedEx labels, print at home",
+      "reason": "This office receives mail at a PO Box, which FedEx cannot deliver to.",
+      "fact_id": 203,
+      "from_cents": null
+    },
+    {
+      "kind": "label_usps",
+      "enabled": true,
+      "title": "USPS labels with postage, print at home",
+      "reason": null,
+      "fact_id": null,
+      "from_cents": 2400
+    },
+    {
+      "kind": "mail_kit",
+      "enabled": true,
+      "title": "Mailing kit shipped to you",
+      "reason": null,
+      "fact_id": null,
+      "from_cents": 4900
+    },
+    {
+      "kind": "address_label",
+      "enabled": true,
+      "title": "Free address label, no postage",
+      "reason": null,
+      "fact_id": null,
+      "from_cents": 0
+    }
+  ]
+}

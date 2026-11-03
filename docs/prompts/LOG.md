@@ -214,3 +214,4 @@
 | 312 | 2026-11-02 18:30Z | deploy now | train red-allowlist + flag-order fixes |
 | 313 | 2026-11-02 18:37Z | deploy now | 4dcd234 live, train green, no regressions |
 | 314 | 2026-11-02 22:35Z | We have a project for hackathon here. However it does not have the core functional | MISSION WIN plan saved: docs/ops/mission-win.md |
+| 316 | 2026-11-03 00:15Z | Execute the plan. Muse workers stopped. Clear old releases from plant in order | B0 hooks, keys, cache, ops topic, contracts, 8 lane briefs, judge stub |

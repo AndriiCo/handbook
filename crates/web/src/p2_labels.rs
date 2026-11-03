@@ -1580,6 +1580,13 @@ async fn put_defaults(
         .into_response()
 }
 
+/// Boot DDL on the P2 DB for the customer label ledger
+/// (`label_purchase`): `CREATE TABLE IF NOT EXISTS` only. B0 seam;
+/// lane SA-25 fills it in.
+pub fn migrate_p2_tables(_p2: &rusqlite::Connection) -> rusqlite::Result<()> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1637,6 +1644,7 @@ mod tests {
             auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             draft_runs: std::sync::Arc::new(crate::draft::DraftRuns::default()),
+            config_cache: std::sync::Arc::new(config::CachedReader::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,

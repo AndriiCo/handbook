@@ -1,0 +1,35 @@
+{
+  "orders": [
+    {
+      "id": "ord_q7Hm2xR4kP",
+      "kind": "mail_kit",
+      "status": "shipped",
+      "mode": "test",
+      "authority_slug": "usa-wa-sos",
+      "customer": "cust_demo01",
+      "total_cents": 4900,
+      "currency": "usd",
+      "created_at": 1793750400,
+      "needs_staff": false
+    },
+    {
+      "id": "ord_k2Lp9vW3sQ",
+      "kind": "label_fedex",
+      "status": "needs_staff",
+      "mode": "test",
+      "authority_slug": "vietnam",
+      "customer": "cust_demo02",
+      "total_cents": 6150,
+      "currency": "usd",
+      "created_at": 1793749900,
+      "needs_staff": true,
+      "reason": "FedEx ship timed out after send (failed_unknown): check the FedEx account before retrying."
+    }
+  ],
+  "counts": {
+    "all": 2,
+    "needs_staff": 1,
+    "to_pack": 0,
+    "shipped": 1
+  }
+}

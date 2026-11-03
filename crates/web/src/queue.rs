@@ -835,6 +835,7 @@ mod tests {
             auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             draft_runs: std::sync::Arc::new(crate::draft::DraftRuns::default()),
+            config_cache: std::sync::Arc::new(config::CachedReader::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,

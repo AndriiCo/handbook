@@ -121,6 +121,14 @@ pub struct DraftRuns {
 }
 
 impl DraftRuns {
+    /// Reserve a fresh id from the one run counter without registering a
+    /// draft run, so other run kinds (Compile, plan compose) stream on
+    /// `run:{id}` without colliding with draft ids.
+    #[allow(dead_code)] // B0 seam: SA-22 `compile.rs` is the caller.
+    pub fn reserve_id(&self) -> u64 {
+        self.next.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
     /// Allocate a run, or `None` when [`MAX_RUNNING`] are in flight.
     pub fn start(&self, capture_id: i64, slug: String, now: i64) -> Option<u64> {
         let mut runs = self.runs.lock().expect("draft-runs lock poisoned");

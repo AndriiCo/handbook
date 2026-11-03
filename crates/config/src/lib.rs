@@ -1051,6 +1051,58 @@ pub mod keys {
     /// CLI-minted setup key. Writers are mint/burn only — admin
     /// PUT and setup PUT both refuse `setup.*`.
     pub const SETUP_KEY_HASH: &str = "setup.key_hash";
+    // ---- MISSION WIN (P315 B0): commerce, carriers, Meta pipeline ----
+    /// Stripe secret API key (test or live). Secret: presence-only in UI.
+    pub const STRIPE_SECRET_KEY: &str = "stripe.secret_key";
+    /// Stripe webhook signing secret (`whsec_…`). Secret.
+    pub const STRIPE_WEBHOOK_SECRET: &str = "stripe.webhook_secret";
+    /// Customer orders master switch. Default false (paid tiers 503).
+    pub const ORDERS_ENABLED: &str = "orders.enabled";
+    /// Service fee per paid label order, in cents. Default 0.
+    pub const ORDERS_FEE_LABEL_CENTS: &str = "orders.fee_label_cents";
+    /// Mailing-kit price (kit + both prepaid legs), in cents.
+    pub const ORDERS_KIT_PRICE_CENTS: &str = "orders.kit_price_cents";
+    /// ISO 4217 lowercase currency for Checkout. Default `usd`.
+    pub const ORDERS_CURRENCY: &str = "orders.currency";
+    /// Ship-from (kit fulfilment) address as one JSON object.
+    pub const ORDERS_SHIP_FROM: &str = "orders.ship_from";
+    /// Max paid orders per UTC day. Default 20.
+    pub const ORDERS_DAILY_CAP: &str = "orders.daily_cap";
+    /// Max total per order, in cents. Default 15000.
+    pub const ORDERS_MAX_ORDER_CENTS: &str = "orders.max_order_cents";
+    /// FedEx API root (sandbox or prod). Default the sandbox root.
+    pub const LABELS_FEDEX_BASE_URL: &str = "labels.fedex_base_url";
+    /// Customer-paid FedEx buys switch (separate from staff `labels.live`).
+    pub const LABELS_CUSTOMER_LIVE: &str = "labels.customer_live";
+    /// Max customer label buys per UTC day. Default 10.
+    pub const LABELS_CUSTOMER_DAILY_CAP: &str = "labels.customer_daily_cap";
+    /// Max USD per customer label. Default 60.
+    pub const LABELS_CUSTOMER_MAX_USD: &str = "labels.customer_max_usd";
+    /// USPS OAuth client id / secret (Labels, Payments, Tracking v3).
+    pub const USPS_CLIENT_ID: &str = "usps.client_id";
+    pub const USPS_CLIENT_SECRET: &str = "usps.client_secret";
+    /// USPS customer registration id + mailer ids (payment auth).
+    pub const USPS_CRID: &str = "usps.crid";
+    pub const USPS_MID: &str = "usps.mid";
+    pub const USPS_MANIFEST_MID: &str = "usps.manifest_mid";
+    /// USPS EPA account number. Secret: presence-only in UI.
+    pub const USPS_EPA_ACCOUNT: &str = "usps.epa_account";
+    /// Live USPS postage switch. Default false (TEM only).
+    pub const USPS_LIVE: &str = "usps.live";
+    /// Max live USPS labels per UTC day. Default 10.
+    pub const USPS_LIVE_DAILY_CAP: &str = "usps.live_daily_cap";
+    /// Max USD per live USPS label. Default 40.
+    pub const USPS_LIVE_MAX_USD: &str = "usps.live_max_usd";
+    /// Compose a page plan after each accept batch. Default false
+    /// (staff press Compose; batch approvals never churn plans).
+    pub const PLAN_AUTO_COMPOSE: &str = "plan.auto_compose";
+    /// Max Compile runs per UTC day. Default 6.
+    pub const COMPILE_DAILY_RUNS: &str = "compile.daily_runs";
+    /// Carrier tracking poller switch. Default false.
+    pub const TRACKING_POLL_ENABLED: &str = "tracking.poll_enabled";
+    /// Max Meta model calls per UTC day, counted from `model_call`
+    /// rows (every pipeline). Default 400.
+    pub const META_DAILY_CALL_CAP: &str = "meta.daily_call_cap";
 
     /// Every registered key with its type (admin UI + roundtrip tests).
     pub const ALL: &[(&str, super::ConfigType)] = &[
@@ -1123,6 +1175,32 @@ pub mod keys {
         (NOTIFY_DAILY_CAP, super::ConfigType::Text),
         (NOTIFY_POSTAL_ADDRESS, super::ConfigType::Text),
         (SETUP_KEY_HASH, super::ConfigType::Secret),
+        (STRIPE_SECRET_KEY, super::ConfigType::Secret),
+        (STRIPE_WEBHOOK_SECRET, super::ConfigType::Secret),
+        (ORDERS_ENABLED, super::ConfigType::Bool),
+        (ORDERS_FEE_LABEL_CENTS, super::ConfigType::Text),
+        (ORDERS_KIT_PRICE_CENTS, super::ConfigType::Text),
+        (ORDERS_CURRENCY, super::ConfigType::Text),
+        (ORDERS_SHIP_FROM, super::ConfigType::Text),
+        (ORDERS_DAILY_CAP, super::ConfigType::Text),
+        (ORDERS_MAX_ORDER_CENTS, super::ConfigType::Text),
+        (LABELS_FEDEX_BASE_URL, super::ConfigType::Text),
+        (LABELS_CUSTOMER_LIVE, super::ConfigType::Bool),
+        (LABELS_CUSTOMER_DAILY_CAP, super::ConfigType::Text),
+        (LABELS_CUSTOMER_MAX_USD, super::ConfigType::Text),
+        (USPS_CLIENT_ID, super::ConfigType::Secret),
+        (USPS_CLIENT_SECRET, super::ConfigType::Secret),
+        (USPS_CRID, super::ConfigType::Text),
+        (USPS_MID, super::ConfigType::Text),
+        (USPS_MANIFEST_MID, super::ConfigType::Text),
+        (USPS_EPA_ACCOUNT, super::ConfigType::Secret),
+        (USPS_LIVE, super::ConfigType::Bool),
+        (USPS_LIVE_DAILY_CAP, super::ConfigType::Text),
+        (USPS_LIVE_MAX_USD, super::ConfigType::Text),
+        (PLAN_AUTO_COMPOSE, super::ConfigType::Bool),
+        (COMPILE_DAILY_RUNS, super::ConfigType::Text),
+        (TRACKING_POLL_ENABLED, super::ConfigType::Bool),
+        (META_DAILY_CALL_CAP, super::ConfigType::Text),
     ];
 }
 
@@ -1167,6 +1245,78 @@ pub fn get_text_for_job(conn: &Connection, kek: &Kek, key: &str) -> Result<Optio
     String::from_utf8(decrypt_value(kek, key, enc_version, &value_enc)?)
         .map(Some)
         .map_err(|_| ConfigError::BadValue("text row is not UTF-8"))
+}
+
+/// Read-through cache for runtime switches and caps (`orders.enabled`,
+/// `usps.live`, daily caps): handlers read per request without a
+/// decrypt each time, and an operator change in admin `/config` lands
+/// within one TTL (or at once — the PUT calls [`CachedReader::invalidate`]),
+/// so installing keys never needs a restart. Secrets are never cached.
+#[derive(Debug)]
+pub struct CachedReader {
+    ttl: std::time::Duration,
+    rows: std::sync::Mutex<std::collections::HashMap<String, (std::time::Instant, CachedValue)>>,
+}
+
+#[derive(Debug, Clone)]
+enum CachedValue {
+    Text(Option<String>),
+    Bool(Option<bool>),
+}
+
+impl Default for CachedReader {
+    fn default() -> Self {
+        CachedReader::new(std::time::Duration::from_secs(30))
+    }
+}
+
+impl CachedReader {
+    /// Empty cache with the given TTL (30 s in production).
+    pub fn new(ttl: std::time::Duration) -> Self {
+        CachedReader {
+            ttl,
+            rows: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Cached [`get_text_for_job`]. Errors are never cached.
+    pub fn text(&self, conn: &Connection, kek: &Kek, key: &str) -> Result<Option<String>> {
+        if let Some(CachedValue::Text(v)) = self.fresh(key) {
+            return Ok(v);
+        }
+        let v = get_text_for_job(conn, kek, key)?;
+        self.put(key, CachedValue::Text(v.clone()));
+        Ok(v)
+    }
+
+    /// Cached [`get_bool_for_job`]. Errors are never cached.
+    pub fn bool(&self, conn: &Connection, kek: &Kek, key: &str) -> Result<Option<bool>> {
+        if let Some(CachedValue::Bool(v)) = self.fresh(key) {
+            return Ok(v);
+        }
+        let v = get_bool_for_job(conn, kek, key)?;
+        self.put(key, CachedValue::Bool(v));
+        Ok(v)
+    }
+
+    /// Drop every cached row (called after any config write).
+    pub fn invalidate(&self) {
+        self.rows.lock().expect("config cache poisoned").clear();
+    }
+
+    fn fresh(&self, key: &str) -> Option<CachedValue> {
+        let rows = self.rows.lock().expect("config cache poisoned");
+        rows.get(key)
+            .filter(|(at, _)| at.elapsed() < self.ttl)
+            .map(|(_, v)| v.clone())
+    }
+
+    fn put(&self, key: &str, value: CachedValue) {
+        self.rows
+            .lock()
+            .expect("config cache poisoned")
+            .insert(key.to_string(), (std::time::Instant::now(), value));
+    }
 }
 
 /// Secret text that never renders in `Debug` (key material).
@@ -2241,8 +2391,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_69_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 69);
+    fn registry_holds_95_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 95);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -2252,6 +2402,10 @@ mod runtime_tests {
         // id + secret); eight bools (labels.live is the eighth); rest
         // text (auth.* adds three, google/apple/meta ids six, mailer.*
         // six, meta.* one, mail.* three, notify.* two, labels.* four).
+        // MISSION WIN (P316) adds 26: five secrets (stripe.secret_key,
+        // stripe.webhook_secret, usps.client_id/client_secret/
+        // epa_account), five bools (orders.enabled, labels.customer_live,
+        // usps.live, plan.auto_compose, tracking.poll_enabled), 16 text.
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -2260,7 +2414,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (8, 49, 12));
+        assert_eq!(counts, (13, 65, 17));
     }
 
     #[test]

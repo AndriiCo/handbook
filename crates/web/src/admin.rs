@@ -620,7 +620,7 @@ async fn set_config(
         actor: &auth.user.user_id,
     };
     match config::set_value(&conn, kek, &write) {
-        Ok(()) => {}
+        Ok(()) => state.config_cache.invalidate(),
         Err(config::ConfigError::BadKeyName | config::ConfigError::BadValue(_)) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -669,8 +669,9 @@ fn publish_body_too_large(body: &serde_json::Value) -> bool {
 }
 
 /// Staff publish to one bus channel. Authority channels accept only
-/// `fact_accepted` events — this is what keeps anonymous subscribers
-/// on accepted facts only.
+/// the ids-only kinds in `ws_bus::AUTHORITY_KINDS` (`fact_accepted`,
+/// `plan_accepted`, `offices_accepted`) — this is what keeps anonymous
+/// subscribers on accepted content only.
 async fn publish(
     _auth: AdminAuth,
     State(state): State<AppState>,
@@ -683,10 +684,12 @@ async fn publish(
         )
             .into_response();
     };
-    if matches!(topic, auth::ws::WsTopic::Authority { .. }) && body.kind != "fact_accepted" {
+    if matches!(topic, auth::ws::WsTopic::Authority { .. })
+        && !crate::ws_bus::AUTHORITY_KINDS.contains(&body.kind.as_str())
+    {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"error": "authority channels carry fact_accepted only"})),
+            Json(json!({"error": "authority channels carry accepted-content kinds only"})),
         )
             .into_response();
     }
@@ -917,6 +920,7 @@ mod tests {
             auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             demo_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             draft_runs: std::sync::Arc::new(crate::draft::DraftRuns::default()),
+            config_cache: std::sync::Arc::new(config::CachedReader::default()),
             google_cfg: None,
             apple_cfg: None,
             meta_cfg: None,

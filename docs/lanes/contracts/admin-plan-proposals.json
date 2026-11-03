@@ -1,0 +1,164 @@
+{
+  "plans": [
+    {
+      "id": 13,
+      "authority_slug": "usa-wa-sos",
+      "version": 4,
+      "status": "proposed",
+      "created_at": 1793750400,
+      "run_id": 88,
+      "plan": {
+        "id": 13,
+        "version": 4,
+        "status": "proposed",
+        "accepted_at": null,
+        "headline": "Get a Washington apostille in person the same day, or by mail in about a week.",
+        "paths": [
+          {
+            "id": "birth-certificate",
+            "label": "Birth certificate",
+            "fact_ids": [
+              201
+            ]
+          },
+          {
+            "id": "diploma",
+            "label": "Diploma or transcript",
+            "fact_ids": [
+              201
+            ]
+          }
+        ],
+        "blocks": [
+          {
+            "id": "b1",
+            "kind": "step",
+            "title": "Check your document is a certified copy",
+            "body": "Bring the certified copy, not a photocopy.",
+            "fact_ids": [
+              206
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b2",
+            "kind": "office",
+            "office_ids": [
+              31
+            ],
+            "fact_ids": [
+              202,
+              204,
+              205
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b3",
+            "kind": "fees",
+            "lines": [
+              {
+                "label": "Apostille",
+                "amount_cents": 1500,
+                "per": "document",
+                "fact_id": 201
+              }
+            ],
+            "fact_ids": [
+              201
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b4",
+            "kind": "forms",
+            "form_ids": [
+              41
+            ],
+            "fact_ids": [
+              206
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b5",
+            "kind": "mail",
+            "title": "Or mail it",
+            "body": "Mailed requests go to the PO Box, so use USPS.",
+            "fact_ids": [
+              203
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b6",
+            "kind": "callout",
+            "tone": "warning",
+            "title": "Not for use inside the US",
+            "body": "Washington apostilles are for use abroad only.",
+            "fact_ids": [
+              201
+            ],
+            "show_for": [
+              "diploma"
+            ]
+          },
+          {
+            "id": "b7",
+            "kind": "timing",
+            "title": "Same day in person",
+            "body": "Walk-in requests are processed the same day.",
+            "fact_ids": [
+              205
+            ],
+            "show_for": []
+          }
+        ],
+        "hide_topics": [
+          "phone_script"
+        ]
+      },
+      "validator": {
+        "passed": true,
+        "checks": [
+          {
+            "id": "fact_ids_accepted",
+            "ok": true,
+            "detail": "7 blocks cite 6 accepted facts"
+          },
+          {
+            "id": "numbers_in_citations",
+            "ok": true,
+            "detail": "$15, 8:00, 4:30, 4000 all found in cited text"
+          },
+          {
+            "id": "hours_guard",
+            "ok": true,
+            "detail": "1 range, am/pm consistent"
+          },
+          {
+            "id": "no_urls_html",
+            "ok": true,
+            "detail": ""
+          },
+          {
+            "id": "entailment",
+            "ok": true,
+            "detail": "Wonder: 7/7 blocks supported"
+          }
+        ],
+        "dropped_blocks": []
+      },
+      "diff": {
+        "added": [
+          "b7"
+        ],
+        "removed": [],
+        "changed": [
+          "b3"
+        ]
+      },
+      "current_version": 3
+    }
+  ]
+}

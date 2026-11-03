@@ -1,0 +1,84 @@
+{
+  "offices": [
+    {
+      "id": 32,
+      "authority_slug": "usa-wa-sos",
+      "name": "SYNTHETIC Apostille Counter",
+      "status": "proposed",
+      "visit": {
+        "kind": "walk_in",
+        "appointment_required": false,
+        "notes": "Same-day processing for walk-in requests.",
+        "fact_ids": [
+          205
+        ]
+      },
+      "address": {
+        "line1": "100 Fixture Way",
+        "line2": null,
+        "city": "Olympia",
+        "region": "WA",
+        "postal_code": "98501",
+        "country": "US",
+        "fact_id": 204
+      },
+      "mail": {
+        "po_box": "PO Box 4000",
+        "line1": "PO Box 4000",
+        "city": "Olympia",
+        "region": "WA",
+        "postal_code": "98504",
+        "country": "US",
+        "usps_only": true,
+        "fact_id": 203
+      },
+      "hours": [
+        {
+          "days": [
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri"
+          ],
+          "open": "08:00",
+          "close": "16:30",
+          "fact_id": 202
+        }
+      ],
+      "timezone": "America/Los_Angeles",
+      "timezone_source": "staff_confirmed",
+      "phone": null,
+      "directions_url": "https://www.openstreetmap.org/search?query=100%20Fixture%20Way%20Olympia%20WA",
+      "fact_ids": [
+        202,
+        203,
+        204,
+        205
+      ],
+      "accepted_at": null,
+      "guards": [
+        {
+          "id": "address_ok",
+          "ok": true,
+          "detail": "street, city, region, ZIP all in fact 204"
+        },
+        {
+          "id": "hours_ok",
+          "ok": true,
+          "detail": "08:00-16:30, Mon-Fri"
+        },
+        {
+          "id": "po_box_from_text",
+          "ok": true,
+          "detail": "PO Box 4000 quoted in fact 203"
+        },
+        {
+          "id": "timezone",
+          "ok": false,
+          "detail": "not quoted: needs staff confirmation"
+        }
+      ]
+    }
+  ]
+}

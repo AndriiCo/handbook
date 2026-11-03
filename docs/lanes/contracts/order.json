@@ -1,0 +1,121 @@
+{
+  "id": "ord_q7Hm2xR4kP",
+  "kind": "mail_kit",
+  "status": "shipped",
+  "mode": "test",
+  "authority": {
+    "slug": "usa-wa-sos",
+    "name": "USA — Washington Secretary of State"
+  },
+  "path_id": "birth-certificate",
+  "created_at": 1793750400,
+  "updated_at": 1793757600,
+  "amount": {
+    "currency": "usd",
+    "total_cents": 4900,
+    "lines": [
+      {
+        "label": "Mailing kit",
+        "cents": 1900
+      },
+      {
+        "label": "USPS Priority to PO Box 4000",
+        "cents": 1200
+      },
+      {
+        "label": "USPS Priority return",
+        "cents": 1200
+      },
+      {
+        "label": "Service fee",
+        "cents": 600
+      }
+    ]
+  },
+  "return_to": {
+    "name": "SYNTHETIC Customer",
+    "city": "Springfield",
+    "region": "IL",
+    "postal_code": "62701",
+    "country": "US"
+  },
+  "legs": [
+    {
+      "role": "kit_to_customer",
+      "carrier": "usps",
+      "service": "USPS_PRIORITY",
+      "shipment_id": 51,
+      "status": "in_transit",
+      "tracking_number": "9400100000000000000001",
+      "tracking_url": "https://example.test/track/9400100000000000000001",
+      "label_url": "/apostille/api/v1/p2/orders/ord_q7Hm2xR4kP/labels/kit_to_customer.pdf",
+      "topic": "shipment:51"
+    },
+    {
+      "role": "outbound",
+      "carrier": "usps",
+      "service": "USPS_PRIORITY",
+      "shipment_id": 52,
+      "status": "label_ready",
+      "tracking_number": "9400100000000000000002",
+      "tracking_url": "https://example.test/track/9400100000000000000002",
+      "label_url": "/apostille/api/v1/p2/orders/ord_q7Hm2xR4kP/labels/outbound.pdf",
+      "topic": "shipment:52"
+    },
+    {
+      "role": "return",
+      "carrier": "usps",
+      "service": "USPS_PRIORITY",
+      "shipment_id": 53,
+      "status": "label_ready",
+      "tracking_number": "9400100000000000000003",
+      "tracking_url": "https://example.test/track/9400100000000000000003",
+      "label_url": "/apostille/api/v1/p2/orders/ord_q7Hm2xR4kP/labels/return.pdf",
+      "topic": "shipment:53"
+    }
+  ],
+  "form_fill_id": "fil_9b2c4e7d1a",
+  "events": [
+    {
+      "at": 1793750400,
+      "kind": "order.created",
+      "text": "Order placed",
+      "leg": null
+    },
+    {
+      "at": 1793750460,
+      "kind": "order.paid",
+      "text": "Paid $49.00 (test mode)",
+      "leg": null
+    },
+    {
+      "at": 1793750520,
+      "kind": "label.ready",
+      "text": "USPS labels ready",
+      "leg": "outbound"
+    },
+    {
+      "at": 1793754000,
+      "kind": "kit.packed",
+      "text": "Kit packed",
+      "leg": "kit_to_customer"
+    },
+    {
+      "at": 1793757600,
+      "kind": "tracking.update",
+      "text": "Accepted at USPS origin facility",
+      "leg": "kit_to_customer"
+    }
+  ],
+  "receipt": {
+    "paid_at": 1793750460,
+    "receipt_url": "https://example.test/receipt/synthetic"
+  },
+  "actions": [
+    {
+      "id": "download_labels",
+      "label": "Download labels"
+    }
+  ],
+  "topic": "billing:cust_demo01"
+}
