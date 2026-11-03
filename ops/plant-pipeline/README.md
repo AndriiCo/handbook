@@ -19,8 +19,9 @@ gate stops the job before anything is staged for production.
 - Async: `submit.sh` returns in seconds. Poll with `status.sh`.
 - Logged: `logs/<run>.log` (full) + `logs/<run>.<stage>.log`.
 - History: `history.jsonl`, one JSON object per stage/final event.
-- Plant never touches production. `artifacts/<run>/` holds the
-  staging dir a later explicit deploy step may ship.
+- The build pipeline never touches production. `artifacts/<run>/`
+  holds the staging dir a later explicit deploy step may ship. (The
+  separate work-queue worker below only dials OUT to production.)
 
 ## Layout on plant (`~/apostille-pipeline/`)
 
@@ -65,6 +66,61 @@ linger needs root (forbidden). A systemd user unit
 while logged in. Singleton via `flock -n`: whichever starts
 first holds the lock, the other exits quietly. One job at a
 time, 10 s poll. Worst-case pickup after a reboot is ~60 s.
+
+## Work-queue worker (P392)
+
+Production keeps pending work items (research, scrapes, evals) in
+`work.sqlite`; `cargo xtask worker` on plant dials OUT to
+`wss://andrii.ai/apostille/api/v1/worker/ws`, checks one job out at a
+time, heartbeats its lease, and uploads the result (spec
+`docs/specs/work-queue.md`). Staff queue jobs and download results on
+the admin Work queue page (`/work`). Plant never accepts a connection
+and holds no production credential except the worker token.
+
+Layout on plant (operator decision 2026-11-03, `docs/ops/deploy.md` § Plant):
+
+```
+~/apostille-worker/src/          source of one committed SHA (.sha inside)
+~/.config/apostille/worker.env   APOSTILLE_WORKER_TOKEN + META_API_KEY, mode 0600
+/srv/scratch/apostille/work/     worker.lock, worker.log, job-<id>-a<n>/ scratch
+/srv/scratch/apostille/fetch-cache/  URL-keyed page cache (reruns re-read)
+/srv/scratch/apostille/meta-cache/   Meta call cache (record/replay layer)
+/srv/scratch/apostille/models/   self-hosted weights (precheck.glimmer)
+/srv/scratch/apostille/target/   cargo target dir for the worker build
+~/apostille-pipeline/gpu.lock    held by GPU kinds for the whole job
+```
+
+Setup (from the Mac; idempotent):
+
+```sh
+# 1. token: mint once, save it as worker.token in admin /config
+openssl rand -hex 32
+# 2. secrets file on plant (paste the token and plant's Meta key)
+ssh plant 'mkdir -p ~/.config/apostille && umask 077 && cat > ~/.config/apostille/worker.env'
+#   APOSTILLE_WORKER_TOKEN=<64 hex chars from step 1>
+#   META_API_KEY=<plant's Meta API key>
+#   (Ctrl-D ends the input)
+# 3. dirs, source of HEAD (or a SHA), release build, cron watchdog
+./ops/plant-pipeline/worker-install.sh            # add --restart after an update
+# 4. smoke: watch it connect, then check the admin Work queue page
+ssh plant 'tail -n 20 /srv/scratch/apostille/work/worker.log'
+```
+
+The watchdog is a user-crontab line, same reasoning as the pipeline
+worker above (Linger=no, so cron is the real persistence; the
+`worker.lock` flock keeps one copy, extra starts exit quietly):
+
+```
+* * * * * cd $HOME/apostille-worker/src && /srv/scratch/apostille/target/release/xtask worker --connect wss://andrii.ai/apostille/api/v1/worker/ws >>/srv/scratch/apostille/work/worker.log 2>&1 # apostille-worker
+```
+
+Disconnects reconnect with backoff (1 s doubling to 60 s); a job keeps
+running through a dropped socket and completes on the next session
+with the same lease token. A crashed worker's lease expires after 300 s
+and the job requeues (3 attempts by default, then `failed`; staff can
+Retry). One-off runs without the server:
+`cargo xtask worker --run-local job.json` with
+`{"kind": "scrape.urls", "payload": {"urls": ["https://…"]}}`.
 
 ## Failure semantics
 

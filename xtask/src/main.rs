@@ -34,6 +34,7 @@ mod setup;
 mod up;
 mod voice_replay;
 mod watch;
+mod worker;
 mod world;
 
 fn main() {
@@ -75,6 +76,7 @@ fn main() {
         Some("ask") => ask::run(&args[1..]),
         Some("archive-package") => archive::run_package(&args[1..]),
         Some("world-index") => world::run(&args[1..]),
+        Some("worker") => worker::run(&args[1..]),
         Some("crawl") => crawl::run(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("up") => up::run(&args[1..]),
@@ -133,6 +135,7 @@ Tasks:
   archive-package  bundle a crawl run into WACZ/CSVs/index [--run]
   ask     answer one question with cited authority facts [<question> --slug --base --replay]
   world-index  build packs/world from HCCH status table [--live] [--out]
+  worker  plant worker for the production work queue [--connect <wss>] [--run-local <job.json>] [--unpack <bundle>] [--kinds]
   up    boot the handbook on loopback with synthetic data [--check] [--fresh] [--live] [--from-archive <url|dir>]
   judge one-command local copy for hackathon judges: prerequisite doctor, fresh boot, staff sign-in link [--live] [--check]
   model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files

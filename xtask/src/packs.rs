@@ -223,7 +223,7 @@ pub fn validate_dir(dir: &Path) -> Vec<PackError> {
 ///
 /// `stem` is the filename stem (must equal `pack.pack`); `raw` is
 /// the file bytes (scanned for banned fixture values).
-fn validate(pack: &Pack, stem: &str, raw: &[u8]) -> Vec<String> {
+pub(crate) fn validate(pack: &Pack, stem: &str, raw: &[u8]) -> Vec<String> {
     let mut violations = Vec::new();
     if pack.pack != stem {
         violations.push(format!(

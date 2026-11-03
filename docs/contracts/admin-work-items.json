@@ -1,0 +1,162 @@
+{
+  "list": {
+    "items": [
+      {
+        "id": 7,
+        "kind": "research.nonparty",
+        "status": "leased",
+        "attempts": 1,
+        "max_attempts": 3,
+        "lease_owner": "plant",
+        "lease_expires_at": 1793750700,
+        "created_by": "staff-1",
+        "created_at": 1793750400,
+        "updated_at": 1793750460,
+        "error": null,
+        "result": null,
+        "summary": null,
+        "payload": {
+          "countries": [
+            "EG"
+          ]
+        },
+        "staged": false
+      },
+      {
+        "id": 6,
+        "kind": "scrape.urls",
+        "status": "done",
+        "attempts": 1,
+        "max_attempts": 3,
+        "lease_owner": null,
+        "lease_expires_at": null,
+        "created_by": "staff-1",
+        "created_at": 1793750100,
+        "updated_at": 1793750160,
+        "error": null,
+        "result": {
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "bytes": 1234,
+          "content_type": "application/json"
+        },
+        "summary": {
+          "pages": 1,
+          "failed": 0
+        },
+        "payload": {
+          "urls": [
+            "https://example.com/synthetic/1"
+          ]
+        },
+        "staged": false
+      }
+    ],
+    "workers": [
+      {
+        "name": "plant",
+        "capabilities": [
+          "research.nonparty",
+          "scrape.urls",
+          "eval.gold",
+          "precheck.glimmer"
+        ],
+        "version": "0.1.0",
+        "connected_at": 1793750000,
+        "last_seen_at": 1793750460,
+        "job_id": 7
+      }
+    ],
+    "kinds": [
+      {
+        "kind": "research.nonparty",
+        "about": "Non-party legalization packs",
+        "example": {
+          "countries": [
+            "EG"
+          ]
+        }
+      }
+    ],
+    "counts": {
+      "pending": 0,
+      "leased": 1,
+      "done": 1,
+      "failed": 0
+    }
+  },
+  "enqueue_request": {
+    "kind": "scrape.urls",
+    "payload": {
+      "urls": [
+        "https://example.com/synthetic/1"
+      ]
+    },
+    "max_attempts": 3
+  },
+  "enqueue_response": {
+    "id": 8,
+    "status": "pending"
+  },
+  "detail": {
+    "item": {
+      "id": 6,
+      "kind": "scrape.urls",
+      "status": "done",
+      "attempts": 1,
+      "max_attempts": 3,
+      "lease_owner": null,
+      "lease_expires_at": null,
+      "created_by": "staff-1",
+      "created_at": 1793750100,
+      "updated_at": 1793750160,
+      "error": null,
+      "result": {
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "bytes": 1234,
+        "content_type": "application/json"
+      },
+      "summary": {
+        "pages": 1,
+        "failed": 0
+      },
+      "payload": {
+        "urls": [
+          "https://example.com/synthetic/1"
+        ]
+      },
+      "staged": false
+    },
+    "audit": [
+      {
+        "at": 1793750100,
+        "actor": "staff-1",
+        "action": "work_enqueue",
+        "reason": "scrape.urls"
+      },
+      {
+        "at": 1793750110,
+        "actor": "plant",
+        "action": "work_checkout",
+        "reason": "attempt 1"
+      },
+      {
+        "at": 1793750160,
+        "actor": "plant",
+        "action": "work_complete",
+        "reason": "1234 bytes"
+      }
+    ]
+  },
+  "retry_response": {
+    "id": 5,
+    "status": "pending"
+  },
+  "stage_response": {
+    "id": 9,
+    "dir": "packs-inbox/9",
+    "packs": [
+      "EG"
+    ],
+    "count": 1
+  }
+}

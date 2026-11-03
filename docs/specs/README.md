@@ -43,6 +43,9 @@ the consolidated author-decision list is at the bottom of this file.
   key hierarchy, Mac-vs-Linux matrix).
 - [admin-workers.md](admin-workers.md) — admin workers/captures
   API + UI (status, retry, fetch, sweep; staff-only).
+- [work-queue.md](work-queue.md) — production work items in
+  `work.sqlite`, plant workers over an outbound WebSocket
+  (`cargo xtask worker`), `research.nonparty` packs (P392).
 - [form-framework.md](form-framework.md) — shared
   resemblance-form framework (validation, address, phone,
   country) + per-form projects under `forms/` + the US DOS

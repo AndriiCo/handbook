@@ -14,6 +14,7 @@
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
+	import ServerCogIcon from '@lucide/svelte/icons/server-cog';
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import PackageIcon from '@lucide/svelte/icons/package';
 	import PhoneIcon from '@lucide/svelte/icons/phone';
@@ -50,7 +51,8 @@
 				{ label: 'Review', href: resolve('/(admin)/review'), icon: ListChecksIcon, keywords: 'facts approve queue triage bulk by authority' },
 				{ label: 'Trace', href: resolve('/(admin)/trace'), icon: ActivityIcon, keywords: 'draft model tokens latency' },
 				{ label: 'Workers', href: resolve('/(admin)/workers'), icon: DatabaseIcon, keywords: 'fetch captures sweep' },
-				{ label: 'Packs', href: resolve('/(admin)/packs'), icon: GlobeIcon, keywords: 'authorities world load countries' }
+				{ label: 'Packs', href: resolve('/(admin)/packs'), icon: GlobeIcon, keywords: 'authorities world load countries' },
+				{ label: 'Work queue', href: resolve('/(admin)/work'), icon: ServerCogIcon, keywords: 'jobs plant worker research queue' }
 			]
 		},
 		{

@@ -1122,6 +1122,11 @@ pub mod keys {
     /// `refresh` (always call, overwrite). `$META_CACHE_MODE` and
     /// xtask `--cache-mode` override it.
     pub const META_CACHE_MODE: &str = "meta.cache_mode";
+    // ---- P392 work queue: plant workers over WebSocket ----
+    /// Shared bearer token plant workers present on
+    /// `/apostille/api/v1/worker/ws` (>= 32 chars). Secret: presence-only
+    /// in UI; the same value lives in the worker's `worker.env`.
+    pub const WORKER_TOKEN: &str = "worker.token";
 
     /// Keys removed from the registry (admin client certificates and the
     /// split-port admin listener are gone). A stored row is ignored: the
@@ -1229,6 +1234,7 @@ pub mod keys {
         (TRACKING_POLL_ENABLED, super::ConfigType::Bool),
         (META_DAILY_CALL_CAP, super::ConfigType::Text),
         (META_CACHE_MODE, super::ConfigType::Text),
+        (WORKER_TOKEN, super::ConfigType::Secret),
     ];
 }
 
@@ -2404,8 +2410,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_95_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 95);
+    fn registry_holds_96_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 96);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -2421,7 +2427,8 @@ mod runtime_tests {
         // usps.live, plan.auto_compose, tracking.poll_enabled), 16 text.
         // P373 removes tls.client_ca_file and net.admin_https_port (text)
         // and admin.require_cert (bool). P391 adds three text keys
-        // (paths.meta_cache_dir, paths.fetch_cache_dir, meta.cache_mode).
+        // (paths.meta_cache_dir, paths.fetch_cache_dir, meta.cache_mode);
+        // P392 adds worker.token (secret).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -2430,7 +2437,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (12, 66, 17));
+        assert_eq!(counts, (12, 66, 18));
     }
 
     #[test]

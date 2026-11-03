@@ -48,6 +48,10 @@ ureq = { version = "3", default-features = false, features = [
 ] }
 toml = { version = "0.8", features = ["parse"] }
 serde_yaml_ng = "0.10"
+# Plant worker socket (P392): blocking client over our own TCP/rustls
+# stream, so no TLS feature (and no second crypto provider) is pulled.
+tungstenite = { version = "0.29", default-features = false, features = ["handshake"] }
+webpki-roots = "1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

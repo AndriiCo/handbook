@@ -60,6 +60,7 @@ mod translate;
 mod unfurl;
 mod uploads;
 mod usps;
+mod worker;
 mod ws_bus;
 
 use axum::{
@@ -478,7 +479,9 @@ fn migrate_mission_p2(p2: &rusqlite::Connection) -> rusqlite::Result<()> {
 
 /// Lane-owned public routes (merged into the `/apostille` API).
 fn mission_public_routes() -> Router<AppState> {
-    plan::public_routes().merge(stripe::public_routes())
+    plan::public_routes()
+        .merge(stripe::public_routes())
+        .merge(worker::public_routes())
 }
 
 /// Lane-owned customer routes (merged into the `/api/v1/p2` nest).
@@ -524,6 +527,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(admin_orders::admin_router(state.clone()))
         .merge(first_source::admin_router(state.clone()))
         .merge(admin_packs::admin_router(state.clone()))
+        .merge(worker::admin_router(state.clone()))
 }
 
 /// Public router with explicit state (admin routes are NEVER here —

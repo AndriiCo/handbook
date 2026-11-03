@@ -1210,6 +1210,29 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				applies: 'live'
 			}
 		]
+	},
+	{
+		id: 'workers',
+		title: 'Plant workers',
+		summary:
+			'Plant workers dial out to this server over one WebSocket (/apostille/api/v1/worker/ws) and check out queued jobs from the Work queue page: research, scraping and evals that call the Meta model API from plant. The token below is the only credential plant holds for this server.',
+		setup: [
+			'Mint a token on your own machine: openssl rand -hex 32 prints 64 hex characters.',
+			'Paste it into worker.token here and save.',
+			'Put the same value in ~/.config/apostille/worker.env on plant as APOSTILLE_WORKER_TOKEN=<token> (file mode 0600), then start cargo xtask worker (docs: ops/plant-pipeline/README.md).',
+			'To rotate, save a new value here and update worker.env; connected workers are refused at their next reconnect.'
+		],
+		keys: [
+			{
+				key: 'worker.token',
+				type: 'secret',
+				label: 'Worker token',
+				what: 'Bearer token plant workers present when they open the worker WebSocket. Checked on every connection; no row means the endpoint answers 503 and no worker can connect.',
+				how: 'Setup steps 1 to 3.',
+				format: 'At least 32 characters; 64 hex characters from step 1. Write-only.',
+				applies: 'call'
+			}
+		]
 	}
 ];
 
@@ -1239,7 +1262,8 @@ const PREFIX_GROUP: [string, string][] = [
 	['telnyx.', 'voice'],
 	['plan.', 'pipeline'],
 	['compile.', 'pipeline'],
-	['setup.', 'setup']
+	['setup.', 'setup'],
+	['worker.', 'workers']
 ];
 
 /** Group for keys no prefix claims. */

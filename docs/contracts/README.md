@@ -45,6 +45,13 @@ double-submit pair except the Stripe webhook.
 | GET `/apostille/api/v1/admin/fulfilment` | admin | staff | n/a | — | SA-24 | `admin-fulfilment.json` |
 | POST `/apostille/api/v1/admin/fulfilment/{id}/packed` / `shipped` | admin | staff | yes | — | SA-24 | `order.json` |
 | GET `/apostille/api/v1/fulfilment/{id}/packet.pdf` | admin | staff | n/a | — | SA-24 | PDF |
+| GET `/apostille/api/v1/admin/work-items?status=&limit=&before_id=` | admin | staff | n/a | — | P392 | `admin-work-items.json` `list` |
+| POST `/apostille/api/v1/admin/work-items` `{kind, payload, max_attempts?}` | admin | staff | yes | — | P392 | `enqueue_response` (201) |
+| GET `/apostille/api/v1/admin/work-items/{id}` | admin | staff | n/a | — | P392 | `detail` |
+| GET `/apostille/api/v1/admin/work-items/{id}/result` | admin | staff | n/a | — | P392 | result bytes (attachment) |
+| POST `/apostille/api/v1/admin/work-items/{id}/retry` | admin | staff | yes | — | P392 | `retry_response` |
+| POST `/apostille/api/v1/admin/work-items/{id}/stage-packs` | admin | staff | yes | — | P392 | `stage_response`; files in `<store>/packs-inbox/{id}/` |
+| GET `/apostille/api/v1/worker/ws` (WebSocket) | public | plant worker (`worker.token` bearer) | n/a | 8 sockets/IP | P392 | `worker-frames.json` |
 
 Every admin route gets an `admin-denial` case (no session → 401/403 on
 the admin host, and the public host never serves it).
