@@ -3,7 +3,7 @@
 //! Testable Rust replacement for `docs/ops/apostille-ship.sh`.
 //! Runs ON the server as the unprivileged `hal` user: `hal` needs
 //! group-write on `<root>/releases/` plus the pinned grants from
-//! `xtask/ops/ops-hal-access.sh` (`systemctl restart`
+//! `xtask provision` (`systemctl restart`
 //! among them — never stop/disable). Layout under `--root`
 //! (default `/srv/apostille`):
 //!
@@ -321,7 +321,7 @@ pub fn check_rollback_guard(
 }
 
 /// `sudo -n systemctl <action> apostille`. Only `restart` is used here,
-/// and hal's pinned sudoers entry (see `ops-rootless-access.sh`)
+/// and hal's pinned sudoers entry (`xtask/ops/wrappers/hal-apostille.sudoers`)
 /// covers restart/reload/status/is-active — never stop/disable, and
 /// `-n` fails fast instead of hanging on a password prompt.
 ///

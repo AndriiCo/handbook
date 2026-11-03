@@ -91,6 +91,9 @@ pub struct Target {
     /// Docker: `auto`, `linux/arm64` or `linux/amd64`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
+    /// Docker: host ports (on 127.0.0.1) for the container's 443 and 80.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publish: Option<Publish>,
     /// Docker: host port mapped to the container's SSH.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh_port: Option<u16>,
@@ -111,6 +114,24 @@ pub struct Target {
 pub struct Ports {
     pub public: u16,
     pub admin: u16,
+}
+
+/// Host ports a rehearsal container publishes (8443/8080 by default:
+/// 443 and 80 on a developer machine are often taken).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Publish {
+    pub https: u16,
+    pub http: u16,
+}
+
+impl Default for Publish {
+    fn default() -> Self {
+        Publish {
+            https: 8443,
+            http: 8080,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -178,8 +199,9 @@ impl SetupFile {
                 kind: TargetKind::Docker,
                 public_host: Some("rehearsal.localhost".to_string()),
                 platform: Some("auto".to_string()),
+                publish: Some(Publish::default()),
                 ssh_port: Some(2222),
-                timers: vec!["watch".into(), "backup".into()],
+                timers: vec!["backup".into()],
                 ..Target::default()
             },
         );
@@ -354,7 +376,15 @@ pub fn derived(target: &Target) -> BTreeMap<String, Value> {
                 .unwrap_or_else(|| "andrii.ai".into());
             out.insert("net.public_host".into(), s(&host));
             out.insert("auth.rp_id".into(), s(&host));
-            out.insert("auth.origin".into(), s(&format!("https://{host}")));
+            // The browser's origin carries the published port when it is
+            // not 443 (the rehearsal); admin.<host> on that port is a
+            // subdomain origin of it.
+            let https = match (target.kind, target.publish) {
+                (TargetKind::Docker, Some(p)) if p.https != 443 => format!(":{}", p.https),
+                (TargetKind::Docker, None) => ":8443".to_string(),
+                _ => String::new(),
+            };
+            out.insert("auth.origin".into(), s(&format!("https://{host}{https}")));
             out.insert(
                 "paths.static_dir".into(),
                 s("/srv/apostille/current/static"),
@@ -387,6 +417,9 @@ pub fn derived(target: &Target) -> BTreeMap<String, Value> {
                 Value::Bool(target.kind == TargetKind::Server),
             );
             if target.kind == TargetKind::Docker {
+                // Requests reach the container from Docker's bridge
+                // gateway; its ports are published on 127.0.0.1 only.
+                out.insert("admin.allow_ips".into(), s("172.16.0.0/12"));
                 // TLS from the rehearsal CA (no public DNS for ACME).
                 out.insert("acme.enabled".into(), Value::Bool(false));
                 out.insert("tls.cert_file".into(), s("/etc/apostille/tls/cert.pem"));

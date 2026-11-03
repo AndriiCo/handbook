@@ -35,10 +35,20 @@ Procedures live in [deploy.md](deploy.md); rebuilding from scratch uses
    `labels.customer_live` and one Stripe test-mode order per carrier;
    `tracking.poll_enabled` last.
 
+7. **Create your setup file** (before any rebuild):
+   `cargo xtask setup wizard` creates `private/config.yaml` (sops + age,
+   your key in `~/.config/sops/age/keys.txt`) and opens the wizard.
+   Fill each target and its secrets, run "Check keys and access" per
+   target, and do the brand step (read the terms, drop the files, tick
+   acceptance). Back up `~/.config/sops/age/keys.txt` offline: without
+   it the file cannot be decrypted. The Docker rehearsal
+   (`cargo xtask setup --target docker`) proves a rebuild end to end
+   without touching a server.
+
 ## Deferred
 
-- Brand logos (GP3): the setup wizard's brand step records the licence
-  terms and places `google.svg`, `apple.svg`, `meta.svg` in `private/brand/`.
+- Brand logos (GP3): done through step 7's brand step; only accepted,
+  hash-matched files from `private/brand/` ship.
 - Re-run `ops-a5-eval.sh` before the A5 72-hour window ends.
 - Low findings left open in P379: FedEx cancel method (POST vs the
   documented but unconfirmed PUT), a quote paid up to ~1 h after its

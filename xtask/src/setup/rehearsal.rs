@@ -6,7 +6,7 @@
 //! key), its known-hosts file, and a throwaway TLS CA whose leaf covers
 //! `rehearsal.localhost` and `admin.rehearsal.localhost`. Browsers and
 //! curl resolve `*.localhost` to loopback, so the container's 443 and
-//! 80 are published on 127.0.0.1 only.
+//! 80 are published on 127.0.0.1 only (8443 and 8080 by default).
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -179,6 +179,7 @@ fn container_running() -> bool {
 pub fn start_container(
     repo: &Path,
     platform: &str,
+    (https, http): (u16, u16),
     names: &[String],
     log: &dyn Fn(String),
 ) -> Result<(), String> {
@@ -218,13 +219,10 @@ pub fn start_container(
             "/run/lock",
             "-p",
             "127.0.0.1:2222:22",
-            "-p",
-            "127.0.0.1:443:443",
-            "-p",
-            "127.0.0.1:443:443/udp",
-            "-p",
-            "127.0.0.1:80:80",
         ]);
+        cmd.args(["-p", &format!("127.0.0.1:{https}:443")]);
+        cmd.args(["-p", &format!("127.0.0.1:{https}:443/udp")]);
+        cmd.args(["-p", &format!("127.0.0.1:{http}:80")]);
         for name in names {
             cmd.args(["--add-host", &format!("{name}:127.0.0.1")]);
         }
@@ -234,6 +232,7 @@ pub fn start_container(
         let _ = std::fs::remove_file(repo.join(REHEARSAL_DIR).join("known_hosts"));
         log(format!("started {REHEARSAL_CONTAINER} ({platform})"));
     }
+    wait_booted(log)?;
     let pubkey = std::fs::read(repo.join(REHEARSAL_DIR).join("id_ed25519.pub"))
         .map_err(|e| e.to_string())?;
     let mut child = Command::new("docker")
@@ -277,6 +276,33 @@ pub fn start_container(
     Ok(())
 }
 
+/// Wait until systemd in the container has booted (`running`, or
+/// `degraded` when an optional unit failed): writing into it earlier
+/// races its own /tmp and /run setup.
+fn wait_booted(log: &dyn Fn(String)) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    loop {
+        let state = Command::new("docker")
+            .args([
+                "exec",
+                REHEARSAL_CONTAINER,
+                "systemctl",
+                "is-system-running",
+            ])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+        if state == "running" || state == "degraded" {
+            log(format!("systemd {state}"));
+            return Ok(());
+        }
+        if std::time::Instant::now() > deadline {
+            return Err(format!("systemd never finished booting (state {state:?})"));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+
 /// Remove the container (its whole disk goes with it) and the known
 /// host entry. The key and CA stay, so a rerun needs no new trust.
 pub fn wipe(repo: &Path) -> Result<(), String> {
@@ -293,6 +319,7 @@ pub fn wait_ssh(conn: &Conn, secs: u64) -> Result<(), String> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
     loop {
         let ok = Command::new("ssh")
+            .current_dir(crate::repo_root())
             .args(conn.options("-p"))
             .arg(&conn.dest)
             .arg("true")

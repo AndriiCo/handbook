@@ -14,9 +14,8 @@ nothing is `cargo xtask setup` plus `cargo xtask provision`.
 | `ops-a2-record.sh`, `a2-record.py` | production | hal | Record the photo-precheck verdicts for the public sample |
 | `ops-a5-eval.sh` | production | hal | Re-run the gold-set eval behind the home page's quality numbers |
 
-One-time provisioning scripts kept until `xtask provision` has rebuilt a
-host end to end (they are superseded by it): `ops-hal-access.sh`,
-`ops-rootless-access.sh`, `ops-units-reinstall.sh`,
-`ops-backup-enable.sh`, `ops-acme-enable.sh`, `ops-acme-add-www.sh`,
-`ops-packs-seed.sh`, `ops-hcch-seed.sh`, `ops-loop-first-run.sh`,
-`ops-drill3-run.sh`.
+`wrappers/` holds the root-owned `/usr/local/sbin/apostille-*` wrappers
+and hal's zero-wildcard sudoers drop-in. `xtask provision` embeds them
+at build time and installs them (checked by `visudo`); edit them here,
+never on a server. `ops/rehearsal/Dockerfile` is the blank server the
+Docker rehearsal provisions.

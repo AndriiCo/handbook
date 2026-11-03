@@ -173,6 +173,9 @@ pub enum Builtin {
     },
     StartContainer {
         platform: String,
+        /// Host ports for the container's 443 and 80.
+        https: u16,
+        http: u16,
     },
     WaitSsh {
         conn: Conn,
@@ -393,6 +396,7 @@ fn docker_plan(target: &Target, facts: &Facts) -> Vec<Step> {
         .public_host
         .clone()
         .unwrap_or_else(|| "rehearsal.localhost".into());
+    let publish = target.publish.unwrap_or_default();
     let platform = match target.platform.as_deref() {
         None | Some("auto") => facts.arch.docker_platform().to_string(),
         Some(p) => p.to_string(),
@@ -425,7 +429,11 @@ fn docker_plan(target: &Target, facts: &Facts) -> Vec<Step> {
         step(
             Phase::Container,
             format!("start {REHEARSAL_CONTAINER} ({platform}, systemd as PID 1)"),
-            Action::Builtin(Builtin::StartContainer { platform }),
+            Action::Builtin(Builtin::StartContainer {
+                platform,
+                https: publish.https,
+                http: publish.http,
+            }),
         ),
         step(
             Phase::Container,
@@ -443,7 +451,7 @@ fn docker_plan(target: &Target, facts: &Facts) -> Vec<Step> {
         Phase::Verify,
         "healthz names the release over the rehearsal CA",
         Action::Builtin(Builtin::WaitHealth {
-            url: format!("https://{host}/apostille/healthz"),
+            url: format!("https://{host}:{}/apostille/healthz", publish.https),
             ca: Some(format!("{REHEARSAL_DIR}/ca.pem")),
             timeout_secs: 90,
         }),

@@ -115,13 +115,15 @@ fn run_action(ctx: &Ctx, index: usize, action: &Action) -> Result<(), String> {
     match action {
         Action::Local { argv } => {
             let mut cmd = Command::new(&argv[0]);
-            cmd.args(&argv[1..]).current_dir(&ctx.repo);
+            cmd.args(&argv[1..])
+                .current_dir(&ctx.repo)
+                .stdin(Stdio::null());
             stream(ctx, index, &mut cmd, None)
         }
         Action::Ssh { conn, script, feed } => {
             let input = render_feed(ctx, *feed)?;
             let mut cmd = ssh_command(conn);
-            cmd.arg(script);
+            cmd.arg(script).stdin(Stdio::null());
             stream(ctx, index, &mut cmd, input)
         }
         Action::Upload { conn, from, to } => upload(ctx, index, conn, &ctx.repo.join(from), to),
@@ -129,9 +131,13 @@ fn run_action(ctx: &Ctx, index: usize, action: &Action) -> Result<(), String> {
     }
 }
 
+/// `ssh` from the repo root (the rehearsal's key paths are repo-relative).
 fn ssh_command(conn: &Conn) -> Command {
     let mut cmd = Command::new("ssh");
-    cmd.args(conn.options("-p")).arg(&conn.dest).arg("--");
+    cmd.args(conn.options("-p"))
+        .arg(&conn.dest)
+        .arg("--")
+        .current_dir(crate::repo_root());
     cmd
 }
 
@@ -143,11 +149,11 @@ fn stream(
     input: Option<Vec<u8>>,
 ) -> Result<(), String> {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    cmd.stdin(if input.is_some() {
-        Stdio::piped()
-    } else {
-        Stdio::null()
-    });
+    // Without a feed, keep whatever stdin the caller set (an upload's tar
+    // pipe); callers default to null.
+    if input.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
     let mut child = cmd.spawn().map_err(|e| format!("spawn: {e}"))?;
     if let Some(bytes) = input {
         let mut stdin = child.stdin.take().ok_or("stdin")?;
@@ -303,7 +309,7 @@ fn builtin(ctx: &Ctx, index: usize, b: &Builtin) -> Result<(), String> {
         Builtin::GateStamp => {
             let sha12 = &ctx.facts.sha[..12];
             let mut cmd = ssh_command(&Conn::alias("plant"));
-            cmd.arg(format!(
+            cmd.stdin(Stdio::null()).arg(format!(
                 "grep -l '\"ci_green\": true' ~/apostille-pipeline/acceptance/{sha12}*.json"
             ));
             stream(ctx, index, &mut cmd, None).map_err(|_| {
@@ -320,7 +326,11 @@ fn builtin(ctx: &Ctx, index: usize, b: &Builtin) -> Result<(), String> {
         }
         Builtin::RehearsalTls { names } => rehearsal::ensure_tls(&ctx.repo, names)
             .map(|_| log(format!("leaf for {}", names.join(", ")))),
-        Builtin::StartContainer { platform } => {
+        Builtin::StartContainer {
+            platform,
+            https,
+            http,
+        } => {
             let target = &ctx.file.targets[&ctx.target];
             let host = target.public_host.clone().unwrap_or_default();
             let names = if target.dns.is_empty() {
@@ -328,7 +338,7 @@ fn builtin(ctx: &Ctx, index: usize, b: &Builtin) -> Result<(), String> {
             } else {
                 target.dns.clone()
             };
-            rehearsal::start_container(&ctx.repo, platform, &names, &log)
+            rehearsal::start_container(&ctx.repo, platform, (*https, *http), &names, &log)
         }
         Builtin::WaitSsh { conn } => rehearsal::wait_ssh(conn, 90),
         Builtin::WaitHealth {

@@ -4,8 +4,8 @@
 # Meta model, and print the counts to approve in /review.
 # Run as the deploy user (hal), never root; re-running is safe
 # (packs-load is exists-safe, fetch-slug dedups, analyze-scan advances
-# a watermark and skips seen captures). Needs ops-rootless-access.sh
-# once (group perms + KEK group-read).
+# a watermark and skips seen captures). Needs the group perms and KEK
+# group-read that `xtask provision` sets up.
 #
 #   bash /home/hal/apostille/scripts/ops-gp2-proposals.sh
 #

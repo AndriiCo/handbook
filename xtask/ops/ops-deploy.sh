@@ -1,6 +1,6 @@
 #!/bin/bash
 # Deploy a staged release + install its unit file. Runs as the deploy
-# user hal, never root (group perms from ops-rootless-access.sh; restart
+# user hal, never root (group perms from `xtask provision`; restart
 # via its pinned sudoers grant; unit install via the root-owned wrapper).
 #
 #   bash /home/hal/apostille/scripts/ops-deploy.sh /home/hal/apostille/staging/<version>

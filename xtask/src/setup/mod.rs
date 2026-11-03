@@ -43,8 +43,12 @@ fn fail(message: &str) -> ! {
     std::process::exit(1);
 }
 
+/// `--file`, or `private/config.yaml` at the repo root (from any subdirectory).
 fn file_path(args: &[String]) -> PathBuf {
-    PathBuf::from(crate::flag(args, "file").unwrap_or_else(|| file::DEFAULT_PATH.to_string()))
+    crate::flag(args, "file").map_or_else(
+        || crate::repo_root().join(file::DEFAULT_PATH),
+        PathBuf::from,
+    )
 }
 
 /// Load the file, or `None` when it does not exist yet.
@@ -310,7 +314,12 @@ fn run_targets(args: &[String]) {
     }
     for name in &targets {
         if let Err(e) = run_one(&f, name, &rev, from, order.as_deref(), &print_event) {
-            fail(&e);
+            // The run already printed its own STOPPED line; only refusals
+            // before the first step still need saying.
+            if !e.starts_with("step ") {
+                eprintln!("setup: {e}");
+            }
+            std::process::exit(1);
         }
     }
 }

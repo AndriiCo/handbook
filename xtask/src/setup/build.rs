@@ -107,12 +107,12 @@ pub fn plan(arch: Arch, host: &str, sccache: bool) -> BuildPlan {
     }
 }
 
+/// True when `bin` is on PATH (`command -v`: zig has no `--version`).
 pub fn have(bin: &str) -> bool {
-    Command::new(bin)
-        .arg("--version")
+    Command::new("sh")
+        .args(["-c", &format!("command -v {bin}")])
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 /// Hardening flags for C code built by `cc` for `triple`.

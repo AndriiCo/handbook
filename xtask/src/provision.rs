@@ -322,7 +322,9 @@ fn layout(ctx: &mut Ctx, manifest: &Manifest) -> Result<(), String> {
         "apostille",
         0o2775,
     )?;
-    dir(ctx, ETC, "root", "andrii-ai", 0o2770)?;
+    // Group apostille reads (never writes) here: hal's recurring ops
+    // scripts stage a KEK copy, as on production. tls/ stays andrii-ai's.
+    dir(ctx, ETC, "root", "apostille", 0o2750)?;
     dir(ctx, STORE, "andrii-ai", "andrii-ai", 0o750)?;
     dir(
         ctx,

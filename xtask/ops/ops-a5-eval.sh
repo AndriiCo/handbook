@@ -28,7 +28,7 @@ trap cleanup EXIT
 "$XTASK" --help 2>/dev/null | grep -q "^  eval " || { echo "ABORT: this xtask has no eval subcommand (deploy first)"; exit 1; }
 touch "$STORE/.w" 2>/dev/null && rm -f "$STORE/.w" || {
     echo "ABORT: store $STORE not writable by $USER (eval writes quality.json there)"
-    echo "remedy as root: bash ~/apostille/scripts/ops-rootless-access.sh"
+    echo "remedy: re-run xtask provision (cargo xtask setup --from provision)"
     ls -ld "$STORE"
     exit 1
 }

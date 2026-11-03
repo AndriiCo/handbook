@@ -124,6 +124,99 @@ guard refuses (across a hard migration, or away from a
 `rollback_safe = false` release) is the operator's call. Fix forward
 on staging afterwards.
 
+## Rebuild from scratch
+
+One encrypted file holds every setting and secret for every target:
+`private/config.yaml` (sops + age; `private/` is git-ignored, kept out
+of Docker contexts and out of agent reads). Plaintext never touches
+disk: `cargo xtask setup` decrypts into memory and seals each target's
+values on the host with `config-import` in one transaction. Edit it in
+the wizard or by hand with `sops private/config.yaml`.
+
+```sh
+cargo xtask setup                      # no file: create it, open the wizard
+cargo xtask setup wizard               # edit, check keys, run, licences
+cargo xtask setup check --target staging
+cargo xtask setup --target docker --dry-run
+cargo xtask setup --target docker      # rehearsal on this Mac
+```
+
+Targets (the template has all four):
+
+| Target | Kind | What a run does |
+|---|---|---|
+| `local` | this machine | `xtask up` on loopback with the file's values imported |
+| `docker` | rehearsal | `ubuntu:26.04` + systemd in Docker, playing a blank server |
+| `staging` | `plant` | push the SHA, build, harden-check, seal, restart by PID |
+| `production` | server | stamp, probe, DNS, build, provision, seal, deploy, ACME, staff, scoreboard |
+
+Phases run in order and stop at the first failure; `--from <phase>`
+resumes. Each step's commands are printed by `--dry-run`; the
+production plan is pinned by a golden test
+(`xtask/src/setup/testdata/production-plan.txt`). Production runs only
+with `--operator-order "<who, when, what>"`, recorded in
+`private/setup-log.jsonl`.
+
+**Builds.** Each target's CPU is detected (`uname -m` over SSH, or the
+Docker daemon's architecture). The same triple as this machine builds
+with `cargo build`, anything else with `cargo zigbuild` (zig 0.17).
+sccache wraps rustc when installed. C dependencies get
+`-fstack-protector-strong -fstack-clash-protection -D_FORTIFY_SOURCE=2`
+and Rust links full RELRO; `cargo xtask harden-check <elf>` refuses a
+binary without PIE, a non-executable stack, W^X segments, BIND_NOW and
+`__stack_chk_fail`. A release is built from a throwaway worktree of an
+exact commit and cached in `target/setup/<sha7>-<triple>/`.
+
+**Provision** (`xtask provision`, root, idempotent, `--check` shows
+changes): users `hal` and `andrii-ai`, group `apostille`; the release
+and store directories; the KEK (created once, never overwritten); the
+root-owned wrappers and one zero-wildcard sudoers drop-in (checked by
+`visudo`); the systemd units; `ufw` on servers (skipped in a
+container); `/srv/apostille/public-host`, which the deploy smoke reads;
+and on a first install the release, the sealed config, the packs and
+the service. Later releases never need root.
+
+**Docker rehearsal.** `setup --target docker` builds for the daemon's
+CPU, starts `handbook-rehearsal` (privileged, cgroupns host; SSH on
+127.0.0.1:2222, the container's 443 and 80 on 127.0.0.1:8443 and :8080,
+set by `targets.docker.publish`), and runs the same provision, seal,
+deploy, verify and staff steps over SSH. Its SSH key, known hosts and a
+throwaway TLS CA live in `private/rehearsal/`. The hosts are
+`https://rehearsal.localhost:8443/apostille` and
+`https://admin.rehearsal.localhost:8443/` (both resolve to loopback;
+`admin.allow_ips` is Docker's bridge range, since only this Mac can
+reach the ports). To try passkeys there, trust
+`private/rehearsal/ca.pem` in your browser yourself and paste the setup
+key the run prints into admin `/config`. `setup wipe --target docker` deletes the
+container; the next run rebuilds it from nothing. Set
+`targets.docker.platform: linux/amd64` to rehearse the x86_64 build
+under emulation.
+
+**Brand files.** The wizard's brand step lists Apple, Google, Meta,
+the FIDO passkey icon and the Vogun face: the owner's terms, what they
+allow, where to get the file. You read the terms and download the
+files in your own browser, drop them in, and tick acceptance; the file
+records your name, the time, the terms version and each file's
+sha256. Builds ship only files whose hash matches a recorded
+acceptance (from `private/brand/`).
+
+**Rebuilding production** (only on the operator's order; a freeze
+blocks it):
+
+1. Take a backup off the server first (the nightly in
+   `/var/lib/apostille-backups/`, plus the KEK if the old store must
+   stay readable).
+2. Fill `targets.production` in the wizard: `ssh` (hal) and
+   `ssh_admin` (an account with passwordless sudo, used only to
+   provision), `bind`/`bind6`, the DNS names, timers, and every secret.
+   Mint a fresh single-use ACME EAB key. Run `setup check --target
+   production` until every row you need is `ok`.
+3. Point DNS at the new server and wait until the `dns` check passes.
+4. Get a plant stamp for the SHA, then
+   `cargo xtask setup --target production --operator-order "<text>"`.
+   The first staff setup key prints once at the end; open admin
+   `/config` with it and enrol a passkey.
+
 ## Plant
 
 - Never root, never ask for root; home directory only.
