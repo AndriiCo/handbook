@@ -21,7 +21,7 @@ double-submit pair except the Stripe webhook.
 | POST `/apostille/api/v1/p2/orders/{id}/quote` | public p2 | owner | yes | `orders_write` | SA-24 (+SA-25 rates) | `order-quote.json` |
 | POST `/apostille/api/v1/p2/orders/{id}/checkout` | public p2 | owner | yes | `orders_write` | SA-24 | `{"checkout_url": "…"}` or 503 `order-paused.json` |
 | POST `/apostille/api/v1/p2/orders/{id}/confirm` | public p2 | owner | yes | `orders_write` | SA-24 | `order.json` |
-| GET `/apostille/api/v1/p2/orders/{id}/labels/{leg}.pdf` | public p2 | owner or staff | n/a | `orders_read` | SA-25 | PDF |
+| GET `/apostille/api/v1/p2/orders/{id}/labels/{leg}` | public p2 | owner | n/a | `orders_read` | SA-24 (address label, HTML NOT POSTAGE) / SA-25 (carrier PDFs) | HTML or PDF |
 | POST `/apostille/api/v1/stripe/webhook` | public | Stripe (HMAC) | **exempt** | `stripe_webhook` 120/min | SA-24 | 200 `{}` |
 | POST `/apostille/api/v1/p2/forms/{form_id}/fill` | public p2 | customer | yes | `forms_fill` 10/min/customer | SA-23 | `form-fill.json` (201) |
 | GET `/apostille/api/v1/p2/forms/fills/{fill_id}.pdf` | public p2 | owner or staff | n/a | `orders_read` | SA-23 | PDF |
@@ -52,6 +52,12 @@ the admin host, and the public host never serves it).
 `GET /apostille/api/v1/authorities` rows now also carry `kind`
 (`country | state | province | office`) and `verified_at` (unix seconds
 of the newest staff accept, or null) — P320.
+
+`POST /orders` body (P325): `{slug, kind, path_id|null, form_fill_id|null,
+return_to: {name, line1, line2|null, city, region (2 letters), postal_code,
+country: "US"}}`; `address_label` answers 201 with status `labels_ready`;
+paid kinds answer 503 `paid_tiers_paused` while paused, 409
+`option_unavailable` (with `reason`) when the card is disabled by a fact.
 
 ## WS events (ids only; the client re-reads the API)
 Seeds: `ws-events.json`.

@@ -229,3 +229,4 @@
 | sa-27-2 | 2026-11-03 00:43Z | W2a plan renderer on /authority/[slug]: PathPicker, cited blocks, provenance, live | Plan, "How this page was made", live re-fetch; 24 shots, demo green |
 | sa-26-2 | 2026-11-03 00:45Z | W1b: review console upgrade — table + detail, j/k/a/r, plan/office/form tabs; trace TTFT | Review console + tabs + trace latency/TTFT; shots 24 OK, demo 3/3 green |
 | 324 | 2026-11-03 00:55Z | Merge SA-26 + SA-27; Dashboard nav + / → /dashboard; tabs primitive fix; demo plan + model-calls mocks | shots 76, demo 3/3, smoke, web 340, clippy green |
+| 325 | 2026-11-03 01:02Z | C1 (SA-24, builder): orders API, backing submission, fact-derived delivery options, free address label | orders 6 tests (FK on, authz, seeds); web 346 (1 known voice flake) |

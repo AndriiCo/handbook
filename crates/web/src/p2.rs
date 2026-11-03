@@ -117,7 +117,7 @@ struct SubmissionView {
 /// Resolve the caller's `customer_ref` from either session cookie: the
 /// DEMO `demo_session` cookie or a real auth session with a customer
 /// ref. `None` means anonymous — customer endpoints answer 401.
-fn caller_customer_ref(state: &AppState, headers: &HeaderMap) -> Option<String> {
+pub(crate) fn caller_customer_ref(state: &AppState, headers: &HeaderMap) -> Option<String> {
     let cookies = headers.get(header::COOKIE)?.to_str().ok()?;
     let conn = db::open(&Store::new(&state.store_root)).ok()?;
     if let Some(token) = cookie_value(cookies, "demo_session")
