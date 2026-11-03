@@ -624,10 +624,12 @@ pub async fn delete_request(
                 Ok(conn) => conn,
                 Err(_) => return store_unavailable(),
             };
-            if store::erase_identity(&conn, &user_id).is_err() {
+            // Data first, identity last: if erasing data fails, Meta's
+            // retry still finds the owner and can finish the job.
+            if handbook_store::db::erase_customer_data(&conn, &p2, &store, &user_id, now).is_err() {
                 return store_unavailable();
             }
-            if handbook_store::db::erase_customer_data(&conn, &p2, &store, &user_id, now).is_err() {
+            if store::erase_identity(&conn, &user_id).is_err() {
                 return store_unavailable();
             }
             passkey::audit_auth(&conn, now, "system", "meta_data_deleted", &code);

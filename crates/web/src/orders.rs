@@ -1683,6 +1683,37 @@ mod tests {
     }
 
     #[test]
+    fn erasure_removes_orders_before_their_shipments() {
+        // Review #6: the order tables' foreign keys made erasure fail.
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::new(tmp.path());
+        store.init().unwrap();
+        let hb = db::open(&store).unwrap();
+        db::migrate(&hb).unwrap();
+        let p2 = db::open_p2(&store).unwrap();
+        db::migrate_p2(&p2).unwrap();
+        migrate_p2_tables(&p2).unwrap();
+        crate::forms_map::migrate_p2_tables(&p2).unwrap();
+        let d =
+            destination(&[f(203, "po_box", "Send to PO Box 4000, Olympia, WA 98504.")]).unwrap();
+        for kind in KINDS {
+            create_order(&p2, "cust-1", (7, "S"), &body(kind), &d, "test", 1).unwrap();
+        }
+        let keep = create_order(&p2, "cust-2", (7, "S"), &body("mail_kit"), &d, "test", 1).unwrap();
+        let report = db::erase_customer_data(&hb, &p2, &store, "cust-1", 2).unwrap();
+        assert_eq!(report.orders, 4);
+        assert_eq!(report.shipments, 8, "1 + 2 + 2 + 3 legs");
+        let left: i64 = p2
+            .query_row("SELECT COUNT(*) FROM customer_order", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 1);
+        assert!(
+            order_view(&p2, &keep, "S").unwrap().is_some(),
+            "other customers untouched"
+        );
+    }
+
+    #[test]
     fn contract_seeds_match_the_served_shapes() {
         let seed: Value = serde_json::from_str(include_str!(
             "../../../docs/lanes/contracts/order-options.json"

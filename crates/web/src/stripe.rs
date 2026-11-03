@@ -221,7 +221,8 @@ pub fn verify_signature(
         }
     }
     let Some(t) = t else { return false };
-    if (now - t).abs() > tolerance || sigs.is_empty() {
+    // abs_diff: `t` is attacker-supplied; `now - t` overflowed (abort).
+    if t.abs_diff(now) > tolerance.unsigned_abs() || sigs.is_empty() {
         return false;
     }
     let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
@@ -360,6 +361,23 @@ mod tests {
         assert!(!verify_signature(
             body.as_bytes(),
             "t=abc,v1=zz",
+            secret,
+            now,
+            TOLERANCE_SECS
+        ));
+        assert!(
+            !verify_signature(
+                body.as_bytes(),
+                "t=-9223372036854775808,v1=00",
+                secret,
+                now,
+                TOLERANCE_SECS
+            ),
+            "extreme t never overflows"
+        );
+        assert!(!verify_signature(
+            body.as_bytes(),
+            "t=9223372036854775807,v1=00",
             secret,
             now,
             TOLERANCE_SECS

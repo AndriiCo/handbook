@@ -258,6 +258,8 @@ pub struct EraseReport {
     pub label_defaults: usize,
     pub captures: usize,
     pub blobs: usize,
+    /// Customer orders erased (web-owned tables, when present).
+    pub orders: usize,
 }
 
 /// Hard-erase one customer's handbook data (data-deletion
@@ -297,6 +299,57 @@ pub fn erase_customer_data(
             )?;
             capture_ids.extend(sig);
             capture_ids.extend(pdf);
+        }
+        // Web-owned order tables (created by the web crate at boot, so
+        // guarded): their foreign keys point at shipment and
+        // form_submission, so they go first or the deletes below fail.
+        let has = |name: &str| -> rusqlite::Result<bool> {
+            Ok(p2
+                .query_row(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [name],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some())
+        };
+        if has("customer_order")? {
+            for (table, col) in [
+                ("order_event", "order_id"),
+                ("order_shipment", "order_id"),
+                ("order_payment", "order_id"),
+            ] {
+                if has(table)? {
+                    p2.execute(
+                        &format!(
+                            "DELETE FROM {table} WHERE {col} IN
+                             (SELECT id FROM customer_order WHERE customer_ref = ?1)"
+                        ),
+                        [customer_ref],
+                    )?;
+                }
+            }
+            report.orders += p2.execute(
+                "DELETE FROM customer_order WHERE customer_ref = ?1",
+                [customer_ref],
+            )?;
+        }
+        let mut fill_paths: Vec<String> = Vec::new();
+        if has("form_fill")? {
+            fill_paths = p2
+                .prepare("SELECT pdf_path FROM form_fill WHERE customer_ref = ?1")?
+                .query_map([customer_ref], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            p2.execute(
+                "DELETE FROM form_fill WHERE customer_ref = ?1",
+                [customer_ref],
+            )?;
+        }
+        for rel in &fill_paths {
+            // Filled official forms carry the customer's values.
+            if rel.starts_with("fills/") && !rel.contains("..") {
+                let _ = std::fs::remove_file(store.root().join(rel));
+            }
         }
         if !submission_ids.is_empty() {
             let placeholders = submission_ids
@@ -1239,6 +1292,7 @@ mod tests {
                 label_defaults: 1,
                 captures: 2,
                 blobs: 2,
+                orders: 0,
             }
         );
         // PII rows gone; the stranger's rows survive.

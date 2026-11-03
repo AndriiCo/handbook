@@ -246,3 +246,4 @@
 | 337 | 2026-11-03 02:28Z | VPN is up, ship T1 | e25fd3e live (prev 4dcd234); prod 5/10 → 5/10, no regressions |
 | 338 | 2026-11-03 02:42Z | Hotfix (review #0 critical): non-ASCII ZIP / address text aborted the process; overflow-safe hours | web 352 green, clippy clean |
 | 339 | 2026-11-03 02:56Z | Hotfix deploy cfb625b (review #0 critical) | live (prev e25fd3e); prod 5/10 → 5/10 |
+| 340 | 2026-11-03 02:59Z | Review fixes #4 #5 #6: whole-token number guard + exact fee cents, webhook t overflow, erasure with orders | web 367, store 39 green; clippy clean |

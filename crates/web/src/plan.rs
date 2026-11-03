@@ -421,7 +421,7 @@ pub fn validate_plan(plan: &RenderPlanV1, facts: &[Grounding]) -> (RenderPlanV1,
                 let fact_ok = b.fact_ids.contains(&line.fact_id);
                 let amount_ok = line.amount_cents >= 0
                     && by_id.get(&line.fact_id).is_some_and(|f| {
-                        crate::translate::guard_ok(&dollars(line.amount_cents), &f.text)
+                        crate::translate::dollar_amounts_cents(&f.text).contains(&line.amount_cents)
                     });
                 if !fact_ok || !amount_ok || has_markup_or_url(&line.label) {
                     bad_line = Some(format!(

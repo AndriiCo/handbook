@@ -402,38 +402,76 @@ fn adjacent_symbol_after(text: &str, pos: usize) -> Option<char> {
     is_money_symbol(sym).then_some(sym)
 }
 
-/// True when `hay` carries `digits` with only grouping separators
-/// (space, NBSP, narrow NBSP, `.`, `,`) between consecutive digits —
-/// so `25,000` matches `25 000` but never `26`.
-fn contains_digit_run(hay: &str, digits: &str) -> bool {
-    if digits.is_empty() {
-        return true;
-    }
-    let want: Vec<char> = digits.chars().collect();
-    let hay: Vec<char> = hay.chars().collect();
-    for s in 0..hay.len() {
-        if hay[s] != want[0] {
-            continue;
-        }
-        let mut wi = 0;
-        let mut i = s;
-        while i < hay.len() && wi < want.len() {
-            if hay[i] == want[wi] {
-                wi += 1;
-                i += 1;
-            } else if matches!(hay[i], ' ' | '\u{A0}' | '\u{202F}' | '.' | ',' | ':')
-                && hay.get(i + 1).is_some_and(|c| *c == want[wi])
-            {
-                i += 1;
-            } else {
-                break;
+/// Whole number tokens of `hay` for the guards: the maximal runs of
+/// [`find_numbers`], with a space / NBSP / narrow NBSP joining two runs
+/// only as a thousands group (`25 000` reads as `25000`). Returns
+/// `(byte_start, byte_end, digits)`.
+fn number_tokens(hay: &str) -> Vec<(usize, usize, String)> {
+    let runs = find_numbers(hay);
+    let mut out: Vec<(usize, usize, String)> = Vec::new();
+    for (s, e, d) in runs {
+        if let Some(last) = out.last_mut() {
+            let gap = &hay[last.1..s];
+            let grouping = matches!(gap, " " | "\u{A0}" | "\u{202F}") && d.len() == 3;
+            if grouping {
+                last.1 = e;
+                last.2.push_str(&d);
+                continue;
             }
         }
-        if wi == want.len() {
-            return true;
+        out.push((s, e, d));
+    }
+    out
+}
+
+/// True when `hay` holds a whole number token with exactly `digits` —
+/// `15` never matches inside `150`, nor `4022` inside `40228` (review
+/// P338 #4: the old substring scan accepted both).
+fn contains_digit_run(hay: &str, digits: &str) -> bool {
+    digits.is_empty() || number_tokens(hay).iter().any(|(_, _, d)| d == digits)
+}
+
+/// True when `hay` holds `digits` as a whole token next to `sym`
+/// (`$15`, `15 $`, `US$ 15`).
+fn contains_money(hay: &str, sym: char, digits: &str) -> bool {
+    number_tokens(hay).iter().any(|(s, e, d)| {
+        d == digits
+            && (adjacent_symbol_before(hay, *s) == Some(sym)
+                || adjacent_symbol_after(hay, *e) == Some(sym))
+    })
+}
+
+/// Every `$` amount written in `text`, in cents (`$150` → 15000,
+/// `$15.00` → 1500, `$1,500` → 150000). A trailing `.d`/`.dd` is a
+/// decimal; any other `.`/`,` is grouping.
+pub fn dollar_amounts_cents(text: &str) -> Vec<i64> {
+    let mut out = Vec::new();
+    for (s, e, _) in number_tokens(text) {
+        let money = adjacent_symbol_before(text, s) == Some('$')
+            || adjacent_symbol_after(text, e) == Some('$');
+        if !money {
+            continue;
+        }
+        let raw: String = text[s..e]
+            .chars()
+            .filter(|c| c.is_ascii_digit() || matches!(c, '.' | ','))
+            .collect();
+        let (whole, cents) = match raw.rsplit_once('.') {
+            Some((w, f))
+                if !f.is_empty() && f.len() <= 2 && f.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                (w.to_string(), format!("{f:0<2}"))
+            }
+            _ => (raw.clone(), "00".to_string()),
+        };
+        let whole: String = whole.chars().filter(char::is_ascii_digit).collect();
+        if let (Ok(w), Ok(c)) = (whole.parse::<i64>(), cents.parse::<i64>())
+            && let Some(total) = w.checked_mul(100).and_then(|v| v.checked_add(c))
+        {
+            out.push(total);
         }
     }
-    false
+    out
 }
 
 /// Re-extraction guard: every protected span of `original` must survive
@@ -446,9 +484,7 @@ pub fn guard_ok(original: &str, translated: &str) -> bool {
         .into_iter()
         .all(|span| match span.kind {
             ProtectedKind::Number => contains_digit_run(translated, &span.digits),
-            ProtectedKind::Money(sym) => {
-                translated.contains(sym) && contains_digit_run(translated, &span.digits)
-            }
+            ProtectedKind::Money(sym) => contains_money(translated, sym, &span.digits),
             ProtectedKind::PoBox => {
                 lower.contains("po box") && contains_digit_run(translated, &span.digits)
             }
@@ -1151,6 +1187,49 @@ pub async fn translation_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numbers_match_whole_tokens_only() {
+        assert!(contains_digit_run(
+            "You pay $150 for same-day service",
+            "150"
+        ));
+        assert!(
+            !contains_digit_run("You pay $150 for same-day service", "15"),
+            "15 is not 150"
+        );
+        assert!(!contains_digit_run("Mail to PO Box 40228", "4022"));
+        assert!(contains_digit_run("open 8:00 AM to 4:30 PM", "800"));
+        assert!(
+            !contains_digit_run("open 8:00 AM to 4:30 PM", "8"),
+            "8 is not 8:00"
+        );
+        assert!(
+            contains_digit_run("25 000 personas", "25000"),
+            "space thousands still join"
+        );
+        assert!(contains_money("cuesta 15 $ por documento", '$', "15"));
+        assert!(
+            !contains_money("$150 fee; 15 days", '$', "15"),
+            "the 15 here is not money"
+        );
+        assert!(guard_ok("The fee is $15.", "La tarifa es de $15."));
+        assert!(!guard_ok("The fee is $15.", "La tarifa es de $150."));
+    }
+
+    #[test]
+    fn dollar_amounts_parse_to_exact_cents() {
+        assert_eq!(
+            dollar_amounts_cents("You pay $150 for same-day service"),
+            vec![15000]
+        );
+        assert_eq!(
+            dollar_amounts_cents("$15.00 per document, $1,500 max, 8:00 AM"),
+            vec![1500, 150000]
+        );
+        assert_eq!(dollar_amounts_cents("fee 15 $"), vec![1500]);
+        assert!(dollar_amounts_cents("Open 8:00 AM, PO Box 4000").is_empty());
+    }
 
     // Recorded Meta chat-completion envelopes (replay fixtures: no key,
     // no network — the parser proves the shape, the stub proves the flow).
