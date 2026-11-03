@@ -14,7 +14,21 @@
 	import Heading from '../../../../lib/components/brand/Heading.svelte';
 	import Guilloche from '../../../../lib/components/brand/Guilloche.svelte';
 	import Flag from '../../../../lib/components/brand/Flag.svelte';
-	import silhouettes from '../../../../lib/geo/silhouettes.json';
+	import ChainView from '../../../../lib/public-ui/ChainView.svelte';
+	import PlanView from '../../../../lib/public-ui/plan/PlanView.svelte';
+	import ProvenancePanel from '../../../../lib/public-ui/plan/ProvenancePanel.svelte';
+	import {
+		parsePlan,
+		selectedPath,
+		type PlanForm,
+		type PlanView as PlanViewData
+	} from '../../../../lib/public-ui/plan.js';
+	import {
+		flagFor,
+		latestCapture,
+		silhouetteFor,
+		verifiedAtOf
+	} from '../../../../lib/public-ui/authority-meta.js';
 	import { subscribe } from '../../../../lib/live.svelte.js';
 	import {
 		factCount,
@@ -43,22 +57,6 @@
 		return { ok: res.ok, status: res.status, body };
 	}
 
-	// Per-authority display facts the API does not carry yet. Assumed:
-	// Viet Nam's native name and HCCH Convention entry date come from the
-	// watched HCCH pages (packs/vietnam-routing.json), not the API.
-	const NATIVE: Record<string, { name: string; lang: string }> = {
-		vietnam: { name: 'Việt Nam', lang: 'vi' }
-	};
-	const IN_FORCE: Record<string, string> = {
-		vietnam: '2026-09-11'
-	};
-	const FLAG: Record<string, string> = { vietnam: 'vn', 'usa-wa-sos': 'us', hcch: 'nl' };
-	const SIL: Record<string, keyof typeof silhouettes> = {
-		vietnam: 'vietnam',
-		'usa-wa-sos': 'washington',
-		hcch: 'netherlands'
-	};
-
 	let facts = $state<any[] | null>(null);
 	let loadError = $state<string | null>(null);
 	let notFound = $state(false);
@@ -72,6 +70,7 @@
 	let authorityName = $state<string | null>(null);
 	let authorityCountry = $state<string | null>(null);
 	let authorityRegion = $state<string | null>(null);
+	let authorityVerifiedAt = $state('');
 	let activeTopic = $state('');
 
 	type LedgerEvent = {
@@ -83,6 +82,57 @@
 	};
 	let ledger = $state<LedgerEvent[]>([]);
 
+	// Accepted render plan (W2a): `GET /authorities/{slug}/plan` always
+	// answers 200; `plan: null` (or any unreadable body) falls back to
+	// the fact guide below. The page waits for both reads before it
+	// draws, so the guide never flashes ahead of a plan.
+	let planView = $state<PlanViewData | null>(null);
+	let planSettled = $state(false);
+	let planFlash = $state(false);
+	let planFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+	async function loadPlan(current: string, flash = false) {
+		try {
+			const res = await get(`/authorities/${encodeURIComponent(current)}/plan`);
+			if (current !== slug) return;
+			planView = res.ok ? parsePlan(res.body) : null;
+		} catch {
+			if (current !== slug) return;
+			planView = null;
+		} finally {
+			if (current === slug) planSettled = true;
+		}
+		if (flash && planView) {
+			if (planFlashTimer) clearTimeout(planFlashTimer);
+			planFlash = true;
+			planFlashTimer = setTimeout(() => {
+				planFlash = false;
+				planFlashTimer = null;
+			}, 1500);
+		}
+	}
+
+	const path = $derived(
+		planView ? selectedPath(planView.plan, page.url.searchParams.get('path')) : null
+	);
+	function pathHref(id: string | null): string {
+		const q = new URLSearchParams(page.url.search);
+		if (id) q.set('path', id);
+		else q.delete('path');
+		const qs = q.toString();
+		return `${page.url.pathname}${qs ? `?${qs}` : ''}`;
+	}
+	function orderHref(kind?: string): string {
+		const q = new URLSearchParams({ destination: slug });
+		if (path) q.set('path', path);
+		if (kind) q.set('kind', kind);
+		return `${resolve('/(customer)/order')}?${q}`;
+	}
+	function fillHref(form: PlanForm): string {
+		const q = new URLSearchParams({ authority: slug, form: String(form.id) });
+		return `${resolve('/(customer)/forms')}?${q}`;
+	}
+
 	const groups = $derived(groupFactsByTopic(facts ?? []));
 	const topicId = (topic: string) =>
 		`topic-${topic.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
@@ -90,17 +140,6 @@
 	function firstCapture(fact: any): any | null {
 		const cites = Array.isArray(fact?.citations) ? fact.citations : [];
 		return cites.length > 0 ? cites[0] : null;
-	}
-
-	function latestCapture(list: any[]): string {
-		let latest = '';
-		for (const f of list) {
-			for (const c of Array.isArray(f?.citations) ? f.citations : []) {
-				if (typeof c?.captured_at === 'string' && c.captured_at > latest)
-					latest = c.captured_at;
-			}
-		}
-		return latest;
 	}
 
 	function shortDate(iso: string): string {
@@ -116,10 +155,10 @@
 		ledger = seedLedgerEvents(list) as LedgerEvent[];
 	}
 
-	function pushLiveEvent() {
-		const id = `live-${Date.now()}`;
+	function pushLiveEvent(text = 'New fact approved by staff') {
+		const id = `live-${Date.now()}-${ledger.length}`;
 		ledger = [
-			{ id, kind: 'verified', text: 'New fact approved by staff', at: '', fresh: true },
+			{ id, kind: 'verified', text, at: '', fresh: true },
 			...ledger
 		];
 		setTimeout(() => {
@@ -158,6 +197,7 @@
 				authorityCountry = found.country;
 			if (found && typeof found.region === 'string' && found.region)
 				authorityRegion = found.region;
+			if (found) authorityVerifiedAt = verifiedAtOf(found);
 		} catch {
 			// The slug stays the heading; the index is a nicety, not a gate.
 		}
@@ -200,20 +240,34 @@
 		activeTopic = '';
 		authorityName = null;
 		authorityCountry = null;
+		authorityRegion = null;
+		authorityVerifiedAt = '';
 		ledger = [];
+		planView = null;
+		planSettled = false;
 		reload(current).catch(() => {
 			if (current !== slug) return;
 			loadError = publicError(500, 'dossier');
 		});
+		void loadPlan(current);
 		void resolveName(current);
 		// Live ledger: an approval in /review re-renders this dossier
-		// over WS `authority:{slug}` — no polling.
+		// over WS `authority:{slug}` — ids only, so the page re-reads
+		// the API; no polling.
 		return subscribe(`authority:${current}`, (msg) => {
 			if (current !== slug) return;
 			if (msg?.type === 'fact_accepted') {
 				pushLiveEvent();
 				if (typeof msg?.fact_id === 'number') pendingFlashFactId = msg.fact_id;
 				void reload(current).catch(() => {});
+				void loadPlan(current, true);
+			} else if (msg?.type === 'plan_accepted') {
+				const v = typeof msg?.version === 'number' ? ` v${msg.version}` : '';
+				pushLiveEvent(`Plan${v} approved by staff`);
+				void loadPlan(current, true);
+			} else if (msg?.type === 'offices_accepted') {
+				pushLiveEvent('Office details approved by staff');
+				void loadPlan(current, true);
 			}
 		});
 	});
@@ -276,12 +330,16 @@
 		})()
 	);
 
+	// Every header value is runtime data: the index row (name, country,
+	// region, verified_at) and the accepted facts. Flag and outline are
+	// looked up from the row's country/region, never from the slug.
 	const displayName = $derived(authorityName ?? slug);
-	const native = $derived(NATIVE[slug]);
-	const inForce = $derived(IN_FORCE[slug]);
-	const flag = $derived(FLAG[slug] ?? null);
-	const sil = $derived(SIL[slug] ? silhouettes[SIL[slug]] : null);
-	const lastVerified = $derived(facts ? latestCapture(facts) : '');
+	const flag = $derived(flagFor(authorityCountry));
+	const sil = $derived(silhouetteFor({ region: authorityRegion, country: authorityCountry }));
+	const lastVerified = $derived(authorityVerifiedAt || (facts ? latestCapture(facts) : ''));
+	const hasChain = $derived(
+		(facts ?? []).some((f) => f?.status === 'accepted' && f?.topic === 'legalization_chain')
+	);
 </script>
 
 <svelte:head>
@@ -297,7 +355,7 @@
 	</Notice>
 {:else if loadError}
 	<Notice variant="error" heading="This dossier is unavailable."><p>{loadError}</p></Notice>
-{:else if facts === null}
+{:else if facts === null || !planSettled}
 	<div role="status" aria-label="Loading dossier" class="flex flex-col gap-2 pt-6">
 		<span class="sr-only">Loading dossier</span>
 		<Skeleton class="h-9 w-2/3" />
@@ -342,14 +400,9 @@
 				<span class="vt-title">{displayName}</span>
 			</Heading>
 		</div>
-		{#if native}
-			<p lang={native.lang} class="mt-2 mb-0 text-lg text-ink-muted">{native.name}</p>
-		{/if}
 		{#if facts.length > 0}
 			<p class="mt-3 mb-0 font-mono text-xs text-ink-muted">
-				{#if inForce}<span>in force since {inForce}</span> · {/if}<span
-					>last verified {shortDate(lastVerified) || '—'}</span
-				>
+				<span>last verified {shortDate(lastVerified) || '—'}</span>
 				· <span>{factCount(facts.length)}</span>
 			</p>
 		{/if}
@@ -396,28 +449,76 @@
 		</nav>
 	</header>
 
-	<section aria-labelledby="howto" class="border-y border-line bg-surface py-10 xl:py-16">
-		<div class="mx-auto w-full max-w-5xl px-4 sm:px-6">
-			<h2 id="howto" class="text-h2 mt-0 mb-0 font-semibold">
-				How to get your apostille<span class="sr-only"> for {displayName}</span>
-			</h2>
-			{#if guideSteps.length === 0}
-				<div class="mt-8">
-					<GuideEmpty websiteUrl={websiteUrl} slug={slug} />
-				</div>
-			{:else}
-				<ol class="m-0 mt-8 list-none p-0">
-					{#each guideSteps as step, i (step.id)}
-						<GuideStep step={step} index={i} flash={flashStepId === step.id} />
-					{/each}
-				</ol>
+	{#if planView}
+		<section
+			aria-labelledby="plan"
+			class={`plan-section border-y border-line bg-surface py-10 xl:py-16 ${planFlash ? 'plan-flash' : ''}`}
+			data-plan-version={planView.plan.version}
+		>
+			<div class="mx-auto w-full max-w-5xl px-4 sm:px-6">
+				<p class="text-eyebrow m-0 font-semibold tracking-wide text-ink-muted uppercase">
+					Staff-approved · plan v{planView.plan.version}
+				</p>
+				<h2 id="plan" class="text-h2 mt-2 mb-0 font-semibold">
+					Your apostille plan<span class="sr-only"> for {displayName}</span>
+				</h2>
+				<PlanView view={planView} {path} hrefFor={pathHref} {orderHref} {fillHref} />
 				<p class="mt-8 mb-0 max-w-prose text-sm text-ink-muted">
-					Every value above is staff-accepted, with its source one tap
+					Every step above rests on staff-accepted facts, each with its source one tap
 					away. General information, not legal advice.
 				</p>
-			{/if}
-		</div>
-	</section>
+			</div>
+		</section>
+		{#if planView.provenance}
+			<section aria-labelledby="made-title" id="made" class="mx-auto w-full max-w-5xl scroll-mt-20 px-4 py-10 sm:px-6 xl:py-16">
+				<p class="text-eyebrow m-0 font-semibold tracking-wide text-ink-muted uppercase">
+					Built by Meta models, approved by a person
+				</p>
+				<h2 id="made-title" class="text-h2 mt-2 mb-0 font-semibold">How this page was made</h2>
+				<p class="mt-2 mb-6 max-w-prose text-sm text-ink-muted">
+					Each stage below is recorded with the plan. Nothing reaches this page until the
+					validator passes and a staff reviewer accepts it.
+				</p>
+				<ProvenancePanel
+					provenance={planView.provenance}
+					version={planView.plan.version}
+					acceptedAt={planView.plan.accepted_at}
+				/>
+			</section>
+		{/if}
+	{:else}
+		<section aria-labelledby="howto" class="border-y border-line bg-surface py-10 xl:py-16">
+			<div class="mx-auto w-full max-w-5xl px-4 sm:px-6">
+				<h2 id="howto" class="text-h2 mt-0 mb-0 font-semibold">
+					How to get your apostille<span class="sr-only"> for {displayName}</span>
+				</h2>
+				{#if guideSteps.length === 0}
+					<div class="mt-8">
+						<GuideEmpty websiteUrl={websiteUrl} slug={slug} />
+					</div>
+				{:else}
+					<ol class="m-0 mt-8 list-none p-0">
+						{#each guideSteps as step, i (step.id)}
+							<GuideStep step={step} index={i} flash={flashStepId === step.id} />
+						{/each}
+					</ol>
+					<p class="mt-8 mb-0 max-w-prose text-sm text-ink-muted">
+						Every value above is staff-accepted, with its source one tap
+						away. General information, not legal advice.
+					</p>
+				{/if}
+			</div>
+		</section>
+	{/if}
+	{#if hasChain}
+		<section aria-labelledby="chain" class="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 xl:py-16">
+			<h2 id="chain" class="text-h2 mt-0 mb-0 font-semibold">Legalization chain</h2>
+			<p class="mt-2 mb-6 max-w-prose text-sm text-ink-muted">
+				Each hop below is a staff-approved fact, in order, with its source one tap away.
+			</p>
+			<ChainView facts={facts} />
+		</section>
+	{/if}
 	<section aria-label="Follow this office" class="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 xl:py-16">
 		<FollowCard slug={slug} name={displayName} apiBase={apiRoot} />
 	</section>
@@ -579,3 +680,18 @@
 	{/if}
 {/if}
 
+<style>
+	.plan-section {
+		transition:
+			box-shadow 300ms ease-out,
+			background-color 300ms ease-out;
+	}
+	.plan-flash {
+		box-shadow: inset 0 0 0 2px var(--color-verified);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.plan-section {
+			transition: none;
+		}
+	}
+</style>
