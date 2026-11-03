@@ -80,6 +80,12 @@
 		return res.status === 401 || res.status === 403;
 	}
 
+	// The server's own reason (session expired, request token
+	// rejected, IP not allowed) — a 403 is not always a lost session.
+	async function authNote(res: Response): Promise<string> {
+		return authError(res.status, await readErrorBody(res)) ?? 'The admin host refused the request.';
+	}
+
 	function normalizeStatus(data: any): Status | null {
 		if (!data || data.mode !== 'manual') return null;
 		const q = data.queue ?? {};
@@ -197,7 +203,7 @@
 				body: JSON.stringify({})
 			});
 			if (authFailed(res)) {
-				item.note = 'Staff session expired — log in again, then retry.';
+				item.note = await authNote(res);
 			} else if (res.status === 409) {
 				item.note = 'No source to re-fetch (unattributed capture).';
 			} else if (res.status === 502) {
@@ -236,7 +242,7 @@
 				})
 			});
 			if (authFailed(res)) {
-				fetchNote = 'Staff session expired — log in again, then retry.';
+				fetchNote = await authNote(res);
 			} else if (res.status === 404) {
 				fetchNote = 'Unknown authority slug.';
 			} else if (res.status === 422) {
@@ -292,7 +298,7 @@
 				body: JSON.stringify({ items })
 			});
 			if (authFailed(res)) {
-				sweepNote = 'Staff session expired — log in again, then retry.';
+				sweepNote = await authNote(res);
 			} else if (res.status === 404 || res.status === 422) {
 				const data = await res.json().catch(() => null);
 				sweepNote = `Rejected (${res.status}): ${data?.error ?? 'bad items'}. Nothing fetched.`;

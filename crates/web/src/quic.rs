@@ -192,6 +192,27 @@ async fn serve_connection(conn: quinn::Connection, router: Router) {
     }
 }
 
+/// RFC 9114 §4.2.1: an h3 client may split `cookie` into one field
+/// line per cookie (Chrome's QPACK encoder does), and the server must
+/// join them with "; " before anything outside HTTP/2/3 reads them.
+/// Every cookie read in this crate takes `headers.get(COOKIE)` — the
+/// first line only — so without this the session cookie and the CSRF
+/// cookie never arrive on the same request over QUIC.
+fn join_cookie_lines(headers: &mut header::HeaderMap) {
+    if headers.get_all(header::COOKIE).iter().nth(1).is_none() {
+        return;
+    }
+    let joined = headers
+        .get_all(header::COOKIE)
+        .iter()
+        .map(|v| v.as_bytes())
+        .collect::<Vec<_>>()
+        .join(&b"; "[..]);
+    if let Ok(value) = header::HeaderValue::from_bytes(&joined) {
+        headers.insert(header::COOKIE, value);
+    }
+}
+
 /// Bridge one h3 request to `Router::oneshot` and write the
 /// response back. Any failure ends ONLY this request (the stream
 /// drops = reset; the connection serves on).
@@ -217,6 +238,7 @@ async fn serve_request(
             .map_err(|e| format!("h3 authority to host: {e}"))?;
         parts.headers.insert(header::HOST, value);
     }
+    join_cookie_lines(&mut parts.headers);
     if is_ws_path(parts.uri.path()) {
         return send_synthetic(
             &mut stream,
@@ -331,6 +353,26 @@ async fn send_synthetic(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn split_cookie_lines_join_so_session_and_csrf_arrive_together() {
+        let mut headers = header::HeaderMap::new();
+        for crumb in ["sidebar:state=true", "hb_csrf=abc", "__Host-hb_adm=sess"] {
+            headers.append(header::COOKIE, header::HeaderValue::from_static(crumb));
+        }
+        join_cookie_lines(&mut headers);
+        assert_eq!(headers.get_all(header::COOKIE).iter().count(), 1);
+        let jar = headers.get(header::COOKIE).unwrap().to_str().unwrap();
+        assert_eq!(jar, "sidebar:state=true; hb_csrf=abc; __Host-hb_adm=sess");
+        assert_eq!(auth::cookie_value(jar, auth::CSRF_COOKIE), Some("abc"));
+        assert_eq!(auth::cookie_value(jar, auth::ADM_COOKIE), Some("sess"));
+
+        // One line (HTTP/1.1, or an h3 client that never splits) is untouched.
+        let mut single = header::HeaderMap::new();
+        single.insert(header::COOKIE, header::HeaderValue::from_static("a=1; b=2"));
+        join_cookie_lines(&mut single);
+        assert_eq!(single.get(header::COOKIE).unwrap(), "a=1; b=2");
+    }
 
     #[test]
     fn bridge_cap_rejects_declared_oversize_early() {

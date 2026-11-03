@@ -31,8 +31,9 @@
 	type NavItem = { label: string; href: string; icon: Component; keywords: string };
 	type NavGroup = { label: string; items: NavItem[] };
 
-	// Groups per the console plan (Overview, Content, Commerce, Comms,
-	// System). New screens join their group as their lanes land.
+	// Groups per the console plan (Overview, Content, Commerce, First
+	// source, System). "First source" is staff asking the office itself
+	// (calls, email) when the published pages leave a question open.
 	const NAV: NavGroup[] = [
 		{
 			label: 'Overview',
@@ -57,7 +58,7 @@
 			]
 		},
 		{
-			label: 'Comms',
+			label: 'First source',
 			items: [{ label: 'Voice calls', href: resolve('/(admin)/calls'), icon: PhoneIcon, keywords: 'phone telnyx' }]
 		},
 		{

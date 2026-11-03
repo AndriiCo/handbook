@@ -128,22 +128,165 @@ pub fn ingest_bytes(
     Ok(IngestOutcome::Created { capture_id })
 }
 
-/// Thin-watch text extraction: lossy UTF-8, naive `<tag>` stripping,
-/// whitespace collapsed. HTML-aware extraction (scripts, entities,
-/// PDFs) is F5 work; this only needs to feed sidecars + FTS today.
+/// Elements whose bodies are never page text: scripts (including
+/// `importmap` / JSON-LD blobs), styles, templates, embedded media.
+const SKIP_ELEMENTS: &[&str] = &[
+    "script", "style", "template", "noscript", "svg", "iframe", "object", "canvas",
+];
+
+/// Elements that start a new line, so headings, paragraphs and list
+/// items stay apart instead of running into one another.
+const BLOCK_ELEMENTS: &[&str] = &[
+    "address", "article", "aside", "blockquote", "br", "caption", "dd", "div", "dl", "dt",
+    "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6",
+    "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "title", "tr",
+    "ul",
+];
+
+/// Capture text for sidecars, FTS and model input: lossy UTF-8, tags
+/// stripped, the bodies of [`SKIP_ELEMENTS`] and comments dropped,
+/// entities decoded, one line per block element, table cells joined
+/// with " | ", whitespace collapsed within each line. Plain text (no
+/// tags) comes back with only its whitespace collapsed.
 pub fn extract_text(bytes: &[u8]) -> String {
-    let lossy = String::from_utf8_lossy(bytes);
-    let mut out = String::with_capacity(lossy.len());
-    let mut in_tag = false;
-    for ch in lossy.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(ch),
-            _ => {}
+    let html = String::from_utf8_lossy(bytes);
+    let s = html.as_ref();
+    // ASCII lowercasing keeps every byte offset, so indices found in
+    // `lower` slice `s` on the same char boundaries.
+    let lower = s.to_ascii_lowercase();
+    let mut out = String::with_capacity(s.len() / 2);
+    let mut cells_in_row = 0usize;
+    let mut i = 0;
+    while i < s.len() {
+        let rest = &s[i..];
+        if let Some(comment) = rest.strip_prefix("<!--") {
+            i = comment.find("-->").map_or(s.len(), |e| i + 4 + e + 3);
+            continue;
+        }
+        let starts_tag = rest.starts_with('<')
+            && rest[1..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || matches!(c, '/' | '!' | '?'));
+        if !starts_tag {
+            let next = rest[1..].find('<').map_or(s.len(), |n| i + 1 + n);
+            // Source line breaks are layout, not structure: only
+            // block elements start a line.
+            let run = decode_entities(&s[i..next]);
+            out.extend(run.chars().map(|c| if c.is_whitespace() { ' ' } else { c }));
+            i = next;
+            continue;
+        }
+        let (tag, after) = match rest.find('>') {
+            Some(e) => (&lower[i + 1..i + e], i + e + 1),
+            None => (&lower[i + 1..], s.len()),
+        };
+        let closing = tag.starts_with('/');
+        let name = tag
+            .trim_start_matches('/')
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .next()
+            .unwrap_or("");
+        if !closing && !tag.ends_with('/') && SKIP_ELEMENTS.contains(&name) {
+            let close = format!("</{name}");
+            i = match lower[after..].find(&close) {
+                Some(c) => {
+                    let at = after + c;
+                    s[at..].find('>').map_or(s.len(), |g| at + g + 1)
+                }
+                None => s.len(),
+            };
+            continue;
+        }
+        if BLOCK_ELEMENTS.contains(&name) {
+            out.push('\n');
+        }
+        if name == "tr" && !closing {
+            cells_in_row = 0;
+        }
+        if (name == "td" || name == "th") && !closing {
+            if cells_in_row > 0 {
+                out.push_str(" | ");
+            }
+            cells_in_row += 1;
+        }
+        i = after;
+    }
+    out.lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Decode character references: numeric (`&#233;`, `&#xE9;`) and the
+/// named ones official pages use. Unknown names stay as written.
+fn decode_entities(text: &str) -> String {
+    if !text.contains('&') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        let tail = &rest[amp..];
+        let semi = tail[1..]
+            .char_indices()
+            .take(12)
+            .find(|(_, c)| *c == ';')
+            .map(|(k, _)| k + 1);
+        match semi.and_then(|semi| entity(&tail[1..semi]).map(|ch| (ch, semi))) {
+            Some((ch, semi)) => {
+                out.push(ch);
+                rest = &tail[semi + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &tail[1..];
+            }
         }
     }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
+    out.push_str(rest);
+    out
+}
+
+fn entity(name: &str) -> Option<char> {
+    if let Some(num) = name.strip_prefix('#') {
+        let code = match num.strip_prefix(['x', 'X']) {
+            Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+            None => num.parse().ok()?,
+        };
+        return char::from_u32(code).filter(|c| *c != '\0');
+    }
+    Some(match name {
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        "quot" => '"',
+        "apos" => '\'',
+        "nbsp" => ' ',
+        "ndash" => '\u{2013}',
+        "mdash" => '\u{2014}',
+        "lsquo" => '\u{2018}',
+        "rsquo" => '\u{2019}',
+        "ldquo" => '\u{201c}',
+        "rdquo" => '\u{201d}',
+        "hellip" => '\u{2026}',
+        "bull" => '\u{2022}',
+        "middot" => '\u{b7}',
+        "sect" => '\u{a7}',
+        "para" => '\u{b6}',
+        "deg" => '\u{b0}',
+        "copy" => '\u{a9}',
+        "reg" => '\u{ae}',
+        "trade" => '\u{2122}',
+        "euro" => '\u{20ac}',
+        "pound" => '\u{a3}',
+        "yen" => '\u{a5}',
+        "cent" => '\u{a2}',
+        "times" => '\u{d7}',
+        _ => return None,
+    })
 }
 
 fn write_sidecar(store: &Store, capture_id: i64, text: &str) -> Result<()> {
@@ -291,5 +434,26 @@ mod tests {
             "PO Box 40220"
         );
         assert_eq!(extract_text(b"plain"), "plain");
+    }
+
+    #[test]
+    fn extract_text_drops_scripts_styles_and_comments() {
+        // Shape of a Liferay portal page: an importmap and inline
+        // scripts in <head>, a comment, entities, a fee table.
+        let html = "<html><head><title>Trang ch&#7911; - C&#7893;ng th&ocirc;ng tin</title>\
+            <script type=\"importmap\">{\"imports\":{\"react-dom\":\"/o/x.js\"}}</script>\
+            <style>.a{color:red}</style><SCRIPT>var a = '<p>no</p>';</SCRIPT></head>\
+            <body><!-- <p>hidden</p> --><h1>Ch&#7913;ng nh&#7853;n l&atilde;nh s&#7921;</h1>\
+            <p>Fee:&nbsp;$15 &amp; up</p><table><tr><th>Item</th><th>Fee</th></tr>\
+            <tr><td>Apostille</td><td>$15</td></tr></table><p>a < b</p></body></html>";
+        let text = extract_text(html.as_bytes());
+        assert!(!text.contains("imports"), "{text}");
+        assert!(!text.contains("color:red"), "{text}");
+        assert!(!text.contains("var a"), "{text}");
+        assert!(!text.contains("hidden"), "{text}");
+        assert!(text.starts_with("Trang ch\u{1ee7} - C\u{1ed5}ng th&ocirc;ng tin\n"), "{text}");
+        assert!(text.contains("Fee: $15 & up"), "{text}");
+        assert!(text.contains("Item | Fee\nApostille | $15"), "{text}");
+        assert!(text.contains("a < b"), "{text}");
     }
 }
