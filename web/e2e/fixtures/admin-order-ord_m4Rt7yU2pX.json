@@ -1,0 +1,83 @@
+{
+  "id": "ord_m4Rt7yU2pX",
+  "kind": "mail_kit",
+  "status": "packing",
+  "mode": "test",
+  "authority": {
+    "slug": "usa-wa-sos",
+    "name": "USA — Washington Secretary of State"
+  },
+  "path_id": "diploma",
+  "created_at": 1793743200,
+  "updated_at": 1793747400,
+  "amount": {
+    "currency": "usd",
+    "total_cents": 4900,
+    "lines": [
+      { "label": "Mailing kit", "cents": 1900 },
+      { "label": "USPS Priority to the authority", "cents": 1200 },
+      { "label": "USPS Priority return", "cents": 1200 },
+      { "label": "Service fee", "cents": 600 }
+    ]
+  },
+  "return_to": {
+    "name": "SYNTHETIC Customer",
+    "city": "Columbus",
+    "region": "OH",
+    "postal_code": "43004",
+    "country": "US"
+  },
+  "legs": [
+    {
+      "role": "kit_to_customer",
+      "carrier": "usps",
+      "service": "USPS_PRIORITY",
+      "shipment_id": 71,
+      "status": "label_ready",
+      "tracking_number": "9400100000000000000071",
+      "tracking_url": null,
+      "label_url": "/apostille/api/v1/p2/orders/ord_m4Rt7yU2pX/labels/kit_to_customer",
+      "label_kind": "carrier",
+      "topic": "shipment:71"
+    },
+    {
+      "role": "outbound",
+      "carrier": "usps",
+      "service": "USPS_PRIORITY",
+      "shipment_id": 72,
+      "status": "label_ready",
+      "tracking_number": "9400100000000000000072",
+      "tracking_url": null,
+      "label_url": "/apostille/api/v1/p2/orders/ord_m4Rt7yU2pX/labels/outbound",
+      "label_kind": "carrier",
+      "topic": "shipment:72"
+    },
+    {
+      "role": "return",
+      "carrier": "usps",
+      "service": "USPS_PRIORITY",
+      "shipment_id": 73,
+      "status": "label_ready",
+      "tracking_number": "9400100000000000000073",
+      "tracking_url": null,
+      "label_url": "/apostille/api/v1/p2/orders/ord_m4Rt7yU2pX/labels/return",
+      "label_kind": "carrier",
+      "topic": "shipment:73"
+    }
+  ],
+  "form_fill_id": "fil_4c8e2a9b7d",
+  "events": [
+    { "at": 1793743200, "kind": "order.created", "text": "Order placed", "leg": null },
+    { "at": 1793743260, "kind": "order.paid", "text": "Paid $49.00 (test mode)", "leg": null },
+    { "at": 1793743320, "kind": "label.ready", "text": "USPS labels ready", "leg": "outbound" },
+    { "at": 1793747400, "kind": "order.packing", "text": "Kit is being packed", "leg": null }
+  ],
+  "receipt": {
+    "paid_at": 1793743260,
+    "receipt_url": null,
+    "refunded": false
+  },
+  "actions": [],
+  "topic": "billing:cust_demo03",
+  "customer_ref": "cust_demo03"
+}

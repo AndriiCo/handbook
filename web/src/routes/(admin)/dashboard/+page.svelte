@@ -285,7 +285,7 @@
 				<p class="m-0 min-w-0 flex-1 text-sm font-semibold">
 					{stats.kpis.needs_staff} order{stats.kpis.needs_staff === 1 ? '' : 's'} need{stats.kpis.needs_staff === 1 ? 's' : ''} staff
 				</p>
-				<a class="text-sm font-semibold text-ink underline underline-offset-4" href="/orders?status=needs_staff">
+				<a class="text-sm font-semibold text-ink underline underline-offset-4" href="/staff-orders?status=needs_staff">
 					Open orders
 				</a>
 			</div>

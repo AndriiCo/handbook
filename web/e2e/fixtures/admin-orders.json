@@ -1,0 +1,108 @@
+{
+  "orders": [
+    {
+      "id": "ord_q7Hm2xR4kP",
+      "kind": "mail_kit",
+      "status": "shipped",
+      "mode": "test",
+      "authority_slug": "usa-wa-sos",
+      "customer": "cust_demo01",
+      "total_cents": 4900,
+      "currency": "usd",
+      "created_at": 1793750400,
+      "needs_staff": false
+    },
+    {
+      "id": "ord_k2Lp9vW3sQ",
+      "kind": "label_fedex",
+      "status": "needs_staff",
+      "mode": "test",
+      "authority_slug": "vietnam",
+      "customer": "cust_demo02",
+      "total_cents": 6150,
+      "currency": "usd",
+      "created_at": 1793749900,
+      "needs_staff": true,
+      "reason": "FedEx ship timed out after send (failed_unknown): check the FedEx account before retrying."
+    },
+    {
+      "id": "ord_m4Rt7yU2pX",
+      "kind": "mail_kit",
+      "status": "packing",
+      "mode": "test",
+      "authority_slug": "usa-wa-sos",
+      "customer": "cust_demo03",
+      "total_cents": 4900,
+      "currency": "usd",
+      "created_at": 1793743200,
+      "needs_staff": false
+    },
+    {
+      "id": "ord_v8Cd3nB6hJ",
+      "kind": "label_usps",
+      "status": "paid",
+      "mode": "test",
+      "authority_slug": "usa-wa-sos",
+      "customer": "cust_demo04",
+      "total_cents": 3100,
+      "currency": "usd",
+      "created_at": 1793736000,
+      "needs_staff": false
+    },
+    {
+      "id": "ord_t5Gh1jK9wE",
+      "kind": "label_usps",
+      "status": "quoted",
+      "mode": "test",
+      "authority_slug": "vietnam",
+      "customer": "cust_demo05",
+      "total_cents": 2400,
+      "currency": "usd",
+      "created_at": 1793728800,
+      "needs_staff": false
+    },
+    {
+      "id": "ord_p9Lk4mN7bV",
+      "kind": "label_fedex",
+      "status": "needs_staff",
+      "mode": "test",
+      "authority_slug": "vietnam",
+      "customer": "cust_demo07",
+      "total_cents": 7250,
+      "currency": "usd",
+      "created_at": 1793700000,
+      "needs_staff": true,
+      "reason": "Return label address failed FedEx validation: confirm the postal code with the customer."
+    },
+    {
+      "id": "ord_b3Nz8wQ1tY",
+      "kind": "address_label",
+      "status": "labels_ready",
+      "mode": "test",
+      "authority_slug": "usa-wa-sos",
+      "customer": "cust_demo01",
+      "total_cents": 0,
+      "currency": "usd",
+      "created_at": 1793664000,
+      "needs_staff": false
+    },
+    {
+      "id": "ord_x2Wq6eR8tY",
+      "kind": "mail_kit",
+      "status": "refunded",
+      "mode": "test",
+      "authority_slug": "usa-wa-sos",
+      "customer": "cust_demo06",
+      "total_cents": 4900,
+      "currency": "usd",
+      "created_at": 1793620000,
+      "needs_staff": false
+    }
+  ],
+  "counts": {
+    "all": 8,
+    "needs_staff": 2,
+    "to_pack": 1,
+    "shipped": 1
+  }
+}

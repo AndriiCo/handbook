@@ -1,0 +1,75 @@
+{
+  "id": "ord_k2Lp9vW3sQ",
+  "kind": "label_fedex",
+  "status": "needs_staff",
+  "mode": "test",
+  "authority": {
+    "slug": "vietnam",
+    "name": "Vietnam — Ministry of Foreign Affairs"
+  },
+  "path_id": "birth-certificate",
+  "created_at": 1793749900,
+  "updated_at": 1793750280,
+  "amount": {
+    "currency": "usd",
+    "total_cents": 6150,
+    "lines": [
+      { "label": "FedEx International Priority to the authority", "cents": 4200 },
+      { "label": "FedEx return label", "cents": 1350 },
+      { "label": "Service fee", "cents": 600 }
+    ]
+  },
+  "return_to": {
+    "name": "SYNTHETIC Customer",
+    "city": "Springfield",
+    "region": "IL",
+    "postal_code": "62701",
+    "country": "US"
+  },
+  "legs": [
+    {
+      "role": "outbound",
+      "carrier": "fedex",
+      "service": "FEDEX_INTERNATIONAL_PRIORITY",
+      "shipment_id": 61,
+      "status": "pending",
+      "tracking_number": null,
+      "tracking_url": null,
+      "label_url": null,
+      "label_kind": "carrier",
+      "topic": "shipment:61"
+    },
+    {
+      "role": "return",
+      "carrier": "fedex",
+      "service": "FEDEX_INTERNATIONAL_PRIORITY",
+      "shipment_id": 62,
+      "status": "pending",
+      "tracking_number": null,
+      "tracking_url": null,
+      "label_url": null,
+      "label_kind": "carrier",
+      "topic": "shipment:62"
+    }
+  ],
+  "form_fill_id": null,
+  "events": [
+    { "at": 1793749900, "kind": "order.created", "text": "Order placed", "leg": null },
+    { "at": 1793749960, "kind": "order.paid", "text": "Paid $61.50 (test mode)", "leg": null },
+    { "at": 1793750010, "kind": "order.label_purchasing", "text": "Buying FedEx labels", "leg": "outbound" },
+    {
+      "at": 1793750280,
+      "kind": "order.needs_staff",
+      "text": "FedEx ship timed out after send (failed_unknown): check the FedEx account before retrying.",
+      "leg": "outbound"
+    }
+  ],
+  "receipt": {
+    "paid_at": 1793749960,
+    "receipt_url": null,
+    "refunded": false
+  },
+  "actions": [],
+  "topic": "billing:cust_demo02",
+  "customer_ref": "cust_demo02"
+}

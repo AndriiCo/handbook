@@ -15,6 +15,7 @@
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import TagIcon from '@lucide/svelte/icons/tag';
+	import PackageIcon from '@lucide/svelte/icons/package';
 	import PhoneIcon from '@lucide/svelte/icons/phone';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SearchIcon from '@lucide/svelte/icons/search';
@@ -50,7 +51,10 @@
 		},
 		{
 			label: 'Commerce',
-			items: [{ label: 'Labels', href: resolve('/(admin)/labels'), icon: TagIcon, keywords: 'fedex usps postage' }]
+			items: [
+				{ label: 'Orders', href: resolve('/(admin)/staff-orders'), icon: PackageIcon, keywords: 'orders fulfilment kit refund stripe' },
+				{ label: 'Labels', href: resolve('/(admin)/labels'), icon: TagIcon, keywords: 'fedex usps postage' }
+			]
 		},
 		{
 			label: 'Comms',

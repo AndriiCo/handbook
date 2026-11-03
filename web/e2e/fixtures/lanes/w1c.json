@@ -1,0 +1,35 @@
+{
+  "routes": {
+    "/staff-orders": {
+      "name": "w1c-orders",
+      "ready": "ord_k2Lp9vW3sQ",
+      "build": "admin"
+    },
+    "/staff-orders?order=ord_k2Lp9vW3sQ": {
+      "name": "w1c-order-needs-staff",
+      "ready": "Buying FedEx labels",
+      "build": "admin"
+    },
+    "/staff-orders?status=to_pack&order=ord_m4Rt7yU2pX": {
+      "name": "w1c-order-packing",
+      "ready": "9400100000000000000071",
+      "build": "admin"
+    }
+  },
+  "api": [
+    { "path": "^/apostille/api/v1/admin/orders$", "fixture": "admin-orders.json" },
+    { "path": "^/apostille/api/v1/admin/orders/ord_k2Lp9vW3sQ$", "fixture": "admin-order-ord_k2Lp9vW3sQ.json" },
+    { "path": "^/apostille/api/v1/admin/orders/ord_m4Rt7yU2pX$", "fixture": "admin-order-ord_m4Rt7yU2pX.json" },
+    {
+      "method": "POST",
+      "path": "^/apostille/api/v1/admin/orders/ord_m4Rt7yU2pX/advance$",
+      "json": { "id": "ord_m4Rt7yU2pX", "status": "shipped" }
+    },
+    {
+      "method": "POST",
+      "path": "^/apostille/api/v1/admin/orders/[^/]+/refund$",
+      "status": 503,
+      "json": { "error": "payments not configured" }
+    }
+  ]
+}
