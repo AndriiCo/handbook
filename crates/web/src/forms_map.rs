@@ -40,7 +40,8 @@ const TYPES: &[&str] = &["text", "date", "number", "checkbox", "select"];
 /// Function words a lone label quote may not be (they ground nothing).
 const STOPWORDS: &[&str] = &[
     "the", "a", "an", "of", "to", "and", "or", "for", "in", "on", "by", "at", "is", "be", "if",
-    "no", "yes",
+    "no", "yes", "any", "all", "not", "are", "your", "this", "that", "with", "from", "please",
+    "form",
 ];
 const MAX_FILL_VALUE: usize = 200;
 
@@ -80,9 +81,10 @@ fn guard_field(
     // common case on request forms (re-review #2), so only an empty,
     // 1-2 char or function-word quote is refused. The visitor label
     // stays a plain-language paraphrase shown next to this quote.
-    let one_word = q.split_whitespace().count() == 1;
+    // A quote made only of function words grounds nothing, whatever its
+    // length ("of the", "if any"; re-review of P349 #8).
     if q.len() < 3
-        || (one_word && STOPWORDS.contains(&q.as_str()))
+        || q.split_whitespace().all(|w| STOPWORDS.contains(&w))
         || !format!(" {text_norm} ").contains(&format!(" {q} "))
     {
         return Err(format!("{name}: label quote is not in the PDF's text"));
@@ -584,6 +586,20 @@ pub fn fill_values(raw: &BTreeMap<String, Value>) -> Result<BTreeMap<String, Str
     Ok(out)
 }
 
+/// `YYYY-MM-DD` as `(year, month, day)` string slices.
+fn iso_date(v: &str) -> Option<(&str, &str, &str)> {
+    let b = v.as_bytes();
+    let shape = b.len() == 10
+        && b.iter().enumerate().all(|(i, c)| {
+            if i == 4 || i == 7 {
+                *c == b'-'
+            } else {
+                c.is_ascii_digit()
+            }
+        });
+    shape.then(|| (&v[..4], &v[5..7], &v[8..10]))
+}
+
 fn fill_id() -> String {
     use rand::Rng as _;
     const ALPHABET: &[u8] = b"abcdefghijkmnopqrstuvwxyz23456789";
@@ -682,7 +698,7 @@ async fn fill(
         )
             .into_response();
     }
-    let values = match fill_values(&body.values) {
+    let mut values = match fill_values(&body.values) {
         Ok(v) => v,
         Err(e) => {
             return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))).into_response();
@@ -698,13 +714,45 @@ async fn fill(
         )
             .into_response();
     }
+    // Date boxes printed shorter than an ISO date take the form's compact
+    // US order: MaxLen 8 → MMDDYYYY, 6 → MMDDYY (the date picker always
+    // posts YYYY-MM-DD; re-review of P349 #2).
+    for f in &mapped {
+        let (Some(name), Some(max)) = (f["name"].as_str(), f["max_len"].as_u64()) else {
+            continue;
+        };
+        if f["type"] != "date" || max >= 10 {
+            continue;
+        }
+        if let Some(v) = values.get_mut(name)
+            && let Some((y, m, d)) = iso_date(v)
+        {
+            let compact = match max {
+                8..=9 => Some(format!("{m}{d}{y}")),
+                6..=7 => Some(format!("{m}{d}{}", &y[2..])),
+                _ => None,
+            };
+            if let Some(c) = compact {
+                *v = c;
+            }
+        }
+    }
     // Only the validated, normalised values are stored.
     let stored = serde_json::to_string(&values).unwrap_or_default();
     let Ok((_, bytes)) = capture_pdf(&store, &conn, capture_id) else {
         return store_unavailable();
     };
-    let pdf = match tokio::task::spawn_blocking(move || forms::acro::fill_flatten(&bytes, &values))
-        .await
+    let pdf = match tokio::task::spawn_blocking(move || {
+        // The form computes or locks read-only fields: a map accepted
+        // before the compose-time drop may still list one, so its value
+        // is left out rather than failing every fill (re-review of P349 #9).
+        let mut values = values;
+        if let Ok(acro) = forms::acro::fields(&bytes) {
+            values.retain(|k, _| !acro.iter().any(|f| f.read_only && &f.name == k));
+        }
+        forms::acro::fill_flatten(&bytes, &values)
+    })
+    .await
     {
         Ok(r) => r,
         Err(_) => return store_unavailable(),
@@ -818,6 +866,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn iso_dates_split_only_when_well_formed() {
+        assert_eq!(iso_date("2026-11-04"), Some(("2026", "11", "04")));
+        assert_eq!(iso_date("2026/11/04"), None);
+        assert_eq!(iso_date("2026-11-4"), None);
+        assert_eq!(iso_date("２０２６-11-04"), None);
+    }
+
+    #[test]
     fn one_word_labels_ground_and_read_only_fields_drop() {
         // Re-review #2/#7: Name, Date, Signature are the common labels.
         let text = norm("Name: ____ Date: ____ Signature: ____ Total amount enclosed: ____ the");
@@ -842,6 +898,11 @@ mod tests {
             "a function word grounds nothing"
         );
         assert!(guard_field(&raw("Name", "Na"), &acro, &text).is_err());
+        // Re-review of P349 #8: filler phrases of any length ground nothing.
+        let filler = norm("Name of the applicant, if any, please sign this form");
+        assert!(guard_field(&raw("Name", "of the"), &acro, &filler).is_err());
+        assert!(guard_field(&raw("Name", "if any"), &acro, &filler).is_err());
+        assert!(guard_field(&raw("Name", "Name of the applicant"), &acro, &filler).is_ok());
         assert!(
             guard_field(&raw("Name", "Address"), &acro, &text).is_err(),
             "not in the text"

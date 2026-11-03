@@ -1066,7 +1066,9 @@ pub mod keys {
     pub const ORDERS_CURRENCY: &str = "orders.currency";
     /// Ship-from (kit fulfilment) address as one JSON object.
     pub const ORDERS_SHIP_FROM: &str = "orders.ship_from";
-    /// Max paid orders per UTC day. Default 20.
+    /// Soft cap on paid orders per UTC day (default 20): once this many
+    /// payments are captured today in the current mode, checkout opens no
+    /// new session; sessions already open may still complete.
     pub const ORDERS_DAILY_CAP: &str = "orders.daily_cap";
     /// Max total per order, in cents. Default 15000.
     pub const ORDERS_MAX_ORDER_CENTS: &str = "orders.max_order_cents";

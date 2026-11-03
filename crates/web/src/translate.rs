@@ -153,6 +153,9 @@ pub struct ProtectedSpan {
     pub kind: ProtectedKind,
     pub text: String,
     pub digits: String,
+    /// Canonical clock times (`H:MM`) when this number span is a time
+    /// or an hour range; empty otherwise.
+    pub clock: Vec<String>,
 }
 
 /// Street suffixes that close an address span (case-insensitive,
@@ -296,6 +299,7 @@ pub fn protected_spans(text: &str) -> Vec<ProtectedSpan> {
             kind: ProtectedKind::PoBox,
             text: text[s..e].to_string(),
             digits,
+            clock: Vec::new(),
         });
         used.push((s, e));
     }
@@ -323,6 +327,7 @@ pub fn protected_spans(text: &str) -> Vec<ProtectedSpan> {
                 kind: ProtectedKind::Money(*sym),
                 text: text[*s..*e].to_string(),
                 digits: digits.clone(),
+                clock: Vec::new(),
             });
             used.push((*s, *e));
         }
@@ -380,6 +385,7 @@ pub fn protected_spans(text: &str) -> Vec<ProtectedSpan> {
             kind: ProtectedKind::Street,
             text: text[*s..end].to_string(),
             digits: digits.clone(),
+            clock: Vec::new(),
         });
         used.push((*s, end));
     }
@@ -392,6 +398,7 @@ pub fn protected_spans(text: &str) -> Vec<ProtectedSpan> {
             kind: ProtectedKind::Number,
             text: text[*s..*e].to_string(),
             digits: digits.clone(),
+            clock: token_clocks(text, *s, *e),
         });
         used.push((*s, *e));
     }
@@ -437,72 +444,110 @@ fn number_tokens(hay: &str) -> Vec<(usize, usize, String)> {
     out
 }
 
-fn is_range_sep(c: char) -> bool {
-    matches!(c, '-' | '/' | '\u{2013}' | '\u{2014}')
+fn is_dash(c: char) -> bool {
+    matches!(c, '-' | '\u{2013}' | '\u{2014}')
 }
 
-/// Digits of each side of a range/compound token (`8:00-4:30` →
-/// `800`, `430`; `98504-0228` → `98504`, `0228`); one entry when the
-/// token has no range separator.
-fn range_parts(raw: &str) -> Vec<String> {
-    raw.split(is_range_sep)
-        .map(|p| p.chars().filter(char::is_ascii_digit).collect::<String>())
-        .filter(|d| !d.is_empty())
+/// `H` or `H:MM` (hour ≤ 24, minutes < 60) as a canonical `H:MM`.
+fn clock(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let (h, m) = raw.split_once(':').unwrap_or((raw, "00"));
+    let digits = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
+    if !digits(h) || h.len() > 2 || !digits(m) || m.len() != 2 {
+        return None;
+    }
+    let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+    (h <= 24 && m < 60).then(|| format!("{h}:{m:02}"))
+}
+
+/// An am/pm marker right after byte `pos`: `8 AM`, `8 a.m.`, `8pm`.
+fn meridiem_after(text: &str, pos: usize) -> bool {
+    let rest = text
+        .get(pos..)
+        .unwrap_or("")
+        .trim_start_matches([' ', '\t', '\u{A0}', '\u{202F}']);
+    let b: Vec<u8> = rest
+        .bytes()
+        .take(4)
+        .map(|b| b.to_ascii_lowercase())
+        .collect();
+    let word_end = |i: usize| b.get(i).is_none_or(|c| !c.is_ascii_alphabetic());
+    ((b.starts_with(b"am") || b.starts_with(b"pm")) && word_end(2))
+        || b.starts_with(b"a.m")
+        || b.starts_with(b"p.m")
+}
+
+/// The clock times one number token writes, canonical `H:MM`: an
+/// `H:MM` token, a bare hour followed by am/pm, or both ends of an hour
+/// range (`9-5`, `8:00-4:30`). Empty for anything else — counts, dates
+/// (`7/1/2024`), phone numbers, ZIPs (re-review of P349 #0/#1).
+fn token_clocks(text: &str, s: usize, e: usize) -> Vec<String> {
+    let raw = &text[s..e];
+    let sides: Vec<&str> = raw.split(is_dash).collect();
+    let Some(clocks) = sides
+        .iter()
+        .map(|p| clock(p))
+        .collect::<Option<Vec<String>>>()
+    else {
+        return Vec::new();
+    };
+    match clocks.len() {
+        2 => clocks,
+        1 if raw.contains(':') || meridiem_after(text, e) => clocks,
+        _ => Vec::new(),
+    }
+}
+
+/// Every clock time `text` writes.
+fn clock_times(text: &str) -> Vec<String> {
+    number_tokens(text)
+        .into_iter()
+        .flat_map(|(s, e, _)| token_clocks(text, s, e))
         .collect()
 }
 
-/// The hour of an on-the-hour time (`8:00` → `8`), so `8 AM` and
-/// `8:00 a.m.` ground each other; never for `4:30`.
-fn whole_hour(raw: &str) -> Option<String> {
-    let (h, m) = raw.trim().split_once(':')?;
-    (m == "00" && !h.is_empty() && h.len() <= 2 && h.bytes().all(|b| b.is_ascii_digit()))
-        .then(|| h.to_string())
-}
-
-/// Every digit string `hay` grounds: each whole token, each side of a
-/// range token, and the hour of an `H:00` time.
-fn grounded_numbers(hay: &str) -> Vec<String> {
+/// Whole number tokens of `hay`, plus the five-digit head of a ZIP+4
+/// (`98504-0228` grounds `98504`).
+fn plain_numbers(hay: &str) -> Vec<String> {
     let mut out = Vec::new();
     for (s, e, d) in number_tokens(hay) {
         let raw = &hay[s..e];
-        out.push(d);
-        for part in raw.split(is_range_sep) {
-            let digits: String = part.chars().filter(char::is_ascii_digit).collect();
-            if !digits.is_empty() {
-                out.push(digits);
-            }
-            if let Some(h) = whole_hour(part) {
-                out.push(h);
-            }
+        let zip4 = raw.len() == 10
+            && raw.as_bytes()[5] == b'-'
+            && raw
+                .bytes()
+                .enumerate()
+                .all(|(i, b)| i == 5 || b.is_ascii_digit());
+        if zip4 {
+            out.push(raw[..5].to_string());
         }
+        out.push(d);
     }
     out
 }
 
-/// True when `hay` grounds `digits` as a whole number — `15` never
-/// matches inside `150`, nor `4022` inside `40228` (review P338 #4: the
-/// old substring scan accepted both) — or as one side of a range
-/// (`98504` in `98504-0228`, `800` in `8:00-4:30`) or the hour of an
-/// `H:00` time.
+/// True when `hay` holds a whole number token with exactly `digits` —
+/// `15` never matches inside `150`, nor `4022` inside `40228` (review
+/// P338 #4: the old substring scan accepted both) — or a ZIP+4 whose
+/// head is `digits`.
 fn contains_digit_run(hay: &str, digits: &str) -> bool {
-    digits.is_empty() || grounded_numbers(hay).iter().any(|d| d == digits)
+    digits.is_empty() || plain_numbers(hay).iter().any(|d| d == digits)
 }
 
-/// A number span of the original survives in `hay`: as a whole, or —
-/// for a range span (`9-5`, `8:00-4:30`) — side by side; an `H:00`
-/// span also survives as its bare hour (`8:00` ~ `8 AM`).
-fn number_grounded(hay: &str, span_text: &str, digits: &str) -> bool {
-    if contains_digit_run(hay, digits) {
+/// A number span of the original survives in `hay`: as a whole token,
+/// or — when the span is a clock time or an hour range — as the same
+/// clock time(s) written any way (`8:00 a.m.` ~ `8 AM`, `9-5` ~
+/// `9 AM to 5 PM`, `8:00 AM to 4:30 PM` ~ `8:00-4:30`). A count never
+/// grounds against a time, nor a time against a count.
+fn number_grounded(hay: &str, span: &ProtectedSpan) -> bool {
+    if contains_digit_run(hay, &span.digits) {
         return true;
     }
-    let parts = range_parts(span_text);
-    if parts.len() > 1 {
-        return span_text.split(is_range_sep).zip(&parts).all(|(raw, d)| {
-            contains_digit_run(hay, d)
-                || whole_hour(raw).is_some_and(|h| contains_digit_run(hay, &h))
-        });
+    if span.clock.is_empty() {
+        return false;
     }
-    whole_hour(span_text).is_some_and(|h| contains_digit_run(hay, &h))
+    let times = clock_times(hay);
+    span.clock.iter().all(|c| times.contains(c))
 }
 
 /// True when `hay` holds `digits` as a whole token next to `sym`
@@ -556,7 +601,7 @@ pub fn guard_ok(original: &str, translated: &str) -> bool {
     protected_spans(original)
         .into_iter()
         .all(|span| match span.kind {
-            ProtectedKind::Number => number_grounded(translated, &span.text, &span.digits),
+            ProtectedKind::Number => number_grounded(translated, &span),
             // Dollars compare by value (`$1,500` never grounds `$15.00`,
             // `15,00 $` grounds `$15.00`); other symbols by digits.
             ProtectedKind::Money('$') => match cents_of(&span.text) {
@@ -1300,12 +1345,8 @@ mod tests {
         assert!(!contains_digit_run("Mail to PO Box 40228", "4022"));
         assert!(contains_digit_run("open 8:00 AM to 4:30 PM", "800"));
         assert!(
-            contains_digit_run("open 8:00 AM to 4:30 PM", "8"),
-            "8 AM is 8:00 (on the hour)"
-        );
-        assert!(
-            !contains_digit_run("open 8:00 AM to 4:30 PM", "4"),
-            "4 PM is not 4:30"
+            !contains_digit_run("open 8:00 AM to 4:30 PM", "8"),
+            "8 is not 8:00 (clock times match only through guard_ok)"
         );
         assert!(
             contains_digit_run("25 000 personas", "25000"),
@@ -1343,6 +1384,55 @@ mod tests {
         assert!(!guard_ok("8:00 AM to 4 PM", "8:00-4:30"));
         assert!(!guard_ok("PO Box 4022", "PO Box 40228"));
         assert!(!guard_ok("Fee $15", "Fee $150"));
+    }
+
+    #[test]
+    fn counts_never_ground_against_times_dates_or_phones() {
+        // Re-review of P349 #0: a bare count is not an on-the-hour time.
+        assert!(!guard_ok(
+            "Get it back in 8 days.",
+            "Open 8:00 AM to 4:30 PM"
+        ));
+        assert!(!guard_ok("Bring 8 copies.", "Open 8:00 a.m."));
+        assert!(!guard_ok(
+            "Mail it to PO Box 8.",
+            "PO Box 4000; open 8:00 AM"
+        ));
+        assert!(!guard_ok(
+            "Closes at 12:00 on Fridays.",
+            "Limit 12 documents per request."
+        ));
+        assert!(!guard_ok(
+            "Allow 3 business days. Open 8:00 a.m. to 3:00 p.m.",
+            "Prevea 5 días hábiles. Abierto de 8:00 a 3:00."
+        ));
+        assert!(!guard_ok(
+            "Allow 10 business days. Open 7:00 a.m.",
+            "Prevea 7 días hábiles. Abierto a las 10:00."
+        ));
+        // #1: dates, phone numbers and count ranges are not split.
+        assert!(!guard_ok(
+            "Allow 7 business days.",
+            "As of 7/1/2024 requests take 10 business days."
+        ));
+        assert!(!guard_ok(
+            "Allow 1 business day.",
+            "Effective 1/1/2025 the fee is $15."
+        ));
+        assert!(!guard_ok("Processing takes 725 days", "Call 360-725-0377"));
+        assert!(!guard_ok(
+            "Allow 5 business days.",
+            "Hours 9-5, processing 15 business days"
+        ));
+        assert!(!guard_ok(
+            "Processing takes 3 business days.",
+            "Processing takes 3-5 business days."
+        ));
+        // A faithful translation of a time still passes.
+        assert!(guard_ok(
+            "Allow 3 business days. Open 8:00 a.m. to 3:00 p.m.",
+            "Prevea 3 días hábiles. Abierto de 8:00 a 3:00."
+        ));
     }
 
     #[test]

@@ -1302,9 +1302,9 @@ async fn checkout(
         })
         .and_then(|v| v.trim().parse::<i64>().ok())
         .unwrap_or(20);
-    // The cap counts captured payments in this mode (abandoned
-    // sessions never consume it, re-review #1); one customer may hold
-    // at most two open sessions, which bounds the overshoot.
+    // A soft cap: once this many payments were captured today in this
+    // mode, no new checkout opens (sessions already open may still
+    // complete). Abandoned sessions never consume it (re-review #1).
     let today: i64 = p2
         .query_row(
             "SELECT COUNT(*) FROM order_payment WHERE status = 'paid' AND paid_at >= ?1 AND livemode = ?2",
@@ -1314,21 +1314,6 @@ async fn checkout(
         .unwrap_or(i64::MAX);
     if total > max || today >= cap {
         return paused();
-    }
-    let open_sessions: i64 = p2
-        .query_row(
-            "SELECT COUNT(*) FROM order_payment p JOIN customer_order o ON o.id = p.order_id
-             WHERE o.customer_ref = ?1 AND p.status = 'open' AND p.order_id != ?2 AND p.created_at >= ?3",
-            rusqlite::params![customer_ref, id, now - SESSION_TTL_SECS],
-            |r| r.get(0),
-        )
-        .unwrap_or(i64::MAX);
-    if open_sessions >= 2 {
-        return err(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many open checkouts",
-            Some("Finish or close your other checkout first."),
-        );
     }
     // Claim first: only one checkout can move quoted → awaiting_payment.
     if !set_status(&p2, &id, "quoted", "awaiting_payment", now) {

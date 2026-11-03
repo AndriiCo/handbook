@@ -2084,11 +2084,20 @@ mod tests {
     }
 
     fn demo_run_request(sample: &str) -> Request<Body> {
+        demo_run_request_from(sample, demo_addr())
+    }
+
+    /// The precheck limiter is process-global: a test that drains a
+    /// bucket uses its own peer address.
+    fn demo_run_request_from(
+        sample: &str,
+        addr: axum::extract::ConnectInfo<std::net::SocketAddr>,
+    ) -> Request<Body> {
         Request::builder()
             .uri("/apostille/api/v1/demo/precheck")
             .method("POST")
             .header("content-type", "application/json")
-            .extension(demo_addr())
+            .extension(addr)
             .body(Body::from(
                 serde_json::json!({"sample": sample}).to_string(),
             ))
@@ -2143,6 +2152,7 @@ mod tests {
     #[tokio::test]
     async fn demo_precheck_serves_recording_and_limits() {
         let fx = fixture();
+        let own = || axum::extract::ConnectInfo("127.0.0.42:9".parse().unwrap());
         let dir = fx.state.store_root.join("demo_precheck");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -2160,7 +2170,7 @@ mod tests {
         let app = session_app(&fx.state.store_root);
         let res = app
             .clone()
-            .oneshot(demo_run_request("syn-doc-clean"))
+            .oneshot(demo_run_request_from("syn-doc-clean", own()))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
@@ -2176,13 +2186,13 @@ mod tests {
         for _ in 0..9 {
             let res = app
                 .clone()
-                .oneshot(demo_run_request("syn-doc-clean"))
+                .oneshot(demo_run_request_from("syn-doc-clean", own()))
                 .await
                 .unwrap();
             assert_eq!(res.status(), StatusCode::OK);
         }
         let res = app
-            .oneshot(demo_run_request("syn-doc-clean"))
+            .oneshot(demo_run_request_from("syn-doc-clean", own()))
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);

@@ -57,6 +57,9 @@ pub struct PrecheckBody {
 }
 
 /// `POST /api/v1/demo/precheck {"sample": id}`.
+static PRECHECK_LIMITS: std::sync::LazyLock<passkey::RateBuckets> =
+    std::sync::LazyLock::new(passkey::RateBuckets::default);
+
 pub async fn run(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -69,11 +72,11 @@ pub async fn run(
         )
             .into_response();
     }
-    let ip = passkey::client_ip(addr);
-    if !state
-        .demo_limits
-        .check(&format!("dp:{ip}"), unix_now(), 10, 60)
-    {
+    // A model-free read: its own map (a flood never fills the
+    // demo-login map), keyed per IPv4 / IPv6 /64, admitting newcomers
+    // when full (re-review of P349 #5).
+    let ip = crate::admin_ip::rate_key(Some(addr.ip()));
+    if !PRECHECK_LIMITS.check_read(&format!("dp:{ip}"), unix_now(), 10, 60) {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(json!({"error": "too many precheck runs — wait a minute"})),

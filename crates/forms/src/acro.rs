@@ -140,6 +140,9 @@ fn walk(
             .iter()
             .filter_map(|w| w.as_reference().ok())
             .collect();
+        // A widget listed twice is drawn once (re-review of P349 #11).
+        ids.sort();
+        ids.dedup();
         if ids.is_empty() && d.get(b"Rect").is_ok() {
             ids.push(*id); // merged field + widget
         }
@@ -178,6 +181,7 @@ pub fn fields(bytes: &[u8]) -> Result<Vec<AcroField>, AcroError> {
     for r in &roots {
         walk(&doc, r, "", &mut terminal, 0, &mut seen);
     }
+    too_many_widgets(&terminal)?;
     let mut out = Vec::new();
     for (name, widgets, field_id) in terminal {
         let Ok(d) = doc.get_dictionary(field_id) else {
@@ -409,6 +413,20 @@ fn text_em(text: &str) -> f32 {
     text.chars().map(char_em).sum::<f32>() * 1.03
 }
 
+/// Real forms carry tens to a few hundred widgets; a crafted PDF with
+/// millions would pin a fill thread (re-review of P349 #11).
+const MAX_WIDGETS: usize = 5_000;
+
+fn too_many_widgets<T, U>(terminal: &[(T, Vec<U>, ObjectId)]) -> Result<(), AcroError> {
+    let n: usize = terminal.iter().map(|(_, w, _)| w.len().max(1)).sum();
+    if n > MAX_WIDGETS {
+        return Err(AcroError(
+            "this form has too many fields to fill".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Smallest font size a fill prints at; a value that does not fit at
 /// this size is refused, never clipped.
 const MIN_SIZE: f32 = 5.0;
@@ -482,6 +500,7 @@ pub fn fill_flatten(bytes: &[u8], values: &BTreeMap<String, String>) -> Result<V
     for r in &roots {
         walk(&doc, r, "", &mut terminal, 0, &mut seen);
     }
+    too_many_widgets(&terminal)?;
     // Widget → page from the pages' own /Annots (authoritative); /P
     // only as a fallback.
     let mut page_of: BTreeMap<ObjectId, ObjectId> = BTreeMap::new();
@@ -588,6 +607,12 @@ pub fn fill_flatten(bytes: &[u8], values: &BTreeMap<String, String>) -> Result<V
                             })
                             .filter(|s| *s > 0.0);
                         let (w_pts, h_pts) = (rect[2] - rect[0] - 4.0, rect[3] - rect[1]);
+                        // A widget too small to show text (a zero-size data
+                        // holder, a sliver) draws nothing instead of failing
+                        // the whole fill (re-review of P349 #7).
+                        if !(w_pts > 0.0 && h_pts >= 1.0) {
+                            continue;
+                        }
                         let multiline = ff & (1 << 12) != 0;
                         let comb = (ff & (1 << 24) != 0)
                             .then_some(field.max_len)
