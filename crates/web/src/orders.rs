@@ -142,6 +142,11 @@ impl UsAddress {
 }
 
 fn is_zip(s: &str) -> bool {
+    // ASCII only: byte slicing below must never split a UTF-8 char
+    // (a customer-typed "1234é" once aborted the process).
+    if !s.is_ascii() {
+        return false;
+    }
     let (five, rest) = s.split_at(s.len().min(5));
     five.len() == 5
         && five.bytes().all(|b| b.is_ascii_digit())
@@ -168,7 +173,8 @@ pub fn us_address_in(text: &str) -> Option<UsAddress> {
         }
         let city = parts[i - 1].rsplit(['.', ':']).next().unwrap_or("").trim();
         let raw = parts[i - 2];
-        let lower = raw.to_lowercase();
+        // ASCII lowercase keeps byte offsets identical to `raw`.
+        let lower = raw.to_ascii_lowercase();
         let start = lower
             .find("po box")
             .or_else(|| lower.find("p.o. box"))
@@ -1370,6 +1376,25 @@ mod tests {
             topic: topic.into(),
             text: text.into(),
         }
+    }
+
+    #[test]
+    fn non_ascii_input_never_panics() {
+        assert!(!is_zip("1234é"));
+        assert!(!is_zip("é"));
+        assert!(!is_zip("98501-é234"));
+        assert!(us_address_in("İİİ at PO Box 4000, Olympia, WA 98504").is_some());
+        assert!(us_address_in("Hà Nội, Đống Đa, VN 100000").is_none());
+        let bad = ReturnTo {
+            name: "A".into(),
+            line1: "1 A St".into(),
+            line2: None,
+            city: "B".into(),
+            region: "WA".into(),
+            postal_code: "1234é".into(),
+            country: "US".into(),
+        };
+        assert!(!bad.valid());
     }
 
     #[test]

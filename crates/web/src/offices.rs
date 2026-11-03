@@ -87,7 +87,8 @@ fn written_in(needle: &str, hay: &str) -> bool {
 fn minutes(t: &str) -> Option<u32> {
     let (h, m) = t.split_once(':')?;
     let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
-    (h < 24 && m < 60 && t.len() == 5).then_some(h * 60 + m)
+    // Lazy: an absurd model value must fail the check, not overflow.
+    (h < 24 && m < 60 && t.len() == 5).then(|| h * 60 + m)
 }
 
 /// The ways a time may be written in source text (`16:30` → `4:30`,
@@ -167,7 +168,8 @@ fn days_written(days: &[String], text: &str) -> bool {
 
 /// `PO Box N` written in `text`, normalized.
 fn po_box_in(text: &str) -> Option<String> {
-    let lower = text.to_lowercase();
+    // ASCII lowercase: the index slices `text` below.
+    let lower = text.to_ascii_lowercase();
     let i = lower.find("po box").or_else(|| lower.find("p.o. box"))?;
     let rest = &text[i..];
     let digits: String = rest
@@ -946,6 +948,16 @@ mod tests {
         assert_eq!(
             failed,
             ["address_ok", "po_box_from_text", "hours_ok", "timezone"]
+        );
+    }
+
+    #[test]
+    fn absurd_model_values_never_panic() {
+        assert_eq!(minutes("4294967295:00"), None);
+        assert_eq!(minutes("99:99"), None);
+        assert_eq!(
+            po_box_in("İİ Mail to PO Box 40228"),
+            Some("PO Box 40228".into())
         );
     }
 

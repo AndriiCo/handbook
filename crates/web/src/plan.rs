@@ -257,7 +257,7 @@ fn dollars(cents: i64) -> String {
     if cents % 100 == 0 {
         format!("${}", cents / 100)
     } else {
-        format!("${}.{:02}", cents / 100, (cents % 100).abs())
+        format!("${}.{:02}", cents / 100, (cents % 100).unsigned_abs())
     }
 }
 
