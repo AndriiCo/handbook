@@ -1,7 +1,7 @@
 //! `cargo xtask judge`: the one command a hackathon judge runs on a
 //! fresh clone (macOS or Linux, Rust + Node) to get a working local
 //! copy — public site on http://localhost:18318/apostille, admin on
-//! http://localhost:18319 — with no keys, synthetic data and recorded
+//! http://localhost:18319 (`--port-base N` moves both) — with no keys, synthetic data and recorded
 //! Meta model responses (`--live` drafts through the judge's own
 //! `META_API_KEY` instead).
 //!
@@ -20,7 +20,6 @@ use std::process::Command;
 /// Free disk the first build needs (release target + node_modules +
 /// both SPAs + the store), with headroom.
 const MIN_FREE_GB: u64 = 6;
-const PORTS: [u16; 2] = [18318, 18319];
 /// `web/package.json` engines.
 const NODE_MIN_MAJOR: u64 = 24;
 const NPM_MIN_MAJOR: u64 = 11;
@@ -34,6 +33,10 @@ struct Problem {
 /// Entry point (the builder wires the `judge` arm in `main.rs`).
 pub fn run(args: &[String]) {
     let doctor_only = args.iter().any(|a| a == "--doctor");
+    if let Err(e) = crate::up::apply_port_base(args) {
+        eprintln!("judge: {e}");
+        std::process::exit(2);
+    }
     println!("judge: checking prerequisites (nothing is installed for you)");
     let problems = doctor();
     if !problems.is_empty() {
@@ -97,7 +100,7 @@ fn doctor() -> Vec<Problem> {
         }),
         Some(_) => {}
     }
-    for port in PORTS {
+    for port in [crate::up::public_port(), crate::up::admin_port()] {
         if TcpListener::bind(("127.0.0.1", port)).is_err() {
             problems.push(Problem {
                 what: format!("port {port} is in use on 127.0.0.1"),

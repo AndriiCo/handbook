@@ -33,9 +33,9 @@ const STORE_DIR: &str = ".local/store";
 const KEK_FILE: &str = ".local/handbook-kek";
 /// Remembers the lockfile hash the last `npm ci` installed.
 const NCI_HASH_FILE: &str = ".local/.npm-ci-hash";
-/// Ports match the staging runbook (operator forwards these over SSH).
-const PUBLIC_PORT: u16 = 18318;
-const ADMIN_PORT: u16 = 18319;
+/// Default ports match the staging runbook (operator forwards these
+/// over SSH); `--port-base N` serves public on N and admin on N+1.
+const DEFAULT_PORT_BASE: u16 = 18318;
 /// Synthetic A2 verdicts committed for local boots.
 const VERDICTS_SRC: &str = "evals/captures/demo_precheck";
 
@@ -52,6 +52,32 @@ fn env_label() -> &'static str {
     ENV_LABEL.get().copied().unwrap_or("local")
 }
 
+/// Public port; admin is the next one (`--port-base`, first set wins).
+static PORT_BASE: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
+
+pub fn public_port() -> u16 {
+    PORT_BASE.get().copied().unwrap_or(DEFAULT_PORT_BASE)
+}
+
+pub fn admin_port() -> u16 {
+    public_port() + 1
+}
+
+/// Read `--port-base N` (1024-65534, so N+1 is a valid port) and
+/// remember it; `xtask judge` calls this before its doctor.
+pub fn apply_port_base(args: &[String]) -> Result<(), String> {
+    let Some(i) = args.iter().position(|a| a == "--port-base") else {
+        return Ok(());
+    };
+    let base = args
+        .get(i + 1)
+        .and_then(|v| v.parse::<u16>().ok())
+        .filter(|b| (1024..=65534).contains(b))
+        .ok_or("--port-base needs a port from 1024 to 65534")?;
+    let _ = PORT_BASE.set(base);
+    Ok(())
+}
+
 /// Entry point (the builder wires the `up` arm in `main.rs`).
 pub fn run(args: &[String]) {
     let live = has(args, "--live");
@@ -59,6 +85,7 @@ pub fn run(args: &[String]) {
     let check = has(args, "--check");
     let archive = archive_arg(args).unwrap_or_else(|| usage());
     check_flags(args);
+    apply_port_base(args).unwrap_or_else(|e| fail(&e));
     assert_repo_root();
     check_toolchain();
     if fresh && Path::new(".local").exists() {
@@ -122,7 +149,7 @@ pub fn run(args: &[String]) {
     }
     let setup_key = setup_key_mint(&xtask);
     let cfg = load_runtime_config();
-    let review_link = match staff_review_link(cfg.bind, cfg.bind6, ADMIN_PORT) {
+    let review_link = match staff_review_link(cfg.bind, cfg.bind6, admin_port()) {
         Ok(link) => link,
         Err(e) => fail(&format!("staff login link refused: {e}")),
     };
@@ -136,7 +163,7 @@ pub fn run(args: &[String]) {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo xtask up [--live] [--fresh] [--check] [--from-archive <url|dir> [--country ISO2]]"
+        "usage: cargo xtask up [--live] [--fresh] [--check] [--port-base N] [--from-archive <url|dir> [--country ISO2]]"
     );
     std::process::exit(2);
 }
@@ -176,7 +203,7 @@ fn archive_arg(args: &[String]) -> Option<Option<(String, Option<String>)>> {
 }
 
 fn check_flags(args: &[String]) {
-    const VALUE_FLAGS: [&str; 2] = ["--from-archive", "--country"];
+    const VALUE_FLAGS: [&str; 3] = ["--from-archive", "--country", "--port-base"];
     let mut skip_next = false;
     for arg in args {
         if skip_next {
@@ -456,18 +483,20 @@ fn enroll_if_needed(xtask: &Path) {
 /// browsers; the release dev-seam gate only honors it while every
 /// bind stays loopback.
 fn config_set_all(xtask: &Path) {
-    const SETTINGS: &[(&str, &str, &str)] = &[
+    let (public, admin) = (public_port().to_string(), admin_port().to_string());
+    let origin = format!("http://localhost:{admin}");
+    let settings: [(&str, &str, &str); 9] = [
         ("net.bind", "text", "127.0.0.1"),
-        ("net.port", "text", "18318"),
-        ("net.admin_port", "text", "18319"),
+        ("net.port", "text", &public),
+        ("net.admin_port", "text", &admin),
         ("auth.rp_id", "text", "localhost"),
-        ("auth.origin", "text", "http://localhost:18319"),
+        ("auth.origin", "text", &origin),
         ("paths.static_dir", "text", "crates/web/static"),
         ("paths.spa_dir", "text", "web/build"),
         ("paths.admin_spa_dir", "text", "web/build-admin"),
         ("admin.mtls_off", "bool", "true"),
     ];
-    for (key, kind, value) in SETTINGS {
+    for (key, kind, value) in settings {
         xtask_cmd(
             xtask,
             &[
@@ -1223,16 +1252,16 @@ fn run_check(web: &Path, setup_key: &str, review_link: &str) {
         }
     }
     for (host, port, path, want) in [
-        ("127.0.0.1", PUBLIC_PORT, "/apostille/healthz", "ok"),
+        ("127.0.0.1", public_port(), "/apostille/healthz", "ok"),
         (
             "127.0.0.1",
-            PUBLIC_PORT,
+            public_port(),
             "/apostille/api/v1/authorities",
             "authorities",
         ),
         (
             "127.0.0.1",
-            ADMIN_PORT,
+            admin_port(),
             "/apostille/api/v1/setup/status",
             "setup_required",
         ),
@@ -1272,11 +1301,11 @@ fn child_exited(child: &mut Child) -> bool {
 /// report it. Split for tests: the deadline is a parameter so the
 /// exited-child path proves it returns without waiting it out.
 fn wait_healthy_until(child: &mut Child, deadline: std::time::Instant) -> WaitOutcome {
-    wait_healthy_on(child, deadline, PUBLIC_PORT)
+    wait_healthy_on(child, deadline, public_port())
 }
 
 /// Port-parameterized core: tests pass a provably closed port, so a
-/// live server on the real `PUBLIC_PORT` (staging runs during the
+/// live server on the real public port (staging runs during the
 /// plant gate) can never flip the outcome.
 fn wait_healthy_on(child: &mut Child, deadline: std::time::Instant, port: u16) -> WaitOutcome {
     use std::time::Duration;
@@ -1308,19 +1337,20 @@ fn kill(child: &mut Child) {
 }
 
 fn print_banner(setup_key: &str, review_link: &str) {
+    let (public, admin) = (public_port(), admin_port());
     println!();
     println!("handbook is up (loopback only, synthetic data):");
-    println!("  public:  http://localhost:{PUBLIC_PORT}/apostille");
-    println!("  admin:   http://localhost:{ADMIN_PORT}/");
+    println!("  public:  http://localhost:{public}/apostille");
+    println!("  admin:   http://localhost:{admin}/");
     println!("  review:  {review_link}");
     println!("  setup key (prints ONCE — paste at /config to enrol staff):");
     println!("    {setup_key}");
     println!("try this:");
     println!("  - open the review queue and approve a proposed fact");
-    println!("  - curl -s http://localhost:{PUBLIC_PORT}/apostille/api/v1/authorities");
+    println!("  - curl -s http://localhost:{public}/apostille/api/v1/authorities");
     println!("  - POST {{\"sample\":\"syn-doc-clean\"}} to /apostille/api/v1/demo/precheck");
     if env_label() == "judge" {
-        crate::judge::print_tour(PUBLIC_PORT, ADMIN_PORT);
+        crate::judge::print_tour(public, admin);
     }
     println!();
 }
@@ -1549,6 +1579,16 @@ mod tests {
         );
         assert!(staff_review_link(lan, None, 18319).is_err());
         assert!(staff_review_link(loopback, Some(lan), 18319).is_err());
+    }
+
+    #[test]
+    fn port_base_rejects_ports_without_an_admin_neighbour() {
+        let args = |v: &str| vec!["--port-base".to_string(), v.to_string()];
+        assert!(apply_port_base(&args("65535")).is_err());
+        assert!(apply_port_base(&args("80")).is_err());
+        assert!(apply_port_base(&args("x")).is_err());
+        assert!(apply_port_base(&["--port-base".to_string()]).is_err());
+        assert!(apply_port_base(&[]).is_ok());
     }
 
     #[test]

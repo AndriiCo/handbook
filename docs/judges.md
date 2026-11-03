@@ -12,6 +12,8 @@ You need macOS or Linux (WSL2 is fine), `git`, Rust via
 `rust-toolchain.toml`), Node 24+ with npm 11+, ports 18318 and 18319
 free, and about 6 GB of disk. `cargo xtask judge --doctor` checks all of
 that and prints one exact fix per problem; nothing is installed for you.
+If those ports are taken, `cargo xtask judge --port-base 28318` serves
+the public site on 28318 and the staff console on 28319 instead.
 
 ## What it does
 1. Builds both web apps (public site and staff console) and the release
