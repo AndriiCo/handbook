@@ -479,10 +479,18 @@ mod tests {
         let out = run_job(&GpuProbe, &ctx, &Value::Null, &dir.path().join("gpu.lock")).unwrap();
         let v: Value = serde_json::from_slice(&out.bytes).unwrap();
         assert_eq!(v["held"], true);
-        assert!(
-            try_lock(&dir.path().join("gpu.lock")).unwrap().is_some(),
-            "released after"
-        );
+        // flock belongs to the open file description: a subprocess that
+        // another test forks at this moment shares it until its exec
+        // closes the inherited fd, so allow a brief window for release.
+        let lock = dir.path().join("gpu.lock");
+        let released = (0..40).any(|_| {
+            let free = try_lock(&lock).unwrap().is_some();
+            if !free {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            free
+        });
+        assert!(released, "released after");
     }
 
     #[test]
