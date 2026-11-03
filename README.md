@@ -88,13 +88,13 @@ the U.S., Canada, and Mexico.
 ## What shipped
 
 What is live at <https://andrii.ai/apostille> today (production
-`0.1.0+a999b1b`, deployed 2026-11-03):
+`0.1.0+20abd03`, deployed 2026-11-03):
 
 - **Every Hague party in the index:** search the country-grouped
-  authority index. Release P395–P398 ships the 130 HCCH-party packs
+  authority index of **510 authorities**: the 130 HCCH-party packs
   (501 competent authorities from the HCCH status table, six merged
-  into the curated US dossiers), loaded from admin **Packs**. Until
-  staff load them, production lists the 3 curated authorities.
+  into the curated US dossiers) plus the curated packs, loaded from
+  admin **Packs** on 2026-11-03.
 - **Dossiers:** a step-by-step guide, cited evidence, a "what
   changed" panel per watched source (SA-14), and notice banners
   (`service_notice`), all updating live.
@@ -120,16 +120,14 @@ customer has been charged.
 Promise words are quoted from the hackathon application text
 (2026-10-26). "Live" means served by the production SHA; "(repo)"
 means merged and shipped but waiting on an operator step or data.
-Production is `0.1.0+a999b1b`, scoreboard **6/10** measured
-2026-11-03T23:06Z (`node xtask/ops/scoreboard.mjs`). The red rows:
-- GP2-data and A1: vietnam has 6 of 8 accepted facts (approvals are
-  operator-owned).
+Production is `0.1.0+20abd03`, scoreboard **8/10** measured
+2026-11-03T23:45Z (`node xtask/ops/scoreboard.mjs`). The red rows:
 - GP3: brand logos not placed.
 - S1: licence, video and repo visibility (operator-owned).
 
 | Promised (application words) | Status | Reason / where it stands |
 |---|---|---|
-| Watch 500+ cited URLs, HCCH feed, inbox for authority notices | Delivered (repo) | 478 world watch URLs + 24 curated ship in the release. The sweep keeps every download in the fetch cache, advances past dead URLs, honours weekly cadence, and spaces requests per host (P396, P402). Notices on a watched page are captured even when tiny (`gained_lines`). Live once the world packs are loaded. The F3 email inbox stays partial (the instruct worker reads email captures). |
+| Watch 500+ cited URLs, HCCH feed, inbox for authority notices | Delivered | 478 world watch URLs + 24 curated are loaded on production. The sweep keeps every download in the fetch cache, advances past dead URLs, honours weekly cadence, and spaces requests per host (P396, P402). Notices on a watched page are captured even when tiny (`gained_lines`). The F3 email inbox stays partial (the instruct worker reads email captures). |
 | Muse Spark turns only changes into cited records I approve | Delivered | Changed web captures draft from their added lines only (P394, every 15 min, under `meta.daily_call_cap`). Staff approve in /review; approvals publish live. |
 | Reading English, Spanish or French pages and forms | Partial | Runner drafts from es/fr pages; gold set 30 cases including 4 es/fr. Live rates on all 30 cases: see Eval numbers. Es/fr translation after approval is merged but not wired. |
 | Flag contradictions like Washington's two PO Boxes | Delivered | Conflict banner on the dossier (`crates/web/src/approval.rs`). |
@@ -138,15 +136,16 @@ Production is `0.1.0+a999b1b`, scoreboard **6/10** measured
 | SAM 3.1 masking faces and plates | Delivered | Hosted SAM 3.1 on the precheck path, plus an open-weights SAM 3 drop-in on plant. |
 | Self-hosted Muse Glimmer pre-checks document photos | Delivered (repo) | `precheck.glimmer` worker kind on plant's GPU plus `ops/open-weights/glimmer-serve.sh` (P404). Weights download from the operator-named Hugging Face repo into `/srv/scratch/apostille/models`. Not run yet. |
 | Approved changes reach the handbook and MCP server | Delivered | Accepted-only publish; read-only MCP tool `lookup_authority`. |
-| A new country means new sources, not new code | Delivered | 130 country packs as data (`packs/world/`), validated in ci, loaded from admin Packs with no code change. Non-party countries come from the `research.nonparty` worker job (P392) into `packs/world-nonparty/`. |
-| One source for every country, starting 106 US/CA/MX; prepaid labels and envelopes to your door | Partial | Every Hague party is in the release. Non-parties come from the research job (not yet run). The staff FedEx path now keeps the label PDF, and the request fields are checked against FedEx's docs (P393). The first live label waits on the operator's production keys. Envelope kits are not delivered. |
+| A new country means new sources, not new code | Delivered | 130 country packs as data (`packs/world/`), validated in ci, loaded on production from admin Packs with no code change (510 authorities live). Non-party countries come from the `research.nonparty` worker job (P392) into `packs/world-nonparty/`. |
+| One source for every country, starting 106 US/CA/MX; prepaid labels and envelopes to your door | Partial | Every Hague party is live (510 authorities). Non-parties come from the research job (not yet run). The staff FedEx path now keeps the label PDF, and the request fields are checked against FedEx's docs (P393). The first live label waits on the operator's production keys. Envelope kits are not delivered. |
 | Success criterion: Viet Nam request → completed form + FedEx label, envelopes tomorrow | Partial | The form fill works and the staff label path is ready. No end-to-end Viet Nam order has been run with a real label yet. |
 | Source-changed view (SA-14) | Delivered | Admin capture history plus a line diff; the public "What changed" panel shows added and removed lines per source. It needs two captures of a source, which the daily sweep produces. |
 
 Number provenance (measured 2026-11-03 unless noted):
 
-- Production `0.1.0+a999b1b`, 6/10: measured with the scoreboard
-  after the deploy; before the deploy it was also 6/10.
+- Production `0.1.0+20abd03`, 8/10: measured with the scoreboard
+  before and after the deploy. The count of 510 authorities is from
+  the live `GET /api/v1/authorities`.
 - 501 world authorities in 130 packs, 478 watch URLs: parsed from
   `packs/world/` (pinned by `world_rows_merge_into_curated_dossiers`).
 - Staging with every pack loaded serves 510 authorities and passed
@@ -156,8 +155,8 @@ Number provenance (measured 2026-11-03 unless noted):
 
 ## What's next
 
-- Load the world packs on production and run `research.nonparty` for
-  the non-party countries.
+- Run `research.nonparty` for the non-party countries and load them
+  from Packs.
 - Buy the first live FedEx label on the staff path, then the
   customer-paid path.
 - Run Glimmer on plant once the weights are named.
