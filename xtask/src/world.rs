@@ -1632,7 +1632,11 @@ fn spark_post(
     }
     let mut attempt_no = 0u32;
     loop {
-        cache.admit(&cache_key).map_err(|e| e.to_string())?;
+        if let Err(e) = cache.admit(&cache_key) {
+            // Never leave the key-bearing config behind.
+            let _ = std::fs::remove_file(&cfg_path);
+            return Err(e.to_string());
+        }
         let code = Command::new("curl")
             .args(["-sS", "-m", "300", "-X", "POST", "--config"])
             .arg(&cfg_path)
