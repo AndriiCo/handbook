@@ -1017,7 +1017,7 @@ fn remember_contact(
     kind: &str,
     value: &str,
     details: &str,
-) -> Option<i64> {
+) -> Option<(i64, bool)> {
     let (authority_id, _) = authority(conn, slug).ok()??;
     let existing: Option<i64> = conn
         .query_row(
@@ -1027,8 +1027,8 @@ fn remember_contact(
         )
         .optional()
         .ok()?;
-    if existing.is_some() {
-        return existing;
+    if let Some(id) = existing {
+        return Some((id, false));
     }
     conn.execute(
         "INSERT INTO channel(authority_id, visibility, kind, value, details, purpose)
@@ -1036,7 +1036,7 @@ fn remember_contact(
         rusqlite::params![authority_id, kind, value, details],
     )
     .ok()?;
-    Some(conn.last_insert_rowid())
+    Some((conn.last_insert_rowid(), true))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1082,26 +1082,53 @@ async fn add_contact(
     if found.is_none() {
         return not_found(&slug);
     }
-    let Some(id) = remember_contact(&conn, &slug, &body.kind, &value, &details) else {
+    let Some((id, created)) = remember_contact(&conn, &slug, &body.kind, &value, &details) else {
         return store_unavailable();
     };
-    let _ = conn.execute(
-        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
-         VALUES (?1, ?2, 'channel_add', 'channel', ?3, ?4)",
-        rusqlite::params![
-            unix_now(),
-            auth.user.user_id,
-            id,
-            format!("{slug} {}", body.kind)
-        ],
-    );
+    if created {
+        let _ = conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+             VALUES (?1, ?2, 'channel_add', 'channel', ?3, ?4)",
+            rusqlite::params![
+                unix_now(),
+                auth.user.user_id,
+                id,
+                format!("{slug} {}", body.kind)
+            ],
+        );
+    }
     let found = found.map(|(aid, _)| aid).unwrap_or_default();
+    let status = if created {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
     match contacts(&conn, found) {
         Ok(list) => (
-            StatusCode::CREATED,
-            Json(json!({"id": id, "contacts": list})),
+            status,
+            Json(json!({"id": id, "created": created, "contacts": list})),
         )
             .into_response(),
+        Err(_) => store_unavailable(),
+    }
+}
+
+async fn list_contacts(
+    _auth: AdminAuth,
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Response {
+    let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
+        return store_unavailable();
+    };
+    let Ok(found) = authority(&conn, &slug) else {
+        return store_unavailable();
+    };
+    let Some((id, _)) = found else {
+        return not_found(&slug);
+    };
+    match contacts(&conn, id) {
+        Ok(list) => Json(json!({"slug": slug, "contacts": list})).into_response(),
         Err(_) => store_unavailable(),
     }
 }
@@ -1192,7 +1219,7 @@ pub fn admin_router(state: AppState) -> Router {
         )
         .route(
             "/apostille/api/v1/admin/first-source/{slug}/contacts",
-            post(add_contact),
+            get(list_contacts).post(add_contact),
         )
         .route(
             "/apostille/api/v1/admin/first-source/emails",
@@ -1383,8 +1410,8 @@ mod tests {
         let (_dir, conn, a, _) = store();
         let first = remember_contact(&conn, "synthetic-sos", "email", "x@sos.example.gov", "");
         let again = remember_contact(&conn, "synthetic-sos", "email", "x@sos.example.gov", "");
-        assert!(first.is_some());
-        assert_eq!(first, again);
+        assert!(first.is_some_and(|(_, created)| created));
+        assert_eq!(again, first.map(|(id, _)| (id, false)));
         remember_contact(&conn, "synthetic-sos", "phone", "+15550100", "front desk");
         let list = contacts(&conn, a).unwrap();
         assert_eq!(list.len(), 2);

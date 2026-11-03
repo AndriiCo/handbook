@@ -19,6 +19,10 @@ pub struct ParsedMail {
     pub subject: String,
     /// All `Authentication-Results` values, topmost first.
     pub auth_results: Vec<String>,
+    /// Threading headers, raw (see [`message_ids`]).
+    pub message_id: String,
+    pub in_reply_to: String,
+    pub references: String,
     /// Sidecar body: decoded `text/plain`, tag-stripped `text/html`
     /// fallback, else empty.
     pub body_text: String,
@@ -52,8 +56,29 @@ pub fn parse(raw: &[u8]) -> ParsedMail {
         date: get("date"),
         subject: get("subject"),
         auth_results: all("authentication-results"),
+        message_id: get("message-id"),
+        in_reply_to: get("in-reply-to"),
+        references: get("references"),
         body_text,
     }
+}
+
+/// The `<id@host>` tokens of a Message-ID / In-Reply-To / References
+/// value, in order, brackets kept (the form we send and store).
+pub fn message_ids(value: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = value;
+    while let Some(open) = rest.find('<') {
+        let Some(close) = rest[open..].find('>') else {
+            break;
+        };
+        let id = &rest[open..open + close + 1];
+        if id.len() > 2 && !id.contains(char::is_whitespace) {
+            out.push(id.to_string());
+        }
+        rest = &rest[open + close + 1..];
+    }
+    out
 }
 
 /// Sender addr-spec from a `From:` value (`Name <addr>` or bare `addr`),
@@ -255,6 +280,23 @@ mod tests {
             sender_domain("ops@example.gov").as_deref(),
             Some("example.gov")
         );
+    }
+
+    #[test]
+    fn threading_headers_yield_bracketed_ids() {
+        let raw = "From: ops@example.gov\r\nMessage-ID: <r-1@example.gov>\r\nIn-Reply-To: <outreach-4-ab@andrii.ai>\r\nReferences: <first@x.test>\r\n <outreach-4-ab@andrii.ai>\r\n\r\nYes.";
+        let parsed = parse(raw.as_bytes());
+        assert_eq!(message_ids(&parsed.message_id), ["<r-1@example.gov>"]);
+        assert_eq!(
+            message_ids(&parsed.in_reply_to),
+            ["<outreach-4-ab@andrii.ai>"]
+        );
+        assert_eq!(
+            message_ids(&parsed.references),
+            ["<first@x.test>", "<outreach-4-ab@andrii.ai>"]
+        );
+        assert!(message_ids("no ids <> here").is_empty());
+        assert!(message_ids("<a b@c>").is_empty());
     }
 
     #[test]

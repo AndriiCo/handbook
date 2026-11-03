@@ -312,10 +312,57 @@ fn fetch_one(
                 "UPDATE capture SET authenticity = ?1 WHERE id = ?2",
                 rusqlite::params![authenticity.to_string(), capture_id],
             )?;
+            link_outreach_reply(conn, capture_id, &parsed)?;
             Ok(FetchOutcome::Created)
         }
         IngestOutcome::Duplicate { .. } => Ok(FetchOutcome::Duplicate),
     }
+}
+
+/// First-source threading: an office's reply names our outreach
+/// `Message-ID` in In-Reply-To or References. Link the first sent
+/// outreach email it answers to this capture and mark it replied.
+/// A store without the (web-owned, additive) `outreach_email` table
+/// links nothing. Returns the linked email id.
+pub fn link_outreach_reply(
+    conn: &Connection,
+    capture_id: i64,
+    parsed: &crate::mime::ParsedMail,
+) -> rusqlite::Result<Option<i64>> {
+    let has_table = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'outreach_email'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !has_table {
+        return Ok(None);
+    }
+    let mut ids = crate::mime::message_ids(&parsed.in_reply_to);
+    ids.extend(crate::mime::message_ids(&parsed.references));
+    for id in ids {
+        let email: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM outreach_email
+                 WHERE message_id = ?1 AND status IN ('sent', 'replied')
+                 ORDER BY id LIMIT 1",
+                [&id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(email) = email {
+            conn.execute(
+                "UPDATE outreach_email SET status = 'replied',
+                        reply_capture_id = COALESCE(reply_capture_id, ?1)
+                 WHERE id = ?2",
+                rusqlite::params![capture_id, email],
+            )?;
+            return Ok(Some(email));
+        }
+    }
+    Ok(None)
 }
 
 struct Sender {
@@ -495,6 +542,39 @@ mod tests {
     /// Office-closure notice with a forged-future `Date:` (sender-
     /// claimed) and a google auth stamp. internalDate rules ordering.
     const NOTICE: &str = "From: ops@example.gov\r\nTo: box@example.com\r\nDate: Sat, 01 Jan 2033 00:00:00 +0000\r\nSubject: Office closure tomorrow\r\nAuthentication-Results: mx.google.com; dkim=pass header.d=example.gov; spf=pass smtp.mailfrom=ops@example.gov; dmarc=pass header.from=example.gov\r\n\r\nThe Olympia office is closed tomorrow.";
+
+    #[test]
+    fn replies_link_to_the_outreach_email_they_answer() {
+        let (_dir, _store, conn) = migrated();
+        let reply = crate::mime::parse(
+            b"From: ops@example.gov\r\nIn-Reply-To: <outreach-4-ab@andrii.ai>\r\n\r\nYes.",
+        );
+        // No outreach table on this store: nothing to link.
+        assert_eq!(link_outreach_reply(&conn, 9, &reply).unwrap(), None);
+        conn.execute_batch(
+            "CREATE TABLE outreach_email (id INTEGER PRIMARY KEY, message_id TEXT NOT NULL,
+                 status TEXT NOT NULL, reply_capture_id INTEGER);
+             INSERT INTO outreach_email VALUES (4, '<outreach-4-ab@andrii.ai>', 'sent', NULL);
+             INSERT INTO outreach_email VALUES (5, '<outreach-5-cd@andrii.ai>', 'draft', NULL);",
+        )
+        .unwrap();
+        assert_eq!(link_outreach_reply(&conn, 9, &reply).unwrap(), Some(4));
+        // A second reply keeps the first reply's capture.
+        assert_eq!(link_outreach_reply(&conn, 10, &reply).unwrap(), Some(4));
+        let (status, capture): (String, i64) = conn
+            .query_row(
+                "SELECT status, reply_capture_id FROM outreach_email WHERE id = 4",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((status.as_str(), capture), ("replied", 9));
+        // An unsent draft is never matched.
+        let stray = crate::mime::parse(
+            b"From: x@example.gov\r\nReferences: <outreach-5-cd@andrii.ai>\r\n\r\nHi.",
+        );
+        assert_eq!(link_outreach_reply(&conn, 11, &stray).unwrap(), None);
+    }
 
     fn migrated() -> (tempfile::TempDir, Store, Connection) {
         let dir = tempfile::tempdir().unwrap();
