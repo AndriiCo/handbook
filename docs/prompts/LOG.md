@@ -268,3 +268,4 @@
 | 359 | 2026-11-03 13:12Z | Phone numbers in international format on admin inputs | pin libphonenumber-js 1.13.15 (MIT, admin-only import) |
 | 360 | 2026-11-03 13:14Z | Re-fetch of an unchanged page kept the importmap text | same bytes + new text → fresh capture; Latin-1 entities; ingest 57, web 388 |
 | 361 | 2026-11-03 13:17Z | Office replies thread back to the outreach email; contacts list | In-Reply-To/References → replied + reply capture; GET contacts; mail 27 |
+| 362 | 2026-11-03 13:26Z | Slugs as usa/washington with us/wa aliases, 3-level county paths | authority_path: derived US state paths + explicit rows; [...trail] dossier; shots 24, demo 3/3 |

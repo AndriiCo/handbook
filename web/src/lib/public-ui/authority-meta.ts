@@ -13,7 +13,16 @@ export type AuthorityRow = {
 	kind?: string | null;
 	fact_count?: number | null;
 	verified_at?: string | number | null;
+	/** Canonical readable address (`usa/washington`); the slug when none. */
+	path?: string | null;
+	/** Other addresses that open the same dossier (`us/wa`, the slug). */
+	aliases?: string[] | null;
 };
+
+/** The address to link a dossier by: its readable path, else its slug. */
+export function addressOf(row: { slug: string; path?: string | null }): string {
+	return typeof row.path === 'string' && row.path ? row.path : row.slug;
+}
 
 // Flag SVGs bundled in static/flags/ (flag-icons, MIT). An <img> for a
 // missing file would 404 (a console error), so only these render.

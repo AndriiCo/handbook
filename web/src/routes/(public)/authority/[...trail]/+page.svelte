@@ -3,6 +3,7 @@
 	import { flip } from 'svelte/animate';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
 	import VerifiedChip from '../../../../lib/public-ui/VerifiedChip.svelte';
 	import TranslationChip from '../../../../lib/public-ui/TranslationChip.svelte';
@@ -46,7 +47,17 @@
 		translateHref
 	} from '../../../../lib/public-ui/translate.js';
 
-	const slug = $derived(page.params.slug ?? '');
+	// The address is a readable path (`usa/washington`, `us/wa`, a county
+	// `usa/new_york/chemung`) or the internal slug. A one-segment address
+	// IS the slug, so its fetches start at once; a path resolves first.
+	// The slug alone keys every fetch and the WS topic.
+	const trail = $derived(page.params.trail ?? '');
+	let resolvedSlugs = $state<Record<string, string>>({});
+	let unknownPath = $state(false);
+	const slug = $derived(trail.includes('/') ? (resolvedSlugs[trail] ?? '') : trail);
+	// Canonical address and breadcrumbs, from the resolver or the index row.
+	let canonicalPath = $state<string | null>(null);
+	let crumbs = $state<{ path: string; label: string; slug: string | null }[]>([]);
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
@@ -186,12 +197,32 @@
 		armFlash(list);
 	}
 
+	function crumbsFor(path: string, rows: any[]): { path: string; label: string; slug: string | null }[] {
+		const parts = path.split('/');
+		if (parts.length < 2) return [];
+		return parts.slice(0, -1).map((part, i) => {
+			const prefix = parts.slice(0, i + 1).join('/');
+			const owner = rows.find((r) => r?.path === prefix);
+			const label =
+				typeof owner?.name === 'string'
+					? owner.name
+					: i === 0 && (part === 'usa' || part === 'us')
+						? 'United States'
+						: part.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+			return { path: prefix, label, slug: typeof owner?.slug === 'string' ? owner.slug : null };
+		});
+	}
+
 	async function resolveName(current: string) {
 		try {
 			const res = await get('/authorities');
 			if (current !== slug || !res.ok) return;
 			const rows = res.body?.authorities;
 			const found = Array.isArray(rows) ? rows.find((a) => a?.slug === current) : null;
+			if (found && typeof found.path === 'string' && found.path) {
+				canonicalPath = found.path;
+				if (crumbs.length === 0) crumbs = crumbsFor(found.path, rows);
+			}
 			if (found && typeof found.name === 'string' && found.name) authorityName = found.name;
 			if (found && typeof found.country === 'string' && found.country)
 				authorityCountry = found.country;
@@ -232,6 +263,47 @@
 		if (facts && sectionsRoot) observeSections();
 	});
 
+	// A readable path resolves to its slug once (public, model-free read).
+	$effect(() => {
+		const t = trail;
+		unknownPath = false;
+		if (!t.includes('/') || resolvedSlugs[t]) return;
+		let cancelled = false;
+		get(`/authorities/resolve?path=${encodeURIComponent(t)}`)
+			.then((res) => {
+				if (cancelled || t !== trail) return;
+				if (!res.ok || typeof res.body?.slug !== 'string') {
+					unknownPath = true;
+					return;
+				}
+				if (typeof res.body.canonical === 'string') canonicalPath = res.body.canonical;
+				if (Array.isArray(res.body.crumbs)) {
+					crumbs = res.body.crumbs
+						.slice(0, -1)
+						.filter((c: any) => typeof c?.path === 'string' && typeof c?.label === 'string');
+				}
+				resolvedSlugs = { ...resolvedSlugs, [t]: res.body.slug };
+			})
+			.catch(() => {
+				if (!cancelled && t === trail) unknownPath = true;
+			});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	// Show the canonical address in place (no navigation, no refetch):
+	// /authority/usa-wa-sos and /authority/us/wa read /authority/usa/washington.
+	let swappedFor = '';
+	$effect(() => {
+		const canon = canonicalPath;
+		const current = slug;
+		if (!canon || !current || canon === trail || swappedFor === current) return;
+		swappedFor = current;
+		const href = resolve('/(public)/authority/[...trail]', { trail: canon });
+		void goto(`${href}${page.url.search}${page.url.hash}`, { shallow: true, replace: true });
+	});
+
 	$effect(() => {
 		const current = slug;
 		facts = null;
@@ -245,6 +317,7 @@
 		ledger = [];
 		planView = null;
 		planSettled = false;
+		if (!current) return;
 		reload(current).catch(() => {
 			if (current !== slug) return;
 			loadError = publicError(500, 'dossier');
@@ -278,7 +351,7 @@
 	$effect(() => {
 		const current = slug;
 		const want = target;
-		if (!want) {
+		if (!want || !current) {
 			translatedById = {};
 			return;
 		}
@@ -346,10 +419,10 @@
 	<title>{displayName} — Apostille Handbook</title>
 </svelte:head>
 
-{#if notFound}
-	<Notice variant="warning" heading="Unknown authority “{slug}”.">
+{#if notFound || unknownPath}
+	<Notice variant="warning" heading="Unknown authority “{slug || trail}”.">
 		<p>
-			This slug is not in the handbook index.
+			This address is not in the handbook index.
 			<a href={resolve('/(public)')}>Back to the authority index</a>.
 		</p>
 	</Notice>
@@ -386,6 +459,21 @@
 					</a>
 				</li>
 				<li class="m-0 p-0" aria-hidden="true">/</li>
+				{#each crumbs as crumb (crumb.path)}
+					<li class="m-0 p-0">
+						{#if crumb.slug}
+							<a
+								class="text-ink-muted no-underline hover:text-ink hover:underline"
+								href={resolve('/(public)/authority/[...trail]', { trail: crumb.path })}
+							>
+								{crumb.label}
+							</a>
+						{:else}
+							{crumb.label}
+						{/if}
+					</li>
+					<li class="m-0 p-0" aria-hidden="true">/</li>
+				{/each}
 				<li class="m-0 p-0" aria-current="page">{displayName}</li>
 			</ol>
 		</nav>

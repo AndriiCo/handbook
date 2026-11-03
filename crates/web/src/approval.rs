@@ -1159,6 +1159,19 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
             .collect::<rusqlite::Result<Vec<_>>>()
         })
         .unwrap_or_default();
+    // Readable addresses ride along in a separate fail-soft read, so a
+    // path problem can never empty the index GP1/GP2 read.
+    let paths = crate::authority_path::all_paths(&conn);
+    let rows: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|mut row| {
+            if let Some(p) = row["slug"].as_str().and_then(|slug| paths.get(slug)) {
+                row["path"] = json!(p.primary);
+                row["aliases"] = json!(p.aliases);
+            }
+            row
+        })
+        .collect();
     (StatusCode::OK, Json(json!({"authorities": rows}))).into_response()
 }
 

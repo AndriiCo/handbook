@@ -25,6 +25,8 @@ const ROUTES = {
 	'/authority/vietnam?lang=fr': { name: 'gp2-dossier-fr', ready: 'Authority dossier' },
 	'/authority/usa-wa-sos': { name: 'gp2-dossier-wa', ready: 'Authority dossier' },
 	'/authority/hcch': { name: 'gp2-dossier-hcch', ready: 'Authority dossier' },
+	'/authority/usa/washington': { name: 'gp2-dossier-wa-path', ready: 'Authority dossier' },
+	'/authority/us/wa': { name: 'gp2-dossier-wa-alias', ready: 'Authority dossier' },
 	'/login': { name: 'gp3-login', ready: 'Log in' },
 	'/order': { name: 'gp4-order', ready: 'Destination' },
 	'/orders': { name: 'gp4-orders', ready: 'newest first' },
@@ -166,6 +168,32 @@ try {
 					}
 					if (path.endsWith('/api/v1/authorities')) {
 						return r.fulfill({ json: authorities });
+					}
+					// Readable addresses (usa/washington, us/wa) resolve
+					// from the fixture index, like the real resolver.
+					if (path.endsWith('/api/v1/authorities/resolve')) {
+						const want = (new URL(r.request().url()).searchParams.get('path') ?? '')
+							.toLowerCase()
+							.replace(/^\/+|\/+$/g, '');
+						const rows = authorities.authorities ?? [];
+						const row = rows.find(
+							(a) => a.path === want || a.slug === want || (a.aliases ?? []).includes(want)
+						);
+						if (!row) {
+							return r.fulfill({ status: 404, json: { error: 'no authority at this address' } });
+						}
+						const canonical = row.path ?? row.slug;
+						const parts = canonical.split('/');
+						const crumbs = parts.map((part, i) => {
+							const prefix = parts.slice(0, i + 1).join('/');
+							const owner = rows.find((a) => (a.path ?? a.slug) === prefix);
+							const label =
+								owner?.name ?? (i === 0 && part === 'usa' ? 'United States' : part.replace(/_/g, ' '));
+							return { path: prefix, label, slug: owner?.slug ?? null };
+						});
+						return r.fulfill({
+							json: { slug: row.slug, canonical, aliases: row.aliases ?? [], crumbs }
+						});
 					}
 					const m = path.match(/\/api\/v1\/authorities\/([^/]+)\/facts$/);
 					if (m) {

@@ -9,6 +9,7 @@
 	import HagueMap from '../../lib/components/brand/HagueMap.svelte';
 	import ApostilleCertificate from '../../lib/components/brand/ApostilleCertificate.svelte';
 	import {
+		addressOf,
 		flagFor,
 		kindLabel,
 		laneOf,
@@ -154,7 +155,7 @@
 	);
 
 	const authorityHref = (slug: string) =>
-		resolve('/(public)/authority/[slug]', { slug });
+		resolve('/(public)/authority/[...trail]', { trail: slug });
 
 	function pick(slug: string) {
 		comboOpen = false;
@@ -240,7 +241,7 @@
 						<li role="option" id={`hero-opt-${a.slug}`} aria-selected="false" class="m-0 p-0">
 							<button
 								type="button"
-								onclick={() => pick(a.slug)}
+								onclick={() => pick(addressOf(a))}
 								onmouseenter={() => (activeDescendant = `hero-opt-${a.slug}`)}
 								class="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-lg px-3 text-left hover:bg-surface"
 							>
@@ -439,7 +440,7 @@
 				{#each (blank ? tableRows : filterAuthorities(tableRows, query)) as authority (authority.slug)}
 					<tr class="border-b border-line">
 						<th scope="row" class="py-2 pr-4 font-medium">
-							<a class="inline-flex min-h-11 items-center" href={authorityHref(authority.slug)}>
+							<a class="inline-flex min-h-11 items-center" href={authorityHref(addressOf(authority))}>
 								{authority.name}
 							</a>
 						</th>

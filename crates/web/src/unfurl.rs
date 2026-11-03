@@ -27,7 +27,9 @@ pub struct MetaFact {
 
 /// Everything the head injects for one dossier.
 pub struct DossierMeta {
-    pub slug: String,
+    /// Canonical public address (`usa/washington`; the slug when the
+    /// authority has no readable path).
+    pub path: String,
     pub name: String,
     pub place: String,
     pub facts: Vec<MetaFact>,
@@ -117,8 +119,11 @@ pub fn load_dossier(
         }
         facts.push(MetaFact { topic, statement });
     }
+    let path = crate::authority_path::all_paths(conn)
+        .remove(slug)
+        .map_or_else(|| slug.to_string(), |p| p.primary);
     Ok(Some(DossierMeta {
-        slug: slug.to_string(),
+        path,
         name,
         place,
         facts,
@@ -240,7 +245,7 @@ const GEN_OG_DESCRIPTION: &str = "<meta\n\t\t\tproperty=\"og:description\"\n\t\t
 /// (unit-tested, including hostile statements).
 pub fn render_dossier(shell: &str, meta: &DossierMeta, base: &str) -> String {
     let base = base.trim_end_matches('/');
-    let page_url = format!("{base}/authority/{}", meta.slug);
+    let page_url = format!("{base}/authority/{}", meta.path);
     let count = meta.facts.len();
     let place = if meta.place.is_empty() {
         String::new()
@@ -318,15 +323,19 @@ pub fn render_dossier(shell: &str, meta: &DossierMeta, base: &str) -> String {
     page
 }
 
-/// `GET /apostille/authority/{slug}` — shell with injected head,
-/// 404 status (same shell) for unknown slugs.
-pub async fn dossier(State(state): State<AppState>, Path(slug): Path<String>) -> Response {
+/// `GET /apostille/authority/{*trail}` — shell with injected head for
+/// any address of a dossier (slug, `usa/washington`, `us/wa`, a county
+/// path), canonical link to its primary path; 404 status (same shell)
+/// for an address nothing answers to.
+pub async fn dossier(State(state): State<AppState>, Path(trail): Path<String>) -> Response {
     let shell = tokio::fs::read(&state.spa_index).await.unwrap_or_default();
     let shell = String::from_utf8_lossy(&shell).to_string();
     let Some(conn) = passkey::open_conn(&state) else {
         return store_unavailable();
     };
-    let meta = load_dossier(&conn, &state.store_root, slug.trim()).unwrap_or(None);
+    let slug = crate::authority_path::resolve(&conn, &trail)
+        .map_or_else(|| trail.trim().to_string(), |found| found.slug);
+    let meta = load_dossier(&conn, &state.store_root, &slug).unwrap_or(None);
     match meta {
         Some(meta) => (
             [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -423,6 +432,15 @@ pub async fn sitemap(State(state): State<AppState>) -> Response {
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();
+    // One canonical address per authority (its readable path).
+    let paths = crate::authority_path::all_paths(&conn);
+    let rows: Vec<(String, Option<i64>)> = rows
+        .into_iter()
+        .map(|(slug, day)| {
+            let path = paths.get(&slug).map_or(slug, |p| p.primary.clone());
+            (path, day)
+        })
+        .collect();
     let home_day = rows.iter().filter_map(|(_, day)| *day).max();
     (
         [(header::CONTENT_TYPE, "application/xml; charset=utf-8")],
@@ -438,7 +456,7 @@ mod tests {
 
     fn meta() -> DossierMeta {
         DossierMeta {
-            slug: "test-sos".to_string(),
+            path: "test-sos".to_string(),
             name: "Test \"SOS\" & Co".to_string(),
             place: "WA, USA".to_string(),
             facts: vec![MetaFact {

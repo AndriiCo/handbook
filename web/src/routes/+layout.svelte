@@ -39,7 +39,7 @@
 	let theme = $state<Theme>('auto');
 	let cmdOpen = $state(false);
 	let authorities = $state<
-		{ slug: string; name: string; country: string; fact_count: number }[] | null
+		{ slug: string; name: string; country: string; fact_count: number; path?: string | null }[] | null
 	>(null);
 	let status = $state<'checking' | 'in' | 'out'>('checking');
 	let customerRef = $state<string | null>(null);
@@ -51,7 +51,7 @@
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
 	const asset = (path: string) => `${apiRoot}/${path}`;
 	const authorityHref = (slug: string) =>
-		resolve('/(public)/authority/[slug]', { slug });
+		resolve('/(public)/authority/[...trail]', { trail: slug });
 
 	function effective(pref: Theme): 'light' | 'dark' {
 		if (pref !== 'auto') return pref;
@@ -375,8 +375,8 @@
 					{#each authorities as a (a.slug)}
 						<Command.LinkItem
 							class="text-foreground"
-							href={authorityHref(a.slug)}
-							value={`${a.name} ${a.country} ${a.slug}`}
+							href={authorityHref(a.path || a.slug)}
+							value={`${a.name} ${a.country} ${a.slug} ${a.path ?? ''}`}
 							onclick={() => (cmdOpen = false)}
 						>
 							<LandmarkIcon class="size-4" aria-hidden="true" />

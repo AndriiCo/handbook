@@ -21,6 +21,7 @@ mod admin_stats;
 mod admin_voice;
 mod admin_workers;
 mod approval;
+mod authority_path;
 mod compile;
 mod demo_precheck;
 mod draft;
@@ -458,6 +459,7 @@ fn migrate_mission_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     factcheck::migrate_tables(conn)?;
     offices::migrate_tables(conn)?;
     first_source::migrate_tables(conn)?;
+    authority_path::migrate_tables(conn)?;
     forms_map::migrate_tables(conn)
 }
 
@@ -560,6 +562,11 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/magic/start", post(magic::start))
         .route("/api/v1/auth/magic/consume", post(magic::consume))
         .route("/api/v1/authorities", get(approval::public_authorities))
+        // Readable addresses (usa/washington, us/wa) → internal slug.
+        .route(
+            "/api/v1/authorities/resolve",
+            get(authority_path::resolve_route),
+        )
         .route(
             "/api/v1/authorities/{slug}/facts",
             get(approval::public_facts),
@@ -578,7 +585,7 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         // Crawler surface: shell with injected head (slug routes
         // sort before the SPA fallback below, so unfurls render
         // with no JS).
-        .route("/authority/{slug}", get(unfurl::dossier))
+        .route("/authority/{*trail}", get(unfurl::dossier))
         .route("/sitemap.xml", get(unfurl::sitemap))
         .route("/api/v1/notify/status", get(follow::status))
         .route("/api/v1/notify/subscribe", post(follow::subscribe))
@@ -3596,6 +3603,78 @@ mod tests {
             body.contains("https://example.test/office"),
             "isBasedOn source"
         );
+    }
+
+    #[tokio::test]
+    async fn readable_addresses_serve_the_dossier_with_one_canonical_path() {
+        let fx = fixture();
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "Washington",
+                name: "Synthetic WA SoS",
+                slug: "synthetic-wa-sos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        drop(conn);
+        for (uri, status) in [
+            ("/apostille/authority/usa/washington", StatusCode::OK),
+            ("/apostille/authority/us/wa", StatusCode::OK),
+            ("/apostille/authority/synthetic-wa-sos", StatusCode::OK),
+            ("/apostille/authority/usa/oregon", StatusCode::NOT_FOUND),
+        ] {
+            let res = public_router_for(&fx.state)
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(res.status(), status, "{uri}");
+            let body = body_text(res).await;
+            assert!(body.contains("spa-fixture"), "{uri}: the SPA shell");
+            if status == StatusCode::OK {
+                assert!(
+                    body.contains("<link rel=\"canonical\" href=\"https://example.test/apostille/authority/usa/washington\""),
+                    "{uri}: canonical is the primary path"
+                );
+            }
+        }
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/authorities/resolve?path=US/WA")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+        assert_eq!(v["slug"], "synthetic-wa-sos");
+        assert_eq!(v["canonical"], "usa/washington");
+        assert_eq!(v["crumbs"][0]["label"], "United States");
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri("/apostille/api/v1/authorities")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+        let row = v["authorities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["slug"] == "synthetic-wa-sos")
+            .unwrap();
+        assert_eq!(row["path"], "usa/washington");
+        assert!(row["aliases"].as_array().unwrap().contains(&json!("us/wa")));
     }
 
     #[tokio::test]

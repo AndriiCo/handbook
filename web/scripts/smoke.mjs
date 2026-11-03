@@ -16,7 +16,7 @@ const SHARED = ['Start with your destination'];
 // Route ids registered in the client manifest (entry chunk).
 const PUBLIC_ROUTES = [
 	'/(public)',
-	'/(public)/authority/[slug]',
+	'/(public)/authority/[...trail]',
 	'/(customer)/orders',
 	'/(customer)/uploads',
 	'/(customer)/precheck'

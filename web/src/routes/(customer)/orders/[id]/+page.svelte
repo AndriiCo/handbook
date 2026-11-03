@@ -177,7 +177,7 @@
 		<Heading level={1} eyebrow="Order">{KIND_LABEL[order.kind] ?? order.kind}</Heading>
 		<p class="m-0 text-body-lg text-ink-muted">
 			For
-			<a class="underline underline-offset-4" href={resolve('/(public)/authority/[slug]', { slug: order.authority.slug })}>{order.authority.name}</a>
+			<a class="underline underline-offset-4" href={resolve('/(public)/authority/[...trail]', { trail: order.authority.slug })}>{order.authority.name}</a>
 			· placed {fmtDate(order.created_at)} · <span class="font-mono text-sm">{order.id}</span>
 		</p>
 		<div class="flex flex-wrap items-center gap-2 text-sm">

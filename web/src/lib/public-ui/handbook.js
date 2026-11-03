@@ -38,7 +38,10 @@ export function filterAuthorities(authorities, query) {
 		(a) =>
 			(a.name ?? '').toLowerCase().includes(q) ||
 			(a.slug ?? '').toLowerCase().includes(q) ||
-			(a.country ?? '').toLowerCase().includes(q)
+			(a.country ?? '').toLowerCase().includes(q) ||
+			(a.path ?? '').toLowerCase().includes(q) ||
+			(Array.isArray(a.aliases) &&
+				a.aliases.some((/** @type {unknown} */ alias) => String(alias).toLowerCase() === q))
 	);
 }
 

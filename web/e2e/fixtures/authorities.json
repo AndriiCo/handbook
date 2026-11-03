@@ -12,7 +12,14 @@
    "fact_count": 9,
    "name": "USA \u2014 Washington Secretary of State",
    "slug": "usa-wa-sos",
-   "region": "Washington"
+   "region": "Washington",
+   "path": "usa/washington",
+   "aliases": [
+    "us/wa",
+    "usa/wa",
+    "us/washington",
+    "usa-wa-sos"
+   ]
   },
   {
    "country": "Netherlands",
