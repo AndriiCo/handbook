@@ -1,7 +1,7 @@
-# Operator — MISSION WIN (updated Tue 11-03 ~05:45 PST)
+# Operator — MISSION WIN (updated Tue 11-03 ~08:10 PST)
 
-Plan: `docs/ops/mission-win.md` (you approved it 11-02). Production is
-still `0.1.0+4dcd234`. On `main` since (all plant-gated green so far):
+Plan: `docs/ops/mission-win.md` (you approved it 11-02). Production runs
+`0.1.0+9460b26` (deploy report below). Shipped since 4dcd234:
 - P315 meta-1 prompt v2 (selectable; v1 stays default — live eval at the
   merge: v1 quote_found 1.000 / value_in_quote 1.000 / topic 0.667;
   v2 0.965 / 0.947 / 0.754, so v2 is not promoted).
@@ -21,37 +21,41 @@ Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
 
 ## Open now, in order
 
-**Approvals fail in production ("csrf check failed", Workers "session
-expired") — workaround today, fix on main.** Production advertises
-HTTP/3 (`alt-svc: h3`). Over HTTP/3, Chrome sends one `cookie` line per
-cookie and the server read only the first, so the session cookie and the
-CSRF cookie never arrived on the same request. P356 joins the lines (RFC
-9114 §4.2.1); it ships with the next deploy. Until then, approve over
-HTTP/1.1: in Chrome open `chrome://flags/#enable-quic`, set **Disabled**,
-relaunch, then use admin `/review` as usual (Firefox:
-`about:config` → `network.http.http3.enable` = false). Re-enable after
-the deploy.
+1. **Approve in admin `/review` (works over HTTP/3 again).** If you turned
+   QUIC off in Chrome (`chrome://flags/#enable-quic`) or Firefox
+   (`network.http.http3.enable`), set it back to Default/true. Use
+   Review → "By authority" → "Accept all verified" for usa-wa-sos and
+   vietnam (≥8 accepted each, keep 2 proposed per slug for the video).
+   Flips GP2-data, A1 and GP2-page. Paste back: accepted counts per slug.
+2. **Viet Nam MOFA capture:** in admin Workers press Retry on it (its old
+   text is the portal's script blob); the new capture has the page text.
+3. **Before sending outreach email:** set `mailer.provider` in `/config`
+   (the Mailer group shows the steps; staging uses the file mailer).
+4. **Washington SOS alert:** sos.wa.gov posted on 11/02 that apostille
+   services are unavailable; check it before recording the WA scenes.
 
-**Deploy decision (yours).** AGENTS.md §7 still says no deploys from Tue
-11-03 00:00 PST; your verbal extension to Wed 11-04 ~09:00 is not in the
-file. Commit the step-0 edit (or tell the builder "deploy") to ship the
-candidate **`9460b26` (P356-P369)**: plant stamp green, staging-green
-9/10 (only S1) + live demo 3/3 on that exact SHA (Tue ~06:40 PST). It
-carries the HTTP/3 cookie fix, clean capture text (scripts dropped; a
-Retry re-captures an unchanged page), bulk accept/reject per authority
-(Review "By authority"; Triage folded in), First source (open questions
-on Calls, an Email page with Muse Spark drafts, human review, send, and
-reply threading), readable dossier addresses (`/authority/usa/washington`,
-`/authority/us/wa`, county paths), the grouped Config setup guide and
-the Workers sweep picker with phone/email/URL chips. An adversarial
-review of the server work found and fixed (P366) a crash in the new
-text extractor before it ever shipped. Default if you say nothing: no
-deploy; everything stays on main and staging.
-
-**After the deploy:** in admin Workers, press Retry on the Viet Nam MOFA
-capture (its old text is the portal's script blob); the new capture has
-the page text. Set `mailer.provider` in `/config` before sending outreach
-email (staging uses the file mailer).
+**9460b26 DEPLOYED (Tue 11-03 ~07:56 PST, on your "Deploy 9460b26" —
+inside the AGENTS.md §7 freeze, by your explicit order):** production
+runs `0.1.0+9460b26` (previous `78a9ca2`; kept `39b8430`, `78a9ca2`;
+pruned `cfb625b`). Flags announced per §7: `--skip-accept
+--allow-today-overlap`. Plant stamp `9460b26547bd.json` (`ci_green`),
+staging-green 9/10 (only S1) + live demo 3/3, prod-before 5/10 →
+prod-after 5/10, zero regressions (every row's detail identical; only
+P0's version changed). Ships P356-P369: the HTTP/3 cookie join (approve
+and Workers writes no longer fail with "csrf check failed" / "session
+expired"), clean capture text, Review "By authority" bulk
+accept/reject (Triage folded in), First source (open questions on
+Calls, Email page: Muse Spark draft → human review → send → reply
+threading), readable dossier addresses, the grouped Config setup guide
+and the Workers sweep picker. Verified on production after the deploy
+(read-only): over HTTP/3 with the cookies on separate lines a matching
+CSRF echo now passes (401 no session) while a mismatched one still gets
+403; `/authority/us/wa`, `/usa/wa`, `/usa-wa-sos` serve the dossier with
+canonical `/authority/usa/washington` and the browser swaps the address
+in place (0 console errors at 390 and 1440); resolve API, sitemap and
+home search by "us/wa" work; unknown paths 404. Build note: macOS's
+00:00 `/tmp` sweep broke the `/tmp` zig copy; `ship-release.sh` now uses
+Homebrew's zig 0.17.0 when that happens (P371).
 
 
 **T2b DEPLOYED (~21:50 PST):** production runs `0.1.0+78a9ca2`

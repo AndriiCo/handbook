@@ -278,3 +278,4 @@
 | 369 | 2026-11-03 14:11Z | Suggested questions quoted internal field keys | confirm questions read the value only; web first_source 6 |
 | 370 | 2026-11-03 14:21Z | Staging acceptance of the P356-P369 candidate | 9460b26: plant green, staging 9/10 (S1 only) + demo 3/3; resolve/alias/sitemap live |
 | 371 | 2026-11-03 15:52Z | Deploy 9460b26 | ship-release falls back to Homebrew zig 0.17.0 after macOS purged /tmp copy |
+| 372 | 2026-11-03 16:02Z | Deploy 9460b26 (record) | prod 0.1.0+9460b26 (prev 78a9ca2); 5/10 → 5/10, no regressions; h3 CSRF verified |
