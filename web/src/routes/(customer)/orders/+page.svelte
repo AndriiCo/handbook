@@ -1,159 +1,157 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { flip } from 'svelte/animate';
+	import { fade } from 'svelte/transition';
+	import { prefersReducedMotion } from 'svelte/motion';
 	import { resolve } from '$app/paths';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import Heading from '../../../lib/components/brand/Heading.svelte';
 	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
+	import { Button } from '../../../lib/components/ui/button/index.js';
+	import StatusBadge from '../../../lib/customer/StatusBadge.svelte';
+	import LivePill from '../../../lib/customer/LivePill.svelte';
+	import { coalesce, liveTopics } from '../../../lib/customer/live-topics.svelte';
+	import {
+		KIND_LABEL,
+		fmtDate,
+		loadOrders,
+		loginHref,
+		money,
+		type OrderSummary
+	} from '../../../lib/customer/orders';
+	import PrinterIcon from '@lucide/svelte/icons/printer';
+	import StampIcon from '@lucide/svelte/icons/stamp';
+	import PackageIcon from '@lucide/svelte/icons/package';
+	import TagIcon from '@lucide/svelte/icons/tag';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 
-	// Orders list: the caller's form submissions, newest first.
-	// Anonymous visitors get the sign-in prompt, never an error dump.
-	type Submission = {
-		id: number;
-		authority: string;
-		status: string;
-		created_at: number;
-		submitted_at: number | null;
-	};
+	// W3b cabinet: the caller's orders, newest first, live on
+	// billing:{customer_ref} (ids-only events → one re-read).
+	const ICONS = { label_fedex: PrinterIcon, label_usps: StampIcon, mail_kit: PackageIcon, address_label: TagIcon };
 
-	const apiRoot = resolve('/(public)').replace(/\/$/, '');
-	const api = (path: string) => `${apiRoot}/api/v1${path}`;
-
-	let rows = $state<Submission[] | null>(null);
-	let names = $state<Record<string, string>>({});
+	let rows = $state<OrderSummary[] | null>(null);
+	let topic = $state<string | null>(null);
 	let loadError = $state<string | null>(null);
 	let needsLogin = $state(false);
 
-	$effect(() => {
-		(async () => {
-			try {
-				const [subs, auths] = await Promise.all([
-					fetch(api('/p2/submissions'), { credentials: 'same-origin' }),
-					fetch(api('/authorities'), { credentials: 'same-origin' })
-				]);
-				if (subs.status === 401) {
-					needsLogin = true;
-					rows = [];
-					return;
-				}
-				if (!subs.ok) {
-					loadError = 'The orders list is unavailable right now. Try again in a bit.';
-					rows = [];
-					return;
-				}
-				const body = await subs.json().catch(() => ({}));
-				rows = Array.isArray(body?.submissions) ? body.submissions : [];
-				if (auths.ok) {
-					const index = await auths.json().catch(() => ({}));
-					if (Array.isArray(index?.authorities)) {
-						for (const a of index.authorities) {
-							if (a?.slug && a?.name) names[a.slug] = a.name;
-						}
-					}
-				}
-			} catch {
+	async function load() {
+		const list = await loadOrders();
+		if (list.kind === 'login') {
+			needsLogin = true;
+			rows = [];
+			return;
+		}
+		if (list.kind === 'error') {
+			if (rows === null) {
 				loadError = 'The orders list is unavailable right now. Try again in a bit.';
 				rows = [];
 			}
-		})();
+			return;
+		}
+		loadError = null;
+		rows = list.orders;
+		topic = list.topic;
+	}
+
+	const refresh = coalesce(() => void load());
+	const bus = liveTopics(
+		() => (topic ? [topic] : []),
+		() => refresh()
+	);
+
+	onMount(() => {
+		void load();
 	});
 
-	const fmtDate = (unix: number) =>
-		new Date(unix * 1000).toLocaleDateString(undefined, {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric'
-		});
+	const ms = (n: number) => (prefersReducedMotion.current ? 0 : n);
 </script>
 
 <svelte:head>
 	<title>Orders — Apostille Handbook</title>
 </svelte:head>
 
-<Heading level={1}>Orders</Heading>
-
-{#if needsLogin}
-	<Notice variant="info" heading="Sign in to see your orders.">
-		<p>
-			Order history lives in your account.
-			<a href={resolve('/(customer)/login')}>Sign in</a>
-			or
-			<a href={resolve('/(customer)/order')}>start a new order</a>.
-		</p>
-	</Notice>
-{:else if loadError}
-	<Notice variant="error" heading="Orders are unavailable."><p>{loadError}</p></Notice>
-{:else if rows === null}
-	<div role="status" aria-label="Loading orders" class="mt-4 flex max-w-[32rem] flex-col gap-2">
-		<span class="sr-only">Loading orders</span>
-		<Skeleton class="h-11 w-full" />
-		<Skeleton class="h-11 w-full" />
-		<Skeleton class="h-11 w-2/3" />
+<div class="flex flex-wrap items-end justify-between gap-4">
+	<div class="flex flex-col gap-2">
+		<Heading level={1} eyebrow="Your account">Orders</Heading>
 	</div>
-{:else if rows.length === 0}
-	<Notice variant="info" heading="No orders yet.">
-		<p>
-			Submitted orders will appear here with live status.
-			<a href={resolve('/(customer)/order')}>Start a new order</a>.
-		</p>
-	</Notice>
-{:else}
-	<p class="text-sm text-ink-muted">
-		{rows.length}
-		{rows.length === 1 ? 'order' : 'orders'}, newest first.
-		<a class="underline" href={resolve('/(customer)/order')}>Start a new order</a>.
-	</p>
-	<table class="mt-4 block w-full border-collapse md:table">
-		<caption class="sr-only">Your orders, newest first</caption>
-		<thead class="sr-only md:not-sr-only">
-			<tr>
-				<th class="border border-line bg-surface px-[0.8rem] py-[0.6rem] text-left" scope="col">Order</th>
-				<th class="border border-line bg-surface px-[0.8rem] py-[0.6rem] text-left" scope="col">
-					Authority
-				</th>
-				<th class="border border-line bg-surface px-[0.8rem] py-[0.6rem] text-left" scope="col">Status</th>
-				<th class="border border-line bg-surface px-[0.8rem] py-[0.6rem] text-left" scope="col">Created</th>
-			</tr>
-		</thead>
-		<tbody class="block w-full md:table-row-group">
-			{#each rows as row (row.id)}
-				<tr class="mb-3 block rounded-sm border border-line even:bg-surface md:mb-0 md:table-row md:rounded-none md:border-0">
-					<td
-						data-label="Order"
-						class="block border-0 border-b border-line px-[0.8rem] py-[0.6rem] text-left font-mono text-[0.9rem] last:border-b-0 md:table-cell md:border"
-						><a class="underline" href={resolve('/(customer)/forms/[id]', { id: String(row.id) })}>#{row.id}</a></td
-					>
-					<td
-						data-label="Authority"
-						class="block border-0 border-b border-line px-[0.8rem] py-[0.6rem] text-left last:border-b-0 md:table-cell md:border"
-						>{names[row.authority] ?? row.authority}</td
-					>
-					<td
-						data-label="Status"
-						class="block border-0 border-b border-line px-[0.8rem] py-[0.6rem] text-left last:border-b-0 md:table-cell md:border"
-						><span class="rounded-full border border-line px-2 py-0.5 text-sm capitalize">{row.status}</span></td
-					>
-					<td
-						data-label="Created"
-						class="block border-0 border-b border-line px-[0.8rem] py-[0.6rem] text-left last:border-b-0 md:table-cell md:border"
-						>{fmtDate(row.created_at)}</td
-					>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
-{/if}
+	<div class="flex items-center gap-3">
+		<LivePill live={bus.live} lastAt={bus.lastAt} />
+		<Button href={resolve('/(customer)/order')} class="h-11 px-5">
+			<PlusIcon aria-hidden="true" /> New order
+		</Button>
+	</div>
+</div>
 
-<style>
-	/* Mobile-only label injection has no clean utility (attr() +
-	   string concat); the desktop kill inverts the old max-width
-	   query mobile-first. */
-	td::before {
-		content: attr(data-label) ': ';
-		font-weight: 700;
-		font-family: var(--font-sans);
-	}
-	@media (min-width: 720px) {
-		td::before {
-			content: none;
-		}
-	}
-</style>
+<div class="mt-8">
+	{#if needsLogin}
+		<Notice variant="info" heading="Sign in to see your orders.">
+			<p>
+				Orders, labels and tracking live in your account.
+				<a class="underline underline-offset-4" href={loginHref(resolve('/(customer)/orders'))}>Sign in</a>
+				or <a class="underline underline-offset-4" href={resolve('/(customer)/order')}>start a new order</a>.
+			</p>
+		</Notice>
+	{:else if loadError}
+		<Notice variant="error" heading="Orders are unavailable."><p>{loadError}</p></Notice>
+	{:else if rows === null}
+		<div role="status" aria-label="Loading orders" class="grid gap-3">
+			<span class="sr-only">Loading orders</span>
+			<Skeleton class="h-24 w-full rounded-lg" />
+			<Skeleton class="h-24 w-full rounded-lg" />
+		</div>
+	{:else if rows.length === 0}
+		<div class="flex flex-col items-start gap-4 rounded-xl border border-dashed border-line bg-surface p-8">
+			<p class="m-0 text-h3 font-semibold text-ink">No orders yet.</p>
+			<p class="m-0 text-ink-muted">Your orders appear here with live status, labels and tracking.</p>
+			<Button href={resolve('/(customer)/order')} class="h-11 px-5">Start an order</Button>
+		</div>
+	{:else}
+		<p class="m-0 text-sm text-ink-muted">
+			{rows.length}
+			{rows.length === 1 ? 'order' : 'orders'}, newest first.
+		</p>
+		<ul class="m-0 mt-3 flex list-none flex-col gap-3 p-0" aria-label="Your orders, newest first">
+			{#each rows as row (row.id)}
+				{@const Icon = ICONS[row.kind] ?? TagIcon}
+				<li animate:flip={{ duration: ms(250) }} in:fade={{ duration: ms(200) }}>
+					<a
+						href={resolve('/(customer)/orders/[id]', { id: row.id })}
+						class="flex items-center gap-4 rounded-xl border border-line bg-bg p-4 text-ink no-underline shadow-sm transition-[box-shadow,border-color] duration-200 hover:border-brand-300 hover:shadow-md sm:p-5"
+						data-order={row.id}
+					>
+						<span
+							aria-hidden="true"
+							class="hidden size-12 flex-none items-center justify-center rounded-lg bg-surface-2 text-accent-strong sm:flex"
+						>
+							<Icon class="size-6" />
+						</span>
+						<span class="flex min-w-0 flex-1 flex-col gap-1">
+							<span class="flex flex-wrap items-center gap-x-3 gap-y-1">
+								<span class="font-semibold">{KIND_LABEL[row.kind] ?? row.kind}</span>
+								<StatusBadge status={row.status} />
+								{#if row.mode === 'test'}
+									<span class="text-xs font-medium text-changed">Test mode</span>
+								{/if}
+							</span>
+							<span class="truncate text-sm text-ink-muted">{row.authority.name}</span>
+							{#if row.next}
+								<span class="text-sm font-medium text-accent-strong">{row.next}</span>
+							{/if}
+						</span>
+						<span class="flex flex-none flex-col items-end gap-1 text-right">
+							<span class="font-mono font-semibold">
+								{row.total_cents === 0 ? 'Free' : money(row.total_cents, row.currency)}
+							</span>
+							<span class="text-xs text-ink-muted">{fmtDate(row.created_at)}</span>
+						</span>
+						<ChevronRightIcon
+							class="size-5 flex-none text-ink-muted"
+							aria-hidden="true"
+						/>
+					</a>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+</div>

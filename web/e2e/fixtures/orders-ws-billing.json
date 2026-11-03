@@ -1,0 +1,28 @@
+[
+  {
+    "type": "order.created",
+    "topic": "billing:cust_demo01",
+    "order_id": "ord_q7Hm2xR4kP",
+    "at": 1793750400
+  },
+  {
+    "type": "order.paid",
+    "topic": "billing:cust_demo01",
+    "order_id": "ord_q7Hm2xR4kP",
+    "at": 1793750460
+  },
+  {
+    "type": "label.ready",
+    "topic": "billing:cust_demo01",
+    "order_id": "ord_q7Hm2xR4kP",
+    "leg": "outbound",
+    "at": 1793750520
+  },
+  {
+    "type": "tracking.update",
+    "topic": "billing:cust_demo01",
+    "order_id": "ord_q7Hm2xR4kP",
+    "leg": "kit_to_customer",
+    "at": 1793757600
+  }
+]

@@ -1,0 +1,35 @@
+{
+	"routes": {
+		"/order?destination=usa-wa-sos&step=document": {
+			"name": "gp4-order-document",
+			"ready": "Diploma or transcript"
+		},
+		"/order?destination=usa-wa-sos&path=birth-certificate&step=form": {
+			"name": "gp4-order-form",
+			"ready": "Your full name"
+		},
+		"/order?destination=usa-wa-sos&path=birth-certificate&kind=mail_kit&step=delivery": {
+			"name": "gp4-order-delivery",
+			"ready": "Mailing kit shipped to you"
+		},
+		"/orders/ord_q7Hm2xR4kP": { "name": "w3-order-detail", "ready": "Accepted at USPS origin facility" },
+		"/billing": { "name": "w3-billing", "ready": "View receipt" },
+		"/shipping": { "name": "w3-shipping", "ready": "Track with USPS" }
+	},
+	"api": [
+		{ "path": "/api/v1/p2/orders/options$", "fixture": "orders-options.json" },
+		{ "path": "/api/v1/p2/orders/ord_b3Nz8wQ1tY$", "fixture": "orders-order-free.json" },
+		{ "path": "/api/v1/p2/orders/ord_[A-Za-z0-9]+$", "fixture": "orders-order.json" },
+		{ "path": "/api/v1/p2/orders$", "fixture": "orders-list.json" },
+		{ "method": "POST", "path": "/api/v1/p2/orders$", "fixture": "orders-created.json", "status": 201 },
+		{ "method": "POST", "path": "/api/v1/p2/orders/[^/]+/quote$", "fixture": "orders-quote.json" },
+		{ "method": "POST", "path": "/api/v1/p2/orders/[^/]+/checkout$", "fixture": "orders-paused.json", "status": 503 },
+		{ "method": "POST", "path": "/api/v1/p2/orders/[^/]+/confirm$", "fixture": "orders-order.json" },
+		{ "method": "POST", "path": "/api/v1/p2/forms/[^/]+/fill$", "fixture": "orders-form-fill.json", "status": 201 },
+		{ "path": "/api/v1/authorities/usa-wa-sos/plan$", "fixture": "orders-plan.json" }
+	],
+	"ws": [
+		{ "topic": "^billing:", "fixture": "orders-ws-billing.json" },
+		{ "topic": "^shipment:51$", "fixture": "orders-ws-shipment.json" }
+	]
+}

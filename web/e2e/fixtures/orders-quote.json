@@ -1,0 +1,41 @@
+{
+  "order_id": "ord_q7Hm2xR4kP",
+  "mode": "test",
+  "currency": "usd",
+  "total_cents": 4900,
+  "expires_at": 1793752200,
+  "lines": [
+    {
+      "label": "Mailing kit",
+      "cents": 1900
+    },
+    {
+      "label": "USPS Priority to PO Box 4000",
+      "cents": 1200
+    },
+    {
+      "label": "USPS Priority return",
+      "cents": 1200
+    },
+    {
+      "label": "Service fee",
+      "cents": 600
+    }
+  ],
+  "carrier_quotes": [
+    {
+      "leg": "outbound",
+      "carrier": "usps",
+      "service": "USPS_PRIORITY",
+      "cents": 1200,
+      "delivery_days": 3
+    },
+    {
+      "leg": "return",
+      "carrier": "usps",
+      "service": "USPS_PRIORITY",
+      "cents": 1200,
+      "delivery_days": 3
+    }
+  ]
+}

@@ -230,3 +230,5 @@
 | sa-26-2 | 2026-11-03 00:45Z | W1b: review console upgrade — table + detail, j/k/a/r, plan/office/form tabs; trace TTFT | Review console + tabs + trace latency/TTFT; shots 24 OK, demo 3/3 green |
 | 324 | 2026-11-03 00:55Z | Merge SA-26 + SA-27; Dashboard nav + / → /dashboard; tabs primitive fix; demo plan + model-calls mocks | shots 76, demo 3/3, smoke, web 340, clippy green |
 | 325 | 2026-11-03 01:02Z | C1 (SA-24, builder): orders API, backing submission, fact-derived delivery options, free address label | orders 6 tests (FK on, authz, seeds); web 346 (1 known voice flake) |
+| sa-28-1 | 2026-11-03 00:51Z | W3a /order: Destination → Document → Form → Delivery → Pay | Cited delivery cards, quote, checkout/paused; typecheck green only with sa-28-2 |
+| sa-28-2 | 2026-11-03 00:51Z | W3b cabinet: /orders, /orders/[id], /billing, /shipping live | Live cabinet on billing/shipment topics; commerce spec 7/7; all gates green |

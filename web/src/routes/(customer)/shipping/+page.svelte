@@ -1,744 +1,186 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
+	import { toast } from 'svelte-sonner';
+	import Notice from '../../../lib/public-ui/Notice.svelte';
+	import Heading from '../../../lib/components/brand/Heading.svelte';
+	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
+	import { Button } from '../../../lib/components/ui/button/index.js';
+	import StatusBadge from '../../../lib/customer/StatusBadge.svelte';
+	import LivePill from '../../../lib/customer/LivePill.svelte';
+	import { coalesce, liveTopics } from '../../../lib/customer/live-topics.svelte';
+	import {
+		KIND_LABEL,
+		ROLE_LABEL,
+		UNPAID,
+		carrierName,
+		loadDetails,
+		loadOrders,
+		loginHref,
+		safeHref,
+		serviceName,
+		type Order
+	} from '../../../lib/customer/orders';
+	import CopyIcon from '@lucide/svelte/icons/copy';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
+	import FileDownIcon from '@lucide/svelte/icons/file-down';
+	import TruckIcon from '@lucide/svelte/icons/truck';
 
-	const apiRoot = resolve('/(public)').replace(/\/$/, '');
-	const api = (path: string) => `${apiRoot}/api/v1${path}`;
+	// W3b: every label and tracking number across the caller's orders,
+	// in one place. Labels are bought by the order flow (/order); this
+	// page only reads. Live on billing:{customer_ref} and each leg's
+	// shipment:{id}.
+	let orders = $state<Order[] | null>(null);
+	let topic = $state<string | null>(null);
+	let view = $state<'loading' | 'ready' | 'login' | 'error'>('loading');
 
-	type LabelSummary = {
-		direction: string;
-		carrier: string;
-		service_name: string;
-		status: string;
-		tracking_no: string | null;
-		tracking_url: string | null;
-		label_url: string | null;
-	};
-
-	type LabelView = {
-		id: number;
-		purchase_option: string;
-		label_format: string;
-		content_type: string;
-		summary: LabelSummary;
-	};
-
-	type Address = {
-		name: string;
-		street1: string;
-		street2: string;
-		city: string;
-		state_province: string;
-		postal: string;
-		country: string;
-		phone: string;
-	};
-
-	const FORMATS: Array<[string, string]> = [
-		['four_by_six', '4×6 label'],
-		['half_letter', 'Half-letter (two per sheet)'],
-		['letter', 'US Letter'],
-		['a4', 'A4'],
-		['window_envelope', 'Window envelope (#10)']
-	];
-	const PAPERS: Array<[string, string]> = [
-		['four_by_six', '4×6'],
-		['letter', 'US Letter'],
-		['a4', 'A4']
-	];
-	const SERVICES: Array<[string, string]> = [
-		['overnight', 'Overnight'],
-		['two_day', '2-day'],
-		['ground', 'Ground']
-	];
-	const PARCELS: Array<[string, string]> = [
-		['letter_envelope', 'Letter envelope'],
-		['flat_envelope', 'Flat envelope']
-	];
-
-	const emptyAddress = (country: string): Address => ({
-		name: '',
-		street1: '',
-		street2: '',
-		city: '',
-		state_province: '',
-		postal: '',
-		country,
-		phone: ''
-	});
-
-	let authorityId = $state('1');
-	let from = $state<Address>(emptyAddress('US'));
-	let to = $state<Address>(emptyAddress('US'));
-	let parcel = $state('letter_envelope');
-	let service = $state('two_day');
-
-	let shipmentId = $state<number | null>(null);
-	let shipmentStatus = $state('');
-	let labels = $state<LabelView[]>([]);
-
-	let direction = $state('outbound');
-	let carrier = $state('usps');
-	let kind = $state<'printable' | 'prepaid'>('printable');
-	let format = $state('four_by_six');
-	let paper = $state('four_by_six');
-
-	let notice = $state('');
-	let errors = $state<Array<{ field?: string; message?: string }>>([]);
-	let busy = $state(false);
-	let pasteTracking = $state<Record<number, string>>({});
-	let pasteFiles = $state<Record<number, File | null>>({});
-
-	function cleanAddress(addr: Address): Record<string, string> {
-		const out: Record<string, string> = {
-			name: addr.name.trim(),
-			street1: addr.street1.trim(),
-			city: addr.city.trim(),
-			state_province: addr.state_province.trim(),
-			postal: addr.postal.trim(),
-			country: addr.country.trim().toUpperCase()
-		};
-		if (addr.street2.trim()) out.street2 = addr.street2.trim();
-		if (addr.phone.trim()) out.phone = addr.phone.trim();
-		return out;
-	}
-
-	async function readError(res: Response): Promise<void> {
-		errors = [];
-		notice = '';
-		try {
-			const data = await res.json();
-			if (typeof data?.error === 'string') {
-				notice = data.error;
-			} else if (Array.isArray(data?.errors)) {
-				errors = data.errors;
-			} else {
-				notice = `Request failed (${res.status}).`;
-			}
-		} catch {
-			notice = `Request failed (${res.status}).`;
-		}
-	}
-
-	async function loadDefaults(): Promise<void> {
-		try {
-			const res = await fetch(api('/p2/profile/label-defaults'), {
-				credentials: 'same-origin'
-			});
-			if (!res.ok) return;
-			const data = await res.json();
-			if (typeof data?.option_a_format === 'string') format = data.option_a_format;
-			if (typeof data?.option_b_paper === 'string') paper = data.option_b_paper;
-		} catch {
-			// Defaults are a convenience; the form works without them.
-		}
-	}
-
-	async function saveDefaults(): Promise<void> {
-		busy = true;
-		notice = '';
-		errors = [];
-		try {
-			const res = await fetch(api('/p2/profile/label-defaults'), {
-				method: 'PUT',
-				credentials: 'same-origin',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ option_a_format: format, option_b_paper: paper })
-			});
-			if (!res.ok) {
-				await readError(res);
-				return;
-			}
-			notice = 'Defaults saved.';
-		} catch {
-			notice = 'Could not save defaults.';
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function createShipment(): Promise<void> {
-		busy = true;
-		notice = '';
-		errors = [];
-		try {
-			const res = await fetch(api('/p2/shipments'), {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					authority_id: Number(authorityId),
-					from: cleanAddress(from),
-					to: cleanAddress(to),
-					parcel: { preset: parcel },
-					service
-				})
-			});
-			if (!res.ok) {
-				await readError(res);
-				return;
-			}
-			const data = await res.json();
-			shipmentId = data.id;
-			shipmentStatus = data.status;
-			labels = [];
-			notice = `Shipment ${shipmentId} created.`;
-		} catch {
-			notice = 'Could not create the shipment.';
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function refresh(): Promise<void> {
-		if (shipmentId === null) return;
-		try {
-			const res = await fetch(api(`/p2/shipments/${shipmentId}`), {
-				credentials: 'same-origin'
-			});
-			if (!res.ok) {
-				await readError(res);
-				return;
-			}
-			const data = await res.json();
-			shipmentStatus = data.status;
-			labels = Array.isArray(data.labels) ? data.labels : [];
-		} catch {
-			notice = 'Could not refresh the shipment.';
-		}
-	}
-
-	async function purchase(): Promise<void> {
-		if (shipmentId === null) return;
-		busy = true;
-		notice = '';
-		errors = [];
-		try {
-			const res = await fetch(api(`/p2/shipments/${shipmentId}/purchase`), {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					direction,
-					carrier: kind === 'prepaid' ? 'usps' : carrier,
-					option: kind === 'printable' ? { kind, format } : { kind, paper }
-				})
-			});
-			if (!res.ok) {
-				await readError(res);
-				return;
-			}
-			const data = await res.json();
-			if (data?.queued === true) {
-				notice =
-					'Queued for staff purchase. The label appears below once staff paste back the tracking number and file.';
-			} else {
-				notice = 'Label issued.';
-			}
-			await refresh();
-		} catch {
-			notice = 'Could not purchase the label.';
-		} finally {
-			busy = false;
-		}
-	}
-
-	function pickFile(id: number, event: Event): void {
-		const input = event.currentTarget as HTMLInputElement | null;
-		pasteFiles[id] = input?.files?.[0] ?? null;
-	}
-
-	function fileToBase64(file: File): Promise<string> {
-		return new Promise((resolvePromise, reject) => {
-			const reader = new FileReader();
-			reader.onload = () => {
-				const text = typeof reader.result === 'string' ? reader.result : '';
-				resolvePromise(text.split(',').pop() ?? '');
-			};
-			reader.onerror = () => reject(new Error('read failed'));
-			reader.readAsDataURL(file);
-		});
-	}
-
-	async function pasteBack(id: number): Promise<void> {
-		if (shipmentId === null) return;
-		const file = pasteFiles[id];
-		if (!file) {
-			notice = 'Choose the bought label PDF first.';
+	async function load() {
+		const list = await loadOrders();
+		if (list.kind === 'login') {
+			view = 'login';
 			return;
 		}
-		busy = true;
-		notice = '';
-		errors = [];
-		try {
-			const res = await fetch(api(`/p2/shipments/${shipmentId}/labels/${id}/paste-back`), {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					tracking_no: (pasteTracking[id] ?? '').trim(),
-					label_pdf_base64: await fileToBase64(file)
-				})
-			});
-			if (!res.ok) {
-				await readError(res);
-				return;
+		if (list.kind === 'error') {
+			if (orders === null) view = 'error';
+			return;
+		}
+		topic = list.topic;
+		const shipped = list.orders.filter((o) => !UNPAID.includes(o.status));
+		const details = await loadDetails(shipped.map((o) => o.id));
+		orders = details.filter((o) => o.legs.length > 0);
+		view = 'ready';
+	}
+
+	const refresh = coalesce(() => void load());
+	const bus = liveTopics(
+		() => [...(topic ? [topic] : []), ...(orders ?? []).flatMap((o) => o.legs.map((l) => l.topic))],
+		(t, msg) => {
+			if (t.startsWith('shipment:') && typeof msg.status === 'string' && orders) {
+				const sid = Number(msg.shipment_id);
+				orders = orders.map((o) => ({
+					...o,
+					legs: o.legs.map((l) => (l.shipment_id === sid ? { ...l, status: String(msg.status) } : l))
+				}));
 			}
-			notice = 'Tracking pasted back; label issued.';
-			pasteTracking[id] = '';
-			pasteFiles[id] = null;
-			await refresh();
+			refresh();
+		}
+	);
+
+	onMount(() => {
+		void load();
+	});
+
+	const legCount = $derived((orders ?? []).reduce((n, o) => n + o.legs.length, 0));
+
+	async function copy(text: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+			toast.success('Tracking number copied.');
 		} catch {
-			notice = 'Could not paste back.';
-		} finally {
-			busy = false;
+			toast.error('Copy is blocked in this browser; select the number instead.');
 		}
 	}
-
-	async function voidLabel(id: number): Promise<void> {
-		if (shipmentId === null) return;
-		busy = true;
-		notice = '';
-		errors = [];
-		try {
-			const res = await fetch(api(`/p2/shipments/${shipmentId}/labels/${id}/void`), {
-				method: 'POST',
-				credentials: 'same-origin',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({})
-			});
-			if (!res.ok) {
-				await readError(res);
-				return;
-			}
-			notice = 'Label voided.';
-			await refresh();
-		} catch {
-			notice = 'Could not void the label.';
-		} finally {
-			busy = false;
-		}
-	}
-
-	function downloadHref(id: number): string {
-		return api(`/p2/shipments/${shipmentId}/labels/${id}/download`);
-	}
-
-	function formatName(value: string): string {
-		return FORMATS.find(([v]) => v === value)?.[1] ?? value;
-	}
-
-	onMount(loadDefaults);
 </script>
 
 <svelte:head>
-	<title>Shipping labels — Apostille Handbook</title>
+	<title>Shipping — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Shipping labels</h1>
+<div class="flex flex-wrap items-end justify-between gap-4">
+	<div class="flex flex-col gap-2">
+		<Heading level={1} eyebrow="Your account">Shipping</Heading>
+	</div>
+	<LivePill live={bus.live} lastAt={bus.lastAt} />
+</div>
 
-{#if notice}
-	<p class="rounded-sm border border-line bg-surface px-4 py-3" role="status">{notice}</p>
-{/if}
-{#if errors.length}
-	<ul class="rounded-sm border border-[var(--danger,#b3261e)] bg-surface py-3 pr-4 pl-8" role="alert">
-		{#each errors as err}
-			<li>{err.field ? `${err.field}: ` : ''}{err.message}</li>
-		{/each}
-	</ul>
-{/if}
-
-<section aria-labelledby="shipment-h">
-	<h2 id="shipment-h">1. Shipment</h2>
-	<form
-		class="flex max-w-[44rem] flex-col gap-2"
-		onsubmit={(e) => {
-			e.preventDefault();
-			createShipment();
-		}}
-	>
-		<label class="font-bold" for="authority">Authority ID</label>
-		<input
-			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-			id="authority"
-			type="number"
-			min="1"
-			bind:value={authorityId}
-			required
-		/>
-
-		<div class="grid grid-cols-1 gap-4 min-[48rem]:grid-cols-2">
-			<fieldset class="rounded-sm border border-line px-4 py-3">
-				<legend class="px-1 font-bold">From</legend>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-name">Name</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="from-name"
-					type="text"
-					bind:value={from.name}
-					required
-					autocomplete="name"
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-street">Street</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="from-street"
-					type="text"
-					bind:value={from.street1}
-					required
-					autocomplete="street-address"
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-street2">
-					Street, line 2 (optional)
-				</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="from-street2"
-					type="text"
-					bind:value={from.street2}
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-city">City</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="from-city"
-					type="text"
-					bind:value={from.city}
-					required
-					autocomplete="address-level2"
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-state">State</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="from-state"
-					type="text"
-					bind:value={from.state_province}
-					required
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-postal">
-					Postal code
-				</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="from-postal"
-					type="text"
-					bind:value={from.postal}
-					required
-					autocomplete="postal-code"
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-country">
-					Country (ISO-2)
-				</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="from-country"
-					type="text"
-					bind:value={from.country}
-					required
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="from-phone">
-					Phone (optional)
-				</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="from-phone"
-					type="tel"
-					bind:value={from.phone}
-					autocomplete="tel"
-				/>
-			</fieldset>
-			<fieldset class="rounded-sm border border-line px-4 py-3">
-				<legend class="px-1 font-bold">To</legend>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-name">Name</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="to-name"
-					type="text"
-					bind:value={to.name}
-					required
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-street">Street</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="to-street"
-					type="text"
-					bind:value={to.street1}
-					required
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-street2">
-					Street, line 2 (optional)
-				</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="to-street2"
-					type="text"
-					bind:value={to.street2}
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-city">City</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="to-city"
-					type="text"
-					bind:value={to.city}
-					required
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-state">State</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="to-state"
-					type="text"
-					bind:value={to.state_province}
-					required
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-postal">
-					Postal code
-				</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="to-postal"
-					type="text"
-					bind:value={to.postal}
-					required
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-country">
-					Country (ISO-2)
-				</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="to-country"
-					type="text"
-					bind:value={to.country}
-					required
-				/>
-				<label class="mt-2 flex min-h-0 items-center gap-[0.6rem] font-bold" for="to-phone">
-					Phone (optional)
-				</label>
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="to-phone"
-					type="tel"
-					bind:value={to.phone}
-				/>
-			</fieldset>
+<div class="mt-8">
+	{#if view === 'login'}
+		<Notice variant="info" heading="Sign in to see your labels.">
+			<p>
+				Labels and tracking live in your account.
+				<a class="underline underline-offset-4" href={loginHref(resolve('/(customer)/shipping'))}>Sign in</a> to continue.
+			</p>
+		</Notice>
+	{:else if view === 'error'}
+		<Notice variant="error" heading="Shipping is unavailable right now.">
+			<p>Try again in a bit.</p>
+		</Notice>
+	{:else if view === 'loading' || orders === null}
+		<div role="status" aria-label="Loading labels" class="grid gap-3">
+			<span class="sr-only">Loading labels</span>
+			<Skeleton class="h-32 w-full rounded-lg" />
+			<Skeleton class="h-32 w-full rounded-lg" />
 		</div>
-
-		<div class="flex flex-wrap gap-4">
-			<div class="flex flex-col gap-1">
-				<label class="font-bold" for="parcel">Parcel</label>
-				<select
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="parcel"
-					bind:value={parcel}
-				>
-					{#each PARCELS as [value, label]}
-						<option {value}>{label}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="flex flex-col gap-1">
-				<label class="font-bold" for="service">Service</label>
-				<select
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-					id="service"
-					bind:value={service}
-				>
-					{#each SERVICES as [value, label]}
-						<option {value}>{label}</option>
-					{/each}
-				</select>
-			</div>
+	{:else if orders.length === 0}
+		<div class="flex flex-col items-start gap-4 rounded-xl border border-dashed border-line bg-surface p-8">
+			<p class="m-0 text-h3 font-semibold text-ink">No labels yet.</p>
+			<p class="m-0 text-ink-muted">Labels you buy with an order appear here with live tracking.</p>
+			<Button href={resolve('/(customer)/order')} class="h-11 px-5">Start an order</Button>
 		</div>
-
-		<button
-			class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-[1.2rem] py-[0.6rem] font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
-			type="submit"
-			disabled={busy}>Create shipment</button
-		>
-	</form>
-</section>
-
-<section aria-labelledby="purchase-h">
-	<h2 id="purchase-h">2. Purchase a label</h2>
-	{#if shipmentId === null}
-		<p class="rounded-sm border border-line bg-surface px-4 py-3">Create a shipment first.</p>
 	{:else}
-		<p>
-			Shipment {shipmentId} · status: <strong>{shipmentStatus || 'draft'}</strong>
-			<button
-				type="button"
-				class="m-0 ml-2 min-h-0 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-[0.6rem] py-1 font-bold text-accent-ink"
-				onclick={refresh}>Refresh</button
-			>
+		<p class="m-0 text-sm text-ink-muted">
+			{legCount}
+			{legCount === 1 ? 'shipment' : 'shipments'} across {orders.length}
+			{orders.length === 1 ? 'order' : 'orders'}.
 		</p>
-		<form
-			class="flex max-w-[44rem] flex-col gap-2"
-			onsubmit={(e) => {
-				e.preventDefault();
-				purchase();
-			}}
-		>
-			<fieldset class="rounded-sm border border-line px-4 py-3">
-				<legend class="px-1 font-bold">Label option</legend>
-				<label class="flex min-h-11 items-center gap-[0.6rem] font-bold">
-					<input type="radio" name="kind" value="printable" bind:group={kind} />
-					A — Printable address label (you affix postage)
-				</label>
-				<label class="flex min-h-11 items-center gap-[0.6rem] font-bold">
-					<input type="radio" name="kind" value="prepaid" bind:group={kind} />
-					B — Prepaid USPS label (demo purchase, no live postage)
-				</label>
-			</fieldset>
-
-			<div class="flex flex-wrap gap-4">
-				<div class="flex flex-col gap-1">
-					<label class="font-bold" for="direction">Direction</label>
-					<select
-						class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-						id="direction"
-						bind:value={direction}
-					>
-						<option value="outbound">Outbound (you → authority)</option>
-						<option value="return">Return (authority → you)</option>
-					</select>
-				</div>
-				{#if kind === 'printable'}
-					<div class="flex flex-col gap-1">
-						<label class="font-bold" for="carrier">Carrier</label>
-						<select
-							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-							id="carrier"
-							bind:value={carrier}
-						>
-							<option value="usps">USPS</option>
-							<option value="fed_ex">FedEx</option>
-						</select>
+		<ul class="m-0 mt-3 flex list-none flex-col gap-4 p-0">
+			{#each orders as o (o.id)}
+				<li class="overflow-hidden rounded-xl border border-line bg-bg shadow-sm">
+					<div class="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface px-4 py-3 sm:px-5">
+						<span class="flex min-w-0 flex-col">
+							<span class="font-semibold text-ink">{KIND_LABEL[o.kind] ?? o.kind} · {o.authority.name}</span>
+							<a class="font-mono text-sm underline underline-offset-4" href={resolve('/(customer)/orders/[id]', { id: o.id })}>{o.id}</a>
+						</span>
+						<StatusBadge status={o.status} />
 					</div>
-					<div class="flex flex-col gap-1">
-						<label class="font-bold" for="format">Layout</label>
-						<select
-							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-							id="format"
-							bind:value={format}
-						>
-							{#each FORMATS as [value, label]}
-								<option {value}>{label}</option>
-							{/each}
-						</select>
-					</div>
-				{:else}
-					<div class="flex flex-col gap-1">
-						<span class="font-bold">Carrier</span>
-						<p class="mt-1 mb-0">USPS (prepaid is USPS-only)</p>
-					</div>
-					<div class="flex flex-col gap-1">
-						<label class="font-bold" for="paper">Paper size</label>
-						<select
-							class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-							id="paper"
-							bind:value={paper}
-						>
-							{#each PAPERS as [value, label]}
-								<option {value}>{label}</option>
-							{/each}
-						</select>
-					</div>
-				{/if}
-			</div>
-
-			<div class="flex flex-wrap gap-3">
-				<button
-					class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-[1.2rem] py-[0.6rem] font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
-					type="submit"
-					disabled={busy}>Purchase label</button
-				>
-				<button
-					class="mt-3 min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-[1.2rem] py-[0.6rem] font-bold text-ink disabled:cursor-wait disabled:opacity-60"
-					type="button"
-					disabled={busy}
-					onclick={saveDefaults}
-				>
-					Save choices as my defaults
-				</button>
-			</div>
-		</form>
-	{/if}
-</section>
-
-<section aria-labelledby="labels-h">
-	<h2 id="labels-h">3. Labels</h2>
-	{#if labels.length === 0}
-		<p class="rounded-sm border border-line bg-surface px-4 py-3">No labels yet for this shipment.</p>
-	{:else}
-		<ul class="m-0 flex list-none flex-col gap-4 p-0">
-			{#each labels as label (label.id)}
-				<li class="rounded-sm border border-line px-4 py-3">
-					<p>
-						<strong>#{label.id}</strong>
-						{label.summary.service_name} ·
-						{label.summary.direction} ·
-						{label.purchase_option === 'printable'
-							? `printable, ${formatName(label.label_format)}`
-							: `prepaid, ${label.label_format}`} ·
-						<strong>{label.summary.status}</strong>
-					</p>
-					<p>
-						{#if label.summary.tracking_no}
-							Tracking: {label.summary.tracking_no}
-							{#if label.summary.tracking_url}
-								<a class="ml-3" href={label.summary.tracking_url} target="_blank" rel="noreferrer">
-									Track
-								</a>
-							{/if}
-						{:else}
-							No tracking yet.
-						{/if}
-						{#if label.summary.label_url}
-							<a class="ml-3" href={downloadHref(label.id)} download>Download</a>
-						{/if}
-					</p>
-					{#if label.summary.status === 'pending' || label.summary.status === 'voided'}
-						<form
-							class="mt-2 flex max-w-[28rem] flex-col gap-2"
-							onsubmit={(e) => {
-								e.preventDefault();
-								pasteBack(label.id);
-							}}
-						>
-							<label class="font-bold" for="track-{label.id}">Tracking number</label>
-							<input
-								class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-								id="track-{label.id}"
-								type="text"
-								bind:value={pasteTracking[label.id]}
-								placeholder="Pasted back by staff"
-							/>
-							<label class="font-bold" for="file-{label.id}">Label PDF</label>
-							<input
-								class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
-								id="file-{label.id}"
-								type="file"
-								accept="application/pdf"
-								onchange={(e) => pickFile(label.id, e)}
-							/>
-							<button
-								class="mt-3 min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-[1.2rem] py-[0.6rem] font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
-								type="submit"
-								disabled={busy}>Paste back</button
-							>
-						</form>
-					{/if}
-					{#if label.summary.status === 'issued'}
-						<button
-							type="button"
-							class="mt-3 min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-[1.2rem] py-[0.6rem] font-bold text-ink disabled:cursor-wait disabled:opacity-60"
-							disabled={busy}
-							onclick={() => voidLabel(label.id)}
-						>
-							Void label
-						</button>
-					{/if}
+					<ul class="m-0 list-none p-0">
+						{#each o.legs as leg (leg.shipment_id)}
+							{@const label = safeHref(leg.label_url)}
+							{@const track = safeHref(leg.tracking_url)}
+							<li class="flex flex-col gap-2 border-b border-line px-4 py-3 last:border-b-0 sm:px-5" data-leg={leg.role}>
+								<div class="flex flex-wrap items-center justify-between gap-2">
+									<span class="flex items-center gap-2 font-medium text-ink">
+										<TruckIcon class="size-4 text-accent-strong" aria-hidden="true" />
+										{ROLE_LABEL[leg.role] ?? leg.role}
+										<span class="font-normal text-ink-muted">· {serviceName(leg.service, leg.carrier) || carrierName(leg.carrier)}</span>
+									</span>
+									<StatusBadge status={leg.status} />
+								</div>
+								<div class="flex flex-wrap items-center gap-2">
+									{#if leg.tracking_number}
+										<span class="min-w-0 font-mono text-sm break-all text-ink">{leg.tracking_number}</span>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="size-11"
+											aria-label={`Copy tracking number for ${ROLE_LABEL[leg.role] ?? leg.role}`}
+											onclick={() => copy(leg.tracking_number ?? '')}
+										>
+											<CopyIcon aria-hidden="true" />
+										</Button>
+									{:else}
+										<span class="text-sm text-ink-muted">No tracking number on this label.</span>
+									{/if}
+								</div>
+								{#if track || label}
+									<div class="flex flex-wrap gap-2">
+										{#if track}
+											<Button variant="outline" class="h-11 px-4" href={track} target="_blank" rel="noopener noreferrer">
+												Track with {carrierName(leg.carrier)} <ExternalLinkIcon aria-hidden="true" />
+											</Button>
+										{/if}
+										{#if label}
+											<Button variant="outline" class="h-11 px-4" href={label} download>
+												<FileDownIcon aria-hidden="true" /> Label PDF
+											</Button>
+										{/if}
+									</div>
+								{/if}
+							</li>
+						{/each}
+					</ul>
 				</li>
 			{/each}
 		</ul>
 	{/if}
-</section>
-
+</div>
