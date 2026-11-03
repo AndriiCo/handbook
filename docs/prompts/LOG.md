@@ -281,3 +281,4 @@
 | 372 | 2026-11-03 16:02Z | Deploy 9460b26 (record) | prod 0.1.0+9460b26 (prev 78a9ca2); 5/10 → 5/10, no regressions; h3 CSRF verified |
 | 373 | 2026-11-03 16:27Z | Config: remove tls.client_ca_file and other dead keys; First-boot setup on top | 3 keys removed (stored rows ignored); setup group first; TOC pins clicked group |
 | 374 | 2026-11-03 16:36Z | Implement reserved keys: plan.auto_compose + compile.daily_runs | auto-compose per slug (folds bursts); Compile run API capped per day; web 399 |
+| 375 | 2026-11-03 16:48Z | Implement reserved keys: orders.ship_from, orders.fee_label_cents, labels.customer_* | customer FedEx labels: carrier quote + fee, ledger buyer, refunds; kit ships from ship_from |

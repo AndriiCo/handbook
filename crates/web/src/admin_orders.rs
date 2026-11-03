@@ -288,6 +288,7 @@ async fn advance(
         "delivered" => "Delivered",
         "labels_ready" => "Labels ready",
         "packing" => "Kit is being packed",
+        "label_purchasing" => "Buying your labels",
         _ => "Order updated",
     };
     let note: String = body.note.unwrap_or_default().chars().take(200).collect();
@@ -321,6 +322,11 @@ async fn advance(
         "INSERT INTO audit(at, actor, action, entity, entity_id, reason) VALUES (?1, ?2, 'order_advance', 'order', 0, ?3)",
         rusqlite::params![now, auth.user.user_id, format!("{id} {from}->{}", body.to)],
     );
+    // Back to the label buyer (staff fixed what sent it to them): legs
+    // already bought are kept, `unknown` ones still stop it.
+    if body.to == "label_purchasing" {
+        crate::customer_labels::POKE.notify_one();
+    }
     let topic = format!("billing:{customer}");
     state.bus.publish(
         &topic,

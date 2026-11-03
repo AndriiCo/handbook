@@ -257,6 +257,16 @@ pub struct Switches {
     pub stripe_live: bool,
     pub kit_price_cents: Option<i64>,
     pub currency: String,
+    /// Customer FedEx labels can be quoted and bought now
+    /// (`labels.customer_live`, FedEx keys, coherent mode).
+    pub fedex_ready: bool,
+    /// Customer USPS labels can be quoted and bought now.
+    pub usps_ready: bool,
+    /// `orders.ship_from` holds a valid fulfilment address (kits ship
+    /// from it, so the kit card waits for it).
+    pub ship_from_ok: bool,
+    /// `orders.fee_label_cents`, added to every paid label order.
+    pub label_fee_cents: i64,
 }
 
 /// The four delivery cards (contracts `order-options.json`).
@@ -274,7 +284,11 @@ pub fn options(slug: &str, dest: Option<&Destination>, sw: &Switches) -> Value {
             ),
             ("address_label", Some(_)) => (true, None, None),
             (_, Some(_)) if !paid_enabled => (false, Some(paused), None),
-            ("mail_kit", Some(_)) if from.is_none() => (false, Some(paused), None),
+            ("mail_kit", Some(_)) if from.is_none() || !sw.ship_from_ok => {
+                (false, Some(paused), None)
+            }
+            ("label_fedex", Some(_)) if !sw.fedex_ready => (false, Some(paused), None),
+            ("label_usps", Some(_)) if !sw.usps_ready => (false, Some(paused), None),
             _ => (true, None, None),
         };
         json!({"kind": kind, "enabled": enabled, "title": title, "reason": reason,
@@ -320,11 +334,20 @@ fn err(status: StatusCode, error: &str, reason: Option<&str>) -> Response {
 }
 
 fn paused() -> Response {
+    paused_because(crate::customer_labels::PAUSED)
+}
+
+fn paused_because(reason: &str) -> Response {
     err(
         StatusCode::SERVICE_UNAVAILABLE,
         "paid_tiers_paused",
-        Some("Paid options are paused right now. The free address label still works."),
+        Some(reason),
     )
+}
+
+/// The customer-paid carrier label tiers.
+fn is_label(kind: &str) -> bool {
+    matches!(kind, "label_fedex" | "label_usps")
 }
 
 /// Unguessable order id: `ord_` + 10 chars of [A-Za-z0-9].
@@ -373,9 +396,7 @@ fn switches(state: &AppState, meta: &Connection) -> Switches {
             .flatten()
             .unwrap_or(false),
         stripe_key: stripe.as_ref().is_some_and(|k| !k.is_empty()),
-        stripe_live: stripe
-            .as_ref()
-            .is_some_and(|k| k.starts_with(b"sk_live") || k.starts_with(b"rk_live")),
+        stripe_live: stripe_live(&stripe),
         kit_price_cents: cache
             .text(meta, kek, config::keys::ORDERS_KIT_PRICE_CENTS)
             .ok()
@@ -387,7 +408,40 @@ fn switches(state: &AppState, meta: &Connection) -> Switches {
             .ok()
             .flatten()
             .unwrap_or_default(),
+        fedex_ready: crate::customer_labels::ready(
+            state,
+            meta,
+            "label_fedex",
+            stripe_live(&stripe),
+        ),
+        usps_ready: crate::customer_labels::ready(state, meta, "label_usps", stripe_live(&stripe)),
+        ship_from_ok: ship_from(state, meta).is_some(),
+        label_fee_cents: crate::customer_labels::fee_cents(state, meta),
     }
+}
+
+fn stripe_live(key: &Option<Vec<u8>>) -> bool {
+    key.as_ref()
+        .is_some_and(|k| k.starts_with(b"sk_live") || k.starts_with(b"rk_live"))
+}
+
+/// `orders.ship_from`: the fulfilment address kits ship from (one JSON
+/// object in the [`ReturnTo`] shape, plus an optional `phone` carriers
+/// use as the contact number). Invalid or unset reads as `None`.
+pub(crate) fn ship_from(state: &AppState, meta: &Connection) -> Option<ReturnTo> {
+    let kek = state.kek.as_deref()?;
+    let raw = state
+        .config_cache
+        .text(meta, kek, config::keys::ORDERS_SHIP_FROM)
+        .ok()
+        .flatten()?;
+    parse_ship_from(&raw)
+}
+
+pub(crate) fn parse_ship_from(raw: &str) -> Option<ReturnTo> {
+    serde_json::from_str::<ReturnTo>(raw.trim())
+        .ok()
+        .filter(ReturnTo::valid)
 }
 
 /// Customer-entered return address (never in a URL; p2.sqlite only).
@@ -402,6 +456,9 @@ pub struct ReturnTo {
     pub postal_code: String,
     #[serde(default = "us")]
     pub country: String,
+    /// Optional contact number; carriers print it on labels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
 }
 
 fn us() -> String {
@@ -422,6 +479,13 @@ impl ReturnTo {
             && self.region.bytes().all(|b| b.is_ascii_uppercase())
             && is_zip(self.postal_code.trim())
             && self.country == "US"
+            && self.phone.as_deref().is_none_or(|p| {
+                let digits = p.bytes().filter(u8::is_ascii_digit).count();
+                (7..=15).contains(&digits)
+                    && p.len() <= 24
+                    && p.bytes()
+                        .all(|b| b.is_ascii_digit() || b" +-().".contains(&b))
+            })
     }
 }
 
@@ -466,12 +530,29 @@ fn event_text(kind: &str) -> &'static str {
 
 /// Insert one order with its backing submission, legs and first
 /// events, in one p2 transaction. Returns the order id.
+#[cfg(test)]
 pub fn create_order(
+    p2: &Connection,
+    customer_ref: &str,
+    authority: (i64, &str),
+    body: &CreateBody,
+    dest: &Destination,
+    mode: &str,
+    now: i64,
+) -> rusqlite::Result<String> {
+    create_order_from(p2, customer_ref, authority, body, dest, None, mode, now)
+}
+
+/// [`create_order`] with the operator's ship-from address, which a
+/// mailing kit ships from (`orders.ship_from`).
+#[allow(clippy::too_many_arguments)]
+pub fn create_order_from(
     p2: &Connection,
     customer_ref: &str,
     (authority_id, authority_name): (i64, &str),
     body: &CreateBody,
     dest: &Destination,
+    ship_from: Option<&ReturnTo>,
     mode: &str,
     now: i64,
 ) -> rusqlite::Result<String> {
@@ -513,15 +594,19 @@ pub fn create_order(
             now,
         ],
     )?;
-    let customer = json!({
-        "name": body.return_to.name, "street1": body.return_to.line1, "street2": body.return_to.line2,
-        "city": body.return_to.city, "state_province": body.return_to.region,
-        "postal": body.return_to.postal_code, "country": body.return_to.country,
-    });
+    let address = |a: &ReturnTo| {
+        json!({
+            "name": a.name, "street1": a.line1, "street2": a.line2,
+            "city": a.city, "state_province": a.region,
+            "postal": a.postal_code, "country": a.country, "phone": a.phone,
+        })
+    };
+    let customer = address(&body.return_to);
+    let kit_from = ship_from.map_or_else(|| json!({"name": "Apostille Handbook"}), address);
     for (role, carrier, service) in legs_for(&body.kind) {
         let (from, to) = match *role {
             "return" => (&dest_json, &customer),
-            "kit_to_customer" => (&json!({"name": "Apostille Handbook"}), &customer),
+            "kit_to_customer" => (&kit_from, &customer),
             _ => (&customer, &dest_json),
         };
         tx.execute(
@@ -624,8 +709,12 @@ pub fn order_view(
                 "role": role, "carrier": carrier, "service": r.get::<_, String>(2)?,
                 "shipment_id": shipment_id,
                 "status": if label_ready { "label_ready" } else { "pending" },
+                "tracking_url": match carrier.as_str() {
+                    "fedex" => labels::tracking_url(labels::Carrier::FedEx, &tracking),
+                    "usps" => labels::tracking_url(labels::Carrier::Usps, &tracking),
+                    _ => None,
+                },
                 "tracking_number": (!tracking.is_empty()).then_some(tracking),
-                "tracking_url": Value::Null,
                 "label_url": label_ready.then(|| format!("/apostille/api/v1/p2/orders/{id}/labels/{role}")),
                 "label_kind": if free { "address_only" } else { "carrier" },
                 "topic": format!("shipment:{shipment_id}"),
@@ -647,6 +736,9 @@ pub fn order_view(
     let mut actions = Vec::new();
     if free && status == "labels_ready" {
         actions.push(json!({"id": "print_label", "label": "Print the address label"}));
+    }
+    if is_label(&kind) && status == "labels_ready" {
+        actions.push(json!({"id": "print_labels", "label": "Print your labels"}));
     }
     Ok(Some(json!({
         "id": id, "kind": kind, "status": status, "mode": mode,
@@ -840,12 +932,14 @@ async fn create(
         );
     }
     let mode = if sw.stripe_live { "live" } else { "test" };
-    let id = match create_order(
+    let kit_from = ship_from(&state, &meta);
+    let id = match create_order_from(
         &p2,
         &customer_ref,
         (authority_id, &authority_name),
         &body,
         &dest,
+        kit_from.as_ref(),
         mode,
         now,
     ) {
@@ -958,8 +1052,41 @@ async fn get_one(
     }
 }
 
+/// One bought carrier label PDF of an order leg (owner checked by the
+/// caller).
+fn carrier_label_pdf(state: &AppState, p2: &Connection, id: &str, leg: &str) -> Response {
+    let sha: Option<String> = p2
+        .query_row(
+            "SELECT l.label_sha256 FROM order_shipment os
+             JOIN shipping_label l ON l.shipment_id = os.shipment_id
+             WHERE os.order_id = ?1 AND os.role = ?2 AND l.status = 'issued'
+               AND l.label_sha256 != ''
+             ORDER BY l.id DESC LIMIT 1",
+            rusqlite::params![id, leg],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap_or(None);
+    let Some(bytes) = sha.and_then(|sha| Store::new(&state.store_root).read_blob(&sha).ok()) else {
+        return err(StatusCode::NOT_FOUND, "no such label", None);
+    };
+    (
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_string()),
+            (header::CACHE_CONTROL, "private, no-store".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"{id}-{leg}-label.pdf\""),
+            ),
+        ],
+        bytes,
+    )
+        .into_response()
+}
+
 /// `GET /orders/{id}/labels/{leg}` — owner only. The free address label
-/// is printable HTML marked NOT POSTAGE; carrier labels are SA-25's.
+/// is printable HTML marked NOT POSTAGE; carrier labels are the bought
+/// PDFs.
 async fn get_label(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -974,6 +1101,9 @@ async fn get_label(
     let Some((owner, _, kind)) = owner_of(&p2, &id) else {
         return err(StatusCode::NOT_FOUND, "unknown order", None);
     };
+    if owner == customer_ref && is_label(&kind) && matches!(leg.as_str(), "outbound" | "return") {
+        return carrier_label_pdf(&state, &p2, &id, &leg);
+    }
     if owner != customer_ref || kind != "address_label" || leg != "outbound" {
         return err(StatusCode::NOT_FOUND, "no such label", None);
     }
@@ -1069,14 +1199,14 @@ fn owned(
     }
 }
 
-fn event(p2: &Connection, id: &str, kind: &str, text: &str, now: i64) {
+pub(crate) fn event(p2: &Connection, id: &str, kind: &str, text: &str, now: i64) {
     let _ = p2.execute(
         "INSERT INTO order_event(order_id, at, kind, text, leg) VALUES (?1, ?2, ?3, ?4, NULL)",
         rusqlite::params![id, now, kind, text],
     );
 }
 
-fn set_status(p2: &Connection, id: &str, from: &str, to: &str, now: i64) -> bool {
+pub(crate) fn set_status(p2: &Connection, id: &str, from: &str, to: &str, now: i64) -> bool {
     can_transition(from, to)
         && p2
             .execute(
@@ -1106,8 +1236,47 @@ async fn quote(
     if !(sw.orders_enabled && sw.stripe_key) {
         return paused();
     }
-    let Some(lines) = price_lines(&kind, &sw) else {
-        return paused();
+    let current: String = p2
+        .query_row(
+            "SELECT status FROM customer_order WHERE id = ?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .unwrap_or_default();
+    if !matches!(current.as_str(), "draft" | "quoted") {
+        return err(StatusCode::CONFLICT, "order cannot be quoted now", None);
+    }
+    // Label tiers price at the carrier (both legs) plus the service
+    // fee; the kit is an operator-set price.
+    let mut carrier_quotes: Vec<crate::customer_labels::LegQuote> = Vec::new();
+    let lines = if is_label(&kind) {
+        let (st, oid, k, live) = (state.clone(), id.clone(), kind.clone(), sw.stripe_live);
+        match tokio::task::spawn_blocking(move || {
+            crate::customer_labels::quote_order(&st, &oid, &k, live)
+        })
+        .await
+        {
+            Ok(Ok(quotes)) => {
+                let lines = crate::customer_labels::label_lines(&quotes, sw.label_fee_cents);
+                carrier_quotes = quotes;
+                lines
+            }
+            Ok(Err(crate::customer_labels::QuoteError::Paused(why))) => {
+                return paused_because(why);
+            }
+            Ok(Err(crate::customer_labels::QuoteError::Carrier(e))) => {
+                tracing::warn!(order = %id, error = %e, "label quote failed at the carrier");
+                return paused_because(
+                    "The carrier could not price this shipment right now. Try again in a few minutes.",
+                );
+            }
+            Err(_) => return store_unavailable(),
+        }
+    } else {
+        let Some(lines) = price_lines(&kind, &sw) else {
+            return paused();
+        };
+        lines
     };
     let total: i64 = lines.iter().map(|l| l.1).sum();
     let max = state
@@ -1139,7 +1308,8 @@ async fn quote(
         sw.currency.clone()
     };
     let amount = json!({"currency": currency, "total_cents": total, "quoted_at": now,
-                        "lines": lines.iter().map(|(l, c)| json!({"label": l, "cents": c})).collect::<Vec<_>>()});
+                        "lines": lines.iter().map(|(l, c)| json!({"label": l, "cents": c})).collect::<Vec<_>>(),
+                        "carrier_quotes": carrier_quotes});
     if status == "draft" && !set_status(&p2, &id, "draft", "quoted", now) {
         return err(StatusCode::CONFLICT, "order cannot be quoted now", None);
     }
@@ -1158,7 +1328,8 @@ async fn quote(
         return err(StatusCode::CONFLICT, "order cannot be quoted now", None);
     }
     Json(json!({"order_id": id, "mode": if sw.stripe_live { "live" } else { "test" }, "currency": amount["currency"],
-                "total_cents": total, "expires_at": now + QUOTE_TTL_SECS, "lines": amount["lines"], "carrier_quotes": []}))
+                "total_cents": total, "expires_at": now + QUOTE_TTL_SECS, "lines": amount["lines"],
+                "carrier_quotes": amount["carrier_quotes"]}))
     .into_response()
 }
 
@@ -1247,8 +1418,41 @@ async fn checkout(
         return err(StatusCode::CONFLICT, "quote the order first", None);
     }
     let stored: Value = serde_json::from_str(&amount).unwrap_or(json!({}));
-    let Some(lines) = price_lines(&kind, &sw) else {
-        return paused();
+    let fresh = stored["quoted_at"]
+        .as_i64()
+        .is_some_and(|t| now - t <= QUOTE_TTL_SECS);
+    let lines = if is_label(&kind) {
+        let ready = if kind == "label_fedex" {
+            sw.fedex_ready
+        } else {
+            sw.usps_ready
+        };
+        let quotes: Vec<crate::customer_labels::LegQuote> =
+            serde_json::from_value(stored["carrier_quotes"].clone()).unwrap_or_default();
+        if !ready || quotes.len() != 2 {
+            return paused();
+        }
+        let caps = crate::customer_labels::caps(&state, &meta);
+        if crate::customer_labels::buys_today(&p2, now).saturating_add(2) > caps.daily_cap {
+            return paused_because(
+                "Label buying reached today's limit. Try again tomorrow or choose another option.",
+            );
+        }
+        // Carrier rates hold for the quote window only: an older quote is
+        // priced again at the carrier, never renewed at the old rate.
+        if !fresh {
+            return err(
+                StatusCode::CONFLICT,
+                "quote_expired",
+                Some("Shipping rates are held for 30 minutes. Review the new total and pay again."),
+            );
+        }
+        crate::customer_labels::label_lines(&quotes, sw.label_fee_cents)
+    } else {
+        let Some(lines) = price_lines(&kind, &sw) else {
+            return paused();
+        };
+        lines
     };
     let total: i64 = lines.iter().map(|l| l.1).sum();
     let currency = if sw.currency.is_empty() {
@@ -1256,9 +1460,6 @@ async fn checkout(
     } else {
         sw.currency.clone()
     };
-    let fresh = stored["quoted_at"]
-        .as_i64()
-        .is_some_and(|t| now - t <= QUOTE_TTL_SECS);
     // The total is re-priced from config right here, so a stale quote
     // at the same price and currency is simply renewed; only a changed
     // price sends the customer back to review it (re-review #0).
@@ -1471,11 +1672,16 @@ pub fn settle(
         ),
         now,
     );
+    let mut buying = false;
     if set_status(&tx, order_id, &status, "paid", now) {
-        // Kits go to the packing queue; carrier-label orders wait for
-        // staff until the label ledger (SA-25 C3) buys them.
+        // Kits go to the packing queue; carrier-label orders go to the
+        // label buyer when customer buys are on, else to staff.
+        buying =
+            kind != "mail_kit" && crate::customer_labels::ready_now(state, &kind, livemode == 1);
         let (to, kind_event, text) = if kind == "mail_kit" {
             ("packing", "kit.queued", "Kit queued for packing")
+        } else if buying {
+            ("label_purchasing", "label.buying", "Buying your labels")
         } else {
             (
                 "needs_staff",
@@ -1506,6 +1712,9 @@ pub fn settle(
         );
     }
     tx.commit().map_err(|e| e.to_string())?;
+    if buying {
+        crate::customer_labels::POKE.notify_one();
+    }
     let topic = format!("billing:{customer_ref}");
     state.bus.publish(
         &topic,
@@ -1644,8 +1853,25 @@ mod tests {
             region: "WA".into(),
             postal_code: "1234é".into(),
             country: "US".into(),
+            phone: None,
         };
         assert!(!bad.valid());
+        let phone = |p: &str| ReturnTo {
+            postal_code: "98504".into(),
+            phone: Some(p.into()),
+            ..bad.clone()
+        };
+        assert!(phone("+1 (360) 555-0100").valid());
+        assert!(!phone("call me").valid());
+        assert!(!phone("12").valid());
+        // The ship-from JSON parses into the same shape, or reads as unset.
+        let ship = parse_ship_from(
+            r#"{"name":"Example Co","line1":"1 Example Way","city":"Seattle","region":"WA","postal_code":"98101","phone":"+13605550100"}"#,
+        )
+        .expect("valid ship-from");
+        assert_eq!(ship.phone.as_deref(), Some("+13605550100"));
+        assert!(parse_ship_from(r#"{"name":"Example Co"}"#).is_none());
+        assert!(parse_ship_from("not json").is_none());
     }
 
     #[test]
@@ -1688,11 +1914,31 @@ mod tests {
             (203, Some(203)),
             "po_box outranks the street address"
         );
-        let sw = Switches {
+        // Not ready (no customer carrier buys, no ship-from): paid cards
+        // stay paused even with Stripe on.
+        let off = Switches {
             orders_enabled: true,
             stripe_key: true,
             kit_price_cents: Some(4900),
             ..Default::default()
+        };
+        let v = options("usa-wa-sos", Some(&d), &off);
+        for kind in ["label_usps", "mail_kit"] {
+            let card = v["options"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["kind"] == kind)
+                .unwrap()
+                .clone();
+            assert_eq!(card["enabled"], false, "{kind}");
+        }
+        // Ready everywhere: the PO Box still disables FedEx, citing the fact.
+        let sw = Switches {
+            fedex_ready: true,
+            usps_ready: true,
+            ship_from_ok: true,
+            ..off
         };
         let v = options("usa-wa-sos", Some(&d), &sw);
         let card = |k: &str| {
@@ -1826,6 +2072,7 @@ mod tests {
                 region: "IL".into(),
                 postal_code: "62701".into(),
                 country: "US".into(),
+                phone: None,
             },
         }
     }

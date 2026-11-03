@@ -23,6 +23,7 @@ mod admin_workers;
 mod approval;
 mod authority_path;
 mod compile;
+mod customer_labels;
 mod demo_precheck;
 mod draft;
 mod factcheck;
@@ -56,6 +57,7 @@ mod tracking;
 mod translate;
 mod unfurl;
 mod uploads;
+mod usps;
 mod ws_bus;
 
 use axum::{
@@ -468,6 +470,7 @@ fn migrate_mission_p2(p2: &rusqlite::Connection) -> rusqlite::Result<()> {
     orders::migrate_p2_tables(p2)?;
     forms_map::migrate_p2_tables(p2)?;
     p2_labels::migrate_p2_tables(p2)?;
+    customer_labels::migrate_p2_tables(p2)?;
     tracking::migrate_p2_tables(p2)
 }
 
@@ -1273,6 +1276,7 @@ async fn main() {
     // (each off unless its config switch is on).
     reconcile::spawn(&state);
     tracking::spawn(&state);
+    customer_labels::spawn(&state);
     let public = public_router(
         state.clone(),
         &cfg.static_dir,
@@ -2858,6 +2862,250 @@ mod tests {
         assert_eq!(started, 2, "one run plus one folded follow-up");
     }
 
+    /// A carrier link whose buy answers are scripted, counting calls.
+    struct ScriptedLink {
+        answers: std::cell::RefCell<Vec<Result<labels::BuyOutcome, labels::LabelError>>>,
+        buys: std::cell::Cell<usize>,
+    }
+
+    impl customer_labels::LabelLink for ScriptedLink {
+        fn carrier(&self) -> &'static str {
+            "fedex"
+        }
+        fn quote(
+            &self,
+            _cfg: &labels::live::LiveConfig,
+            _request: &labels::BuyRequest,
+        ) -> Result<i64, String> {
+            Ok(1_250)
+        }
+        fn buy(
+            &self,
+            _request: &labels::BuyRequest,
+        ) -> Result<labels::BuyOutcome, labels::LabelError> {
+            self.buys.set(self.buys.get() + 1);
+            self.answers.borrow_mut().remove(0)
+        }
+        fn cancel(&self, _tracking_no: &str) -> Result<(), labels::LabelError> {
+            Ok(())
+        }
+        fn payment_ref(&self) -> &str {
+            "000000000"
+        }
+    }
+
+    /// One paid FedEx label order waiting for the buyer.
+    fn paid_label_order(fx: &Fixture) -> String {
+        let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+        let dest = orders::destination(&[orders::FactText {
+            id: 204,
+            topic: "mailing".into(),
+            text: "Mail to 801 Capitol Way S, Olympia, WA 98501.".into(),
+        }])
+        .unwrap();
+        let body = orders::CreateBody {
+            slug: "usa-wa-sos".into(),
+            kind: "label_fedex".into(),
+            path_id: None,
+            form_fill_id: None,
+            return_to: orders::ReturnTo {
+                name: "SYNTHETIC Customer".into(),
+                line1: "1 Example St".into(),
+                line2: None,
+                city: "Springfield".into(),
+                region: "IL".into(),
+                postal_code: "62701".into(),
+                country: "US".into(),
+                phone: Some("+12175550100".into()),
+            },
+        };
+        let id = orders::create_order(&p2, "cust-1", (7, "S"), &body, &dest, "test", 1).unwrap();
+        let quotes = serde_json::json!([
+            {"leg": "outbound", "carrier": "fedex", "cents": 1250},
+            {"leg": "return", "carrier": "fedex", "cents": 1250},
+        ]);
+        p2.execute(
+            "UPDATE customer_order SET status = 'label_purchasing',
+                    amount_json = json_object('total_cents', 2500, 'carrier_quotes', json(?1))
+             WHERE id = ?2",
+            rusqlite::params![quotes.to_string(), id],
+        )
+        .unwrap();
+        id
+    }
+
+    fn order_status(fx: &Fixture, id: &str) -> String {
+        let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+        p2.query_row(
+            "SELECT status FROM customer_order WHERE id = ?1",
+            [id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    fn ledger(fx: &Fixture, id: &str) -> Vec<(String, String)> {
+        let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+        let mut stmt = p2
+            .prepare("SELECT leg, status FROM label_purchase WHERE order_id = ?1 ORDER BY leg")
+            .unwrap();
+        stmt.query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn customer_labels_buy_each_leg_once_and_fail_safe() {
+        let fx = fixture();
+        seal(
+            &fx,
+            config::keys::LABELS_CUSTOMER_LIVE,
+            config::ConfigType::Bool,
+            b"1",
+        );
+
+        // 1. Both legs buy over the recorded FedEx sandbox answers.
+        let id = paid_label_order(&fx);
+        let sandbox = |_: &AppState, _: &rusqlite::Connection, _: &str, _: bool| {
+            Ok(Box::new(customer_labels::FedexLink {
+                base: labels::FEDEX_BASE_SANDBOX.to_string(),
+                bearer: "synthetic".to_string(),
+                account: "000000000".to_string(),
+                transport: labels::live::SandboxTransport::new(
+                    labels::live::FixtureSet::synthetic(),
+                ),
+            }) as Box<dyn customer_labels::LabelLink>)
+        };
+        assert_eq!(
+            customer_labels::buy_order(&fx.state, &id, &sandbox),
+            customer_labels::BuyEnd::Ready
+        );
+        assert_eq!(order_status(&fx, &id), "labels_ready");
+        assert_eq!(
+            ledger(&fx, &id),
+            vec![
+                ("outbound".to_string(), "bought".to_string()),
+                ("return".to_string(), "bought".to_string())
+            ]
+        );
+        // A second pass never buys again.
+        assert_eq!(
+            customer_labels::buy_order(&fx.state, &id, &sandbox),
+            customer_labels::BuyEnd::Skipped
+        );
+        // The owner downloads the PDF; nobody else does.
+        let label = |who: &str| {
+            Request::builder()
+                .uri(format!("/apostille/api/v1/p2/orders/{id}/labels/return"))
+                .header("cookie", format!("{}={who}", auth::PUB_COOKIE))
+                .body(Body::empty())
+                .unwrap()
+        };
+        make_session(&fx.state.store_root, "cust-1", auth::Role::Customer);
+        let res = public_router_for(&fx.state)
+            .oneshot(label("cust-1"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(body_text(res).await.starts_with("%PDF-"));
+
+        // 2. The carrier refuses the shipment (400): nothing is retried;
+        //    with no Stripe key configured the refund goes to staff.
+        let id = paid_label_order(&fx);
+        let refusing = ScriptedLink {
+            answers: std::cell::RefCell::new(vec![Err(labels::LabelError::Api {
+                status: 400,
+                message: "invalid recipient".into(),
+            })]),
+            buys: std::cell::Cell::new(0),
+        };
+        let end = customer_labels::buy_order(&fx.state, &id, &|_, _, _, _| {
+            Ok(Box::new(ScriptedLink {
+                answers: std::cell::RefCell::new(refusing.answers.borrow_mut().drain(..).collect()),
+                buys: std::cell::Cell::new(0),
+            }) as Box<dyn customer_labels::LabelLink>)
+        });
+        assert!(matches!(end, customer_labels::BuyEnd::Staff(_)), "{end:?}");
+        assert_eq!(order_status(&fx, &id), "needs_staff");
+        assert_eq!(
+            ledger(&fx, &id),
+            vec![("outbound".to_string(), "failed".to_string())]
+        );
+
+        // 3. A timeout may have bought: `unknown`, staff, and a later pass
+        //    (staff sent it back) never calls the carrier again.
+        let id = paid_label_order(&fx);
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let timeouts = {
+            let calls = calls.clone();
+            move |_: &AppState, _: &rusqlite::Connection, _: &str, _: bool| {
+                calls.set(calls.get() + 1);
+                Ok(Box::new(ScriptedLink {
+                    answers: std::cell::RefCell::new(vec![Err(labels::LabelError::Transport(
+                        labels::TransportError::new("timed out"),
+                    ))]),
+                    buys: std::cell::Cell::new(0),
+                }) as Box<dyn customer_labels::LabelLink>)
+            }
+        };
+        let end = customer_labels::buy_order(&fx.state, &id, &timeouts);
+        assert!(matches!(end, customer_labels::BuyEnd::Staff(_)), "{end:?}");
+        assert_eq!(
+            ledger(&fx, &id),
+            vec![("outbound".to_string(), "unknown".to_string())]
+        );
+        {
+            let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+            p2.execute(
+                "UPDATE customer_order SET status = 'label_purchasing' WHERE id = ?1",
+                [&id],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            customer_labels::buy_order(&fx.state, &id, &timeouts),
+            customer_labels::BuyEnd::Staff("A label purchase needs a check by our team.")
+        );
+        assert_eq!(calls.get(), 1, "the unknown leg is never re-bought");
+
+        // 4. The daily cap counts every buy that may have happened: 2 bought
+        //    + 1 unknown today, so a cap of 3 sends the next order to staff
+        //    before any carrier call.
+        seal(
+            &fx,
+            config::keys::LABELS_CUSTOMER_DAILY_CAP,
+            config::ConfigType::Text,
+            b"3",
+        );
+        let id = paid_label_order(&fx);
+        let end = customer_labels::buy_order(&fx.state, &id, &|_, _, _, _| {
+            panic!("no carrier call past the daily cap")
+        });
+        assert!(matches!(end, customer_labels::BuyEnd::Staff(_)), "{end:?}");
+        assert!(ledger(&fx, &id).is_empty());
+
+        // 5. The switch off: staff, no ledger row.
+        seal(
+            &fx,
+            config::keys::LABELS_CUSTOMER_DAILY_CAP,
+            config::ConfigType::Text,
+            b"10",
+        );
+        seal(
+            &fx,
+            config::keys::LABELS_CUSTOMER_LIVE,
+            config::ConfigType::Bool,
+            b"0",
+        );
+        let id = paid_label_order(&fx);
+        let end = customer_labels::buy_order(&fx.state, &id, &|_, _, _, _| {
+            panic!("no carrier call while customer buys are off")
+        });
+        assert!(matches!(end, customer_labels::BuyEnd::Staff(_)), "{end:?}");
+        assert!(ledger(&fx, &id).is_empty());
+    }
+
     #[tokio::test]
     async fn staff_advance_never_moves_money_states() {
         // Review #12/#28: advance is for fulfilment; paid/refunded/
@@ -2885,6 +3133,7 @@ mod tests {
                 region: "IL".into(),
                 postal_code: "62701".into(),
                 country: "US".into(),
+                phone: None,
             },
         };
         let free = orders::create_order(

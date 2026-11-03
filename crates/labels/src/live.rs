@@ -424,7 +424,7 @@ pub fn parse_quote_cents(json: &Value) -> Option<i64> {
     best
 }
 
-fn decimal_usd_to_cents(text: &str) -> Option<i64> {
+pub fn decimal_usd_to_cents(text: &str) -> Option<i64> {
     let text = text.trim();
     let (whole, frac) = match text.split_once('.') {
         Some((w, f)) => (w, f),

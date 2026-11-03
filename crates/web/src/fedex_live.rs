@@ -285,7 +285,11 @@ fn base_from(configured: Option<&str>) -> &'static str {
 
 /// Blocking OAuth client-credentials fetch. Secrets stay in this
 /// scope; transport errors never include them (labels guarantee).
-fn fetch_bearer(base: &str, client_id: &str, client_secret: &str) -> Result<String, LiveError> {
+pub(crate) fn fetch_bearer(
+    base: &str,
+    client_id: &str,
+    client_secret: &str,
+) -> Result<String, LiveError> {
     crate::oauth::ensure_provider();
     let config = ureq::Agent::config_builder()
         .http_status_as_error(false)
