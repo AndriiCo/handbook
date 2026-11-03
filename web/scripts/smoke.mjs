@@ -22,6 +22,7 @@ const PUBLIC_ROUTES = [
 	'/(customer)/precheck'
 ];
 const ADMIN_ROUTES = [
+	'/(admin)/dashboard',
 	'/(admin)/review',
 	'/(admin)/trace',
 	'/(admin)/config',
@@ -89,12 +90,12 @@ for (const id of ADMIN_ROUTES) {
 	check(!publicEntry.includes(id), `public manifest has no ${id}`);
 	check(adminEntry.includes(`"${id}"`), `admin manifest registers ${id}`);
 }
-// Admin domain-root contract (server redirects `/` → `/review`, see
+// Admin domain-root contract (server redirects `/` → `/dashboard`, see
 // crates/web/src/admin.rs): the admin build must register the redirect
 // target, and must not contain a second root page (SvelteKit would refuse
 // to build two `/` routes — this pins that the admin build's `/` is still
 // exactly the (public) homepage the redirect exists to bypass).
-check(adminEntry.includes('"/(admin)/review"'), 'admin manifest registers redirect target /(admin)/review');
+check(adminEntry.includes('"/(admin)/dashboard"'), 'admin manifest registers redirect target /(admin)/dashboard');
 check(!adminEntry.includes('"/(admin)/console"'), 'retired /(admin)/console registers no route');
 const adminRootPages = (adminEntry.match(/"\/\((public|admin|mock|customer)\)"/g) || []).length;
 check(adminRootPages === 1, `admin manifest has exactly one root route (found ${adminRootPages})`);

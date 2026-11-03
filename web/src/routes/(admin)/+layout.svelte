@@ -10,6 +10,7 @@
 	import { Kbd } from '#lib/components/ui/kbd/index.js';
 	import { subscribe } from '#lib/live.svelte';
 	import InboxIcon from '@lucide/svelte/icons/inbox';
+	import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
@@ -32,6 +33,12 @@
 	// Groups per the console plan (Overview, Content, Commerce, Comms,
 	// System). New screens join their group as their lanes land.
 	const NAV: NavGroup[] = [
+		{
+			label: 'Overview',
+			items: [
+				{ label: 'Dashboard', href: resolve('/(admin)/dashboard'), icon: LayoutDashboardIcon, keywords: 'kpi stats meta latency tokens' }
+			]
+		},
 		{
 			label: 'Content',
 			items: [
@@ -199,6 +206,7 @@
 					<button
 						type="button"
 						class="inline-flex min-h-9 items-center gap-2 rounded-md border border-line bg-bg px-3 text-sm text-ink-muted hover:text-ink"
+						aria-label="Jump to a console screen"
 						onclick={() => (paletteOpen = true)}
 					>
 						<SearchIcon class="size-4" aria-hidden="true" />

@@ -224,3 +224,8 @@
 | 321 | 2026-11-03 00:37Z | Don't forget about easy to run xtask for judges setup on their machine. | xtask judge: doctor + fresh boot + tour; docs/judges.md, README |
 | 322 | 2026-11-03 00:40Z | Fix: lane admin routers behind the admin guard stack (host, IP allowlist, CSRF, log) | guard test + fixture runs lane DDL; web 333 green |
 | 323 | 2026-11-03 00:47Z | M2 first cut (SA-22, builder): RenderPlanV1 compose + validate_plan + Wonder entailment + /plan read | planted faults dropped; web 340 green, clippy clean |
+| sa-27-1 | 2026-11-03 00:32Z | W2b runtime-only cleanup: delete IN_FORCE, NATIVE, DS-4194 SYNTHETIC_ORDER, ChainView pack | Flags, lanes, Hague tint, chain from runtime data; shots and demo green |
+| sa-26-1 | 2026-11-03 00:29Z | W1a: /dashboard admin page — KPI tiles, Meta tiles, SVG charts, ops feed; labels CSRF | Dashboard live from /admin/stats + ops; labels POSTs carry csrfHeaders; gates green |
+| sa-27-2 | 2026-11-03 00:43Z | W2a plan renderer on /authority/[slug]: PathPicker, cited blocks, provenance, live | Plan, "How this page was made", live re-fetch; 24 shots, demo green |
+| sa-26-2 | 2026-11-03 00:45Z | W1b: review console upgrade — table + detail, j/k/a/r, plan/office/form tabs; trace TTFT | Review console + tabs + trace latency/TTFT; shots 24 OK, demo 3/3 green |
+| 324 | 2026-11-03 00:55Z | Merge SA-26 + SA-27; Dashboard nav + / → /dashboard; tabs primitive fix; demo plan + model-calls mocks | shots 76, demo 3/3, smoke, web 340, clippy green |

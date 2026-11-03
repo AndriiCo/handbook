@@ -337,8 +337,8 @@ pub fn router(state: AppState) -> Router {
         // /staff-login when unauthenticated). `/console` keeps a
         // redirect for old bookmarks (the call-console page is gone;
         // its three panes live on in /calls, /trace and /review).
-        .route("/", get(root_to_review))
-        .route("/console", get(root_to_review))
+        .route("/", get(root_to_dashboard))
+        .route("/console", get(root_to_dashboard))
         // Demo routes never serve on the staff origin: (mock) ships in
         // the admin JS bundle (client-routable) but must 404 server-side.
         .route("/mock/{*rest}", get(admin_not_found))
@@ -489,10 +489,10 @@ async fn admin_not_found() -> impl IntoResponse {
 /// the public homepage (the admin build registers `(public)/+page`
 /// at `/` too): redirect to the review queue. Static target — no
 /// open redirect.
-async fn root_to_review() -> impl IntoResponse {
+async fn root_to_dashboard() -> impl IntoResponse {
     (
         StatusCode::SEE_OTHER,
-        [(header::LOCATION, HeaderValue::from_static("/review"))],
+        [(header::LOCATION, HeaderValue::from_static("/dashboard"))],
     )
 }
 
@@ -961,7 +961,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn root_and_console_redirect_to_review_not_public_shell() {
+    async fn root_and_console_redirect_to_dashboard_not_public_shell() {
         let tmp = tempfile::tempdir().unwrap();
         let app = router(state_with_spa(&tmp));
         // Domain root and the retired `/console` both land on the
@@ -982,7 +982,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(res.status(), StatusCode::SEE_OTHER, "uri: {uri}");
-            assert_eq!(res.headers().get(header::LOCATION).unwrap(), "/review");
+            assert_eq!(res.headers().get(header::LOCATION).unwrap(), "/dashboard");
         }
     }
 

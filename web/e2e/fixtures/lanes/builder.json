@@ -1,0 +1,6 @@
+{
+  "routes": {},
+  "api": [
+    { "path": "^/apostille/api/v1/admin/version$", "fixture": "admin-version.json" }
+  ]
+}

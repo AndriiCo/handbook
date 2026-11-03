@@ -14,6 +14,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const fixture = (name) => JSON.parse(readFileSync(join(HERE, 'fixtures', name), 'utf8'));
+const planHero = fixture('plan-usa-wa-sos.json');
+const planEmpty = fixture('plan-empty.json');
+const modelCalls = fixture('admin-model-calls.json');
 const SHOTS = join(HERE, '..', 'shots', 'demo');
 const LIVE = process.env.DEMO_BASE_URL || null;
 // Scene URLs append `/apostille/...`, so a live base naming the mount
@@ -62,6 +66,14 @@ async function mockApi(page) {
 	await page.route(`**/apostille/api/v1/authorities/${HERO}/facts`, (route) =>
 		route.fulfill({ json: factsHero })
 	);
+	// Meta-composed page plan (SA-22 /plan read): the hero shows the
+	// staff-accepted plan; any other slug reads as no plan (guide).
+	await page.route('**/apostille/api/v1/authorities/*/plan', (route) => {
+		const slug = new URL(route.request().url()).pathname.split('/').at(-2);
+		return route.fulfill({
+			json: slug === 'usa-wa-sos' ? planHero : { ...planEmpty, slug }
+		});
+	});
 	await page.route('**/apostille/api/v1/auth/providers', (route) =>
 		route.fulfill({ json: providers })
 	);
@@ -248,6 +260,9 @@ async function mockAdmin(page) {
 	// show a parse error on camera).
 	await page.route('**/apostille/api/v1/draft-runs/recent*', (route) =>
 		route.fulfill({ json: { rejections: [], count: 0 } })
+	);
+	await page.route('**/apostille/api/v1/admin/model-calls*', (route) =>
+		route.fulfill({ json: modelCalls })
 	);
 	await page.route('**/apostille/api/v1/admin/version', (route) =>
 		route.fulfill({ json: { version: '0.1.0+demo', env: 'staging', started_at: 0, schema: 11, p2_schema: 2 } })
