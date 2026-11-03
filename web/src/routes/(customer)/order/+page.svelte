@@ -390,7 +390,18 @@
 		let fillId: string | null = null;
 		if (form && !formSkipped && filledCount > 0) {
 			const f = await postJson(`/p2/forms/${form.id}/fill`, { values: { ...values } });
-			if (f.ok && typeof f.body?.fill_id === 'string') fillId = f.body.fill_id;
+			if (f.ok && typeof f.body?.fill_id === 'string') {
+				fillId = f.body.fill_id;
+			} else {
+				// Never place the order silently without the form the
+				// customer filled: say why and let them fix it.
+				const why = (f.body as { error?: string } | null)?.error;
+				payError = why
+					? `The official form could not be filled: ${why}`
+					: 'The official form could not be filled. Check your answers and try again.';
+				busy = null;
+				return;
+			}
 		}
 		const r = await postJson<Order>('/p2/orders', {
 			slug,

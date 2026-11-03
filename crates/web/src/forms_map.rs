@@ -72,8 +72,17 @@ fn guard_field(
     if help.chars().count() > 200 || lower_help.contains("http") || lower_help.contains("www.") {
         return Err(format!("{name}: help too long or carries a URL"));
     }
+    // Radio groups and multi-state boxes are a choice of export values:
+    // they map to `select` with the PDF's own options (review #1).
+    let multi = field.kind == "radio" || (field.kind == "checkbox" && field.options.len() > 1);
+    let ty = if multi && matches!(ty.as_str(), "checkbox" | "select") {
+        "select".to_string()
+    } else {
+        ty
+    };
     let ty_ok = match field.kind.as_str() {
-        "checkbox" | "radio" => ty == "checkbox",
+        "checkbox" | "radio" if multi => ty == "select",
+        "checkbox" => ty == "checkbox",
         "choice" => ty == "select",
         "text" => matches!(ty.as_str(), "text" | "date" | "number"),
         _ => false,
@@ -524,7 +533,31 @@ static FILL_LIMITS: LazyLock<crate::passkey::RateBuckets> =
 
 #[derive(Debug, Deserialize)]
 pub struct FillBody {
-    pub values: BTreeMap<String, String>,
+    /// Strings, numbers, or booleans for tick boxes (true → `yes`,
+    /// false/null → left blank), as the order page sends them.
+    pub values: BTreeMap<String, Value>,
+}
+
+/// Normalise posted values to the strings `fill_flatten` takes.
+pub fn fill_values(raw: &BTreeMap<String, Value>) -> Result<BTreeMap<String, String>, String> {
+    let mut out = BTreeMap::new();
+    for (k, v) in raw {
+        match v {
+            Value::Bool(true) => {
+                out.insert(k.clone(), "yes".to_string());
+            }
+            Value::Bool(false) | Value::Null => {}
+            Value::String(s) if !s.trim().is_empty() => {
+                out.insert(k.clone(), s.clone());
+            }
+            Value::String(_) => {}
+            Value::Number(n) => {
+                out.insert(k.clone(), n.to_string());
+            }
+            _ => return Err(format!("field {k:?} needs text, a number or true/false")),
+        }
+    }
+    Ok(out)
 }
 
 fn fill_id() -> String {
@@ -585,10 +618,15 @@ async fn fill(
         )
             .into_response();
     };
+    let values = match fill_values(&body.values) {
+        Ok(v) => v,
+        Err(e) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))).into_response();
+        }
+    };
     let mapped: Vec<Value> = serde_json::from_str(&fields).unwrap_or_default();
     let allowed: Vec<&str> = mapped.iter().filter_map(|f| f["name"].as_str()).collect();
-    if let Some(bad) = body
-        .values
+    if let Some(bad) = values
         .iter()
         .find(|(k, v)| !allowed.contains(&k.as_str()) || v.chars().count() > MAX_FILL_VALUE)
     {
@@ -601,7 +639,13 @@ async fn fill(
     let Ok((_, bytes)) = capture_pdf(&store, &conn, capture_id) else {
         return store_unavailable();
     };
-    let pdf = match forms::acro::fill_flatten(&bytes, &body.values) {
+    let pdf = match tokio::task::spawn_blocking(move || forms::acro::fill_flatten(&bytes, &values))
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return store_unavailable(),
+    };
+    let pdf = match pdf {
         Ok(pdf) => pdf,
         Err(e) => {
             return (
@@ -748,6 +792,35 @@ mod tests {
             guard_map(&bad_type, &acro(), text).0.is_empty(),
             "a checkbox stays a checkbox"
         );
+    }
+
+    #[test]
+    fn posted_values_normalise_booleans_and_refuse_objects() {
+        let raw: BTreeMap<String, Value> = serde_json::from_value(json!({
+            "RequesterName": "SYNTHETIC Customer", "ReturnMail": true, "Unticked": false,
+            "Copies": 2, "Blank": "  ", "Gone": null
+        }))
+        .unwrap();
+        let v = fill_values(&raw).unwrap();
+        assert_eq!(v.get("ReturnMail").map(String::as_str), Some("yes"));
+        assert_eq!(v.get("Copies").map(String::as_str), Some("2"));
+        assert!(!v.contains_key("Unticked") && !v.contains_key("Blank") && !v.contains_key("Gone"));
+        let bad: BTreeMap<String, Value> = serde_json::from_value(json!({"X": {"a": 1}})).unwrap();
+        assert!(fill_values(&bad).is_err());
+        let radio = vec![forms::acro::AcroField {
+            name: "Delivery".into(),
+            kind: "radio".into(),
+            options: vec!["Mail".into(), "Pickup".into()],
+            page: Some(1),
+            max_len: None,
+        }];
+        let raw = json!({"fields": [{"name": "Delivery", "label": "How it comes back", "help": "", "type": "checkbox", "required": true, "prefill_topic": "", "label_quote": "Return by mail"}]});
+        let (kept, _) = guard_map(&raw, &radio, "Return by mail or pickup");
+        assert_eq!(
+            kept[0]["type"], "select",
+            "a radio group is a choice of its export values"
+        );
+        assert_eq!(kept[0]["options"], json!(["Mail", "Pickup"]));
     }
 
     #[test]

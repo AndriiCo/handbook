@@ -247,3 +247,4 @@
 | 338 | 2026-11-03 02:42Z | Hotfix (review #0 critical): non-ASCII ZIP / address text aborted the process; overflow-safe hours | web 352 green, clippy clean |
 | 339 | 2026-11-03 02:56Z | Hotfix deploy cfb625b (review #0 critical) | live (prev e25fd3e); prod 5/10 → 5/10 |
 | 340 | 2026-11-03 02:59Z | Review fixes #4 #5 #6: whole-token number guard + exact fee cents, webhook t overflow, erasure with orders | web 367, store 39 green; clippy clean |
+| 341 | 2026-11-03 03:06Z | Review fixes PDF set + #2: per-widget radio states, appearances burned in, inherited resources, q/Q isolation, fit/wrap/comb, Latin-1 refusal, read-only refusal, cycle-safe walk, /Annots page map, /Perms; JSON fill values; order stops on fill failure | forms 23, web 368, commerce 7/7, demo 3/3 |
