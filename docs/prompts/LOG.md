@@ -283,3 +283,4 @@
 | 374 | 2026-11-03 16:36Z | Implement reserved keys: plan.auto_compose + compile.daily_runs | auto-compose per slug (folds bursts); Compile run API capped per day; web 399 |
 | 375 | 2026-11-03 16:48Z | Implement reserved keys: orders.ship_from, orders.fee_label_cents, labels.customer_* | customer FedEx labels: carrier quote + fee, ledger buyer, refunds; kit ships from ship_from |
 | 376 | 2026-11-03 17:02Z | Implement reserved keys: usps.* (v3 OAuth, payments, labels, prices, live caps), tracking.poll_enabled | USPS v3 client + live caps; tracking poller moves orders; labels 50, web 409 |
+| 378 | 2026-11-03 17:06Z | Config guide: every formerly Reserved key documented as live code | Reserved label gone; orders/labels/usps/pipeline setup steps rewritten; web 180, e2e 26, demo 3/3 |

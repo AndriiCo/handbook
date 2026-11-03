@@ -111,7 +111,6 @@
 		live: 'Applies in seconds',
 		call: 'Read every call',
 		poll: 'Next mail poll',
-		reserved: 'Reserved',
 		locked: 'Server CLI only'
 	};
 
@@ -216,7 +215,6 @@
 	function appliesCls(applies: Applies): string {
 		const base = 'inline-flex h-6 items-center rounded-full px-2 text-xs font-medium';
 		if (applies === 'live' || applies === 'call') return `${base} bg-verified-bg text-verified`;
-		if (applies === 'reserved') return `${base} bg-changed-bg text-changed`;
 		if (applies === 'locked') return `${base} bg-surface-2 text-ink-muted`;
 		return `${base} border border-line text-ink-muted`;
 	}

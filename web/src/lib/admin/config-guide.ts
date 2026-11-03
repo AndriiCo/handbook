@@ -16,10 +16,9 @@ export type ConfigType = 'bool' | 'text' | 'secret';
  * live     CachedReader (30 s TTL; the admin PUT clears the cache).
  * call     re-read on every request or model call.
  * poll     read by each `xtask mail-poll` run (apostille-mail.timer).
- * reserved registered, but no code reads it yet.
  * locked   CLI-managed; the admin PUT answers 422.
  */
-export type Applies = 'boot' | 'live' | 'call' | 'poll' | 'reserved' | 'locked';
+export type Applies = 'boot' | 'live' | 'call' | 'poll' | 'locked';
 
 export interface GuideKey {
 	key: string;
@@ -46,7 +45,6 @@ export const APPLIES_TEXT: Record<Applies, string> = {
 	live: 'Applies within seconds. No restart.',
 	call: 'Read on every call. No restart.',
 	poll: 'Read by the next mail-poll run.',
-	reserved: 'Reserved. No code reads this key yet, so saving it changes nothing today.',
 	locked: 'Managed from the server CLI. This page cannot change it.'
 };
 
@@ -745,8 +743,9 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 			'Customer order switches, prices and caps. Amounts are integer cents in orders.currency. Saving here applies within seconds.',
 		setup: [
 			'Configure Payments (Stripe) first: paid tiers need both orders.enabled and stripe.secret_key.',
-			'Set orders.kit_price_cents (the mailing-kit card stays paused until it is a positive number), orders.max_order_cents and orders.daily_cap.',
-			'Turn on orders.enabled, then open /apostille/order: the delivery cards show prices and the mode (test or live).',
+			'Mailing kits: set orders.kit_price_cents and orders.ship_from (the kit card stays paused until both are valid).',
+			'Label tiers: set orders.fee_label_cents, then turn on labels.customer_live in Label limits & tracking and set the carrier keys (FedEx API, USPS). Each label order is priced at the carrier for both legs, plus the fee.',
+			'Set orders.max_order_cents and orders.daily_cap, turn on orders.enabled, then open /apostille/order: the delivery cards show prices and the mode (test or live).',
 			'To pause paid orders at once, turn orders.enabled off. The free address label keeps working.'
 		],
 		keys: [
@@ -804,20 +803,21 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				key: 'orders.fee_label_cents',
 				type: 'text',
 				label: 'Label service fee',
-				what: 'Service fee per paid label order. Carrier label tiers stay unpriced until live carrier rates land.',
-				how: 'Leave unset.',
-				format: 'Integer cents. Example: 500',
+				what: 'Service fee added to every paid FedEx or USPS label order, on top of the carrier price for both legs. It shows as its own "Service fee" line; 0 or unset adds none.',
+				how: 'Your fee per order, in cents.',
+				format: 'Integer cents, 0 to 100000. Example: 500 = $5.00',
 				default: '0',
-				applies: 'reserved'
+				applies: 'live'
 			},
 			{
 				key: 'orders.ship_from',
 				type: 'text',
 				label: 'Kit ship-from address',
-				what: 'Fulfilment address mailing kits ship from.',
-				how: 'Leave unset until the kit fulfilment reader lands.',
-				format: 'One JSON object (field names to confirm when the reader lands). Example: {"name":"Example Co","line1":"1 Example Way","city":"Seattle","region":"WA","postal_code":"98101","country":"US"}',
-				applies: 'reserved'
+				what: 'Fulfilment address mailing kits ship from (the sender on the kit leg), and the contact phone carriers print on any label whose address has none. The kit card stays paused until this is a valid US address.',
+				how: 'Your packing location, with a phone number carriers can call.',
+				format: 'One JSON object: name, line1, optional line2, city, region (two capital letters), postal_code, optional phone. Example: {"name":"Example Co","line1":"1 Example Way","city":"Seattle","region":"WA","postal_code":"98101","phone":"+13605550100"}',
+				default: 'unset (kit paused)',
+				applies: 'live'
 			}
 		]
 	},
@@ -825,7 +825,7 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		id: 'fedex',
 		title: 'FedEx API',
 		summary:
-			'OAuth credentials and shipper account for staff live FedEx label buys (/apostille/api/v1/fedex-live/ on the admin host). The live-buy routes answer 503 until credentials, caps and the ZIP allowlist are all set.',
+			'OAuth credentials and shipper account for live FedEx label buys: staff buys (/apostille/api/v1/fedex-live/ on the admin host) and customer-paid label orders. labels.fedex_base_url picks sandbox or production; customer orders only buy when it matches the Stripe mode (test key with sandbox, live key with production).',
 		setup: [
 			'https://developer.fedex.com > sign in with your fedex.com user > My Projects > Create API Project. Select the Ship API and the Rate API (the code calls /ship/v1/shipments, /ship/v1/shipments/cancel and /rate/v1/rates/quotes). (verify menu names)',
 			'Start in sandbox: the project test key gives an API Key and a Secret Key. Set labels.fedex_base_url to https://apis-sandbox.fedex.com, because an unset base URL means production.',
@@ -878,12 +878,12 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		id: 'labels',
 		title: 'Label limits & tracking',
 		summary:
-			'Money guards for real label purchases. Staff live FedEx buys need labels.live plus the caps, the ZIP allowlist and the FedEx API keys; any missing piece fails closed. The customer-paid label and tracking keys are reserved for features that have not landed.',
+			'Money guards for real label purchases. Staff live FedEx buys need labels.live plus the caps, the ZIP allowlist and the FedEx API keys. Customer-paid labels (labels.customer_*) are bought automatically after payment, each leg once, only to that order\'s own two addresses; test-mode payments only buy sandbox or TEM postage. Any missing piece fails closed.',
 		setup: [
-			'Save the FedEx API keys and run quotes in sandbox.',
-			'List the destination ZIP codes staff may buy for in labels.live_ship_to_allow. Empty means nothing is buyable.',
-			'Set labels.live_daily_cap and labels.live_max_usd.',
-			'Turn on labels.live last and restart. Buy one label to the operator address and void it if unused.'
+			'Save the FedEx API keys (and the USPS group for USPS labels) and run quotes in sandbox or TEM.',
+			'Staff buys: list the destination ZIP codes in labels.live_ship_to_allow, set labels.live_daily_cap and labels.live_max_usd, then turn on labels.live and restart.',
+			'Customer buys: set labels.customer_daily_cap and labels.customer_max_usd, then turn on labels.customer_live. With a Stripe test key, buy one label order end to end and check both PDFs in the cabinet.',
+			'Turn on tracking.poll_enabled so bought labels report their scans to the order timeline.'
 		],
 		keys: [
 			{
@@ -929,42 +929,42 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 			{
 				key: 'labels.customer_live',
 				type: 'bool',
-				label: 'Customer-paid FedEx buys',
-				what: 'Switch for customer-paid FedEx labels, separate from staff labels.live.',
-				how: 'Leave off.',
+				label: 'Customer-paid labels',
+				what: 'When on, the FedEx and USPS label cards quote both legs at the carrier and, after payment, the label buyer purchases them (a carrier refusal refunds in full; anything uncertain goes to staff). Off: those cards are paused. Separate from the staff switch labels.live.',
+				how: 'Turn on after one sandbox or TEM order worked end to end.',
 				format: 'On or off.',
 				default: 'off',
-				applies: 'reserved'
+				applies: 'live'
 			},
 			{
 				key: 'labels.customer_daily_cap',
 				type: 'text',
 				label: 'Customer label buys per day',
-				what: 'Max customer label buys per UTC day.',
-				how: 'Leave unset.',
-				format: 'Integer. Example: 10',
+				what: 'Customer label buys per UTC day; each leg counts, and so does any buy that may have happened. Reached: new label quotes pause and paid orders wait for staff.',
+				how: 'Your daily label budget.',
+				format: 'Integer 0 to 1000. Example: 10. 0 stops customer buys.',
 				default: '10',
-				applies: 'reserved'
+				applies: 'live'
 			},
 			{
 				key: 'labels.customer_max_usd',
 				type: 'text',
 				label: 'Max cost per customer label',
-				what: 'Per-label ceiling for customer-paid labels.',
-				how: 'Leave unset.',
-				format: 'US dollars. Example: 60',
+				what: 'Per-label ceiling for customer labels: a leg quoted above it pauses that route, and a paid leg above it goes to staff instead of being bought.',
+				how: 'Your most expensive expected route plus a margin.',
+				format: 'US dollars 1 to 10000, decimals allowed. Example: 60 or 42.50',
 				default: '60',
-				applies: 'reserved'
+				applies: 'live'
 			},
 			{
 				key: 'tracking.poll_enabled',
 				type: 'bool',
 				label: 'Carrier tracking poller',
-				what: 'Switch for the USPS and FedEx tracking poller. The poller does not run yet.',
-				how: 'Leave off.',
+				what: 'Every 5 minutes checks up to 20 bought labels with USPS Tracking v3 and FedEx Track (each number at most hourly, never again once delivered). New scans land on the order timeline and move it to in transit, then delivered when the return leg arrives.',
+				how: 'Turn on once the carrier keys are set.',
 				format: 'On or off.',
 				default: 'off',
-				applies: 'reserved'
+				applies: 'live'
 			}
 		]
 	},
@@ -972,21 +972,21 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		id: 'usps',
 		title: 'USPS',
 		summary:
-			'USPS prepaid labels. Today prepaid postage is allowed only against the USPS test environment (TEM) or a loopback stub; usps.certified decides whether the server calls the API or queues the label for manual handling. The OAuth, account and live-postage keys are reserved for the USPS v3 client.',
+			'USPS APIs v3: an OAuth client, payment authorization from your CRID, Mailer IDs and Enterprise Payment Account, then Labels, Prices and Tracking. usps.base_url picks the test environment (TEM) or production; usps.certified lets the server call the label API at all; usps.live allows production postage, for paid live-mode orders only, under its own daily and per-label caps. The unpaid /shipping prepaid labels never leave the test environment.',
 		setup: [
-			'Register at https://developers.usps.com and create an app to get a Consumer Key and Consumer Secret (usps.client_id and usps.client_secret). (verify menu names)',
-			'In the USPS Business Customer Gateway (https://gateway.usps.com) find your CRID, Mailer IDs and the Enterprise Payment Account number. (verify)',
-			'Keep usps.base_url on https://apis-tem.usps.com. Any other host, including production https://apis.usps.com, makes prepaid purchases answer 403.',
-			'Turn on usps.certified only after the TEM label flow is proven, then restart.'
+			'Register at https://developers.usps.com and create an app: its Consumer Key and Consumer Secret are usps.client_id and usps.client_secret. Request Labels API access (it needs separate approval and USPS Ship enrollment). (verify menu names)',
+			'In the Customer Onboarding Portal or Business Customer Gateway (https://gateway.usps.com) find your CRID, Mailer ID, manifest Mailer ID and Enterprise Payment Account number. (verify)',
+			'Keep usps.base_url on https://apis-tem.usps.com, save the keys, turn on usps.certified and restart. With a Stripe test key and labels.customer_live on, buy one USPS label order end to end.',
+			'For production postage: set usps.base_url to https://apis.usps.com and restart, set usps.live_daily_cap and usps.live_max_usd, then turn on usps.live. Only live-mode (paid) orders buy there.'
 		],
 		keys: [
 			{
 				key: 'usps.base_url',
 				type: 'text',
 				label: 'USPS API root',
-				what: 'Root for USPS label calls. Prepaid purchases are refused unless the host is apis-tem.usps.com or loopback.',
-				how: 'Keep the TEM default.',
-				format: 'https URL. Example: https://apis-tem.usps.com',
+				what: 'Root for every USPS call. The test environment buys test postage for test-mode orders and the /shipping prepaid labels; production buys real postage, only with usps.live on and a live Stripe key.',
+				how: 'TEM while testing, production after go-live.',
+				format: 'https://apis-tem.usps.com or https://apis.usps.com',
 				default: 'https://apis-tem.usps.com',
 				applies: 'boot'
 			},
@@ -1004,10 +1004,10 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				key: 'usps.client_id',
 				type: 'secret',
 				label: 'USPS consumer key',
-				what: 'OAuth client for Labels, Payments and Tracking v3.',
+				what: 'OAuth client for Labels, Payments, Prices and Tracking v3; every quote, buy and tracking check mints a fresh token with it.',
 				how: 'Setup step 1.',
 				format: 'Opaque string. Write-only.',
-				applies: 'reserved'
+				applies: 'call'
 			},
 			{
 				key: 'usps.client_secret',
@@ -1016,73 +1016,74 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				what: 'Secret of the same OAuth client.',
 				how: 'Setup step 1.',
 				format: 'Opaque string. Write-only.',
-				applies: 'reserved'
+				applies: 'call'
 			},
 			{
 				key: 'usps.crid',
 				type: 'text',
 				label: 'Customer Registration ID (CRID)',
-				what: 'Your USPS business customer ID, used for payment authorization.',
+				what: 'Your USPS business customer ID, sent in both payment-authorization roles (payer and label owner).',
 				how: 'Setup step 2.',
 				format: 'Digits. Example: 12345678',
-				applies: 'reserved'
+				applies: 'live'
 			},
 			{
 				key: 'usps.mid',
 				type: 'text',
 				label: 'Mailer ID (MID)',
-				what: 'Mailer ID for label payment authorization.',
+				what: 'Mailer ID for the payment-authorization roles.',
 				how: 'Setup step 2.',
 				format: '6 or 9 digits. Example: 123456',
-				applies: 'reserved'
+				applies: 'live'
 			},
 			{
 				key: 'usps.manifest_mid',
 				type: 'text',
 				label: 'Manifest Mailer ID',
-				what: 'Mailer ID used on manifests.',
+				what: 'Mailer ID used on manifests in the payment-authorization roles. Empty uses usps.mid.',
 				how: 'Setup step 2.',
 				format: '6 or 9 digits. Example: 123456',
-				applies: 'reserved'
+				default: 'usps.mid',
+				applies: 'live'
 			},
 			{
 				key: 'usps.epa_account',
 				type: 'secret',
 				label: 'Enterprise Payment Account',
-				what: 'Account USPS postage is paid from.',
+				what: 'Account USPS postage is paid from (EPS), in the payment roles and the price searches.',
 				how: 'Setup step 2.',
 				format: 'Account number. Write-only.',
-				applies: 'reserved'
+				applies: 'call'
 			},
 			{
 				key: 'usps.live',
 				type: 'bool',
 				label: 'Live USPS postage',
-				what: 'Switch for paid production postage.',
-				how: 'Leave off.',
+				what: 'Production postage at all. On, a paid live-mode order may buy USPS postage on https://apis.usps.com (usps.base_url must point there). Off, only the test environment is ever called.',
+				how: 'Turn on last, after a full TEM order.',
 				format: 'On or off.',
 				default: 'off',
-				applies: 'reserved'
+				applies: 'live'
 			},
 			{
 				key: 'usps.live_daily_cap',
 				type: 'text',
 				label: 'Live USPS labels per day',
-				what: 'Max live USPS labels per UTC day.',
-				how: 'Leave unset.',
-				format: 'Integer. Example: 10',
+				what: 'Live USPS labels per UTC day, on top of labels.customer_daily_cap. An order that would not fit both legs waits for staff.',
+				how: 'Your daily postage budget.',
+				format: 'Integer 0 to 1000. Example: 10. 0 stops live USPS postage.',
 				default: '10',
-				applies: 'reserved'
+				applies: 'live'
 			},
 			{
 				key: 'usps.live_max_usd',
 				type: 'text',
 				label: 'Max cost per USPS label',
-				what: 'Per-label ceiling for live USPS postage.',
-				how: 'Leave unset.',
-				format: 'US dollars. Example: 40',
+				what: 'Per-label ceiling for live USPS postage: a Prices v3 quote above it is refused before payment.',
+				how: 'Your Priority Mail rate plus a margin.',
+				format: 'US dollars 1 to 10000, decimals allowed. Example: 40',
 				default: '40',
-				applies: 'reserved'
+				applies: 'live'
 			}
 		]
 	},
@@ -1151,28 +1152,32 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		id: 'pipeline',
 		title: 'AI pipeline automation',
 		summary:
-			'Switches for the compile and page-plan pipelines. Registered now; the code that reads them has not landed, so plans compose only when staff press Compose.',
-		setup: ['Leave both keys unset until the compile and auto-compose features ship.'],
+			'Automation for the Meta pipeline. Auto-compose drafts a page-plan proposal after accepts; a Compile run (Dashboard, Compile an authority) walks capture, draft, cross-check, offices and plan. Nothing is accepted automatically: every output lands in Review as a proposal.',
+		setup: [
+			'Run one Compile from the dashboard and review what it proposed.',
+			'Turn on plan.auto_compose for a fresh plan proposal after each accept batch (about two model calls per run).',
+			'Set compile.daily_runs to your budget; meta.daily_call_cap still caps every model call.'
+		],
 		keys: [
 			{
 				key: 'plan.auto_compose',
 				type: 'bool',
 				label: 'Auto-compose page plans',
-				what: 'Compose a page plan after each accepted fact batch.',
-				how: 'Leave off.',
+				what: 'After a single or bulk accept, compose a fresh page-plan proposal for that authority. One run per authority at a time; accepts during a run fold into one follow-up. Skipped (logged) below 3 accepted facts or at the model-call cap.',
+				how: 'Turn on when reviewers want a plan after every approval batch.',
 				format: 'On or off.',
 				default: 'off',
-				applies: 'reserved'
+				applies: 'live'
 			},
 			{
 				key: 'compile.daily_runs',
 				type: 'text',
 				label: 'Compile runs per day',
-				what: 'Max Compile runs per UTC day.',
-				how: 'Leave unset.',
-				format: 'Integer. Example: 6',
+				what: 'Compile runs per UTC day across all authorities; one run per authority at a time. Reached: the Compile button answers with the cap. 0 stops every run.',
+				how: 'Your daily pipeline budget.',
+				format: 'Integer 0 or more. Example: 6',
 				default: '6',
-				applies: 'reserved'
+				applies: 'live'
 			}
 		]
 	}
