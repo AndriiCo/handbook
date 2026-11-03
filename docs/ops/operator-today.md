@@ -1,55 +1,69 @@
 # Operator: open steps
 
-Production runs `0.1.0+9460b26` (deployed Tue 11-03 ~07:56 PST).
-Procedures live in [deploy.md](deploy.md); rebuilding from scratch uses
-`cargo xtask setup` (see deploy.md § Rebuild from scratch).
+Production runs `0.1.0+a999b1b` (deployed Tue 11-03 ~15:05 PST; store
+schema v12). The rollback point for the v12 migration is
+`/var/lib/apostille/pre-v12-20261103T230443Z.sqlite`: restore it with
+the service stopped; `xtask rollback` refuses to cross v12. Procedures
+live in [deploy.md](deploy.md) (§ Rails has the migration path; §
+Rebuild from scratch has `cargo xtask setup`). No deploy freeze on
+11-03 and 11-04 (operator decision).
 
 ## Open, in order
 
-1. **Approve in admin `/review`.** Review → "By authority" → "Accept all
-   verified" for usa-wa-sos and vietnam (at least 8 accepted each, keep
-   2 proposed per slug for the video). Flips GP2-data, A1 and GP2-page.
-2. **Viet Nam MOFA capture:** in admin Workers press Retry on it (its old
-   text is the portal's script blob).
-3. **Before sending outreach email:** set `mailer.provider` in `/config`.
-4. **Washington SOS alert:** sos.wa.gov posted on 11/02 that apostille
-   services are unavailable; check it before recording the WA scenes.
-5. **S1 (submission).** Source code is PolyForm Noncommercial 1.0.0,
-   content all rights reserved. The row stays red by design:
-   - Licence check: it accepts only MIT or Apache-2.0. If the hackathon
-     rules accept a source-available licence, change the licence line in
-     `xtask/ops/scoreboard.mjs` (`s1()`), e.g. to
-     `/MIT License|Apache License|PolyForm Noncommercial License 1\.0\.0/.test(read('LICENSE').slice(0, 2000))`.
-     If the rules require an OSI licence, this licence fails the
-     submission whatever the row says.
-   - Video: replace README line 6 with the YouTube, Vimeo or Loom URL.
-   - Repo stays private (decided 11-03); the visibility check stays red.
-6. **Deploy decision for candidate `a2abb38`** (P373-P379, freeze in
-   force): plant stamp green, staging-green 9/10 (only S1) + demo 3/3.
-   It removes the dead config keys and makes every formerly Reserved key
-   work (auto-compose, Compile, customer-paid FedEx and USPS labels, the
-   label fee, kit ship-from, the USPS v3 client, the tracking poller);
-   every new switch is off by default. After a deploy, in order:
-   `orders.ship_from` and `orders.fee_label_cents`; FedEx sandbox keys
-   and `labels.fedex_base_url`; USPS keys on TEM and `usps.certified`;
-   `labels.customer_live` and one Stripe test-mode order per carrier;
-   `tracking.poll_enabled` last.
-
-7. **Create your setup file** (before any rebuild):
-   `cargo xtask setup wizard` creates `private/config.yaml` (sops + age,
-   your key in `~/.config/sops/age/keys.txt`) and opens the wizard.
-   Fill each target and its secrets, run "Check keys and access" per
-   target, and do the brand step (read the terms, drop the files, tick
-   acceptance). Back up `~/.config/sops/age/keys.txt` offline: without
-   it the file cannot be decrypted. The Docker rehearsal
-   (`cargo xtask setup --target docker`) proves a rebuild end to end
-   without touching a server.
+1. **Load the world packs.** Sign in at `https://admin.andrii.ai`, open
+   **Packs**, press Load on "Curated", then on "World". This adds
+   authorities, their sources and review tasks, never facts. It should
+   end at 510 authorities.
+2. **Approve in admin `/review`:** vietnam needs 2 more accepted facts
+   (6 of 8). That flips GP2-data and A1. Keep 2 proposed per slug for
+   the video.
+3. **First real FedEx label:**
+   - In `/config`, set `labels.fedex_client_id` and
+     `labels.fedex_client_secret` (production key and secret) and
+     `labels.fedex_account` (9 digits). Turn `labels.live` On. Set
+     `labels.live_ship_to_allow` to the destination ZIP. Leave
+     `labels.fedex_base_url` unset (unset means production).
+   - Press **Restart service** on `/config`.
+   - On `/labels`, fill both addresses and both phones, then press
+     Quote.
+   - The purchase is confirmed in chat (item and total) before Buy.
+   - The caps are 2 a day and $60 a label.
+4. **Plant worker (non-party research and Glimmer):**
+   - As root on plant, once:
+     ```bash
+     sudo mkdir -p /srv/scratch/apostille/{models,meta-cache,fetch-cache,work} /srv/backup/apostille && sudo chown -R chandra: /srv/scratch/apostille /srv/backup/apostille
+     ```
+   - In `/config`, mint `worker.token` and put the same value plus
+     `META_API_KEY` in plant's `~/.config/apostille/worker.env`. The
+     cron watchdog line is in `ops/plant-pipeline/README.md`.
+   - On admin **Work queue**, enqueue `research.nonparty`. When it is
+     done, press "Stage as packs", then load them from **Packs**.
+5. **Glimmer weights:** name the Hugging Face repo (and the `.gguf` plus
+   vision projector files) and put an HF token on plant. Then run
+   `ops/open-weights/glimmer-serve.sh download` and `serve`, and set
+   `GLIMMER_MODEL` in `worker.env`.
+6. **Washington SOS notice:** the apostille hub now carries "Now open in
+   Eastern Washington… Cheney… same-day… $150 same-day service fee".
+   Once the daily sweep captures the change, the change drafter
+   proposes it, and you approve the `service_notice` in `/review`. It
+   then shows as the dossier banner and goes out in the follower
+   digest.
+7. **S1 (submission, before 11-04 18:00 PT):**
+   - Swap in the ready licence. If it is not MIT or Apache-2.0, change
+     the licence check in `xtask/ops/scoreboard.mjs` `s1()`.
+   - Put the video URL on README line 6.
+   - Run a full-history `gitleaks` scan, then
+     `gh repo edit AndriiCo/handbook --visibility public`. All history
+     becomes public.
+8. **Brand logos (GP3):** use the setup wizard's brand step (`cargo xtask
+   setup wizard`). Only accepted, hash-matched files from
+   `private/brand/` ship.
 
 ## Deferred
 
-- Brand logos (GP3): done through step 7's brand step; only accepted,
-  hash-matched files from `private/brand/` ship.
-- Re-run `ops-a5-eval.sh` before the A5 72-hour window ends.
-- Low findings left open in P379: FedEx cancel method (POST vs the
-  documented but unconfirmed PUT), a quote paid up to ~1 h after its
-  window inside an open Checkout session.
+- A "fake FedEx label" judge mode (follow-up).
+- `ops-deploy.sh` on production prints `/srv/apostille/public-host: No
+  such file` at step 3. It is harmless (the stamp check passes), and
+  the next provision writes that file.
+- A quote paid up to ~1 h after its window inside an open Checkout
+  session (P379 low finding).

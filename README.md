@@ -33,15 +33,15 @@ zero marginal model cost, no key on the serving path. Replays and fixtures:
 `evals/authorities/` (30-case gold set), `web/e2e/fixtures/`, crate unit
 tests.
 
-## Eval numbers (2026-11-01, production, live key)
+## Eval numbers (2026-11-02, production, live key)
 
 Model muse-spark-1.3, written to the live store, shown on the home page:
 
 | Metric | What it measures | Latest |
 |---|---|---|
 | `quote_found_rate` | Share of drafted records whose quote is found verbatim on the captured page | **1.0** |
-| `value_in_quote_rate` | Share of records whose fact value appears inside its own quote | 0.969 |
-| `topic_accuracy` | Share of records filed under the correct frozen topic | 0.641 |
+| `value_in_quote_rate` | Share of records whose fact value appears inside its own quote | 0.985 |
+| `topic_accuracy` | Share of records filed under the correct frozen topic | 0.632 |
 
 Planted faults (`cargo xtask eval --planted`; deterministic, no
 model; re-measured 2026-11-02 on the 30-case set): **181/182
@@ -58,9 +58,9 @@ model) to catch.
 Honest note: the gold set is 30 synthetic passages in
 `evals/authorities/`, not live government pages — it grades the
 drafter in isolation, before the quote-checker and human review add
-their own gates. The live-model rates above were measured 2026-11-01
-on the then-26 English-only cases; four Spanish/French cases landed
-2026-11-02 and live rates on the full set are not yet re-measured. `topic_accuracy` understates by construction: each
+their own gates. The live-model rates above were measured
+2026-11-02T17:32Z on all 30 cases (26 English, 4 Spanish/French; 68
+drafted records). `topic_accuracy` understates by construction: each
 gold case carries one topic, but every case drafts several records
 (two from the stub, up to eight live), so at most one record per
 case can match — the other drafted records count as misses even
@@ -87,58 +87,81 @@ the U.S., Canada, and Mexico.
 
 ## What shipped
 
-What is live at <https://andrii.ai/apostille> today: search the
-authority index; dossier pages with a step-by-step guide, cited evidence,
-and live updates; sign in with passkey; run the photo precheck; save an
-order draft. Staff approve every fact in the review queue and watch captures in
-the trace console; approvals reach the public dossier live. Dossiers show
-quote-carrying facts where approved — production's dossiers fill in as
-facts are approved. The watch packs define 24 source URLs across 15
-authorities (`packs/`, 9 packs); 3 authorities are loaded in production,
-not 500+. What is demo-only: document photos are synthetic
-samples, and there is no real mail, fees, or carrier charges anywhere.
+What is live at <https://andrii.ai/apostille> today (production
+`0.1.0+a999b1b`, deployed 2026-11-03):
+
+- **Every Hague party in the index:** search the country-grouped
+  authority index. Release P395–P398 ships the 130 HCCH-party packs
+  (501 competent authorities from the HCCH status table, six merged
+  into the curated US dossiers), loaded from admin **Packs**. Until
+  staff load them, production lists the 3 curated authorities.
+- **Dossiers:** a step-by-step guide, cited evidence, a "what
+  changed" panel per watched source (SA-14), and notice banners
+  (`service_notice`), all updating live.
+- **Sign-in and orders:** sign in with a passkey, run the photo
+  precheck, save an order draft.
+- **Staff tools:**
+  - Approve every fact in the review queue and watch captures in the
+    trace console; approvals reach the public dossier live.
+  - Diff any watched source's captures.
+  - Load packs.
+  - Run research and eval jobs on plant workers through the work queue.
+  - Buy a FedEx label on the staff path (live keys are operator-owned).
+  - Restart the service from `/config`.
+- **Caching:** every Meta API call and every downloaded page is
+  recorded on disk and replayed on reruns (`docs/ops/call-cache.md`);
+  only live calls count toward the daily cap.
+
+What is demo-only: document photos are synthetic samples, and no
+customer has been charged.
 
 ## Promised in our application → delivered
 
 Promise words are quoted from the hackathon application text
-(2026-10-26). Statuses marked "live" are
-served by the production SHA; "(repo)" means merged, not claimed
-live. Production is `0.1.0+2b4bc8d`, scoreboard **5/10** measured
-2026-11-02T17:32Z (`node xtask/ops/scoreboard.mjs`).
-GP2-data is red: Vietnam 0/8, usa-wa-sos 1/8 accepted facts —
-approvals are operator-owned.
+(2026-10-26). "Live" means served by the production SHA; "(repo)"
+means merged and shipped but waiting on an operator step or data.
+Production is `0.1.0+a999b1b`, scoreboard **6/10** measured
+2026-11-03T23:06Z (`node xtask/ops/scoreboard.mjs`). The red rows:
+- GP2-data and A1: vietnam has 6 of 8 accepted facts (approvals are
+  operator-owned).
+- GP3: brand logos not placed.
+- S1: licence, video and repo visibility (operator-owned).
 
 | Promised (application words) | Status | Reason / where it stands |
 |---|---|---|
-| Watch 500+ cited URLs, HCCH feed, inbox for authority notices | Partial | Thin slice live: `packs/` define 24 source URLs across 15 authorities (9 packs, HCCH pack included); 3 authorities loaded in production. Full 500-URL crawl + F3 inbox are roadmap (Week 3+). |
-| Muse Spark turns only changes into cited records I approve | Delivered (repo) | Draft → validate → store-as-proposed; staff approve in /review with audit + conflict banner; approvals publish live. Production approvals pending (see GP2-data above). |
-| Reading English, Spanish or French pages and forms | Partial | Runner drafts from es/fr pages (SA-16); gold set grew 26 → 30 with 4 es/fr cases. Es/fr machine translation after approval is merged (SA-20) but roadmap until wired — not claimed live. Live-model rates below were measured on the 26 English-only cases; full-30 re-measure pending. |
-| Flag contradictions like Washington's two PO Boxes | Delivered (repo) | Conflict policy is the banner (`crates/web/src/approval.rs`); canonical PO-Box fixtures seed the case in tests. |
-| One consular legalization chain (Egypt in USA) with pre-filled authority forms | Partial (repo) | Read-only chain view (`ChainView`, `needs_review` chip per step, `packs/egypt-consular.json`) + DS-4194 prefill from the synthetic order (SA-18). Step validation (V-1…V-19) is roadmap. |
-| Walk-in reports (route photos, parking tips, rejections) update the handbook | Partial (repo) | Signed-in report form (≤3 photos, EXIF stripped) + report tables merged; staff turn reports into cited facts (SA-21). |
-| SAM 3.1 masking faces and plates | Delivered | Hosted SAM 3.1 via the Meta Model API on the precheck path; open-weights SAM 3 drop-in on the plant RTX 3060 for the A2 recorder (+ optional face/plate mask). Weights licence-gated, never committed (SA-6). |
-| Self-hosted Muse Glimmer pre-checks document photos | Descoped | Honest substitute: the public precheck serves recorded verdict JSONs verbatim — zero marginal model cost. Glimmer self-hosting not built. |
-| Approved changes reach the handbook and MCP server | Delivered (repo) | Accepted-only publish; read-only MCP stub with one tool (`lookup_authority`, `crates/mcp`). |
-| A new country means new sources, not new code | Delivered (repo) | 106 authorities staged as data (`packs/world/US.json` 59 + `MX.json` 33 + `CA.json` 14, all `needs_review`); validated by `cargo xtask packs-validate` (SA-17). |
-| One source for every country, starting 106 US/CA/MX; prepaid labels and envelopes to your door | Partial | Authority data staged (above); 3 authorities loaded in production, more load as packs verify. No real mail, fees, or carrier charges anywhere. |
-| Success criterion: Viet Nam request → completed form + FedEx label, envelopes tomorrow | Roadmap | Live order timeline, form PDF fill and carrier postage are roadmap. Live FedEx endpoints merged behind `labels.live` (off by default; caps 2/day, $60 max, ZIP allowlist, staff-only, audited — SA-19); credentials + allowlist are operator-owned. |
-| Source-changed view (SA-14) | Parked | Needs ≥2 captures of one source; production holds at most one per source (carried from the slice report, not independently verified from this worktree). |
+| Watch 500+ cited URLs, HCCH feed, inbox for authority notices | Delivered (repo) | 478 world watch URLs + 24 curated ship in the release. The sweep keeps every download in the fetch cache, advances past dead URLs, honours weekly cadence, and spaces requests per host (P396, P402). Notices on a watched page are captured even when tiny (`gained_lines`). Live once the world packs are loaded. The F3 email inbox stays partial (the instruct worker reads email captures). |
+| Muse Spark turns only changes into cited records I approve | Delivered | Changed web captures draft from their added lines only (P394, every 15 min, under `meta.daily_call_cap`). Staff approve in /review; approvals publish live. |
+| Reading English, Spanish or French pages and forms | Partial | Runner drafts from es/fr pages; gold set 30 cases including 4 es/fr. Live rates on all 30 cases: see Eval numbers. Es/fr translation after approval is merged but not wired. |
+| Flag contradictions like Washington's two PO Boxes | Delivered | Conflict banner on the dossier (`crates/web/src/approval.rs`). |
+| One consular legalization chain (Egypt in USA) with pre-filled authority forms | Partial | Chain view plus DS-4194 prefill. Official PDFs with fillable fields are filled and flattened from accepted form maps (`crates/web/src/forms_map.rs`). Step validation (V-1…V-19) is roadmap. |
+| Walk-in reports (route photos, parking tips, rejections) update the handbook | Partial | Signed-in report form (≤3 photos, EXIF stripped). Staff turn reports into cited facts. |
+| SAM 3.1 masking faces and plates | Delivered | Hosted SAM 3.1 on the precheck path, plus an open-weights SAM 3 drop-in on plant. |
+| Self-hosted Muse Glimmer pre-checks document photos | Delivered (repo) | `precheck.glimmer` worker kind on plant's GPU plus `ops/open-weights/glimmer-serve.sh` (P404). Weights download from the operator-named Hugging Face repo into `/srv/scratch/apostille/models`. Not run yet. |
+| Approved changes reach the handbook and MCP server | Delivered | Accepted-only publish; read-only MCP tool `lookup_authority`. |
+| A new country means new sources, not new code | Delivered | 130 country packs as data (`packs/world/`), validated in ci, loaded from admin Packs with no code change. Non-party countries come from the `research.nonparty` worker job (P392) into `packs/world-nonparty/`. |
+| One source for every country, starting 106 US/CA/MX; prepaid labels and envelopes to your door | Partial | Every Hague party is in the release. Non-parties come from the research job (not yet run). The staff FedEx path now keeps the label PDF, and the request fields are checked against FedEx's docs (P393). The first live label waits on the operator's production keys. Envelope kits are not delivered. |
+| Success criterion: Viet Nam request → completed form + FedEx label, envelopes tomorrow | Partial | The form fill works and the staff label path is ready. No end-to-end Viet Nam order has been run with a real label yet. |
+| Source-changed view (SA-14) | Delivered | Admin capture history plus a line diff; the public "What changed" panel shows added and removed lines per source. It needs two captures of a source, which the daily sweep produces. |
 
-Number provenance (measured this turn vs carried):
+Number provenance (measured 2026-11-03 unless noted):
 
-- Production `0.1.0+2b4bc8d`, 5/10 — measured (`scoreboard.mjs` full run, 2026-11-02T17:32Z).
-- Eval rates — measured from live `/api/v1/quality` this turn: model `muse-spark-1.3`, run `2026-11-01T04:29:10Z`, 26 gold cases at run time, `quote_found_rate` 1.0, `value_in_quote_rate` 0.96875 (shown 0.969), `topic_accuracy` 0.640625 (shown 0.641). Match the README's cited measurement.
-- Gold set now 30 (13 vietnam + 13 usa-wa-sos + 2 mexico-sre + 2 france-legalisation) — counted this turn.
-- 106 authorities = 59 + 33 + 14 — parsed from the pack files this turn.
-- FedEx caps (2/day, $60, off by default) — read from `crates/config/src/lib.rs` defaults this turn.
-- Planted faults 181/182 — carried from the README's cited 2026-11-02 re-measurement; not re-run this turn.
-- S1 submission row stays honest: the source code is source-available under PolyForm Noncommercial 1.0.0 (not an OSI licence, so the row's MIT/Apache check stays red), repo visibility is the operator's call, and the video line is operator-owned.
+- Production `0.1.0+a999b1b`, 6/10: measured with the scoreboard
+  after the deploy; before the deploy it was also 6/10.
+- 501 world authorities in 130 packs, 478 watch URLs: parsed from
+  `packs/world/` (pinned by `world_rows_merge_into_curated_dossiers`).
+- Staging with every pack loaded serves 510 authorities and passed
+  9/10 (only S1) plus the demo 3/3 on each release SHA.
+- Eval rates: live `/api/v1/quality`, run 2026-11-02T17:32:47Z, 30
+  gold cases.
 
 ## What's next
 
-The live order timeline, the form PDF, and the carrier label are roadmap.
-More authorities load as their packs verify; the eval gold set grows past
-the first 30 synthetic passages.
+- Load the world packs on production and run `research.nonparty` for
+  the non-party countries.
+- Buy the first live FedEx label on the staff path, then the
+  customer-paid path.
+- Run Glimmer on plant once the weights are named.
+- Grow the eval gold set past 30 synthetic passages.
 
 ## How we built it with Muse Code
 
