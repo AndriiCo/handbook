@@ -223,3 +223,4 @@
 | 320 | 2026-11-03 00:35Z | B3: admin stats endpoint, authority kind + verified_at, fact accepts on ops | web 332 green, clippy clean |
 | 321 | 2026-11-03 00:37Z | Don't forget about easy to run xtask for judges setup on their machine. | xtask judge: doctor + fresh boot + tour; docs/judges.md, README |
 | 322 | 2026-11-03 00:40Z | Fix: lane admin routers behind the admin guard stack (host, IP allowlist, CSRF, log) | guard test + fixture runs lane DDL; web 333 green |
+| 323 | 2026-11-03 00:47Z | M2 first cut (SA-22, builder): RenderPlanV1 compose + validate_plan + Wonder entailment + /plan read | planted faults dropped; web 340 green, clippy clean |

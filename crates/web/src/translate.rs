@@ -421,7 +421,7 @@ fn contains_digit_run(hay: &str, digits: &str) -> bool {
             if hay[i] == want[wi] {
                 wi += 1;
                 i += 1;
-            } else if matches!(hay[i], ' ' | '\u{A0}' | '\u{202F}' | '.' | ',')
+            } else if matches!(hay[i], ' ' | '\u{A0}' | '\u{202F}' | '.' | ',' | ':')
                 && hay.get(i + 1).is_some_and(|c| *c == want[wi])
             {
                 i += 1;

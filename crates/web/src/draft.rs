@@ -587,7 +587,7 @@ fn sealed_base_url(conn: &rusqlite::Connection, kek: Option<&config::Kek>) -> Op
 
 /// Live model client: `$META_API_KEY` first (staging, one-shot runs),
 /// else the admin-sealed `meta.api_key`. Fails closed — never the stub.
-fn live_client(
+pub(crate) fn live_client(
     conn: &rusqlite::Connection,
     kek: Option<&config::Kek>,
 ) -> Result<handbook_agent::model::MetaRestClient, String> {

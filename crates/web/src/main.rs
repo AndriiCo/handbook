@@ -2572,6 +2572,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn public_plan_read_is_always_200_and_model_free() {
+        // M2: the dossier fetches /plan on every load, so an unknown slug
+        // or a slug without an accepted plan reads as `plan: null` (a 404
+        // would be a console error on GP2-page).
+        let fx = fixture();
+        for slug in ["usa-wa-sos", "no-such-authority"] {
+            let res = public_router_for(&fx.state)
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/apostille/api/v1/authorities/{slug}/plan"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "{slug}");
+            let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+                .await
+                .unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(v["slug"], slug);
+            assert!(v["plan"].is_null());
+            for key in ["facts", "offices", "forms"] {
+                assert!(v[key].is_array(), "{slug}: {key}");
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn publish_rejects_oversized_body() {
         // M1: arbitrary-JSON fan-out is capped; normal events flow.
         let fx = fixture();

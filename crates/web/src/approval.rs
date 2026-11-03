@@ -747,19 +747,34 @@ pub async fn public_facts(
     let Some(conn) = open(&state) else {
         return store_unavailable();
     };
-    let authority_id: Option<i64> = conn
-        .query_row("SELECT id FROM authority WHERE slug = ?1", [&slug], |row| {
-            row.get(0)
-        })
-        .optional()
-        .unwrap_or(None);
-    let Some(authority_id) = authority_id else {
+    let Some(facts) = accepted_fact_views(&conn, &state.store_root, &slug) else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "unknown authority"})),
         )
             .into_response();
     };
+    (
+        StatusCode::OK,
+        Json(json!({"authority": slug, "facts": facts})),
+    )
+        .into_response()
+}
+
+/// Accepted facts of one authority exactly as the public read serves
+/// them (no `phone_script`, conflict banners on accepted siblings), or
+/// `None` for an unknown slug. Shared by `/facts` and the `/plan` read.
+pub fn accepted_fact_views(
+    conn: &Connection,
+    store_root: &std::path::Path,
+    slug: &str,
+) -> Option<Vec<FactView>> {
+    let authority_id: i64 = conn
+        .query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |row| {
+            row.get(0)
+        })
+        .optional()
+        .unwrap_or(None)?;
     let rows: Vec<StoredFact> = conn
         .prepare(
             "SELECT id, topic, statement, status, created_by, created_at,
@@ -773,7 +788,7 @@ pub async fn public_facts(
                 Ok(StoredFact {
                     id: row.get(0)?,
                     authority_id,
-                    slug: slug.clone(),
+                    slug: slug.to_string(),
                     topic: row.get(1)?,
                     statement: row.get(2)?,
                     status: row.get(3)?,
@@ -787,15 +802,11 @@ pub async fn public_facts(
             .collect::<rusqlite::Result<Vec<_>>>()
         })
         .unwrap_or_default();
-    let facts: Vec<FactView> = rows
-        .iter()
-        .map(|row| fact_view(&conn, &state.store_root, row, true))
-        .collect();
-    (
-        StatusCode::OK,
-        Json(json!({"authority": slug, "facts": facts})),
+    Some(
+        rows.iter()
+            .map(|row| fact_view(conn, store_root, row, true))
+            .collect(),
     )
-        .into_response()
 }
 
 /// Public authority index. Anonymous callers reach this; rows are
