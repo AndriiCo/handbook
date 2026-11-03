@@ -1,6 +1,74 @@
 {
   "offices": [
     {
+      "id": 33,
+      "authority_slug": "usa-wa-sos",
+      "run_id": 95,
+      "name": "SYNTHETIC Records Annex",
+      "status": "proposed",
+      "visit": {
+        "kind": "appointment",
+        "appointment_required": true,
+        "notes": "Book a counter slot before visiting.",
+        "fact_ids": [
+          207
+        ]
+      },
+      "address": {
+        "line1": "200 Example Street",
+        "line2": "Suite 3",
+        "city": "Olympia",
+        "region": "WA",
+        "postal_code": "98501",
+        "country": "US",
+        "fact_id": 207
+      },
+      "mail": null,
+      "hours": [
+        {
+          "days": [
+            "tue",
+            "wed",
+            "thu"
+          ],
+          "open": "09:00",
+          "close": "15:00",
+          "fact_id": 208
+        }
+      ],
+      "timezone": null,
+      "timezone_source": null,
+      "phone": null,
+      "directions_url": "https://www.openstreetmap.org/search?query=200%20Example%20Street%20Olympia%20WA",
+      "fact_ids": [
+        207,
+        208
+      ],
+      "accepted_at": null,
+      "guards": [
+        {
+          "id": "address_ok",
+          "ok": true,
+          "detail": "street, city, region, ZIP all in fact 207"
+        },
+        {
+          "id": "hours_ok",
+          "ok": true,
+          "detail": "09:00-15:00, Tue-Thu"
+        },
+        {
+          "id": "po_box_from_text",
+          "ok": true,
+          "detail": "no PO box proposed"
+        },
+        {
+          "id": "timezone",
+          "ok": false,
+          "detail": "not quoted: needs staff confirmation"
+        }
+      ]
+    },
+    {
       "id": 32,
       "authority_slug": "usa-wa-sos",
       "name": "SYNTHETIC Apostille Counter",

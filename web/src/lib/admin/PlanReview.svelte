@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { fly } from 'svelte/transition';
+	import { flip } from 'svelte/animate';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -8,17 +10,24 @@
 	import Notice from '#lib/public-ui/Notice.svelte';
 	import GuardList from './GuardList.svelte';
 	import DecisionBar from './DecisionBar.svelte';
+	import ComposePanel from './ComposePanel.svelte';
+	import type { ComposeSummary, ComposeRun } from './compose.svelte.js';
 	import { decide, fetchPlans, type PlanBlock, type PlanProposal } from './proposals.js';
-	import { errorText } from './admin-api.js';
-	import { ago, fmtCents } from './format.js';
+	import { ApiError, errorText } from './admin-api.js';
+	import { ago, fmtCents, fmtCompact, fmtMs } from './format.js';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import InfoIcon from '@lucide/svelte/icons/info';
 
-	// Page plans tab: Muse Spark composes a plan from accepted facts; a
-	// deterministic validator (+ Muse Wonder entailment) reports; staff
-	// accept → `plan_accepted` on `authority:{slug}`.
-	let { onCount }: { onCount?: (n: number) => void } = $props();
+	// Page plans tab: staff start a compose run (ComposePanel) and
+	// watch Muse Spark → validator → Muse Wonder live; the finished
+	// proposal lands at the top, selected. Accept → `plan_accepted` on
+	// `authority:{slug}`; every decision is optimistic with rollback.
+	let {
+		onCount,
+		initialSlug = '',
+		initialRun = null
+	}: { onCount?: (n: number) => void; initialSlug?: string; initialRun?: number | null } = $props();
 
 	let plans = $state<PlanProposal[]>([]);
 	let loadState = $state<'loading' | 'ready' | 'failed'>('loading');
@@ -26,21 +35,42 @@
 	let selectedId = $state<number | null>(null);
 	let acting = $state(false);
 	let path = $state<string | null>(null);
+	let fresh = $state<number | null>(null);
+	let composer = $state<ComposePanel | null>(null);
+	let reduceMotion = $state(false);
 
-	async function load() {
-		loadState = 'loading';
+	/** Re-read the queue; keep (or move to) `selectId` when it is listed. */
+	async function load(selectId?: number | null, quiet = false) {
+		if (!quiet) loadState = 'loading';
 		try {
-			plans = await fetchPlans();
-			selectedId = plans[0]?.id ?? null;
+			const rows = await fetchPlans();
+			const want = selectId ?? selectedId;
+			plans = rows;
+			selectedId = rows.some((p) => p.id === want) ? (want as number) : (rows[0]?.id ?? null);
 			loadState = 'ready';
-			onCount?.(plans.filter((p) => p.status === 'proposed').length);
+			onCount?.(rows.filter((p) => p.status === 'proposed').length);
 		} catch (err) {
 			loadError = errorText(err, 'Page plans failed to load.');
-			loadState = 'failed';
+			if (!quiet || plans.length === 0) loadState = 'failed';
 		}
 	}
 
+	// A finished run: re-read the list, select the new plan, show it.
+	async function onComposed(s: ComposeSummary, run: ComposeRun) {
+		const id = s.plan_id ?? null;
+		await load(id, true);
+		const found = plans.find((p) => (id !== null && p.id === id) || (run.runId !== null && p.run_id === run.runId));
+		if (!found) return;
+		fresh = found.id;
+		selectedId = found.id;
+		path = null;
+		if (run.reopened) return;
+		await tick();
+		document.getElementById(`plan-${found.id}`)?.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+	}
+
 	onMount(() => {
+		reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		void load();
 	});
 
@@ -90,12 +120,23 @@
 			);
 		} catch (err) {
 			plan.status = prior;
-			toast.error(errorText(err, 'Decision failed — nothing changed.'));
+			if (err instanceof ApiError && err.status === 409) {
+				toast.info(`Plan v${plan.version} was already decided — refreshing.`);
+				void load(plan.id, true);
+			} else {
+				toast.error(errorText(err, 'Decision failed — nothing changed.'));
+			}
 		} finally {
 			acting = false;
 		}
 	}
+
+	const motion = $derived(reduceMotion ? 0 : 200);
 </script>
+
+<div class="flex flex-col gap-4">
+<ComposePanel bind:this={composer} kind="plans" {initialSlug} {initialRun} onDone={onComposed} />
+
 
 {#if loadState === 'loading'}
 	<div class="grid gap-4 md:grid-cols-3" role="status" aria-label="Loading page plans">
@@ -105,23 +146,24 @@
 {:else if loadState === 'failed'}
 	<Notice variant="warning" heading="Page plans are unavailable.">
 		<p class="m-0">{loadError}</p>
-		<p class="mt-3 mb-0"><Button variant="outline" onclick={load}>Try again</Button></p>
+		<p class="mt-3 mb-0"><Button variant="outline" onclick={() => load()}>Try again</Button></p>
 	</Notice>
 {:else if plans.length === 0}
 	<Card.Root class="items-start px-6 py-10">
 		<p class="m-0 text-h3 font-semibold">No page plans waiting</p>
 		<p class="m-0 text-sm text-ink-muted">
-			Muse Spark composes a plan once an authority has enough accepted facts.
+			Muse Spark composes a plan once an authority has three accepted facts.
 		</p>
-		<Button variant="outline" href="/compile">Start a compile run</Button>
+		<Button variant="outline" onclick={() => composer?.focusPicker()}>Choose an authority to compose</Button>
 	</Card.Root>
 {:else}
 	<div class="grid gap-4 lg:grid-cols-4">
 		<ul class="m-0 flex list-none flex-col gap-2 p-0" aria-label="Plan proposals">
 			{#each plans as p (p.id)}
-				<li>
+				<li animate:flip={{ duration: motion }} in:fly={{ y: -8, duration: motion }}>
 					<button
 						type="button"
+						id={`plan-${p.id}`}
 						class={`flex w-full cursor-pointer flex-col gap-1 rounded-md border px-3 py-2 text-left transition-colors duration-150 ${p.id === selectedId ? 'border-focus bg-surface' : 'border-line bg-card hover:bg-surface'}`}
 						aria-current={p.id === selectedId ? 'true' : undefined}
 						onclick={() => {
@@ -134,6 +176,9 @@
 							v{p.version}{p.current_version ? ` replaces v${p.current_version}` : ' (first plan)'}
 						</span>
 						<span class="flex flex-wrap gap-1">
+							{#if p.id === fresh}
+								<Badge variant="outline" class="border-focus text-ink">New{p.run_id ? ` · run ${p.run_id}` : ''}</Badge>
+							{/if}
 							{#if p.status !== 'proposed'}
 								<Badge variant="secondary">{p.status}</Badge>
 							{:else if p.validator.passed}
@@ -157,9 +202,14 @@
 						</h2>
 						<p class="m-0 text-sm text-ink-muted">
 							Composed by Muse Spark {ago(plan.created_at, Math.max(Date.now() / 1000, plan.created_at))}{plan.run_id
-								? ` in compile run ${plan.run_id}`
+								? ` in run ${plan.run_id}`
 								: ''} · {plan.plan.blocks.length} blocks
 						</p>
+						{#if plan.spend}
+							<p class="m-0 font-mono text-xs text-ink-muted tabular-nums">
+								{fmtMs(plan.spend.latency_ms)} · {fmtCompact(plan.spend.input_tokens)} in · {fmtCompact(plan.spend.cached_tokens)} cached · {fmtCompact(plan.spend.output_tokens)} out · {fmtCompact(plan.spend.reasoning_tokens)} reasoning
+							</p>
+						{/if}
 					</div>
 					<DecisionBar
 						noun={`plan v${plan.version}`}
@@ -187,9 +237,14 @@
 					<Card.Content class="flex flex-col gap-3">
 						<GuardList guards={plan.validator.checks} label="Validator checks" />
 						{#if plan.validator.dropped_blocks.length > 0}
-							<p class="m-0 text-sm text-changed">
-								Dropped before review: {plan.validator.dropped_blocks.join(', ')}
-							</p>
+							<div class="flex flex-col gap-1 rounded-sm bg-changed-bg px-3 py-2 text-sm">
+								<p class="m-0 font-semibold">Dropped before review ({plan.validator.dropped_blocks.length})</p>
+								<ul class="m-0 flex list-none flex-col gap-1 p-0">
+									{#each plan.validator.dropped_blocks as d (d.id)}
+										<li class="break-words"><span class="font-mono">{d.id}</span>{d.reason ? ` — ${d.reason}` : ''}</li>
+									{/each}
+								</ul>
+							</div>
 						{/if}
 					</Card.Content>
 				</Card.Root>
@@ -300,3 +355,4 @@
 		{/if}
 	</div>
 {/if}
+</div>

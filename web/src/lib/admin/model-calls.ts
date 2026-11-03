@@ -37,29 +37,46 @@ const maybe = (v: unknown): number | null => (typeof v === 'number' && Number.is
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Loose = any;
 
+function callOf(c: Loose): ModelCall {
+	return {
+		id: c.id,
+		at: n(c.at),
+		model: c.model,
+		pipeline: typeof c.pipeline === 'string' ? c.pipeline : '',
+		run_id: maybe(c.run_id),
+		latency_ms: maybe(c.latency_ms),
+		ttft_ms: maybe(c.ttft_ms),
+		input_tokens: n(c.input_tokens),
+		output_tokens: n(c.output_tokens),
+		cached_tokens: n(c.cached_tokens),
+		reasoning_tokens: n(c.reasoning_tokens),
+		outcome: typeof c.outcome === 'string' ? c.outcome : 'ok',
+		attempt: n(c.attempt) || 1
+	};
+}
+
+const rows = (body: Loose): ModelCall[] =>
+	(Array.isArray(body?.calls) ? body.calls : [])
+		.filter((c: Loose) => c && typeof c.id === 'number' && typeof c.model === 'string')
+		.map(callOf);
+
+/**
+ * Every attempt one run made (compose: Spark, then Wonder), oldest
+ * first. `since=0` so a run reopened from a link still finds its rows.
+ */
+export async function fetchRunCalls(runId: number): Promise<ModelCall[]> {
+	const body = await getJson<Loose>(`/admin/model-calls?run_id=${runId}&since=0&limit=50`, 'Run calls');
+	return rows(body)
+		.filter((c) => c.run_id === runId)
+		.sort((a, b) => a.at - b.at || a.id - b.id);
+}
+
 export async function fetchModelCalls(
 	pipeline: string | null
 ): Promise<{ calls: ModelCall[]; summary: CallSummary | null }> {
 	const q = pipeline ? `?pipeline=${encodeURIComponent(pipeline)}` : '';
 	const body = await getJson<Loose>(`/admin/model-calls${q}`, 'Model calls');
-	const calls: ModelCall[] = (Array.isArray(body?.calls) ? body.calls : [])
-		.filter((c: Loose) => c && typeof c.id === 'number' && typeof c.model === 'string')
-		.map((c: Loose) => ({
-			id: c.id,
-			at: n(c.at),
-			model: c.model,
-			pipeline: typeof c.pipeline === 'string' ? c.pipeline : '',
-			run_id: maybe(c.run_id),
-			latency_ms: maybe(c.latency_ms),
-			ttft_ms: maybe(c.ttft_ms),
-			input_tokens: n(c.input_tokens),
-			output_tokens: n(c.output_tokens),
-			cached_tokens: n(c.cached_tokens),
-			reasoning_tokens: n(c.reasoning_tokens),
-			outcome: typeof c.outcome === 'string' ? c.outcome : 'ok',
-			attempt: n(c.attempt) || 1
-		}))
-		.sort((a: ModelCall, b: ModelCall) => b.at - a.at);
+	const calls: ModelCall[] = rows(body).sort((a: ModelCall, b: ModelCall) => b.at - a.at);
 	const s = body?.summary;
 	const summary: CallSummary | null =
 		s && typeof s === 'object'

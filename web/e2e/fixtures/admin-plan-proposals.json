@@ -1,6 +1,199 @@
 {
   "plans": [
     {
+      "id": 14,
+      "authority_slug": "usa-wa-sos",
+      "version": 5,
+      "status": "proposed",
+      "created_at": 1793750700,
+      "run_id": 94,
+      "plan": {
+        "id": 14,
+        "version": 5,
+        "status": "proposed",
+        "accepted_at": null,
+        "headline": "Get a Washington apostille in person the same day, or by mail in about a week.",
+        "paths": [
+          {
+            "id": "birth-certificate",
+            "label": "Birth certificate",
+            "fact_ids": [
+              201
+            ]
+          },
+          {
+            "id": "diploma",
+            "label": "Diploma or transcript",
+            "fact_ids": [
+              201
+            ]
+          }
+        ],
+        "blocks": [
+          {
+            "id": "b1",
+            "kind": "step",
+            "title": "Check your document is a certified copy",
+            "body": "Bring the certified copy, not a photocopy.",
+            "fact_ids": [
+              206
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b2",
+            "kind": "office",
+            "office_ids": [
+              31
+            ],
+            "fact_ids": [
+              202,
+              204,
+              205
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b3",
+            "kind": "fees",
+            "lines": [
+              {
+                "label": "Apostille",
+                "amount_cents": 1500,
+                "per": "document",
+                "fact_id": 201
+              }
+            ],
+            "fact_ids": [
+              201
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b4",
+            "kind": "forms",
+            "form_ids": [
+              41
+            ],
+            "fact_ids": [
+              206
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b5",
+            "kind": "mail",
+            "title": "Or mail it",
+            "body": "Mailed requests go to the PO Box, so use USPS.",
+            "fact_ids": [
+              203
+            ],
+            "show_for": []
+          },
+          {
+            "id": "b7",
+            "kind": "timing",
+            "title": "Same day in person",
+            "body": "Walk-in requests are processed the same day.",
+            "fact_ids": [
+              205
+            ],
+            "show_for": []
+          }
+        ],
+        "hide_topics": [
+          "phone_script"
+        ]
+      },
+      "validator": {
+        "passed": true,
+        "checks": [
+          {
+            "id": "fact_ids_accepted",
+            "ok": true,
+            "detail": "6 blocks cite 6 accepted facts"
+          },
+          {
+            "id": "numbers_in_citations",
+            "ok": true,
+            "detail": "$15, 8:00, 4:30, 4000 all found in cited text"
+          },
+          {
+            "id": "hours_guard",
+            "ok": true,
+            "detail": "1 range, am/pm consistent"
+          },
+          {
+            "id": "no_urls_html",
+            "ok": true,
+            "detail": ""
+          },
+          {
+            "id": "entailment",
+            "ok": false,
+            "detail": "muse-wonder-1.0: 6/7 blocks supported"
+          }
+        ],
+        "dropped_blocks": [
+          {
+            "id": "b6",
+            "reason": "entailment: fact 201 does not say the apostille is invalid inside the US"
+          }
+        ]
+      },
+      "diff": {
+        "added": [
+          "b7"
+        ],
+        "removed": [],
+        "changed": [
+          "b3"
+        ]
+      },
+      "current_version": 3,
+      "provenance": {
+        "models": [
+          {
+            "model": "muse-spark-1.3",
+            "role": "extract"
+          },
+          {
+            "model": "muse-wonder-1.0",
+            "role": "cross_check"
+          },
+          {
+            "model": "muse-spark-1.3",
+            "role": "compose"
+          }
+        ],
+        "validator": {
+          "passed": true,
+          "checks": 5,
+          "dropped_blocks": 1
+        },
+        "cross_check": {
+          "supported": 6,
+          "contradicted": 0,
+          "not_found": 0,
+          "checked_before_accept": true
+        },
+        "run": {
+          "run_id": 94,
+          "latency_ms": 14630,
+          "input_tokens": 21480,
+          "output_tokens": 1870,
+          "cached_tokens": 15360,
+          "reasoning_tokens": 2410
+        },
+        "sources": [
+          {
+            "url": "https://example.test/wa-sos/apostille",
+            "captured_at": 1793660000
+          }
+        ]
+      }
+    },
+    {
       "id": 13,
       "authority_slug": "usa-wa-sos",
       "version": 4,

@@ -108,6 +108,15 @@
 
 	type Tab = 'facts' | 'plans' | 'offices' | 'forms' | 'translations';
 	const TABS: Tab[] = ['facts', 'plans', 'offices', 'forms', 'translations'];
+
+	// Compose deep links, read before the tabs mount: `compose=<slug>`
+	// preselects the authority (never starts a run); `run=<id>` reopens
+	// that compose run in the tab named by `tab`.
+	const boot = typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search);
+	const bootTab = boot.get('tab');
+	const composeSlug = /^[a-z0-9-]{1,80}$/.test(boot.get('compose') ?? '') ? (boot.get('compose') ?? '') : '';
+	const bootRunRaw = Number(boot.get('run'));
+	const bootRun = Number.isInteger(bootRunRaw) && bootRunRaw > 0 ? bootRunRaw : null;
 	let tab = $state<Tab>('facts');
 	let counts = $state<Record<'plans' | 'offices' | 'forms', number | null>>({
 		plans: null,
@@ -1182,11 +1191,19 @@
 		</Tabs.Content>
 
 		<Tabs.Content value="plans">
-			<PlanReview onCount={(n) => (counts.plans = n)} />
+			<PlanReview
+				onCount={(n) => (counts.plans = n)}
+				initialSlug={composeSlug}
+				initialRun={bootTab === 'plans' ? bootRun : null}
+			/>
 		</Tabs.Content>
 
 		<Tabs.Content value="offices">
-			<OfficeReview onCount={(n) => (counts.offices = n)} />
+			<OfficeReview
+				onCount={(n) => (counts.offices = n)}
+				initialSlug={composeSlug}
+				initialRun={bootTab === 'offices' ? bootRun : null}
+			/>
 		</Tabs.Content>
 
 		<Tabs.Content value="forms">
