@@ -33,7 +33,29 @@ Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
    (the Mailer group shows the steps; staging uses the file mailer).
 4. **Washington SOS alert:** sos.wa.gov posted on 11/02 that apostille
    services are unavailable; check it before recording the WA scenes.
-5. **Deploy decision for candidate `a2abb38` (P373-P379; yours, the freeze
+5. **S1 (submission), three steps only you can do.** Done by the builder
+   (P381): source code under PolyForm Noncommercial 1.0.0 with your
+   licensing notes, content all rights reserved (`LICENSE-CONTENT.md`),
+   scrub list applied (server IPs redacted), full-history gitleaks clean
+   (604 commits; the 60 replay-digest hits are fingerprinted in
+   `.gitleaksignore`). Still red, by design of the row:
+   a. **Licence row.** S1 accepts only MIT or Apache-2.0 (an OSI
+      licence); PolyForm Noncommercial is source-available, not OSI. If
+      the Cerebral Valley rules accept a source-available licence, edit
+      `.agents/scoreboard/scoreboard.mjs` line 259 yourself (agents never
+      edit it), e.g. to
+      `/MIT License|Apache License|PolyForm Noncommercial License 1\.0\.0/.test(read('LICENSE').slice(0, 2000))`
+      (the notes push the title past 400 characters), and the S1 text in
+      `.agents/goal.md`. If the rules require OSI, this licence fails the
+      submission whatever the row says.
+   b. **Video.** Replace README line 6 with the YouTube, Vimeo or Loom
+      URL.
+   c. **Public repo.** `gh repo edit AndriiCo/handbook --visibility public
+      --accept-visibility-change-consequences` publishes the full history,
+      including `docs/ops/security-review-2026-10-27.md` (open findings;
+      the scrub list proposed moving it out, which history would not
+      undo) and the ops pages. The builder flips it on your explicit word.
+6. **Deploy decision for candidate `a2abb38` (P373-P379; yours, the freeze
    is in force).** Plant stamp green and staging-green 9/10 (only S1) + live
    demo 3/3 on that exact SHA (Tue ~09:35 PST). On main, not in production: the dead config keys are gone (`tls.client_ca_file`,
    `admin.require_cert`, `net.admin_https_port`; a stored value is ignored
@@ -235,9 +257,8 @@ Your top lines now (details in Still-open below):
 2. Viet Nam proposals + A5: `ops-gp2-proposals.sh`, then
    `ops-a5-eval.sh` Monday evening — the 72 h window expires
    **Tue 20:29 PST** — and again Wed morning.
-3. S1: LICENSE stays proprietary (no change); repo public,
-   demo video link (replace the README line yourself on
-   2026-11-03; builder must never upload it).
+3. S1: superseded 11-03 (source code now PolyForm Noncommercial; see
+   "Open now" item 5).
 4. Prod `META_API_KEY` is already working (A2 live, 38 ms).
 
 Disk fixed 2026-11-01 ~04:05Z (operator cleaned plant `/home`, now 8%):
@@ -307,9 +328,9 @@ group-read pre-step from this morning is done — A2 reads prove it.
    the quality.json lines. Flips A5; proposals feed item 2. A5 window:
    re-run Monday evening whether or not Monday's deploy happens
    (current 72 h window expires Tue 20:29 PST), and again Wed morning.
-4. S1 (LICENSE stays proprietary — do not change it): make
-   the repo public, link the demo video in README (video lands
-   11-03). Video: record the production admin approve scene
+4. S1 (superseded 11-03 by "Open now" item 5; the license is now
+   PolyForm Noncommercial): make the repo public, link the demo video
+   in README (video lands 11-03). Video: record the production admin approve scene
    yourself (session login from your allowlisted IP, no cert;
    builder takes desktop/mobile), upload to YouTube, paste the
    URL back.
