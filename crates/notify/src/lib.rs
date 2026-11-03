@@ -574,8 +574,12 @@ pub fn load_fact(
         )
         .optional()?
         .unwrap_or(0);
-    let previous: String = conn
-        .query_row(
+    // A service notice adds to the ones before it (the dossier stacks
+    // them newest first); it never replaces one, so no "was:" line.
+    let previous: String = if topic == "service_notice" {
+        String::new()
+    } else {
+        conn.query_row(
             "SELECT statement FROM fact
              WHERE authority_id = ?1 AND topic = ?2 AND status = 'accepted' AND id < ?3
              ORDER BY id DESC LIMIT 1",
@@ -583,7 +587,8 @@ pub fn load_fact(
             |row| row.get(0),
         )
         .optional()?
-        .unwrap_or_default();
+        .unwrap_or_default()
+    };
     Ok(Some(DigestFact {
         fact_id,
         topic,
@@ -800,6 +805,56 @@ mod tests {
         assert_eq!(enqueue_from_audit(&conn, 200).expect("enqueue"), 1);
         // Confirm tokens are single-use.
         assert_eq!(confirm(&conn, 201, &token).expect("replay"), None);
+    }
+
+    #[test]
+    fn service_notice_accept_reaches_followers_without_a_was_line() {
+        let conn = memory();
+        let kek = kek();
+        seed_authority(&conn);
+        let out = subscribe(&conn, 100, "vietnam", "a@example.com", &kek).expect("sub");
+        confirm(&conn, 101, &out.confirm_token.unwrap()).expect("confirm");
+        for (id, statement) in [
+            (8, "notice: counter closed 11/01"),
+            (9, "notice: unavailable"),
+        ] {
+            conn.execute(
+                "INSERT INTO fact(id, authority_id, topic, statement, status, capture_id,
+                                  citation_start, citation_end)
+                 VALUES (?1, 1, 'service_notice', ?2, 'accepted', 0, -1, -1)",
+                rusqlite::params![id, statement],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO audit(id, action, entity_id) VALUES (1, 'fact_accept', 9)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(enqueue_from_audit(&conn, 102).expect("enqueue"), 1);
+        conn.execute_batch(
+            "CREATE TABLE capture(id INTEGER PRIMARY KEY, source_id INTEGER, captured_at INTEGER);
+             CREATE TABLE source(id INTEGER PRIMARY KEY, authority_id INTEGER, kind TEXT,
+                                 uri TEXT);",
+        )
+        .unwrap();
+        let fact = load_fact(&conn, std::path::Path::new("/nonexistent"), 9)
+            .expect("load")
+            .expect("fact");
+        assert_eq!(fact.topic, "service_notice");
+        assert_eq!(fact.previous, "", "notices stack, they never replace");
+        let (subject, body) = build_digest(
+            &[fact],
+            "https://example.test",
+            "https://example.test/apostille/notify/unsubscribe?t=abc",
+            "Example Co, 1 Test Way",
+        );
+        assert!(subject.contains("Viet Nam"));
+        assert!(
+            body.contains("service_notice: notice: unavailable"),
+            "{body}"
+        );
+        assert!(!body.contains("was:"), "{body}");
     }
 
     #[test]

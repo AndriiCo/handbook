@@ -4,6 +4,7 @@
 //! Every fallible API returns [`contracts::HandbookError`].
 
 pub mod db;
+pub mod history;
 pub mod store;
 
 /// Canonical test fixtures (the Washington PO-Box pair). Test-only on

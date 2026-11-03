@@ -5,11 +5,14 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	GUIDE_STEPS,
+	NOTICE_TOPIC,
 	buildGuide,
+	changePanels,
 	domain,
 	fieldLabel,
 	markQuote,
 	parseStatement,
+	serviceNotices,
 	sourceUrl,
 	staleMark
 } from '../src/lib/public-ui/guide.js';
@@ -266,4 +269,97 @@ test('GUIDE_STEPS covers the frozen vocabulary except phone_script', () => {
 	];
 	for (const t of frozen) assert.ok(covered.has(t), `step covers ${t}`);
 	assert.ok(!covered.has('phone_script'));
+	// Service notices are the dossier banner, never a guide step.
+	assert.ok(!covered.has(NOTICE_TOPIC));
+});
+
+const NOTICE_QUOTE =
+	'Notice posted 11/02/2026: Apostille services are unavailable until further notice while we upgrade our systems.';
+
+function notice(over) {
+	return fact({
+		topic: 'service_notice',
+		statement: `notice: ${NOTICE_QUOTE}`,
+		citations: [
+			{
+				quote: NOTICE_QUOTE,
+				source_url: 'https://www.sos.wa.gov/corporations-charities/apostilles',
+				captured_at: '2026-11-02T00:00:00Z'
+			}
+		],
+		...over
+	});
+}
+
+test('service notices skip the guide and become banner rows, newest first', () => {
+	const facts = [
+		fact({ id: 1 }),
+		notice({ id: 2 }),
+		notice({
+			id: 3,
+			statement: 'notice: Counter closed 10/30',
+			citations: [
+				{
+					quote: 'Counter closed 10/30 for a power outage.',
+					source_url: 'https://www.sos.wa.gov/',
+					captured_at: '2026-10-30T08:00:00Z'
+				}
+			]
+		}),
+		notice({ id: 4, status: 'proposed' }),
+		notice({ id: 5, citations: [] })
+	];
+	const steps = buildGuide(facts, NOW);
+	assert.deepEqual(
+		steps.flatMap((s) => s.items.flatMap((i) => i.factIds)),
+		[1],
+		'notices never enter a step'
+	);
+	const rows = serviceNotices(facts);
+	assert.deepEqual(
+		rows.map((r) => r.id),
+		[2, 3],
+		'accepted + cited only, newest capture first'
+	);
+	assert.equal(rows[0].text, NOTICE_QUOTE);
+	assert.equal(rows[0].quote, NOTICE_QUOTE);
+	assert.equal(rows[0].capturedAt, '2026-11-02T00:00:00Z');
+	assert.match(rows[0].sourceUrl, /^https:\/\/www\.sos\.wa\.gov\//);
+	assert.deepEqual(serviceNotices(null), []);
+});
+
+test('changePanels keeps real changes with both dates and drops junk', () => {
+	const panels = changePanels({
+		changes: [
+			{
+				source_url: 'https://www.sos.wa.gov/',
+				captured_at: '2026-10-20T00:00:00Z',
+				previous_captured_at: '2026-10-19T00:00:00Z',
+				added: [],
+				removed: ['Old line'],
+				more_added: 0,
+				more_removed: 0
+			},
+			{
+				source_url: 'https://www.sos.wa.gov/corporations-charities/apostilles',
+				captured_at: '2026-11-02T00:00:00Z',
+				previous_captured_at: '2026-11-01T00:00:00Z',
+				added: [NOTICE_QUOTE],
+				removed: [],
+				more_added: 2,
+				more_removed: 0
+			},
+			{ source_url: 'http://insecure.example/', captured_at: '2026-11-02T00:00:00Z', added: ['x'] },
+			{ source_url: 'https://www.sos.wa.gov/x', captured_at: '2026-11-02T00:00:00Z' },
+			null
+		]
+	});
+	assert.equal(panels.length, 2);
+	assert.equal(panels[0].date, '2026-11-02');
+	assert.equal(panels[0].since, '2026-11-01');
+	assert.deepEqual(panels[0].added, [NOTICE_QUOTE]);
+	assert.equal(panels[0].more, 2);
+	assert.deepEqual(panels[1].removed, ['Old line']);
+	assert.deepEqual(changePanels({}), []);
+	assert.deepEqual(changePanels(null), []);
 });

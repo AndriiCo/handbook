@@ -39,7 +39,14 @@
 		seedLedgerEvents,
 		topicLabel
 	} from '../../../../lib/public-ui/handbook.js';
-	import { buildGuide, domain, markQuote, sourceUrl } from '../../../../lib/public-ui/guide.js';
+	import {
+		buildGuide,
+		changePanels,
+		domain,
+		markQuote,
+		serviceNotices,
+		sourceUrl
+	} from '../../../../lib/public-ui/guide.js';
 	import {
 		CHROME,
 		indexTranslations,
@@ -75,6 +82,9 @@
 	}
 
 	let facts = $state<any[] | null>(null);
+	// SA-14: per-source "What changed" (added/removed lines, both
+	// capture dates). A failed read just hides the panel.
+	let changes = $state<ReturnType<typeof changePanels>>([]);
 	let loadError = $state<string | null>(null);
 	let notFound = $state(false);
 	// Machine-translation view (SA-20): `?lang=es|fr` swaps accepted
@@ -203,6 +213,16 @@
 		armFlash(list);
 	}
 
+	async function loadChanges(current: string) {
+		try {
+			const res = await get(`/authorities/${encodeURIComponent(current)}/changes`);
+			if (current !== slug) return;
+			changes = res.ok ? changePanels(res.body) : [];
+		} catch {
+			if (current === slug) changes = [];
+		}
+	}
+
 	function crumbsFor(path: string, rows: any[]): { path: string; label: string; slug: string | null }[] {
 		const parts = path.split('/');
 		if (parts.length < 2) return [];
@@ -320,6 +340,7 @@
 	$effect(() => {
 		const current = slug;
 		facts = null;
+		changes = [];
 		loadError = null;
 		notFound = false;
 		activeTopic = '';
@@ -336,6 +357,7 @@
 			loadError = publicError(500, 'dossier');
 		});
 		void loadPlan(current);
+		void loadChanges(current);
 		void resolveName(current);
 		// Live ledger: an approval in /review re-renders this dossier
 		// over WS `authority:{slug}` — ids only, so the page re-reads
@@ -349,6 +371,7 @@
 				if (typeof msg?.fact_id === 'number') pendingFlashFactId = msg.fact_id;
 				void reload(current).catch(() => {});
 				void loadPlan(current, true);
+				void loadChanges(current);
 			} else if (msg?.type === 'plan_accepted') {
 				const v = typeof msg?.version === 'number' ? ` v${msg.version}` : '';
 				pushLiveEvent(`Plan${v} approved by staff`);
@@ -385,6 +408,9 @@
 	});
 
 	const guideSteps = $derived(buildGuide(facts ?? [], Date.now()));
+	// Accepted service notices (closures, outages): the banner at the
+	// top, newest first — never a guide step.
+	const notices = $derived(serviceNotices(facts ?? []));
 
 	// WS flash: the last accepted fact's step lights up after reload.
 	let flashStepId = $state<string | null>(null);
@@ -451,6 +477,29 @@
 		<Skeleton class="h-24 w-full" />
 	</div>
 {:else}
+	{#if notices.length > 0}
+		<section aria-label="Service notices" class="flex flex-col gap-2 pt-6">
+			{#each notices as n (n.id)}
+				{@const src = sourceUrl(n.sourceUrl, n.quote)}
+				<Notice variant="warning" heading={`Service notice · ${shortDate(n.capturedAt)}`}>
+					{#if n.text !== n.quote}
+						<p class="m-0 break-words">{n.text}</p>
+					{/if}
+					<blockquote class="font-quote m-0 mt-2 border-l-2 border-verified pl-3 break-words italic">
+						{n.quote}
+					</blockquote>
+					<p class="mt-2 mb-0 text-xs text-ink-muted">
+						{#if src}
+							<a href={src} target="_blank" rel="noopener noreferrer">{domain(n.sourceUrl)}</a>
+						{:else}
+							<span>{domain(n.sourceUrl)}</span>
+						{/if}
+						· captured {shortDate(n.capturedAt)} · approved by staff
+					</p>
+				</Notice>
+			{/each}
+		</section>
+	{/if}
 	<header class="relative overflow-clip py-10 xl:py-16" aria-labelledby="dossier-title">
 		{#if sil}
 			<svg
@@ -769,6 +818,38 @@
 							</ol>
 						{/if}
 					</section>
+					{#each changes as change (change.sourceUrl)}
+						<section
+							class="rounded-xl border border-line bg-bg p-5"
+							aria-label={`What changed on ${change.date} at ${domain(change.sourceUrl)}`}
+						>
+							<h2 class="text-h3 m-0 font-semibold">What changed on {change.date}</h2>
+							<p class="m-0 mt-1 font-mono text-xs text-ink-muted">
+								{domain(change.sourceUrl)}{#if change.since}&nbsp;· since {change.since}{/if}
+							</p>
+							<ul class="m-0 mt-4 list-none p-0">
+								{#each change.added as line, i (`added-${i}`)}
+									<li class="m-0 border-l-2 border-verified py-1 pl-3 text-sm break-words text-ink">
+										<span class="sr-only">Added: </span><span aria-hidden="true" class="font-mono">+ </span
+										>{line}
+									</li>
+								{/each}
+								{#each change.removed as line, i (`removed-${i}`)}
+									<li
+										class="m-0 border-l-2 border-changed py-1 pl-3 text-sm break-words text-ink-muted line-through"
+									>
+										<span class="sr-only">Removed: </span><span aria-hidden="true" class="font-mono">− </span
+										>{line}
+									</li>
+								{/each}
+							</ul>
+							{#if change.more > 0}
+								<p class="mt-2 mb-0 text-xs text-ink-muted">
+									{change.more} more changed line{change.more === 1 ? '' : 's'} on the source page.
+								</p>
+							{/if}
+						</section>
+					{/each}
 					<section class="rounded-xl border border-line bg-surface p-5" aria-labelledby="about">
 						<h2 id="about" class="text-h3 m-0 font-semibold">About this dossier</h2>
 						<p class="mt-2 mb-0 text-sm text-ink-muted">

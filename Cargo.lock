@@ -1376,6 +1376,7 @@ version = "0.1.0"
 dependencies = [
  "contracts",
  "handbook-store",
+ "ingest",
  "rusqlite",
  "rustls",
  "serde_json",

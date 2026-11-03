@@ -45,6 +45,11 @@ double-submit pair except the Stripe webhook.
 | GET `/apostille/api/v1/admin/fulfilment` | admin | staff | n/a | — | SA-24 | `admin-fulfilment.json` |
 | POST `/apostille/api/v1/admin/fulfilment/{id}/packed` / `shipped` | admin | staff | yes | — | SA-24 | `order.json` |
 | GET `/apostille/api/v1/fulfilment/{id}/packet.pdf` | admin | staff | n/a | — | SA-24 | PDF |
+| GET `/apostille/api/v1/admin/sources/{id}/captures` | admin | staff | n/a | — | SA-14 (P394) | `{source, captures: [{id, captured_at, kind, trust, sha256, bytes, previous_id, reread, added, removed}], count}` |
+| GET `/apostille/api/v1/admin/captures/{id}/diff` | admin | staff | n/a | — | SA-14 (P394) | `{capture, previous, reread, missing_sidecar, added, removed, lines: [{op: same\|added\|removed, text, old_line, new_line} \| {op: gap, lines}]}` |
+| POST `/apostille/api/v1/admin/captures/{id}/draft-changes` | admin | staff | yes | daily cap | SA-14 (P394) | `{outcome: drafted\|skipped, reason?, added_lines, proposed, rejected, suppressed, fact_ids}` |
+| POST `/apostille/api/v1/admin/changes/draft-pending` | admin | staff | yes | daily cap | SA-14 (P394) | `{runs: [{capture_id, outcome, …}], count}` |
+| GET `/apostille/api/v1/authorities/{slug}/changes` | public | anyone | n/a | — | SA-14 (P394) | `{authority, changes: [{source_url, captured_at, previous_captured_at, added, removed, more_added, more_removed}]}` |
 
 Every admin route gets an `admin-denial` case (no session → 401/403 on
 the admin host, and the public host never serves it).

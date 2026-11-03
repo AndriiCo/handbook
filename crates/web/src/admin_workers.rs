@@ -148,6 +148,8 @@ async fn status(_auth: AdminAuth, State(state): State<AppState>) -> impl IntoRes
 struct CaptureView {
     id: i64,
     authority_slug: String,
+    /// The watched source (links the staff source history, SA-14).
+    source_id: Option<i64>,
     source_uri: Option<String>,
     captured_at: i64,
     kind: String,
@@ -204,7 +206,7 @@ async fn list_captures(
         }
     }
     let mut sql = "SELECT c.id, a.slug, s.uri, c.captured_at, c.kind,
-                          c.bytes_raw, c.sha256, c.trust, c.notes
+                          c.bytes_raw, c.sha256, c.trust, c.notes, c.source_id
                    FROM capture c
                    JOIN authority a ON a.id = c.authority_id
                    LEFT JOIN source s ON s.id = c.source_id
@@ -247,6 +249,7 @@ async fn list_captures(
                 Ok(CaptureView {
                     id,
                     authority_slug: row.get(1)?,
+                    source_id: row.get(9)?,
                     source_uri: row.get(2)?,
                     captured_at: row.get(3)?,
                     kind: row.get(4)?,

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { fly } from 'svelte/transition';
 	import { toast } from 'svelte-sonner';
 	import Notice from '#lib/public-ui/Notice.svelte';
@@ -64,6 +65,7 @@
 	interface Capture {
 		id: number;
 		authority: string;
+		sourceId: number | null;
 		uri: string | null;
 		capturedAt: number;
 		kind: string;
@@ -213,6 +215,7 @@
 		return {
 			id: row.id,
 			authority: typeof row.authority_slug === 'string' ? row.authority_slug : '?',
+			sourceId: typeof row.source_id === 'number' ? row.source_id : null,
 			uri: typeof row.source_uri === 'string' ? row.source_uri : null,
 			capturedAt: typeof row.captured_at === 'number' ? row.captured_at : 0,
 			kind: typeof row.kind === 'string' ? row.kind : '?',
@@ -1057,10 +1060,18 @@
 							{#if item.note}
 								<p class="m-0 rounded-md border border-line bg-surface px-3 py-2 text-sm" role="status">{item.note}</p>
 							{/if}
-							<div>
+							<div class="flex flex-wrap gap-2">
 								<Button variant="outline" onclick={() => retry(item)} disabled={item.busy || !item.uri}>
 									{item.busy ? 'Fetching…' : 'Retry'}
 								</Button>
+								{#if item.sourceId !== null}
+									<Button
+										variant="outline"
+										href={`${resolve('/(admin)/sources/[id]', { id: String(item.sourceId) })}?capture=${item.id}`}
+									>
+										History &amp; diff
+									</Button>
+								{/if}
 							</div>
 						</li>
 					{/each}
