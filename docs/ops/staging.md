@@ -423,6 +423,29 @@ above verbatim).
   Mon 23:59 PST; still needs the unit-file root step + prod
   approvals + brand SVGs + S1.
 
+## Run 20 (2026-11-03 UTC, e25fd3e) — 9/10, MISSION WIN T1 candidate + live Meta chain
+
+- Plant stamps `3f79dbca91e7.json`, `e25fd3ef612d.json` (`ci_green`).
+- Exact checkout via xfer refs (`xfer-p327`, `xfer-p328`), native release
+  rebuild + both SPAs; restart kill-by-verified-PID + `setsid -f` with
+  the staging key sourced in the remote shell and
+  `APOSTILLE_ENV_LABEL=staging`; `healthz` → `0.1.0+e25fd3e`. DB reused
+  (lane tables created at boot, CREATE IF NOT EXISTS).
+- First acceptance on 3f79dbc: GP4 red on a cold load (the /order
+  stepper waited for the index) → P328 renders it in the loading state.
+  Second (e25fd3e): GP1 red — the tunnel's first requests took 8-10 s
+  (server-side assets < 1 ms); rerun 9/10 with only S1 red + live demo
+  3/3 → staging-green.
+- Live Meta chain on the staging store (backup
+  `~/lanes/builder/staging-store-backup-p333`), harness `plan::live`
+  with `LIVE_ACCEPT_PLAN=1`: 7 muse-wonder-1.0 cross-checks (26 facts,
+  25 supported, prefix cache 97-99% on re-checks), offices (usa-wa-sos 1
+  office: PO Box 40228 quoted, walk-in), plans usa-wa-sos (6 blocks,
+  58.6 s) and vietnam (2 blocks) accepted on staging only. The staging
+  dossier shows the plan, office card, fees and "How this page was
+  made" (11 supported by Wonder before accept).
+- Deploy: blocked — the production VPN route (`fd57:4700::1`) is down.
+
 ## Run 19 (2026-11-02, bde970e) — 9/10 kept, wave-2 stack accepted
 
 - Plant stamp `acceptance/bde970e5b921.json` (`ci_green: true`,

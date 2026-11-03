@@ -240,3 +240,4 @@
 | 331 | 2026-11-03 01:45Z | E1 (SA-23, builder): staff upload of an official PDF/HTML as a staff_verified capture with a lopdf text layer | web 355 green, clippy clean; M3 live: 26 facts, 25 supported |
 | 332 | 2026-11-03 01:51Z | C2+C5 (SA-24, builder): Stripe Checkout, signed webhook, settle + reconciler, staff refund/advance | web 359 green, clippy clean; no lock change |
 | 333 | 2026-11-03 01:52Z | Live chain recorded (cross-check → offices → plan); harness can accept the plan on the staging stand | provenance: 11 supported by Wonder before accept |
+| 334 | 2026-11-03 02:02Z | Staging Run 20 recorded: e25fd3e staging-green; live chain accepted on the staging stand | 9/10 + demo 3/3; prod VPN blocks T1 |
