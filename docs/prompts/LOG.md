@@ -221,3 +221,4 @@
 | 318 | 2026-11-03 00:26Z | B1+B2: admin console shell (sidebar, breadcrumbs, cmd-K, env badge, live dot), shadcn primit | shell live; demo 3/3, shots 48, smoke, check green |
 | 319 | 2026-11-03 00:32Z | M1 (SA-22 step 1, builder): chat_json + per-attempt model_call telemetry, admin model-calls, daily cap | agent 60, web 330, clippy+fmt clean; operator page updated |
 | 320 | 2026-11-03 00:35Z | B3: admin stats endpoint, authority kind + verified_at, fact accepts on ops | web 332 green, clippy clean |
+| 321 | 2026-11-03 00:37Z | Don't forget about easy to run xtask for judges setup on their machine. | xtask judge: doctor + fresh boot + tour; docs/judges.md, README |

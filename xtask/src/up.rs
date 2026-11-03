@@ -39,6 +39,19 @@ const ADMIN_PORT: u16 = 18319;
 /// Synthetic A2 verdicts committed for local boots.
 const VERDICTS_SRC: &str = "evals/captures/demo_precheck";
 
+/// Environment label the served binary reports on the admin env badge
+/// (`APOSTILLE_ENV_LABEL`): `local` for `up`, `judge` for `xtask judge`.
+static ENV_LABEL: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+/// `xtask judge` sets `judge` before calling [`run`] (first set wins).
+pub fn set_env_label(label: &'static str) {
+    let _ = ENV_LABEL.set(label);
+}
+
+fn env_label() -> &'static str {
+    ENV_LABEL.get().copied().unwrap_or("local")
+}
+
 /// Entry point (the builder wires the `up` arm in `main.rs`).
 pub fn run(args: &[String]) {
     let live = has(args, "--live");
@@ -1125,6 +1138,7 @@ fn web_env() -> Vec<(String, String)> {
     vec![
         ("STORE_DIR".to_string(), STORE_DIR.to_string()),
         ("HANDBOOK_DEV_KEK".to_string(), format!("dev:{}", hex(&raw))),
+        ("APOSTILLE_ENV_LABEL".to_string(), env_label().to_string()),
     ]
 }
 
@@ -1305,6 +1319,9 @@ fn print_banner(setup_key: &str, review_link: &str) {
     println!("  - open the review queue and approve a proposed fact");
     println!("  - curl -s http://localhost:{PUBLIC_PORT}/apostille/api/v1/authorities");
     println!("  - POST {{\"sample\":\"syn-doc-clean\"}} to /apostille/api/v1/demo/precheck");
+    if env_label() == "judge" {
+        crate::judge::print_tour(PUBLIC_PORT, ADMIN_PORT);
+    }
     println!();
 }
 

@@ -223,6 +223,12 @@ cargo xtask ci
 
 ## Run it yourself
 
+Judges: `cargo xtask judge` on a fresh clone (macOS or Linux, Rust +
+Node 24, no keys). It checks your prerequisites and prints one exact fix
+per problem, boots everything below with recorded Meta responses, and
+prints a five-minute tour. `cargo xtask judge --doctor` runs only the
+checks. Details: [docs/judges.md](docs/judges.md).
+
 One command boots the whole handbook on loopback with synthetic data —
 pinned toolchains (`rust-toolchain.toml`, `.nvmrc`), both web builds, the
 release binaries, a fresh `.local/` store with a file KEK, loopback
