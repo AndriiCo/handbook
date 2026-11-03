@@ -112,6 +112,20 @@
    "value": "+13605550142",
    "details": "Apostille line",
    "visibility": "private"
+  },
+  {
+   "id": 44,
+   "kind": "email",
+   "value": "apostilles@example.gov",
+   "details": "",
+   "visibility": "private"
+  },
+  {
+   "id": 45,
+   "kind": "phone",
+   "value": "+13605550100",
+   "details": "ext. 2",
+   "visibility": "private"
   }
  ]
 }

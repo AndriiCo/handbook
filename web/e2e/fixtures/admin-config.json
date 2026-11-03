@@ -1,0 +1,19 @@
+{
+	"keys": [
+		{ "key": "acme.eab_hmac", "type": "secret", "set": true },
+		{ "key": "acme.eab_kid", "type": "text", "value": "synthetic-kid-0001" },
+		{ "key": "acme.enabled", "type": "bool", "value": true },
+		{ "key": "admin.allow_ips", "type": "text", "value": "203.0.113.0/24, 2001:db8::/64" },
+		{ "key": "legacy.unknown_key", "type": "text", "value": "x" },
+		{ "key": "media.terms_read", "type": "bool", "value": true },
+		{ "key": "meta.api_key", "type": "secret", "set": true },
+		{ "key": "net.bind", "type": "text", "value": "0.0.0.0" },
+		{ "key": "net.public_host", "type": "text", "value": "andrii.ai" },
+		{ "key": "orders.enabled", "type": "bool", "value": false },
+		{ "key": "orders.kit_price_cents", "type": "text", "value": "4900" },
+		{ "key": "quic.enabled", "type": "text", "value": "1" },
+		{ "key": "setup.key_hash", "type": "secret", "set": true },
+		{ "key": "stripe.secret_key", "type": "secret", "set": true },
+		{ "key": "tls.client_ca_file", "type": "text", "value": "" }
+	]
+}

@@ -1,13 +1,42 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import Notice from '../../../lib/public-ui/Notice.svelte';
-	import { csrfHeaders } from '../../../lib/admin/config-client.js';
-	import { authError, readErrorBody } from '../../../lib/admin/http-errors.js';
+	import { onMount, tick, untrack } from 'svelte';
+	import { fly } from 'svelte/transition';
+	import { toast } from 'svelte-sonner';
+	import Notice from '#lib/public-ui/Notice.svelte';
+	import Heading from '#lib/components/brand/Heading.svelte';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Table from '#lib/components/ui/table/index.js';
+	import AuthorityPicker from '#lib/admin/AuthorityPicker.svelte';
+	import TargetField from '#lib/admin/TargetField.svelte';
+	import type { AuthorityOption } from '#lib/admin/authorities.js';
+	import { csrfHeaders } from '#lib/admin/config-client.js';
+	import { authError, readErrorBody } from '#lib/admin/http-errors.js';
+	import {
+		classifyEntry,
+		defaultCountryFor,
+		entryKey,
+		extractEntries,
+		formatSaved,
+		planSubmit,
+		type Entry
+	} from '#lib/admin/contact-entry.js';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import LandmarkIcon from '@lucide/svelte/icons/landmark';
+	import LinkIcon from '@lucide/svelte/icons/link';
+	import MailIcon from '@lucide/svelte/icons/mail';
+	import PhoneIcon from '@lucide/svelte/icons/phone';
+	import RadarIcon from '@lucide/svelte/icons/radar';
+	import InboxIcon from '@lucide/svelte/icons/inbox';
 
 	// Workers management against the admin workers API (admin-workers.md
 	// §8): status, per-authority ingest state, capture list with retry,
-	// one-off fetch, manual watch-sweep. Admin build only; same literal
-	// /apostille root as the triage page.
+	// one-off fetch, manual watch sweep. Admin build only; same literal
+	// /apostille root as the triage page. The sweep takes one authority
+	// and one typed field: URLs go to POST /workers/sweep, office emails
+	// and phones to POST /admin/first-source/{slug}/contacts.
 	const api = (path: string) => `/apostille/api/v1${path}`;
 
 	interface Status {
@@ -45,23 +74,47 @@
 		note: string | null;
 	}
 
-	interface SweepResult {
-		slug: string;
-		url: string;
-		outcome: string;
-		captureId: number | null;
-		detail: string | null;
+	interface Contact {
+		id: number;
+		kind: string;
+		value: string;
+		details: string;
 	}
+
+	type Outcome = 'created' | 'duplicate' | 'failed' | 'skipped' | 'saved' | 'on_file' | 'rejected';
+
+	interface ResultRow {
+		key: string;
+		kind: 'url' | 'email' | 'phone';
+		target: string;
+		outcome: Outcome;
+		text: string;
+	}
+
+	const SOURCE_KINDS = [
+		{ value: 'website_official', label: 'Official website' },
+		{ value: 'website_thirdparty', label: 'Third-party website' }
+	];
+	const TRUSTS = [
+		{ value: 'official', label: 'Official' },
+		{ value: 'staff_verified', label: 'Staff verified' },
+		{ value: 'community', label: 'Community' }
+	];
+	const CAPTURE_KINDS = ['warc', 'file', 'scan', 'photo', 'video', 'audio', 'email', 'transcript', 'comment'];
+	const CAPTURE_TRUSTS = ['official', 'staff_verified', 'community', 'rejected'];
 
 	let status = $state<Status | null>(null);
 	let authorities = $state<Authority[]>([]);
 	let captures = $state<Capture[]>([]);
 	let loadState = $state<'loading' | 'ready' | 'failed'>('loading');
 	let loadError = $state<string | null>(null);
+	let refreshing = $state(false);
 
 	let filterAuthority = $state('');
-	let filterKind = $state('');
-	let filterTrust = $state('');
+	let filterKind = $state('all');
+	let filterTrust = $state('all');
+	let capturesState = $state<'ready' | 'loading' | 'failed'>('ready');
+	let capturesError = $state<string | null>(null);
 
 	let fetchSlug = $state('');
 	let fetchUrl = $state('');
@@ -70,11 +123,32 @@
 	let fetchBusy = $state(false);
 	let fetchNote = $state<string | null>(null);
 
-	let sweepText = $state('');
+	let pickerRows = $state<AuthorityOption[]>([]);
+	let sweepSlug = $state('');
+	let sweepEntries = $state<Entry[]>([]);
 	let sweepBusy = $state(false);
 	let sweepNote = $state<string | null>(null);
-	let sweepResults = $state<SweepResult[]>([]);
+	let sweepResults = $state<ResultRow[]>([]);
 	let sweepSummary = $state<string | null>(null);
+	let onFile = $state<Contact[]>([]);
+	let onFileState = $state<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+	let onFileError = $state<string | null>(null);
+	let targetField = $state<{ flush: () => void; focus: () => void } | null>(null);
+	let reduceMotion = $state(false);
+
+	const motion = $derived(reduceMotion ? 0 : 150);
+	const sweepRow = $derived(pickerRows.find((r) => r.slug === sweepSlug) ?? null);
+	const sweepCountry = $derived(defaultCountryFor(sweepRow ?? (sweepSlug ? { slug: sweepSlug } : null)));
+	const savedKeys = $derived(new Set(onFile.map((c) => formatSaved(c).key)));
+	const plan = $derived(planSubmit(sweepEntries, savedKeys));
+	const sweepLabel = $derived.by(() => {
+		const parts: string[] = [];
+		if (plan.urls.length) parts.push(`Fetch ${plan.urls.length} URL${plan.urls.length === 1 ? '' : 's'}`);
+		if (plan.contacts.length)
+			parts.push(`${parts.length ? 'save' : 'Save'} ${plan.contacts.length} contact${plan.contacts.length === 1 ? '' : 's'}`);
+		return parts.length ? parts.join(' · ') : 'Run sweep';
+	});
+	const canSweep = $derived(!!sweepSlug && !sweepBusy && plan.urls.length + plan.contacts.length > 0);
 
 	function authFailed(res: Response): boolean {
 		return res.status === 401 || res.status === 403;
@@ -84,6 +158,15 @@
 	// rejected, IP not allowed) — a 403 is not always a lost session.
 	async function authNote(res: Response): Promise<string> {
 		return authError(res.status, await readErrorBody(res)) ?? 'The admin host refused the request.';
+	}
+
+	async function post(path: string, body: unknown): Promise<Response> {
+		return fetch(api(path), {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', ...csrfHeaders() },
+			credentials: 'same-origin',
+			body: JSON.stringify(body)
+		});
 	}
 
 	function normalizeStatus(data: any): Status | null {
@@ -141,6 +224,17 @@
 		};
 	}
 
+	function normalizeContacts(list: unknown): Contact[] {
+		return (Array.isArray(list) ? list : [])
+			.filter((c: any) => c && typeof c.value === 'string' && typeof c.kind === 'string')
+			.map((c: any) => ({
+				id: typeof c.id === 'number' ? c.id : 0,
+				kind: c.kind,
+				value: c.value,
+				details: typeof c.details === 'string' ? c.details : ''
+			}));
+	}
+
 	function isCapture(value: Capture | null): value is Capture {
 		return value !== null;
 	}
@@ -149,20 +243,24 @@
 		return value !== null;
 	}
 
-	async function load() {
-		loadState = 'loading';
+	function capturesQuery(): string {
+		const params = new URLSearchParams();
+		if (filterAuthority) params.set('authority', filterAuthority);
+		if (filterKind !== 'all') params.set('kind', filterKind);
+		if (filterTrust !== 'all') params.set('trust', filterTrust);
+		params.set('limit', '100');
+		return `?${params}`;
+	}
+
+	async function load(soft = false) {
+		if (soft) refreshing = true;
+		else loadState = 'loading';
 		loadError = null;
 		try {
-			const params = new URLSearchParams();
-			if (filterAuthority.trim()) params.set('authority', filterAuthority.trim());
-			if (filterKind.trim()) params.set('kind', filterKind.trim());
-			if (filterTrust.trim()) params.set('trust', filterTrust.trim());
-			params.set('limit', '100');
-			const query = params.size > 0 ? `?${params}` : '';
 			const [statusRes, authRes, capRes] = await Promise.all([
 				fetch(api('/workers/status'), { credentials: 'same-origin' }),
 				fetch(api('/workers/authorities'), { credentials: 'same-origin' }),
-				fetch(api(`/workers/captures${query}`), { credentials: 'same-origin' })
+				fetch(api(`/workers/captures${capturesQuery()}`), { credentials: 'same-origin' })
 			]);
 			if ([statusRes, authRes, capRes].some(authFailed)) {
 				// Auth failures show the server's answer verbatim (the
@@ -183,25 +281,137 @@
 					.filter(isCapture);
 				if (!status) throw new Error('unrecognized status shape');
 			}
-			loadState = loadError ? 'failed' : 'ready';
+			if (!soft || loadError) loadState = loadError ? 'failed' : 'ready';
 		} catch {
 			loadError = 'Workers service unreachable — is the API server running?';
-			loadState = 'failed';
+			if (!soft) loadState = 'failed';
+		} finally {
+			refreshing = false;
 		}
 	}
 
-	onMount(load);
+	// Filter changes re-read the capture list only; the pickers can
+	// only hold known slugs, so a filter never reads as an outage.
+	async function loadCaptures() {
+		capturesState = 'loading';
+		capturesError = null;
+		try {
+			const res = await fetch(api(`/workers/captures${capturesQuery()}`), { credentials: 'same-origin' });
+			if (authFailed(res)) {
+				capturesError = await authNote(res);
+				capturesState = 'failed';
+				return;
+			}
+			if (!res.ok) {
+				capturesError = `Captures failed to load: HTTP ${res.status}.`;
+				capturesState = 'failed';
+				return;
+			}
+			const data = await res.json();
+			captures = (Array.isArray(data?.captures) ? data.captures : []).map(normalizeCapture).filter(isCapture);
+			capturesState = 'ready';
+		} catch {
+			capturesError = 'Workers service unreachable — is the API server running?';
+			capturesState = 'failed';
+		}
+	}
+
+	async function loadOnFile(slug: string) {
+		onFileState = 'loading';
+		onFileError = null;
+		try {
+			const res = await fetch(api(`/admin/first-source/${encodeURIComponent(slug)}/questions`), {
+				credentials: 'same-origin'
+			});
+			if (slug !== sweepSlug) return;
+			if (authFailed(res)) {
+				onFileError = await authNote(res);
+				onFileState = 'failed';
+				return;
+			}
+			if (!res.ok) {
+				const body = await readErrorBody(res);
+				onFileError = `Contacts on file could not load (HTTP ${res.status}${typeof body?.error === 'string' ? `: ${body.error}` : ''}).`;
+				onFileState = 'failed';
+				return;
+			}
+			const data = await res.json();
+			onFile = normalizeContacts(data?.contacts);
+			onFileState = 'ready';
+		} catch {
+			if (slug !== sweepSlug) return;
+			onFileError = 'The admin host could not be reached for contacts on file.';
+			onFileState = 'failed';
+		}
+	}
+
+	onMount(() => {
+		reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		// Deep link: ?authority=<slug>&targets=<list> prefills the sweep
+		// (other staff screens link here with the URLs to re-fetch).
+		const params = new URLSearchParams(window.location.search);
+		const slug = params.get('authority');
+		const targets = params.get('targets');
+		if (slug) sweepSlug = slug;
+		if (targets) sweepEntries = dedupe(extractEntries(targets, defaultCountryFor({ slug: slug ?? '' })).entries);
+		void load().then(async () => {
+			if (window.location.hash === '#sweep') {
+				await tick();
+				document.getElementById('sweep')?.scrollIntoView({ block: 'start' });
+			}
+		});
+	});
+
+	// Contacts on file follow the chosen authority.
+	$effect(() => {
+		const slug = sweepSlug;
+		untrack(() => {
+			onFile = [];
+			sweepResults = [];
+			sweepSummary = null;
+			sweepNote = null;
+			if (slug) void loadOnFile(slug);
+			else onFileState = 'idle';
+		});
+	});
+
+	// The authority filter re-reads captures when it changes (the
+	// first run is the page load itself).
+	let filterSeen = '';
+	$effect(() => {
+		const slug = filterAuthority;
+		untrack(() => {
+			if (slug === filterSeen) return;
+			filterSeen = slug;
+			if (loadState === 'ready') void loadCaptures();
+		});
+	});
+
+	// Numbers typed before the authority was chosen are re-read with
+	// its country (a bare 360 555 0100 needs one to be valid).
+	$effect(() => {
+		const country = sweepCountry;
+		untrack(() => {
+			if (sweepEntries.length === 0) return;
+			sweepEntries = dedupe(sweepEntries.map((e) => (e.kind === 'url' || e.kind === 'email' ? e : classifyEntry(e.raw, country))));
+		});
+	});
+
+	function dedupe(list: Entry[]): Entry[] {
+		const seen = new Set<string>();
+		return list.filter((e) => {
+			const key = entryKey(e);
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
+	}
 
 	async function retry(item: Capture) {
 		item.busy = true;
 		item.note = null;
 		try {
-			const res = await fetch(api(`/workers/captures/${item.id}/retry`), {
-				method: 'POST',
-				headers: { 'content-type': 'application/json', ...csrfHeaders() },
-				credentials: 'same-origin',
-				body: JSON.stringify({})
-			});
+			const res = await post(`/workers/captures/${item.id}/retry`, {});
 			if (authFailed(res)) {
 				item.note = await authNote(res);
 			} else if (res.status === 409) {
@@ -227,19 +437,23 @@
 	}
 
 	async function runFetch() {
-		fetchBusy = true;
 		fetchNote = null;
+		if (!fetchSlug) {
+			fetchNote = 'Choose the authority this URL belongs to.';
+			return;
+		}
+		const target = classifyEntry(fetchUrl);
+		if (target.kind !== 'url') {
+			fetchNote = 'Enter an absolute http(s) address.';
+			return;
+		}
+		fetchBusy = true;
 		try {
-			const res = await fetch(api('/workers/fetch'), {
-				method: 'POST',
-				headers: { 'content-type': 'application/json', ...csrfHeaders() },
-				credentials: 'same-origin',
-				body: JSON.stringify({
-					slug: fetchSlug.trim(),
-					url: fetchUrl.trim(),
-					source_kind: fetchKind,
-					trust: fetchTrust
-				})
+			const res = await post('/workers/fetch', {
+				slug: fetchSlug,
+				url: target.value,
+				source_kind: fetchKind,
+				trust: fetchTrust
 			});
 			if (authFailed(res)) {
 				fetchNote = await authNote(res);
@@ -258,7 +472,8 @@
 					data?.outcome === 'skipped'
 						? `Skipped: ${data?.reason ?? 'robots disallow'}.`
 						: `${data?.outcome ?? 'done'} → capture #${data?.capture_id ?? '?'}.`;
-				await load();
+				fetchUrl = '';
+				await load(true);
 			}
 		} catch {
 			fetchNote = 'Workers service unreachable — is the API server running?';
@@ -267,64 +482,133 @@
 		}
 	}
 
-	function parseSweepLines(): { slug: string; url: string }[] | null {
-		const items: { slug: string; url: string }[] = [];
-		for (const line of sweepText.split('\n')) {
-			const trimmed = line.trim();
-			if (!trimmed) continue;
-			const parts = trimmed.split('|').map((part) => part.trim());
-			if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
-			items.push({ slug: parts[0], url: parts[1] });
+	const OUTCOME_TEXT: Record<string, string> = {
+		created: 'Fetched',
+		duplicate: 'Unchanged',
+		skipped: 'Robots disallow',
+		failed: 'Fetch failed'
+	};
+
+	async function sweepUrls(slug: string, urls: Entry[]): Promise<{ rows: ResultRow[]; sent: Set<string>; note: string | null; summary: string | null }> {
+		const rows: ResultRow[] = [];
+		const sent = new Set<string>();
+		const res = await post('/workers/sweep', { items: urls.map((u) => ({ slug, url: u.value })) });
+		if (authFailed(res)) return { rows, sent, note: await authNote(res), summary: null };
+		if (res.status === 404 || res.status === 422) {
+			const data = await res.json().catch(() => null);
+			return { rows, sent, note: `Sweep rejected (${res.status}): ${data?.error ?? 'bad items'}. Nothing fetched.`, summary: null };
 		}
-		return items;
+		if (!res.ok) return { rows, sent, note: `Sweep failed: HTTP ${res.status}. Nothing fetched.`, summary: null };
+		const data = await res.json();
+		for (const row of Array.isArray(data?.results) ? data.results : []) {
+			const url = typeof row?.url === 'string' ? row.url : '?';
+			const outcome = (['created', 'duplicate', 'failed', 'skipped'].includes(row?.outcome) ? row.outcome : 'failed') as Outcome;
+			const id = typeof row?.capture_id === 'number' ? row.capture_id : null;
+			const detail = typeof row?.detail === 'string' ? row.detail : null;
+			let text = OUTCOME_TEXT[outcome];
+			if (outcome === 'created' && id !== null) text = `Fetched → capture #${id}`;
+			if (outcome === 'duplicate' && id !== null) text = `Unchanged → capture #${id}`;
+			if (outcome === 'failed') text = `${detail ?? 'Fetch failed'} · failure task recorded`;
+			if (outcome === 'skipped' && detail) text = `Skipped: ${detail}`;
+			rows.push({ key: `url:${url}`, kind: 'url', target: url, outcome, text });
+			if (outcome !== 'failed') sent.add(`url:${url}`);
+		}
+		const s = data?.summary;
+		const summary = s
+			? `${s.total} URL${s.total === 1 ? "" : "s"} swept: ${s.created} new, ${s.duplicate} unchanged, ${s.failed} failed, ${s.skipped} skipped`
+			: null;
+		return { rows, sent, note: null, summary };
+	}
+
+	async function saveContacts(slug: string, list: Entry[]): Promise<{ rows: ResultRow[]; sent: Set<string>; note: string | null; contacts: Contact[] | null }> {
+		const rows: ResultRow[] = [];
+		const sent = new Set<string>();
+		let contacts: Contact[] | null = null;
+		const before = new Set(onFile.map((c) => formatSaved(c).key));
+		for (const c of list) {
+			const kind = c.kind === 'phone' ? 'phone' : 'email';
+			const key = entryKey(c);
+			const res = await post(`/admin/first-source/${encodeURIComponent(slug)}/contacts`, {
+				kind,
+				value: c.value,
+				details: c.details
+			});
+			if (authFailed(res)) {
+				// One auth answer covers the rest: stop, keep every chip.
+				return { rows, sent, note: await authNote(res), contacts };
+			}
+			const data = await res.json().catch(() => null);
+			if (!res.ok) {
+				const why = typeof data?.error === 'string' ? data.error : `HTTP ${res.status}`;
+				rows.push({ key, kind, target: c.display, outcome: 'rejected', text: `Not saved: ${why}` });
+				continue;
+			}
+			if (Array.isArray(data?.contacts)) contacts = normalizeContacts(data.contacts);
+			const existed = data?.created === false || (data?.created === undefined && before.has(key));
+			rows.push({
+				key,
+				kind,
+				target: c.display,
+				outcome: existed ? 'on_file' : 'saved',
+				text: existed ? 'Already on file' : 'Saved to this office'
+			});
+			sent.add(key);
+		}
+		return { rows, sent, note: null, contacts };
 	}
 
 	async function runSweep() {
-		sweepBusy = true;
+		targetField?.flush();
+		await tick();
 		sweepNote = null;
-		sweepResults = [];
-		sweepSummary = null;
-		const items = parseSweepLines();
-		if (!items || items.length === 0 || items.length > 10) {
-			sweepNote = 'Need 1–10 lines shaped “slug | https://…”.';
-			sweepBusy = false;
+		if (!sweepSlug) {
+			sweepNote = 'Choose the issuing office first.';
 			return;
 		}
+		const current = planSubmit(sweepEntries, savedKeys);
+		if (current.urls.length + current.contacts.length === 0) {
+			sweepNote = current.invalid.length ? 'Fix or remove the flagged entries first.' : 'Add a URL, an email or a phone number.';
+			targetField?.focus();
+			return;
+		}
+		const slug = sweepSlug;
+		sweepBusy = true;
+		sweepResults = [];
+		sweepSummary = null;
 		try {
-			const res = await fetch(api('/workers/sweep'), {
-				method: 'POST',
-				headers: { 'content-type': 'application/json', ...csrfHeaders() },
-				credentials: 'same-origin',
-				body: JSON.stringify({ items })
-			});
-			if (authFailed(res)) {
-				sweepNote = await authNote(res);
-			} else if (res.status === 404 || res.status === 422) {
-				const data = await res.json().catch(() => null);
-				sweepNote = `Rejected (${res.status}): ${data?.error ?? 'bad items'}. Nothing fetched.`;
-			} else if (!res.ok) {
-				sweepNote = `Sweep failed: HTTP ${res.status}.`;
-			} else {
-				const data = await res.json();
-				sweepResults = Array.isArray(data?.results)
-					? data.results.map(
-							(row: any): SweepResult => ({
-								slug: typeof row?.slug === 'string' ? row.slug : '?',
-								url: typeof row?.url === 'string' ? row.url : '?',
-								outcome: typeof row?.outcome === 'string' ? row.outcome : '?',
-								captureId: typeof row?.capture_id === 'number' ? row.capture_id : null,
-								detail: typeof row?.detail === 'string' ? row.detail : null
-							})
-						)
-					: [];
-				const s = data?.summary;
-				sweepSummary = s
-					? `${s.total} items: ${s.created} created, ${s.duplicate} duplicate, ${s.failed} failed, ${s.skipped} skipped.`
-					: null;
-				await load();
+			const [urlPart, contactPart] = await Promise.allSettled([
+				current.urls.length ? sweepUrls(slug, current.urls) : Promise.resolve(null),
+				current.contacts.length ? saveContacts(slug, current.contacts) : Promise.resolve(null)
+			]);
+			const rows: ResultRow[] = [];
+			const sent = new Set<string>();
+			const notes: string[] = [];
+			if (urlPart.status === 'fulfilled' && urlPart.value) {
+				rows.push(...urlPart.value.rows);
+				urlPart.value.sent.forEach((k) => sent.add(k));
+				if (urlPart.value.note) notes.push(urlPart.value.note);
+				sweepSummary = urlPart.value.summary;
+			} else if (urlPart.status === 'rejected') {
+				notes.push('Sweep: workers service unreachable — nothing fetched.');
 			}
-		} catch {
-			sweepNote = 'Workers service unreachable — is the API server running?';
+			if (contactPart.status === 'fulfilled' && contactPart.value) {
+				rows.push(...contactPart.value.rows);
+				contactPart.value.sent.forEach((k) => sent.add(k));
+				if (contactPart.value.note && !notes.includes(contactPart.value.note)) notes.push(contactPart.value.note);
+				if (contactPart.value.contacts) onFile = contactPart.value.contacts;
+			} else if (contactPart.status === 'rejected') {
+				notes.push('Contacts: the admin host could not be reached — nothing saved.');
+			}
+			sweepResults = rows;
+			sweepNote = notes.length ? notes.join(' ') : null;
+			// Sent chips leave the field; failed and invalid ones stay.
+			sweepEntries = sweepEntries.filter((e) => !sent.has(entryKey(e)) && !(e.kind === 'url' && sent.has(`url:${e.value}`)));
+			const ok = rows.filter((r) => r.outcome !== 'failed' && r.outcome !== 'rejected').length;
+			const bad = rows.length - ok;
+			if (rows.length && bad === 0 && notes.length === 0) toast.success(`${ok} done for ${slug}.`);
+			else if (rows.length) toast.warning(`${ok} done, ${bad + (notes.length ? 1 : 0)} need a look.`);
+			else if (notes.length) toast.error(notes[0]);
+			if (current.urls.length) await load(true);
 		} finally {
 			sweepBusy = false;
 		}
@@ -332,296 +616,456 @@
 
 	function stamp(at: number | null): string {
 		if (at === null || at <= 0) return '—';
-		return new Date(at * 1000).toISOString().replace('T', ' ').slice(0, 19) + 'Z';
+		return new Date(at * 1000).toISOString().replace('T', ' ').slice(0, 16) + 'Z';
 	}
+
+	function kib(bytes: number): string {
+		if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(bytes % (1024 * 1024) === 0 ? 0 : 1)} MiB`;
+		if (bytes >= 1024) return `${Math.round(bytes / 1024)} KiB`;
+		return `${bytes} B`;
+	}
+
+	function labelFor(list: { value: string; label: string }[], value: string): string {
+		return list.find((x) => x.value === value)?.label ?? value;
+	}
+
+	function human(value: string): string {
+		return value.replace(/_/g, ' ');
+	}
+
+	// Full class strings per outcome (the tailwind checker reads literals).
+	function outcomeCls(outcome: Outcome): string {
+		const base = 'inline-flex h-6 flex-none items-center rounded-full px-2 text-xs font-medium';
+		if (outcome === 'created' || outcome === 'saved') return `${base} bg-verified-bg text-verified`;
+		if (outcome === 'skipped') return `${base} bg-changed-bg text-changed`;
+		if (outcome === 'failed' || outcome === 'rejected') return `${base} bg-destructive/10 text-destructive`;
+		return `${base} bg-surface-2 text-ink-muted`;
+	}
+
+	const OUTCOME_BADGE: Record<Outcome, string> = {
+		created: 'New capture',
+		duplicate: 'Unchanged',
+		skipped: 'Skipped',
+		failed: 'Failed',
+		saved: 'Saved',
+		on_file: 'On file',
+		rejected: 'Rejected'
+	};
 </script>
 
 <svelte:head>
 	<title>Workers — Admin — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Workers</h1>
-<p class="max-w-[60ch] text-ink-muted">
-	Manual drive over the URL download/analysis ingest paths. Every fetch runs now, inside the
-	request — there is no background scheduler.
-</p>
+<div class="mt-6 flex flex-col gap-6 pb-12">
+	<header class="flex flex-wrap items-end justify-between gap-4">
+		<div class="flex min-w-0 flex-col gap-1">
+			<Heading level={1} eyebrow="Content">Workers</Heading>
+			<p class="m-0 max-w-prose text-sm text-ink-muted">
+				Manual drive over the URL download and analysis ingest paths. Every fetch runs now, inside the
+				request; there is no background scheduler.
+			</p>
+		</div>
+		<Button variant="outline" size="lg" onclick={() => load(true)} disabled={refreshing || loadState === 'loading'}>
+			<RefreshCwIcon class={refreshing ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
+			Refresh
+		</Button>
+	</header>
 
-{#if loadState === 'loading'}
-	<Notice variant="info" heading="Loading…"><p>Fetching worker status.</p></Notice>
-{:else if loadState === 'failed'}
-	<Notice variant="warning" heading="Workers unavailable."><p>{loadError}</p></Notice>
-	<p>
-		<button
-			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
-			onclick={load}>Retry</button
-		>
-	</p>
-{:else if status}
-	<section class="mt-8 border-t border-line pt-4" aria-label="Status">
-		<h2 class="m-0 mb-3 text-[1.1rem]">Status</h2>
-		<dl class="m-0 grid gap-[0.4rem]">
-			<div class="grid grid-cols-[12rem_1fr] gap-4"><dt class="text-ink-muted">Mode</dt><dd class="m-0">{status.mode}</dd></div>
-			<div class="grid grid-cols-[12rem_1fr] gap-4">
-				<dt class="text-ink-muted">Fetch backend</dt><dd class="m-0 font-mono">{status.backend}</dd>
+	{#if loadState === 'loading'}
+		<div class="flex flex-col gap-6" role="status" aria-label="Loading worker status">
+			<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+				{#each [0, 1, 2, 3] as i (i)}
+					<div class="flex flex-col gap-2 rounded-lg border border-line bg-card p-4 shadow-sm">
+						<Skeleton class="h-3 w-20 rounded-xs" />
+						<Skeleton class="h-6 w-12 rounded-xs" />
+					</div>
+				{/each}
 			</div>
-			<div class="grid grid-cols-[12rem_1fr] gap-4">
-				<dt class="text-ink-muted">Fetch timeout</dt><dd class="m-0">{status.timeoutSecs}s</dd>
+			<div class="flex flex-col gap-3 rounded-lg border border-line bg-card p-4 shadow-sm md:p-6">
+				<Skeleton class="h-6 w-40 rounded-xs" />
+				<Skeleton class="h-9 w-full rounded-md" />
+				<Skeleton class="h-11 w-full rounded-md" />
 			</div>
-			<div class="grid grid-cols-[12rem_1fr] gap-4">
-				<dt class="text-ink-muted">Body cap</dt><dd class="m-0">{status.maxBody} bytes</dd>
-			</div>
-			<div class="grid grid-cols-[12rem_1fr] gap-4">
-				<dt class="text-ink-muted">Captures</dt><dd class="m-0">{status.captures}</dd>
-			</div>
-			<div class="grid grid-cols-[12rem_1fr] gap-4">
-				<dt class="text-ink-muted">Sources</dt><dd class="m-0">{status.sources}</dd>
-			</div>
-			<div class="grid grid-cols-[12rem_1fr] gap-4">
-				<dt class="text-ink-muted">Open fetch failures</dt><dd class="m-0">{status.failures}</dd>
-			</div>
-			<div class="grid grid-cols-[12rem_1fr] gap-4">
-				<dt class="text-ink-muted">Last sweep</dt>
-				<dd class="m-0">
-					{#if status.lastSweep}
-						{stamp(status.lastSweep.at)} by {status.lastSweep.actor} — {status.lastSweep.summary}
-					{:else}
-						never run
-					{/if}
-				</dd>
-			</div>
-		</dl>
-	</section>
-
-	<section class="mt-8 border-t border-line pt-4" aria-label="Authorities">
-		<h2 class="m-0 mb-3 text-[1.1rem]">Authorities</h2>
-		{#if authorities.length === 0}
-			<p>No authorities yet.</p>
-		{:else}
-			<table class="w-full border-collapse text-[0.9rem]">
-				<thead>
-					<tr>
-						<th class="border-b border-line px-3 py-2 text-left" scope="col">Authority</th>
-						<th class="border-b border-line px-3 py-2 text-left" scope="col">Sources</th>
-						<th class="border-b border-line px-3 py-2 text-left" scope="col">Captures</th>
-						<th class="border-b border-line px-3 py-2 text-left" scope="col">Last capture</th>
-						<th class="border-b border-line px-3 py-2 text-left" scope="col">Fetch failures</th>
-						<th class="border-b border-line px-3 py-2 text-left" scope="col">Last analysis</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each authorities as row (row.slug)}
-						<tr>
-							<th class="border-b border-line px-3 py-2 text-left font-semibold" scope="row">
-								{row.name} <span class="font-mono text-ink-muted">{row.slug}</span>
-							</th>
-							<td class="border-b border-line px-3 py-2 text-left">{row.sources}</td>
-							<td class="border-b border-line px-3 py-2 text-left">{row.captures}</td>
-							<td class="border-b border-line px-3 py-2 text-left">{stamp(row.lastCaptureAt)}</td>
-							<td class="border-b border-line px-3 py-2 text-left">{row.failures}</td>
-							<td class="border-b border-line px-3 py-2 text-left">
-								{#if row.lastAnalysisAt}{stamp(row.lastAnalysisAt)} ({row.lastPromptVersion ?? '?'}){:else}—{/if}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		{/if}
-	</section>
-
-	<section class="mt-8 border-t border-line pt-4" aria-label="Captures">
-		<h2 class="m-0 mb-3 text-[1.1rem]">Captures</h2>
-		<form
-			class="flex flex-wrap items-end gap-3"
-			onsubmit={(event) => {
-				event.preventDefault();
-				load();
-			}}
-		>
-			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
-				>Authority
-				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
-					type="text"
-					bind:value={filterAuthority}
-					placeholder="slug"
-				/></label
-			>
-			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
-				>Kind
-				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
-					type="text"
-					bind:value={filterKind}
-					placeholder="warc"
-				/></label
-			>
-			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
-				>Trust
-				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
-					type="text"
-					bind:value={filterTrust}
-					placeholder="official"
-				/></label
-			>
-			<button
-				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
-				type="submit">Apply</button
-			>
-		</form>
-		{#if captures.length === 0}
-			<p>No captures match.</p>
-		{:else}
-			<ul class="mt-4 mb-0 grid list-none gap-4 p-0">
-				{#each captures as item (item.id)}
-					<li class="rounded-sm border border-line px-4 py-[0.9rem]">
-						<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-							<span class="text-[0.8rem] tracking-[0.08em] text-ink-muted uppercase">
-								{item.authority} · {item.kind} · {item.trust}
-							</span>
-							<span class="ml-auto font-mono text-sm">#{item.id}</span>
-						</div>
-						<p class="mt-2 mb-0 font-mono wrap-anywhere">
-							{item.uri ?? '(unattributed — nothing to re-fetch)'}
-						</p>
-						<p class="mt-1 mb-0 text-sm text-ink-muted">
-							{stamp(item.capturedAt)} · {item.bytes} bytes · sha {item.sha.slice(0, 16)}…
-						</p>
-						{#if item.note}
-							<p class="rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem]" role="status">
-								{item.note}
-							</p>
-						{/if}
-						<p class="mb-0 flex gap-3">
-							<button
-								class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
-								onclick={() => retry(item)}
-								disabled={item.busy || !item.uri}
+		</div>
+	{:else if loadState === 'failed'}
+		<Notice variant="warning" heading="Workers unavailable.">
+			<p class="m-0">{loadError}</p>
+			<p class="mt-3 mb-0"><Button onclick={() => load()}>Try again</Button></p>
+		</Notice>
+	{:else if status}
+		<section aria-label="Status">
+			<dl class="m-0 grid grid-cols-2 gap-3 md:grid-cols-4">
+				<div class="flex flex-col gap-1 rounded-lg border border-line bg-card p-4 shadow-sm">
+					<dt class="text-xs font-medium text-ink-muted">Captures</dt>
+					<dd class="m-0 text-h3 font-semibold tabular-nums">{status.captures}</dd>
+				</div>
+				<div class="flex flex-col gap-1 rounded-lg border border-line bg-card p-4 shadow-sm">
+					<dt class="text-xs font-medium text-ink-muted">Sources</dt>
+					<dd class="m-0 text-h3 font-semibold tabular-nums">{status.sources}</dd>
+				</div>
+				<div class="flex flex-col gap-1 rounded-lg border border-line bg-card p-4 shadow-sm">
+					<dt class="text-xs font-medium text-ink-muted">Open fetch failures</dt>
+					<dd class={`m-0 text-h3 font-semibold tabular-nums ${status.failures > 0 ? 'text-changed' : ''}`}>{status.failures}</dd>
+				</div>
+				<div class="flex flex-col gap-1 rounded-lg border border-line bg-card p-4 shadow-sm">
+					<dt class="text-xs font-medium text-ink-muted">Fetcher</dt>
+					<dd class="m-0 text-sm">
+						<span class="font-mono">{status.backend}</span> · {status.mode}
+						<span class="block text-xs text-ink-muted">{status.timeoutSecs} s timeout · {kib(status.maxBody)} cap</span>
+					</dd>
+				</div>
+				<div class="col-span-2 flex flex-col gap-1 rounded-lg border border-line bg-card p-4 shadow-sm md:col-span-4">
+					<dt class="text-xs font-medium text-ink-muted">Last sweep</dt>
+					<dd class="m-0 text-sm">
+						{#if status.lastSweep}
+							<time class="font-mono text-xs" datetime={new Date(status.lastSweep.at * 1000).toISOString()}
+								>{stamp(status.lastSweep.at)}</time
 							>
-								{item.busy ? 'Fetching…' : 'Retry'}
-							</button>
+							by {status.lastSweep.actor} · {status.lastSweep.summary}
+						{:else}
+							No sweep has run yet. Start one below.
+						{/if}
+					</dd>
+				</div>
+			</dl>
+		</section>
+
+		<div class="grid gap-6 lg:grid-cols-5">
+			<section
+				id="sweep"
+				aria-labelledby="sweep-title"
+				class="flex min-w-0 scroll-mt-20 flex-col gap-4 rounded-lg border border-line bg-card p-4 shadow-sm md:p-6 lg:col-span-3"
+			>
+				<div class="flex flex-col gap-1">
+					<h2 id="sweep-title" class="m-0 flex items-center gap-2 text-h3 font-semibold">
+						<RadarIcon class="size-5 text-accent-strong" aria-hidden="true" /> Watch sweep
+					</h2>
+					<p class="m-0 text-sm text-ink-muted">
+						Pick the office, then paste what you found: up to 10 URLs are fetched right now, in order;
+						emails and phone numbers are saved as the office's contacts for first-source calls and mail.
+					</p>
+				</div>
+				<form
+					class="flex flex-col gap-4"
+					onsubmit={(event) => {
+						event.preventDefault();
+						void runSweep();
+					}}
+				>
+					<AuthorityPicker id="sweep-authority" label="Issuing office" bind:value={sweepSlug} onLoaded={(rows) => (pickerRows = rows)} />
+					<div class="flex flex-col gap-1 rounded-md bg-surface px-3 py-2 text-sm">
+						<p class="m-0 flex flex-wrap items-center gap-x-2 gap-y-1">
+							<LandmarkIcon class="size-4 flex-none text-ink-muted" aria-hidden="true" />
+							{#if sweepSlug}
+								<span class="font-medium">{sweepRow?.name ?? sweepSlug}</span>
+								<code class="rounded-xs bg-surface-2 px-1 font-mono text-xs text-ink-muted">{sweepSlug}</code>
+							{:else}
+								<span class="text-ink-muted">No office chosen yet</span>
+							{/if}
 						</p>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</section>
+						<p class="m-0 text-xs text-ink-muted">
+							A slug names the office that issues apostilles, not the state or country:
+							<code class="font-mono">usa-wa-sos</code> is Washington's Secretary of State, so there is no
+							<code class="font-mono">usa-wa</code>. Dossier links and live updates key on the slug, so it
+							never changes.
+						</p>
+					</div>
 
-	<section class="mt-8 border-t border-line pt-4" aria-label="Fetch">
-		<h2 class="m-0 mb-3 text-[1.1rem]">Fetch one URL</h2>
-		<form
-			class="grid max-w-[40rem] gap-3"
-			onsubmit={(event) => {
-				event.preventDefault();
-				runFetch();
-			}}
-		>
-			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
-				>Authority slug
-				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
-					type="text"
-					bind:value={fetchSlug}
-					placeholder="usa-wa-sos"
-					required
-				/></label
+					{#if sweepSlug}
+						<div class="flex flex-col gap-1.5" aria-live="polite">
+							<p class="m-0 text-xs font-medium text-ink-muted">On file for this office</p>
+							{#if onFileState === 'loading'}
+								<div class="flex flex-wrap gap-1.5" role="status" aria-label="Loading contacts on file">
+									<Skeleton class="h-7 w-44 rounded-full" />
+									<Skeleton class="h-7 w-36 rounded-full" />
+								</div>
+							{:else if onFileState === 'failed'}
+								<p class="m-0 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+									{onFileError}
+									<Button variant="outline" size="sm" onclick={() => loadOnFile(sweepSlug)}>Try again</Button>
+								</p>
+							{:else if onFile.length === 0}
+								<p class="m-0 text-sm text-ink-muted">
+									No office email or phone yet. Add the ones from its public contact page below.
+								</p>
+							{:else}
+								<ul class="m-0 flex list-none flex-wrap gap-1.5 p-0" aria-label="Contacts on file">
+									{#each onFile as c (c.id || c.value)}
+										{@const f = formatSaved(c)}
+										<li
+											class="inline-flex min-h-7 max-w-full items-center gap-1 rounded-full bg-surface-2 px-2 text-sm text-ink-muted"
+											title={f.title}
+										>
+											{#if f.kind === 'phone'}<PhoneIcon class="size-3.5 flex-none" aria-hidden="true" />{:else if f.kind === 'email'}<MailIcon
+													class="size-3.5 flex-none"
+													aria-hidden="true"
+												/>{:else}<LinkIcon class="size-3.5 flex-none" aria-hidden="true" />{/if}
+											<span class="min-w-0 wrap-anywhere">{f.display}</span>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+					{/if}
+
+					<TargetField
+						bind:this={targetField}
+						id="sweep-targets"
+						bind:entries={sweepEntries}
+						defaultCountry={sweepCountry}
+						{savedKeys}
+						disabled={sweepBusy}
+					/>
+
+					<div class="flex flex-wrap items-center gap-3">
+						<Button type="submit" size="lg" disabled={!canSweep}>
+							{#if sweepBusy}
+								<RefreshCwIcon class="motion-safe:animate-spin" aria-hidden="true" /> Working…
+							{:else}
+								{sweepLabel}
+							{/if}
+						</Button>
+						{#if !sweepSlug}
+							<span class="text-sm text-ink-muted">Choose the issuing office to enable the sweep.</span>
+						{/if}
+					</div>
+				</form>
+
+				{#if sweepNote}
+					<Notice variant="warning" heading="Not everything went through.">
+						<p class="m-0 text-sm">{sweepNote}</p>
+					</Notice>
+				{/if}
+				{#if sweepResults.length > 0}
+					<div class="flex flex-col gap-2">
+						{#if sweepSummary}<p class="m-0 text-sm font-medium" role="status">{sweepSummary}</p>{/if}
+						<ul class="m-0 flex list-none flex-col divide-y divide-line rounded-md border border-line p-0" aria-label="Sweep results">
+							{#each sweepResults as row, index (`${row.key}-${index}`)}
+								<li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm" in:fly={{ y: -4, duration: motion }}>
+									{#if row.kind === 'url'}<LinkIcon class="size-4 flex-none text-ink-muted" aria-hidden="true" />{:else if row.kind === 'email'}<MailIcon
+											class="size-4 flex-none text-ink-muted"
+											aria-hidden="true"
+										/>{:else}<PhoneIcon class="size-4 flex-none text-ink-muted" aria-hidden="true" />{/if}
+									<span class="min-w-0 flex-1 font-mono text-xs wrap-anywhere">{row.target}</span>
+									<span class={outcomeCls(row.outcome)}>{OUTCOME_BADGE[row.outcome]}</span>
+									<span class="w-full text-ink-muted sm:w-auto">{row.text}</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			</section>
+
+			<section
+				aria-labelledby="fetch-title"
+				class="flex min-w-0 flex-col gap-4 self-start rounded-lg border border-line bg-card p-4 shadow-sm md:p-6 lg:col-span-2"
 			>
-			<label class="grid gap-[0.3rem] text-sm text-ink-muted"
-				>URL
-				<input
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
-					type="url"
-					bind:value={fetchUrl}
-					placeholder="https://…"
-					required
-				/></label
-			>
-			<div class="flex flex-wrap gap-3">
-				<label class="grid flex-1 basis-48 gap-[0.3rem] text-sm text-ink-muted">
-					Source kind
-					<select
-						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
-						bind:value={fetchKind}
-					>
-						<option value="website_official">website_official</option>
-						<option value="website_thirdparty">website_thirdparty</option>
-					</select>
-				</label>
-				<label class="grid flex-1 basis-48 gap-[0.3rem] text-sm text-ink-muted">
-					Trust
-					<select
-						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
-						bind:value={fetchTrust}
-					>
-						<option value="official">official</option>
-						<option value="staff_verified">staff_verified</option>
-						<option value="community">community</option>
-					</select>
-				</label>
+				<div class="flex flex-col gap-1">
+					<h2 id="fetch-title" class="m-0 text-h3 font-semibold">Fetch one URL</h2>
+					<p class="m-0 text-sm text-ink-muted">One page, with the source kind and trust you choose.</p>
+				</div>
+				<form
+					class="flex flex-col gap-4"
+					onsubmit={(event) => {
+						event.preventDefault();
+						void runFetch();
+					}}
+				>
+					<AuthorityPicker id="fetch-authority" label="Authority" bind:value={fetchSlug} />
+					<div class="flex flex-col gap-1">
+						<label for="fetch-url" class="text-xs font-medium text-ink-muted">URL</label>
+						<Input
+							id="fetch-url"
+							type="url"
+							class="h-10"
+							bind:value={fetchUrl}
+							placeholder="https://…"
+							autocomplete="off"
+							required
+						/>
+					</div>
+					<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+						<div class="flex min-w-0 flex-col gap-1">
+							<span id="fetch-kind-label" class="text-xs font-medium text-ink-muted">Source kind</span>
+							<Select.Root type="single" bind:value={fetchKind}>
+								<Select.Trigger id="fetch-kind" class="h-10 w-full" aria-labelledby="fetch-kind-label fetch-kind">
+									{labelFor(SOURCE_KINDS, fetchKind)}
+								</Select.Trigger>
+								<Select.Content>
+									{#each SOURCE_KINDS as k (k.value)}
+										<Select.Item value={k.value} label={k.label}>{k.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="flex min-w-0 flex-col gap-1">
+							<span id="fetch-trust-label" class="text-xs font-medium text-ink-muted">Trust</span>
+							<Select.Root type="single" bind:value={fetchTrust}>
+								<Select.Trigger id="fetch-trust" class="h-10 w-full" aria-labelledby="fetch-trust-label fetch-trust">
+									{labelFor(TRUSTS, fetchTrust)}
+								</Select.Trigger>
+								<Select.Content>
+									{#each TRUSTS as t (t.value)}
+										<Select.Item value={t.value} label={t.label}>{t.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+					</div>
+					<div>
+						<Button type="submit" size="lg" disabled={fetchBusy}>{fetchBusy ? 'Fetching…' : 'Fetch now'}</Button>
+					</div>
+				</form>
+				{#if fetchNote}
+					<p class="m-0 rounded-md border border-line bg-surface px-3 py-2 text-sm" role="status">{fetchNote}</p>
+				{/if}
+			</section>
+		</div>
+
+		<section aria-labelledby="authorities-title" class="flex flex-col gap-3">
+			<h2 id="authorities-title" class="m-0 text-h3 font-semibold">Authorities</h2>
+			{#if authorities.length === 0}
+				<div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-line bg-card px-6 py-10 text-center">
+					<InboxIcon class="size-8 text-ink-muted" aria-hidden="true" />
+					<p class="m-0 text-sm text-ink-muted">No authority has ingest state yet. A sweep creates the first.</p>
+					<Button variant="outline" href="#sweep">Start a sweep</Button>
+				</div>
+			{:else}
+				<div class="overflow-x-auto rounded-lg border border-line bg-card shadow-sm">
+					<Table.Root aria-label="Authorities">
+						<Table.Header class="bg-surface">
+							<tr class="border-b border-line">
+								<Table.Head class="w-1/2 px-3 text-xs text-ink-muted sm:px-4 lg:w-1/3">Authority</Table.Head>
+								<Table.Head class="text-right text-xs text-ink-muted">Sources</Table.Head>
+								<Table.Head class="text-right text-xs text-ink-muted">Captures</Table.Head>
+								<Table.Head class="hidden text-xs text-ink-muted md:table-cell">Last capture</Table.Head>
+								<Table.Head class="text-right text-xs text-ink-muted">Failures</Table.Head>
+								<Table.Head class="hidden pr-4 text-xs text-ink-muted lg:table-cell">Last analysis</Table.Head>
+							</tr>
+						</Table.Header>
+						<Table.Body>
+							{#each authorities as row (row.slug)}
+								<tr class="border-b border-line last:border-b-0">
+									<th scope="row" class="max-w-0 px-3 py-2.5 text-left font-normal sm:px-4">
+										<span class="block truncate text-sm font-medium" title={row.name}>{row.name}</span>
+										<span class="block truncate font-mono text-xs text-ink-muted">{row.slug}</span>
+									</th>
+									<Table.Cell class="text-right font-mono text-sm tabular-nums">{row.sources}</Table.Cell>
+									<Table.Cell class="text-right font-mono text-sm tabular-nums">{row.captures}</Table.Cell>
+									<Table.Cell class="hidden font-mono text-xs text-ink-muted md:table-cell">{stamp(row.lastCaptureAt)}</Table.Cell>
+									<Table.Cell class={`text-right font-mono text-sm tabular-nums ${row.failures > 0 ? 'text-changed' : ''}`}>{row.failures}</Table.Cell>
+									<Table.Cell class="hidden pr-4 font-mono text-xs text-ink-muted lg:table-cell">
+										{#if row.lastAnalysisAt}{stamp(row.lastAnalysisAt)} · {row.lastPromptVersion ?? '?'}{:else}—{/if}
+									</Table.Cell>
+								</tr>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
+			{/if}
+		</section>
+
+		<section aria-labelledby="captures-title" class="flex flex-col gap-3">
+			<h2 id="captures-title" class="m-0 text-h3 font-semibold">Captures</h2>
+			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
+				<div class="flex min-w-0 flex-col gap-1 sm:col-span-2">
+					<AuthorityPicker id="filter-authority" label="Authority" bind:value={filterAuthority} />
+				</div>
+				<div class="flex min-w-0 flex-col gap-1">
+					<span id="filter-kind-label" class="text-xs font-medium text-ink-muted">Kind</span>
+					<Select.Root type="single" bind:value={filterKind} onValueChange={() => loadCaptures()}>
+						<Select.Trigger id="filter-kind" class="h-9 w-full" aria-labelledby="filter-kind-label filter-kind">
+							{filterKind === 'all' ? 'Any kind' : human(filterKind)}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="all" label="Any kind">Any kind</Select.Item>
+							{#each CAPTURE_KINDS as k (k)}
+								<Select.Item value={k} label={human(k)}>{human(k)}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+				<div class="flex min-w-0 flex-col gap-1">
+					<span id="filter-trust-label" class="text-xs font-medium text-ink-muted">Trust</span>
+					<Select.Root type="single" bind:value={filterTrust} onValueChange={() => loadCaptures()}>
+						<Select.Trigger id="filter-trust" class="h-9 w-full" aria-labelledby="filter-trust-label filter-trust">
+							{filterTrust === 'all' ? 'Any trust' : human(filterTrust)}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="all" label="Any trust">Any trust</Select.Item>
+							{#each CAPTURE_TRUSTS as t (t)}
+								<Select.Item value={t} label={human(t)}>{human(t)}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
 			</div>
-			<p class="mb-0 flex gap-3">
-				<button
-					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
-					type="submit"
-					disabled={fetchBusy}>{fetchBusy ? 'Fetching…' : 'Fetch now'}</button
-				>
-			</p>
-		</form>
-		{#if fetchNote}
-			<p class="rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem]" role="status">
-				{fetchNote}
-			</p>
-		{/if}
-	</section>
+			{#if filterAuthority}
+				<p class="m-0 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+					Showing <code class="font-mono text-xs">{filterAuthority}</code>
+					<Button
+						variant="ghost"
+						size="sm"
+						onclick={() => {
+							filterAuthority = '';
+						}}>All authorities</Button
+					>
+				</p>
+			{/if}
 
-	<section class="mt-8 border-t border-line pt-4" aria-label="Sweep">
-		<h2 class="m-0 mb-3 text-[1.1rem]">Watch sweep</h2>
-		<p>Runs up to 10 fetches sequentially, right now. One per line:</p>
-		<pre class="overflow-x-auto rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem] font-mono text-sm">usa-wa-sos | https://example.com/synthetic/1</pre>
-		<form
-			class="grid max-w-[40rem] gap-3"
-			onsubmit={(event) => {
-				event.preventDefault();
-				runSweep();
-			}}
-		>
-			<label class="grid gap-[0.3rem] text-sm text-ink-muted">
-				Sweep items
-				<textarea
-					class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 font-mono text-sm text-ink"
-					bind:value={sweepText}
-					rows="6"
-					placeholder="slug | https://…"
-				></textarea>
-			</label>
-			<p class="mb-0 flex gap-3">
-				<button
-					class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55"
-					type="submit"
-					disabled={sweepBusy}>{sweepBusy ? 'Sweeping…' : 'Run sweep'}</button
-				>
-			</p>
-		</form>
-		{#if sweepNote}
-			<p class="rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem]" role="status">
-				{sweepNote}
-			</p>
-		{/if}
-		{#if sweepSummary}
-			<p class="rounded-sm border border-line bg-surface px-[0.8rem] py-[0.6rem]" role="status">
-				{sweepSummary}
-			</p>
-			<ul class="mt-3 mb-0 grid list-none gap-[0.4rem] p-0 text-[0.9rem]">
-				{#each sweepResults as row, index (`${row.slug}-${row.url}-${index}`)}
-					<li class="flex flex-wrap gap-x-3 gap-y-1 border-b border-line pb-[0.4rem]">
-						<span class="font-mono">{row.outcome}</span>
-						{row.slug} · {row.url}
-						{#if row.captureId !== null}<span class="font-mono">→ #{row.captureId}</span>{/if}
-						{#if row.detail}<span class="text-ink-muted">{row.detail}</span>{/if}
-					</li>
-				{/each}
-			</ul>
-		{/if}
-	</section>
-{/if}
-
+			{#if capturesState === 'loading'}
+				<div class="flex flex-col gap-3" role="status" aria-label="Loading captures">
+					{#each [0, 1] as i (i)}
+						<Skeleton class="h-24 w-full rounded-lg" />
+					{/each}
+				</div>
+			{:else if capturesState === 'failed'}
+				<Notice variant="warning" heading="Captures could not load.">
+					<p class="m-0">{capturesError}</p>
+					<p class="mt-3 mb-0"><Button onclick={loadCaptures}>Try again</Button></p>
+				</Notice>
+			{:else if captures.length === 0}
+				<div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-line bg-card px-6 py-10 text-center">
+					<InboxIcon class="size-8 text-ink-muted" aria-hidden="true" />
+					<p class="m-0 text-sm text-ink-muted">No capture matches these filters.</p>
+					<Button
+						variant="outline"
+						onclick={() => {
+							filterAuthority = '';
+							filterKind = 'all';
+							filterTrust = 'all';
+						}}>Clear filters</Button
+					>
+				</div>
+			{:else}
+				<ul class="m-0 flex list-none flex-col gap-3 p-0">
+					{#each captures as item (item.id)}
+						<li class="flex flex-col gap-2 rounded-lg border border-line bg-card p-4 shadow-sm">
+							<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+								<span class="text-eyebrow font-semibold tracking-wide text-ink-muted uppercase">
+									{item.authority} · {human(item.kind)} · {human(item.trust)}
+								</span>
+								<span class="ml-auto font-mono text-sm">#{item.id}</span>
+							</div>
+							<p class="m-0 font-mono text-sm wrap-anywhere">
+								{item.uri ?? 'Unattributed capture: nothing to re-fetch'}
+							</p>
+							<p class="m-0 text-sm text-ink-muted">
+								{stamp(item.capturedAt)} · {kib(item.bytes)} · sha <span class="font-mono">{item.sha.slice(0, 12)}</span>
+							</p>
+							{#if item.note}
+								<p class="m-0 rounded-md border border-line bg-surface px-3 py-2 text-sm" role="status">{item.note}</p>
+							{/if}
+							<div>
+								<Button variant="outline" onclick={() => retry(item)} disabled={item.busy || !item.uri}>
+									{item.busy ? 'Fetching…' : 'Retry'}
+								</Button>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+	{/if}
+</div>
