@@ -1,8 +1,12 @@
-// brand-fonts.mjs — stage the proprietary Vogun brand face for release
-// builds. Copies Vogun-Medium.woff2 + Vogun-MediumItalic.woff2 from
-// $BRAND_FONT_DIR into static/fonts/brand/ (git-ignored; the files never
-// enter the repo because it will be public). Without the directory the
-// build continues on the 'Vogun Fallback' face — one line, no failure.
+// brand-fonts.mjs — stage licensed brand files for release builds.
+// Copies the Vogun webfonts from $BRAND_FONT_DIR into static/fonts/brand/
+// and the provider logos (google, apple, meta, passkey .svg) from
+// $BRAND_DIR into src/lib/assets/brand/. Both targets are git-ignored:
+// the files are operator-licensed and never enter the repo.
+// `cargo xtask setup` passes only files whose licence acceptance is
+// recorded in the setup file. Without the directories the build
+// continues on the 'Vogun Fallback' face and text-only provider
+// buttons — one line each, no failure.
 //
 // Usage: node scripts/brand-fonts.mjs (also wired as prebuild hooks).
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -10,26 +14,34 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(root, 'static', 'fonts', 'brand');
-const files = ['Vogun-Medium.woff2', 'Vogun-MediumItalic.woff2'];
 
-const srcDir = process.env.BRAND_FONT_DIR;
-if (!srcDir || !existsSync(srcDir)) {
-	// One line on the fallback path; the build must continue.
-	console.log('brand-fonts: no BRAND_FONT_DIR — building with the Vogun Fallback face');
-	process.exit(0);
-}
-
-mkdirSync(outDir, { recursive: true });
-let staged = 0;
-for (const file of files) {
-	const src = join(srcDir, file);
-	if (!existsSync(src)) {
-		console.log(`brand-fonts: missing ${file} in BRAND_FONT_DIR — building with the fallback face`);
-		continue;
+function stage(envName, files, outDir, label) {
+	const srcDir = process.env[envName];
+	if (!srcDir || !existsSync(srcDir)) {
+		console.log(`brand-fonts: no ${envName} — building without the licensed ${label}`);
+		return;
 	}
-	// Served unmodified: the licence forbids subsetting or conversion.
-	copyFileSync(src, join(outDir, file));
-	staged += 1;
+	let staged = 0;
+	for (const file of files) {
+		const src = join(srcDir, file);
+		if (!existsSync(src)) continue;
+		mkdirSync(outDir, { recursive: true });
+		// Served unmodified: the licences forbid altering the files.
+		copyFileSync(src, join(outDir, file));
+		staged += 1;
+	}
+	console.log(`brand-fonts: staged ${staged}/${files.length} ${label}`);
 }
-console.log(`brand-fonts: staged ${staged}/${files.length} Vogun files`);
+
+stage(
+	'BRAND_FONT_DIR',
+	['Vogun-Medium.woff2', 'Vogun-MediumItalic.woff2'],
+	join(root, 'static', 'fonts', 'brand'),
+	'Vogun files'
+);
+stage(
+	'BRAND_DIR',
+	['google.svg', 'apple.svg', 'meta.svg', 'passkey.svg'],
+	join(root, 'src', 'lib', 'assets', 'brand'),
+	'provider logos'
+);

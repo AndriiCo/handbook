@@ -1,0 +1,23 @@
+#!/bin/bash
+# Usage: printf 'set\nacme.enabled\nbool\ntrue\n' | apostille-config
+set -u
+STORE="--store /var/lib/apostille --kek-file /etc/apostille/handbook-kek"
+IFS= read -r OP || exit 1
+IFS= read -r KEY || KEY=""
+IFS= read -r TYPE || TYPE=""
+VALUE="$(cat)"
+case "$OP" in set|get|verify) ;; *) echo "ABORT: op must be set|get|verify" >&2; exit 1 ;; esac
+if [ "$OP" != verify ]; then
+    case "$KEY" in
+        ""|*[!a-z0-9._-]*) echo "ABORT: bad key" >&2; exit 1 ;;
+    esac
+fi
+if [ "$OP" = set ] && [ "$TYPE" != bool ] && [ "$TYPE" != text ] && [ "$TYPE" != secret ]; then
+    echo "ABORT: type must be bool|text|secret" >&2; exit 1
+fi
+# shellcheck disable=SC2086 (STORE is fixed words, never user input)
+case "$OP" in
+    set) printf '%s' "$VALUE" | exec /srv/apostille/current/xtask config-set $STORE --key "$KEY" --type "$TYPE" --value-from-stdin ;;
+    get) exec /srv/apostille/current/xtask config-get $STORE --key "$KEY" ;;
+    verify) exec /srv/apostille/current/xtask config-verify $STORE ;;
+esac

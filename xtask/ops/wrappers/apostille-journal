@@ -1,0 +1,12 @@
+#!/bin/bash
+# Usage: echo '-5 min' | apostille-journal. Empty stdin = last 50 lines.
+set -u
+IFS= read -r WINDOW || WINDOW=""
+if [ -z "$WINDOW" ]; then
+    exec /usr/bin/journalctl -u apostille --no-pager -n 50
+fi
+case "$WINDOW" in
+    -[0-9]*\ min|-[0-9]*\ h|-[0-9]*\ d) ;;
+    *) echo "ABORT: window must look like '-5 min'" >&2; exit 1 ;;
+esac
+exec /usr/bin/journalctl -u apostille --no-pager --since "$WINDOW"

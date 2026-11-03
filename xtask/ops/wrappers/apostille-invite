@@ -1,0 +1,18 @@
+#!/bin/bash
+# Usage: printf 'staff\njdoe\n7\n\n' | apostille-invite
+set -u
+STORE=/var/lib/apostille
+IFS= read -r ROLE || exit 1
+IFS= read -r CN || CN=""
+IFS= read -r DAYS || DAYS=""
+IFS= read -r ORIGIN || ORIGIN=""
+case "$ROLE" in staff|admin) ;; *) echo "ABORT: role must be staff|admin" >&2; exit 1 ;; esac
+case "$CN" in ""|*[!A-Za-z0-9._-]*) echo "ABORT: bad cn" >&2; exit 1 ;; esac
+[ "${#CN}" -le 64 ] || { echo "ABORT: bad cn" >&2; exit 1; }
+case "$DAYS" in ""|*[!0-9]*) echo "ABORT: days must be 1..30" >&2; exit 1 ;; esac
+{ [ "$DAYS" -ge 1 ] && [ "$DAYS" -le 30 ]; } || { echo "ABORT: days must be 1..30" >&2; exit 1; }
+case "$ORIGIN" in ""|https://*|http://localhost*) ;; *) echo "ABORT: bad origin" >&2; exit 1 ;; esac
+ARGS="--store $STORE --role $ROLE --cn $CN --actor hal --days $DAYS"
+[ -n "$ORIGIN" ] && ARGS="$ARGS --origin $ORIGIN"
+# shellcheck disable=SC2086 (ARGS is fixed words + validated values)
+exec /srv/apostille/current/xtask admin-invite $ARGS

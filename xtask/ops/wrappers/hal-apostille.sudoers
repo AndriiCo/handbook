@@ -1,0 +1,20 @@
+# Managed by `cargo xtask provision`. The deploy user gets exactly these
+# commands; zero wildcards (variable input travels on stdin into the
+# root-owned, validating wrappers in /usr/local/sbin).
+hal ALL=(root) NOPASSWD: \
+    /usr/bin/systemctl restart apostille, \
+    /usr/bin/systemctl reload apostille, \
+    /usr/bin/systemctl status apostille, \
+    /usr/bin/systemctl is-active apostille, \
+    /usr/bin/systemctl reset-failed apostille, \
+    /usr/bin/systemctl daemon-reload, \
+    /usr/local/sbin/apostille-install-unit, \
+    /usr/local/sbin/apostille-journal
+hal ALL=(andrii-ai) NOPASSWD: \
+    /usr/local/sbin/apostille-config, \
+    /usr/local/sbin/apostille-config-import, \
+    /usr/local/sbin/apostille-setup-key, \
+    /usr/local/sbin/apostille-packs-load, \
+    /usr/local/sbin/apostille-sqlite, \
+    /usr/local/sbin/apostille-invite, \
+    /usr/bin/rm -f /var/lib/apostille/acme/cert.pem /var/lib/apostille/acme/key.pem

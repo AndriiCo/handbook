@@ -118,8 +118,12 @@ echo "=== 3. verify stamp (bounded /healthz poll, no bare sleeps)"
 TRIES="${VERIFY_TRIES:-18}"
 INTERVAL="${VERIFY_INTERVAL:-5}"
 STAMP=""
+# The host's public name, recorded by `xtask provision` (production
+# has no file and keeps andrii.ai; the rehearsal container has its own).
+HOST="$(tr -cd 'a-z0-9.-' < /srv/apostille/public-host 2>/dev/null)"
+HOST="${HOST:-andrii.ai}"
 for ((i = 1; i <= TRIES; i++)); do
-    STAMP="$(curl -s -m 10 https://andrii.ai/apostille/healthz 2>/dev/null || true)"
+    STAMP="$(curl -s -m 10 "https://$HOST/apostille/healthz" 2>/dev/null || true)"
     case "$STAMP" in
         *"\"version\":\"0.1.0+$VERSION\""*)
             echo "$STAMP"

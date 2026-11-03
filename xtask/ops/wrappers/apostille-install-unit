@@ -1,0 +1,24 @@
+#!/bin/bash
+# Install the staged unit named by hal's pointer file. No args
+# (sudoers has no wildcards on this box). Content-validated: may
+# only run /srv/apostille/current/web as andrii-ai.
+set -u
+PTR=/home/hal/apostille/.pending-unit
+SRC="$(cat "$PTR" 2>/dev/null || true)"
+case "$SRC" in
+    /home/hal/apostille/staging/*) ;;
+    *) echo "ABORT: bad pointer" >&2; exit 1 ;;
+esac
+case "$SRC" in
+    *[!a-zA-Z0-9/._-]*) echo "ABORT: bad pointer chars" >&2; exit 1 ;;
+esac
+[ -f "$SRC" ] && [ -s "$SRC" ] || { echo "ABORT: no staged unit" >&2; exit 1; }
+grep -qx 'User=andrii-ai' "$SRC" || { echo "ABORT: unit must run as andrii-ai" >&2; exit 1; }
+grep -qx 'Group=andrii-ai' "$SRC" || { echo "ABORT: unit must run as andrii-ai" >&2; exit 1; }
+grep -qx 'ExecStart=/srv/apostille/current/web' "$SRC" || { echo "ABORT: unexpected ExecStart" >&2; exit 1; }
+grep -q '^User=root\|^Group=root' "$SRC" && { echo "ABORT: root unit refused" >&2; exit 1; }
+diff -u /etc/systemd/system/apostille.service "$SRC" || true
+/usr/bin/cp "$SRC" /etc/systemd/system/apostille.service
+/usr/bin/systemctl daemon-reload
+grep -H StartLimit /etc/systemd/system/apostille.service || echo "(no StartLimit lines)"
+rm -f "$PTR"

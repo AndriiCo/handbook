@@ -1,0 +1,8 @@
+#!/bin/bash
+# Seal a whole config payload (handbook-config-import/1 JSON on stdin)
+# into the production store as the service user. Mode on argv is fixed
+# by sudoers: no arguments means merge.
+set -u
+[ "$#" = 0 ] || { echo "ABORT: apostille-config-import takes no arguments" >&2; exit 1; }
+exec /srv/apostille/current/xtask config-import --store /var/lib/apostille \
+    --kek-file /etc/apostille/handbook-kek --stdin --mode merge --actor hal

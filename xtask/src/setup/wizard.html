@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Handbook setup</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #fff; --ink: #14181f; --muted: #5b6472; --line: #e3e6eb;
+  --brand: #0b4a75; --brand-soft: #e6eef5; --ok: #1f7a4d; --warn: #9a6200; --fail: #b3261e;
+  --radius: 12px; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1216; --panel: #171b21; --ink: #e8ebf0; --muted: #98a2b0; --line: #2a3039;
+          --brand: #6fb0e0; --brand-soft: #18283a; --ok: #5cc48f; --warn: #e0a640; --fail: #f2766d; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); }
+header { padding: 20px 24px 8px; display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 12px; }
+h3 { font-size: 14px; margin: 16px 0 8px; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 12px; }
+main { padding: 0 24px 48px; max-width: 1200px; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0 16px; border-bottom: 1px solid var(--line); }
+nav button { border: 0; background: none; padding: 8px 12px; border-bottom: 2px solid transparent; color: var(--muted); font: inherit; cursor: pointer; }
+nav button[aria-selected="true"] { color: var(--ink); border-color: var(--brand); font-weight: 600; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+input[type=text], input[type=password], textarea, select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+textarea { min-height: 56px; font-family: var(--mono); font-size: 12px; }
+button.primary, button.secondary { border-radius: 8px; padding: 7px 14px; font: inherit; cursor: pointer; border: 1px solid var(--brand); }
+button.primary { background: var(--brand); color: #fff; }
+button.secondary { background: var(--brand-soft); color: var(--brand); }
+button:disabled { opacity: .5; cursor: default; }
+table { width: 100%; border-collapse: collapse; }
+td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 500; }
+.badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .fail { color: var(--fail); } .skip { color: var(--muted); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.problems { border-color: var(--warn); }
+pre.log { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; max-height: 420px; overflow: auto; font: 12px/1.45 var(--mono); white-space: pre-wrap; margin: 0; }
+ol.phases { list-style: none; padding: 0; margin: 0 0 12px; }
+ol.phases li { padding: 3px 0; display: flex; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: var(--line); flex: none; }
+.dot.run { background: var(--brand); animation: pulse 1s infinite; } .dot.ok { background: var(--ok); } .dot.fail { background: var(--fail); }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dot.run { animation: none; } }
+.saved { font-size: 11px; color: var(--ok); }
+.hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Handbook setup</h1>
+    <div class="muted mono" id="path"></div>
+  </div>
+  <div class="row">
+    <div><label for="operator">Operator (recorded on licence acceptances)</label><input id="operator" type="text" placeholder="Full name"></div>
+    <div><label for="defaults">Default targets for <span class="mono">cargo xtask setup</span></label><input id="defaults" type="text" placeholder="local"></div>
+  </div>
+</header>
+<main>
+  <div id="problems" class="panel problems hidden"></div>
+  <nav id="tabs" role="tablist"></nav>
+  <section id="view"></section>
+</main>
+<script>
+const CSRF = "__CSRF__";
+let S = null;          // last /api/state
+let tab = "staging";
+let runState = { steps: [], status: {}, log: [], finished: null };
+
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined) n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return n;
+};
+
+async function api(path, body) {
+  const init = body === undefined ? {} : {
+    method: "POST", headers: { "content-type": "application/json", "x-setup-csrf": CSRF }, body: JSON.stringify(body)
+  };
+  const res = await fetch(path, { credentials: "same-origin", ...init });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || res.statusText);
+  return json;
+}
+
+async function refresh() {
+  S = await api("/api/state");
+  document.getElementById("path").textContent = S.path;
+  const op = document.getElementById("operator");
+  if (document.activeElement !== op) op.value = S.operator || "";
+  const df = document.getElementById("defaults");
+  if (document.activeElement !== df) df.value = (S.default_targets || []).join(", ");
+  const p = document.getElementById("problems");
+  p.replaceChildren();
+  if (S.problems.length) {
+    p.classList.remove("hidden");
+    p.append(el("h2", {}, "A run would refuse this file:"), el("ul", {}, S.problems.map(x => el("li", { class: "mono" }, x))));
+  } else p.classList.add("hidden");
+  renderTabs();
+  render();
+}
+
+function saveOperator() {
+  const name = document.getElementById("operator").value;
+  const default_targets = document.getElementById("defaults").value.split(",").map(s => s.trim()).filter(Boolean);
+  api("/api/operator", { name, default_targets }).then(refresh).catch(e => alert(e.message));
+}
+document.getElementById("operator").addEventListener("change", saveOperator);
+document.getElementById("defaults").addEventListener("change", saveOperator);
+
+function renderTabs() {
+  const names = [...Object.keys(S.targets), "shared", "brand", "run"];
+  const label = n => ({ shared: "Shared config", brand: "Brand & licences", run: "Run" }[n] || n);
+  document.getElementById("tabs").replaceChildren(...names.map(n =>
+    el("button", { role: "tab", "aria-selected": String(n === tab), onclick: () => { tab = n; renderTabs(); render(); } }, label(n))));
+}
+
+function render() {
+  const v = document.getElementById("view");
+  if (tab === "shared") v.replaceChildren(configPanel("shared"));
+  else if (tab === "brand") v.replaceChildren(brandPanel());
+  else if (tab === "run") v.replaceChildren(runPanel());
+  else v.replaceChildren(targetPanel(tab));
+}
+
+// ---------------------------------------------------------- targets
+const FIELDS = [
+  ["ssh", "SSH alias (unprivileged; hal on servers)"], ["ssh_admin", "SSH alias with sudo (provision only)"],
+  ["public_host", "Public host (admin is admin.<host>)"], ["bind", "Bind IPv4"], ["bind6", "Bind IPv6"],
+  ["dns", "Certificate names (comma-separated)"], ["timers", "Timers (watch, mail, backup, instruct, retention)"],
+  ["platform", "Docker platform (auto, linux/arm64, linux/amd64)"],
+];
+
+function targetPanel(name) {
+  const t = S.targets[name];
+  const fields = el("div", { class: "grid" }, FIELDS.map(([f, help]) => {
+    const value = Array.isArray(t[f]) ? t[f].join(", ") : (t[f] || "");
+    const input = el("input", { type: "text", value, id: `f-${f}` });
+    const mark = el("span", { class: "saved" });
+    input.addEventListener("change", () => api("/api/target", { target: name, field: f, value: input.value })
+      .then(() => { mark.textContent = " saved"; refresh(); }).catch(e => alert(e.message)));
+    return el("div", {}, el("label", { for: `f-${f}` }, help, mark), input);
+  }));
+  const keys = el("textarea", { id: "f-deploy_keys" }, (t.deploy_keys || []).join("\n"));
+  keys.addEventListener("change", () => api("/api/target", { target: name, field: "deploy_keys", value: keys.value }).then(refresh).catch(e => alert(e.message)));
+  const derived = el("table", {}, el("tr", {}, el("th", {}, "Derived key"), el("th", {}, "Value")),
+    Object.entries(t.derived).map(([k, val]) => el("tr", {}, el("td", { class: "mono" }, k), el("td", { class: "mono" }, JSON.stringify(val)))));
+  const checks = el("div", {});
+  const checkBtn = el("button", { class: "secondary", onclick: async () => {
+    checkBtn.disabled = true; checks.replaceChildren(el("p", { class: "muted" }, "Calling each provider (10 s budget each)…"));
+    try { const r = await api("/api/check", { target: name }); checks.replaceChildren(checkTable(r.results)); }
+    catch (e) { checks.replaceChildren(el("p", { class: "fail" }, e.message)); }
+    checkBtn.disabled = false;
+  } }, "Check keys and access");
+  return el("div", {},
+    el("div", { class: "panel" }, el("h2", {}, `${name} `, el("span", { class: "badge" }, t.kind)), fields,
+      el("h3", {}, "Deploy keys for hal (one OpenSSH public key per line; empty: the keys in ssh-agent)"), keys,
+      el("h3", {}, "Derived (from the target's shape; not typed)"), derived),
+    el("div", { class: "panel" }, el("div", { class: "row" }, el("h2", {}, "Checks"), checkBtn),
+      el("p", { class: "muted" }, "No-op calls only: tokens are minted and thrown away, balances read; nothing is bought, sent or charged."), checks),
+    runControls(name),
+    configPanel(name));
+}
+
+function checkTable(results) {
+  return el("table", {}, el("tr", {}, el("th", {}, "Check"), el("th", {}, "Result"), el("th", {}, "Detail")),
+    results.map(r => el("tr", {}, el("td", {}, r.label), el("td", {}, el("span", { class: `badge ${r.status}` }, r.status)), el("td", { class: "mono" }, r.detail))));
+}
+
+function runControls(name) {
+  const t = S.targets[name];
+  const from = el("select", { id: "from" }, el("option", { value: "" }, "from the start"), S.phases.map(p => el("option", { value: p }, `from ${p}`)));
+  const sha = el("input", { type: "text", id: "sha", placeholder: "HEAD" });
+  const order = el("input", { type: "text", id: "order", placeholder: "who ordered it, when, what" });
+  const go = el("button", { class: "primary", onclick: async () => {
+    try {
+      runState = { steps: [], status: {}, log: [], finished: null };
+      await api("/api/run", { target: name, from: from.value, sha: sha.value || null, order: order.value || null });
+      tab = "run"; renderTabs(); render();
+    } catch (e) { alert(e.message); }
+  } }, t.kind === "local" ? "Run in a terminal: cargo xtask setup --target local" : `Rebuild ${name}`);
+  if (t.kind === "local" || S.running) go.disabled = true;
+  return el("div", { class: "panel" }, el("h2", {}, "Run"),
+    el("div", { class: "grid" },
+      el("div", {}, el("label", { for: "sha" }, "Commit (built in a throwaway worktree)"), sha),
+      el("div", {}, el("label", { for: "from" }, "Resume"), from),
+      name === "production" ? el("div", {}, el("label", { for: "order" }, "Operator order (required for production; logged)"), order) : null),
+    el("p", {}, go));
+}
+
+// ---------------------------------------------------------- config values
+function configPanel(scope) {
+  const own = scope === "shared" ? S.shared : S.targets[scope].config;
+  const derived = scope === "shared" ? {} : S.targets[scope].derived;
+  const filter = el("input", { type: "text", placeholder: "filter keys (meta, labels, auth…)" });
+  const body = el("tbody");
+  const draw = () => {
+    const q = filter.value.trim().toLowerCase();
+    body.replaceChildren(...S.keys.filter(k => !q || k.key.includes(q)).map(k => keyRow(scope, k, own[k.key], derived[k.key])));
+  };
+  filter.addEventListener("input", draw);
+  draw();
+  return el("div", { class: "panel" },
+    el("h2", {}, scope === "shared" ? "Shared config (no secrets: those are per target)" : `Config for ${scope} (wins over shared)`),
+    filter, el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "Key"), el("th", {}, "Type"), el("th", {}, "Value"))), body));
+}
+
+function keyRow(scope, k, value, derived) {
+  const mark = el("span", { class: "saved" });
+  let input;
+  const save = v => api("/api/value", { scope, key: k.key, value: v })
+    .then(r => { mark.textContent = r.problems ? " saved (see problems)" : " saved"; refresh(); })
+    .catch(e => alert(e.message));
+  if (derived !== undefined) {
+    input = el("span", { class: "mono muted" }, `${JSON.stringify(derived)} (derived)`);
+  } else if (k.secret) {
+    if (scope === "shared") input = el("span", { class: "muted" }, "set per target");
+    else {
+      const set = value && value.secret;
+      input = el("div", { class: "row" },
+        el("span", { class: `badge ${set ? "ok" : "skip"}` }, set ? "set" : "not set"),
+        el("input", { type: "password", autocomplete: "off", placeholder: set ? "replace" : "paste the value", onchange: e => save(e.target.value || null) }),
+        set ? el("button", { class: "secondary", onclick: () => save(null) }, "Clear") : null);
+    }
+  } else if (k.type === "bool") {
+    input = el("select", { onchange: e => save(e.target.value === "" ? null : e.target.value === "true") },
+      el("option", { value: "", selected: value === null || value === undefined }, "unset"),
+      el("option", { value: "true", selected: value === true }, "on"),
+      el("option", { value: "false", selected: value === false }, "off"));
+  } else {
+    input = el("input", { type: "text", value: value ?? "", onchange: e => save(e.target.value || null) });
+  }
+  return el("tr", {}, el("td", { class: "mono" }, k.key, mark), el("td", { class: "muted" }, k.type), el("td", {}, input));
+}
+
+// ---------------------------------------------------------- brand
+function brandPanel() {
+  return el("div", {},
+    el("div", { class: "panel" }, el("h2", {}, "Brand assets and licences"),
+      el("p", { class: "muted" }, "Read each owner's terms in your own browser, download the files there, drop them here, then tick acceptance. ",
+        "Files live in ", el("span", { class: "mono" }, S.brand_dir), " (git-ignored). Builds ship only files whose acceptance is recorded with this exact hash; this tool never accepts terms for you.")),
+    S.brand.map(a => {
+      const version = el("input", { type: "text", placeholder: "terms version or date you read", value: a.accepted ? a.accepted.version : "" });
+      const tick = el("input", { type: "checkbox", id: `acc-${a.id}`, checked: !!a.accepted });
+      tick.addEventListener("change", () => api("/api/licence", { asset: a.id, terms_version: version.value, accept: tick.checked }).then(refresh).catch(e => { alert(e.message); refresh(); }));
+      return el("div", { class: "panel" },
+        el("h2", {}, a.owner, " ", a.accepted ? el("span", { class: "badge ok" }, "accepted") : el("span", { class: "badge skip" }, "not accepted")),
+        el("p", {}, a.terms_url ? el("a", { href: a.terms_url, target: "_blank", rel: "noopener noreferrer" }, a.terms) : a.terms),
+        el("p", { class: "muted" }, "Allows: ", a.permits), el("p", { class: "muted" }, "Get it: ", a.get),
+        el("table", {}, a.files.map(f => {
+          const pick = el("input", { type: "file", accept: f.name.endsWith(".svg") ? ".svg,image/svg+xml" : ".woff2" });
+          pick.addEventListener("change", async () => {
+            const file = pick.files[0]; if (!file) return;
+            const res = await fetch(`/api/brand/${encodeURIComponent(f.name)}`, { method: "POST", credentials: "same-origin", headers: { "x-setup-csrf": CSRF }, body: file });
+            if (!res.ok) alert((await res.json().catch(() => ({}))).error || res.statusText);
+            refresh();
+          });
+          return el("tr", {}, el("td", { class: "mono" }, f.name),
+            el("td", {}, el("span", { class: `badge ${f.licensed ? "ok" : f.present ? "warn" : "skip"}` }, f.licensed ? "licensed" : f.present ? "present, re-accept" : "missing")),
+            el("td", {}, pick));
+        })),
+        el("div", { class: "row" }, version, el("label", { for: `acc-${a.id}` }, tick, ` I, ${S.operator || "(set the operator name)"}, have read and accept these terms`)),
+        a.accepted ? el("p", { class: "muted" }, `Recorded: ${a.accepted.by}, ${a.accepted.at}`) : null);
+    }));
+}
+
+// ---------------------------------------------------------- run
+function runPanel() {
+  const steps = el("ol", { class: "phases" }, runState.steps.map((s, i) => {
+    const st = runState.status[i] || "";
+    return el("li", {}, el("span", { class: `dot ${st}` }), el("span", {}, el("span", { class: "muted mono" }, `[${s[0]}] `), s[1],
+      runState.status[`${i}:detail`] ? el("div", { class: "fail mono" }, runState.status[`${i}:detail`]) : null));
+  }));
+  const log = el("pre", { class: "log", id: "log" }, runState.log.join("\n") || "No run yet. Start one from a target tab.");
+  const end = runState.finished ? el("p", { class: runState.finished.ok ? "ok" : "fail" }, runState.finished.detail) : null;
+  setTimeout(() => { log.scrollTop = log.scrollHeight; }, 0);
+  return el("div", { class: "panel" }, el("h2", {}, "Run"), end, steps, log);
+}
+
+const es = new EventSource("/api/events");
+es.onmessage = m => {
+  const e = JSON.parse(m.data);
+  if (e.kind === "plan") runState = { steps: e.steps, status: {}, log: [`${e.target} at ${e.version}`], finished: null };
+  else if (e.kind === "start") { runState.status[e.index] = "run"; runState.log.push(`== ${e.index + 1} [${e.phase}] ${e.title}`); }
+  else if (e.kind === "line") runState.log.push(`   ${e.text}`);
+  else if (e.kind === "done") { runState.status[e.index] = e.ok ? "ok" : "fail"; if (!e.ok) runState.status[`${e.index}:detail`] = e.detail; }
+  else if (e.kind === "finished") { runState.finished = e; refresh(); }
+  if (tab === "run") render();
+};
+
+refresh().catch(e => { document.getElementById("view").replaceChildren(el("p", { class: "fail" }, e.message)); });
+</script>
+</body>
+</html>

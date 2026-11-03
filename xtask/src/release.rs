@@ -23,6 +23,27 @@ pub const SERVICE: &str = "apostille";
 /// Prod smoke URL (also validates the TLS chain).
 pub const DEFAULT_SMOKE_URL: &str = "https://andrii.ai/apostille/healthz";
 
+/// Smoke URL for the host at `root`: `xtask provision` records the
+/// host's public name in `<root>/public-host` (the rehearsal container
+/// is `rehearsal.localhost`); without that file, production's URL.
+#[must_use]
+pub fn default_smoke_url(root: &Path) -> String {
+    std::fs::read_to_string(root.join("public-host"))
+        .ok()
+        .map(|text| text.trim().to_ascii_lowercase())
+        .filter(|host| {
+            !host.is_empty()
+                && host.len() <= 200
+                && host
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+        })
+        .map_or_else(
+            || DEFAULT_SMOKE_URL.to_string(),
+            |host| format!("https://{host}/apostille/healthz"),
+        )
+}
+
 /// Release dirs kept after a successful deploy (the live one plus the
 /// newest 3); older ones are pruned oldest-first.
 pub const MAX_RELEASES: usize = 4;
@@ -430,6 +451,59 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Copy a validated staged release into `<root>/releases/<version>/`
+/// and write its manifest (no swap, no restart). Shared by `deploy` and
+/// the first install in `provision`.
+pub fn install_release(
+    root: &Path,
+    src: &Path,
+    version: &str,
+    sha: &str,
+    migration_notes: &str,
+    rollback_safe: bool,
+) -> Result<(), String> {
+    let dst = root.join("releases").join(version);
+    std::fs::create_dir_all(&dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
+    for bin in ["web", "xtask"] {
+        std::fs::copy(src.join(bin), dst.join(bin)).map_err(|e| format!("copy {bin}: {e}"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(dst.join(bin))
+                .map_err(|e| format!("stat {bin}: {e}"))?
+                .permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(dst.join(bin), perms)
+                .map_err(|e| format!("chmod {bin}: {e}"))?;
+        }
+    }
+    for dir in ["spa", "spa-admin", "static"] {
+        let _ = std::fs::remove_dir_all(dst.join(dir));
+        copy_dir(&src.join(dir), &dst.join(dir))?;
+    }
+    if src.join("packs").is_dir() {
+        let _ = std::fs::remove_dir_all(dst.join("packs"));
+        copy_dir(&src.join("packs"), &dst.join("packs"))?;
+    }
+    if src.join("evals").is_dir() {
+        let _ = std::fs::remove_dir_all(dst.join("evals"));
+        copy_dir(&src.join("evals"), &dst.join("evals"))?;
+    }
+    write_manifest(
+        &dst.join("release.toml"),
+        &ReleaseManifest {
+            version: version.to_string(),
+            sha: sha.to_string(),
+            schema_version: handbook_store::db::SCHEMA_VERSION,
+            p2_schema_version: handbook_store::db::P2_SCHEMA_VERSION,
+            migration_notes: migration_notes.to_string(),
+            rollback_safe,
+        },
+    )?;
+
+    Ok(())
+}
+
 /// Options for [`deploy`]. `packs_dir`/`expect_build` are `None`
 /// exactly when the caller passed the matching `--skip-*` flag.
 pub struct DeployOptions {
@@ -497,43 +571,13 @@ pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
     }
     validate_release_src(&opts.src)?;
 
-    let dst = opts.root.join("releases").join(&opts.version);
-    std::fs::create_dir_all(&dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
-    for bin in ["web", "xtask"] {
-        std::fs::copy(opts.src.join(bin), dst.join(bin)).map_err(|e| format!("copy {bin}: {e}"))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(dst.join(bin))
-                .map_err(|e| format!("stat {bin}: {e}"))?
-                .permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(dst.join(bin), perms)
-                .map_err(|e| format!("chmod {bin}: {e}"))?;
-        }
-    }
-    for dir in ["spa", "spa-admin", "static"] {
-        let _ = std::fs::remove_dir_all(dst.join(dir));
-        copy_dir(&opts.src.join(dir), &dst.join(dir))?;
-    }
-    if opts.src.join("packs").is_dir() {
-        let _ = std::fs::remove_dir_all(dst.join("packs"));
-        copy_dir(&opts.src.join("packs"), &dst.join("packs"))?;
-    }
-    if opts.src.join("evals").is_dir() {
-        let _ = std::fs::remove_dir_all(dst.join("evals"));
-        copy_dir(&opts.src.join("evals"), &dst.join("evals"))?;
-    }
-    write_manifest(
-        &dst.join("release.toml"),
-        &ReleaseManifest {
-            version: opts.version.clone(),
-            sha: opts.sha.clone(),
-            schema_version: handbook_store::db::SCHEMA_VERSION,
-            p2_schema_version: handbook_store::db::P2_SCHEMA_VERSION,
-            migration_notes: opts.migration_notes.clone(),
-            rollback_safe: opts.rollback_safe,
-        },
+    install_release(
+        &opts.root,
+        &opts.src,
+        &opts.version,
+        &opts.sha,
+        &opts.migration_notes,
+        opts.rollback_safe,
     )?;
 
     let prev = atomic_swap(&opts.root, &opts.version)?;
@@ -694,8 +738,10 @@ pub fn run_deploy(args: &[String]) {
                 }),
         )
     };
+    let root = PathBuf::from(crate::flag(args, "root").unwrap_or_else(|| DEFAULT_ROOT.to_string()));
     let opts = DeployOptions {
-        root: PathBuf::from(crate::flag(args, "root").unwrap_or_else(|| DEFAULT_ROOT.to_string())),
+        smoke_url: crate::flag(args, "smoke-url").unwrap_or_else(|| default_smoke_url(&root)),
+        root,
         src: PathBuf::from(src),
         version,
         sha,
@@ -706,7 +752,6 @@ pub fn run_deploy(args: &[String]) {
         store: PathBuf::from(crate::flag(args, "store").unwrap_or_else(|| "store".to_string())),
         actor: crate::flag(args, "actor").unwrap_or_else(|| "xtask".to_string()),
         restart: !has(args, "no-restart"),
-        smoke_url: crate::flag(args, "smoke-url").unwrap_or_else(|| DEFAULT_SMOKE_URL.to_string()),
         // No day gate: deploys are instant per operator order, so PT
         // midnight is never read (the field stays for struct shape).
         pt_midnight_secs: None,
@@ -723,13 +768,14 @@ pub fn run_deploy(args: &[String]) {
 
 /// CLI entry: `xtask rollback --to <sha> [flags]`.
 pub fn run_rollback(args: &[String]) {
+    let root = PathBuf::from(crate::flag(args, "root").unwrap_or_else(|| DEFAULT_ROOT.to_string()));
     let opts = RollbackOptions {
-        root: PathBuf::from(crate::flag(args, "root").unwrap_or_else(|| DEFAULT_ROOT.to_string())),
+        smoke_url: crate::flag(args, "smoke-url").unwrap_or_else(|| default_smoke_url(&root)),
+        root,
         to: crate::required(args, "to"),
         force: has(args, "force"),
         backup_note: crate::flag(args, "backup-note"),
         restart: !has(args, "no-restart"),
-        smoke_url: crate::flag(args, "smoke-url").unwrap_or_else(|| DEFAULT_SMOKE_URL.to_string()),
     };
     match rollback(&opts) {
         Ok(summary) => println!("{summary}"),
@@ -742,6 +788,23 @@ pub fn run_rollback(args: &[String]) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn smoke_url_follows_the_recorded_public_host() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(default_smoke_url(dir.path()), DEFAULT_SMOKE_URL);
+        std::fs::write(dir.path().join("public-host"), "rehearsal.localhost\n").unwrap();
+        assert_eq!(
+            default_smoke_url(dir.path()),
+            "https://rehearsal.localhost/apostille/healthz"
+        );
+        std::fs::write(dir.path().join("public-host"), "evil.test/x?y\n").unwrap();
+        assert_eq!(
+            default_smoke_url(dir.path()),
+            DEFAULT_SMOKE_URL,
+            "junk falls back"
+        );
+    }
+
     use super::*;
     use std::io::{Read, Write};
 

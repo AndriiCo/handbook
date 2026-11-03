@@ -168,6 +168,9 @@ pub fn run(args: &[String]) {
     xtask_cmd(&xtask, &["init", "--store", STORE_DIR]);
     enroll_if_needed(&xtask);
     config_set_all(&xtask);
+    if let Some(payload) = IMPORT.get() {
+        import_setup_values(&xtask, payload);
+    }
     xtask_cmd(
         &xtask,
         &[
@@ -522,6 +525,47 @@ fn xtask_cmd(bin: &Path, args: &[&str]) {
             args.join(" "),
             status.code().unwrap_or(-1)
         ));
+    }
+}
+
+/// Values from the setup file (`cargo xtask setup --target local`),
+/// sealed over the loopback defaults. Held in memory only.
+static IMPORT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+
+pub fn set_import_payload(payload: Vec<u8>) {
+    let _ = IMPORT.set(payload);
+}
+
+fn import_setup_values(bin: &Path, payload: &[u8]) {
+    use std::io::Write as _;
+    println!(
+        "up: + {} config-import (setup file values, merge)",
+        bin.display()
+    );
+    let mut child = Command::new(bin)
+        .args([
+            "config-import",
+            "--store",
+            STORE_DIR,
+            "--kek-file",
+            KEK_FILE,
+            "--stdin",
+            "--mode",
+            "merge",
+            "--actor",
+            "setup",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("spawn config-import: {e}")));
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(payload)
+            .unwrap_or_else(|e| fail(&format!("config-import stdin: {e}")));
+    }
+    let status = child.wait().unwrap_or_else(|e| fail(&e.to_string()));
+    if !status.success() {
+        fail("config-import of the setup file values failed");
     }
 }
 

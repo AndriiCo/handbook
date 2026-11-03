@@ -1,0 +1,6 @@
+#!/bin/bash
+# Load the live release's jurisdiction packs into the store (never facts).
+set -u
+[ "$#" = 0 ] || { echo "ABORT: apostille-packs-load takes no arguments" >&2; exit 1; }
+exec /srv/apostille/current/xtask packs-load --store /var/lib/apostille \
+    --packs /srv/apostille/current/packs

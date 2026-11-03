@@ -13,7 +13,6 @@ mod archive;
 mod ask;
 mod atlas;
 mod backup;
-mod brand_assets;
 mod build_handbook;
 mod config;
 mod config_import;
@@ -27,8 +26,10 @@ mod judge;
 mod mcp_serve;
 mod packs;
 mod pii_sweep;
+mod provision;
 mod release;
 mod secrets;
+mod setup;
 mod up;
 mod voice_replay;
 mod watch;
@@ -59,7 +60,6 @@ fn main() {
         Some("eval") => eval::run(&args[1..]),
         Some("backup") => backup::run(&args[1..]),
         Some("backup-verify") => backup::run_verify(&args[1..]),
-        Some("brand-assets") => brand_assets::run(&args[1..]),
         Some("packs-validate") => run_packs_validate(&args[1..]),
         Some("packs-load") => run_packs_load(&args[1..]),
         Some("config-enroll") => config::run_enroll(&args[1..]),
@@ -81,6 +81,9 @@ fn main() {
         Some("model-gate") => run_model_gate(),
         Some("voice-replay") => voice_replay::run(&args[1..]),
         Some("deploy") => release::run_deploy(&args[1..]),
+        Some("provision") => provision::run(&args[1..]),
+        Some("setup") => setup::run(&args[1..]),
+        Some("harden-check") => setup::build::run_harden_check(&args[1..]),
         Some("rollback") => release::run_rollback(&args[1..]),
         Some("install-hooks") => run_install_hooks(),
         Some(unknown) => {
@@ -117,7 +120,6 @@ Tasks:
   demo-vietnam  frozen VN drill on a temp store (never prod)
   backup   nightly backup: SQLite backup API + tar (see flags below)
   backup-verify  restore-to-scratch + checks (drill-3 engine)
-  brand-assets  operator logo runbook; --check scans ~/Downloads
   packs-validate  validate packs/*.json (F13; needs_review invariants)
   packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)
@@ -135,8 +137,11 @@ Tasks:
   model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files
   voice-replay  replay webhook fixtures at the stub (see --corpus/--scenario)
   install-hooks point git at .githooks/ (pre-commit secret scan)
+  setup  rebuild targets from private/config.yaml (sops); no file: create it in the localhost wizard. Subcommands: wizard, check, print, new, wipe (setup --help)
+  harden-check <elf>...  fail unless PIE, NX stack, no W+X segment, full RELRO, stack protector
   deploy      install a staged release on this host (see flags below; docs/ops/deploy.md)
   rollback    roll back to a kept release (see flags below)
+  provision   root, on a server: users, dirs, KEK, wrappers, sudoers, units, firewall; first install (--manifest --release --version --config-stdin --check)
 
 deploy flags:
   --version <sha>  release dir name, 7..=64 lowercase hex (required)
@@ -344,6 +349,20 @@ fn run_add_authority(args: &[String]) {
             std::process::exit(1);
         }
     }
+}
+
+/// The repository's top directory (`git rev-parse`), or the current
+/// directory outside a checkout.
+pub(crate) fn repo_root() -> std::path::PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+    Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(&cwd)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().into())
+        .unwrap_or(cwd)
 }
 
 /// Current unix time as i64 (audit `at` values).

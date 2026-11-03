@@ -1,0 +1,3 @@
+#!/bin/bash
+# Usage: echo "SELECT ..." | apostille-sqlite
+exec /usr/bin/sqlite3 /var/lib/apostille/handbook.sqlite

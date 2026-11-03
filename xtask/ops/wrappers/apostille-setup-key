@@ -1,0 +1,7 @@
+#!/bin/bash
+# Mint the first-boot setup key (prints once, valid 72 h). Refuses when a
+# staff passkey already exists (break-glass needs a root login).
+set -u
+[ "$#" = 0 ] || { echo "ABORT: apostille-setup-key takes no arguments" >&2; exit 1; }
+exec /srv/apostille/current/xtask setup-key-mint --store /var/lib/apostille \
+    --kek-file /etc/apostille/handbook-kek --actor hal
