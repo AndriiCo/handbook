@@ -169,21 +169,24 @@ pub struct Clock {
 }
 
 impl Clock {
-    /// Same time of day: equal when both or neither carry am/pm; an
-    /// unmarked hour under 12 also matches its afternoon (`4:30` ~
-    /// `4:30 PM`), never the reverse half (`8 PM` ≁ `8:00 AM`).
+    /// Unmarked times that name one time of day only: 24-hour afternoon
+    /// hours and midnight (`16:30`, `00:30`). `8:00` could be either half.
+    fn unambiguous(self) -> bool {
+        self.h >= 13 || self.h == 0
+    }
+
+    /// Same time of day, never across halves: two marked (or two
+    /// unmarked) times match on the same hour; an unmarked time matches
+    /// a marked one only when it is unambiguous (`16:30` ~ `4:30 PM`;
+    /// `8:00` ≁ `8 PM`, `00:00` ≁ `12 PM`).
     fn same(self, other: Clock) -> bool {
-        if self.m != other.m {
-            return false;
-        }
-        let loose = |marked: Clock, bare: Clock| {
-            bare.h == marked.h || (bare.h < 12 && bare.h + 12 == marked.h)
-        };
-        match (self.marked, other.marked) {
-            (true, false) => loose(self, other),
-            (false, true) => loose(other, self),
-            _ => self.h == other.h,
-        }
+        self.m == other.m
+            && self.h == other.h
+            && match (self.marked, other.marked) {
+                (true, false) => other.unambiguous(),
+                (false, true) => self.unambiguous(),
+                _ => true,
+            }
     }
 }
 
@@ -490,27 +493,36 @@ fn clock(raw: &str) -> Option<(u32, u32)> {
 }
 
 /// The am/pm marker right after byte `pos`: `Some(true)` for pm,
-/// `Some(false)` for am (`8 AM`, `8 a.m.`, `8pm`).
+/// `Some(false)` for am (`8 AM`, `8 a.m.`, `8pm`, Spanish `8 a. m.`).
 fn meridiem_after(text: &str, pos: usize) -> Option<bool> {
     let rest = text
         .get(pos..)
         .unwrap_or("")
         .trim_start_matches([' ', '\t', '\u{A0}', '\u{202F}']);
-    let b: Vec<u8> = rest
-        .bytes()
-        .take(4)
-        .map(|b| b.to_ascii_lowercase())
-        .collect();
-    let word_end = |i: usize| b.get(i).is_none_or(|c| !c.is_ascii_alphabetic());
-    let marker =
-        |c: u8| (b.starts_with(&[c, b'm']) && word_end(2)) || b.starts_with(&[c, b'.', b'm']);
-    if marker(b'p') {
-        Some(true)
-    } else if marker(b'a') {
-        Some(false)
-    } else {
-        None
+    // `a`/`p`, an optional dot and spaces, `m`, an optional dot, then
+    // no letter: `am`, `a.m.`, `a. m.`, `P.M.` (never `among`, `a las`).
+    let mut it = rest.chars().peekable();
+    let half = match it.next().map(|c| c.to_ascii_lowercase()) {
+        Some('p') => true,
+        Some('a') => false,
+        _ => return None,
+    };
+    if it.peek() == Some(&'.') {
+        it.next();
+        while it
+            .peek()
+            .is_some_and(|c| matches!(c, ' ' | '\u{A0}' | '\u{202F}'))
+        {
+            it.next();
+        }
     }
+    if it.next().map(|c| c.to_ascii_lowercase()) != Some('m') {
+        return None;
+    }
+    if it.peek() == Some(&'.') {
+        it.next();
+    }
+    it.peek().is_none_or(|c| !c.is_alphabetic()).then_some(half)
 }
 
 /// A word starts right after byte `pos` (`3-5 business days`,
@@ -548,29 +560,39 @@ fn token_clocks(text: &str, s: usize, e: usize) -> Vec<Clock> {
     if !timed {
         return Vec::new();
     }
-    let last = parsed.len() - 1;
-    parsed
-        .into_iter()
-        .enumerate()
-        .map(|(i, (h, m))| match pm.filter(|_| i == last) {
-            Some(true) if h < 12 => Clock {
-                h: h + 12,
-                m,
-                marked: true,
-            },
-            Some(false) if h == 12 => Clock {
-                h: 0,
-                m,
-                marked: true,
-            },
-            Some(_) => Clock { h, m, marked: true },
-            None => Clock {
-                h,
-                m,
-                marked: false,
-            },
-        })
-        .collect()
+    let bare = |(h, m): (u32, u32)| Clock {
+        h,
+        m,
+        marked: false,
+    };
+    let marked = |(h, m): (u32, u32), pm: bool| Clock {
+        h: match (h, pm) {
+            (13.., _) => h,
+            (12, false) => 0,
+            (12, true) => 12,
+            (h, true) => h + 12,
+            (h, false) => h,
+        },
+        m,
+        marked: true,
+    };
+    match (parsed.as_slice(), pm) {
+        ([one], Some(p)) => vec![marked(*one, p)],
+        // A trailing am/pm covers the whole range: the start shares the
+        // end's half unless it sits later on the 12-hour dial
+        // (`8-9am`, `3:00-4:00pm`, `11-1pm`).
+        ([a, b], Some(p)) if a.0 <= 12 && b.0 <= 12 => {
+            let start_pm = if a.0 % 12 <= b.0 % 12 { p } else { !p };
+            vec![marked(*a, start_pm), marked(*b, p)]
+        }
+        // Office hours that end earlier on the dial run morning to
+        // afternoon (`8:00-4:30`, `9-5`, `9:30-1:00`); any other bare
+        // range stays ambiguous (`8-11:30`).
+        ([a, b], None) if a.0 <= 12 && b.0 <= 12 && b.0 % 12 < a.0 % 12 => {
+            vec![marked(*a, false), marked(*b, true)]
+        }
+        (sides, _) => sides.iter().map(|c| bare(*c)).collect(),
+    }
 }
 
 /// Every clock time `text` writes.
@@ -1536,6 +1558,55 @@ mod tests {
             "Cierran a las 16:30."
         ));
         assert!(guard_ok("Open 9-5 pm", "Open 9 AM to 5 PM"));
+        // Verify of P352: never across halves of the day.
+        assert!(!guard_ok(
+            "Walk-ins accepted until 8 PM.",
+            "Se aceptan visitas hasta las 8:00 a. m."
+        ));
+        assert!(!guard_ok(
+            "The counter closes at 12 PM on Fridays.",
+            "La ventanilla cierra a las 12:00 a. m. los viernes."
+        ));
+        assert!(!guard_ok(
+            "The counter is open 8am-3pm Mon-Fri.",
+            "Abierto de 8:00 p. m. a 3:00 a. m."
+        ));
+        assert!(!guard_ok(
+            "Pickup 3:00-4:00pm.",
+            "Recogida de 3:00 a 4:00 a. m."
+        ));
+        assert!(!guard_ok(
+            "The counter closes at 12:00 PM on Fridays.",
+            "La ventanilla cierra a las 00:00 los viernes."
+        ));
+        assert!(!guard_ok(
+            "The counter opens at 8 PM",
+            "Counter hours are Mon-Fri 8-11:30 for filing and pickup."
+        ));
+        assert!(!guard_ok(
+            "Walk-ins start at 8 PM",
+            "walk-ins 8-9am Mon-Thu"
+        ));
+        assert!(!guard_ok("Phones open at 8 PM", "Mon-Fri 8-5"));
+        assert!(!guard_ok("Intake until 1 AM", "hours 9:30-1:00 intake"));
+        assert!(!guard_ok(
+            "Open until 8 PM",
+            "Office hours: Monday - Friday, 8:00-4:30"
+        ));
+        assert!(!guard_ok(
+            "Pick up documents from 3 AM, Monday to Friday.",
+            "pickup 3:00-4:00pm (pet docs same-day)"
+        ));
+        // ... while the same times written another way still ground.
+        assert!(guard_ok(
+            "Walk-ins accepted until 8 AM.",
+            "Se aceptan visitas hasta las 8 a. m."
+        ));
+        assert!(guard_ok("Walk-ins start at 8 AM", "walk-ins 8-9am Mon-Thu"));
+        assert!(guard_ok("Pick up from 3 PM to 4 PM", "pickup 3:00-4:00pm"));
+        assert!(guard_ok("Intake until 1 PM", "hours 9:30-1:00 intake"));
+        assert!(guard_ok("Open 11 AM to 1 PM", "open 11-1pm"));
+        assert!(guard_ok("Closes at 12:30 AM", "Cierra a las 0:30"));
         // A faithful translation of a time still passes.
         assert!(guard_ok(
             "Allow 3 business days. Open 8:00 a.m. to 3:00 p.m.",
