@@ -134,6 +134,7 @@
 | 228 | 2026-11-01 19:08Z | Slice: what a judge sees in the first 60 seconds. Home quality chip | quality date, calendar days, region CTA, 307, sitemap |
 | 229 | 2026-11-01 19:20Z | Slice: README.md for judges. They read only this file, the video and the | eval table, shipped/next, arch, prod box, scan clean |
 | 230 | 2026-11-01 19:21Z | Slice: docs/demo-script.md plus demo takes. HERO=usa-wa-sos. | script 175s, HERO takes, overflow fix |
+| meta-1 | 2026-11-01 19:28Z | topic_accuracy 0.641: v2 prompt with 25 topic definitions + closed field lists | v2 prompt + selection + eval --prompt, tests green |
 | 231 | 2026-11-01 19:50Z | Goal: visitors can follow an authority and get an email when an accepted | notify crate + routes + worker wired, tests green; UI next |
 | 232 | 2026-11-01 20:06Z | Slice: dossier guide v1 (GP2-page, web-only, no Rust, no migration). | follow card + confirm pages, shots+demo green |
 | 233 | 2026-11-01 20:14Z | Goal: the review §5 P1 items, one slice each, staging-proven: (1) tower-h | timeouts+concurrency+QUIC cap, tests green |
@@ -214,3 +215,4 @@
 | 312 | 2026-11-02 18:30Z | deploy now | train red-allowlist + flag-order fixes |
 | 313 | 2026-11-02 18:37Z | deploy now | 4dcd234 live, train green, no regressions |
 | 314 | 2026-11-02 22:35Z | We have a project for hackathon here. However it does not have the core functional | MISSION WIN plan saved: docs/ops/mission-win.md |
+| 315 | 2026-11-03 00:02Z | Execute the plan. Muse workers stopped. Clear old releases from plant in order | B0: merge meta-1 prompt v2 (v1 default), tests+clippy green |

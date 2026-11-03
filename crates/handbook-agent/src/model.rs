@@ -84,6 +84,23 @@ pub const META_BASE_URL: &str = "https://api.meta.ai/v1";
 /// Drafting model (`docs/meta-api.md`: default Spark on cost).
 const DRAFT_MODEL: &str = "muse-spark-1.3";
 
+/// Second prompt generation: topic definitions + closed per-topic
+/// field lists. Selected by `DraftRequest.prompt_version`; v1 stays
+/// the default (see `runner::PROMPT_VERSION`).
+pub const PROMPT_VERSION_V2: &str = "aa-prompt-v2";
+
+/// Standing-rules template for a prompt version. Only the two named
+/// generations exist; anything else reads as v1 (the only producers
+/// are `runner::PROMPT_VERSION` and the eval `--prompt` flag, which
+/// rejects unknown values, so the fallback is unreachable).
+fn template_for(version: &str) -> &'static str {
+    if version == PROMPT_VERSION_V2 {
+        include_str!("../prompts/aa-prompt-v2.md")
+    } else {
+        include_str!("../prompts/aa-prompt-v1.md")
+    }
+}
+
 /// Retry budget: up to 4 attempts per stream POST (error-handling
 /// docs: 3–5 with jitter, honouring `Retry-After`).
 const MAX_ATTEMPTS: u32 = 4;
@@ -402,10 +419,10 @@ const PER_RUN_MARKER: &str = "<!-- PER-RUN -->";
 /// (`` `messages` must contain at least one message with role `user`
 /// or `tool` ``), so the `user` message is always present.
 fn draft_body(req: &DraftRequest, previous_failure: Option<&str>) -> serde_json::Value {
-    let template = include_str!("../prompts/aa-prompt-v1.md");
+    let template = template_for(req.prompt_version);
     let (developer, per_run) = template
         .split_once(PER_RUN_MARKER)
-        .expect("aa-prompt-v1.md carries a PER-RUN part");
+        .expect("prompt template carries a PER-RUN part");
     debug_assert!(
         !developer.contains("{{"),
         "standing rules must not hold per-run placeholders"
@@ -638,6 +655,26 @@ mod tests {
             capture_id: 0,
             doc_ids: vec!["fixture".to_string()],
         }
+    }
+
+    #[test]
+    fn prompt_versions_split_on_marker_with_clean_prefix() {
+        // Both generations render: standing rules up front (no
+        // per-run placeholders — the stable cacheable prefix), values
+        // after the marker. v2 teaches topics + closed field lists.
+        for version in ["aa-prompt-v1", PROMPT_VERSION_V2] {
+            let (developer, per_run) = template_for(version)
+                .split_once(PER_RUN_MARKER)
+                .expect("PER-RUN part");
+            assert!(!developer.contains("{{"), "version: {version}");
+            assert!(per_run.contains("{{slug}}"), "version: {version}");
+        }
+        let (v2, _) = template_for(PROMPT_VERSION_V2)
+            .split_once(PER_RUN_MARKER)
+            .expect("PER-RUN part");
+        assert!(v2.contains("`po_box`"), "v2 defines topics");
+        assert!(v2.contains("per_document"), "v2 lists closed fields");
+        assert!(template_for("aa-prompt-v1").contains("Reply in the source language"));
     }
 
     #[test]
