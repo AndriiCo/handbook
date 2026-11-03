@@ -988,6 +988,7 @@ fn compose_blocking(
     kek: Option<&config::Kek>,
     slug: &str,
     run_id: u64,
+    on_step: &dyn Fn(&str),
 ) -> Result<serde_json::Value, String> {
     let store = handbook_store::store::Store::new(store_root);
     let conn = db::open(&store).map_err(|e| format!("store unavailable: {e}"))?;
@@ -1034,7 +1035,9 @@ fn compose_blocking(
     spend.add(&resp);
     let drafted: RenderPlanV1 =
         serde_json::from_value(resp.value).map_err(|e| format!("compose: plan shape: {e}"))?;
+    on_step("validate");
     let (mut plan, mut report) = validate_plan(&drafted, &grounding);
+    on_step("entail");
     entail(
         &client,
         &mut plan,
@@ -1148,6 +1151,24 @@ async fn compose(
         )
             .into_response();
     }
+    // Preconditions answer synchronously: a run that cannot start is a
+    // 422 now, never a `compose.failed` the console subscribed too late
+    // to hear.
+    let accepted: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fact f JOIN authority a ON a.id = f.authority_id
+             WHERE a.slug = ?1 AND f.status = 'accepted' AND f.topic != 'phone_script'",
+            [&body.slug],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if accepted < MIN_FACTS as i64 {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": format!("needs at least {MIN_FACTS} accepted facts (has {accepted})"), "accepted": accepted})),
+        )
+            .into_response();
+    }
     drop(conn);
     let run_id = state.draft_runs.reserve_id();
     let bus = state.bus.clone();
@@ -1162,8 +1183,11 @@ async fn compose(
             json!({"slug": slug, "model": PLAN_MODEL}),
         );
         let job_slug = slug.clone();
+        let step_bus = bus.clone();
         let outcome = tokio::task::spawn_blocking(move || {
-            compose_blocking(&store_root, kek.as_deref(), &job_slug, run_id)
+            let on_step =
+                |step: &str| publish_run(&step_bus, run_id, "compose.step", json!({"step": step}));
+            compose_blocking(&store_root, kek.as_deref(), &job_slug, run_id, &on_step)
         })
         .await;
         match outcome {
@@ -1346,7 +1370,7 @@ mod live {
             );
         }
         for (i, slug) in slugs.split(',').enumerate() {
-            match crate::offices::compose_blocking(&root, None, slug, 9_100 + i as u64) {
+            match crate::offices::compose_blocking(&root, None, slug, 9_100 + i as u64, &|_| {}) {
                 Ok(summary) => {
                     println!("LIVE-OFFICES {slug} {summary}");
                     for (id, office, guards) in conn
@@ -1367,7 +1391,7 @@ mod live {
         }
         for (i, slug) in slugs.split(',').enumerate() {
             let run_id = 9_000 + i as u64;
-            match compose_blocking(&root, None, slug, run_id) {
+            match compose_blocking(&root, None, slug, run_id, &|_| {}) {
                 Ok(summary) => {
                     println!("LIVE {slug} {summary}");
                     let row: (String, String, String) = conn

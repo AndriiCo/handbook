@@ -2609,6 +2609,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn doomed_compose_runs_answer_synchronously() {
+        // A run that cannot start answers 404/422 at once — never a 202
+        // whose `*.failed` event fires before the console subscribes.
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        {
+            let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+            db::add_authority(
+                &conn,
+                &db::NewAuthority {
+                    kind: "state",
+                    country: "USA",
+                    region: "TS",
+                    name: "Empty SOS",
+                    slug: "empty-sos",
+                    actor: "t",
+                    at: 1,
+                },
+            )
+            .unwrap();
+        }
+        for (uri, slug, want) in [
+            (
+                "/apostille/api/v1/admin/plans/compose",
+                "no-such",
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                "/apostille/api/v1/admin/plans/compose",
+                "empty-sos",
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                "/apostille/api/v1/admin/offices/compose",
+                "no-such",
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                "/apostille/api/v1/admin/offices/compose",
+                "empty-sos",
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+        ] {
+            let res = admin::router(fx.state.clone())
+                .merge(mission_admin_routers(&fx.state))
+                .oneshot(admin_request(
+                    "POST",
+                    uri,
+                    Some("admin.andrii.ai"),
+                    Some("staff-1"),
+                    Some("csrf-token"),
+                    Some("https://admin.andrii.ai"),
+                    Some(serde_json::json!({"slug": slug})),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), want, "{uri} {slug}");
+        }
+    }
+
+    #[tokio::test]
     async fn publish_rejects_oversized_body() {
         // M1: arbitrary-JSON fan-out is capped; normal events flow.
         let fx = fixture();

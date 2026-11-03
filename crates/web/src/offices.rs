@@ -547,6 +547,7 @@ pub fn compose_blocking(
     kek: Option<&config::Kek>,
     slug: &str,
     run_id: u64,
+    on_step: &dyn Fn(&str),
 ) -> Result<Value, String> {
     let store = handbook_store::store::Store::new(store_root);
     let conn = db::open(&store).map_err(|e| format!("store unavailable: {e}"))?;
@@ -606,6 +607,7 @@ pub fn compose_blocking(
             run_id: Some(run_id),
         })
         .map_err(|e| format!("offices failed: {e}"))?;
+    on_step("guards");
     let now = unix_now();
     let mut proposed = Vec::new();
     let mut dropped = 0;
@@ -655,6 +657,45 @@ async fn compose(
         )
             .into_response();
     }
+    // Synchronous preconditions (a doomed run never answers 202).
+    let known: bool = conn
+        .query_row(
+            "SELECT 1 FROM authority WHERE slug = ?1",
+            [&body.slug],
+            |_| Ok(true),
+        )
+        .optional()
+        .unwrap_or(None)
+        .unwrap_or(false);
+    if !known {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "unknown authority"})),
+        )
+            .into_response();
+    }
+    let placeholders = OFFICE_TOPICS
+        .iter()
+        .map(|t| format!("'{t}'"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let office_facts: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM fact f JOIN authority a ON a.id = f.authority_id
+                 WHERE a.slug = ?1 AND f.status = 'accepted' AND f.topic IN ({placeholders})"
+            ),
+            [&body.slug],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if office_facts == 0 {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "needs accepted address, hours, walk-in or mailing facts", "accepted": 0})),
+        )
+            .into_response();
+    }
     drop(conn);
     let run_id = state.draft_runs.reserve_id();
     let (bus, root, kek): (_, _, Option<Arc<config::Kek>>) = (
@@ -671,8 +712,16 @@ async fn compose(
                 .to_string(),
         );
         let job = slug.clone();
+        let step_bus = bus.clone();
+        let step_topic = topic.clone();
         let out = tokio::task::spawn_blocking(move || {
-            compose_blocking(&root, kek.as_deref(), &job, run_id)
+            let on_step = |step: &str| {
+                step_bus.publish(
+                    &step_topic,
+                    json!({"type": "offices.step", "topic": step_topic, "run_id": run_id, "step": step}).to_string(),
+                );
+            };
+            compose_blocking(&root, kek.as_deref(), &job, run_id, &on_step)
         })
         .await;
         let (kind, body) = match out {
@@ -715,13 +764,14 @@ async fn list(
     let slug = q.slug.unwrap_or_default();
     let rows: Vec<Value> = conn
         .prepare(
-            "SELECT id, authority_slug, status, office_json, guards_json, decided_at FROM office_record
+            "SELECT id, authority_slug, status, office_json, guards_json, decided_at, run_id FROM office_record
              WHERE (?1 = 'all' OR status = ?1) AND (?2 = '' OR authority_slug = ?2) ORDER BY id DESC LIMIT 50",
         )
         .and_then(|mut s| {
             s.query_map(rusqlite::params![status, slug], |r| {
                 let mut v = row_view(r.get(0)?, &r.get::<_, String>(1)?, &r.get::<_, String>(2)?, &r.get::<_, String>(3)?, r.get(5)?);
                 v["guards"] = serde_json::from_str(&r.get::<_, String>(4)?).unwrap_or(json!([]));
+                v["run_id"] = json!(r.get::<_, Option<i64>>(6)?);
                 Ok(v)
             })?
             .collect()

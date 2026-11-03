@@ -241,3 +241,4 @@
 | 332 | 2026-11-03 01:51Z | C2+C5 (SA-24, builder): Stripe Checkout, signed webhook, settle + reconciler, staff refund/advance | web 359 green, clippy clean; no lock change |
 | 333 | 2026-11-03 01:52Z | Live chain recorded (cross-check → offices → plan); harness can accept the plan on the staging stand | provenance: 11 supported by Wonder before accept |
 | 334 | 2026-11-03 02:02Z | Staging Run 20 recorded: e25fd3e staging-green; live chain accepted on the staging stand | 9/10 + demo 3/3; prod VPN blocks T1 |
+| 335 | 2026-11-03 02:12Z | SA-26 requests: synchronous compose preconditions, office run_id, step events; sm breakpoint in px | web 360 green, clippy clean |

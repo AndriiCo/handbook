@@ -21,7 +21,10 @@
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 @theme {
-	/* Repo breakpoints (720 / 1080 / 1440), not Tailwind's 768/1024/1280. */
+	/* Repo breakpoints (720 / 1080 / 1440), not Tailwind's 768/1024/1280.
+	   `sm` restated in px: Tailwind orders breakpoints by value only when
+	   they share a unit; the default 40rem sorted sm: after lg:/xl:. */
+	--breakpoint-sm: 640px;
 	--breakpoint-md: 720px;
 	--breakpoint-lg: 1080px;
 	--breakpoint-xl: 1440px;
