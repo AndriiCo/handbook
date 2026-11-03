@@ -1,7 +1,8 @@
 //! Eval harness (A5): deterministic draft-quality grading on the gold set.
 //!
-//! `xtask eval [--live] [--planted] [--store <path>]`: for every case
-//! `evals/authorities/*.json`, draft records from the case evidence and
+//! `xtask eval [--live] [--planted] [--store <path>] [--prompt v1|v2]`:
+//! for every case in `evals/authorities/*.json`, draft records from the
+//! case evidence and
 //! score the deterministic tier — quote found (sliceable, >= 8 chars),
 //! value inside quote, topic match — each computed on its own, never
 //! gated on the others. No database writes: grading calls
@@ -124,16 +125,33 @@ pub fn run(args: &[String]) {
     };
     let cases = load_gold(&gold_dir);
 
+    // Prompt generation under test: `--prompt v2` drafts every case
+    // with `aa-prompt-v2`; anything else (default) stays on v1, and
+    // an unknown value fails fast instead of grading the wrong prompt.
+    let prompt_flag = flag(args, "prompt");
+    let prompt_version: &'static str = match prompt_flag.as_deref() {
+        None | Some("v1") => handbook_agent::runner::PROMPT_VERSION,
+        Some("v2") => handbook_agent::model::PROMPT_VERSION_V2,
+        Some(other) => {
+            eprintln!("eval: unknown --prompt {other:?} (want v1 or v2)");
+            std::process::exit(1);
+        }
+    };
+
     let mut tallies = Tallies::default();
+    let mut input_tokens: u64 = 0;
+    let mut output_tokens: u64 = 0;
+    let mut latency_ms: u64 = 0;
     for case in &cases {
         let req = DraftRequest {
             authority_slug: case.authority.clone(),
-            prompt_version: handbook_agent::runner::PROMPT_VERSION,
+            prompt_version,
             input_text: case.evidence.clone(),
             max_records: handbook_agent::runner::DEFAULT_MAX_RECORDS,
             capture_id: handbook_agent::runner::UNATTRIBUTED_CAPTURE_ID,
             doc_ids: vec!["gold".to_string()],
         };
+        let started = std::time::Instant::now();
         let resp = match client.draft_records(&req) {
             Ok(resp) => resp,
             Err(e) => {
@@ -141,6 +159,9 @@ pub fn run(args: &[String]) {
                 std::process::exit(1);
             }
         };
+        latency_ms += started.elapsed().as_millis() as u64;
+        input_tokens += u64::from(resp.usage.input_tokens);
+        output_tokens += u64::from(resp.usage.output_tokens);
         score_records(&resp.records, &case.evidence, &case.topic, &mut tallies);
     }
 
@@ -183,9 +204,13 @@ pub fn run(args: &[String]) {
         "value_in_quote_rate": rate(tallies.value_in_quote),
         "topic_accuracy": rate(tallies.topic_match),
         "model": model,
+        "prompt": prompt_version,
         "drafted_total": tallies.drafted,
         "planted": planted_json,
         "misses": misses_json,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "latency_ms": latency_ms,
     });
     let dest = store.root().join("quality.json");
     if let Err(e) = std::fs::create_dir_all(store.root())
@@ -199,13 +224,17 @@ pub fn run(args: &[String]) {
         std::process::exit(1);
     }
     println!(
-        "eval: cases={} drafted={} quote_found_rate={:.3} value_in_quote_rate={:.3} topic_accuracy={:.3} model={} -> {}",
+        "eval: cases={} drafted={} quote_found_rate={:.3} value_in_quote_rate={:.3} topic_accuracy={:.3} model={} prompt={} input_tokens={} output_tokens={} latency_ms={} -> {}",
         cases.len(),
         tallies.drafted,
         rate(tallies.quote_found),
         rate(tallies.value_in_quote),
         rate(tallies.topic_match),
         model,
+        prompt_version,
+        input_tokens,
+        output_tokens,
+        latency_ms,
         dest.display()
     );
 }
