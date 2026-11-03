@@ -1,4 +1,4 @@
-# Operator — MISSION WIN (updated Mon 11-02 ~21:55 PST)
+# Operator — MISSION WIN (updated Tue 11-03 ~05:45 PST)
 
 Plan: `docs/ops/mission-win.md` (you approved it 11-02). Production is
 still `0.1.0+4dcd234`. On `main` since (all plant-gated green so far):
@@ -20,6 +20,34 @@ still `0.1.0+4dcd234`. On `main` since (all plant-gated green so far):
 Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
 
 ## Open now, in order
+
+**Approvals fail in production ("csrf check failed", Workers "session
+expired") — workaround today, fix on main.** Production advertises
+HTTP/3 (`alt-svc: h3`). Over HTTP/3, Chrome sends one `cookie` line per
+cookie and the server read only the first, so the session cookie and the
+CSRF cookie never arrived on the same request. P356 joins the lines (RFC
+9114 §4.2.1); it ships with the next deploy. Until then, approve over
+HTTP/1.1: in Chrome open `chrome://flags/#enable-quic`, set **Disabled**,
+relaunch, then use admin `/review` as usual (Firefox:
+`about:config` → `network.http.http3.enable` = false). Re-enable after
+the deploy.
+
+**Deploy decision (yours).** AGENTS.md §7 still says no deploys from Tue
+11-03 00:00 PST; your verbal extension to Wed 11-04 ~09:00 is not in the
+file. Commit the step-0 edit (or tell the builder "deploy") to ship
+P356-P363: the HTTP/3 cookie fix, clean capture text (scripts dropped;
+a Retry re-captures an unchanged page), bulk accept/reject per
+authority, First source (open questions, contacts, email outreach with
+reply threading), readable dossier addresses (`/authority/usa/washington`,
+`/authority/us/wa`, county paths), and the admin config/workers/calls
+screens. Default if you say nothing: no deploy; everything stays on main
+and staging.
+
+**After the deploy:** in admin Workers, press Retry on the Viet Nam MOFA
+capture (its old text is the portal's script blob); the new capture has
+the page text. Set `mailer.provider` in `/config` before sending outreach
+email (staging uses the file mailer).
+
 
 **T2b DEPLOYED (~21:50 PST):** production runs `0.1.0+78a9ca2`
 (previous `39b8430`; kept `39b8430`, `cfb625b`; pruned `e25fd3e`). Flags
