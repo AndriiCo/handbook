@@ -253,3 +253,4 @@
 | 344 | 2026-11-03 03:20Z | Review #35: staff upload parses PDFs on the blocking pool | web 373 green |
 | 345 | 2026-11-03 03:25Z | J2: cargo xtask judge/up --port-base N (public N, admin N+1) | xtask 148 green, clippy clean |
 | 346 | 2026-11-03 03:32Z | T2 deploy: 39b8430 (review fixes P339-P344) to production | prod 5/10 → 5/10, no regressions; flags announced |
+| 347 | 2026-11-03 03:45Z | J2: recorded Muse Spark replay for keyless judge boots (analyze, eval, staff draft) | agent+xtask+web green, clippy clean |

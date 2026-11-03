@@ -33,12 +33,16 @@ authorities and setup endpoints, and exits (what CI runs).
 
 ## Five minutes
 1. Public home: press ⌘K and search "Washington".
-2. Open the dossier: every fact shows its quote, source and capture date
-   one tap away.
-3. Staff console: http://localhost:18319 (sidebar: Review, Trace,
-   Workers, Config; the badge says `judge`).
-4. Review: accept a drafted fact. The public dossier updates live over
-   the `authority:{slug}` WebSocket, without a reload.
+2. Staff console: open http://localhost:18319/config, paste the setup
+   key the command printed (it prints once), and enrol a passkey
+   (Chrome and Safari allow passkeys on localhost). The badge says
+   `judge`.
+3. Review: every Muse Spark draft shows the quote it came from. Keep
+   the Washington dossier open in another tab and accept a few: the
+   dossier updates live over the `authority:{slug}` WebSocket, with no
+   reload. Nothing is public until a person accepts it.
+4. The dossier: every accepted fact shows its quote, source and capture
+   date one tap away.
 5. Trace: "Draft from this capture" streams a model run with its tokens
    and latency.
 

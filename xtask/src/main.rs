@@ -114,8 +114,8 @@ Tasks:
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
   web-budget  report web/build JS+CSS size (advisory, no gate)
   serve       run the dev API server (cargo run -p web)
-  analyze     draft proposed facts for an authority (stub default, --live for Meta API)
-  eval        grade drafts on evals/authorities/*.json [--live] [--store <path>] [--evals <dir>] (writes quality.json)
+  analyze     draft proposed facts for an authority (stub default, --live for Meta API, --live --record <corpus>, --replay <corpus>)
+  eval        grade drafts on evals/authorities/*.json [--live [--record <corpus>]] [--replay <corpus>] [--store <path>] [--evals <dir>] (writes quality.json)
   fetch-url   fetch one URL into a warc capture (thin watch)
   fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
   atlas  run an Atlas task pack: --config <pack> --task <name> [--effort --model --protocol --out --refresh --limit --live --dry-run --run-id --pdf-tool]; --batch-poll <job>; --check
@@ -448,7 +448,6 @@ fn run_serve() {
 }
 
 fn run_analyze(args: &[String]) {
-    use handbook_agent::model::StubClient;
     use std::collections::HashMap;
 
     let store = open_store(args);
@@ -477,11 +476,7 @@ fn run_analyze(args: &[String]) {
     // Stub default (offline-safe); --live drafts via the Meta Model
     // API. The stub cites doc_id "fixture", so the CLI evidence IS
     // the fixture text in both modes.
-    let client: Box<dyn contracts::model::ModelClient> = if args.iter().any(|a| a == "--live") {
-        Box::new(live_client(&conn))
-    } else {
-        Box::new(StubClient)
-    };
+    let client = draft_client(args, || live_client(&conn));
     let mut sources = HashMap::new();
     sources.insert("fixture".to_string(), input.clone());
     let req = handbook_agent::runner::RunRequest {
@@ -511,6 +506,48 @@ fn run_analyze(args: &[String]) {
             eprintln!("analyze: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+/// Drafting client for `analyze` and `eval`. `--replay <corpus>`
+/// serves recorded Muse Spark responses offline (`cargo xtask judge`;
+/// a request with no recording drafts nothing); `--live` drafts via
+/// the Meta Model API, and `--live --record <corpus>` also appends
+/// every response to a replay corpus; otherwise the offline stub.
+pub(crate) fn draft_client(
+    args: &[String],
+    live: impl FnOnce() -> handbook_agent::model::MetaRestClient,
+) -> Box<dyn contracts::model::ModelClient> {
+    let is_live = args.iter().any(|a| a == "--live");
+    let record = flag(args, "record");
+    if let Some(corpus) = flag(args, "replay") {
+        if is_live || record.is_some() {
+            eprintln!("--replay is offline; it cannot combine with --live or --record");
+            std::process::exit(2);
+        }
+        let client =
+            handbook_agent::replay::ReplayClient::load(std::path::Path::new(&corpus), false)
+                .unwrap_or_else(|e| {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                });
+        eprintln!(
+            "replay: {} recorded muse-spark-1.3 responses from {corpus}",
+            client.len()
+        );
+        return Box::new(client);
+    }
+    match (is_live, record) {
+        (true, Some(corpus)) => Box::new(handbook_agent::replay::Recorder::new(
+            live(),
+            std::path::PathBuf::from(corpus),
+        )),
+        (true, None) => Box::new(live()),
+        (false, Some(_)) => {
+            eprintln!("--record needs --live (it records live responses)");
+            std::process::exit(2);
+        }
+        (false, None) => Box::new(handbook_agent::model::StubClient),
     }
 }
 
@@ -576,14 +613,9 @@ fn run_analyze_scan(
     store: &handbook_store::store::Store,
     args: &[String],
 ) {
-    use handbook_agent::model::StubClient;
     use std::collections::HashMap;
 
-    let client: Box<dyn contracts::model::ModelClient> = if args.iter().any(|a| a == "--live") {
-        Box::new(live_client(conn))
-    } else {
-        Box::new(StubClient)
-    };
+    let client = draft_client(args, || live_client(conn));
     let slug = required(args, "slug");
     let lang = flag(args, "lang").unwrap_or_else(|| "en".to_string());
     let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());

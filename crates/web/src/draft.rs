@@ -256,6 +256,7 @@ pub async fn draft_capture(
         capture_id,
         slug,
         text,
+        replay: replay_corpus(&state),
     };
     tokio::spawn(async move { task.run().await });
     (
@@ -400,6 +401,28 @@ struct DraftTask {
     capture_id: i64,
     slug: String,
     text: String,
+    /// Recorded-response corpus for keyless local boots (see
+    /// [`replay_corpus`]); `None` everywhere else.
+    replay: Option<std::path::PathBuf>,
+}
+
+/// `APOSTILLE_REPLAY` (set by `cargo xtask up`/`judge`), honored only
+/// under the `admin.mtls_off` dev seam — which a release binary accepts
+/// only with every bind on loopback — so production never replays.
+fn replay_corpus(state: &AppState) -> Option<std::path::PathBuf> {
+    replay_corpus_from(state.admin_mtls_off, std::env::var_os("APOSTILLE_REPLAY"))
+}
+
+/// Pure core of [`replay_corpus`] (env passed in, so tests need no
+/// process-global `set_var`).
+fn replay_corpus_from(
+    dev_seam: bool,
+    env: Option<std::ffi::OsString>,
+) -> Option<std::path::PathBuf> {
+    if !dev_seam {
+        return None;
+    }
+    env.filter(|v| !v.is_empty()).map(std::path::PathBuf::from)
 }
 
 /// One step event onto `run:{id}`: envelope first, then the step body.
@@ -501,12 +524,26 @@ impl DraftTask {
             })
             .unwrap_or(0);
         // M1: every HTTP attempt lands in `model_call` (trace latency,
-        // daily cap, dashboard tiles).
-        let client = live_client(&conn, self.kek.as_deref())?.with_observer(
-            crate::telemetry::DbObserver::new(self.store_root.clone()),
-            "draft",
-            Some(self.run_id),
-        );
+        // daily cap, dashboard tiles). With no key on a local boot, the
+        // recorded corpus answers instead (labelled as recorded).
+        let (client, model): (Box<dyn ModelClient>, String) =
+            match (live_client(&conn, self.kek.as_deref()), &self.replay) {
+                (Ok(live), _) => {
+                    let live = live.with_observer(
+                        crate::telemetry::DbObserver::new(self.store_root.clone()),
+                        "draft",
+                        Some(self.run_id),
+                    );
+                    let id = live.model_id().to_string();
+                    (Box::new(live), id)
+                }
+                (Err(_), Some(corpus)) => {
+                    let replay = handbook_agent::replay::ReplayClient::load(corpus, true)?;
+                    let id = format!("{} (recorded)", handbook_agent::replay::REPLAY_MODEL);
+                    (Box::new(replay), id)
+                }
+                (Err(e), None) => return Err(e),
+            };
         let mut sources = HashMap::new();
         sources.insert("fixture".to_string(), self.text.clone());
         let req = handbook_agent::runner::RunRequest {
@@ -520,16 +557,12 @@ impl DraftTask {
             at: unix_now(),
             capture_id: self.capture_id,
         };
-        let report = handbook_agent::runner::run_analysis(
-            &conn,
-            &client as &dyn contracts::model::ModelClient,
-            &req,
-        )
-        .map_err(|e| {
-            // `ModelError` display strings are static client/DB
-            // failure labels — no key material flows through here.
-            format!("draft failed: {e}")
-        })?;
+        let report =
+            handbook_agent::runner::run_analysis(&conn, client.as_ref(), &req).map_err(|e| {
+                // `ModelError` display strings are static client/DB
+                // failure labels — no key material flows through here.
+                format!("draft failed: {e}")
+            })?;
         let mut inserted = conn
             .prepare("SELECT id FROM fact WHERE id > ?1 AND status = 'proposed' ORDER BY id")
             .map_err(|e| format!("store unavailable: {e}"))?;
@@ -541,7 +574,7 @@ impl DraftTask {
         Ok(DraftOutcome {
             proposed: report.proposed,
             rejected: report.rejected,
-            model: client.model_id().to_string(),
+            model,
             input_tokens: report.usage.input_tokens,
             output_tokens: report.usage.output_tokens,
             cached_tokens: report.usage.cached_tokens,
@@ -624,6 +657,22 @@ pub(crate) fn live_client(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn replay_only_under_the_dev_seam() {
+        let corpus = || Some(std::ffi::OsString::from("/tmp/drafts-spark.jsonl"));
+        assert_eq!(replay_corpus_from(false, corpus()), None);
+        assert_eq!(
+            replay_corpus_from(true, corpus()),
+            Some(std::path::PathBuf::from("/tmp/drafts-spark.jsonl"))
+        );
+        assert_eq!(
+            replay_corpus_from(true, Some(std::ffi::OsString::new())),
+            None
+        );
+        assert_eq!(replay_corpus_from(true, None), None);
+    }
+
     use super::*;
 
     fn finished_outcome() -> DraftOutcome {

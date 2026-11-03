@@ -170,11 +170,14 @@ pub fn print_tour(public_port: u16, admin_port: u16) {
     println!();
     println!("judge tour (5 minutes; details in docs/judges.md):");
     println!("  1. http://localhost:{public_port}/apostille — press ⌘K, search \"Washington\"");
-    println!("  2. open a dossier: every fact shows its quote, source and date one tap away");
-    println!("  3. http://localhost:{admin_port}/ — the staff console (Review, Trace, Workers)");
     println!(
-        "  4. Review: accept a Muse Spark draft; the public dossier updates live over WebSocket"
+        "  2. http://localhost:{admin_port}/config — paste the setup key above, enrol a passkey"
     );
+    println!(
+        "  3. Review: each Muse Spark draft shows its quote; accept a few with the dossier open in"
+    );
+    println!("     another tab — it updates live over WebSocket, no reload");
+    println!("  4. the dossier: every accepted fact shows its quote, source and date one tap away");
     println!(
         "  5. Trace: \"Draft from this capture\" streams a model run (recorded unless --live)"
     );

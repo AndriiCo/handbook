@@ -1,18 +1,22 @@
-//! One-command local boot: `cargo xtask up [--live] [--fresh] [--check]`.
+//! One-command local boot: `cargo xtask up [--live | --record <corpus>] [--fresh] [--check]`.
 //!
 //! Brings a fresh checkout to a running handbook on loopback: checks the
 //! pinned toolchains, installs the web dependencies (skipped when the
 //! lockfile is unchanged), builds both SPAs, builds the release
 //! binaries, enrolls a file KEK with a DEV CRYPTO banner, seals the
 //! loopback config, loads every pack, ingests one capture per gold case
-//! from `evals/authorities/*.json` (synthetic evidence) plus one
-//! stub-fixture capture per authority, and drafts proposals with
-//! `analyze --scan-captures`, installs the recorded A2 verdicts,
-//! grades `eval` into `quality.json`, mints the setup key, then serves
-//! the release `web` binary in the foreground.
+//! from `evals/authorities/*.json` (synthetic evidence), and drafts
+//! proposals with `analyze --scan-captures` from the recorded
+//! `muse-spark-1.3` responses in `evals/replay/drafts-spark.jsonl` (no
+//! key needed; without that corpus, the offline stub plus one
+//! stub-fixture capture per authority), installs the recorded A2
+//! verdicts, grades `eval` into `quality.json`, mints the setup key,
+//! then serves the release `web` binary in the foreground.
 //!
 //! `--live` swaps the synthetic captures for `fetch-slug` runs and
 //! drafts/scores through the Meta Model API (`META_API_KEY`).
+//! `--record <corpus>` drafts the synthetic captures live and appends
+//! every response to the corpus (how `drafts-spark.jsonl` is made).
 //! `--fresh` wipes `.local/` first. `--check` boots, probes the health,
 //! authorities, and setup-status endpoints, then exits without serving.
 //! `--from-archive <url|dir> [--country ISO2]` additionally imports
@@ -36,6 +40,11 @@ const NCI_HASH_FILE: &str = ".local/.npm-ci-hash";
 /// Default ports match the staging runbook (operator forwards these
 /// over SSH); `--port-base N` serves public on N and admin on N+1.
 const DEFAULT_PORT_BASE: u16 = 18318;
+/// Recorded `muse-spark-1.3` drafts for the synthetic gold captures:
+/// every keyless boot replays them (analyze, eval and the staff
+/// "Draft from this capture"), and `--record` rewrites them on a
+/// machine with a Meta key.
+const REPLAY_CORPUS: &str = "evals/replay/drafts-spark.jsonl";
 /// Synthetic A2 verdicts committed for local boots.
 const VERDICTS_SRC: &str = "evals/captures/demo_precheck";
 
@@ -51,6 +60,50 @@ pub fn set_env_label(label: &'static str) {
 fn env_label() -> &'static str {
     ENV_LABEL.get().copied().unwrap_or("local")
 }
+
+/// Who drafts the proposals on this boot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Drafting {
+    /// Offline stub (no corpus checked out).
+    Stub,
+    /// Recorded Muse Spark responses from [`REPLAY_CORPUS`].
+    Replay,
+    /// Synthetic captures drafted live, each response appended here.
+    Record(String),
+    /// `fetch-slug` captures drafted live.
+    Live,
+}
+
+impl Drafting {
+    /// The `analyze`/`eval` flags for this mode.
+    fn flags(&self) -> Vec<String> {
+        match self {
+            Drafting::Stub => vec![],
+            Drafting::Replay => vec!["--replay".to_string(), REPLAY_CORPUS.to_string()],
+            Drafting::Record(path) => {
+                vec!["--live".to_string(), "--record".to_string(), path.clone()]
+            }
+            Drafting::Live => vec!["--live".to_string()],
+        }
+    }
+}
+
+fn drafting_mode(
+    live: bool,
+    record: Option<String>,
+    corpus_present: bool,
+) -> Result<Drafting, String> {
+    match (live, record) {
+        (true, Some(_)) => Err("--record drafts the synthetic captures; drop --live".to_string()),
+        (true, None) => Ok(Drafting::Live),
+        (false, Some(path)) => Ok(Drafting::Record(path)),
+        (false, None) if corpus_present => Ok(Drafting::Replay),
+        (false, None) => Ok(Drafting::Stub),
+    }
+}
+
+/// This boot's drafting mode, set once in [`run`] (read by [`web_env`]).
+static DRAFTING: std::sync::OnceLock<Drafting> = std::sync::OnceLock::new();
 
 /// Public port; admin is the next one (`--port-base`, first set wins).
 static PORT_BASE: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
@@ -86,6 +139,20 @@ pub fn run(args: &[String]) {
     let archive = archive_arg(args).unwrap_or_else(|| usage());
     check_flags(args);
     apply_port_base(args).unwrap_or_else(|e| fail(&e));
+    let record = args
+        .iter()
+        .position(|a| a == "--record")
+        .map(|i| args.get(i + 1).cloned().unwrap_or_else(|| usage()));
+    let drafting =
+        drafting_mode(live, record, Path::new(REPLAY_CORPUS).exists()).unwrap_or_else(|e| fail(&e));
+    if matches!(drafting, Drafting::Record(_))
+        && std::env::var("META_API_KEY")
+            .map(|k| k.is_empty())
+            .unwrap_or(true)
+    {
+        fail("--record drafts live: set META_API_KEY in the environment");
+    }
+    let _ = DRAFTING.set(drafting.clone());
     assert_repo_root();
     check_toolchain();
     if fresh && Path::new(".local").exists() {
@@ -121,7 +188,19 @@ pub fn run(args: &[String]) {
             );
         }
     } else {
-        seed_captures(&slugs);
+        // The stub-fixture capture exists only for the offline stub.
+        seed_captures(&slugs, drafting == Drafting::Stub);
+    }
+    if let Drafting::Record(path) = &drafting {
+        if let Some(dir) = Path::new(path)
+            .parent()
+            .filter(|d| !d.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(dir)
+                .unwrap_or_else(|e| fail(&format!("mkdir {}: {e}", dir.display())));
+        }
+        std::fs::write(path, "").unwrap_or_else(|e| fail(&format!("reset {path}: {e}")));
+        println!("up: --record: drafting live; every response goes to {path}");
     }
     if let Some((src, country)) = &archive {
         import_from_archive(src, country.as_deref());
@@ -135,16 +214,18 @@ pub fn run(args: &[String]) {
             slug.to_string(),
             "--scan-captures".to_string(),
         ];
-        if live {
-            step.push("--live".to_string());
-        }
+        step.extend(drafting.flags());
         xtask_cmd_ref(&xtask, &step);
     }
     install_verdicts();
-    if live {
-        xtask_cmd(&xtask, &["eval", "--store", STORE_DIR, "--live"]);
-    } else {
-        xtask_cmd(&xtask, &["eval", "--store", STORE_DIR]);
+    let mut eval = vec![
+        "eval".to_string(),
+        "--store".to_string(),
+        STORE_DIR.to_string(),
+    ];
+    eval.extend(drafting.flags());
+    xtask_cmd_ref(&xtask, &eval);
+    if drafting == Drafting::Stub {
         install_recorded_quality();
     }
     let setup_key = setup_key_mint(&xtask);
@@ -163,7 +244,7 @@ pub fn run(args: &[String]) {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo xtask up [--live] [--fresh] [--check] [--port-base N] [--from-archive <url|dir> [--country ISO2]]"
+        "usage: cargo xtask up [--live | --record <corpus>] [--fresh] [--check] [--port-base N] [--from-archive <url|dir> [--country ISO2]]"
     );
     std::process::exit(2);
 }
@@ -203,7 +284,7 @@ fn archive_arg(args: &[String]) -> Option<Option<(String, Option<String>)>> {
 }
 
 fn check_flags(args: &[String]) {
-    const VALUE_FLAGS: [&str; 3] = ["--from-archive", "--country", "--port-base"];
+    const VALUE_FLAGS: [&str; 4] = ["--from-archive", "--country", "--port-base", "--record"];
     let mut skip_next = false;
     for arg in args {
         if skip_next {
@@ -557,7 +638,7 @@ const STUB_FIXTURE_EVIDENCE: &str = "Local handbook fixture (synthetic): the off
 /// storable and `/review` would stay empty. The fixture text carries
 /// both values verbatim (the citation checker demands it) and is
 /// labeled synthetic in its origin.
-fn seed_captures(slugs: &[String]) {
+fn seed_captures(slugs: &[String], stub_fixture: bool) {
     let store = handbook_store::store::Store::new(STORE_DIR);
     let conn =
         handbook_store::db::open(&store).unwrap_or_else(|e| fail(&format!("open store: {e}")));
@@ -578,6 +659,9 @@ fn seed_captures(slugs: &[String]) {
                 &mut created,
                 &mut dupes,
             );
+        }
+        if !stub_fixture {
+            continue;
         }
         ingest_one(
             &conn,
@@ -1164,11 +1248,19 @@ fn staff_review_link(
 /// checks the sealed binds — loopback here, so it boots.
 fn web_env() -> Vec<(String, String)> {
     let raw = std::fs::read(KEK_FILE).unwrap_or_else(|e| fail(&format!("read {KEK_FILE}: {e}")));
-    vec![
+    let mut env = vec![
         ("STORE_DIR".to_string(), STORE_DIR.to_string()),
         ("HANDBOOK_DEV_KEK".to_string(), format!("dev:{}", hex(&raw))),
         ("APOSTILLE_ENV_LABEL".to_string(), env_label().to_string()),
-    ]
+    ];
+    // The staff "Draft from this capture" replays the corpus too (the
+    // server honors it only under the loopback dev seam).
+    if DRAFTING.get() == Some(&Drafting::Replay)
+        && let Ok(abs) = std::fs::canonicalize(REPLAY_CORPUS)
+    {
+        env.push(("APOSTILLE_REPLAY".to_string(), abs.display().to_string()));
+    }
+    env
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -1579,6 +1671,17 @@ mod tests {
         );
         assert!(staff_review_link(lan, None, 18319).is_err());
         assert!(staff_review_link(loopback, Some(lan), 18319).is_err());
+    }
+
+    #[test]
+    fn drafting_replays_by_default_and_records_only_synthetic() {
+        assert_eq!(drafting_mode(false, None, true), Ok(Drafting::Replay));
+        assert_eq!(drafting_mode(false, None, false), Ok(Drafting::Stub));
+        assert_eq!(drafting_mode(true, None, true), Ok(Drafting::Live));
+        assert!(drafting_mode(true, Some("c.jsonl".into()), true).is_err());
+        let rec = drafting_mode(false, Some("c.jsonl".into()), true).unwrap();
+        assert_eq!(rec.flags(), ["--live", "--record", "c.jsonl"]);
+        assert_eq!(Drafting::Replay.flags(), ["--replay", REPLAY_CORPUS]);
     }
 
     #[test]

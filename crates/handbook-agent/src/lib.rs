@@ -4,4 +4,5 @@
 
 pub mod analyze;
 pub mod model;
+pub mod replay;
 pub mod runner;

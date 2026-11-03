@@ -1,6 +1,6 @@
 //! Eval harness (A5): deterministic draft-quality grading on the gold set.
 //!
-//! `xtask eval [--live] [--planted] [--store <path>] [--prompt v1|v2]`:
+//! `xtask eval [--live [--record <corpus>]] [--replay <corpus>] [--planted] [--store <path>] [--prompt v1|v2]`:
 //! for every case in `evals/authorities/*.json`, draft records from the
 //! case evidence and
 //! score the deterministic tier — quote found (sliceable, >= 8 chars),
@@ -25,7 +25,6 @@ use contracts::model::{
     CitationRef, DraftRequest, DraftResponse, ModelClient, ProposedRecord, Usage,
 };
 use handbook_agent::analyze::{MIN_QUOTE_CHARS, ValidationErrorKind, normalize, validate_response};
-use handbook_agent::model::StubClient;
 
 use crate::{flag, open_store, unix_now};
 
@@ -94,18 +93,15 @@ fn load_gold(dir: &std::path::Path) -> Vec<GoldCase> {
 
 /// CLI entry: grade, print the audit line, write `quality.json`.
 pub fn run(args: &[String]) {
-    let live = args.iter().any(|a| a == "--live");
     let store = open_store(args);
-    let client: Box<dyn ModelClient> = if live {
+    let client: Box<dyn ModelClient> = crate::draft_client(args, || {
         let conn = crate::open_db(&store);
         if let Err(e) = handbook_store::db::migrate(&conn) {
             eprintln!("eval: migrate: {e}");
             std::process::exit(1);
         }
-        Box::new(crate::live_client(&conn))
-    } else {
-        Box::new(StubClient)
-    };
+        crate::live_client(&conn)
+    });
     let model = client.model_id().to_string();
     // Gold lives at the workspace root; xtask's own manifest dir is one
     // level down, so prefer the caller's working directory.
