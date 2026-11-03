@@ -235,3 +235,4 @@
 | 326 | 2026-11-03 01:08Z | M2 live proof harness: ignored plan::live test runs compose on a scratch store copy | local: 6 pass, 1 ignored; clippy clean |
 | 327 | 2026-11-03 01:16Z | O1 (SA-23, builder): OfficeSetV1 offices + guards + accept; M2 live proof recorded | 3 live composes, p50 20.4s p95 64.8s; web 350 green |
 | 328 | 2026-11-03 01:21Z | Staging accept found GP4 red on a cold load: stepper now renders while the index loads; O1 live recorded | check, tailwind, shots /order, demo 3/3 |
+| 338 | 2026-11-03 02:42Z | Hotfix (review #0 critical): non-ASCII ZIP / address text aborted the process; overflow-safe hours | web 352 green, clippy clean |
