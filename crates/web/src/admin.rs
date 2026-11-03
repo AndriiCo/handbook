@@ -353,6 +353,7 @@ pub fn router(state: AppState) -> Router {
             "/apostille/api/v1/facts/{id}/reject",
             post(approval::reject_fact),
         )
+        .route("/apostille/api/v1/facts/bulk", post(approval::bulk_decide))
         .route(
             "/apostille/api/v1/facts/{id}/translate",
             post(crate::translate::translate_fact),

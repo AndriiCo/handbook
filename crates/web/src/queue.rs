@@ -866,6 +866,10 @@ mod tests {
                 post(crate::approval::reject_fact),
             )
             .route(
+                "/apostille/api/v1/facts/bulk",
+                post(crate::approval::bulk_decide),
+            )
+            .route(
                 "/apostille/api/v1/suppress-rules",
                 get(list_rules).post(create_rule),
             )
@@ -1060,6 +1064,179 @@ mod tests {
         let (status, v) = json(res).await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(v["error"], "edited value not in citation quote");
+    }
+
+    /// A second cited proposal (fact 3, topic `po_box`, no published
+    /// sibling) next to fixture fact 1 (which changes a published fact).
+    fn add_second_proposal(fx: &Fixture) {
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement, status, created_at,
+                              citation_start, citation_end)
+             VALUES (1, 1, 'po_box', 'po_box: PO Box 40234', 'proposed', 0, 0, 12)",
+            [],
+        )
+        .unwrap();
+    }
+
+    fn statuses(fx: &Fixture) -> Vec<(i64, String)> {
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, status FROM fact WHERE id IN (1, 3) ORDER BY id")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn bulk_accept_is_one_decision_and_one_live_event() {
+        let fx = fixture();
+        add_second_proposal(&fx);
+        let mut live = fx.state.bus.subscribe("authority:t-sos");
+        let uri = "/apostille/api/v1/facts/bulk";
+
+        // require_verified refuses fact 1 (it changes a published fact):
+        // the whole batch is refused and nothing changes.
+        let res = router(fx.state.clone())
+            .oneshot(request(
+                "POST",
+                uri,
+                Some(
+                    json!({"decision": "accept", "authority": "t-sos", "ids": [1, 3],
+                            "require_verified": true}),
+                ),
+            ))
+            .await
+            .unwrap();
+        let (status, v) = json(res).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(v["results"][0]["ok"], false);
+        assert_eq!(v["results"][1]["ok"], true);
+        assert_eq!(
+            statuses(&fx),
+            [(1, "proposed".into()), (3, "proposed".into())]
+        );
+        assert!(live.try_recv().is_err());
+
+        let res = router(fx.state.clone())
+            .oneshot(request(
+                "POST",
+                uri,
+                Some(json!({"decision": "accept", "authority": "t-sos", "ids": [1, 3]})),
+            ))
+            .await
+            .unwrap();
+        let (status, v) = json(res).await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        assert_eq!(v["count"], 2);
+        assert_eq!(
+            statuses(&fx),
+            [(1, "accepted".into()), (3, "accepted".into())]
+        );
+        let event: serde_json::Value = serde_json::from_str(&live.try_recv().unwrap()).unwrap();
+        assert_eq!(event["type"], "fact_accepted");
+        assert_eq!(event["fact_ids"], json!([1, 3]));
+        assert!(live.try_recv().is_err(), "one event per batch");
+
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        let per_fact: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'fact_accept' AND entity = 'fact'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let header: String = conn
+            .query_row(
+                "SELECT after_ref FROM audit WHERE action = 'fact_bulk_accept'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(per_fact, 2);
+        assert_eq!(header, "ids:1,3");
+    }
+
+    #[tokio::test]
+    async fn bulk_with_a_decided_fact_is_409_and_changes_nothing() {
+        let fx = fixture();
+        add_second_proposal(&fx);
+        let res = router(fx.state.clone())
+            .oneshot(request(
+                "POST",
+                "/apostille/api/v1/facts/3/accept",
+                Some(json!({})),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let res = router(fx.state.clone())
+            .oneshot(request(
+                "POST",
+                "/apostille/api/v1/facts/bulk",
+                Some(
+                    json!({"decision": "reject", "authority": "t-sos", "ids": [1, 3],
+                            "reason": "duplicates"}),
+                ),
+            ))
+            .await
+            .unwrap();
+        let (status, v) = json(res).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(v["results"][1]["error"], "fact is not proposed");
+        assert_eq!(
+            statuses(&fx),
+            [(1, "proposed".into()), (3, "accepted".into())]
+        );
+    }
+
+    #[tokio::test]
+    async fn bulk_bodies_are_validated() {
+        let fx = fixture();
+        let many: Vec<i64> = (1..=101).collect();
+        for (body, status, error) in [
+            (
+                json!({"decision": "reject", "authority": "t-sos", "ids": [1]}),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "reason required (1-1024 chars)",
+            ),
+            (
+                json!({"decision": "accept", "authority": "t-sos", "ids": [1, 1]}),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "ids must be distinct positive fact ids",
+            ),
+            (
+                json!({"decision": "accept", "authority": "t-sos", "ids": many}),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "ids must hold 1-100 fact ids",
+            ),
+            (
+                json!({"decision": "accept", "authority": "t-sos", "ids": [1],
+                       "suppress": {"scope": "global"}}),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "suppress is reject-only",
+            ),
+            (
+                json!({"decision": "maybe", "authority": "t-sos", "ids": [1]}),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "decision must be accept or reject",
+            ),
+            (
+                json!({"decision": "accept", "authority": "nope", "ids": [1]}),
+                StatusCode::NOT_FOUND,
+                "unknown authority",
+            ),
+        ] {
+            let res = router(fx.state.clone())
+                .oneshot(request("POST", "/apostille/api/v1/facts/bulk", Some(body)))
+                .await
+                .unwrap();
+            let (got, v) = json(res).await;
+            assert_eq!(got, status, "{v}");
+            assert_eq!(v["error"], error);
+        }
     }
 
     #[tokio::test]

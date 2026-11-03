@@ -139,13 +139,17 @@ fn build_message(
             .parse()
             .map_err(|_| flow::MailError::Transport("bad recipient".into()))?)
         .subject(subject);
-    // Closed header set: only the RFC 8058 pair passes; the values
-    // are mailbox/URL-shaped by construction at the call site.
+    // Closed header set: the RFC 8058 pair plus `Message-ID` (first-
+    // source outreach sets its own so the office's reply threads back
+    // to the draft); the values are mailbox/URL/id-shaped by
+    // construction at the call site.
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("List-Unsubscribe") {
             builder = builder.header(ListUnsubscribe(value.to_string()));
         } else if name.eq_ignore_ascii_case("List-Unsubscribe-Post") {
             builder = builder.header(ListUnsubscribePost(value.to_string()));
+        } else if name.eq_ignore_ascii_case("Message-ID") {
+            builder = builder.message_id(Some(value.to_string()));
         }
     }
     builder
@@ -230,6 +234,7 @@ impl FileMailer {
         for (name, value) in headers {
             if name.eq_ignore_ascii_case("List-Unsubscribe")
                 || name.eq_ignore_ascii_case("List-Unsubscribe-Post")
+                || name.eq_ignore_ascii_case("Message-ID")
             {
                 content.push_str(&format!("{name}: {value}\n"));
             }

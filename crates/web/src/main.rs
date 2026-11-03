@@ -26,6 +26,7 @@ mod demo_precheck;
 mod draft;
 mod factcheck;
 mod fedex_live;
+mod first_source;
 mod follow;
 mod forms_map;
 mod fulfilment;
@@ -456,6 +457,7 @@ fn migrate_mission_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     compile::migrate_tables(conn)?;
     factcheck::migrate_tables(conn)?;
     offices::migrate_tables(conn)?;
+    first_source::migrate_tables(conn)?;
     forms_map::migrate_tables(conn)
 }
 
@@ -513,6 +515,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(forms_map::admin_router(state.clone()))
         .merge(fulfilment::admin_router(state.clone()))
         .merge(admin_orders::admin_router(state.clone()))
+        .merge(first_source::admin_router(state.clone()))
 }
 
 /// Public router with explicit state (admin routes are NEVER here —
@@ -2560,6 +2563,8 @@ mod tests {
             "/apostille/api/v1/admin/offices",
             "/apostille/api/v1/admin/form-maps",
             "/apostille/api/v1/admin/fact-checks?slug=usa-wa-sos",
+            "/apostille/api/v1/admin/authorities",
+            "/apostille/api/v1/admin/first-source/emails",
         ] {
             let get = |host: &'static str, session: Option<&'static str>| {
                 admin_request("GET", uri, Some(host), session, None, None, None)

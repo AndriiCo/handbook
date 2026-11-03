@@ -464,6 +464,350 @@ pub async fn reject_fact(
     .await
 }
 
+/// Reject-with-suppress: adopt (or reuse) the matching live rule.
+/// Runs inside the caller's `BEGIN IMMEDIATE`, which serializes
+/// concurrent deciders, so check-then-insert cannot duplicate.
+fn adopt_suppress_rule(
+    conn: &Connection,
+    auth: &AdminAuth,
+    fact: &StoredFact,
+    sup: &SuppressBody,
+    reason: &str,
+    now: i64,
+) -> rusqlite::Result<(i64, bool)> {
+    let scope_authority = (sup.scope == "authority").then_some(fact.authority_id);
+    let topic = sup.lock_topic.unwrap_or(true).then(|| fact.topic.clone());
+    let norm = db::normalize_statement(&fact.statement);
+    let existing: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM suppress_rule
+             WHERE revoked_at IS NULL AND statement_norm = ?1
+               AND authority_id IS NOT DISTINCT FROM ?2
+               AND topic IS NOT DISTINCT FROM ?3
+             ORDER BY id LIMIT 1",
+            rusqlite::params![norm, scope_authority, topic],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(found) = existing {
+        return Ok((found, true));
+    }
+    conn.execute(
+        "INSERT INTO suppress_rule(authority_id, topic, statement_norm,
+                                   statement, reason, created_by, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![
+            scope_authority,
+            topic,
+            norm,
+            fact.statement,
+            reason,
+            auth.user.user_id,
+            now,
+        ],
+    )?;
+    let rule_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+         VALUES (?1, ?2, 'suppress_rule.create', 'suppress_rule', ?3, ?4)",
+        rusqlite::params![now, auth.user.user_id, rule_id, reason],
+    )?;
+    Ok((rule_id, false))
+}
+
+/// Most facts one bulk decision may cover.
+const MAX_BULK: usize = 100;
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BulkBody {
+    /// `accept` or `reject`.
+    pub decision: String,
+    /// Every id must belong to this authority slug.
+    pub authority: String,
+    pub ids: Vec<i64>,
+    /// Required (1-1024) for reject, optional for accept.
+    pub reason: Option<String>,
+    /// Reject-only: adopt a suppress rule per fact.
+    pub suppress: Option<SuppressBody>,
+    /// Accept-only: also refuse facts that change a published fact or
+    /// that the Wonder cross-check found contradicted.
+    #[serde(default)]
+    pub require_verified: bool,
+}
+
+fn unprocessable(msg: &str) -> axum::response::Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(json!({"error": msg})),
+    )
+        .into_response()
+}
+
+/// Latest Wonder verdict on a fact, tolerating a store without the
+/// `fact_check` table.
+fn latest_verdict(conn: &Connection, fact_id: i64) -> Option<String> {
+    conn.query_row(
+        "SELECT verdict FROM fact_check WHERE fact_id = ?1 ORDER BY id DESC LIMIT 1",
+        [fact_id],
+        |row| row.get(0),
+    )
+    .ok()
+}
+
+/// Accept or reject many proposed facts of ONE authority as one
+/// decision: a preflight over every id, then all-or-nothing inside a
+/// single `BEGIN IMMEDIATE`. Each fact keeps its own `fact_accept` /
+/// `fact_reject` audit row (notify and the dashboard read those), plus
+/// one `fact_bulk_*` header row; an accept publishes ONE
+/// `fact_accepted` event carrying every id, so open dossiers reload
+/// once per batch instead of once per fact.
+pub async fn bulk_decide(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    Json(body): Json<BulkBody>,
+) -> axum::response::Response {
+    let (to, action, header_action) = match body.decision.as_str() {
+        "accept" => ("accepted", "fact_accept", "fact_bulk_accept"),
+        "reject" => ("rejected", "fact_reject", "fact_bulk_reject"),
+        _ => return unprocessable("decision must be accept or reject"),
+    };
+    if body.ids.is_empty() || body.ids.len() > MAX_BULK {
+        return unprocessable("ids must hold 1-100 fact ids");
+    }
+    let mut seen = std::collections::HashSet::new();
+    if body.ids.iter().any(|id| *id <= 0 || !seen.insert(*id)) {
+        return unprocessable("ids must be distinct positive fact ids");
+    }
+    let reason = body.reason.as_deref().unwrap_or("").trim();
+    if reason.len() > 1024 {
+        return unprocessable("reason too long (max 1024 chars)");
+    }
+    if to == "rejected" && reason.is_empty() {
+        return unprocessable("reason required (1-1024 chars)");
+    }
+    if let Some(sup) = body.suppress.as_ref() {
+        if to != "rejected" {
+            return unprocessable("suppress is reject-only");
+        }
+        if sup.scope != "authority" && sup.scope != "global" {
+            return unprocessable("suppress.scope must be authority|global");
+        }
+    }
+    let Some(conn) = open(&state) else {
+        return store_unavailable();
+    };
+    let authority_id: Option<i64> = match conn
+        .query_row(
+            "SELECT id FROM authority WHERE slug = ?1",
+            [&body.authority],
+            |row| row.get(0),
+        )
+        .optional()
+    {
+        Ok(found) => found,
+        Err(_) => return store_unavailable(),
+    };
+    let Some(authority_id) = authority_id else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "unknown authority"})),
+        )
+            .into_response();
+    };
+    let now = unix_now();
+    type Blocked = Vec<serde_json::Value>;
+    type Decided = (Vec<(StoredFact, Option<(i64, bool)>)>, i64);
+    let outcome: rusqlite::Result<Result<Decided, Blocked>> = (|| {
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let mut facts = Vec::with_capacity(body.ids.len());
+        let mut results = Vec::with_capacity(body.ids.len());
+        let mut blocked = false;
+        for &id in &body.ids {
+            let row: Option<(String, StoredFact)> = conn
+                .query_row(
+                    "SELECT f.status, f.authority_id, a.slug, f.topic, f.statement,
+                            f.created_by, f.created_at,
+                            f.capture_id, f.citation_start, f.citation_end
+                     FROM fact f JOIN authority a ON a.id = f.authority_id
+                     WHERE f.id = ?1",
+                    [id],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            StoredFact {
+                                id,
+                                authority_id: row.get(1)?,
+                                slug: row.get(2)?,
+                                topic: row.get(3)?,
+                                statement: row.get(4)?,
+                                status: to.to_string(),
+                                created_by: row.get(5)?,
+                                created_at: row.get(6)?,
+                                capture_id: row.get(7)?,
+                                citation_start: row.get(8)?,
+                                citation_end: row.get(9)?,
+                            },
+                        ))
+                    },
+                )
+                .optional()?;
+            let refusal: Option<(u16, &str)> = match &row {
+                None => Some((404, "fact not found")),
+                Some((_, fact)) if fact.authority_id != authority_id => {
+                    Some((422, "fact not in authority"))
+                }
+                Some((status, _)) if status != "proposed" => Some((409, "fact is not proposed")),
+                Some((_, fact))
+                    if to == "accepted"
+                        && public_citations(&conn, &state.store_root, fact).is_empty() =>
+                {
+                    Some((422, "accept requires a verified citation"))
+                }
+                Some((_, fact))
+                    if to == "accepted"
+                        && body.require_verified
+                        && sibling_conflicts(
+                            &conn,
+                            fact.authority_id,
+                            &fact.topic,
+                            &fact.statement,
+                            id,
+                        )
+                        .iter()
+                        .any(|c| c.status == "accepted") =>
+                {
+                    Some((422, "changes a published fact; review it on its own"))
+                }
+                Some(_)
+                    if to == "accepted"
+                        && body.require_verified
+                        && latest_verdict(&conn, id).as_deref() == Some("contradicted") =>
+                {
+                    Some((422, "the cross-check found the source contradicts it"))
+                }
+                Some(_) => None,
+            };
+            match refusal {
+                Some((code, error)) => {
+                    blocked = true;
+                    results.push(json!({"id": id, "ok": false, "code": code, "error": error}));
+                }
+                None => results.push(json!({"id": id, "ok": true})),
+            }
+            if let Some((_, fact)) = row {
+                facts.push(fact);
+            }
+        }
+        if blocked {
+            conn.execute_batch("ROLLBACK")?;
+            return Ok(Err(results));
+        }
+        let mut decided = Vec::with_capacity(facts.len());
+        for fact in facts {
+            conn.execute(
+                "UPDATE fact SET status = ?1 WHERE id = ?2",
+                rusqlite::params![to, fact.id],
+            )?;
+            conn.execute(
+                "INSERT INTO audit(at, actor, action, entity, entity_id,
+                                    before_ref, after_ref, reason)
+                 VALUES (?1, ?2, ?3, 'fact', ?4, 'proposed', ?5, ?6)",
+                rusqlite::params![now, auth.user.user_id, action, fact.id, to, reason],
+            )?;
+            let rule = match body.suppress.as_ref() {
+                Some(sup) => Some(adopt_suppress_rule(&conn, &auth, &fact, sup, reason, now)?),
+                None => None,
+            };
+            decided.push((fact, rule));
+        }
+        let ids_ref = body
+            .ids
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id, after_ref, reason)
+             VALUES (?1, ?2, ?3, 'authority', ?4, ?5, ?6)",
+            rusqlite::params![
+                now,
+                auth.user.user_id,
+                header_action,
+                authority_id,
+                format!("ids:{ids_ref}"),
+                reason,
+            ],
+        )?;
+        let header_id = conn.last_insert_rowid();
+        conn.execute_batch("COMMIT")?;
+        Ok(Ok((decided, header_id)))
+    })();
+    let (decided, header_id) = match outcome {
+        Ok(Ok(done)) => done,
+        Ok(Err(results)) => {
+            let stale = results.iter().any(|r| r["code"].as_u64() == Some(409));
+            let status = if stale {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::UNPROCESSABLE_ENTITY
+            };
+            return (
+                status,
+                Json(json!({"error": "batch blocked; nothing changed", "results": results})),
+            )
+                .into_response();
+        }
+        Err(_) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return store_unavailable();
+        }
+    };
+    if to == "accepted" {
+        if let Err(e) = notify::enqueue_from_audit(&conn, now) {
+            eprintln!("notify: enqueue_from_audit failed: {e}");
+        }
+        state.notify_poke.notify_one();
+        for (fact, _) in &decided {
+            let _ = crate::translate::request_after_accept(&conn, fact.id, now);
+        }
+        crate::ws_bus::publish_authority_event(
+            &state.bus,
+            &body.authority,
+            "fact_accepted",
+            json!({"fact_id": body.ids[0], "fact_ids": body.ids, "count": body.ids.len()}),
+            now,
+        );
+        crate::ws_bus::publish_ops(
+            &state.bus,
+            "fact_accepted",
+            json!({"fact_id": body.ids[0], "fact_ids": body.ids, "slug": body.authority}),
+            now,
+        );
+    }
+    let results: Vec<serde_json::Value> = decided
+        .iter()
+        .map(|(fact, rule)| {
+            let mut row = json!({"id": fact.id, "ok": true, "status": to});
+            if let Some((rule_id, deduped)) = rule {
+                row["rule"] = json!({"id": rule_id, "deduped": deduped});
+            }
+            row
+        })
+        .collect();
+    (
+        StatusCode::OK,
+        Json(json!({
+            "authority": body.authority,
+            "decision": body.decision,
+            "count": results.len(),
+            "bulk_audit_id": header_id,
+            "results": results,
+        })),
+    )
+        .into_response()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn decide(
     state: &AppState,
@@ -616,52 +960,14 @@ fn decide_inner(
         // so check-then-insert cannot duplicate).
         let mut rule_outcome: Option<(i64, bool)> = None;
         if let Some(sup) = decision.suppress {
-            let scope_authority = (sup.scope == "authority").then_some(fact.authority_id);
-            let topic = sup.lock_topic.unwrap_or(true).then(|| fact.topic.clone());
-            let norm = db::normalize_statement(&fact.statement);
-            let existing: Option<i64> = conn
-                .query_row(
-                    "SELECT id FROM suppress_rule
-                     WHERE revoked_at IS NULL AND statement_norm = ?1
-                       AND authority_id IS NOT DISTINCT FROM ?2
-                       AND topic IS NOT DISTINCT FROM ?3
-                     ORDER BY id LIMIT 1",
-                    rusqlite::params![norm, scope_authority, topic],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            let (rule_id, deduped) = match existing {
-                Some(found) => (found, true),
-                None => {
-                    conn.execute(
-                        "INSERT INTO suppress_rule(authority_id, topic, statement_norm,
-                                                   statement, reason, created_by, created_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                        rusqlite::params![
-                            scope_authority,
-                            topic,
-                            norm,
-                            fact.statement,
-                            decision.reason.unwrap_or(""),
-                            auth.user.user_id,
-                            decision.now,
-                        ],
-                    )?;
-                    let rule_id = conn.last_insert_rowid();
-                    conn.execute(
-                        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
-                         VALUES (?1, ?2, 'suppress_rule.create', 'suppress_rule', ?3, ?4)",
-                        rusqlite::params![
-                            decision.now,
-                            auth.user.user_id,
-                            rule_id,
-                            decision.reason.unwrap_or(""),
-                        ],
-                    )?;
-                    (rule_id, false)
-                }
-            };
-            rule_outcome = Some((rule_id, deduped));
+            rule_outcome = Some(adopt_suppress_rule(
+                conn,
+                auth,
+                &fact,
+                sup,
+                decision.reason.unwrap_or(""),
+                decision.now,
+            )?);
         }
         // Serve the decided text (post-edit) in the response view.
         let mut fact = fact;
