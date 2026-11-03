@@ -1302,6 +1302,57 @@ pub fn admin_router(state: AppState) -> Router {
 }
 
 #[cfg(test)]
+mod live {
+    //! Live compose on a scratch copy of a store (plant only, staging
+    //! key): `LIVE_STORE=<dir> LIVE_SLUGS=usa-wa-sos,vietnam
+    //! cargo test --release -p web plan::live -- --ignored --nocapture`.
+    //! Prints one `LIVE` line per run plus the stored plan and report
+    //! (the replay fixture) and the model-call summary.
+    use super::*;
+
+    #[test]
+    #[ignore = "live: needs META_API_KEY and LIVE_STORE (a scratch store copy)"]
+    fn live_compose() {
+        let root = std::path::PathBuf::from(std::env::var("LIVE_STORE").expect("LIVE_STORE"));
+        let slugs = std::env::var("LIVE_SLUGS").unwrap_or_else(|_| "usa-wa-sos".to_string());
+        let store = handbook_store::store::Store::new(&root);
+        let conn = db::open(&store).expect("open store");
+        crate::telemetry::migrate_tables(&conn).unwrap();
+        migrate_tables(&conn).unwrap();
+        for (i, slug) in slugs.split(',').enumerate() {
+            let run_id = 9_000 + i as u64;
+            match compose_blocking(&root, None, slug, run_id) {
+                Ok(summary) => {
+                    println!("LIVE {slug} {summary}");
+                    let row: (String, String, String) = conn
+                        .query_row(
+                            "SELECT plan_json, validator_json, provenance_json FROM page_plan
+                             WHERE run_id = ?1",
+                            [run_id as i64],
+                            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                        )
+                        .unwrap();
+                    println!("PLAN {slug} {}", row.0);
+                    println!("REPORT {slug} {}", row.1);
+                    println!("PROVENANCE {slug} {}", row.2);
+                }
+                Err(e) => println!("LIVE {slug} FAILED {e}"),
+            }
+        }
+        let q = crate::telemetry::CallsQuery {
+            pipeline: Some("plan".into()),
+            since: Some(0),
+            run_id: None,
+            limit: Some(50),
+        };
+        println!(
+            "CALLS {}",
+            crate::telemetry::calls_view(&conn, &q, unix_now()).unwrap()
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

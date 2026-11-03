@@ -232,3 +232,4 @@
 | 325 | 2026-11-03 01:02Z | C1 (SA-24, builder): orders API, backing submission, fact-derived delivery options, free address label | orders 6 tests (FK on, authz, seeds); web 346 (1 known voice flake) |
 | sa-28-1 | 2026-11-03 00:51Z | W3a /order: Destination → Document → Form → Delivery → Pay | Cited delivery cards, quote, checkout/paused; typecheck green only with sa-28-2 |
 | sa-28-2 | 2026-11-03 00:51Z | W3b cabinet: /orders, /orders/[id], /billing, /shipping live | Live cabinet on billing/shipment topics; commerce spec 7/7; all gates green |
+| 326 | 2026-11-03 01:08Z | M2 live proof harness: ignored plan::live test runs compose on a scratch store copy | local: 6 pass, 1 ignored; clippy clean |
