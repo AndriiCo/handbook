@@ -14,7 +14,13 @@
 	import Heading from '../../../../lib/components/brand/Heading.svelte';
 	import Guilloche from '../../../../lib/components/brand/Guilloche.svelte';
 	import Flag from '../../../../lib/components/brand/Flag.svelte';
-	import silhouettes from '../../../../lib/geo/silhouettes.json';
+	import ChainView from '../../../../lib/public-ui/ChainView.svelte';
+	import {
+		flagFor,
+		latestCapture,
+		silhouetteFor,
+		verifiedAtOf
+	} from '../../../../lib/public-ui/authority-meta.js';
 	import { subscribe } from '../../../../lib/live.svelte.js';
 	import {
 		factCount,
@@ -43,22 +49,6 @@
 		return { ok: res.ok, status: res.status, body };
 	}
 
-	// Per-authority display facts the API does not carry yet. Assumed:
-	// Viet Nam's native name and HCCH Convention entry date come from the
-	// watched HCCH pages (packs/vietnam-routing.json), not the API.
-	const NATIVE: Record<string, { name: string; lang: string }> = {
-		vietnam: { name: 'Việt Nam', lang: 'vi' }
-	};
-	const IN_FORCE: Record<string, string> = {
-		vietnam: '2026-09-11'
-	};
-	const FLAG: Record<string, string> = { vietnam: 'vn', 'usa-wa-sos': 'us', hcch: 'nl' };
-	const SIL: Record<string, keyof typeof silhouettes> = {
-		vietnam: 'vietnam',
-		'usa-wa-sos': 'washington',
-		hcch: 'netherlands'
-	};
-
 	let facts = $state<any[] | null>(null);
 	let loadError = $state<string | null>(null);
 	let notFound = $state(false);
@@ -72,6 +62,7 @@
 	let authorityName = $state<string | null>(null);
 	let authorityCountry = $state<string | null>(null);
 	let authorityRegion = $state<string | null>(null);
+	let authorityVerifiedAt = $state('');
 	let activeTopic = $state('');
 
 	type LedgerEvent = {
@@ -90,17 +81,6 @@
 	function firstCapture(fact: any): any | null {
 		const cites = Array.isArray(fact?.citations) ? fact.citations : [];
 		return cites.length > 0 ? cites[0] : null;
-	}
-
-	function latestCapture(list: any[]): string {
-		let latest = '';
-		for (const f of list) {
-			for (const c of Array.isArray(f?.citations) ? f.citations : []) {
-				if (typeof c?.captured_at === 'string' && c.captured_at > latest)
-					latest = c.captured_at;
-			}
-		}
-		return latest;
 	}
 
 	function shortDate(iso: string): string {
@@ -158,6 +138,7 @@
 				authorityCountry = found.country;
 			if (found && typeof found.region === 'string' && found.region)
 				authorityRegion = found.region;
+			if (found) authorityVerifiedAt = verifiedAtOf(found);
 		} catch {
 			// The slug stays the heading; the index is a nicety, not a gate.
 		}
@@ -200,6 +181,8 @@
 		activeTopic = '';
 		authorityName = null;
 		authorityCountry = null;
+		authorityRegion = null;
+		authorityVerifiedAt = '';
 		ledger = [];
 		reload(current).catch(() => {
 			if (current !== slug) return;
@@ -276,12 +259,16 @@
 		})()
 	);
 
+	// Every header value is runtime data: the index row (name, country,
+	// region, verified_at) and the accepted facts. Flag and outline are
+	// looked up from the row's country/region, never from the slug.
 	const displayName = $derived(authorityName ?? slug);
-	const native = $derived(NATIVE[slug]);
-	const inForce = $derived(IN_FORCE[slug]);
-	const flag = $derived(FLAG[slug] ?? null);
-	const sil = $derived(SIL[slug] ? silhouettes[SIL[slug]] : null);
-	const lastVerified = $derived(facts ? latestCapture(facts) : '');
+	const flag = $derived(flagFor(authorityCountry));
+	const sil = $derived(silhouetteFor({ region: authorityRegion, country: authorityCountry }));
+	const lastVerified = $derived(authorityVerifiedAt || (facts ? latestCapture(facts) : ''));
+	const hasChain = $derived(
+		(facts ?? []).some((f) => f?.status === 'accepted' && f?.topic === 'legalization_chain')
+	);
 </script>
 
 <svelte:head>
@@ -342,14 +329,9 @@
 				<span class="vt-title">{displayName}</span>
 			</Heading>
 		</div>
-		{#if native}
-			<p lang={native.lang} class="mt-2 mb-0 text-lg text-ink-muted">{native.name}</p>
-		{/if}
 		{#if facts.length > 0}
 			<p class="mt-3 mb-0 font-mono text-xs text-ink-muted">
-				{#if inForce}<span>in force since {inForce}</span> · {/if}<span
-					>last verified {shortDate(lastVerified) || '—'}</span
-				>
+				<span>last verified {shortDate(lastVerified) || '—'}</span>
 				· <span>{factCount(facts.length)}</span>
 			</p>
 		{/if}
@@ -418,6 +400,15 @@
 			{/if}
 		</div>
 	</section>
+	{#if hasChain}
+		<section aria-labelledby="chain" class="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 xl:py-16">
+			<h2 id="chain" class="text-h2 mt-0 mb-0 font-semibold">Legalization chain</h2>
+			<p class="mt-2 mb-6 max-w-prose text-sm text-ink-muted">
+				Each hop below is a staff-approved fact, in order, with its source one tap away.
+			</p>
+			<ChainView facts={facts} />
+		</section>
+	{/if}
 	<section aria-label="Follow this office" class="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 xl:py-16">
 		<FollowCard slug={slug} name={displayName} apiBase={apiRoot} />
 	</section>

@@ -14,7 +14,7 @@
 		listAuthorities,
 		publicError
 	} from '../../../lib/public-ui/handbook.js';
-	import { FLAG, LANE_LABEL, laneOf, parseEta } from '../../../lib/public-ui/authority-meta.js';
+	import { flagFor, LANE_LABEL, laneOf, parseEta } from '../../../lib/public-ui/authority-meta.js';
 	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
@@ -37,7 +37,9 @@
 	let done = $state(false);
 	let comboOpen = $state(false);
 
-	let index = $state<{ slug: string; name: string; country: string }[] | null>(null);
+	let index = $state<
+		{ slug: string; name: string; country: string; region?: string; kind?: string }[] | null
+	>(null);
 	let loadError = $state<string | null>(null);
 	let destFacts = $state<any[] | null>(null);
 	let templates = $state<{ id: number; code: string; title: string }[]>([]);
@@ -164,19 +166,20 @@
 		!canNext3 ? 'Add your name, a valid email and a street address to continue.' : ''
 	);
 
-	type Destination = { slug: string; name: string; country: string };
+	type Destination = { slug: string; name: string; country: string; region?: string; kind?: string };
 	const grouped = $derived.by(() => {
 		const out: { lane: keyof typeof LANE_LABEL; rows: Destination[] }[] = [
 			{ lane: 'hague', rows: [] },
 			{ lane: 'legalization', rows: [] },
-			{ lane: 'states', rows: [] }
+			{ lane: 'states', rows: [] },
+			{ lane: 'other', rows: [] }
 		];
-		for (const a of index ?? []) out.find((g) => g.lane === laneOf(a.slug))?.rows.push(a);
+		for (const a of index ?? []) out.find((g) => g.lane === laneOf(a))?.rows.push(a);
 		return out.filter((g) => g.rows.length > 0);
 	});
 
 	const origin = silhouettes.washington;
-	const dest = $derived(silhouetteFor(authority));
+	const dest = $derived(silhouetteFor(index?.find((a) => a.slug === authority)));
 	const eta = $derived(destFacts ? parseEta(destFacts) : '…');
 
 	const DOCS = ['Birth certificate', 'Marriage certificate', 'Corporate document', 'Other'];
@@ -300,8 +303,8 @@
 													value={`${a.name} ${a.country} ${a.slug}`}
 													onSelect={() => pick(a.slug)}
 												>
-													{#if FLAG[a.slug]}
-														<Flag code={FLAG[a.slug]} label={`${a.country} flag`} />
+													{#if flagFor(a.country)}
+														<Flag code={flagFor(a.country) ?? ''} label={`${a.country} flag`} />
 													{:else}
 														<LandmarkIcon
 															class="size-5 flex-none text-ink-muted"
