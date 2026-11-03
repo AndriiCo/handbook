@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
 	approvedAgo,
+	clampName,
 	factCount,
 	filterAuthorities,
+	groupByCountry,
 	groupFactsByTopic,
 	listAuthorities,
 	publicError,
@@ -71,6 +73,46 @@ test('filterAuthorities matches name/slug/country, case-insensitive', () => {
 test('filterAuthorities empty query returns the full list', () => {
 	assert.equal(filterAuthorities(INDEX, '').length, 2);
 	assert.equal(filterAuthorities(INDEX, '   ').length, 2);
+});
+
+test('groupByCountry sorts countries A→Z, International last, facts first', () => {
+	const rows = [
+		{ slug: 'fr-ca-2', name: 'Cour d’appel', country: 'France', fact_count: 0 },
+		{ slug: 'hcch', name: 'HCCH', country: '', fact_count: 0 },
+		{ slug: 'fr-ca-1', name: 'Notaires', country: 'France', fact_count: 3 },
+		{ slug: 'al-ca-1', name: 'Ministry', country: 'Albania', fact_count: 0 }
+	];
+	const groups = groupByCountry(rows);
+	assert.deepEqual(
+		groups.map((g) => [g.country, g.rows.map((a) => a.slug), g.facts]),
+		[
+			['Albania', ['al-ca-1'], 0],
+			['France', ['fr-ca-1', 'fr-ca-2'], 3],
+			['International', ['hcch'], 0]
+		]
+	);
+});
+
+test('groupByCountry holds a world-scale index in one row per country', () => {
+	const rows = [];
+	for (let c = 0; c < 200; c++) {
+		for (let i = 0; i < 4; i++) {
+			rows.push({ slug: `c${c}-${i}`, name: `Authority ${i}`, country: `Country ${c}` });
+		}
+	}
+	const groups = groupByCountry(rows);
+	assert.equal(groups.length, 200);
+	assert.equal(groups.reduce((n, g) => n + g.rows.length, 0), 800);
+});
+
+test('clampName keeps short names and cuts long ones at a word', () => {
+	assert.equal(clampName('Ministry of Justice'), 'Ministry of Justice');
+	const long = 'Pour les actes dont les signataires sont établis, '.repeat(20);
+	const clamped = clampName(long);
+	assert.ok(clamped.length <= 121, clamped);
+	assert.ok(clamped.endsWith('…'));
+	assert.ok(!/[\s,]…$/.test(clamped));
+	assert.equal(clampName(null), '');
 });
 
 test('groupFactsByTopic groups in first-seen order', () => {

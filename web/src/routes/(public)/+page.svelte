@@ -21,14 +21,17 @@
 		type Lane
 	} from '../../lib/public-ui/authority-meta.js';
 	import {
+		clampName,
 		factCount,
 		filterAuthorities,
+		groupByCountry,
 		listAuthorities,
 		publicError,
 		relativeDay
 	} from '../../lib/public-ui/handbook.js';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	type Authority = AuthorityRow & { name: string; country: string; fact_count: number };
 
@@ -153,6 +156,13 @@
 	const tableRows = $derived(
 		others.filter((a) => tableFilter === 'all' || laneOf(a) === tableFilter)
 	);
+	// World scale (~700 rows): blank query → one collapsed row per
+	// country (children render on first open); a query → a flat list
+	// of the first MATCH_CAP matches.
+	const MATCH_CAP = 50;
+	const groups = $derived(groupByCountry(tableRows));
+	const matches = $derived(blank ? [] : filterAuthorities(tableRows, query));
+	let opened = $state<Record<string, boolean>>({});
 
 	const authorityHref = (slug: string) =>
 		resolve('/(public)/authority/[...trail]', { trail: slug });
@@ -423,40 +433,98 @@
 				</p>
 			{/if}
 		</div>
-	{:else}
-		<table class="mt-4 w-full border-collapse text-left">
-			<caption class="sr-only">Authorities{blank ? '' : ` matching “${query}”`}</caption>
-			<thead>
-				<tr class="border-b border-line text-sm text-ink-muted">
-					<th scope="col" class="py-2 pr-4 font-medium">Authority</th>
-					<th scope="col" class="hidden py-2 pr-4 font-medium sm:table-cell">Country</th>
-					<th scope="col" class="py-2 pr-4 text-right font-medium">Facts</th>
-					{#if showStatus}
-						<th scope="col" class="hidden py-2 text-right font-medium md:table-cell">Status</th>
-					{/if}
-				</tr>
-			</thead>
-			<tbody>
-				{#each (blank ? tableRows : filterAuthorities(tableRows, query)) as authority (authority.slug)}
-					<tr class="border-b border-line">
-						<th scope="row" class="py-2 pr-4 font-medium">
-							<a class="inline-flex min-h-11 items-center" href={authorityHref(addressOf(authority))}>
-								{authority.name}
-							</a>
-						</th>
-						<td class="hidden py-2 pr-4 text-sm text-ink-muted sm:table-cell">
+	{:else if !blank}
+		<p class="mt-4 mb-2 text-sm text-ink-muted" role="status">
+			{matches.length === 0
+				? `No authority matches “${query}”.`
+				: matches.length > MATCH_CAP
+					? `Showing ${MATCH_CAP} of ${matches.length} matches — refine the search.`
+					: `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`}
+		</p>
+		<ul class="m-0 list-none p-0" aria-label={`Authorities matching “${query}”`}>
+			{#each matches.slice(0, MATCH_CAP) as authority (authority.slug)}
+				<li class="m-0 border-b border-line p-0">
+					<a
+						class="flex min-h-11 items-center gap-3 py-2 no-underline"
+						href={authorityHref(addressOf(authority))}
+						title={authority.name}
+					>
+						<span class="min-w-0 flex-1 font-medium break-words text-ink">
+							{clampName(authority.name)}
+						</span>
+						<span class="hidden flex-none text-sm text-ink-muted sm:inline">
 							{authority.country}
-						</td>
-						<td class="py-2 pr-4 text-right font-mono text-sm">{authority.fact_count ?? 0}</td>
-						{#if showStatus}
-							<td class="hidden py-2 text-right text-sm text-ink-muted md:table-cell">
-								{kindLabel(authority) || '—'}
-							</td>
+						</span>
+						<span class="flex-none font-mono text-xs text-ink-muted">
+							{factCount(authority.fact_count ?? 0)}
+						</span>
+					</a>
+				</li>
+			{/each}
+		</ul>
+	{:else}
+		<p class="mt-4 mb-2 text-sm text-ink-muted">
+			{tableRows.length} authorities in {groups.length}
+			{groups.length === 1 ? 'country' : 'countries'}. Open a country to see its authorities.
+		</p>
+		<ul class="m-0 list-none p-0" aria-label="Authorities by country">
+			{#each groups as group (group.country)}
+				{@const flag = flagFor(group.country)}
+				<li class="m-0 border-b border-line p-0">
+					<details
+						class="group"
+						ontoggle={(e) => {
+							if ((e.currentTarget as HTMLDetailsElement).open) {
+								opened = { ...opened, [group.country]: true };
+							}
+						}}
+					>
+						<summary
+							class="flex min-h-11 cursor-pointer list-none items-center gap-3 py-2 [&::-webkit-details-marker]:hidden"
+						>
+							<ChevronRightIcon
+								class="size-4 flex-none text-ink-muted transition-transform group-open:rotate-90 motion-reduce:transition-none"
+								aria-hidden="true"
+							/>
+							{#if flag}
+								<Flag code={flag} label={`${group.country} flag`} />
+							{/if}
+							<span class="min-w-0 flex-1 font-medium break-words text-ink">{group.country}</span>
+							<span class="flex-none font-mono text-xs text-ink-muted">
+								{group.rows.length}
+								{group.rows.length === 1 ? 'authority' : 'authorities'}{#if group.facts > 0}
+									· {factCount(group.facts)}{/if}
+							</span>
+						</summary>
+						{#if opened[group.country]}
+							<ul class="m-0 mb-3 list-none p-0 pl-2 sm:pl-8">
+								{#each group.rows as authority (authority.slug)}
+									<li class="m-0 p-0">
+										<a
+											class="flex min-h-11 items-center gap-3 py-1 no-underline"
+											href={authorityHref(addressOf(authority))}
+											title={authority.name}
+										>
+											<span class="min-w-0 flex-1 text-sm break-words text-ink">
+												{clampName(authority.name)}
+											</span>
+											{#if showStatus && kindLabel(authority) && authority.kind !== 'country'}
+												<span class="hidden flex-none text-xs text-ink-muted md:inline">
+													{kindLabel(authority)}
+												</span>
+											{/if}
+											<span class="flex-none font-mono text-xs text-ink-muted">
+												{factCount(authority.fact_count ?? 0)}
+											</span>
+										</a>
+									</li>
+								{/each}
+							</ul>
 						{/if}
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+					</details>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 </section>
 

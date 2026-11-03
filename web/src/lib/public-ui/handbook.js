@@ -75,6 +75,58 @@ export function topicLabel(topic) {
 }
 
 /**
+ * Group the index by `authority.country` for the world-scale home
+ * index: countries A→Z (rows with no country last, as
+ * `International`), authorities with the most accepted facts first,
+ * then by name. Counts are the group's, never a guess.
+ * @param {any[]} authorities
+ * @returns {{ country: string, rows: any[], facts: number }[]}
+ */
+export function groupByCountry(authorities) {
+	const byCountry = new Map();
+	for (const a of authorities ?? []) {
+		const country = String(a?.country ?? '').trim();
+		let g = byCountry.get(country);
+		if (!g) {
+			g = { country, rows: [], facts: 0 };
+			byCountry.set(country, g);
+		}
+		g.rows.push(a);
+		g.facts += Number(a?.fact_count) || 0;
+	}
+	/** @type {{ country: string, rows: any[], facts: number }[]} */
+	const groups = [...byCountry.values()];
+	for (const g of groups) {
+		g.rows.sort(
+			(x, y) =>
+				(Number(y?.fact_count) || 0) - (Number(x?.fact_count) || 0) ||
+				String(x?.name ?? '').localeCompare(String(y?.name ?? ''))
+		);
+		if (!g.country) g.country = 'International';
+	}
+	return groups.sort((x, y) => {
+		if (x.country === 'International') return 1;
+		if (y.country === 'International') return -1;
+		return x.country.localeCompare(y.country);
+	});
+}
+
+/**
+ * An index-row name clamped to `max` characters at a word boundary
+ * (HCCH designations run to ~1,000 characters); the dossier shows the
+ * full text.
+ * @param {unknown} name
+ * @param {number} [max]
+ */
+export function clampName(name, max = 120) {
+	const text = String(name ?? '').trim();
+	if (text.length <= max) return text;
+	const cut = text.slice(0, max);
+	const space = cut.lastIndexOf(' ');
+	return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:–—-]+$/, '')}…`;
+}
+
+/**
  * `1 fact` / `N facts` (shared literal, both pages).
  * @param {number} n
  */
