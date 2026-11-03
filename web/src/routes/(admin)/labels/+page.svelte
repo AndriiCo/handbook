@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
+	import { csrfHeaders } from '../../../lib/admin/config-client.js';
 
 	// Staff-only live FedEx purchase (SA-19). This route ships in the
 	// admin build only (never the public build). The staff API keeps
@@ -102,7 +103,7 @@
 		try {
 			const res = await fetch(`${api()}/quote`, {
 				method: 'POST',
-				headers: { 'content-type': 'application/json' },
+				headers: { 'content-type': 'application/json', ...csrfHeaders() },
 				body: JSON.stringify({ payload: payload() })
 			});
 			if (!res.ok) throw new Error(`quote failed (${res.status})`);
@@ -122,7 +123,7 @@
 		try {
 			const res = await fetch(`${api()}/purchase`, {
 				method: 'POST',
-				headers: { 'content-type': 'application/json' },
+				headers: { 'content-type': 'application/json', ...csrfHeaders() },
 				body: JSON.stringify({
 					order_id: orderId.trim(),
 					leg,
@@ -150,7 +151,7 @@
 		try {
 			const res = await fetch(`${api()}/void`, {
 				method: 'POST',
-				headers: { 'content-type': 'application/json' },
+				headers: { 'content-type': 'application/json', ...csrfHeaders() },
 				body: JSON.stringify({ order_id: orderId.trim(), leg })
 			});
 			if (!res.ok) throw new Error(`void failed (${res.status})`);

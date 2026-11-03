@@ -1,0 +1,26 @@
+{
+  "routes": {
+    "/dashboard": { "name": "sa26-dashboard", "ready": "Muse Wonder", "build": "admin" },
+    "/review": { "name": "sa26-review-facts", "ready": "Consular Department", "build": "admin" },
+    "/review?tab=plans": { "name": "sa26-review-plans", "ready": "Validator report", "build": "admin" },
+    "/review?tab=offices": { "name": "sa26-review-offices", "ready": "SYNTHETIC Apostille Counter", "build": "admin" },
+    "/review?tab=forms": { "name": "sa26-review-forms", "ready": "RequesterName", "build": "admin" },
+    "/trace": { "name": "sa26-trace", "ready": "Muse Wonder", "build": "admin" }
+  },
+  "api": [
+    { "path": "^/apostille/api/v1/admin/stats$", "fixture": "admin-stats.json" },
+    { "path": "^/apostille/api/v1/queue$", "fixture": "admin-queue.json" },
+    { "path": "^/apostille/api/v1/admin/fact-checks$", "fixture": "admin-fact-checks.json" },
+    { "path": "^/apostille/api/v1/suppress-rules$", "fixture": "admin-review-extras.json" },
+    { "path": "^/apostille/api/v1/suppressions$", "fixture": "admin-review-extras.json" },
+    { "path": "^/apostille/api/v1/draft-runs/recent$", "fixture": "admin-review-extras.json" },
+    { "path": "^/apostille/api/v1/admin/plans$", "fixture": "admin-plan-proposals.json" },
+    { "path": "^/apostille/api/v1/admin/offices$", "fixture": "admin-office-proposals.json" },
+    { "path": "^/apostille/api/v1/admin/form-maps$", "fixture": "admin-form-maps.json" },
+    { "path": "^/apostille/api/v1/admin/model-calls$", "fixture": "admin-model-calls.json" },
+    { "path": "^/apostille/api/v1/workers/captures$", "fixture": "admin-captures.json" }
+  ],
+  "ws": [
+    { "topic": "^ops$", "fixture": "admin-ws-ops.json" }
+  ]
+}

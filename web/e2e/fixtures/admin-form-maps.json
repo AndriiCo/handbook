@@ -1,0 +1,68 @@
+{
+  "form_maps": [
+    {
+      "id": 7,
+      "authority_slug": "usa-wa-sos",
+      "status": "proposed",
+      "source_url": "https://example.test/apostille/request-form.pdf",
+      "capture_id": 120,
+      "created_at": 1793750400,
+      "acroform_fields": 4,
+      "mapped": 4,
+      "fields": [
+        {
+          "name": "RequesterName",
+          "label": "Your full name",
+          "help": "As it should appear on the return envelope.",
+          "type": "text",
+          "required": true,
+          "options": [],
+          "prefill_topic": null,
+          "label_quote": "Name of person requesting"
+        },
+        {
+          "name": "Country",
+          "label": "Country where the document will be used",
+          "help": "The apostille names this country.",
+          "type": "text",
+          "required": true,
+          "options": [],
+          "prefill_topic": null,
+          "label_quote": "Country of destination"
+        },
+        {
+          "name": "DocCount",
+          "label": "Number of documents",
+          "help": "Each document is charged separately.",
+          "type": "number",
+          "required": true,
+          "options": [],
+          "prefill_topic": "fees",
+          "label_quote": "Number of documents"
+        },
+        {
+          "name": "ReturnMail",
+          "label": "Return by mail",
+          "help": "",
+          "type": "checkbox",
+          "required": false,
+          "options": [],
+          "prefill_topic": "mailing",
+          "label_quote": "Return by mail"
+        }
+      ],
+      "guards": [
+        {
+          "id": "label_in_span",
+          "ok": true,
+          "detail": "4/4 labels found in the text layer"
+        },
+        {
+          "id": "names_from_acroform",
+          "ok": true,
+          "detail": "4/4"
+        }
+      ]
+    }
+  ]
+}

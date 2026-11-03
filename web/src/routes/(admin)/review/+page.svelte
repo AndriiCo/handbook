@@ -1,7 +1,21 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
+	import { fly } from 'svelte/transition';
+	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
-	import Notice from '../../../lib/public-ui/Notice.svelte';
+	import Heading from '#lib/components/brand/Heading.svelte';
+	import Notice from '#lib/public-ui/Notice.svelte';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Kbd } from '#lib/components/ui/kbd/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import PlanReview from '#lib/admin/PlanReview.svelte';
+	import OfficeReview from '#lib/admin/OfficeReview.svelte';
+	import FormMapReview from '#lib/admin/FormMapReview.svelte';
 	import {
 		acceptBody,
 		acceptFact,
@@ -14,9 +28,16 @@
 		rejectFact,
 		revokeRule,
 		ruleBody
-	} from '../../../lib/admin/review-client.js';
-	import { subscribe } from '../../../lib/live.svelte.js';
-	import { csrfHeaders } from '../../../lib/admin/config-client.js';
+	} from '#lib/admin/review-client.js';
+	import { getJson, postJson, errorText } from '#lib/admin/admin-api.js';
+	import { fetchFactChecks, type FactCheck } from '#lib/admin/proposals.js';
+	import { ago, modelName } from '#lib/admin/format.js';
+	import { subscribe } from '#lib/live.svelte.js';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import CheckCheckIcon from '@lucide/svelte/icons/check-check';
+	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import InboxIcon from '@lucide/svelte/icons/inbox';
 
 	interface QueueItem {
 		id: number;
@@ -79,10 +100,20 @@
 		error: string | null;
 	}
 
-	// Review queue (analysis-agent.md §11.4): one proposed fact per
-	// card, fixed field order, reasoning quarantined. Same API root
-	// as the calls page.
+	// Review console (analysis-agent.md §11.4 + MISSION WIN W1b): a data
+	// table of proposed facts with one detail pane, j/k/a/r keys, and
+	// tabs for page plans, offices, form maps and translations. Every
+	// decision is the server's: optimistic here, rolled back on error.
 	const api = () => `/apostille/api/v1`;
+
+	type Tab = 'facts' | 'plans' | 'offices' | 'forms' | 'translations';
+	const TABS: Tab[] = ['facts', 'plans', 'offices', 'forms', 'translations'];
+	let tab = $state<Tab>('facts');
+	let counts = $state<Record<'plans' | 'offices' | 'forms', number | null>>({
+		plans: null,
+		offices: null,
+		forms: null
+	});
 
 	let authority = $state('');
 	let topic = $state('');
@@ -95,6 +126,10 @@
 	let decided = $state<Record<number, string>>({});
 	let refreshNote = $state<string | null>(null);
 	let ui = $state<Record<number, CardUi>>({});
+	let selectedId = $state<number | null>(null);
+	let checks = $state<Record<number, FactCheck>>({});
+	let batchActing = $state(false);
+	let reduceMotion = $state(false);
 
 	let rules = $state<SuppressRule[]>([]);
 	let rulesState = $state<'loading' | 'ready' | 'failed'>('loading');
@@ -114,7 +149,6 @@
 	// Translations tab (SA-20): Muse Spark renders accepted facts into
 	// es/fr after approval. The guard (digits/fees/addresses) holds
 	// failures back as `guard_ok = 0` — staff-visible, never public.
-	let tab = $state<'queue' | 'translations'>('queue');
 	interface AcceptedFact {
 		id: number;
 		topic: string;
@@ -130,10 +164,10 @@
 		created_at: number;
 	}
 	let acceptedFacts = $state<AcceptedFact[]>([]);
-	let acceptedState = $state<'loading' | 'ready' | 'failed'>('loading');
+	let acceptedState = $state<'idle' | 'loading' | 'ready' | 'failed'>('idle');
 	let acceptedError = $state<string | null>(null);
 	let trRows = $state<TranslationRow[]>([]);
-	let trState = $state<'loading' | 'ready' | 'failed'>('loading');
+	let trState = $state<'idle' | 'loading' | 'ready' | 'failed'>('idle');
 	let trError = $state<string | null>(null);
 	let trNote = $state<string | null>(null);
 	let trActing = $state<Record<string, boolean>>({});
@@ -152,24 +186,15 @@
 		return row.guard_ok ? 'Done' : 'Held by guard';
 	}
 
-	async function readJson(res: Response, what: string) {
-		if (!res.ok) {
-			const body = await res.json().catch(() => ({}));
-			throw new Error(body?.error ? `${what} -> ${body.error}` : `${what} -> ${res.status}`);
-		}
-		return res.json();
-	}
-
 	async function loadAccepted() {
 		acceptedState = 'loading';
 		acceptedError = null;
 		try {
-			const res = await fetch(`${api()}/facts?status=accepted&limit=100`);
-			const body = await readJson(res, 'accepted facts');
+			const body = await getJson<{ facts?: AcceptedFact[] }>('/facts?status=accepted&limit=100', 'Accepted facts');
 			acceptedFacts = Array.isArray(body?.facts) ? body.facts : [];
 			acceptedState = 'ready';
 		} catch (err) {
-			acceptedError = err instanceof Error ? err.message : 'Accepted facts failed.';
+			acceptedError = errorText(err, 'Accepted facts failed.');
 			acceptedState = 'failed';
 		}
 	}
@@ -178,20 +203,13 @@
 		trState = 'loading';
 		trError = null;
 		try {
-			const res = await fetch(`${api()}/translations/status`);
-			const body = await readJson(res, 'translations');
+			const body = await getJson<{ translations?: TranslationRow[] }>('/translations/status', 'Translations');
 			trRows = Array.isArray(body?.translations) ? body.translations : [];
 			trState = 'ready';
 		} catch (err) {
-			trError = err instanceof Error ? err.message : 'Translations failed.';
+			trError = errorText(err, 'Translations failed.');
 			trState = 'failed';
 		}
-	}
-
-	function openTranslations() {
-		tab = 'translations';
-		if (acceptedState === 'loading') void loadAccepted();
-		void loadTranslations();
 	}
 
 	async function translateOne(factId: number, lang: string) {
@@ -200,19 +218,14 @@
 		trActing[key] = true;
 		trNote = null;
 		try {
-			const res = await fetch(`${api()}/facts/${factId}/translate`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json', ...csrfHeaders() },
-				body: JSON.stringify({ lang })
-			});
-			const body = await readJson(res, `translate #${factId}`);
+			const body = await postJson<{ guard_ok?: boolean }>(`/facts/${factId}/translate`, { lang }, `Translate #${factId}`);
 			trNote =
 				body?.guard_ok === false
 					? `Fact #${factId} (${lang}): held by the number/fee/address guard — English stays live.`
 					: `Fact #${factId} (${lang}): translated.`;
 			await loadTranslations();
 		} catch (err) {
-			trNote = err instanceof Error ? err.message : `Translate #${factId} failed.`;
+			trNote = errorText(err, `Translate #${factId} failed.`);
 		} finally {
 			trActing[key] = false;
 		}
@@ -221,16 +234,15 @@
 	async function backfill() {
 		trNote = null;
 		try {
-			const res = await fetch(`${api()}/translations/backfill`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json', ...csrfHeaders() },
-				body: JSON.stringify({ limit: 20 })
-			});
-			const body = await readJson(res, 'backfill');
+			const body = await postJson<{ queued?: number; rendered?: number; guard_failed?: number }>(
+				'/translations/backfill',
+				{ limit: 20 },
+				'Backfill'
+			);
 			trNote = `Backfill: ${body?.queued ?? 0} queued, ${body?.rendered ?? 0} rendered, ${body?.guard_failed ?? 0} held by guard.`;
 			await loadTranslations();
 		} catch (err) {
-			trNote = err instanceof Error ? err.message : 'Backfill failed.';
+			trNote = errorText(err, 'Backfill failed.');
 		}
 	}
 
@@ -254,14 +266,7 @@
 		return card;
 	}
 
-	function age(at: number): string {
-		const mins = Math.max(0, Math.floor((Date.now() / 1000 - at) / 60));
-		if (mins < 1) return 'just now';
-		if (mins < 60) return `${mins}m ago`;
-		const hours = Math.floor(mins / 60);
-		if (hours < 48) return `${hours}h ago`;
-		return `${Math.floor(hours / 24)}d ago`;
-	}
+	const nowSec = () => Math.max(Date.now() / 1000, ...items.map((i) => i.created_at));
 
 	// Riskiest first: changed value vs live sibling, conflict, missing
 	// citation, low-trust source. The one-word badge says why.
@@ -275,11 +280,43 @@
 		return { rank: 4, badge: null };
 	}
 
+	function riskCls(badge: string): string {
+		if (badge === 'Changed') return 'border-changed text-changed';
+		if (badge === 'Conflict' || badge === 'Uncited') return 'border-error text-error';
+		return 'border-line text-ink-muted';
+	}
+
+	// "Verified" = quote-verified by the deterministic gate (every
+	// queued row passed it) with a citation, no live value changed, no
+	// conflicting sibling, and Muse Wonder did not contradict it.
+	function isVerified(item: QueueItem): boolean {
+		return (
+			item.citations.length > 0 &&
+			!item.diff &&
+			!item.blast_radius.conflict &&
+			checks[item.id]?.verdict !== 'contradicted'
+		);
+	}
+
+	const WONDER: Record<string, { label: string; cls: string }> = {
+		supported: { label: 'Wonder: supported', cls: 'border-verified text-verified' },
+		contradicted: { label: 'Wonder: contradicted', cls: 'border-error text-error' },
+		not_found: { label: 'Wonder: not found', cls: 'border-line text-ink-muted' }
+	};
+
 	let sorted = $derived(
 		items
 			.map((item, index) => ({ item, index }))
 			.sort((a, b) => riskOf(a.item).rank - riskOf(b.item).rank || a.index - b.index)
 			.map((row) => row.item)
+	);
+	const selected = $derived(sorted.find((i) => i.id === selectedId) ?? null);
+	const selectedCard = $derived(selected ? (ui[selected.id] ?? null) : null);
+	const open = $derived(sorted.filter((i) => !decided[i.id]));
+	const batch = $derived(
+		selected
+			? open.filter((i) => i.provenance.capture_id === selected.provenance.capture_id && isVerified(i))
+			: []
 	);
 
 	interface BlockedItem {
@@ -300,22 +337,22 @@
 	let blockedState = $state<'loading' | 'ready' | 'failed'>('loading');
 	let blockedError = $state<string | null>(null);
 
-	// Records the verifier refused (the staff
-	// `/draft-runs/recent` endpoint reads the `analyze.rejected` audit
-	// rows). Failed reads keep the queue usable — this section alone
-	// reports the error.
+	// Records the verifier refused (the staff `/draft-runs/recent`
+	// endpoint reads the `analyze.rejected` audit rows). Failed reads
+	// keep the queue usable — this section alone reports the error.
 	async function loadBlocked() {
 		blockedState = 'loading';
 		blockedError = null;
 		try {
-			const res = await fetch(`${api()}/draft-runs/recent?limit=20`);
-			if (!res.ok) throw new Error(`blocked -> ${res.status}`);
-			const body = await res.json();
+			const body = await getJson<{ rejections?: BlockedItem[]; count?: number }>(
+				'/draft-runs/recent?limit=20',
+				'Blocked list'
+			);
 			blocked = Array.isArray(body?.rejections) ? body.rejections : [];
 			blockedCount = typeof body?.count === 'number' ? body.count : blocked.length;
 			blockedState = 'ready';
 		} catch (err) {
-			blockedError = err instanceof Error ? err.message : 'Blocked list failed.';
+			blockedError = errorText(err, 'Blocked list failed.');
 			blockedState = 'failed';
 		}
 	}
@@ -340,20 +377,35 @@
 		return { base: segs(a), next: segs(b) };
 	}
 
-	function trustChip(trust: string): string {
-		const base = 'inline-block rounded border px-2 py-0.5 text-sm font-bold';
-		if (trust === 'official') return `${base} border-success bg-success-bg text-success`;
-		if (trust === 'staff_verified') return `${base} border-accent-fill bg-surface text-accent-strong`;
-		return `${base} border-line bg-surface-2 text-ink-muted`;
+	function syncUrl() {
+		const params = new URLSearchParams(location.search);
+		for (const [key, value] of [
+			['authority', authority.trim()],
+			['topic', topic.trim()],
+			['limit', limit !== 50 ? String(limit) : ''],
+			['tab', tab !== 'facts' ? tab : '']
+		] as const) {
+			if (value) params.set(key, value);
+			else params.delete(key);
+		}
+		const query = params.toString();
+		history.replaceState(history.state, '', query ? `?${query}` : location.pathname);
 	}
 
-	function syncUrl() {
-		const params = new URLSearchParams();
-		if (authority.trim()) params.set('authority', authority.trim());
-		if (topic.trim()) params.set('topic', topic.trim());
-		if (limit !== 50) params.set('limit', String(limit));
-		const query = params.toString();
-		history.replaceState(null, '', query ? `?${query}` : location.pathname);
+	function ensureSelection() {
+		if (selectedId !== null && sorted.some((i) => i.id === selectedId)) return;
+		selectedId = open[0]?.id ?? null;
+	}
+
+	async function loadChecks() {
+		const slugs = [...new Set(items.map((i) => i.authority_slug))];
+		const found = await Promise.allSettled(slugs.map((slug) => fetchFactChecks(slug)));
+		const next: Record<number, FactCheck> = {};
+		for (const r of found) {
+			if (r.status !== 'fulfilled') continue;
+			for (const c of r.value) next[c.fact_id] = c;
+		}
+		checks = next;
 	}
 
 	async function loadQueue(afterId?: number, append = false) {
@@ -377,6 +429,8 @@
 			items = append ? [...items, ...out.items] : out.items;
 			queueCount = out.count;
 			loadState = 'ready';
+			ensureSelection();
+			void loadChecks();
 		} catch (err) {
 			loadError = err instanceof Error ? err.message : 'Review queue failed.';
 			loadState = append ? loadState : 'failed';
@@ -388,6 +442,7 @@
 	function applyFilters(event: SubmitEvent) {
 		event.preventDefault();
 		syncUrl();
+		selectedId = null;
 		void loadQueue();
 	}
 
@@ -418,7 +473,7 @@
 	}
 
 	// Staff `proposals` feed: a draft run or voice quote that inserts
-	// proposals publishes `proposal.created` per fact — insert the card
+	// proposals publishes `proposal.created` per fact — insert the row
 	// live (deduped by id) instead of waiting for the next refresh.
 	async function onProposal(msg: { type?: unknown; fact_id?: unknown }) {
 		if (msg?.type !== 'proposal.created') return;
@@ -431,17 +486,31 @@
 			items = [item, ...items];
 			queueCount += 1;
 			refreshNote = `New proposal #${item.id} arrived live.`;
+			ensureSelection();
 		} catch {
 			// The next queue refresh picks it up; never break the feed.
 		}
 	}
 
+	function setTab(value: string) {
+		if (!TABS.includes(value as Tab)) return;
+		tab = value as Tab;
+		syncUrl();
+		if (tab === 'translations') {
+			if (acceptedState === 'idle') void loadAccepted();
+			void loadTranslations();
+		}
+	}
+
 	onMount(() => {
+		reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const params = new URLSearchParams(location.search);
 		authority = params.get('authority') ?? '';
 		topic = params.get('topic') ?? '';
 		const raw = Number(params.get('limit'));
 		if ([25, 50, 100, 200].includes(raw)) limit = raw;
+		const wanted = params.get('tab');
+		if (wanted && TABS.includes(wanted as Tab) && wanted !== 'facts') setTab(wanted);
 		void loadQueue();
 		void loadRules();
 		void loadSuppressions();
@@ -452,34 +521,74 @@
 		return () => unsub();
 	});
 
-	async function accept(id: number) {
+	// Next undecided row after `id` in table order (wraps to the top).
+	function nextOpen(id: number): number | null {
+		const at = sorted.findIndex((i) => i.id === id);
+		const after = sorted.slice(at + 1).find((i) => !decided[i.id] && i.id !== id);
+		return after?.id ?? sorted.find((i) => !decided[i.id] && i.id !== id)?.id ?? null;
+	}
+
+	function select(id: number | null) {
+		selectedId = id;
+		if (id === null) return;
+		void tick().then(() => {
+			document.getElementById(`fact-row-${id}`)?.scrollIntoView({ block: 'nearest' });
+		});
+	}
+
+	function handleDecisionError(id: number, err: unknown, fallback: string) {
+		const message = err instanceof Error ? err.message : fallback;
+		if (/409|not proposed/.test(message)) {
+			refreshNote = `Fact #${id}: already decided — refreshing.`;
+			void loadQueue();
+		} else {
+			cardUi(id).error = message;
+			toast.error(`Fact #${id}: ${message}`);
+		}
+	}
+
+	async function accept(id: number, quiet = false): Promise<boolean> {
 		const card = cardUi(id);
-		if (decided[id] || card.acting) return;
+		if (decided[id] || card.acting) return false;
+		const item = items.find((i) => i.id === id);
 		card.acting = true;
 		card.error = null;
-		// Optimistic: the card reads decided the moment staff clicks;
-		// a failed POST rolls it back below.
+		// Optimistic: the row reads decided the moment staff clicks and
+		// the pane moves on; a failed POST rolls both back below.
 		decided[id] = 'accepted';
+		if (selectedId === id) select(nextOpen(id));
 		try {
 			const out = await acceptFact(api(), id, acceptBody(undefined, undefined) ?? {});
 			decided[id] = out.status;
+			if (!quiet && item) toast.success(`Accepted — the ${item.authority_slug} dossier updates live.`);
+			return true;
 		} catch (err) {
 			delete decided[id];
-			const message = err instanceof Error ? err.message : 'Accept failed.';
-			if (/409|not proposed/.test(message)) {
-				refreshNote = `Fact #${id}: already decided — refreshing.`;
-				await loadQueue();
-			} else {
-				card.error = message;
-			}
+			select(id);
+			handleDecisionError(id, err, 'Accept failed.');
+			return false;
 		} finally {
 			card.acting = false;
 		}
 	}
 
+	async function acceptBatch() {
+		if (batchActing || batch.length === 0) return;
+		batchActing = true;
+		const capture = batch[0].provenance.capture_id;
+		const ids = batch.map((i) => i.id);
+		let ok = 0;
+		for (const id of ids) {
+			if (await accept(id, true)) ok += 1;
+		}
+		batchActing = false;
+		if (ok > 0) toast.success(`Accepted ${ok} verified fact${ok === 1 ? '' : 's'} from capture #${capture}.`);
+	}
+
 	function startEdit(item: QueueItem) {
 		const card = cardUi(item.id);
 		card.editing = true;
+		card.rejectOpen = false;
 		card.editText = item.statement;
 		card.error = null;
 	}
@@ -497,17 +606,21 @@
 		try {
 			const out = await acceptFact(api(), item.id, body);
 			decided[item.id] = out.status;
+			select(nextOpen(item.id));
+			toast.success(`Accepted with edit — the ${item.authority_slug} dossier updates live.`);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Accept failed.';
-			if (/409|not proposed/.test(message)) {
-				refreshNote = `Fact #${item.id}: already decided — refreshing.`;
-				await loadQueue();
-			} else {
-				card.error = message;
-			}
+			handleDecisionError(item.id, err, 'Accept failed.');
 		} finally {
 			card.acting = false;
 		}
+	}
+
+	async function openReject(item: QueueItem) {
+		const card = cardUi(item.id);
+		card.rejectOpen = true;
+		card.editing = false;
+		await tick();
+		document.getElementById(`reason-${item.id}`)?.focus();
 	}
 
 	async function reject(item: QueueItem) {
@@ -525,18 +638,36 @@
 		try {
 			const out = await rejectFact(api(), item.id, body);
 			decided[item.id] = out.status;
+			select(nextOpen(item.id));
+			toast.success(`Fact #${item.id} rejected${card.suppressOn ? ' and suppressed' : ''}.`);
 			void loadSuppressions();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Reject failed.';
-			if (/409|not proposed/.test(message)) {
-				refreshNote = `Fact #${item.id}: already decided — refreshing.`;
-				await loadQueue();
-			} else {
-				card.error = message;
-			}
+			handleDecisionError(item.id, err, 'Reject failed.');
 		} finally {
 			card.acting = false;
 		}
+	}
+
+	// j/k move, a accept, r reject — facts tab only, never while typing.
+	function onKey(e: KeyboardEvent) {
+		if (tab !== 'facts' || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+		const t = e.target as HTMLElement | null;
+		if (t && (t.closest('input, textarea, select, [contenteditable="true"]') || t.isContentEditable)) return;
+		if (document.querySelector('[role="dialog"]')) return;
+		const key = e.key.toLowerCase();
+		if (key !== 'j' && key !== 'k' && key !== 'a' && key !== 'r') return;
+		e.preventDefault();
+		if (key === 'j' || key === 'k') {
+			if (sorted.length === 0) return;
+			const at = sorted.findIndex((i) => i.id === selectedId);
+			const step = key === 'j' ? 1 : -1;
+			const next = at < 0 ? 0 : Math.min(sorted.length - 1, Math.max(0, at + step));
+			select(sorted[next].id);
+			return;
+		}
+		if (!selected || decided[selected.id]) return;
+		if (key === 'a') void accept(selected.id);
+		else void openReject(selected);
 	}
 
 	async function saveRule(event: SubmitEvent) {
@@ -577,617 +708,553 @@
 		showRevoked = !showRevoked;
 		void loadRules();
 	}
+
+	const tabLabel = (n: number | null) => (n === null ? '' : ` ${n}`);
+	// Inactive triggers in full muted ink (the primitive's 60% ink
+	// misses 4.5:1 on the muted track).
+	const TRIGGER = 'h-8 px-3 text-ink-muted data-active:text-foreground';
+	const decidedCount = $derived(Object.keys(decided).length);
 </script>
+
+<svelte:window onkeydown={onKey} />
 
 <svelte:head>
 	<title>Review queue — Admin — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Review queue</h1>
-
-<Notice variant="warning" heading="One click, one fact.">
-	<p>
-		Accept or reject each proposed fact on its citations — never on the model's own
-		summary. Decisions are audited; conflicts never block, and the server (not this
-		page) is the arbiter of what is decided.
-	</p>
-</Notice>
-
-{#if refreshNote}
-	<p class="font-bold" role="status">{refreshNote}</p>
-{/if}
-
-<div role="tablist" aria-label="Review sections" class="flex flex-wrap gap-2">
-		<button
-			type="button"
-			role="tab"
-			aria-selected={tab === 'queue'}
-			disabled={tab === 'queue'}
-			onclick={() => (tab = 'queue')}
-		>
-			Queue
-		</button>
-		<button
-			type="button"
-			role="tab"
-			aria-selected={tab === 'translations'}
-			disabled={tab === 'translations'}
-			onclick={openTranslations}
-		>
-			Translations
-		</button>
-	</div>
-
-{#if tab === 'queue'}
-<section aria-labelledby="filters">
-	<h2 id="filters">Queue</h2>
-	<form class="flex flex-wrap items-end gap-3" onsubmit={applyFilters}>
-		<p class="m-0">
-			<label class="grid gap-1 font-bold" for="filter-authority">
-				Authority
-				<input
-					class="p-2 font-normal"
-					id="filter-authority"
-					type="text"
-					bind:value={authority}
-					placeholder="usa-wa-sos"
-					autocomplete="off"
-				/>
-			</label>
+<div class="mt-6 flex flex-col gap-6 pb-12">
+	<header class="flex flex-wrap items-end justify-between gap-4">
+		<div class="flex min-w-0 flex-col gap-1">
+			<Heading level={1} eyebrow="Content">Review queue</Heading>
+			<p class="m-0 max-w-prose text-sm text-ink-muted">
+				Decide each Muse Spark proposal on its quoted evidence, never on the model's own summary.
+				Every decision is audited and reaches the dossier live.
+			</p>
+		</div>
+		<p class={`m-0 hidden items-center gap-1 text-xs text-ink-muted ${tab === 'facts' ? 'md:flex' : ''}`}>
+			<Kbd>j</Kbd><Kbd>k</Kbd> move <span aria-hidden="true">·</span> <Kbd>a</Kbd> accept
+			<span aria-hidden="true">·</span> <Kbd>r</Kbd> reject
 		</p>
-		<p class="m-0">
-			<label class="grid gap-1 font-bold" for="filter-topic">
-				Topic
-				<input
-					class="p-2 font-normal"
-					id="filter-topic"
-					type="text"
-					bind:value={topic}
-					placeholder="fees"
-					autocomplete="off"
-				/>
-			</label>
-		</p>
-		<p class="m-0">
-			<label class="grid gap-1 font-bold" for="filter-limit">
-				Per page
-				<select class="p-2 font-normal" id="filter-limit" bind:value={limit}>
-					<option value={25}>25</option>
-					<option value={50}>50</option>
-					<option value={100}>100</option>
-					<option value={200}>200</option>
-				</select>
-			</label>
-		</p>
-		<p class="m-0"><button type="submit">Apply</button></p>
-	</form>
+	</header>
 
-	{#if loadState === 'loading'}
-		<p>Loading…</p>
-	{:else if loadState === 'failed'}
-		<p class="font-bold text-error" role="alert">{loadError}</p>
-		<p><button type="button" onclick={() => loadQueue()}>Retry</button></p>
-	{:else if items.length === 0}
-		<p class="text-ink-muted">Queue clear — nothing proposed right now.</p>
-	{:else}
-		<p class="text-sm text-ink-muted">{queueCount} proposed</p>
-		<ol class="m-0 mt-4 list-none p-0 pb-8">
-			{#each sorted as item (item.id)}
-				{@const card = ui[item.id]}
-				{@const decision = decided[item.id]}
-				{@const risk = riskOf(item)}
-				<li class="border-b border-line py-4">
-					{#if decision}
-						<p class="m-0 font-bold" role="status">
-							Fact #{item.id} decided: {decision}.
-						</p>
+	{#if refreshNote}
+		<p class="m-0 text-sm font-semibold" role="status">{refreshNote}</p>
+	{/if}
+
+	<Tabs.Root value={tab} onValueChange={setTab} class="flex-col gap-4">
+		<div class="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+			<Tabs.List aria-label="Review sections">
+				<Tabs.Trigger value="facts" class={TRIGGER}>Facts{loadState === 'ready' ? ` ${open.length}` : ''}</Tabs.Trigger>
+				<Tabs.Trigger value="plans" class={TRIGGER}>Page plans{tabLabel(counts.plans)}</Tabs.Trigger>
+				<Tabs.Trigger value="offices" class={TRIGGER}>Offices{tabLabel(counts.offices)}</Tabs.Trigger>
+				<Tabs.Trigger value="forms" class={TRIGGER}>Forms{tabLabel(counts.forms)}</Tabs.Trigger>
+				<Tabs.Trigger value="translations" class={TRIGGER}>Translations</Tabs.Trigger>
+			</Tabs.List>
+		</div>
+
+		<Tabs.Content value="facts" class="flex flex-col gap-8">
+			<div class="grid items-start gap-4 lg:grid-cols-5">
+				<div class="flex min-w-0 flex-col gap-3 lg:col-span-3">
+					<form class="flex flex-wrap items-end gap-2" onsubmit={applyFilters} aria-label="Filter the queue">
+						<label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-ink-muted" for="filter-authority">
+							Authority
+							<Input id="filter-authority" class="h-9" bind:value={authority} autocomplete="off" />
+						</label>
+						<label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-ink-muted" for="filter-topic">
+							Topic
+							<Input id="filter-topic" class="h-9" bind:value={topic} autocomplete="off" />
+						</label>
+						<Button type="submit" variant="outline" size="lg">Filter</Button>
+					</form>
+
+					{#if loadState === 'loading'}
+						<div class="flex flex-col gap-2" role="status" aria-label="Loading the review queue">
+							{#each [0, 1, 2, 3, 4] as i (i)}
+								<Skeleton class="h-16 rounded-sm" />
+							{/each}
+						</div>
+					{:else if loadState === 'failed'}
+						<Notice variant="error" heading="The review queue could not load.">
+							<p class="m-0">{loadError}</p>
+							<p class="mt-3 mb-0"><Button variant="outline" onclick={() => loadQueue()}>Try again</Button></p>
+						</Notice>
+					{:else if items.length === 0}
+						<Card.Root class="items-start px-6 py-10">
+							<InboxIcon class="size-6 text-ink-muted" aria-hidden="true" />
+							<p class="m-0 text-h3 font-semibold">Queue clear</p>
+							<p class="m-0 text-sm text-ink-muted">Nothing proposed right now. Draft from a fresh capture to fill it.</p>
+							<Button href={resolve('/(admin)/trace')}>Open the trace console</Button>
+						</Card.Root>
 					{:else}
-						<article aria-label={`Proposed fact ${item.id}`}>
-							<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-								<h3 class="m-0 text-lg">
-									<a href={`${api()}/queue/${item.id}`}>Fact #{item.id}</a>
-								</h3>
-								<span class="font-mono text-sm">{item.authority_slug}</span>
-								<span class="inline-block rounded border border-line bg-surface-2 px-2 py-0.5 text-sm font-bold">
-									{item.topic}
-								</span>
-								{#if risk.badge}
-									<span class="inline-block rounded border border-warning bg-warning-bg px-2 py-0.5 text-sm font-bold">
-										{risk.badge}
-									</span>
-								{/if}
-								<span class="text-sm text-ink-muted">
-									by {item.created_by} · {age(item.created_at)}
-								</span>
-							</header>
-
-							{#if item.diff}
-								{@const parts = markChanged(item.diff.base_statement, item.statement)}
-								<section aria-label="Change from live fact">
-									<p class="mb-1 text-sm font-bold text-ink-muted">
-										Live fact #{item.diff.base_fact_id} [{item.diff.base_status}] →
-									</p>
-									<p class="m-0 mb-1">
-										{#each parts.base as seg, i (i)}<span
-											class={seg.changed ? 'bg-error-bg' : ''}
-										>{seg.text}</span>{/each}
-									</p>
-									<p class="m-0 mb-1 font-bold">↓ proposed:</p>
-									<p class="m-0">
-										{#each parts.next as seg, i (i)}<span
-											class={seg.changed ? 'bg-success-bg' : ''}
-										>{seg.text}</span>{/each}
-									</p>
-								</section>
-							{:else}
-								<section aria-label="No live sibling">
-									<p class="m-0 font-bold">{item.statement}</p>
-									<p class="text-sm text-ink-muted">
-										No live sibling — first claim on this topic.
-									</p>
-								</section>
-							{/if}
-
-							<section aria-label="Citations">
-								<h4 class="mb-1 text-base">Citations</h4>
-								{#if item.citations.length === 0}
-									<p class="text-sm text-ink-muted">No citation recorded.</p>
-								{:else}
-									<ul class="m-0 list-none p-0">
-										{#each item.citations as cite, ci (ci)}
-											<li class="mb-1">
-												<span class="font-mono text-sm">
-													capture {cite.capture_id} · bytes {cite.start_byte}–{cite.end_byte}
-												</span>
-												<code class="block max-w-[60rem] overflow-x-auto p-2">
-													{card.quoteOpen || cite.quote.length <= 280
-														? cite.quote
-														: `${cite.quote.slice(0, 280)}…`}
-												</code>
-												{#if cite.quote.length > 280}
-													<button type="button" onclick={() => (card.quoteOpen = !card.quoteOpen)}>
-														{card.quoteOpen ? 'Collapse' : 'Expand'} quote
+						<p class="m-0 text-xs text-ink-muted">
+							{queueCount} proposed · {decidedCount} decided this session · riskiest first
+						</p>
+						<div class="overflow-hidden rounded-md border border-line">
+							<table class="block w-full border-collapse text-sm md:table">
+								<caption class="sr-only">Proposed facts, riskiest first</caption>
+								<thead class="sr-only bg-surface md:not-sr-only">
+									<tr class="text-left text-xs text-ink-muted">
+										<th scope="col" class="px-3 py-2 font-medium">Proposed fact</th>
+										<th scope="col" class="px-3 py-2 font-medium">Signals</th>
+										<th scope="col" class="px-3 py-2 text-right font-medium">Age</th>
+									</tr>
+								</thead>
+								<tbody class="block md:table-row-group">
+									{#each sorted as item (item.id)}
+										{@const decision = decided[item.id]}
+										{@const risk = riskOf(item)}
+										{@const check = checks[item.id]}
+										<tr
+											id={`fact-row-${item.id}`}
+											class={`flex flex-col border-t border-l-2 border-t-line transition-colors duration-150 md:table-row ${item.id === selectedId ? 'border-l-accent-strong bg-surface' : 'border-l-transparent hover:bg-surface'}`}
+											aria-current={item.id === selectedId ? 'true' : undefined}
+										>
+											<td class="min-w-0 px-3 pt-2 md:py-2">
+												{#if decision}
+													<p class="m-0 flex items-center gap-2 py-1 font-semibold text-verified" role="status" in:fly={{ y: -4, duration: reduceMotion ? 0 : 150 }}>
+														<CheckIcon class="size-4 flex-none" aria-hidden="true" />Fact #{item.id} decided: {decision}.
+													</p>
+												{:else}
+													<button
+														type="button"
+														class="flex w-full min-w-0 cursor-pointer flex-col gap-0.5 text-left"
+														onclick={() => select(item.id)}
+													>
+														<span class="block max-w-full truncate font-mono text-xs text-ink-muted">#{item.id} · {item.authority_slug} · {item.topic}</span>
+														<span class="line-clamp-2 text-ink">{item.statement}</span>
 													</button>
 												{/if}
-											</li>
-										{/each}
-									</ul>
-								{/if}
-							</section>
-
-							<div class="my-3 max-w-[60rem] rounded border-2 border-warning bg-warning-bg p-3" role="note" aria-label="Untrusted model output">
-								<p class="m-0 mb-1 text-sm font-bold">
-									Untrusted model output — verify against citations, not this box.
-								</p>
-								{#if item.reasoning_untrusted}
-									<p class="m-0 text-sm">{item.reasoning_untrusted}</p>
-								{:else}
-									<p class="m-0 text-sm italic">Model gave no summary — review citations.</p>
-								{/if}
+											</td>
+											<td class="px-3 py-1 md:py-2">
+												<span class="flex flex-wrap gap-1">
+													{#if risk.badge}
+														<Badge variant="outline" class={riskCls(risk.badge)}>{risk.badge}</Badge>
+													{/if}
+													{#if check && WONDER[check.verdict]}
+														<Badge variant="outline" class={WONDER[check.verdict].cls}>
+															<SparklesIcon aria-hidden="true" />{WONDER[check.verdict].label}
+														</Badge>
+													{/if}
+												</span>
+											</td>
+											<td class="px-3 pb-2 text-xs whitespace-nowrap text-ink-muted md:py-2 md:text-right">
+												{ago(item.created_at, nowSec())}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+						{#if items.length >= limit}
+							<div>
+								<Button variant="outline" disabled={loadingMore} onclick={() => loadQueue(items[items.length - 1]?.id, true)}>
+									{loadingMore ? 'Working…' : 'Load more'}
+								</Button>
 							</div>
+						{/if}
+					{/if}
+				</div>
 
-							<section aria-label="Blast radius">
-								<h4 class="mb-1 text-base">Blast radius</h4>
+				<aside class="min-w-0 lg:sticky lg:top-20 lg:col-span-2" aria-label="Selected fact">
+					{#if loadState !== 'ready' || items.length === 0}
+						{#if loadState === 'loading'}
+							<Skeleton class="h-96 rounded-md" />
+						{/if}
+					{:else if !selected || !selectedCard}
+						<Card.Root class="items-start px-6 py-10">
+							<CheckCheckIcon class="size-6 text-verified" aria-hidden="true" />
+							<p class="m-0 text-h3 font-semibold">All caught up</p>
+							<p class="m-0 text-sm text-ink-muted">Every proposal in view is decided. The dossiers already show the accepted facts.</p>
+							<Button variant="outline" href={resolve('/(admin)/trace')}>Draft more in the trace console</Button>
+						</Card.Root>
+					{:else}
+						{@const item = selected}
+						{@const card = selectedCard}
+						{@const risk = riskOf(item)}
+						{@const check = checks[item.id]}
+						<Card.Root class="gap-4 shadow-md">
+							<Card.Header>
+								<Card.Title class="flex flex-wrap items-center gap-2">
+									<h2 class="m-0 text-h3 font-semibold">Fact #{item.id}</h2>
+									<Badge variant="secondary">{item.topic}</Badge>
+									{#if risk.badge}<Badge variant="outline" class={riskCls(risk.badge)}>{risk.badge}</Badge>{/if}
+								</Card.Title>
+								<Card.Description>
+									<span class="font-mono">{item.authority_slug}</span> · {modelName(item.created_by.split(' ')[0] ?? '')} · {ago(item.created_at, nowSec())}
+								</Card.Description>
+							</Card.Header>
+							<Card.Content class="flex flex-col gap-4">
+								{#if decided[item.id]}
+									<p class="m-0 text-sm font-semibold text-ink-muted">Already decided ({decided[item.id]}). Press j for the next one.</p>
+								{/if}
+								{#if item.diff}
+									{@const parts = markChanged(item.diff.base_statement, item.statement)}
+									<div class="flex flex-col gap-1" aria-label="Change from live fact">
+										<p class="m-0 text-xs text-ink-muted">Live fact #{item.diff.base_fact_id} ({item.diff.base_status})</p>
+										<p class="m-0 text-body">
+											{#each parts.base as seg, i (i)}<span class={seg.changed ? 'rounded-xs bg-error-bg line-through' : ''}>{seg.text}</span>{/each}
+										</p>
+										<p class="m-0 text-xs text-ink-muted">Proposed</p>
+										<p class="m-0 text-body font-semibold">
+											{#each parts.next as seg, i (i)}<span class={seg.changed ? 'rounded-xs bg-verified-bg' : ''}>{seg.text}</span>{/each}
+										</p>
+									</div>
+								{:else}
+									<p class="m-0 text-body font-semibold">{item.statement}</p>
+								{/if}
+
+								<section aria-label="Citations" class="flex flex-col gap-2">
+									{#if item.citations.length === 0}
+										<p class="m-0 text-sm text-error">No citation recorded — reject or re-draft.</p>
+									{:else}
+										{#each item.citations as cite, ci (ci)}
+											<figure class="m-0 flex flex-col gap-1 rounded-sm border-l-2 border-verified bg-surface px-3 py-2">
+												<blockquote class="m-0 font-quote text-body italic">
+													{card.quoteOpen || cite.quote.length <= 280 ? cite.quote : `${cite.quote.slice(0, 280)}…`}
+												</blockquote>
+												<figcaption class="flex flex-wrap items-center gap-2 font-mono text-xs text-ink-muted">
+													<CheckIcon class="size-3 text-verified" aria-hidden="true" />quote-verified · capture {cite.capture_id} · bytes {cite.start_byte}–{cite.end_byte}
+													{#if cite.quote.length > 280}
+														<Button variant="link" size="xs" onclick={() => (card.quoteOpen = !card.quoteOpen)}>
+															{card.quoteOpen ? 'Collapse' : 'Expand'} quote
+														</Button>
+													{/if}
+												</figcaption>
+											</figure>
+										{/each}
+									{/if}
+									{#if check}
+										<p class={`m-0 flex items-start gap-2 text-sm ${check.verdict === 'contradicted' ? 'text-error' : 'text-ink-muted'}`}>
+											<SparklesIcon class="mt-0.5 size-4 flex-none" aria-hidden="true" />
+											<span>
+												{modelName(check.model)} cross-check: {check.verdict.replace('_', ' ')}{check.quote && check.verdict === 'contradicted' ? ` — “${check.quote}”` : '.'}
+											</span>
+										</p>
+									{/if}
+								</section>
+
+								<div class="rounded-sm border border-warning bg-warning-bg px-3 py-2" role="note" aria-label="Untrusted model output">
+									<p class="m-0 text-xs font-semibold">Untrusted model output — verify against the quote, not this box.</p>
+									<p class="m-0 text-sm">{item.reasoning_untrusted ?? 'Model gave no summary.'}</p>
+								</div>
+
 								{#if item.blast_radius.conflict}
-									<Notice variant="warning" heading="Conflicting reports for this item.">
+									<div class="flex flex-col gap-1 rounded-sm bg-error-bg px-3 py-2 text-sm">
+										<p class="m-0 flex items-center gap-2 font-semibold"><TriangleAlertIcon class="size-4" aria-hidden="true" />Conflicts with a live fact</p>
 										{#each item.blast_radius.conflicts as sib (sib.id)}
-											<p>{sib.statement} <span class="font-mono">[{sib.status}]</span></p>
+											<p class="m-0">#{sib.id} {sib.statement} <span class="font-mono text-xs">({sib.status})</span></p>
 										{/each}
-									</Notice>
-								{:else}
-									<p class="text-sm text-ink-muted">No conflicting siblings.</p>
+									</div>
 								{/if}
-								<p class="text-sm">
-									<a href={resolve('/(admin)/triage')}>
-										{item.blast_radius.open_tasks} open task{item.blast_radius.open_tasks === 1 ? '' : 's'}
-									</a>
-								</p>
-							</section>
 
-							<section aria-label="Provenance">
-								<h4 class="mb-1 text-base">Provenance</h4>
-								<p class="m-0 flex flex-wrap items-center gap-2 text-sm">
-									<span class={trustChip(item.provenance.trust)}>{item.provenance.trust}</span>
-									<span>{item.provenance.capture_kind} capture #{item.provenance.capture_id}</span>
-									<span class="text-ink-muted">authenticity: {item.provenance.authenticity}</span>
-								</p>
-								<p class="text-sm text-ink-muted">
-									Evidence sidecar: <code>{item.provenance.sidecar}</code>
-								</p>
-							</section>
+								<dl class="m-0 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+									<div>
+										<dt class="text-xs text-ink-muted">Source</dt>
+										<dd class="m-0">{item.provenance.trust} · {item.provenance.capture_kind} #{item.provenance.capture_id}</dd>
+									</div>
+									<div>
+										<dt class="text-xs text-ink-muted">Authenticity</dt>
+										<dd class="m-0">{item.provenance.authenticity}</dd>
+									</div>
+									<div>
+										<dt class="text-xs text-ink-muted">Open tasks</dt>
+										<dd class="m-0"><a href={resolve('/(admin)/triage')}>{item.blast_radius.open_tasks}</a></dd>
+									</div>
+									<div class="min-w-0">
+										<dt class="text-xs text-ink-muted">Evidence sidecar</dt>
+										<dd class="m-0 truncate font-mono text-xs">{item.provenance.sidecar}</dd>
+									</div>
+								</dl>
 
-							<div class="mt-3 flex flex-wrap gap-2">
-								<button type="button" disabled={card.acting} onclick={() => accept(item.id)}>
-									{card.acting ? 'Working…' : 'Accept'}
-								</button>
-								<button type="button" disabled={card.acting} onclick={() => startEdit(item)}>
-									Accept with edit
-								</button>
-								<button
-									type="button"
-									disabled={card.acting}
-									onclick={() => (card.rejectOpen = !card.rejectOpen)}
-								>
-									{card.rejectOpen ? 'Hide reject' : 'Reject…'}
-								</button>
-							</div>
-
-							{#if card.editing}
-								<div class="mt-2 max-w-[60rem]">
-									<label class="grid gap-1 font-bold" for={`edit-${item.id}`}>
-										Edited statement
-										<textarea
-											class="p-2 font-normal"
-											id={`edit-${item.id}`}
-											rows="3"
-											bind:value={card.editText}
-										></textarea>
-									</label>
-									{#if card.editText !== item.statement}
-										{@const preview = markChanged(item.statement, card.editText)}
-										<div class="mt-2 border border-line p-2" aria-label="Diff preview">
-											<p class="m-0 mb-1 text-sm font-bold text-ink-muted">
-												Diff preview (edited vs current proposal):
-											</p>
-											<p class="m-0">
-												{#each preview.next as seg, pi (pi)}<span
-													class={seg.changed ? 'bg-success-bg' : ''}
-												>{seg.text}</span>{/each}
-											</p>
+								{#if !decided[item.id]}
+									<div class="flex flex-wrap gap-2">
+										<Button size="lg" disabled={card.acting} onclick={() => accept(item.id)} aria-keyshortcuts="a">
+											Accept
+										</Button>
+										<Button size="lg" variant="outline" disabled={card.acting} onclick={() => startEdit(item)}>
+											Accept with edit
+										</Button>
+										<Button
+											size="lg"
+											variant="outline"
+											disabled={card.acting}
+											aria-keyshortcuts="r"
+											aria-expanded={card.rejectOpen}
+											onclick={() => (card.rejectOpen ? (card.rejectOpen = false) : openReject(item))}
+										>
+											{card.rejectOpen ? 'Hide reject' : 'Reject…'}
+										</Button>
+									</div>
+									{#if batch.length >= 2}
+										<div>
+											<Button variant="secondary" size="lg" disabled={batchActing} onclick={acceptBatch}>
+												<CheckCheckIcon aria-hidden="true" />
+												Accept all verified from this capture ({batch.length})
+											</Button>
 										</div>
 									{/if}
-									<p class="text-sm text-ink-muted">{card.editText.length}/2000 chars</p>
-									<div class="flex gap-2">
-										<button
-											type="button"
-											disabled={card.acting ||
-												card.editText.trim().length === 0 ||
-												card.editText.length > 2000}
-											onclick={() => acceptEdit(item)}
-										>
-											{card.acting ? 'Working…' : 'Submit accept'}
-										</button>
-										<button type="button" onclick={() => (card.editing = false)}>Cancel</button>
-									</div>
-								</div>
-							{/if}
+								{/if}
 
-							{#if card.rejectOpen}
-								<div class="mt-2 max-w-[60rem]">
-									<label class="grid gap-1 font-bold" for={`reason-${item.id}`}>
-										Reject reason (required)
-										<textarea
-											class="p-2 font-normal"
-											id={`reason-${item.id}`}
-											rows="2"
-											bind:value={card.reason}
-										></textarea>
-									</label>
-									<p class="text-sm text-ink-muted">{card.reason.trim().length}/1024 chars</p>
-									<details class="mb-2 border border-line p-2">
-										<summary class="cursor-pointer font-bold">Also suppress future copies</summary>
-										<p>
-											<label class="flex items-start gap-2" for={`suppress-${item.id}`}>
-												<input
-													id={`suppress-${item.id}`}
-													type="checkbox"
-													bind:checked={card.suppressOn}
-												/>
-												Create a suppress rule for this statement
-											</label>
-										</p>
-										{#if card.suppressOn}
-											<p>
-												<label class="grid max-w-[20rem] gap-1 font-bold" for={`scope-${item.id}`}>
-													Scope
-													<select
-														class="p-2 font-normal"
-														id={`scope-${item.id}`}
-														bind:value={card.scope}
-													>
-														<option value="authority">This authority</option>
-														<option value="global">Global (all authorities)</option>
-													</select>
-												</label>
+								{#if card.editing}
+									<div class="flex flex-col gap-2">
+										<label class="flex flex-col gap-1 text-sm font-medium" for={`edit-${item.id}`}>
+											Edited statement
+											<Textarea id={`edit-${item.id}`} rows={3} bind:value={card.editText} />
+										</label>
+										{#if card.editText !== item.statement}
+											{@const preview = markChanged(item.statement, card.editText)}
+											<p class="m-0 rounded-sm border border-line px-3 py-2 text-sm" aria-label="Diff preview">
+												{#each preview.next as seg, pi (pi)}<span class={seg.changed ? 'rounded-xs bg-verified-bg' : ''}>{seg.text}</span>{/each}
 											</p>
-											<p>
-												<label class="flex items-start gap-2" for={`lock-${item.id}`}>
+										{/if}
+										<p class="m-0 text-xs text-ink-muted">{card.editText.length}/2000 chars</p>
+										<div class="flex gap-2">
+											<Button
+												disabled={card.acting || card.editText.trim().length === 0 || card.editText.length > 2000}
+												onclick={() => acceptEdit(item)}
+											>
+												{card.acting ? 'Working…' : 'Submit accept'}
+											</Button>
+											<Button variant="ghost" onclick={() => (card.editing = false)}>Cancel</Button>
+										</div>
+									</div>
+								{/if}
+
+								{#if card.rejectOpen}
+									<div class="flex flex-col gap-2">
+										<label class="flex flex-col gap-1 text-sm font-medium" for={`reason-${item.id}`}>
+											Reject reason (required)
+											<Textarea id={`reason-${item.id}`} rows={2} bind:value={card.reason} />
+										</label>
+										<p class="m-0 text-xs text-ink-muted">{card.reason.trim().length}/1024 chars</p>
+										<label class="flex items-start gap-2 text-sm" for={`suppress-${item.id}`}>
+											<input id={`suppress-${item.id}`} type="checkbox" class="mt-1" bind:checked={card.suppressOn} />
+											Also suppress future copies of this statement
+										</label>
+										{#if card.suppressOn}
+											<fieldset class="m-0 flex flex-col gap-1 border-0 p-0 text-sm">
+												<legend class="mb-1 text-xs font-medium text-ink-muted">Scope</legend>
+												<label class="flex items-center gap-2"><input type="radio" name={`scope-${item.id}`} value="authority" bind:group={card.scope} />This authority</label>
+												<label class="flex items-center gap-2"><input type="radio" name={`scope-${item.id}`} value="global" bind:group={card.scope} />Global (all authorities)</label>
+												<label class="mt-1 flex items-center gap-2" for={`lock-${item.id}`}>
 													<input id={`lock-${item.id}`} type="checkbox" bind:checked={card.lockTopic} />
 													Lock rule to topic “{item.topic}”
 												</label>
-											</p>
+											</fieldset>
 										{/if}
-									</details>
-									<p>
-										<button
-											type="button"
-											disabled={card.acting ||
-												card.reason.trim().length === 0 ||
-												card.reason.length > 1024}
-											onclick={() => reject(item)}
-										>
-											{card.acting ? 'Working…' : 'Submit reject'}
-										</button>
-									</p>
-								</div>
-							{/if}
+										<div>
+											<Button
+												variant="destructive"
+												disabled={card.acting || card.reason.trim().length === 0 || card.reason.length > 1024}
+												onclick={() => reject(item)}
+											>
+												{card.acting ? 'Working…' : 'Submit reject'}
+											</Button>
+										</div>
+									</div>
+								{/if}
 
-							{#if card.error}
-								<p class="font-bold text-error" role="alert">{card.error}</p>
-							{/if}
-						</article>
+								{#if card.error}
+									<p class="m-0 text-sm font-semibold text-error" role="alert">{card.error}</p>
+								{/if}
+							</Card.Content>
+						</Card.Root>
 					{/if}
-				</li>
-			{/each}
-		</ol>
-		{#if items.length >= limit}
-			<p>
-				<button
-					type="button"
-					disabled={loadingMore}
-					onclick={() => loadQueue(items[items.length - 1]?.id, true)}
-				>
-					{loadingMore ? 'Loading…' : 'Load more'}
-				</button>
-			</p>
-		{/if}
-	{/if}
-</section>
-{:else}
-<section aria-labelledby="translations">
-	<h2 id="translations">Translations</h2>
-	<p class="max-w-[60rem] text-sm text-ink-muted">
-		Muse Spark renders each accepted fact into Spanish and French. A deterministic
-		guard holds back any render that drops or rewrites digits, currency amounts, or
-		addresses — held rows stay English on the public dossier.
-	</p>
-	<p class="flex flex-wrap gap-2">
-		<button type="button" onclick={backfill}>Backfill missing (20)</button>
-		<button type="button" onclick={() => { void loadAccepted(); void loadTranslations(); }}>
-			Refresh
-		</button>
-	</p>
-	{#if trNote}
-		<p class="font-bold" role="status">{trNote}</p>
-	{/if}
-	{#if acceptedState === 'loading' || trState === 'loading'}
-		<p>Loading…</p>
-	{:else if acceptedState === 'failed'}
-		<p class="font-bold text-error" role="alert">{acceptedError}</p>
-		<p><button type="button" onclick={() => loadAccepted()}>Retry</button></p>
-	{:else if trState === 'failed'}
-		<p class="font-bold text-error" role="alert">{trError}</p>
-		<p><button type="button" onclick={() => loadTranslations()}>Retry</button></p>
-	{:else if acceptedFacts.length === 0}
-		<p class="text-ink-muted">No accepted facts yet — accept from the queue first.</p>
-	{:else}
-		<p class="text-sm text-ink-muted">{acceptedFacts.length} accepted · {trRows.length} rows</p>
-		<ol class="m-0 mt-4 list-none p-0 pb-8">
-			{#each acceptedFacts as fact (fact.id)}
-				<li class="border-b border-line py-4">
-					<article aria-label={`Accepted fact ${fact.id}`}>
-						<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-							<h3 class="m-0 text-lg">Fact #{fact.id}</h3>
-							<span class="inline-block rounded border border-line bg-surface-2 px-2 py-0.5 text-sm font-bold">
-								{fact.topic}
-							</span>
-						</header>
-						<p class="m-0 font-bold">{fact.statement}</p>
-						<ul class="m-0 mt-2 list-none p-0">
-							{#each ['es', 'fr'] as lang (lang)}
-								{@const row = trFor(fact.id, lang)}
-								<li class="mb-1 flex flex-wrap items-center gap-2 text-sm">
-									<span class="font-mono">{lang}</span>
-									<span
-										class="inline-block rounded border border-line bg-surface-2 px-2 py-0.5 text-sm font-bold"
-									>
-										{trLabel(row)}
+				</aside>
+			</div>
+
+			<div class="grid items-start gap-4 lg:grid-cols-2">
+				<section aria-labelledby="blocked" class="flex flex-col gap-2">
+					<h2 id="blocked" class="m-0 text-h3 font-semibold">Blocked by the verifier</h2>
+					<p class="m-0 text-sm text-ink-muted">
+						Records the verifier refused: unknown topic, bad span, or a value outside its quote.
+						Nothing here reaches the dossier.
+					</p>
+					{#if blockedState === 'loading'}
+						<Skeleton class="h-16 rounded-sm" />
+					{:else if blockedState === 'failed'}
+						<p class="m-0 text-sm text-ink-muted" role="status">{blockedError}</p>
+						<div><Button variant="outline" size="sm" onclick={loadBlocked}>Try again</Button></div>
+					{:else if blocked.length === 0}
+						<p class="m-0 text-sm text-ink-muted">Nothing blocked — every recent draft passed the verifier.</p>
+					{:else}
+						<p class="m-0 text-xs text-ink-muted">{blockedCount} blocked</p>
+						<ul class="m-0 flex list-none flex-col p-0">
+							{#each blocked as row (row.id)}
+								<li class="flex flex-col gap-0.5 border-t border-line py-2 text-sm">
+									<span class="font-mono text-xs text-ink-muted">
+										{row.authority_slug} · {row.topic} · attempt {row.attempt} · bytes {row.span_start}–{row.span_end}
 									</span>
-									{#if row?.statement}
-										<span class="max-w-[60rem] break-words text-ink-muted">{row.statement}</span>
-									{/if}
-									{#if row?.model}
-										<span class="font-mono text-xs text-ink-muted">{row.model}</span>
-									{/if}
-									<button
-										type="button"
-										disabled={trActing[trKey(fact.id, lang)]}
-										onclick={() => translateOne(fact.id, lang)}
-									>
-										{trActing[trKey(fact.id, lang)] ? 'Working…' : 'Translate'}
-									</button>
+									<span><span class="font-semibold">{row.kind.replaceAll('_', ' ')}</span>: {row.field} “{row.value}”</span>
 								</li>
 							{/each}
 						</ul>
-					</article>
-				</li>
-			{/each}
-		</ol>
-	{/if}
-</section>
-{/if}
-
-<section aria-labelledby="blocked">
-	<h2 id="blocked">Blocked by the verifier</h2>
-	{#if blockedState === 'ready'}
-		<p class="text-sm text-ink-muted">{blockedCount} blocked</p>
-	{/if}
-	<p class="max-w-[60rem] text-sm text-ink-muted">
-		Records the verifier refused — unknown topic, bad span, or a value outside its
-		quote. Fix the evidence and re-draft; nothing here reaches the dossier.
-	</p>
-	{#if blockedState === 'failed'}
-		<p class="font-bold text-error" role="alert">{blockedError}</p>
-		<p><button type="button" onclick={loadBlocked}>Retry</button></p>
-	{:else if blockedState === 'ready' && blocked.length === 0}
-		<p class="text-ink-muted">Nothing blocked — every recent draft passed the verifier.</p>
-	{:else if blockedState === 'ready'}
-		<ul class="m-0 mt-4 list-none p-0 pb-8">
-			{#each blocked as row (row.id)}
-				<li class="border-b border-line py-[0.7rem]">
-					<p class="m-0">
-						<span class="font-mono text-sm">{row.authority_slug}</span>
-						<span class="inline-block rounded border border-line bg-surface-2 px-2 py-0.5 text-sm font-bold">
-							{row.topic}
-						</span>
-						<span class="text-sm text-ink-muted">
-							attempt {row.attempt} · bytes {row.span_start}–{row.span_end}
-						</span>
-					</p>
-					<p class="m-0 text-sm">
-						<span class="font-bold">{row.kind}</span> — {row.field}: {row.value}
-					</p>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</section>
-
-<section aria-labelledby="rules">
-	<h2 id="rules">Suppress rules</h2>
-	<p class="max-w-[60rem] text-sm text-ink-muted">
-		Rules skip matching statements before they reach the queue (suppression is skip-only —
-		accepted facts are never touched). Every rule is reversible.
-	</p>
-	<form class="max-w-[60rem]" onsubmit={saveRule}>
-		<p>
-			<label class="grid gap-1 font-bold" for="rule-statement">
-				Statement to suppress
-				<textarea
-					class="p-2 font-normal"
-					id="rule-statement"
-					rows="2"
-					bind:value={ruleStatement}
-				></textarea>
-			</label>
-		</p>
-		<div class="flex flex-wrap gap-3">
-			<p class="m-0">
-				<label class="grid gap-1 font-bold" for="rule-authority">
-					Authority (blank = global)
-					<input
-						class="p-2 font-normal"
-						id="rule-authority"
-						type="text"
-						bind:value={ruleAuthority}
-						autocomplete="off"
-					/>
-				</label>
-			</p>
-			<p class="m-0">
-				<label class="grid gap-1 font-bold" for="rule-topic">
-					Topic (blank = all)
-					<input
-						class="p-2 font-normal"
-						id="rule-topic"
-						type="text"
-						bind:value={ruleTopic}
-						autocomplete="off"
-					/>
-				</label>
-			</p>
-			<p class="m-0">
-				<label class="grid gap-1 font-bold" for="rule-reason">
-					Reason
-					<input
-						class="p-2 font-normal"
-						id="rule-reason"
-						type="text"
-						bind:value={ruleReason}
-						autocomplete="off"
-					/>
-				</label>
-			</p>
-		</div>
-		{#if ruleError}
-			<p class="font-bold text-error" role="alert">{ruleError}</p>
-		{/if}
-		<p>
-			<button type="submit" disabled={ruleSaving}>{ruleSaving ? 'Saving…' : 'Create rule'}</button>
-		</p>
-	</form>
-
-	<p>
-		<label class="flex items-start gap-2" for="show-revoked">
-			<input id="show-revoked" type="checkbox" checked={showRevoked} onchange={toggleRevoked} />
-			Show revoked rules
-		</label>
-	</p>
-	{#if rulesState === 'loading'}
-		<p>Loading…</p>
-	{:else if rulesState === 'failed'}
-		<p class="font-bold text-error" role="alert">{rulesError}</p>
-		<p><button type="button" onclick={loadRules}>Retry</button></p>
-	{:else if rules.length === 0}
-		<p class="text-ink-muted">No suppress rules.</p>
-	{:else}
-		<ul class="m-0 mt-4 list-none p-0 pb-8">
-			{#each rules as rule (rule.id)}
-				<li class="border-b border-line py-[0.7rem]">
-					<p class="m-0">
-						<span class="font-bold">Rule #{rule.id}</span>
-						<span class="font-mono text-sm">
-							{rule.authority_slug ?? 'global'} · {rule.topic ?? 'all topics'}
-						</span>
-						{#if rule.revoked_at !== null}
-							<span class="text-sm font-bold text-error">revoked</span>
-						{/if}
-					</p>
-					<p class="m-0 text-sm">{rule.statement}</p>
-					<p class="m-0 text-sm text-ink-muted">
-						{rule.reason || 'no reason'} · by {rule.created_by}
-					</p>
-					{#if rule.revoked_at === null}
-						<p class="m-0 mt-1">
-							<button type="button" onclick={() => revoke(rule.id)}>Revoke</button>
-						</p>
 					{/if}
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</section>
+				</section>
 
-<section aria-labelledby="skips">
-	<h2 id="skips">Suppression log</h2>
-	<p class="max-w-[60rem] text-sm text-ink-muted">
-		Read-only: statements the runner skipped. Path A = live duplicate, path B = matched
-		rule.
-	</p>
-	{#if skipsState === 'loading'}
-		<p>Loading…</p>
-	{:else if skipsState === 'failed'}
-		<p class="font-bold text-error" role="alert">{skipsError}</p>
-		<p><button type="button" onclick={loadSuppressions}>Retry</button></p>
-	{:else if suppressions.length === 0}
-		<p class="text-ink-muted">No suppressions recorded.</p>
-	{:else}
-		<div class="overflow-x-auto pb-8">
-			<table>
-				<thead>
-					<tr>
-						<th scope="col">ID</th>
-						<th scope="col">Authority</th>
-						<th scope="col">Topic</th>
-						<th scope="col">Path</th>
-						<th scope="col">Rule</th>
-						<th scope="col">Statement</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each suppressions as skip (skip.id)}
-						<tr>
-							<td>#{skip.id}</td>
-							<td class="font-mono text-sm">{skip.authority_slug}</td>
-							<td>{skip.topic}</td>
-							<td>{skip.path}</td>
-							<td>{skip.rule_id === null ? '—' : `#${skip.rule_id}`}</td>
-							<td class="max-w-[40rem]">{skip.statement}</td>
-						</tr>
+				<section aria-labelledby="skips" class="flex flex-col gap-2">
+					<h2 id="skips" class="m-0 text-h3 font-semibold">Suppression log</h2>
+					<p class="m-0 text-sm text-ink-muted">Statements the runner skipped: path A is a live duplicate, path B a matched rule.</p>
+					{#if skipsState === 'loading'}
+						<Skeleton class="h-16 rounded-sm" />
+					{:else if skipsState === 'failed'}
+						<p class="m-0 text-sm text-ink-muted" role="status">{skipsError}</p>
+						<div><Button variant="outline" size="sm" onclick={loadSuppressions}>Try again</Button></div>
+					{:else if suppressions.length === 0}
+						<p class="m-0 text-sm text-ink-muted">No suppressions recorded.</p>
+					{:else}
+						<ul class="m-0 flex list-none flex-col p-0">
+							{#each suppressions as skip (skip.id)}
+								<li class="flex flex-col gap-0.5 border-t border-line py-2 text-sm">
+									<span class="font-mono text-xs text-ink-muted">
+										#{skip.id} · {skip.authority_slug} · {skip.topic} · path {skip.path}{skip.rule_id === null ? '' : ` · rule #${skip.rule_id}`}
+									</span>
+									<span>{skip.statement}</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</section>
+			</div>
+
+			<section aria-labelledby="rules" class="flex flex-col gap-3">
+				<div class="flex flex-wrap items-baseline justify-between gap-2">
+					<h2 id="rules" class="m-0 text-h3 font-semibold">Suppress rules</h2>
+					<label class="flex items-center gap-2 text-sm" for="show-revoked">
+						<input id="show-revoked" type="checkbox" checked={showRevoked} onchange={toggleRevoked} />
+						Show revoked rules
+					</label>
+				</div>
+				<p class="m-0 max-w-prose text-sm text-ink-muted">
+					Rules skip matching statements before they reach the queue. Accepted facts are never
+					touched, and every rule is reversible.
+				</p>
+				<form class="grid gap-2 md:grid-cols-4" onsubmit={saveRule} aria-label="Create a suppress rule">
+					<label class="flex flex-col gap-1 text-xs font-medium text-ink-muted md:col-span-4" for="rule-statement">
+						Statement to suppress
+						<Textarea id="rule-statement" rows={2} bind:value={ruleStatement} />
+					</label>
+					<label class="flex flex-col gap-1 text-xs font-medium text-ink-muted" for="rule-authority">
+						Authority (blank = global)
+						<Input id="rule-authority" class="h-9" bind:value={ruleAuthority} autocomplete="off" />
+					</label>
+					<label class="flex flex-col gap-1 text-xs font-medium text-ink-muted" for="rule-topic">
+						Topic (blank = all)
+						<Input id="rule-topic" class="h-9" bind:value={ruleTopic} autocomplete="off" />
+					</label>
+					<label class="flex flex-col gap-1 text-xs font-medium text-ink-muted" for="rule-reason">
+						Reason
+						<Input id="rule-reason" class="h-9" bind:value={ruleReason} autocomplete="off" />
+					</label>
+					<div class="flex items-end">
+						<Button type="submit" variant="outline" size="lg" disabled={ruleSaving}>{ruleSaving ? 'Saving…' : 'Create rule'}</Button>
+					</div>
+				</form>
+				{#if ruleError}
+					<p class="m-0 text-sm font-semibold text-error" role="alert">{ruleError}</p>
+				{/if}
+				{#if rulesState === 'loading'}
+					<Skeleton class="h-16 rounded-sm" />
+				{:else if rulesState === 'failed'}
+					<p class="m-0 text-sm text-ink-muted" role="status">{rulesError}</p>
+					<div><Button variant="outline" size="sm" onclick={loadRules}>Try again</Button></div>
+				{:else if rules.length === 0}
+					<p class="m-0 text-sm text-ink-muted">No suppress rules.</p>
+				{:else}
+					<ul class="m-0 flex list-none flex-col p-0">
+						{#each rules as rule (rule.id)}
+							<li class="flex flex-wrap items-start justify-between gap-2 border-t border-line py-2 text-sm">
+								<span class="flex min-w-0 flex-col gap-0.5">
+									<span class="font-mono text-xs text-ink-muted">
+										Rule #{rule.id} · {rule.authority_slug ?? 'global'} · {rule.topic ?? 'all topics'}{rule.revoked_at !== null ? ' · revoked' : ''}
+									</span>
+									<span>{rule.statement}</span>
+									<span class="text-xs text-ink-muted">{rule.reason || 'no reason'} · by {rule.created_by}</span>
+								</span>
+								{#if rule.revoked_at === null}
+									<Button variant="ghost" size="sm" onclick={() => revoke(rule.id)}>Revoke</Button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		</Tabs.Content>
+
+		<Tabs.Content value="plans">
+			<PlanReview onCount={(n) => (counts.plans = n)} />
+		</Tabs.Content>
+
+		<Tabs.Content value="offices">
+			<OfficeReview onCount={(n) => (counts.offices = n)} />
+		</Tabs.Content>
+
+		<Tabs.Content value="forms">
+			<FormMapReview onCount={(n) => (counts.forms = n)} />
+		</Tabs.Content>
+
+		<Tabs.Content value="translations" class="flex flex-col gap-3">
+			<p class="m-0 max-w-prose text-sm text-ink-muted">
+				Muse Spark renders each accepted fact into Spanish and French. A deterministic guard holds
+				back any render that drops or rewrites digits, currency amounts or addresses; held rows stay
+				English on the public dossier.
+			</p>
+			<div class="flex flex-wrap gap-2">
+				<Button variant="outline" onclick={backfill}>Backfill missing (20)</Button>
+				<Button variant="ghost" onclick={() => { void loadAccepted(); void loadTranslations(); }}>Refresh</Button>
+			</div>
+			{#if trNote}
+				<p class="m-0 text-sm font-semibold" role="status">{trNote}</p>
+			{/if}
+			{#if acceptedState === 'loading' || trState === 'loading' || acceptedState === 'idle'}
+				<div class="flex flex-col gap-2" role="status" aria-label="Loading translations">
+					<Skeleton class="h-16 rounded-sm" />
+					<Skeleton class="h-16 rounded-sm" />
+				</div>
+			{:else if acceptedState === 'failed'}
+				<Notice variant="warning" heading="Accepted facts are unavailable.">
+					<p class="m-0">{acceptedError}</p>
+					<p class="mt-3 mb-0"><Button variant="outline" onclick={() => loadAccepted()}>Try again</Button></p>
+				</Notice>
+			{:else if trState === 'failed'}
+				<Notice variant="warning" heading="Translations are unavailable.">
+					<p class="m-0">{trError}</p>
+					<p class="mt-3 mb-0"><Button variant="outline" onclick={() => loadTranslations()}>Try again</Button></p>
+				</Notice>
+			{:else if acceptedFacts.length === 0}
+				<p class="m-0 text-sm text-ink-muted">No accepted facts yet. Accept from the Facts tab first.</p>
+			{:else}
+				<p class="m-0 text-xs text-ink-muted">{acceptedFacts.length} accepted · {trRows.length} rows</p>
+				<ul class="m-0 flex list-none flex-col p-0">
+					{#each acceptedFacts as fact (fact.id)}
+						<li class="flex flex-col gap-2 border-t border-line py-3">
+							<p class="m-0 flex flex-wrap items-center gap-2 text-sm">
+								<span class="font-mono text-xs text-ink-muted">Fact #{fact.id}</span>
+								<Badge variant="secondary">{fact.topic}</Badge>
+								<span class="font-semibold">{fact.statement}</span>
+							</p>
+							<ul class="m-0 flex list-none flex-col gap-1 p-0">
+								{#each ['es', 'fr'] as lang (lang)}
+									{@const row = trFor(fact.id, lang)}
+									<li class="flex flex-wrap items-center gap-2 text-sm">
+										<span class="w-6 font-mono text-xs">{lang}</span>
+										<Badge variant="outline">{trLabel(row)}</Badge>
+										{#if row?.statement}<span class="min-w-0 break-words text-ink-muted">{row.statement}</span>{/if}
+										<Button
+											variant="ghost"
+											size="sm"
+											disabled={trActing[trKey(fact.id, lang)]}
+											onclick={() => translateOne(fact.id, lang)}
+										>
+											{trActing[trKey(fact.id, lang)] ? 'Working…' : 'Translate'}
+										</Button>
+									</li>
+								{/each}
+							</ul>
+						</li>
 					{/each}
-				</tbody>
-			</table>
-		</div>
-	{/if}
-</section>
-									
+				</ul>
+			{/if}
+		</Tabs.Content>
+	</Tabs.Root>
+</div>

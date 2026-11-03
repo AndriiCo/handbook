@@ -1,0 +1,150 @@
+{
+  "items": [
+    {
+      "id": 7,
+      "authority_slug": "vietnam",
+      "topic": "fees",
+      "statement": "Legalization at the Consular Department costs 300,000 VND per document.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793749800,
+      "diff": null,
+      "citations": [
+        {
+          "capture_id": 3,
+          "start_byte": 120,
+          "end_byte": 220,
+          "quote": "The Consular Department charges 300,000 VND for each legalized document copy presented at the counter."
+        }
+      ],
+      "reasoning_untrusted": "SYNTHETIC: the fee table lists one per-document charge.",
+      "blast_radius": { "conflict": false, "conflicts": [], "open_tasks": 0 },
+      "provenance": {
+        "capture_id": 3,
+        "capture_kind": "fetch",
+        "trust": "official",
+        "authenticity": "tls-fetch",
+        "sidecar": "vietnam-consular-fees.sidecar.json"
+      }
+    },
+    {
+      "id": 8,
+      "authority_slug": "vietnam",
+      "topic": "hours",
+      "statement": "The Consular Department receives documents Monday to Friday, 8:00 to 11:30.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793749800,
+      "diff": null,
+      "citations": [
+        {
+          "capture_id": 3,
+          "start_byte": 260,
+          "end_byte": 344,
+          "quote": "Documents are received from Monday to Friday, 8:00 to 11:30 (SYNTHETIC fixture text)."
+        }
+      ],
+      "reasoning_untrusted": null,
+      "blast_radius": { "conflict": false, "conflicts": [], "open_tasks": 0 },
+      "provenance": {
+        "capture_id": 3,
+        "capture_kind": "fetch",
+        "trust": "official",
+        "authenticity": "tls-fetch",
+        "sidecar": "vietnam-consular-fees.sidecar.json"
+      }
+    },
+    {
+      "id": 9,
+      "authority_slug": "vietnam",
+      "topic": "processing_time",
+      "statement": "Legalization takes 3 working days from receipt.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793749800,
+      "diff": {
+        "base_statement": "Legalization takes 5 working days from receipt.",
+        "base_fact_id": 41,
+        "base_status": "accepted"
+      },
+      "citations": [
+        {
+          "capture_id": 3,
+          "start_byte": 400,
+          "end_byte": 470,
+          "quote": "Results are returned within 3 working days of receipt (SYNTHETIC fixture text)."
+        }
+      ],
+      "reasoning_untrusted": "SYNTHETIC: the page now says 3 days, the live fact says 5.",
+      "blast_radius": { "conflict": false, "conflicts": [], "open_tasks": 1 },
+      "provenance": {
+        "capture_id": 3,
+        "capture_kind": "fetch",
+        "trust": "official",
+        "authenticity": "tls-fetch",
+        "sidecar": "vietnam-consular-fees.sidecar.json"
+      }
+    },
+    {
+      "id": 12,
+      "authority_slug": "usa-wa-sos",
+      "topic": "mailing",
+      "statement": "Mailed requests go to PO Box 4000, Olympia, WA 98504.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793746200,
+      "diff": null,
+      "citations": [
+        {
+          "capture_id": 120,
+          "start_byte": 1820,
+          "end_byte": 1902,
+          "quote": "Mail your request to the Apostille Program, PO Box 4000, Olympia, WA 98504 (SYNTHETIC fixture text)."
+        }
+      ],
+      "reasoning_untrusted": null,
+      "blast_radius": {
+        "conflict": true,
+        "conflicts": [
+          { "id": 33, "statement": "Mailed requests go to PO Box 40220, Olympia, WA 98504.", "status": "accepted" }
+        ],
+        "open_tasks": 0
+      },
+      "provenance": {
+        "capture_id": 120,
+        "capture_kind": "fetch",
+        "trust": "official",
+        "authenticity": "tls-fetch",
+        "sidecar": "usa-wa-sos-apostille.sidecar.json"
+      }
+    },
+    {
+      "id": 13,
+      "authority_slug": "hcch",
+      "topic": "membership",
+      "statement": "The Apostille Convention has 128 Contracting Parties.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793742600,
+      "diff": null,
+      "citations": [
+        {
+          "capture_id": 77,
+          "start_byte": 40,
+          "end_byte": 118,
+          "quote": "SYNTHETIC fixture text: the status table lists 128 Contracting Parties to the Convention."
+        }
+      ],
+      "reasoning_untrusted": null,
+      "blast_radius": { "conflict": false, "conflicts": [], "open_tasks": 0 },
+      "provenance": {
+        "capture_id": 77,
+        "capture_kind": "fetch",
+        "trust": "secondary",
+        "authenticity": "tls-fetch",
+        "sidecar": "hcch-status.sidecar.json"
+      }
+    }
+  ],
+  "count": 5
+}

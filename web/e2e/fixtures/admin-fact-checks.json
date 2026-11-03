@@ -1,0 +1,32 @@
+{
+  "checks": [
+    {
+      "fact_id": 7,
+      "verdict": "supported",
+      "quote": "The Consular Department charges 300,000 VND for each legalized document copy presented at the counter.",
+      "model": "muse-wonder-1.0",
+      "at": 1793749900
+    },
+    {
+      "fact_id": 8,
+      "verdict": "supported",
+      "quote": "Documents are received from Monday to Friday, 8:00 to 11:30 (SYNTHETIC fixture text).",
+      "model": "muse-wonder-1.0",
+      "at": 1793749900
+    },
+    {
+      "fact_id": 12,
+      "verdict": "contradicted",
+      "quote": "SYNTHETIC fixture text: an older page names PO Box 40220.",
+      "model": "muse-wonder-1.0",
+      "at": 1793746300
+    },
+    {
+      "fact_id": 13,
+      "verdict": "not_found",
+      "quote": "",
+      "model": "muse-wonder-1.0",
+      "at": 1793742700
+    }
+  ]
+}
