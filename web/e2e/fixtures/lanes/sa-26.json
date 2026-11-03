@@ -1,0 +1,11 @@
+{
+  "routes": {
+    "/dashboard": { "name": "sa26-dashboard", "ready": "Muse Wonder", "build": "admin" }
+  },
+  "api": [
+    { "path": "/apostille/api/v1/admin/stats$", "fixture": "admin-stats.json" }
+  ],
+  "ws": [
+    { "topic": "^ops$", "fixture": "admin-ws-ops.json" }
+  ]
+}
