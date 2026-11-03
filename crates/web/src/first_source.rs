@@ -200,8 +200,24 @@ fn confirm_question(statement: &str) -> String {
     let room = voice::scripts::MAX_QUESTION_CHARS.saturating_sub(frame);
     format!(
         "We list: \"{}\". Is that still correct?",
-        clip(statement.trim(), room)
+        clip(spoken(statement), room)
     )
+}
+
+/// A statement as an office reads it: the drafter's `field_key: value`
+/// prefix (`per_document: $15 …`) is internal and dropped.
+fn spoken(statement: &str) -> &str {
+    let trimmed = statement.trim();
+    if let Some((key, rest)) = trimmed.split_once(": ")
+        && key.starts_with(|c: char| c.is_ascii_lowercase())
+        && key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        && !rest.trim().is_empty()
+    {
+        return rest.trim();
+    }
+    trimmed
 }
 
 fn has_table(conn: &Connection, name: &str) -> bool {
@@ -1445,6 +1461,16 @@ mod tests {
             remember_contact(&conn, "no-such", "email", "x@y.gov", ""),
             None
         );
+    }
+
+    #[test]
+    fn confirm_questions_drop_the_field_key() {
+        assert_eq!(
+            confirm_question("per_document: $15 per document."),
+            "We list: \"$15 per document.\". Is that still correct?"
+        );
+        assert_eq!(spoken("Fees: $15"), "Fees: $15");
+        assert_eq!(spoken("po_box: "), "po_box:");
     }
 
     #[test]

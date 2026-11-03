@@ -275,3 +275,4 @@
 | 366 | 2026-11-03 13:52Z | Fix the verified findings of the P356-P364 adversarial review | extractor panic on multibyte runs (critical); no cross-kind supersede; detached send; task text; dossier canonical; web 394 |
 | 367 | 2026-11-03 13:57Z | Merge First source web: calls open questions + autocomplete, Email outreach page | nav Email; web test 147, shots 32, demo 3/3, e2e 22/22 |
 | 368 | 2026-11-03 14:09Z | Merge admin config setup guide + Workers sweep picker with typed contact chips | 17 groups/95 keys; E.164 phones (libphonenumber-js); shots 176, e2e 22/22, test 168 |
+| 369 | 2026-11-03 14:11Z | Suggested questions quoted internal field keys | confirm questions read the value only; web first_source 6 |
