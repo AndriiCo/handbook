@@ -675,7 +675,8 @@ pub(crate) fn live_client(
     {
         let base = sealed_base_url(conn, kek)
             .unwrap_or_else(|| handbook_agent::model::META_BASE_URL.to_string());
-        return Ok(handbook_agent::model::MetaRestClient::new(base, key));
+        return Ok(handbook_agent::model::MetaRestClient::new(base, key)
+            .with_cache(crate::call_cache::meta_cache(conn, kek)));
     }
     let Some(kek) = kek else {
         return Err("meta api key not configured".to_string());
@@ -695,10 +696,12 @@ pub(crate) fn live_client(
     } else {
         cfg.meta_base_url
     };
-    Ok(handbook_agent::model::MetaRestClient::new(
-        base,
-        key.as_str().to_string(),
-    ))
+    // Every pipeline's repeat request replays from the call cache and
+    // only live calls count toward `meta.daily_call_cap`.
+    Ok(
+        handbook_agent::model::MetaRestClient::new(base, key.as_str().to_string())
+            .with_cache(crate::call_cache::meta_cache(conn, Some(kek))),
+    )
 }
 
 #[cfg(test)]

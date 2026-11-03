@@ -28,11 +28,22 @@ The open-weights path shells out to ops/open-weights/sam3_boxes.py once
 per sample (model loads once per call); --mask blackens the detected
 face / license-plate boxes via that script before Spark ever sees the
 pixels. --mask needs --sam-backend open-weights.
+
+Call cache (operator decision 2026-11-03; docs/ops/call-cache.md): every
+Meta call is keyed by sha256 of its canonical request and saved under
+--meta-cache (default $META_CACHE_DIR, else <--store>/meta-cache) in the
+same on-disk format as the Rust crates/callcache, so a rerun replays
+instead of re-spending. --cache-mode record (default) | replay-only
+(offline; no key needed; a miss aborts) | refresh. Live calls count
+toward --daily-call-cap (default $META_DAILY_CALL_CAP, else 400) in the
+shared ledger; hits never do.
 """
 
 import argparse
 import base64
+import hashlib
 import json
+import os
 import random
 import struct
 import sys
@@ -56,6 +67,126 @@ TERMINAL = {400, 401, 402, 403, 404, 413}
 MAX_ATTEMPTS = 4
 
 
+# --- Meta call cache: same key and layout as crates/callcache ---------
+KEY_TAG = "meta-cache/v1"
+CACHE_MODES = ("record", "replay-only", "refresh")
+DEFAULT_DAILY_CALL_CAP = 400
+
+
+class CacheMiss(RuntimeError):
+    """replay-only and nothing stored for this request."""
+
+
+class OverBudget(RuntimeError):
+    """Today's live calls reached the daily cap."""
+
+
+def canonical_json(value):
+    """Sorted keys, no whitespace, UTF-8 (== callcache::canonical_json)."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def url_path(url):
+    i = url.find("://")
+    if i < 0:
+        return url
+    rest = url[i + 3:]
+    j = rest.find("/")
+    return "/" if j < 0 else rest[j:]
+
+
+def cache_key(url, body):
+    material = f"{KEY_TAG}\nPOST {url_path(url)}\n".encode() + canonical_json(body).encode()
+    return hashlib.sha256(material).hexdigest()
+
+
+def _write_atomic(path, data):
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.{time.monotonic_ns()}.tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+class MetaCache:
+    """Record/replay cache for Meta calls (shared with the Rust tools)."""
+
+    def __init__(self, root, mode="record", cap=DEFAULT_DAILY_CALL_CAP):
+        if mode not in CACHE_MODES:
+            raise ValueError(f"cache mode {mode!r}: want one of {CACHE_MODES}")
+        self.root, self.mode, self.cap = str(root), mode, int(cap)
+        self.hits = self.live = 0
+
+    def _entry(self, key, suffix):
+        return os.path.join(self.root, "v1", key[:2], key + suffix)
+
+    def _ledger(self, now):
+        day = time.strftime("%Y-%m-%d", time.gmtime(now))
+        return os.path.join(self.root, "ledger", day + ".jsonl")
+
+    def lookup(self, key):
+        """(status, bytes) on a hit; None to call live; CacheMiss offline."""
+        if self.mode == "refresh":
+            return None
+        try:
+            with open(self._entry(key, ".json"), "rb") as f:
+                meta = json.loads(f.read())
+            with open(self._entry(key, ".body"), "rb") as f:
+                body = f.read()
+        except (OSError, ValueError):
+            meta, body = None, None
+        whole = meta and hashlib.sha256(body).hexdigest() == meta.get("sha256")
+        if whole and meta.get("key") == key:
+            self.hits += 1
+            return int(meta["status"]), body
+        if self.mode == "replay-only":
+            raise CacheMiss(f"cache miss in replay-only mode (key {key[:12]}…)")
+        return None
+
+    def used_today(self, now=None):
+        try:
+            with open(self._ledger(now or time.time()), "rb") as f:
+                return f.read().count(b"\n")
+        except OSError:
+            return 0
+
+    def admit(self, key):
+        if self.mode == "replay-only":
+            raise CacheMiss(f"cache miss in replay-only mode (key {key[:12]}…)")
+        used = self.used_today()
+        if used >= self.cap:
+            raise OverBudget(f"daily model-call cap reached ({self.cap}, {used} live calls today)")
+
+    def spent(self, url, model, status):
+        self.live += 1
+        now = int(time.time())
+        line = json.dumps({"at": now, "path": url_path(url), "model": model,
+                           "status": int(status), "pid": os.getpid()})
+        path = self._ledger(now)
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+    def store(self, key, url, model, status, body):
+        if not 200 <= int(status) < 300:
+            return
+        meta = {"v": 1, "key": key, "method": "POST", "path": url_path(url), "model": model,
+                "status": int(status), "stored_at": int(time.time()),
+                "sha256": hashlib.sha256(body).hexdigest(), "len": len(body)}
+        _write_atomic(self._entry(key, ".body"), body)
+        _write_atomic(self._entry(key, ".json"), json.dumps(meta).encode())
+
+    def summary(self):
+        return (f"meta cache ({self.mode}, {self.root}): "
+                f"{self.hits} hit(s), {self.live} live call(s)")
+
+
+# Set by main(); post_json() calls straight out when None (unit tests).
+CACHE = None
+
+
 def retry_after_secs(headers):
     try:
         return max(0, int(str(headers.get("Retry-After", "")).strip()))
@@ -64,6 +195,12 @@ def retry_after_secs(headers):
 
 
 def post_json(url, key, body, timeout=120):
+    model = str(body.get("model", ""))
+    ckey = cache_key(url, body) if CACHE else None
+    if CACHE:
+        hit = CACHE.lookup(ckey)
+        if hit is not None:
+            return hit[0], json.loads(hit[1]), 0.0
     data = json.dumps(body).encode()
     headers = {
         "Authorization": f"Bearer {key}",
@@ -71,13 +208,23 @@ def post_json(url, key, body, timeout=120):
     }
     delay = 2.0
     for attempt in range(MAX_ATTEMPTS):
+        if CACHE:
+            CACHE.admit(ckey)
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
         started = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=timeout) as res:
                 payload = res.read()
+                if CACHE:
+                    CACHE.spent(url, model, res.status)
+                    try:
+                        CACHE.store(ckey, url, model, res.status, payload)
+                    except OSError as e:  # the answer is paid for: keep it
+                        print(f"  cache: store failed: {e}", file=sys.stderr)
                 return res.status, json.loads(payload), time.monotonic() - started
         except urllib.error.HTTPError as e:
+            if CACHE:
+                CACHE.spent(url, model, e.code)
             payload = e.read()[:500].decode("utf-8", "replace")
             secs = time.monotonic() - started
             if e.code in TERMINAL or e.code not in RETRYABLE or attempt == MAX_ATTEMPTS - 1:
@@ -373,6 +520,14 @@ def build_parser():
     ap.add_argument("--mask", default="",
                     help='blacken targets before judging, e.g. "faces,license plates" '
                          "(needs --sam-backend open-weights)")
+    ap.add_argument("--store", default=os.environ.get("STORE_DIR", "store"),
+                    help="store dir; the default cache is <store>/meta-cache")
+    ap.add_argument("--meta-cache", default=os.environ.get("META_CACHE_DIR"),
+                    help="Meta call cache dir (default $META_CACHE_DIR, else <store>/meta-cache)")
+    ap.add_argument("--cache-mode", default=os.environ.get("META_CACHE_MODE") or "record",
+                    choices=CACHE_MODES)
+    ap.add_argument("--daily-call-cap", type=int,
+                    default=int(os.environ.get("META_DAILY_CALL_CAP") or DEFAULT_DAILY_CALL_CAP))
     return ap
 
 
@@ -384,9 +539,12 @@ def main():
         print(f"ABORT: {e}", file=sys.stderr)
         return 2
 
-    import os
+    global CACHE
+    CACHE = MetaCache(args.meta_cache or os.path.join(args.store, "meta-cache"),
+                      args.cache_mode, args.daily_call_cap)
+    print(f"meta cache: {CACHE.root} ({CACHE.mode}, daily cap {CACHE.cap})", flush=True)
     key = os.environ.get("META_API_KEY", "")
-    if not key:
+    if not key and CACHE.mode != "replay-only":
         print("ABORT: META_API_KEY is not set (export it in this shell only)", file=sys.stderr)
         return 1
 
@@ -457,6 +615,7 @@ def main():
         dest = out / f"{sample}.json"
         dest.write_text(json.dumps(record, indent=2) + "\n")
         print(f"  wrote {dest}", flush=True)
+    print(CACHE.summary())
     print(f"DONE: {len(pngs)} recording(s) tokens in={total_in} out={total_out} — paste this whole output back to the agent")
     return 0
 

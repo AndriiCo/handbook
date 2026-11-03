@@ -38,6 +38,9 @@ pub struct RunOptions {
     pub limit: Option<usize>,
     pub dry_run: bool,
     pub pdf_tool: Option<Vec<String>>,
+    /// Shared URL fetch cache (`paths.fetch_cache_dir`): every live
+    /// source fetch is recorded; `replay-only` reruns from disk.
+    pub fetch_cache: Option<std::sync::Arc<callcache::FetchCache>>,
 }
 
 /// Dry-run projection (no model calls made).
@@ -147,6 +150,7 @@ impl<'a, P: ModelPort> Runner<'a, P> {
                 &cache_dir(&self.out),
                 options.refresh,
                 self.now,
+                options.fetch_cache.as_deref(),
             )?;
             if fetched.from_cache {
                 skipped_cache += 1;

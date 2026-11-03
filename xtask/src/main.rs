@@ -14,6 +14,7 @@ mod ask;
 mod atlas;
 mod backup;
 mod build_handbook;
+mod call_cache;
 mod config;
 mod config_import;
 mod crawl;
@@ -479,12 +480,15 @@ pub(crate) fn draft_client(
         );
         return Box::new(client);
     }
+    // Live drafts go through the call cache: a rerun replays, and only
+    // live calls count toward `meta.daily_call_cap`.
+    let cached = || live().with_cache(call_cache::meta_cache(args));
     match (is_live, record) {
         (true, Some(corpus)) => Box::new(handbook_agent::replay::Recorder::new(
-            live(),
+            cached(),
             std::path::PathBuf::from(corpus),
         )),
-        (true, None) => Box::new(live()),
+        (true, None) => Box::new(cached()),
         (false, Some(_)) => {
             eprintln!("--record needs --live (it records live responses)");
             std::process::exit(2);

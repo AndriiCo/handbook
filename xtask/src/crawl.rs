@@ -49,11 +49,21 @@
 //! SSRF guard for `127.0.0.0/8` + `::1` fixture servers (tests and
 //! local fixtures only — production runs never pass it).
 //!
+//! Fetch cache (`--fetch-cache <dir>`, `--fetch-cache-mode`; see
+//! `docs/ops/call-cache.md`): every hop (request bytes, raw response
+//! head, body) and every robots.txt answer is recorded. `record` (the
+//! default) re-archives a URL already in the cache without fetching
+//! it again; `replay-only` reruns the whole crawl from disk, robots
+//! included, with no network (TLS chains are then not re-captured).
+//! Robots are always re-checked live outside `replay-only`.
+//!
 //! No live crawling in tests: fixtures are loopback servers only.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+use callcache::{CacheMode, FetchCache};
 
 use crate::{flag, required, unix_now};
 
@@ -75,6 +85,18 @@ const DEPTH1_KEYWORDS: &[&str] = &["apostille", "legaliz", "authentic", "fee", "
 const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Timeout for robots.txt fetches.
 const ROBOTS_TIMEOUT: Duration = Duration::from_secs(15);
+/// Longest redirect chain rebuilt from the fetch cache.
+const MAX_REPLAY_HOPS: usize = 10;
+
+/// `name: value` pairs of a raw response head (lowercase names).
+fn head_pairs(head: &[u8]) -> Vec<(String, String)> {
+    String::from_utf8_lossy(head)
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_once(':'))
+        .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_string()))
+        .collect()
+}
 
 /// Defensive SA-7 pack shape: every field optional (SA-7 iterates).
 #[derive(serde::Deserialize, Default)]
@@ -207,7 +229,7 @@ pub fn run(args: &[String]) {
         }
     }
 
-    let shared = Shared::new(&out, allow_loopback);
+    let shared = Shared::new(&out, allow_loopback, crate::call_cache::fetch_cache(args));
     // Depth-0 outcomes (missing/denylisted decided inline; the rest
     // are grouped by host for the parallel crawl).
     let mut by_host: HashMap<String, Vec<Seed>> = HashMap::new();
@@ -393,6 +415,7 @@ enum CachedRobots {
 struct Shared {
     out: std::path::PathBuf,
     allow_loopback: bool,
+    fetch_cache: Arc<FetchCache>,
     robots: Mutex<Vec<RobotsRow>>,
     robots_cache: Mutex<HashMap<String, CachedRobots>>,
     outcomes: Mutex<Vec<SeedOutcome>>,
@@ -409,10 +432,11 @@ struct WriterSlot {
 }
 
 impl Shared {
-    fn new(out: &std::path::Path, allow_loopback: bool) -> Self {
+    fn new(out: &std::path::Path, allow_loopback: bool, fetch_cache: Arc<FetchCache>) -> Self {
         Self {
             out: out.to_path_buf(),
             allow_loopback,
+            fetch_cache,
             robots: Mutex::new(Vec::new()),
             robots_cache: Mutex::new(HashMap::new()),
             outcomes: Mutex::new(Vec::new()),
@@ -456,15 +480,7 @@ impl Shared {
         let cached = match cached {
             Some(cached) => cached,
             None => {
-                let fresh = match ingest::warc::fetch_robots_body(
-                    &origin,
-                    ROBOTS_TIMEOUT,
-                    self.allow_loopback,
-                ) {
-                    Err(reason) => CachedRobots::Failed(reason),
-                    Ok(None) => CachedRobots::Missing,
-                    Ok(Some(body)) => CachedRobots::Body(body),
-                };
+                let fresh = self.robots_body(&origin);
                 lock(&self.robots_cache).insert(origin.clone(), fresh.clone());
                 fresh
             }
@@ -482,6 +498,115 @@ impl Shared {
                 crawl_delay_secs: 0,
             },
         }
+    }
+
+    /// One origin's robots.txt: live (and recorded) unless replay-only,
+    /// which answers from the fetch cache and fails closed on a miss.
+    fn robots_body(&self, origin: &str) -> CachedRobots {
+        let url = format!("{origin}/robots.txt");
+        if self.fetch_cache.mode() == CacheMode::ReplayOnly {
+            return match self.fetch_cache.latest(&url) {
+                Some(r) if r.status == 200 => {
+                    CachedRobots::Body(String::from_utf8_lossy(&r.body).into_owned())
+                }
+                Some(r) if r.status == 404 => CachedRobots::Missing,
+                _ => CachedRobots::Failed("robots-not-in-fetch-cache-closed".to_string()),
+            };
+        }
+        let (fresh, status, body) =
+            match ingest::warc::fetch_robots_body(origin, ROBOTS_TIMEOUT, self.allow_loopback) {
+                Err(reason) => return CachedRobots::Failed(reason),
+                Ok(None) => (CachedRobots::Missing, 404, Vec::new()),
+                Ok(Some(body)) => {
+                    let bytes = body.clone().into_bytes();
+                    (CachedRobots::Body(body), 200, bytes)
+                }
+            };
+        let record = callcache::Fetched {
+            status,
+            body,
+            ..callcache::Fetched::default()
+        };
+        if let Err(e) = self.fetch_cache.record(&url, record) {
+            eprintln!("crawl: fetch cache: {e}");
+        }
+        fresh
+    }
+
+    /// A start URL's hop chain: replayed from the fetch cache when every
+    /// hop is there (record, replay-only), else fetched live with
+    /// `hook` and every hop recorded.
+    fn fetch_hops(
+        &self,
+        url: &str,
+        hook: &mut dyn FnMut(&str) -> Result<(), ingest::warc::FetchError>,
+    ) -> Result<ingest::warc::FetchResult, ingest::warc::FetchError> {
+        if let Some(replayed) = self.replay_chain(url)? {
+            return Ok(replayed);
+        }
+        let fetched =
+            ingest::warc::fetch_with_hops_opt(url, FETCH_TIMEOUT, self.allow_loopback, Some(hook))?;
+        for hop in &fetched.hops {
+            let record = callcache::Fetched {
+                status: hop.status,
+                headers: head_pairs(&hop.response_head),
+                body: hop.body.clone(),
+                head: Some(hop.response_head.clone()),
+                request: Some(hop.request_bytes.clone()),
+            };
+            if let Err(e) = self.fetch_cache.record(&hop.url, record) {
+                eprintln!("crawl: fetch cache: {e}");
+            }
+        }
+        Ok(fetched)
+    }
+
+    /// Rebuild a hop chain from the cache by following each 3xx
+    /// `Location`; `None` when any hop is missing (record mode).
+    fn replay_chain(
+        &self,
+        url: &str,
+    ) -> Result<Option<ingest::warc::FetchResult>, ingest::warc::FetchError> {
+        let mut hops = Vec::new();
+        let mut current = url.to_string();
+        for _ in 0..=MAX_REPLAY_HOPS {
+            let record = match self.fetch_cache.lookup(&current) {
+                Ok(Some(record)) => record,
+                Ok(None) => return Ok(None),
+                Err(e) => return Err(ingest::warc::FetchError::Transport(e.to_string())),
+            };
+            let next = if (300..400).contains(&record.status) {
+                record
+                    .header("location")
+                    .and_then(|loc| ingest::warc::resolve_redirect(&current, loc))
+            } else {
+                None
+            };
+            hops.push(ingest::warc::HopCapture {
+                url: current.clone(),
+                request_bytes: record.request.unwrap_or_default(),
+                status: record.status,
+                response_head: record.head.unwrap_or_default(),
+                body: record.body,
+            });
+            match next {
+                Some(next) => current = next,
+                None => {
+                    return Ok(Some(ingest::warc::FetchResult {
+                        hops,
+                        tls_chain: Vec::new(),
+                        tls_note: "tls-replayed-from-fetch-cache".to_string(),
+                    }));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// True when `url` will replay from the cache (no politeness wait:
+    /// nothing goes to the host).
+    fn served_from_cache(&self, url: &str) -> bool {
+        matches!(self.fetch_cache.lookup(url), Ok(Some(_)))
     }
 
     /// Raise the politeness floor for `host` (robots `Crawl-delay`).
@@ -632,7 +757,9 @@ fn crawl_host(seeds: &[Seed], shared: &Shared) {
             ));
             continue;
         }
-        shared.polite_wait(&host);
+        if !shared.served_from_cache(&seed.uri) {
+            shared.polite_wait(&host);
+        }
         let outcome = fetch_and_archive(seed, 0, &verdict.text, shared);
         let links = match &outcome.links {
             Some(links) => links.clone(),
@@ -736,12 +863,7 @@ fn fetch_and_archive(seed: &Seed, depth: u8, robots_text: &str, shared: &Shared)
         shared.polite_wait(&parts.host);
         Ok(())
     };
-    let fetched = match ingest::warc::fetch_with_hops_opt(
-        &seed.uri,
-        FETCH_TIMEOUT,
-        shared.allow_loopback,
-        Some(&mut redirect_hook),
-    ) {
+    let fetched = match shared.fetch_hops(&seed.uri, &mut redirect_hook) {
         Err(ingest::warc::FetchError::RedirectDisallowed(note)) => {
             let mut failed = failed_outcome(format!("redirect: {note}"));
             failed.outcome.status = "disallowed".to_string();
@@ -819,7 +941,9 @@ fn crawl_depth1(seed: &Seed, link: &str, shared: &Shared) {
         ));
         return;
     }
-    shared.polite_wait(&parts.host);
+    if !shared.served_from_cache(link) {
+        shared.polite_wait(&parts.host);
+    }
     let child = Seed {
         pack: seed.pack.clone(),
         slug: seed.slug.clone(),
@@ -967,16 +1091,24 @@ mod tests {
     }
 
     fn run_crawl(dir: &std::path::Path) {
-        let args = vec![
+        run_crawl_into(dir, "run", &[]);
+    }
+
+    fn run_crawl_into(dir: &std::path::Path, out: &str, extra: &[&str]) {
+        let mut args = vec![
             "crawl".to_string(),
             "--packs".to_string(),
             dir.join("packs").to_string_lossy().into_owned(),
             "--out".to_string(),
-            dir.join("run").to_string_lossy().into_owned(),
+            dir.join(out).to_string_lossy().into_owned(),
             // Fixture switch: the loopback servers below are denied by
             // the production SSRF default.
             "--allow-loopback".to_string(),
+            // Per-case cache (never the shared store default).
+            "--fetch-cache".to_string(),
+            dir.join("fetch-cache").to_string_lossy().into_owned(),
         ];
+        args.extend(extra.iter().map(|a| a.to_string()));
         run(&args);
     }
 
@@ -1118,6 +1250,25 @@ mod tests {
 
         server_a.join().unwrap();
         server_b.join().unwrap();
+
+        // Offline rerun from the fetch cache: both servers are gone,
+        // robots and pages replay, and the same outcomes come back.
+        run_crawl_into(&dir, "rerun", &["--fetch-cache-mode", "replay-only"]);
+        let rerun: Vec<SeedOutcome> = serde_json::from_str(
+            &std::fs::read_to_string(dir.join("rerun/seeds.json")).expect("rerun seeds.json"),
+        )
+        .expect("parse rerun seeds");
+        let statuses = |outcomes: &[SeedOutcome]| {
+            let mut pairs: Vec<(String, String, u16)> = outcomes
+                .iter()
+                .map(|o| (o.uri.clone(), o.status.clone(), o.http_status))
+                .collect();
+            pairs.sort();
+            pairs
+        };
+        assert_eq!(statuses(&rerun), statuses(&seeds));
+        let manifest = std::fs::read_to_string(dir.join("fetch-cache/manifest.jsonl")).unwrap();
+        assert!(manifest.contains("/robots.txt") && manifest.contains(&depth1));
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -27,6 +27,7 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+use atlas::cached::CachedTransport;
 use atlas::model::{Transport, UreqTransport};
 use serde_json::{Value, json};
 
@@ -217,7 +218,7 @@ fn retry_delay(attempt_no: u32, retry_after: Option<u64>) -> Duration {
 /// One chat POST against the Meta API with the findings retry
 /// discipline. Returns the decoded envelope.
 fn post_chat(
-    transport: &UreqTransport,
+    transport: &CachedTransport<UreqTransport>,
     meta_base: &str,
     key: &str,
     body: &Value,
@@ -452,7 +453,7 @@ impl FactsSource {
 /// (zero network; requests are recorded for shape assertions).
 pub enum MetaSource {
     Live {
-        transport: UreqTransport,
+        transport: CachedTransport<UreqTransport>,
         meta_base: String,
         key: String,
     },
@@ -686,7 +687,10 @@ pub fn run(args: &[String]) {
             .unwrap_or_else(|| handbook_agent::model::META_BASE_URL.to_string());
         let facts = FactsSource::Live { base: base.clone() };
         let mut meta = MetaSource::Live {
-            transport: UreqTransport::default(),
+            transport: CachedTransport::new(
+                UreqTransport::default(),
+                crate::call_cache::meta_cache(args),
+            ),
             meta_base,
             key,
         };

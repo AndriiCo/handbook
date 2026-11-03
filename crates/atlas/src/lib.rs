@@ -9,6 +9,7 @@
 //! Spec: `docs/specs/atlas-harness.md`.
 
 pub mod batch;
+pub mod cached;
 pub mod chunk;
 pub mod config;
 pub mod error;

@@ -237,6 +237,7 @@ name = "atlas"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "callcache",
  "rustls",
  "serde",
  "serde_json",
@@ -558,6 +559,16 @@ name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+
+[[package]]
+name = "callcache"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+]
 
 [[package]]
 name = "cbc"
@@ -1374,6 +1385,7 @@ dependencies = [
 name = "handbook-agent"
 version = "0.1.0"
 dependencies = [
+ "callcache",
  "contracts",
  "handbook-store",
  "rusqlite",
@@ -1703,6 +1715,7 @@ dependencies = [
 name = "ingest"
 version = "0.1.0"
 dependencies = [
+ "callcache",
  "contracts",
  "data-encoding",
  "flate2",
@@ -2055,9 +2068,11 @@ name = "media"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "callcache",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "ureq",
 ]
 
@@ -3944,6 +3959,7 @@ dependencies = [
  "axum-server",
  "base64 0.22.1",
  "bytes",
+ "callcache",
  "config",
  "contracts",
  "ed25519-dalek",
@@ -4283,6 +4299,7 @@ dependencies = [
  "auth",
  "axum",
  "base64 0.22.1",
+ "callcache",
  "chacha20poly1305",
  "config",
  "contracts",

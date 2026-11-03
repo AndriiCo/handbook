@@ -147,6 +147,88 @@ impl HttpTransport for UreqTransport {
     }
 }
 
+/// Record/replay wrapper (operator decision 2026-11-03: reruns never
+/// re-spend Meta budget). JSON bodies key on their canonical form,
+/// multipart on the text fields plus the file's sha256; a hit returns
+/// the stored status + raw bytes and never counts toward the daily cap.
+pub struct CachedTransport<T: HttpTransport> {
+    inner: T,
+    cache: std::sync::Arc<callcache::MetaCache>,
+}
+
+impl<T: HttpTransport> CachedTransport<T> {
+    pub fn new(inner: T, cache: std::sync::Arc<callcache::MetaCache>) -> Self {
+        Self { inner, cache }
+    }
+
+    fn through(
+        &self,
+        key: &str,
+        req: &callcache::meta::Request<'_>,
+        live: impl FnOnce() -> Result<HttpResponse, TransportError>,
+    ) -> Result<HttpResponse, TransportError> {
+        let live = || live().map(|r| (r.status, r.body));
+        match self.cache.call(key, req, live) {
+            Ok(answer) => Ok(HttpResponse {
+                status: answer.status,
+                body: answer.body,
+            }),
+            Err(callcache::CallError::Live(e)) => Err(e),
+            Err(callcache::CallError::Cache(e)) => Err(TransportError::new(e.to_string())),
+        }
+    }
+}
+
+impl<T: HttpTransport> HttpTransport for CachedTransport<T> {
+    fn post_json(
+        &self,
+        url: &str,
+        bearer: &str,
+        body: &Value,
+    ) -> Result<HttpResponse, TransportError> {
+        let req = callcache::meta::Request {
+            method: "POST",
+            url,
+            model: body.get("model").and_then(Value::as_str).unwrap_or(""),
+        };
+        let key = callcache::meta::json_key(url, body);
+        self.through(&key, &req, || self.inner.post_json(url, bearer, body))
+    }
+
+    fn post_multipart(
+        &self,
+        url: &str,
+        bearer: &str,
+        file: &MultipartFile,
+        fields: &[MultipartField],
+    ) -> Result<HttpResponse, TransportError> {
+        let parts: Vec<callcache::meta::TextPart<'_>> = fields
+            .iter()
+            .map(|f| callcache::meta::TextPart {
+                name: f.name,
+                value: f.value,
+                content_type: f.content_type,
+            })
+            .collect();
+        let key =
+            callcache::meta::multipart_key(url, file.field, file.content_type, file.bytes, &parts);
+        let model = fields
+            .iter()
+            .find(|f| f.name == "request")
+            .and_then(|f| serde_json::from_str::<Value>(f.value).ok())
+            .and_then(|v| v.get("model").and_then(Value::as_str).map(str::to_string))
+            .unwrap_or_default();
+        let req = callcache::meta::Request {
+            method: "POST",
+            url,
+            model: &model,
+        };
+        self.through(&key, &req, || {
+            self.inner.post_multipart(url, bearer, file, fields)
+        })
+    }
+}
+
 fn finish(response: ureq::http::Response<ureq::Body>) -> Result<HttpResponse, TransportError> {
     let status = response.status().as_u16();
     let body = response
@@ -184,3 +266,100 @@ impl fmt::Display for TransportError {
 }
 
 impl std::error::Error for TransportError {}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::sync::Arc;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct Counting(Cell<u32>);
+
+    impl HttpTransport for &Counting {
+        fn post_json(&self, _: &str, _: &str, _: &Value) -> Result<HttpResponse, TransportError> {
+            self.0.set(self.0.get() + 1);
+            Ok(HttpResponse {
+                status: 200,
+                body: br#"{"boxes":[]}"#.to_vec(),
+            })
+        }
+
+        fn post_multipart(
+            &self,
+            _: &str,
+            _: &str,
+            _: &MultipartFile,
+            _: &[MultipartField],
+        ) -> Result<HttpResponse, TransportError> {
+            self.0.set(self.0.get() + 1);
+            Ok(HttpResponse {
+                status: 200,
+                body: br#"{"text":"hello"}"#.to_vec(),
+            })
+        }
+    }
+
+    fn audio(bytes: &[u8]) -> MultipartFile<'_> {
+        MultipartFile {
+            field: "audio",
+            name: "clip-1234.wav",
+            content_type: "audio/wav",
+            bytes,
+        }
+    }
+
+    #[test]
+    fn repeat_upload_and_json_calls_skip_the_transport() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = Arc::new(
+            callcache::MetaCache::new(dir.path(), callcache::CacheMode::Record).with_budget(9),
+        );
+        let counting = Counting::default();
+        let transport = CachedTransport::new(&counting, cache.clone());
+        let url = "https://api.meta.ai/v1/asr/transcribe";
+        let request = r#"{"model":"muse-voice-transcribe-1.0"}"#;
+        let fields = [MultipartField::typed(
+            "request",
+            request,
+            "application/json",
+        )];
+        for _ in 0..2 {
+            let r = transport
+                .post_multipart(url, "k", &audio(b"RIFF1"), &fields)
+                .unwrap();
+            assert_eq!(r.body, br#"{"text":"hello"}"#);
+        }
+        assert_eq!(counting.0.get(), 1);
+        // Other audio bytes are another request.
+        transport
+            .post_multipart(url, "k", &audio(b"RIFF2"), &fields)
+            .unwrap();
+        assert_eq!(counting.0.get(), 2);
+        let body = serde_json::json!({"model": "sam-3.1", "prompt": "face"});
+        for _ in 0..2 {
+            transport
+                .post_json("https://api.meta.ai/v1/sam", "k", &body)
+                .unwrap();
+        }
+        assert_eq!(counting.0.get(), 3);
+        assert_eq!(cache.budget().unwrap().used(callcache::unix_now()), 3);
+
+        let offline = Arc::new(callcache::MetaCache::new(
+            dir.path(),
+            callcache::CacheMode::ReplayOnly,
+        ));
+        let idle = Counting::default();
+        let transport = CachedTransport::new(&idle, offline);
+        transport
+            .post_multipart(url, "k", &audio(b"RIFF1"), &fields)
+            .unwrap();
+        assert!(
+            transport
+                .post_multipart(url, "k", &audio(b"RIFF3"), &fields)
+                .is_err()
+        );
+        assert_eq!(idle.0.get(), 0);
+    }
+}

@@ -216,6 +216,26 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				format: 'Absolute path. Example: /var/lib/apostille/acme',
 				default: 'acme (relative to the working directory)',
 				applies: 'boot'
+			},
+			{
+				key: 'paths.meta_cache_dir',
+				type: 'text',
+				label: 'Model call cache directory',
+				what: 'Where every Meta model answer is saved, keyed by a hash of the exact request. A repeat request (a retry, a rerun, a revision that changes nothing) is answered from disk and costs no call. Also holds the daily call ledger that every pipeline and CLI run counts against. Holds model output from customer material (drafts, transcripts): keep it owner-only on the store volume. The META_CACHE_DIR variable takes precedence.',
+				how: 'Leave unset on production. Point it at a shared scratch disk when several runs should reuse each other.',
+				format: 'Absolute path. Example: /srv/scratch/apostille/meta-cache',
+				default: '<store>/meta-cache',
+				applies: 'call'
+			},
+			{
+				key: 'paths.fetch_cache_dir',
+				type: 'text',
+				label: 'URL fetch cache directory',
+				what: 'Where every fetched page is saved by content hash, with a manifest line per fetch (URL, time, status, headers, hash). Crawls, world-index and atlas runs reuse it, and replay-only mode reruns them with no network. The FETCH_CACHE_DIR variable takes precedence.',
+				how: 'Leave unset on production.',
+				format: 'Absolute path. Example: /srv/scratch/apostille/fetch-cache',
+				default: '<store>/fetch-cache',
+				applies: 'call'
 			}
 		]
 	},
@@ -501,11 +521,21 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				key: 'meta.daily_call_cap',
 				type: 'text',
 				label: 'Daily model-call cap',
-				what: 'Hard daily budget counted from recorded model calls since 00:00 UTC across every pipeline. Once reached, staff draft, plan, offices, cross-check and form-map runs answer 429. 0 stops every run.',
+				what: 'Hard daily budget counted from recorded model calls since 00:00 UTC across every pipeline. Once reached, staff draft, plan, offices, cross-check and form-map runs answer 429, and xtask, atlas and worker runs stop before the next call. Answers served from the call cache never count. 0 stops every run.',
 				how: 'Your daily call budget.',
 				format: 'Integer, 0 or more. Example: 400',
 				default: '400',
 				applies: 'live'
+			},
+			{
+				key: 'meta.cache_mode',
+				type: 'text',
+				label: 'Model call cache mode',
+				what: 'record answers a repeat request from paths.meta_cache_dir and calls the model only for new ones. replay-only never calls the model: a request with no saved answer fails (offline demos and reruns). refresh always calls and overwrites the saved answer. Saved answers never count toward meta.daily_call_cap. The META_CACHE_MODE variable takes precedence.',
+				how: 'Leave on record. Use refresh only to re-ask the model on purpose.',
+				format: 'record, replay-only or refresh.',
+				default: 'record',
+				applies: 'call'
 			},
 			{
 				key: 'media.terms_read',

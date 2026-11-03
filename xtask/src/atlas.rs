@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use atlas::batch::{BatchJob, BatchRunner, job_dir};
+use atlas::cached::CachedTransport;
 use atlas::config::{AtlasConfig, Effort, Protocol};
 use atlas::model::{BASE_URL, MetaClient, ModelPort, StubPort, UreqTransport};
 
@@ -48,6 +49,8 @@ pub fn run(args: &[String]) {
         limit: super::flag(args, "limit").and_then(|v| v.parse().ok()),
         dry_run: args.iter().any(|a| a == "--dry-run"),
         pdf_tool: pdf_tool(args),
+        // Every live source fetch is archived; replay-only reruns offline.
+        fetch_cache: Some(crate::call_cache::fetch_cache(args)),
     };
     let live = args.iter().any(|a| a == "--live");
     let out = options
@@ -112,14 +115,28 @@ fn pdf_tool(args: &[String]) -> Option<Vec<String>> {
     Some(argv)
 }
 
-/// Live client: sealed `meta.api_key` first, `$META_API_KEY` fallback.
-/// Shared with the instruct worker (same key, same rules).
-pub(crate) fn live_client(args: &[String]) -> MetaClient<UreqTransport> {
+/// The live atlas client: every call goes through the call cache.
+pub(crate) type LiveClient = MetaClient<CachedTransport<UreqTransport>>;
+
+/// Record/replay transport for this invocation (`--meta-cache`,
+/// `--cache-mode`, `--daily-call-cap`; see `call_cache`).
+fn cached_transport(args: &[String]) -> CachedTransport<UreqTransport> {
+    CachedTransport::new(
+        UreqTransport::default(),
+        crate::call_cache::meta_cache(args),
+    )
+}
+
+/// Live client: `$META_API_KEY` first, sealed `meta.api_key` fallback.
+/// Shared with the instruct worker (same key, same rules). Repeat
+/// requests replay from the call cache and only live calls count
+/// toward `meta.daily_call_cap`.
+pub(crate) fn live_client(args: &[String]) -> LiveClient {
     if let Ok(key) = std::env::var("META_API_KEY")
         && !key.is_empty()
     {
         eprintln!("atlas: using $META_API_KEY");
-        return MetaClient::new(UreqTransport::default(), BASE_URL, key);
+        return MetaClient::new(cached_transport(args), BASE_URL, key);
     }
     let store = super::open_store(args);
     let conn = super::open_db(&store);
@@ -139,7 +156,7 @@ pub(crate) fn live_client(args: &[String]) -> MetaClient<UreqTransport> {
         std::process::exit(2);
     };
     MetaClient::new(
-        UreqTransport::default(),
+        cached_transport(args),
         &cfg.meta_base_url,
         key.as_str().to_string(),
     )

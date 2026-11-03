@@ -4,11 +4,13 @@
 //! call to a JSONL corpus; [`ReplayClient`] serves those responses back
 //! for byte-identical requests, so a machine with no Meta key drafts
 //! the exact records `muse-spark-1.3` drafted on the recording run.
-//! Requests are keyed by a SHA-256 over the fields that shape the
-//! model's input (slug, prompt version, record cap, citation doc ids,
-//! input text); `capture_id` is store-local and left out. The corpus is
-//! recorded from synthetic evidence only (`evals/authorities`), never
-//! customer data.
+//! Requests are keyed by a SHA-256 over everything that shapes the
+//! model's input: the model id, the standing-rules template the prompt
+//! version selects (hashed, so an edited template misses instead of
+//! replaying stale drafts), and the request fields (slug, prompt
+//! version, record cap, citation doc ids, input text); `capture_id` is
+//! store-local and left out. The corpus is recorded from synthetic
+//! evidence only (`evals/authorities`), never customer data.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -24,16 +26,34 @@ use sha2::{Digest, Sha256};
 /// The model every corpus line must name (the live drafting model).
 pub const REPLAY_MODEL: &str = "muse-spark-1.3";
 
-/// Stable request key: hex SHA-256 over NUL-separated input fields.
-pub fn request_key(req: &DraftRequest) -> String {
-    let mut h = Sha256::new();
-    for part in [
+/// Stable request key for `model`: hex SHA-256 over NUL-separated
+/// `replay-key/v2`, the model id, the template's sha256 and
+/// [`fields_key`]. Composed, so a v1 corpus line (whose `key` is the
+/// fields digest) re-keys from its own `model` and `prompt` columns.
+pub fn request_key(req: &DraftRequest, model: &str) -> String {
+    compose_key(model, req.prompt_version, &fields_key(req))
+}
+
+/// v2 key from a model id, a prompt version and a [`fields_key`].
+pub fn compose_key(model: &str, prompt_version: &str, fields: &str) -> String {
+    let template = callcache::sha256_hex(crate::model::template_for(prompt_version).as_bytes());
+    nul_digest(&["replay-key/v2", model, &template, fields])
+}
+
+/// Digest of the request fields alone (the v1 corpus key).
+pub fn fields_key(req: &DraftRequest) -> String {
+    nul_digest(&[
         req.authority_slug.as_str(),
         req.prompt_version,
         &req.max_records.to_string(),
         &req.doc_ids.join("\u{1f}"),
         req.input_text.as_str(),
-    ] {
+    ])
+}
+
+fn nul_digest(parts: &[&str]) -> String {
+    let mut h = Sha256::new();
+    for part in parts {
         h.update(part.as_bytes());
         h.update([0u8]);
     }
@@ -55,7 +75,8 @@ fn entry_line(req: &DraftRequest, model: &str, latency_ms: u64, resp: &DraftResp
                    "byte_end": r.citation.byte_end, "confidence": r.confidence})
         })
         .collect();
-    json!({"key": request_key(req), "slug": req.authority_slug, "prompt": req.prompt_version,
+    json!({"key": request_key(req, model), "kv": 2, "slug": req.authority_slug,
+           "prompt": req.prompt_version,
            "model": model, "latency_ms": latency_ms, "usage": usage_json(&resp.usage),
            "summary": resp.summary, "records": records})
     .to_string()
@@ -79,6 +100,14 @@ fn parse_line(line: &str) -> Result<(String, Entry), String> {
     if v["model"].as_str() != Some(REPLAY_MODEL) {
         return Err(format!("model must be {REPLAY_MODEL}"));
     }
+    // v1 lines (no `kv`) keyed the fields alone: re-key them from
+    // their own model and prompt columns.
+    let key = if v["kv"].as_u64() == Some(2) {
+        key
+    } else {
+        let prompt = v["prompt"].as_str().ok_or("missing prompt")?;
+        compose_key(REPLAY_MODEL, prompt, &key)
+    };
     let records = v["records"]
         .as_array()
         .ok_or("missing records")?
@@ -155,7 +184,7 @@ impl ModelClient for ReplayClient {
     }
 
     fn draft_records(&self, req: &DraftRequest) -> Result<DraftResponse, ModelError> {
-        if let Some(entry) = self.entries.get(&request_key(req)) {
+        if let Some(entry) = self.entries.get(&request_key(req, REPLAY_MODEL)) {
             return Ok(entry.response.clone());
         }
         if self.strict {
@@ -291,16 +320,62 @@ mod tests {
         let base = req("text", 1);
         let mut other = base.clone();
         other.max_records = 9;
-        assert_ne!(request_key(&base), request_key(&other));
+        assert_ne!(
+            request_key(&base, REPLAY_MODEL),
+            request_key(&other, REPLAY_MODEL)
+        );
         let mut other = base.clone();
         other.authority_slug = "vietnam".to_string();
-        assert_ne!(request_key(&base), request_key(&other));
+        assert_ne!(
+            request_key(&base, REPLAY_MODEL),
+            request_key(&other, REPLAY_MODEL)
+        );
         let mut other = base.clone();
         other.doc_ids.push("b".to_string());
-        assert_ne!(request_key(&base), request_key(&other));
+        assert_ne!(
+            request_key(&base, REPLAY_MODEL),
+            request_key(&other, REPLAY_MODEL)
+        );
         let mut other = base.clone();
         other.prompt_version = "aa-prompt-v2";
-        assert_ne!(request_key(&base), request_key(&other));
+        assert_ne!(
+            request_key(&base, REPLAY_MODEL),
+            request_key(&other, REPLAY_MODEL)
+        );
+    }
+
+    #[test]
+    fn key_covers_the_model_and_the_template() {
+        let base = req("text", 1);
+        assert_ne!(
+            request_key(&base, REPLAY_MODEL),
+            request_key(&base, "muse-wonder-1.0")
+        );
+        // Same fields, other standing rules: a different key.
+        let fields = fields_key(&base);
+        assert_ne!(
+            compose_key(REPLAY_MODEL, "aa-prompt-v1", &fields),
+            compose_key(REPLAY_MODEL, crate::model::PROMPT_VERSION_V2, &fields)
+        );
+    }
+
+    #[test]
+    fn v1_corpus_lines_rekey_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v1.jsonl");
+        let base = req("$15 per document", 3);
+        let line = json!({"key": fields_key(&base), "model": REPLAY_MODEL,
+                          "prompt": base.prompt_version, "records": [], "summary": "s"});
+        std::fs::write(&path, format!("{line}\n")).unwrap();
+        let replay = ReplayClient::load(&path, true).unwrap();
+        assert_eq!(replay.draft_records(&base).unwrap().summary, "s");
+    }
+
+    #[test]
+    fn committed_corpus_still_loads() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evals/replay/drafts-spark.jsonl");
+        assert!(ReplayClient::load(&path, true).unwrap().len() >= 60);
     }
 
     #[test]
