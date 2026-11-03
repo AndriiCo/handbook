@@ -233,3 +233,4 @@
 | sa-28-1 | 2026-11-03 00:51Z | W3a /order: Destination → Document → Form → Delivery → Pay | Cited delivery cards, quote, checkout/paused; typecheck green only with sa-28-2 |
 | sa-28-2 | 2026-11-03 00:51Z | W3b cabinet: /orders, /orders/[id], /billing, /shipping live | Live cabinet on billing/shipment topics; commerce spec 7/7; all gates green |
 | 326 | 2026-11-03 01:08Z | M2 live proof harness: ignored plan::live test runs compose on a scratch store copy | local: 6 pass, 1 ignored; clippy clean |
+| 327 | 2026-11-03 01:16Z | O1 (SA-23, builder): OfficeSetV1 offices + guards + accept; M2 live proof recorded | 3 live composes, p50 20.4s p95 64.8s; web 350 green |

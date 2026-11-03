@@ -1,13 +1,23 @@
-# Operator — MISSION WIN (updated Mon 11-02 ~17:35 PST)
+# Operator — MISSION WIN (updated Mon 11-02 ~17:20 PST)
 
 Plan: `docs/ops/mission-win.md` (you approved it 11-02). Production is
-still `0.1.0+4dcd234`. Landed on `main` since: P314 plan, P315/11c0e56
-meta-1 prompt v2 (selectable, v1 stays default; live eval at the merge:
-quote_found 1.000, value_in_quote 1.000, topic_accuracy 0.667, 30 cases,
-muse-spark-1.3), P316 lane hooks + 26 config keys + contracts + lane
-briefs, P317 shots lane registries, P318 admin console shell
-(sidebar, ⌘K, env badge, live dot) + admin `/version`. Plant: two old
-pipeline runs pruned (/home 16% used, 203 G free).
+still `0.1.0+4dcd234`. On `main` since (all plant-gated green so far):
+- P315 meta-1 prompt v2 (selectable; v1 stays default — live eval at the
+  merge: v1 quote_found 1.000 / value_in_quote 1.000 / topic 0.667;
+  v2 0.965 / 0.947 / 0.754, so v2 is not promoted).
+- P316-P318 lane hooks, 26 config keys, contracts, admin console shell
+  (sidebar, ⌘K, env badge, live dot), admin `/version`.
+- P319 per-attempt Meta telemetry (`model_call`), `chat_json`, daily cap.
+- P320 `/admin/stats`, authority kind + verified_at; P322 lane admin
+  routes behind the admin guard stack.
+- P321 `cargo xtask judge` (doctor + fresh boot + tour, docs/judges.md).
+- P323 Meta page plans: Spark compose → validator → Wonder entailment →
+  staff accept → public `/plan`.
+- P324 SA-26 dashboard + review console + trace latency; SA-27 "Your
+  apostille plan" dossier + runtime-only cleanup.
+- P325 orders API (dark: free address label live, paid tiers paused,
+  FedEx disabled with a cited PO-box fact); SA-28 /order + cabinet.
+Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
 
 ## Open now, in order
 

@@ -1319,6 +1319,27 @@ mod live {
         let conn = db::open(&store).expect("open store");
         crate::telemetry::migrate_tables(&conn).unwrap();
         migrate_tables(&conn).unwrap();
+        crate::offices::migrate_tables(&conn).unwrap();
+        for (i, slug) in slugs.split(',').enumerate() {
+            match crate::offices::compose_blocking(&root, None, slug, 9_100 + i as u64) {
+                Ok(summary) => {
+                    println!("LIVE-OFFICES {slug} {summary}");
+                    for (id, office, guards) in conn
+                        .prepare("SELECT id, office_json, guards_json FROM office_record WHERE run_id = ?1")
+                        .unwrap()
+                        .query_map([9_100 + i as i64], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+                        .unwrap()
+                        .flatten()
+                    {
+                        println!("OFFICE {slug} {id} {office}");
+                        println!("GUARDS {slug} {id} {guards}");
+                        // Accept so the plan compose below sees offices.
+                        let _ = crate::offices::decide(&conn, id, true, None, "live-harness", unix_now());
+                    }
+                }
+                Err(e) => println!("LIVE-OFFICES {slug} FAILED {e}"),
+            }
+        }
         for (i, slug) in slugs.split(',').enumerate() {
             let run_id = 9_000 + i as u64;
             match compose_blocking(&root, None, slug, run_id) {
