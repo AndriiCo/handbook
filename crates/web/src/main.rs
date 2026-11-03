@@ -18,6 +18,7 @@ mod admin;
 mod admin_ip;
 mod admin_orders;
 mod admin_packs;
+mod admin_restart;
 mod admin_stats;
 mod admin_voice;
 mod admin_workers;
@@ -1135,6 +1136,8 @@ async fn main() {
             }
         }
     };
+    // P393 staff restart: its preflight skips the ports we hold.
+    admin_restart::remember_boot(&cfg);
     if cfg.admin_mtls_off {
         eprintln!(
             "WARNING: admin.mtls_off — local-dev seams on (loopback admin hosts, test cert header; local dev only)"
@@ -1324,6 +1327,7 @@ async fn main() {
         admin::router(state.clone())
             .merge(admin_workers::router(state.clone()))
             .merge(fedex_live::router(state.clone()))
+            .merge(admin_restart::router(state.clone()))
             .merge(admin_voice::staff_router(state.clone()))
             .merge(admin_voice::webhook_router(state.clone()))
             .merge(mission_admin_routers(&state)),
@@ -1734,11 +1738,19 @@ async fn supervise(
         .expect("install SIGTERM handler");
     let mut draining = false;
     let mut failed = false;
+    // Staff restart (P393): same drain, then exit 75 so systemd's
+    // `Restart=on-failure` starts the new process.
+    let mut exit_code = 0;
     loop {
         tokio::select! {
             _ = &mut ctrl_c, if !draining => {
                 drain(&handles, &quic);
                 draining = true;
+            }
+            _ = admin_restart::requested(), if !draining => {
+                drain(&handles, &quic);
+                draining = true;
+                exit_code = admin_restart::EXIT_CODE;
             }
             _ = sigterm.recv(), if !draining => {
                 drain(&handles, &quic);
@@ -1746,7 +1758,7 @@ async fn supervise(
             }
             outcome = servers.join_next() => {
                 match outcome {
-                    None => std::process::exit(i32::from(failed)),
+                    None => std::process::exit(if failed { 1 } else { exit_code }),
                     Some(Ok(Ok(()))) => {}
                     Some(Ok(Err(e))) => {
                         eprintln!("listener failed: {e}");
@@ -5177,6 +5189,10 @@ mod tests {
         assert!(by_key("mailer.key").get("value").is_none());
         assert_eq!(by_key("mailer.enabled")["value"], true);
         assert_eq!(by_key("mailer.host")["value"], "mail.example.test");
+        // P393: each row says when it was saved, and the list says when
+        // this process started (the page's "restart needed" chip).
+        assert!(by_key("mailer.host")["updated_at"].as_i64().unwrap() > 0);
+        assert!(listed["started_at"].is_i64());
 
         // Unknown type → 422.
         let res = admin_router_for(&fx.state)
@@ -6164,6 +6180,7 @@ mod tests {
             admin::router(state.clone())
                 .merge(admin_workers::router(state.clone()))
                 .merge(fedex_live::router(state.clone()))
+                .merge(admin_restart::router(state.clone()))
                 .merge(admin_voice::staff_router(state.clone()))
                 .merge(admin_voice::webhook_router(state.clone()))
                 .merge(mission_admin_routers(state)),

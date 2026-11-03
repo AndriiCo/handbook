@@ -91,6 +91,17 @@ pub trait HttpTransport {
             ))
         }
     }
+
+    /// PUT a JSON body (FedEx cancels a shipment with PUT). A
+    /// transport that cannot PUT refuses rather than sending a POST.
+    fn put_json(
+        &self,
+        _url: &str,
+        _bearer: &str,
+        _body: &Value,
+    ) -> Result<HttpResponse, TransportError> {
+        Err(TransportError::new("this transport cannot send PUT"))
+    }
 }
 
 /// Live [`HttpTransport`] over ureq (rustls, pure Rust).
@@ -187,6 +198,22 @@ impl HttpTransport for UreqTransport {
             request = request.header(*name, value.to_string());
         }
         let response = request.call().map_err(TransportError::from_ureq)?;
+        finish(response)
+    }
+
+    fn put_json(
+        &self,
+        url: &str,
+        bearer: &str,
+        body: &Value,
+    ) -> Result<HttpResponse, TransportError> {
+        let response = self
+            .agent
+            .put(url)
+            .header("Authorization", format!("Bearer {bearer}"))
+            .header("Content-Type", "application/json")
+            .send_json(body)
+            .map_err(TransportError::from_ureq)?;
         finish(response)
     }
 }
@@ -410,14 +437,20 @@ impl<T: HttpTransport> LabelClient for UspsClient<T> {
     }
 }
 
-/// FedEx Ship v1 client: `POST /ship/v1/shipments` plus cancel.
+/// FedEx Ship v1 client: `POST /ship/v1/shipments` plus
+/// `PUT /ship/v1/shipments/cancel`.
 ///
+/// Request shapes follow FedEx's published Ship API JSON
+/// (<https://developer.fedex.com/api/en-us/catalog/ship/v1/docs.html>).
 /// Returns use `PRINT_RETURN_LABEL` (we print both PDFs); pickup is
 /// drop-off (no pickup scheduling in P2).
 pub struct FedExClient<T: HttpTransport> {
     base_url: String,
     transport: T,
     certified: bool,
+    /// Shipper account for cancel (a buy carries its own in
+    /// [`BuyRequest::payment_ref`]). Server-side only, never logged.
+    account: Option<String>,
 }
 
 impl<T: HttpTransport> FedExClient<T> {
@@ -426,7 +459,14 @@ impl<T: HttpTransport> FedExClient<T> {
             base_url: base_url.trim_end_matches('/').to_string(),
             transport,
             certified,
+            account: None,
         }
+    }
+
+    /// The account FedEx's cancel body names (`accountNumber.value`).
+    pub fn with_account(mut self, account: &str) -> Self {
+        self.account = Some(account.trim().to_string());
+        self
     }
 }
 
@@ -454,7 +494,7 @@ impl<T: HttpTransport> LabelClient for FedExClient<T> {
             LabelError::BadResponse("no tracking number in fedex answer".to_string())
         })?;
         let label_pdf = label_bytes(&json, &self.transport, bearer)?;
-        let postage_cost_cents = find_cents(&json);
+        let postage_cost_cents = fedex_net_charge_cents(&json);
         Ok(BuyOutcome {
             tracking_no,
             label_pdf,
@@ -463,16 +503,40 @@ impl<T: HttpTransport> LabelClient for FedExClient<T> {
         })
     }
 
+    /// Ship API "Cancel Shipment": `PUT /ship/v1/shipments/cancel`
+    /// (<https://developer.fedex.com/api/en-us/catalog/ship/v1/docs.html>,
+    /// section Cancel Shipment). The account is required in the body.
     fn cancel(&self, bearer: &str, tracking_no: &str) -> Result<(), LabelError> {
-        // Cancel method (PUT vs POST) is unverified from public docs —
-        // confirm in the spec before the first real cancel.
         check_tracking(tracking_no)?;
+        let account = self.account.as_deref().unwrap_or_default();
+        check_payment_ref(account)?;
         let url = format!("{}/ship/v1/shipments/cancel", self.base_url);
-        let body = json!({ "trackingNumber": tracking_no });
-        let response = self.transport.post_json(&url, bearer, None, &body)?;
+        let body = fedex_cancel_body(account, tracking_no);
+        let response = self.transport.put_json(&url, bearer, &body)?;
         check_ok(&response)?;
+        // A 200 can still say no: `output.cancelledShipment` is false
+        // when FedEx kept the shipment (already tendered, say).
+        let json: Value = serde_json::from_slice(&response.body).unwrap_or(Value::Null);
+        if walk(&json, "output/cancelledShipment") == Some(&Value::Bool(false)) {
+            return Err(LabelError::Api {
+                status: response.status,
+                message: "fedex did not cancel the shipment".to_string(),
+            });
+        }
         Ok(())
     }
+}
+
+/// Cancel Shipment body (Ship API): account, tracking number, and
+/// `DELETE_ALL_PACKAGES` so a multi-piece shipment voids whole.
+pub fn fedex_cancel_body(account: &str, tracking_no: &str) -> Value {
+    json!({
+        "accountNumber": { "value": account.trim() },
+        "emailShipment": false,
+        "senderCountryCode": "US",
+        "deletionControl": "DELETE_ALL_PACKAGES",
+        "trackingNumber": tracking_no.trim(),
+    })
 }
 
 /// USPS Labels v3 label request body ([`crate::usps::label_body`]),
@@ -484,12 +548,25 @@ pub fn usps_label_body(request: &BuyRequest) -> Value {
     crate::usps::label_body(request.payload, request.direction, now)
 }
 
-/// FedEx Ship v1 shipment body. Enum spellings follow the public Ship
-/// docs + guides; verify `pickupType`, `labelStockType`, and the
-/// return-detail shape in the spec at integration time.
+/// FedEx Ship v1 "Create Shipment" body, field by field against the
+/// published Ship API JSON
+/// (<https://developer.fedex.com/api/en-us/catalog/ship/v1/docs.html>):
+///
+/// - top level: `accountNumber.value` (the shipper account billed) and
+///   `labelResponseOptions: "LABEL"` (the PDF comes back base64 in
+///   `pieceResponses[].packageDocuments[].encodedLabel`, no second
+///   fetch);
+/// - `requestedShipment.recipients` is an array (Rate uses a single
+///   `recipient`); both contacts carry `phoneNumber`, which FedEx
+///   requires;
+/// - `shippingChargesPayment.payor.responsibleParty.accountNumber` is
+///   an object `{ "value": … }`, never a bare string;
+/// - `labelSpecification`: PDF on `PAPER_4X6` (the `STOCK_*` stocks
+///   are for thermal printers).
 pub fn fedex_ship_body(request: &BuyRequest) -> Value {
     let payload = request.payload;
-    let dims = payload.parcel.dims();
+    let account = request.payment_ref.trim();
+    let packaging = fedex_packaging_type(payload);
     let mut shipment: serde_json::Map<String, Value> = serde_json::Map::from_iter([
         (
             "shipper".to_string(),
@@ -499,11 +576,11 @@ pub fn fedex_ship_body(request: &BuyRequest) -> Value {
             }),
         ),
         (
-            "recipient".to_string(),
-            json!({
+            "recipients".to_string(),
+            json!([{
                 "contact": fedex_contact(&payload.to),
                 "address": fedex_address(&payload.to),
-            }),
+            }]),
         ),
         (
             "serviceType".to_string(),
@@ -511,14 +588,7 @@ pub fn fedex_ship_body(request: &BuyRequest) -> Value {
         ),
         (
             "packagingType".to_string(),
-            Value::String(
-                if payload.parcel.is_envelope() {
-                    "FEDEX_ENVELOPE"
-                } else {
-                    "YOUR_PACKAGING"
-                }
-                .to_string(),
-            ),
+            Value::String(packaging.to_string()),
         ),
         (
             "pickupType".to_string(),
@@ -528,25 +598,16 @@ pub fn fedex_ship_body(request: &BuyRequest) -> Value {
             "shippingChargesPayment".to_string(),
             json!({
                 "paymentType": "SENDER",
-                "payor": { "responsibleParty": { "accountNumber": request.payment_ref } },
+                "payor": { "responsibleParty": { "accountNumber": { "value": account } } },
             }),
         ),
         (
             "labelSpecification".to_string(),
-            json!({ "imageType": "PDF", "labelStockType": "STOCK_4X6" }),
+            json!({ "imageType": "PDF", "labelStockType": "PAPER_4X6" }),
         ),
         (
             "requestedPackageLineItems".to_string(),
-            json!([{
-                // FedEx bills in lb/oz; grams convert up (ceil).
-                "weight": { "units": "LB", "value": dims.weight_g.div_ceil(454).max(1) },
-                "dimensions": {
-                    "length": (dims.length_cm / 2.54).ceil() as u32,
-                    "width": (dims.width_cm / 2.54).ceil() as u32,
-                    "height": (dims.height_cm / 2.54).ceil() as u32,
-                    "units": "IN",
-                },
-            }]),
+            json!([fedex_package_line(payload)]),
         ),
     ]);
     if request.direction == Direction::Return {
@@ -555,23 +616,79 @@ pub fn fedex_ship_body(request: &BuyRequest) -> Value {
             json!({ "returnType": "PRINT_RETURN_LABEL" }),
         );
     }
-    Value::Object(serde_json::Map::from_iter([(
-        "requestedShipment".to_string(),
-        Value::Object(shipment),
-    )]))
+    json!({
+        "labelResponseOptions": "LABEL",
+        "accountNumber": { "value": account },
+        "requestedShipment": Value::Object(shipment),
+    })
+}
+
+/// FedEx `packagingType`: envelope presets ship in `FEDEX_ENVELOPE`,
+/// except on FedEx Ground, which takes only the customer's own
+/// packaging (`YOUR_PACKAGING`).
+pub(crate) fn fedex_packaging_type(payload: &ShipmentPayload) -> &'static str {
+    if payload.parcel.is_envelope() && payload.service != crate::ServiceClass::Ground {
+        "FEDEX_ENVELOPE"
+    } else {
+        "YOUR_PACKAGING"
+    }
+}
+
+/// One `requestedPackageLineItems` entry. FedEx bills in whole pounds
+/// here (grams round up); dimensions are required only for
+/// `YOUR_PACKAGING` and must then carry all three sides.
+pub(crate) fn fedex_package_line(payload: &ShipmentPayload) -> Value {
+    let dims = payload.parcel.dims();
+    let weight = json!({ "units": "LB", "value": dims.weight_g.div_ceil(454).max(1) });
+    if fedex_packaging_type(payload) == "FEDEX_ENVELOPE" {
+        return json!({ "weight": weight });
+    }
+    json!({
+        "weight": weight,
+        "dimensions": {
+            "length": (dims.length_cm / 2.54).ceil() as u32,
+            "width": (dims.width_cm / 2.54).ceil() as u32,
+            "height": (dims.height_cm / 2.54).ceil() as u32,
+            "units": "IN",
+        },
+    })
 }
 
 fn fedex_contact(address: &crate::PostalAddress) -> Value {
-    json!({ "personName": address.name, "phoneNumber": address.phone })
+    json!({
+        "personName": address.name.trim(),
+        "phoneNumber": address
+            .phone
+            .as_deref()
+            .map(|p| fedex_phone(p, &address.country))
+            .unwrap_or_default(),
+    })
+}
+
+/// FedEx wants bare digits; US and CA numbers are exactly 10, so a
+/// leading `+1`/`1` country code is dropped there.
+pub fn fedex_phone(raw: &str, country: &str) -> String {
+    let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
+    let nanp = matches!(country.trim(), "US" | "CA");
+    match digits.strip_prefix('1') {
+        Some(rest) if nanp && digits.len() == 11 => rest.to_string(),
+        _ => digits,
+    }
 }
 
 fn fedex_address(address: &crate::PostalAddress) -> Value {
+    let mut lines = vec![address.street1.trim().to_string()];
+    if let Some(street2) = address.street2.as_deref().map(str::trim)
+        && !street2.is_empty()
+    {
+        lines.push(street2.to_string());
+    }
     json!({
-        "streetLines": [address.street1],
-        "city": address.city,
-        "stateOrProvinceCode": address.state_province,
-        "postalCode": address.postal,
-        "countryCode": address.country,
+        "streetLines": lines,
+        "city": address.city.trim(),
+        "stateOrProvinceCode": address.state_province.trim(),
+        "postalCode": address.postal.trim(),
+        "countryCode": address.country.trim(),
     })
 }
 
@@ -616,6 +733,7 @@ fn find_tracking(json: &Value) -> Option<String> {
         "trackingNo",
         "output/transactionShipments/0/completedShipmentDetail/completedPackageDetails/0/trackingIds/0/trackingNumber",
         "output/transactionShipments/0/masterTrackingNumber",
+        "output/transactionShipments/0/pieceResponses/0/trackingNumber",
         "label/trackingNumber",
     ] {
         if let Some(hit) = walk(json, path)
@@ -639,6 +757,8 @@ fn label_bytes<T: HttpTransport>(
         "labelImage",
         "label_image",
         "label/base64",
+        // FedEx Ship API with `labelResponseOptions: LABEL`.
+        "output/transactionShipments/0/pieceResponses/0/packageDocuments/0/encodedLabel",
         "output/transactionShipments/0/completedShipmentDetail/completedPackageDetails/0/packageDocuments/0/parts/0/image",
         "output/transactionShipments/0/pieceResponses/0/label",
     ] {
@@ -687,12 +807,7 @@ fn decode_label(encoded: &str) -> Result<Vec<u8>, LabelError> {
 
 /// Postage in cents when the carrier reports it (recorded, P2-L4).
 fn find_cents(json: &Value) -> Option<i64> {
-    for path in [
-        "postageCents",
-        "postage_cents",
-        "totalAmountCents",
-        "output/transactionShipments/0/completedShipmentDetail/shipmentRating/shipmentRateDetails/0/totalNetCharge",
-    ] {
+    for path in ["postageCents", "postage_cents", "totalAmountCents"] {
         if let Some(Value::Number(n)) = walk(json, path)
             && let Some(cents) = n.as_i64()
         {
@@ -700,6 +815,34 @@ fn find_cents(json: &Value) -> Option<i64> {
         }
     }
     None
+}
+
+/// FedEx Ship charge in cents. FedEx reports decimal dollars as JSON
+/// numbers (`"totalNetCharge": 9.45`), never cents.
+fn fedex_net_charge_cents(json: &Value) -> Option<i64> {
+    [
+        concat!(
+            "output/transactionShipments/0/completedShipmentDetail/",
+            "shipmentRating/shipmentRateDetails/0/totalNetCharge"
+        ),
+        "output/transactionShipments/0/pieceResponses/0/netChargeAmount",
+    ]
+    .into_iter()
+    .find_map(|path| walk(json, path).and_then(dollars_to_cents))
+}
+
+/// Decimal dollars (JSON number or numeric string) to whole cents,
+/// rounded. Negative or non-numeric amounts are no amount.
+pub fn dollars_to_cents(value: &Value) -> Option<i64> {
+    let dollars = match value {
+        Value::Number(n) => n.as_f64()?,
+        Value::String(s) => s.trim().parse::<f64>().ok()?,
+        _ => return None,
+    };
+    if !dollars.is_finite() || dollars < 0.0 {
+        return None;
+    }
+    Some((dollars * 100.0).round() as i64)
 }
 
 /// Walk `a/b/0/c` through objects (by key) and arrays (by index).
@@ -716,7 +859,7 @@ fn walk<'a>(json: &'a Value, path: &str) -> Option<&'a Value> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::cell::RefCell;
 
@@ -727,6 +870,7 @@ mod tests {
         pub(crate) last_accept: RefCell<Option<String>>,
         pub(crate) last_body: RefCell<Value>,
         pub(crate) last_headers: RefCell<Vec<(String, String)>>,
+        pub(crate) last_method: RefCell<String>,
     }
 
     impl StubTransport {
@@ -741,6 +885,7 @@ mod tests {
                 last_accept: RefCell::new(None),
                 last_body: RefCell::new(Value::Null),
                 last_headers: RefCell::new(Vec::new()),
+                last_method: RefCell::new(String::new()),
             }
         }
     }
@@ -753,9 +898,23 @@ mod tests {
             accept: Option<&str>,
             body: &Value,
         ) -> Result<HttpResponse, TransportError> {
+            *self.last_method.borrow_mut() = "POST".to_string();
             *self.last_url.borrow_mut() = url.to_string();
             *self.last_bearer.borrow_mut() = bearer.to_string();
             *self.last_accept.borrow_mut() = accept.map(str::to_string);
+            *self.last_body.borrow_mut() = body.clone();
+            Ok(self.response.borrow().clone())
+        }
+
+        fn put_json(
+            &self,
+            url: &str,
+            bearer: &str,
+            body: &Value,
+        ) -> Result<HttpResponse, TransportError> {
+            *self.last_method.borrow_mut() = "PUT".to_string();
+            *self.last_url.borrow_mut() = url.to_string();
+            *self.last_bearer.borrow_mut() = bearer.to_string();
             *self.last_body.borrow_mut() = body.clone();
             Ok(self.response.borrow().clone())
         }
@@ -1036,6 +1195,243 @@ mod tests {
             shipment["returnShipmentDetail"]["returnType"],
             json!("PRINT_RETURN_LABEL")
         );
+    }
+
+    /// FedEx's documented request and answer samples (see
+    /// `fixtures/fedex/README.md` for the source of each file).
+    pub(crate) mod fedex_fixtures {
+        pub(crate) const SHIP_REQUEST: &str =
+            include_str!("../fixtures/fedex/ship_request_documented.json");
+        pub(crate) const RATE_REQUEST: &str =
+            include_str!("../fixtures/fedex/rate_request_documented.json");
+        pub(crate) const CANCEL_REQUEST: &str =
+            include_str!("../fixtures/fedex/cancel_request_documented.json");
+        pub(crate) const SHIP_REPLY: &str = include_str!("../fixtures/fedex/ship_reply.json");
+        pub(crate) const RATE_REPLY: &str = include_str!("../fixtures/fedex/rate_reply.json");
+        pub(crate) const CANCEL_REPLY: &str = include_str!("../fixtures/fedex/cancel_reply.json");
+    }
+
+    /// Every key path in `v` (`a.b[].c`), with the JSON kind of the
+    /// value there: `object`, `array` or `scalar`. Arrays collapse to
+    /// `[]` and merge their elements.
+    pub(crate) fn shape(v: &Value) -> std::collections::BTreeMap<String, &'static str> {
+        fn walk(v: &Value, path: &str, out: &mut std::collections::BTreeMap<String, &'static str>) {
+            let kind = match v {
+                Value::Object(_) => "object",
+                Value::Array(_) => "array",
+                _ => "scalar",
+            };
+            if !path.is_empty() {
+                out.insert(path.to_string(), kind);
+            }
+            match v {
+                Value::Object(map) => {
+                    for (k, child) in map {
+                        let next = if path.is_empty() {
+                            k.clone()
+                        } else {
+                            format!("{path}.{k}")
+                        };
+                        walk(child, &next, out);
+                    }
+                }
+                Value::Array(items) => {
+                    for child in items {
+                        walk(child, &format!("{path}[]"), out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        walk(v, "", &mut out);
+        out
+    }
+
+    /// Every path of the documented sample is in ours with the same
+    /// kind (object/array/scalar), except the listed optional fields
+    /// we leave out on purpose. Scalars may differ in type: FedEx's
+    /// samples send `phoneNumber`/`postalCode` as numbers where the
+    /// schema says string.
+    pub(crate) fn assert_covers(documented: &Value, ours: &Value, optional: &[&str]) {
+        let ours = shape(ours);
+        for (path, kind) in shape(documented) {
+            if optional.contains(&path.as_str()) {
+                continue;
+            }
+            assert_eq!(
+                ours.get(&path),
+                Some(&kind),
+                "documented field {path} ({kind}) missing or reshaped"
+            );
+        }
+    }
+
+    /// Synthetic shipper account (FedEx's own sample value).
+    const ACCOUNT: &str = "123456789";
+
+    fn fedex_payload() -> crate::ShipmentPayload {
+        let mut payload = crate::payload::tests::sample_payload();
+        payload.to.phone = Some("360-555-0199".to_string());
+        payload.to.street2 = Some("Suite 2".to_string());
+        payload
+    }
+
+    #[test]
+    fn fedex_ship_body_matches_the_documented_request() {
+        let payload = fedex_payload();
+        let request = BuyRequest {
+            payload: &payload,
+            direction: Direction::Outbound,
+            payment_ref: ACCOUNT,
+        };
+        let body = fedex_ship_body(&request);
+        let documented: Value = serde_json::from_str(fedex_fixtures::SHIP_REQUEST).unwrap();
+        assert_covers(
+            &documented,
+            &body,
+            &[
+                "requestedShipment.shipDatestamp",
+                "requestedShipment.blockInsightVisibility",
+                "requestedShipment.shipper.contact.companyName",
+                "requestedShipment.recipients[].contact.companyName",
+            ],
+        );
+        // The fields P393 fixed, value by value.
+        assert_eq!(body["accountNumber"], json!({ "value": "123456789" }));
+        assert_eq!(body["labelResponseOptions"], json!("LABEL"));
+        let shipment = &body["requestedShipment"];
+        assert!(
+            shipment.get("recipient").is_none(),
+            "ship uses recipients[]"
+        );
+        assert_eq!(shipment["recipients"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            shipment["shippingChargesPayment"],
+            json!({
+                "paymentType": "SENDER",
+                "payor": { "responsibleParty": { "accountNumber": { "value": "123456789" } } },
+            })
+        );
+        assert_eq!(
+            shipment["shipper"]["contact"]["phoneNumber"],
+            json!("5551234567")
+        );
+        assert_eq!(
+            shipment["recipients"][0]["contact"]["phoneNumber"],
+            json!("3605550199")
+        );
+        assert_eq!(
+            shipment["recipients"][0]["address"]["streetLines"],
+            json!(["PO Box 40234", "Suite 2"])
+        );
+        assert_eq!(
+            shipment["labelSpecification"],
+            json!({ "imageType": "PDF", "labelStockType": "PAPER_4X6" })
+        );
+        assert_eq!(shipment["pickupType"], json!("DROPOFF_AT_FEDEX_LOCATION"));
+        assert_eq!(shipment["packagingType"], json!("FEDEX_ENVELOPE"));
+        assert!(
+            shipment["requestedPackageLineItems"][0]
+                .get("dimensions")
+                .is_none(),
+            "FedEx packaging carries no dimensions"
+        );
+    }
+
+    #[test]
+    fn fedex_ground_never_ships_in_a_fedex_envelope() {
+        let mut payload = fedex_payload();
+        payload.service = crate::ServiceClass::Ground;
+        let body = fedex_ship_body(&BuyRequest {
+            payload: &payload,
+            direction: Direction::Outbound,
+            payment_ref: ACCOUNT,
+        });
+        let shipment = &body["requestedShipment"];
+        assert_eq!(shipment["serviceType"], json!("FEDEX_GROUND"));
+        assert_eq!(shipment["packagingType"], json!("YOUR_PACKAGING"));
+        let dims = &shipment["requestedPackageLineItems"][0]["dimensions"];
+        assert_eq!(dims["units"], json!("IN"));
+        assert!(dims["length"].as_u64().unwrap() > 0);
+    }
+
+    #[test]
+    fn fedex_phone_is_bare_digits_with_ten_in_nanp() {
+        assert_eq!(fedex_phone("+1 (360) 555-0100", "US"), "3605550100");
+        assert_eq!(fedex_phone("360.555.0100", "US"), "3605550100");
+        assert_eq!(fedex_phone("1 416 555 0100", "CA"), "4165550100");
+        assert_eq!(fedex_phone("+44 20 7946 0000", "GB"), "442079460000");
+    }
+
+    #[test]
+    fn fedex_buy_reads_the_documented_answer() {
+        let transport = StubTransport::canned(200, fedex_fixtures::SHIP_REPLY.as_bytes());
+        let client = FedExClient::new(FEDEX_BASE_SANDBOX, transport, true);
+        let payload = fedex_payload();
+        let outcome = client
+            .buy(
+                "bearer-synthetic",
+                &BuyRequest {
+                    payload: &payload,
+                    direction: Direction::Outbound,
+                    payment_ref: ACCOUNT,
+                },
+            )
+            .unwrap();
+        assert_eq!(outcome.tracking_no, "794953535000");
+        assert!(outcome.label_pdf.starts_with(b"%PDF-"));
+        // `totalNetCharge` is decimal dollars, never cents.
+        assert_eq!(outcome.postage_cost_cents, Some(1_908));
+        assert_eq!(*client.transport.last_method.borrow(), "POST");
+    }
+
+    #[test]
+    fn fedex_cancel_puts_the_documented_body() {
+        let transport = StubTransport::canned(200, fedex_fixtures::CANCEL_REPLY.as_bytes());
+        let client =
+            FedExClient::new(FEDEX_BASE_SANDBOX, transport, true).with_account(" 123456789 ");
+        client.cancel("bearer-synthetic", "794953535000").unwrap();
+        assert_eq!(*client.transport.last_method.borrow(), "PUT");
+        assert_eq!(
+            *client.transport.last_url.borrow(),
+            "https://apis-sandbox.fedex.com/ship/v1/shipments/cancel"
+        );
+        let body = client.transport.last_body.borrow().clone();
+        let documented: Value = serde_json::from_str(fedex_fixtures::CANCEL_REQUEST).unwrap();
+        assert_covers(&documented, &body, &[]);
+        assert_eq!(body["accountNumber"], json!({ "value": "123456789" }));
+        assert_eq!(body["trackingNumber"], json!("794953535000"));
+
+        // No account: refused before any request.
+        let bare = FedExClient::new(FEDEX_BASE_SANDBOX, StubTransport::canned(200, b"{}"), true);
+        assert!(matches!(
+            bare.cancel("b", "794953535000"),
+            Err(LabelError::EmptyPaymentRef)
+        ));
+        assert_eq!(*bare.transport.last_method.borrow(), "");
+
+        // A 200 that says it did not cancel is a refusal.
+        let kept = FedExClient::new(
+            FEDEX_BASE_SANDBOX,
+            StubTransport::canned(200, br#"{"output":{"cancelledShipment":false}}"#),
+            true,
+        )
+        .with_account("123456789");
+        assert!(matches!(
+            kept.cancel("b", "794953535000"),
+            Err(LabelError::Api { status: 200, .. })
+        ));
+    }
+
+    #[test]
+    fn dollars_to_cents_rounds_numbers_and_strings() {
+        assert_eq!(dollars_to_cents(&json!(26.6)), Some(2_660));
+        assert_eq!(dollars_to_cents(&json!(19.08)), Some(1_908));
+        assert_eq!(dollars_to_cents(&json!("12.50")), Some(1_250));
+        assert_eq!(dollars_to_cents(&json!(12)), Some(1_200));
+        assert_eq!(dollars_to_cents(&json!(-1.0)), None);
+        assert_eq!(dollars_to_cents(&json!("n/a")), None);
     }
 
     #[test]

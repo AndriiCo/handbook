@@ -1,0 +1,10 @@
+{
+  "accountNumber": { "value": "XXXXX7354" },
+  "requestedShipment": {
+    "shipper": { "address": { "postalCode": "65247", "countryCode": "US" } },
+    "recipient": { "address": { "postalCode": "72348", "countryCode": "US" } },
+    "pickupType": "DROPOFF_AT_FEDEX_LOCATION",
+    "rateRequestType": ["ACCOUNT", "LIST"],
+    "requestedPackageLineItems": [{ "weight": { "units": "LB", "value": "10" } }]
+  }
+}

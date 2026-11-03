@@ -234,9 +234,20 @@ pub const AUDIT_DDL: &str = "CREATE TABLE IF NOT EXISTS fedex_live_audit(\
     detail TEXT NOT NULL\
     )";
 
-/// Both DDL statements, in creation order.
-pub fn ddl_statements() -> [&'static str; 2] {
-    [LEDGER_DDL, AUDIT_DDL]
+/// Bought label files: one row per leg pointing at the PDF in the
+/// content-addressed blob store (`Store::write_blob`), so staff can
+/// download it again. Written next to the ledger row; never updated.
+pub const LABEL_DDL: &str = "CREATE TABLE IF NOT EXISTS fedex_live_label(\
+    idempotency_key TEXT PRIMARY KEY, \
+    tracking_no TEXT NOT NULL, \
+    label_sha256 TEXT NOT NULL, \
+    content_type TEXT NOT NULL, \
+    created_at INTEGER NOT NULL\
+    )";
+
+/// Every DDL statement, in creation order.
+pub fn ddl_statements() -> [&'static str; 3] {
+    [LEDGER_DDL, AUDIT_DDL, LABEL_DDL]
 }
 
 /// One audit row (kept transport-agnostic so tests and callers share it).
@@ -272,6 +283,11 @@ pub struct StoredLabel {
     pub tracking_no: String,
     pub carrier_service: String,
     pub quoted_cents: Option<i64>,
+    /// The label PDF FedEx returned with the buy. Empty when the leg
+    /// was hydrated from `fedex_live_ledger` (a replay): the caller
+    /// keeps the bytes in its blob store, indexed by
+    /// `fedex_live_label`.
+    pub label_pdf: Vec<u8>,
 }
 
 /// In-memory idempotency + day-count ledger. Production callers back
@@ -360,64 +376,63 @@ pub fn parse_token_response(body: &[u8]) -> Result<String, LiveError> {
 // Rate quote
 // ---------------------------------------------------------------------------
 
-/// Rate-quote body for one shipment (FedEx Rate v1 shape; verify field
-/// spellings against the sandbox at integration — see shipping-design
-/// §12.5).
+/// Rate-quote body for one shipment, against FedEx's published Rate
+/// API JSON (<https://developer.fedex.com/api/en-us/catalog/rate/v1/docs.html>):
+/// top-level `accountNumber.value` is the shipper account (an empty
+/// value is refused by FedEx, so the caller must pass the configured
+/// account), `pickupType` is required, the recipient is a single
+/// object (Ship uses a `recipients` array), and `rateRequestType`
+/// asks for the account rate next to list.
 pub fn rate_quote_body(request: &BuyRequest) -> Value {
     let payload = request.payload;
-    let dims = payload.parcel.dims();
     json!({
-        "accountNumber": { "value": request.payment_ref },
+        "accountNumber": { "value": request.payment_ref.trim() },
         "requestedShipment": {
             "shipper": {
                 "address": {
-                    "postalCode": payload.from.postal,
-                    "countryCode": payload.from.country,
+                    "postalCode": payload.from.postal.trim(),
+                    "countryCode": payload.from.country.trim(),
                 }
             },
             "recipient": {
                 "address": {
-                    "postalCode": payload.to.postal,
-                    "countryCode": payload.to.country,
+                    "postalCode": payload.to.postal.trim(),
+                    "countryCode": payload.to.country.trim(),
                 }
             },
+            "pickupType": "DROPOFF_AT_FEDEX_LOCATION",
             "serviceType": crate::carrier::fedex_service_type(payload.service),
-            "packagingType": if payload.parcel.is_envelope() {
-                "FEDEX_ENVELOPE"
-            } else {
-                "YOUR_PACKAGING"
-            },
-            "requestedPackageLineItems": [{
-                "weight": {
-                    "units": "LB",
-                    "value": dims.weight_g.div_ceil(454).max(1),
-                },
-            }],
+            "packagingType": crate::client::fedex_packaging_type(payload),
+            "rateRequestType": ["ACCOUNT", "LIST"],
+            "requestedPackageLineItems": [crate::client::fedex_package_line(payload)],
         },
     })
 }
 
-/// Cheapest quoted total, in cents, from a Rate v1 answer. Amount
-/// fields arrive as decimal-major units (`"12.50"` USD); anything
-/// unparseable means no usable quote.
+/// Quoted total, in cents, from a Rate v1 answer: the cheapest
+/// service's `totalNetCharge`. FedEx sends decimal dollars as JSON
+/// numbers (`26.6`); strings are accepted too. Within one service the
+/// `ACCOUNT` rate (what the account is billed) wins; without one the
+/// highest rate stands, so the cost cap errs on the safe side.
 pub fn parse_quote_cents(json: &Value) -> Option<i64> {
     let details = json
         .pointer("/output/rateReplyDetails")
         .and_then(Value::as_array)?;
     let mut best: Option<i64> = None;
     for detail in details {
-        let amount = detail
-            .pointer("/ratedShipmentDetails/0/totalNetCharge")
-            .and_then(Value::as_str)
-            .or_else(|| {
-                detail
-                    .pointer("/ratedShipmentDetails/0/totalNetCharge")
-                    .and_then(Value::as_f64)
-                    .map(|_| "")
-            });
-        let cents = match amount {
-            Some(text) if !text.is_empty() => decimal_usd_to_cents(text)?,
-            _ => continue,
+        let Some(rated) = detail.get("ratedShipmentDetails").and_then(Value::as_array) else {
+            continue;
+        };
+        let charge = |r: &Value| {
+            r.get("totalNetCharge")
+                .and_then(crate::client::dollars_to_cents)
+        };
+        let account = rated
+            .iter()
+            .find(|r| r.get("rateType").and_then(Value::as_str) == Some("ACCOUNT"))
+            .and_then(charge);
+        let Some(cents) = account.or_else(|| rated.iter().filter_map(charge).max()) else {
+            continue;
         };
         best = Some(best.map_or(cents, |b: i64| b.min(cents)));
     }
@@ -463,6 +478,8 @@ pub struct VoidParams<'a> {
     pub order_id: &'a str,
     pub leg: Leg,
     pub bearer: &'a str,
+    /// Shipper account: FedEx's cancel body requires it.
+    pub account: &'a str,
 }
 
 /// Gate-checked FedEx live operations. Generic over [`HttpTransport`]
@@ -501,6 +518,11 @@ impl<T: HttpTransport> LiveShipment<T> {
     ) -> Result<i64, LiveError> {
         cfg.require_enabled()?;
         cfg.check_zip(&request.payload.to.postal)?;
+        if request.payment_ref.trim().is_empty() {
+            return Err(LiveError::Rate(
+                "fedex account number is not configured".to_string(),
+            ));
+        }
         let url = format!("{}/rate/v1/rates/quotes", self.base_url);
         let body = rate_quote_body(request);
         let response = self
@@ -559,6 +581,7 @@ impl<T: HttpTransport> LiveShipment<T> {
             tracking_no: outcome.tracking_no.clone(),
             carrier_service: outcome.carrier_service.clone(),
             quoted_cents: params.quoted_cents,
+            label_pdf: outcome.label_pdf,
         };
         ledger.record_buy(&key, stored.clone());
         ledger.audit(AuditRow::new(
@@ -582,6 +605,7 @@ impl<T: HttpTransport> LiveShipment<T> {
             .ok_or_else(|| LiveError::DuplicateLeg { key: key.clone() })?;
         let tracking = stored.tracking_no.clone();
         self.client()
+            .with_account(params.account)
             .cancel(params.bearer, &tracking)
             .map_err(LiveError::Label)?;
         ledger.record_void(&key);
@@ -643,6 +667,15 @@ impl HttpTransport for RefTransport<'_> {
     ) -> Result<crate::client::HttpResponse, TransportError> {
         self.inner.delete_with(url, bearer, headers)
     }
+
+    fn put_json(
+        &self,
+        url: &str,
+        bearer: &str,
+        body: &Value,
+    ) -> Result<crate::client::HttpResponse, TransportError> {
+        self.inner.put_json(url, bearer, body)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -660,8 +693,10 @@ pub struct FixtureSet {
 }
 
 impl FixtureSet {
-    /// Synthetic fixtures: a USD 12.50 rate, one shippable label PDF,
-    /// and an empty cancel ack. The token key is assembled from
+    /// Synthetic fixtures in FedEx's documented answer shapes
+    /// (`fixtures/fedex/*.json`): a USD 12.50 account rate, one
+    /// shippable label PDF in `packageDocuments[].encodedLabel`, and a
+    /// `cancelledShipment: true` ack. The token key is assembled from
     /// fragments so this source never contains a scannable
     /// secret-shaped assignment (the value itself is synthetic).
     pub fn synthetic() -> Self {
@@ -676,26 +711,42 @@ impl FixtureSet {
         );
         Self {
             token: serde_json::to_vec(&token_obj).unwrap(),
-            rate: br#"{"output":{"rateReplyDetails":[{"ratedShipmentDetails":[{"totalNetCharge":"12.50"}]}]}}"#
-                .to_vec(),
-            ship: serde_json::to_vec(&json!({
-                "output": { "transactionShipments": [{
-                    "masterTrackingNumber": "SYNTHETIC123456",
-                    "pieceResponses": [{ "label": encoded }],
+            rate: serde_json::to_vec(&json!({
+                "output": { "rateReplyDetails": [{
+                    "serviceType": "FEDEX_2_DAY",
+                    "ratedShipmentDetails": [
+                        { "rateType": "ACCOUNT", "totalNetCharge": 12.5, "currency": "USD" },
+                        { "rateType": "LIST", "totalNetCharge": 14.25, "currency": "USD" },
+                    ],
                 }]},
             }))
             .unwrap(),
-            cancel: b"{}".to_vec(),
+            ship: serde_json::to_vec(&json!({
+                "output": { "transactionShipments": [{
+                    "masterTrackingNumber": "SYNTHETIC123456",
+                    "pieceResponses": [{
+                        "trackingNumber": "SYNTHETIC123456",
+                        "packageDocuments": [{
+                            "contentType": "LABEL",
+                            "docType": "PDF",
+                            "encodedLabel": encoded,
+                        }],
+                    }],
+                }]},
+            }))
+            .unwrap(),
+            cancel: br#"{"output":{"cancelledShipment":true}}"#.to_vec(),
         }
     }
 }
 
 /// Fixture-replay transport: routes by URL substring (`oauth`,
 /// `rates`, `shipments/cancel`, else ship). Records every call for
-/// the transcript.
+/// the transcript, with the request body of the last call.
 pub struct SandboxTransport {
     fixtures: FixtureSet,
     pub calls: std::cell::RefCell<Vec<String>>,
+    pub bodies: std::cell::RefCell<Vec<Value>>,
 }
 
 impl SandboxTransport {
@@ -703,6 +754,7 @@ impl SandboxTransport {
         Self {
             fixtures,
             calls: std::cell::RefCell::new(Vec::new()),
+            bodies: std::cell::RefCell::new(Vec::new()),
         }
     }
 }
@@ -713,9 +765,10 @@ impl HttpTransport for SandboxTransport {
         url: &str,
         _bearer: &str,
         _accept: Option<&str>,
-        _body: &Value,
+        body: &Value,
     ) -> Result<crate::client::HttpResponse, TransportError> {
         self.calls.borrow_mut().push(format!("POST {url}"));
+        self.bodies.borrow_mut().push(body.clone());
         let body = if url.contains("oauth") {
             self.fixtures.token.clone()
         } else if url.contains("rates") {
@@ -745,6 +798,25 @@ impl HttpTransport for SandboxTransport {
         Ok(crate::client::HttpResponse {
             status: 404,
             body: b"{}".to_vec(),
+        })
+    }
+
+    fn put_json(
+        &self,
+        url: &str,
+        _bearer: &str,
+        body: &Value,
+    ) -> Result<crate::client::HttpResponse, TransportError> {
+        self.calls.borrow_mut().push(format!("PUT {url}"));
+        self.bodies.borrow_mut().push(body.clone());
+        let status = if url.contains("shipments/cancel") {
+            200
+        } else {
+            404
+        };
+        Ok(crate::client::HttpResponse {
+            status,
+            body: self.fixtures.cancel.clone(),
         })
     }
 }
@@ -873,6 +945,7 @@ mod tests {
             order_id,
             leg,
             bearer: "bearer-synthetic",
+            account: "acct-synthetic",
         }
     }
 
@@ -1038,6 +1111,110 @@ mod tests {
                 .unwrap_err(),
             LiveError::ZipNotAllowed
         ));
+    }
+
+    #[test]
+    fn rate_body_matches_the_documented_request() {
+        use crate::client::tests::{assert_covers, fedex_fixtures};
+        let mut payload = sample_payload();
+        payload.to.postal = "98001".to_string();
+        let body = rate_quote_body(&BuyRequest {
+            payload: &payload,
+            direction: Direction::Outbound,
+            payment_ref: " 123456789 ",
+        });
+        let documented: Value = serde_json::from_str(fedex_fixtures::RATE_REQUEST).unwrap();
+        assert_covers(&documented, &body, &[]);
+        // Before P393 the staff quote sent `"value": ""`.
+        assert_eq!(body["accountNumber"], json!({ "value": "123456789" }));
+        let shipment = &body["requestedShipment"];
+        assert!(
+            shipment["recipient"].is_object(),
+            "rate takes one recipient"
+        );
+        assert!(shipment.get("recipients").is_none());
+        assert_eq!(shipment["pickupType"], json!("DROPOFF_AT_FEDEX_LOCATION"));
+        assert_eq!(
+            shipment["recipient"]["address"]["postalCode"],
+            json!("98001")
+        );
+        assert_eq!(shipment["serviceType"], json!("FEDEX_2_DAY"));
+    }
+
+    #[test]
+    fn quote_reads_the_documented_rate_answer() {
+        use crate::client::tests::fedex_fixtures;
+        let answer: Value = serde_json::from_str(fedex_fixtures::RATE_REPLY).unwrap();
+        // Numeric `totalNetCharge`; the ACCOUNT rate (26.60) beats LIST
+        // (31.40), and the cheaper of the two services wins.
+        assert_eq!(parse_quote_cents(&answer), Some(2_660));
+        // No ACCOUNT row: the highest rate stands (cap errs safe).
+        let list_only = json!({ "output": { "rateReplyDetails": [{
+            "ratedShipmentDetails": [
+                { "rateType": "LIST", "totalNetCharge": 31.4 },
+                { "rateType": "PREFERRED", "totalNetCharge": "29.99" },
+            ],
+        }]}});
+        assert_eq!(parse_quote_cents(&list_only), Some(3_140));
+        assert_eq!(parse_quote_cents(&json!({ "output": {} })), None);
+    }
+
+    #[test]
+    fn quote_refuses_without_an_account() {
+        let cfg = live_cfg();
+        let sandbox = LiveShipment::new(
+            "https://sandbox.test",
+            SandboxTransport::new(FixtureSet::synthetic()),
+        );
+        let mut payload = sample_payload();
+        payload.to.postal = "98001".to_string();
+        let request = BuyRequest {
+            payload: &payload,
+            direction: Direction::Outbound,
+            payment_ref: "  ",
+        };
+        assert!(matches!(
+            sandbox.quote(&cfg, "bearer-synthetic", &request),
+            Err(LiveError::Rate(_))
+        ));
+        assert!(sandbox.transport.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn buy_keeps_the_label_pdf_and_void_puts_the_account() {
+        let cfg = live_cfg();
+        let sandbox = LiveShipment::new(
+            "https://sandbox.test",
+            SandboxTransport::new(FixtureSet::synthetic()),
+        );
+        let mut payload = sample_payload();
+        payload.to.postal = "98001".to_string();
+        let request = buy_request(&payload);
+        let mut ledger = MemLedger::new();
+        let bought = sandbox
+            .buy_pair(
+                buy_params(&cfg, &request, "order-3", Leg::Outbound, 1),
+                &mut ledger,
+            )
+            .unwrap();
+        assert!(bought[0].label_pdf.starts_with(b"%PDF-"));
+        assert_eq!(bought[0].tracking_no, "SYNTHETIC123456");
+        let ship_body = sandbox.transport.bodies.borrow().last().cloned().unwrap();
+        assert_eq!(ship_body["accountNumber"]["value"], json!("acct-synthetic"));
+        sandbox
+            .void(void_params(&cfg, "order-3", Leg::Outbound, 2), &mut ledger)
+            .unwrap();
+        let calls = sandbox.transport.calls.borrow().clone();
+        assert_eq!(
+            calls.last().map(String::as_str),
+            Some("PUT https://sandbox.test/ship/v1/shipments/cancel")
+        );
+        let cancel_body = sandbox.transport.bodies.borrow().last().cloned().unwrap();
+        assert_eq!(
+            cancel_body["accountNumber"]["value"],
+            json!("acct-synthetic")
+        );
+        assert_eq!(cancel_body["trackingNumber"], json!("SYNTHETIC123456"));
     }
 
     #[test]

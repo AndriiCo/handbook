@@ -25,7 +25,20 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import { fetchConfig, saveConfigKey } from '../../../lib/admin/config-client.js';
+	import {
+		csrfHeaders,
+		fetchConfigWithStart,
+		saveConfigKey
+	} from '../../../lib/admin/config-client.js';
+	import {
+		CONFIRM_WORD,
+		fetchStartedAt,
+		isLockoutKey,
+		requestRestart,
+		restartNeeded,
+		savedSinceStart,
+		waitForRestart
+	} from '../../../lib/admin/restart-client.js';
 	import {
 		fetchSetupStatus,
 		fetchSetupSteps,
@@ -59,6 +72,8 @@
 		// False for wizard fields the server list omits (never set):
 		// completion counts only server-present rows.
 		present?: boolean;
+		// Server clock, unix seconds: when the row was last saved.
+		updated_at?: number;
 	}
 
 	interface GuideField {
@@ -118,12 +133,94 @@
 	let query = $state('');
 	let guideOpen = $state<Record<string, boolean>>({});
 
-	async function load() {
-		loadState = 'loading';
+	// Restart (P393): boot-time keys apply at the next start. The
+	// server checks the saved config first (422 when the next boot
+	// would fail), then drains and exits; systemd starts it again.
+	// The overlay polls /admin/version once a second until
+	// started_at moves, then refetches the list in place — no page
+	// reload (the WebSockets reconnect on their own).
+	let startedAt = $state<number | null>(null);
+	let restartState = $state<'idle' | 'asking' | 'restarting' | 'slow' | 'done'>('idle');
+	let restartError = $state<string | null>(null);
+	let restartWarnings = $state<string[]>([]);
+	let restartElapsed = $state(0);
+	let restartFrom = 0;
+	let confirmText = $state('');
+	let confirmKeys = $state<string[]>([]);
+
+	const pendingBoot = $derived(
+		items.filter(
+			(item) => item.present && restartNeeded(item.entry.applies, item.row.updated_at, startedAt)
+		)
+	);
+	const riskyKeys = $derived([
+		...new Set([
+			...items
+				.filter((item) => item.present && savedSinceStart(item.row.updated_at, startedAt))
+				.map((item) => item.entry.key)
+				.filter(isLockoutKey),
+			...confirmKeys
+		])
+	]);
+	const confirmOk = $derived(
+		riskyKeys.length === 0 || confirmText.trim().toLowerCase() === CONFIRM_WORD
+	);
+
+	async function restart() {
+		restartError = null;
+		restartState = 'asking';
+		try {
+			const confirm = riskyKeys.length ? confirmText : '';
+			const answer = await requestRestart(api(), confirm, fetch, csrfHeaders);
+			if (answer.kind === 'accepted') {
+				restartWarnings = answer.warnings;
+				restartFrom = answer.startedAt;
+				await watchRestart();
+				return;
+			}
+			if (answer.kind === 'refused') {
+				restartError = `The next boot would fail, so nothing was restarted: ${answer.message}`;
+			} else if (answer.kind === 'confirm') {
+				confirmKeys = answer.riskyKeys;
+				restartError = answer.message;
+			} else {
+				restartError = answer.message;
+			}
+		} catch (err) {
+			restartError = err instanceof Error ? err.message : 'Restart failed.';
+		}
+		restartState = 'idle';
+	}
+
+	async function watchRestart() {
+		restartState = 'restarting';
+		restartElapsed = 0;
+		try {
+			startedAt = await waitForRestart(api(), restartFrom, {
+				onTick: (ms) => (restartElapsed = Math.round(ms / 1000))
+			});
+		} catch {
+			restartState = 'slow';
+			return;
+		}
+		confirmText = '';
+		confirmKeys = [];
+		await load({ quiet: true });
+		restartState = 'done';
+	}
+
+	async function load({ quiet = false }: { quiet?: boolean } = {}) {
+		if (!quiet) loadState = 'loading';
 		loadError = null;
 		try {
-			const list = await fetchConfig(api());
-			rows = list.map((row) => ({ ...row, saved: false }));
+			const fetched = await fetchConfigWithStart(api());
+			startedAt = fetched.startedAt ?? (await fetchStartedAt(api()).catch(() => null));
+			const list = fetched.rows;
+			// A quiet (in-place) refresh keeps edits still in flight.
+			const kept = new Map(
+				quiet ? items.filter((i) => i.row.dirty || i.row.saving).map((i) => [i.row.key, i.row]) : []
+			);
+			rows = list.map((row) => kept.get(row.key) ?? { ...row, saved: false });
 			const server = new Map(rows.map((row) => [row.key, row]));
 			const joined: Item[] = [];
 			for (const group of CONFIG_GUIDE) {
@@ -145,6 +242,7 @@
 			}
 			items = joined;
 			loadState = 'ready';
+			if (quiet) return;
 			await tick();
 			followHash();
 		} catch (err) {
@@ -367,7 +465,8 @@
 		row.saving = true;
 		row.error = null;
 		try {
-			await saveConfigKey(api(), row);
+			const { updatedAt } = await saveConfigKey(api(), row);
+			if (updatedAt !== null) row.updated_at = updatedAt;
 			row.dirty = false;
 			row.saved = true;
 			if (row.type === 'secret') {
@@ -752,6 +851,8 @@
 				</Notice>
 			{/if}
 
+			{@render restartCard()}
+
 			<div class="flex flex-col gap-6 xl:grid xl:grid-cols-4 xl:items-start xl:gap-8">
 				<aside class="flex min-w-0 flex-col gap-3 xl:sticky xl:top-20 xl:col-span-1">
 					<p class="m-0 text-sm text-ink-muted" aria-live="polite">
@@ -912,6 +1013,12 @@
 					{#if entry.type === 'secret'}<LockIcon aria-hidden="true" />{/if}{entry.type}
 				</Badge>
 				<span class={appliesCls(entry.applies)}>{APPLIES_LABEL[entry.applies]}</span>
+				{#if item.present && restartNeeded(entry.applies, row.updated_at, startedAt)}
+					<span
+						class="inline-flex h-6 items-center rounded-full bg-warning-bg px-2 text-xs font-medium text-warning"
+						>Restart needed</span
+					>
+				{/if}
 			</div>
 			<code class="font-mono text-xs break-all text-ink-muted">{entry.key}</code>
 			<dl class="m-0 flex flex-col gap-2 text-sm">
@@ -1029,3 +1136,110 @@
 		</div>
 	</li>
 {/snippet}
+
+{#snippet restartCard()}
+	<section
+		aria-labelledby="restart-heading"
+		class="flex flex-col gap-3 rounded-lg border border-line bg-card p-4 shadow-sm md:p-6"
+	>
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+			<h2 id="restart-heading" class="m-0 text-h3 font-semibold">Restart the service</h2>
+			{#if pendingBoot.length > 0}
+				<span
+					class="inline-flex h-6 items-center rounded-full bg-warning-bg px-2 text-xs font-medium text-warning"
+					>{pendingBoot.length} boot-time change{pendingBoot.length === 1 ? '' : 's'} waiting</span
+				>
+			{/if}
+		</div>
+		<p class="m-0 max-w-prose text-sm text-ink-muted">
+			Keys marked “Restart to apply” take effect at the next start. Restart checks the saved config
+			first and refuses if the next boot would fail. This page then waits and reloads its data in
+			place.
+		</p>
+		{#if pendingBoot.length > 0}
+			<p class="m-0 flex flex-wrap items-center gap-1 text-sm">
+				Saved since the last start:
+				{#each pendingBoot as item (item.entry.key)}
+					<a
+						class="rounded-xs bg-surface-2 px-1 font-mono text-xs text-accent-strong hover:underline"
+						href={`#key-${item.entry.key}`}>{item.entry.key}</a
+					>
+				{/each}
+			</p>
+		{/if}
+		{#if riskyKeys.length > 0}
+			<Notice variant="warning" heading="These changes can lock staff out.">
+				<p class="m-0 text-sm">
+					{riskyKeys.join(', ')} changed since the last start. A wrong value here can keep the admin
+					host unreachable after the restart. Check them, then type “{CONFIRM_WORD}” below.
+				</p>
+			</Notice>
+			<div class="flex max-w-sm flex-col gap-1">
+				<label for="restart-confirm" class="text-xs font-medium text-ink-muted"
+					>Type “{CONFIRM_WORD}” to confirm</label
+				>
+				<Input
+					id="restart-confirm"
+					type="text"
+					class="h-10 font-mono"
+					autocomplete="off"
+					spellcheck={false}
+					bind:value={confirmText}
+				/>
+			</div>
+		{/if}
+		{#if restartError}
+			<Notice variant="error" heading="Not restarted.">
+				<p class="m-0 text-sm">{restartError}</p>
+			</Notice>
+		{/if}
+		{#if restartState === 'done' && startedAt}
+			<Notice variant="success" heading="Restarted.">
+				<p class="m-0 text-sm">
+					Running since {new Date(startedAt * 1000).toLocaleTimeString()}. Boot-time keys saved
+					before the restart are live.
+				</p>
+				{#each restartWarnings as warning (warning)}
+					<p class="m-0 text-sm">Boot warning: {warning}</p>
+				{/each}
+			</Notice>
+		{/if}
+		<div>
+			<Button
+				size="lg"
+				onclick={restart}
+				disabled={!confirmOk || restartState === 'asking' || restartState === 'restarting'}
+			>
+				{restartState === 'asking' ? 'Checking the config…' : 'Restart service'}
+			</Button>
+		</div>
+	</section>
+{/snippet}
+
+{#if restartState === 'restarting' || restartState === 'slow'}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="restart-overlay-title"
+	>
+		<div class="flex max-w-md flex-col gap-3 rounded-lg border border-line bg-card p-6 shadow-sm">
+			{#if restartState === 'restarting'}
+				<h2 id="restart-overlay-title" class="m-0 text-h3 font-semibold">Restarting…</h2>
+				<p class="m-0 text-sm text-ink-muted" role="status">
+					Waiting for the service to come back ({restartElapsed} s). The data reloads by itself.
+				</p>
+			{:else}
+				<h2 id="restart-overlay-title" class="m-0 text-h3 font-semibold">Still restarting</h2>
+				<p class="m-0 text-sm text-ink-muted">
+					The service has not come back after two minutes. Check
+					<code class="font-mono text-xs">journalctl -u apostille</code> on the server.
+				</p>
+				<div class="flex flex-wrap gap-2">
+					<Button onclick={watchRestart}>Keep waiting</Button>
+					<Button variant="outline" onclick={() => (restartState = 'idle')}>Close</Button>
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}

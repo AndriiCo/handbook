@@ -12,7 +12,9 @@ export type ConfigType = 'bool' | 'text' | 'secret';
 
 /**
  * When a saved value takes effect (from the reading code, not the spec):
- * boot     RuntimeConfig::load at startup, restart the service.
+ * boot     RuntimeConfig::load at startup: "Restart service" on /config
+ *          (POST /admin/restart, P393) checks the saved rows, then
+ *          restarts; the key shows "Restart needed" until then.
  * live     CachedReader (30 s TTL; the admin PUT clears the cache).
  * call     re-read on every request or model call.
  * poll     read by each `xtask mail-poll` run (apostille-mail.timer).
@@ -41,7 +43,7 @@ export interface GuideGroup {
 }
 
 export const APPLIES_TEXT: Record<Applies, string> = {
-	boot: 'Read at boot. Restart the service to apply.',
+	boot: 'Read at boot. Apply it with Restart service at the top of this page.',
 	live: 'Applies within seconds. No restart.',
 	call: 'Read on every call. No restart.',
 	poll: 'Read by the next mail-poll run.',

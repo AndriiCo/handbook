@@ -1,0 +1,9 @@
+{
+  "transactionId": "synthetic-transaction",
+  "output": {
+    "cancelledShipment": true,
+    "cancelledHistory": true,
+    "message": "Shipment is successfully cancelled",
+    "alerts": []
+  }
+}

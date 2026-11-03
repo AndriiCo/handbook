@@ -1,0 +1,42 @@
+{
+  "transactionId": "synthetic-transaction",
+  "output": {
+    "transactionShipments": [
+      {
+        "serviceType": "FEDEX_2_DAY",
+        "masterTrackingNumber": "794953535000",
+        "pieceResponses": [
+          {
+            "masterTrackingNumber": "794953535000",
+            "trackingNumber": "794953535000",
+            "netChargeAmount": 21.45,
+            "packageDocuments": [
+              {
+                "contentType": "LABEL",
+                "copiesToPrint": 1,
+                "encodedLabel": "JVBERi0xLjQgc3ludGhldGljIGZlZGV4IGxhYmVsIChkb2N1bWVudGVkIGFuc3dlciBzaGFwZSk=",
+                "docType": "PDF"
+              }
+            ]
+          }
+        ],
+        "completedShipmentDetail": {
+          "masterTrackingId": {
+            "trackingIdType": "FEDEX",
+            "trackingNumber": "794953535000"
+          },
+          "shipmentRating": {
+            "actualRateType": "PAYOR_ACCOUNT_PACKAGE",
+            "shipmentRateDetails": [
+              {
+                "rateType": "PAYOR_ACCOUNT_PACKAGE",
+                "totalNetCharge": 19.08,
+                "currency": "USD"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

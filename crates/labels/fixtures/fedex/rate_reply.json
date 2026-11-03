@@ -1,0 +1,38 @@
+{
+  "transactionId": "synthetic-transaction",
+  "output": {
+    "rateReplyDetails": [
+      {
+        "serviceType": "FEDEX_2_DAY",
+        "ratedShipmentDetails": [
+          {
+            "rateType": "LIST",
+            "totalNetCharge": 31.4,
+            "shipmentRateDetail": {
+              "currency": "USD"
+            }
+          },
+          {
+            "rateType": "ACCOUNT",
+            "totalNetCharge": 26.6,
+            "shipmentRateDetail": {
+              "currency": "USD"
+            }
+          }
+        ]
+      },
+      {
+        "serviceType": "STANDARD_OVERNIGHT",
+        "ratedShipmentDetails": [
+          {
+            "rateType": "ACCOUNT",
+            "totalNetCharge": 58.05,
+            "shipmentRateDetail": {
+              "currency": "USD"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
