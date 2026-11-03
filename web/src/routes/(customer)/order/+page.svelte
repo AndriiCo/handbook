@@ -488,7 +488,12 @@
 		<Notice variant="error" heading="The order form is unavailable."><p>{loadError}</p></Notice>
 	</div>
 {:else if index === null}
-	<div role="status" aria-label="Loading order form" class="mt-10 flex max-w-lg flex-col gap-3">
+	<!-- The stepper renders before the index arrives, so a slow first
+	     read never hides where the visitor is (GP4 reads aria-current). -->
+	<div class="pt-10 lg:w-7/12">
+		<OrderStepper steps={STEPS} current={step} onpick={() => {}} />
+	</div>
+	<div role="status" aria-label="Loading order form" class="mt-8 flex max-w-lg flex-col gap-3">
 		<span class="sr-only">Loading order form</span>
 		<Skeleton class="h-7 w-full" />
 		<Skeleton class="h-11 w-full" />
