@@ -1,0 +1,11 @@
+# Docker build contexts never see secrets, local stores or build output.
+private/
+.local/
+target/
+web/node_modules/
+web/build/
+web/build-admin/
+web/shots/
+.git/
+.claude/
+.muse/

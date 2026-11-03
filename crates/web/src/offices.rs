@@ -2,10 +2,6 @@
 //! appointment/po_box facts into offices; `address_ok` + `hours_ok`
 //! guards; staff accept; `offices_accepted` on `authority:{slug}`.
 //!
-//! Owner: lane SA-23 ground (`docs/lanes/sa-23.md`). O1 first cut
-//! landed by the builder (P327) while the lane session could not start;
-//! the lane owns this file from here.
-//!
 //! The model only proposes structure. Every address line, PO box, day
 //! and time it returns must be written in the accepted fact it cites,
 //! or the guard drops that piece; a timezone is kept only when a cited
@@ -494,7 +490,7 @@ pub fn guard_office(raw: &Value, facts: &[Grounding]) -> (Option<Value>, Vec<Che
 // ------------------------------------------------------------------ DB
 
 /// Boot DDL on the metadata DB (`handbook.sqlite`): `CREATE TABLE IF
-/// NOT EXISTS` only — no ALTER, DROP or RENAME (AGENTS.md §7).
+/// NOT EXISTS` only — no ALTER, DROP or RENAME (docs/ops/deploy.md § Rails).
 pub fn migrate_tables(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS office_record (
@@ -521,7 +517,7 @@ fn row_view(id: i64, slug: &str, status: &str, office: &str, decided: Option<i64
 }
 
 /// Accepted offices for one authority, shaped as
-/// `docs/lanes/contracts/plan.json` → `offices[]` (`plan.rs` reads this).
+/// `docs/contracts/plan.json` → `offices[]` (`plan.rs` reads this).
 pub fn accepted_for_slug(conn: &Connection, slug: &str) -> rusqlite::Result<Vec<Value>> {
     let has: bool = conn
         .query_row(
@@ -1152,7 +1148,7 @@ mod tests {
         assert_eq!(served[0]["timezone_source"], "staff_confirmed");
         assert_eq!(served[0]["status"], "accepted");
         let seed: Value =
-            serde_json::from_str(include_str!("../../../docs/lanes/contracts/plan.json")).unwrap();
+            serde_json::from_str(include_str!("../../../docs/contracts/plan.json")).unwrap();
         for key in seed["offices"][0].as_object().unwrap().keys() {
             assert!(served[0].get(key).is_some(), "office key {key}");
         }

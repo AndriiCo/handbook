@@ -7,9 +7,7 @@ approved by a human. Live at <https://andrii.ai/apostille>.
 
 Built by Andrii Co. for the
 [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon.md)
-(Startup Track), 2026-10-26 to 2026-11-04 with Muse Code — every builder
-and judge turn retained in [docs/prompts/](docs/prompts/) (see
-[docs/prompts/sessions/README.md](docs/prompts/sessions/README.md)).
+(Startup Track), 2026-10-26 to 2026-11-04 with Muse Code.
 
 ## Models
 
@@ -103,13 +101,10 @@ samples, and there is no real mail, fees, or carrier charges anywhere.
 ## Promised in our application → delivered
 
 Promise words are quoted from the hackathon application text
-([001 — Initial scaffolding](docs/prompts/2026-10-26-001-initial-scaffolding.md),
-2026-10-26). No separate "review §14" promise file exists in the
-repo — the push-plan's §14 list points back to this application
-text, so it is the source used here. Statuses marked "live" are
+(2026-10-26). Statuses marked "live" are
 served by the production SHA; "(repo)" means merged, not claimed
 live. Production is `0.1.0+2b4bc8d`, scoreboard **5/10** measured
-2026-11-02T17:32Z (`node .agents/scoreboard/scoreboard.mjs`).
+2026-11-02T17:32Z (`node xtask/ops/scoreboard.mjs`).
 GP2-data is red: Vietnam 0/8, usa-wa-sos 1/8 accepted facts —
 approvals are operator-owned.
 
@@ -147,15 +142,13 @@ the first 30 synthetic passages.
 
 ## How we built it with Muse Code
 
-One builder session ships numbered slices (`P196`, `P197`, … in
-[docs/prompts/LOG.md](docs/prompts/LOG.md)); Meta-model work happens in
-lane sessions on their own worktree branches, merged back by the builder.
-A judge agent re-reads the live screens like a juror would. The oracle is
-a script, not an opinion: `node .agents/scoreboard/scoreboard.mjs`
-scores ten rows (home, dossier data and page, login, order, precheck,
-eval, submission) against production and staging, and every deploy needs
-its green stamp from the plant build gate. The full prompt-and-response
-record sits in [docs/prompts/sessions/](docs/prompts/sessions/).
+One builder session shipped numbered slices (`P196`, `P197`, … in the
+commit subjects); Meta-model work happened in lane sessions on their own
+worktree branches, merged back by the builder. The release checks are a
+script, not an opinion: `node xtask/ops/scoreboard.mjs` scores ten rows
+(home, dossier data and page, login, order, precheck, eval, submission)
+against production and staging, and every deploy needs its green stamp
+from the plant build gate (`docs/ops/deploy.md`).
 
 ## Architecture
 
@@ -208,8 +201,7 @@ crates/handbook-agent/   analysis runner (draft, validate, store as proposed)
 crates/web/              API + WS bus + admin branch (IP-allowlisted)
 web/                     public + admin SPAs (SvelteKit, adapter-static)
 xtask/                   task runner (`cargo xtask ci` = fmt check, clippy, tests)
-docs/prompts/            complete log of prompts and responses
-AGENTS.md                working agreements for coding agents
+docs/ops/deploy.md       build, stage, ship, roll back, watch
 LICENSE                  PolyForm Noncommercial 1.0.0 (source code)
 LICENSE-CONTENT.md       handbook content, all rights reserved
 ```
@@ -259,12 +251,6 @@ See [docs/design.md](docs/design.md) — the proposed evidence-store design
 security baseline live in [docs/specs/](docs/specs/),
 [docs/site-theme.md](docs/site-theme.md), and
 [docs/SECURITY.md](docs/SECURITY.md) (all drafts for review).
-
-## Prompt log
-
-Every prompt and response is retained with timestamps in
-[docs/prompts/](docs/prompts/), one Markdown file per prompt, committed
-alongside the work it produced.
 
 ## License
 

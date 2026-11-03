@@ -141,7 +141,7 @@
   risk — and breaks when the authority re-exports); client-side
   jsPDF (violates "server is source of truth", duplicates layout
   logic, breaks audit hash). `printpdf` + our own rect layout is the
-  smallest thing that works (AGENTS.md simplicity).
+  smallest thing that works.
 - P2-R4 — Replica fidelity: clean-room redraw (our boxes/lines/text
   at measured coordinates), not a scan trace. Header block on page 1:
   template code + version + authority revision + "generated <utc>

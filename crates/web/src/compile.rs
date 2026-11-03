@@ -42,7 +42,7 @@ const MAX_SEEDS: usize = 5;
 const STALE_SECS: i64 = 3_600;
 
 /// Boot DDL on the metadata DB (`handbook.sqlite`): `CREATE TABLE IF
-/// NOT EXISTS` only — no ALTER, DROP or RENAME (AGENTS.md §7).
+/// NOT EXISTS` only — no ALTER, DROP or RENAME (docs/ops/deploy.md § Rails).
 pub fn migrate_tables(conn: &Connection) -> rusqlite::Result<()> {
     // A run lives in a tokio task: after a restart a `running` row is
     // dead, and the one-running-per-slug index below must not trip on it.

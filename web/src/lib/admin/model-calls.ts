@@ -1,6 +1,6 @@
 // Per-attempt Meta model telemetry (SA-22 `model_call` rows):
 // `GET /apostille/api/v1/admin/model-calls?pipeline=&since=`, shaped
-// like docs/lanes/contracts/admin-model-calls.json.
+// like docs/contracts/admin-model-calls.json.
 import { getJson } from './admin-api.js';
 
 export interface ModelCall {

@@ -1,7 +1,7 @@
 //! WARC/1.1 archive writer plus the polite-fetch core for the world crawl.
 //!
 //! The world crawler (`xtask crawl`, SA-8 slice of the operator-ordered
-//! ADDENDUM in `docs/ops/push-plan.md`) stores every capture as WARC/1.1
+//! archive addendum, `docs/ops/world-archive-rights.md`) stores every capture as WARC/1.1
 //! records: one `warcinfo` per file, one `request` + `response` record per
 //! redirect hop, and one `metadata` record per capture carrying the pack
 //! slug, the robots verdict, and the TLS peer chain. Each record is

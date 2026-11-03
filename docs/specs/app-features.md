@@ -25,8 +25,7 @@ P3 (nice-to-have): live translation via SeamlessStreaming. Bulk
 raw-data analysis is done by the implemented Model-API agent — see
 [analysis-agent.md](analysis-agent.md) — not in chat. Conventions
 below: each feature has Goal / Acceptance criteria / Data+API needs /
-Dependencies. `xtask` = Rust task runner, no shell scripts (AGENTS.md
-§5).
+Dependencies. `xtask` = Rust task runner, no shell scripts.
 
 ## F1 — Cited-URL watch (500+ URLs)
 

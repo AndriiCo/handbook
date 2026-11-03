@@ -1,5 +1,5 @@
 // Admin dashboard data: `GET /apostille/api/v1/admin/stats`
-// (contract seed docs/lanes/contracts/admin-stats.json) plus the
+// (contract seed docs/contracts/admin-stats.json) plus the
 // staff-only `ops` WS topic (ids only; the page re-reads the API).
 import { modelName } from './format.js';
 

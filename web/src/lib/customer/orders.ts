@@ -1,6 +1,6 @@
 // Customer commerce client (MISSION WIN SA-28): order options, orders,
 // quotes, checkout and the cabinet. Shapes follow the contract seeds
-// in docs/lanes/contracts/ (order-options, order, orders-list,
+// in docs/contracts/ (order-options, order, orders-list,
 // order-quote, order-paused, plan). Every value a visitor sees comes
 // from these responses: no fee, carrier, address or form field is
 // written here. The labels below name contract enumerations only.

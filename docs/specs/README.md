@@ -52,9 +52,6 @@ the consolidated author-decision list is at the bottom of this file.
 - [voice-telnyx.md](voice-telnyx.md) — Telnyx voice calls
   (Call Control client, webhook verify, recording + transcript
   UI; staff-only, consent-gated).
-- [mtls-seam.md](mtls-seam.md) — admin-listener mTLS (H6 fix
-  part 2): rustls client-cert verification, fingerprint layer,
-  cert lifecycle, staging/prod enrollment, acceptance.
 - [single-443-quic.md](single-443-quic.md) — single-443
   Host-routed admin (444 deprecated, both-SANs cert) +
   native QUIC/HTTP-3 (quinn + h3 bridge, `quic.enabled`,
@@ -410,7 +407,7 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     channel) stays open, split-channel default stands.
 59. Break-glass envelope + ordered drill (OPEN-23, author,
     2026-10-29): sealed offline envelope holding the
-    re-mint authority; Drill 4 in [drill.md](../ops/drill.md)
+    re-mint authority; the setup-key re-mint drill in [deploy.md](../ops/deploy.md)
     is the ordered drill (author outcome keyed "OPEN-22",
     re-keyed — true OPEN-22, who may mint invites, stays
     open; quorum size for `--role admin` also stays open).

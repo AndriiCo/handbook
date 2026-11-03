@@ -185,7 +185,7 @@ Registry grows 30 → 31 keys (5 bool / 24 text / 2 secret).
    host get a name-mismatch error (loud boot warning fires
    as the backstop signal).
 4. **Prod flip.** Deploy; same log assertions; run the
-   mTLS enrollment probes from `mtls-seam.md` §3 against
+   mTLS enrollment probes from the retired mTLS seam spec §3 against
    `https://admin.andrii.ai/apostille` (no `:444`) —
    NOTE: that doc still shows `:444` URLs and needs a
    parent follow-up edit (out of this change's scope).
@@ -209,6 +209,6 @@ Registry grows 30 → 31 keys (5 bool / 24 text / 2 secret).
 - O3. QUIC observability: qlog / connection metrics — which
   sink (journald fields vs separate sagrada)? (Owner: parent;
   blocks step 6 only.)
-- O4. `mtls-seam.md` §2.4/§3 `:444` URLs + the §3 step-4
+- O4. the retired mTLS seam spec §2.4/§3 `:444` URLs + the §3 step-4
   log line: parent follow-up edit after this merges.
   (Owner: parent; blocks step 4 docs only.)

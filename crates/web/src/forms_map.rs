@@ -3,10 +3,8 @@
 //! accept the map; the customer fill is fill-and-flatten of the
 //! official PDF.
 //!
-//! Owner: lane SA-23 ground (`docs/lanes/sa-23.md`). F1 first cut
-//! landed by the builder (P329) while the lane session could not start;
-//! the lane owns this file from here (prefill from accepted facts, the
-//! `form_template` bridge, F2 redraw for flat PDFs).
+//! Next: prefill from accepted facts, the `form_template` bridge, and a
+//! redraw for flat PDFs.
 //!
 //! The model never invents a field: names are an enum of the PDF's own
 //! AcroForm names, every label must be quoted from the PDF's text layer
@@ -165,7 +163,7 @@ pub fn guard_map(
 // ------------------------------------------------------------------ DB
 
 /// Boot DDL on the metadata DB (`handbook.sqlite`): `CREATE TABLE IF
-/// NOT EXISTS` only — no ALTER, DROP or RENAME (AGENTS.md §7).
+/// NOT EXISTS` only — no ALTER, DROP or RENAME (docs/ops/deploy.md § Rails).
 pub fn migrate_tables(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS form_map (
@@ -226,7 +224,7 @@ fn form_view(conn: &Connection, slug: &str, status: &str, row: &MapRow) -> Value
 }
 
 /// Published forms for one authority, shaped as
-/// `docs/lanes/contracts/form.json` (`plan.rs` reads this).
+/// `docs/contracts/form.json` (`plan.rs` reads this).
 pub fn accepted_for_slug(conn: &Connection, slug: &str) -> rusqlite::Result<Vec<Value>> {
     let has: bool = conn
         .query_row(
@@ -993,7 +991,7 @@ mod tests {
     #[test]
     fn contract_seed_shape_matches_the_served_form() {
         let seed: Value =
-            serde_json::from_str(include_str!("../../../docs/lanes/contracts/plan.json")).unwrap();
+            serde_json::from_str(include_str!("../../../docs/contracts/plan.json")).unwrap();
         let conn = Connection::open_in_memory().unwrap();
         migrate_tables(&conn).unwrap();
         conn.execute_batch("CREATE TABLE capture(id INTEGER PRIMARY KEY, source_id INTEGER); CREATE TABLE source(id INTEGER PRIMARY KEY, uri TEXT);").unwrap();

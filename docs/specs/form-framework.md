@@ -70,7 +70,7 @@ Rules for framework code:
 - F2: No PII-bearing defaults, no network, no storage keys.
   Draft persistence (if a route wants it) lives in the route.
 - F3: New shared behavior needs a node:test case before the
-  route uses it (AGENTS.md goal-driven execution).
+  route uses it.
 - F4: Visual style follows the anti-slop preflight
   (bundled:taste): government-form aesthetic is black on
   white, system fonts, no accent gradients, real hierarchy.

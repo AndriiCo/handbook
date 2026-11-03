@@ -20,12 +20,10 @@ GIVEN_SHA="$SHA"
 SHA="${SHA:-$(git rev-parse HEAD)}"
 git cat-file -e "$SHA^{commit}" 2>/dev/null || { echo "ABORT: not a commit: $SHA (commit first; plant builds committed SHAs only)"; exit 2; }
 # Explicit SHAs archive from git, so working-tree edits cannot leak in:
-# the tree is checked only for the HEAD default. The session-log hook
-# rewrites docs/prompts/sessions after every turn; it never ships, so it
-# is always excluded.
-if [ -z "$GIVEN_SHA" ] && [ -n "$(git status --porcelain --untracked-files=no -- . ':!docs/prompts/sessions')" ]; then
+# the tree is checked only for the HEAD default.
+if [ -z "$GIVEN_SHA" ] && [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   echo "ABORT: tracked edits uncommitted — commit or stash first (plant builds $SHA exactly, your edits would not ship)" >&2
-  git status --porcelain --untracked-files=no -- . ':!docs/prompts/sessions' >&2
+  git status --porcelain --untracked-files=no >&2
   exit 2
 fi
 

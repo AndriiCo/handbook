@@ -77,30 +77,17 @@ chmod 600 "$HOME/.config/andrii/eab-staging.txt"
 gcloud config unset api_endpoint_overrides/publicca
 ```
 
-## Certificate sources today (2026-10-27)
+## Certificate sources
 
-Prod currently terminates explicit files
-(`/var/lib/apostille/tls/{cert.pem,key.pem}`, issued once by
-hand, **`andrii.ai`-only** — no admin SAN), NOT in-binary ACME:
-`acme.enabled` defaults false and explicit `tls.*` rows always
-win, so no issuance is ever attempted there. That is also why
-`admin.andrii.ai` never got SSL automatically — the one manual
-issuance covered only `andrii.ai`, and nothing has reissued
-since. (The external ACME client once used for that issuance
-has been removed from the server and the repo.)
+Production issues and renews in the binary for `acme.domains`
+(`andrii.ai`, `admin.andrii.ai`, `www.andrii.ai`) since 2026-10-28.
+Pinned files (`tls.cert_file` + `tls.key_file`) still win while both
+are set, so leave them empty when ACME is on. `cargo xtask setup` turns
+ACME on from the first boot and checks DNS before the service starts.
 
-Fix the admin SAN the automatic way: mint EAB (§ above), set
-`acme.enabled=true` + `acme.eab_kid` + `acme.eab_hmac` (+
-optional `acme.email`), then hand off by emptying the explicit
-rows (`tls.cert_file`/`tls.key_file` set to empty ≡ unset —
-explicit files win while set), and restart. The binary issues
-for `acme.domains` (`andrii.ai,admin.andrii.ai`) and renews via
-ARI forever.
-
-Port-80 lesson (kept from the manual era): sibling services own
-:80 on OTHER IPs of this box, so our redirector binds the
-explicit `net.bind`/`net.bind6` IPs only, never 0.0.0.0 — a
-wildcard bind would fail or steal their port.
+Port-80 lesson: other services may own :80 on other IPs of the same
+box, so the redirector binds the explicit `net.bind`/`net.bind6` IPs,
+never 0.0.0.0.
 
 ## How it works
 

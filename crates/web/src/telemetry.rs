@@ -2,9 +2,6 @@
 //! latency, TTFT, input/output/cached/reasoning tokens, outcome); daily
 //! caps count these rows; p50/p95 feed the trace console and dashboard.
 //!
-//! Owner: lane SA-22 plan (`docs/lanes/sa-22.md`). M1 landed by the
-//! builder (P319) because the lane session could not start yet; the
-//! lane owns this file from here.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,7 +25,7 @@ use crate::{AppState, store_unavailable, unix_now};
 pub const DEFAULT_DAILY_CALL_CAP: i64 = 400;
 
 /// Boot DDL on the metadata DB (`handbook.sqlite`): `CREATE TABLE IF
-/// NOT EXISTS` only — no ALTER, DROP or RENAME (AGENTS.md §7).
+/// NOT EXISTS` only — no ALTER, DROP or RENAME (docs/ops/deploy.md § Rails).
 pub fn migrate_tables(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS model_call (
@@ -153,7 +150,7 @@ pub struct CallsQuery {
 }
 
 /// Calls (newest first) + summary, shaped as
-/// `docs/lanes/contracts/admin-model-calls.json`.
+/// `docs/contracts/admin-model-calls.json`.
 pub fn calls_view(
     conn: &Connection,
     q: &CallsQuery,
@@ -374,7 +371,7 @@ mod tests {
     #[test]
     fn contract_seed_round_trips_the_call_fields() {
         let seed: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../docs/lanes/contracts/admin-model-calls.json"
+            "../../../docs/contracts/admin-model-calls.json"
         ))
         .unwrap();
         for key in [

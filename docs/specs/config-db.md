@@ -212,7 +212,7 @@ green; (c) boot smoke on the target box.
 - [ ] Admin GET lists and PUT sets every §2.1 key (generic API;
   proven by the roundtrip test, no admin.rs changes).
 - [ ] `docs/ops` env tables updated (`acme.md`, `deploy.md`,
-  `parity.md`, `drill.md`, `apostille.service`); no dangling
+  `parity.md`, `apostille.service`); no dangling
   references to migrated vars as live inputs.
 
 ## 7. Open questions

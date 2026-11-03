@@ -4,7 +4,7 @@
 //! every fallible subsystem API returns.
 //!
 //! Lead-owned: changes here ripple to every crate, so edits go through
-//! the parent, never parallel tracks (AGENTS.md §6).
+//! the parent, never parallel tracks.
 
 pub mod error;
 pub mod model;

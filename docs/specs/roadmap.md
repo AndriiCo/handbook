@@ -185,7 +185,7 @@ budgets (Day 7 note).
 
 ## 7. Remaining author inputs (proposed defaults apply on silence)
 
-- AGENTS.md §6 approval (gates lane enforcement).
+- Operator approval (gates lane enforcement).
 - Topic enum: `po_box` own topic (proposed; override anytime).
 - Content home: `store/forms/` + sha manifest (proposed).
 - PII store + retention: separate `p2.sqlite` + 2y/90d/1y

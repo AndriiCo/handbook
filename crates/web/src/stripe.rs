@@ -2,9 +2,6 @@
 //! raw body, HMAC via aws_lc_rs, `stripe_event` dedupe, server-side
 //! session re-fetch for amount/paid/livemode).
 //!
-//! Owner: lane SA-24 commerce (`docs/lanes/sa-24.md`). C2 first cut
-//! landed by the builder (P332) while the lane session could not start.
-//!
 //! Card data never touches this server (PCI SAQ A: hosted Checkout).
 //! The webhook body is never trusted for money: a verified event only
 //! names the session, and `orders::settle` re-reads it from Stripe.

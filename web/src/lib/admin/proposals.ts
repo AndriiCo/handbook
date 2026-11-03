@@ -1,6 +1,6 @@
 // Staff review of model proposals beyond single facts (MISSION WIN
 // W1b): page plans (SA-22), offices and form maps (SA-23). Shapes are
-// the contract seeds docs/lanes/contracts/admin-{plan-proposals,
+// the contract seeds docs/contracts/admin-{plan-proposals,
 // office-proposals,form-maps}.json. Every decision is a CSRF POST;
 // the server publishes the ids-only `authority:{slug}` event.
 import { getJson, postJson } from './admin-api.js';

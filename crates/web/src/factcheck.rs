@@ -2,10 +2,6 @@
 //! whole capture sidecar (supported / contradicted / not_found + quote;
 //! the quote must be a sidecar substring or the verdict is not_found).
 //!
-//! Owner: lane SA-23 ground (`docs/lanes/sa-23.md`). M3 first cut
-//! landed by the builder (P330) while the lane session could not start;
-//! the lane owns this file from here.
-//!
 //! The drafting pass reads a capture in slices; this pass gives
 //! muse-wonder-1.0 the entire sidecar at once (1M context), so a fact
 //! that a later paragraph contradicts is caught before staff accept it.
@@ -66,7 +62,7 @@ pub fn guard_verdict(
 // ------------------------------------------------------------------ DB
 
 /// Boot DDL on the metadata DB (`handbook.sqlite`): `CREATE TABLE IF
-/// NOT EXISTS` only — no ALTER, DROP or RENAME (AGENTS.md §7).
+/// NOT EXISTS` only — no ALTER, DROP or RENAME (docs/ops/deploy.md § Rails).
 pub fn migrate_tables(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS fact_check (

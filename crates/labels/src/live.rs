@@ -33,7 +33,7 @@ pub const DEFAULT_LIVE_DAILY_CAP: u32 = 2;
 pub const DEFAULT_LIVE_MAX_USD_CENTS: i64 = 6_000;
 
 /// Live-gate configuration. Built from DB-backed runtime config by the
-/// caller (keys listed in `docs/lanes/sa-19.md`); tests construct it
+/// caller (`labels.live*` and `labels.fedex_*` keys); tests construct it
 /// directly.
 #[derive(Debug, Clone)]
 pub struct LiveConfig {

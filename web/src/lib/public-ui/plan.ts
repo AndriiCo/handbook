@@ -1,6 +1,6 @@
 // "Your apostille plan" (MISSION WIN W2a): the staff-accepted render
 // plan from `GET /api/v1/authorities/{slug}/plan` (always 200; shape
-// docs/lanes/contracts/plan.json). The page renders allowlisted block
+// docs/contracts/plan.json). The page renders allowlisted block
 // kinds only, each resting on accepted facts it cites; anything else in
 // the payload is ignored. Pure helpers: no window/fetch.
 

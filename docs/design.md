@@ -2,7 +2,6 @@
 
 - Status: proposed
 - Date: 2026-10-26
-- Prompt: [docs/prompts/2026-10-26-003-system-design.md](prompts/2026-10-26-003-system-design.md)
 
 ## 0. Goal and non-goals
 

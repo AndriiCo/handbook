@@ -10,9 +10,6 @@
 //! short tour. `--doctor` runs the checks only; `--check` boots,
 //! probes and exits (CI uses it).
 //!
-//! Owner: lane SA-29 judge-kit (`docs/lanes/sa-29.md`). J1 landed by
-//! the builder (P321); seeded accepted dossiers and the local staff
-//! sign-in link (J2) come next.
 
 use std::net::TcpListener;
 use std::process::Command;

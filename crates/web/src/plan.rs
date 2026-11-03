@@ -3,10 +3,6 @@
 //! accept it, and `GET /api/v1/authorities/{slug}/plan` serves it
 //! (always 200, model-free, re-filtered against current accepted facts).
 //!
-//! Owner: lane SA-22 plan (`docs/lanes/sa-22.md`). M2 first cut landed
-//! by the builder (P323) while the lane session could not start; the
-//! lane owns this file from here (`eval --plans`, live tuning).
-//!
 //! Every model output is a proposal: the deterministic validator drops
 //! any block whose numbers, amounts, PO boxes, street numbers or times
 //! are not written in the facts it cites, any block citing a fact that
@@ -178,7 +174,7 @@ pub struct PlanBlock {
     pub form_ids: Option<Vec<i64>>,
 }
 
-/// The page plan (`docs/lanes/contracts/plan.json` → `plan`).
+/// The page plan (`docs/contracts/plan.json` → `plan`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RenderPlanV1 {
     pub headline: String,
@@ -871,7 +867,7 @@ fn entail(
 // ------------------------------------------------------------------ DB
 
 /// Boot DDL on the metadata DB (`handbook.sqlite`): `CREATE TABLE IF
-/// NOT EXISTS` only — no ALTER, DROP or RENAME (AGENTS.md §7).
+/// NOT EXISTS` only — no ALTER, DROP or RENAME (docs/ops/deploy.md § Rails).
 pub fn migrate_tables(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS page_plan (
@@ -1923,7 +1919,7 @@ mod tests {
     #[test]
     fn contract_seed_deserializes_and_composer_schema_enumerates_ids() {
         let seed: serde_json::Value =
-            serde_json::from_str(include_str!("../../../docs/lanes/contracts/plan.json")).unwrap();
+            serde_json::from_str(include_str!("../../../docs/contracts/plan.json")).unwrap();
         let parsed: RenderPlanV1 = serde_json::from_value(seed["plan"].clone()).unwrap();
         assert_eq!(parsed.blocks.len(), 7);
         assert!(

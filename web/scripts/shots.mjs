@@ -1,4 +1,4 @@
-// shots.mjs — visual gate (AGENTS.md §4). Serves the fresh public
+// shots.mjs — visual gate. Serves the fresh public
 // `build/` over 127.0.0.1 (port 0), intercepts /api/v1 with
 // e2e/fixtures, and captures each route at 390×844 + 1440×900 in
 // light + dark. Fails on: console errors, axe serious/critical,

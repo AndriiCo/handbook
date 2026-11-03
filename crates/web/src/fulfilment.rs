@@ -1,9 +1,7 @@
 //! Kit fulfilment queue (To pack / Awaiting label / Shipped) and the
 //! printed packet (`render_packet_cover`).
 //!
-//! Owner: lane SA-24 commerce (`docs/lanes/sa-24.md`). The
-//! builder wires the hooks below in `main.rs` (B0, P316) and edits
-//! nothing else here; the lane fills them in.
+//! The hooks below are wired in `main.rs`; the routes are still to come.
 
 use axum::Router;
 

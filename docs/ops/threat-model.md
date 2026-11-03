@@ -2,7 +2,7 @@
 
 - Status: draft for author review. Scope: the code as it exists now
   (axum scaffold + demo sessions + store + analysis runner + xtask),
-  plus the deploy path in `docs/ops/staging.md` § Steps.
+  plus the deploy path in `docs/ops/deploy.md` § Steps.
 - Rule: a control is listed as IMPLEMENTED only with a `file:line`
   the author read; everything else is marked planned with its owning doc.
 - Line numbers are as of commit `510afaa`; symbols over lines when
@@ -87,7 +87,7 @@ is trusted); customers attacking each other's browsers outside our pages.
   auto-accepts. Residual: validator checks citation SHAPE, not truth —
   human approval (planned, roadmap Day 3) is the truth gate.
 - Migrations: forward-only at boot, single txn (IMPLEMENTED); rollback
-  across a migration needs explicit author call (`staging.md` § Steps 7).
+  across a migration needs explicit author call (`deploy.md` § Steps 7).
   005's id-0 sentinel rows are labeled quorum-breakers — queries must
   exclude them where provenance matters.
 - xtask CLIs: duplicate flags silently take the FIRST (`main.rs:66-74`,
@@ -100,7 +100,7 @@ is trusted); customers attacking each other's browsers outside our pages.
   `ProtectSystem=strict` — UNINSTALLED, needs root review).
   Live state is still interim user-space: `setsid
   ./current/web` as user `hal`, localhost-only, dies on reboot
-  (`staging.md` § Hosts). In-app rustls terminates TLS
+  (`deploy.md` § Hosts). In-app rustls terminates TLS
   (axum-server, certs from files, fail-closed config).
 - secrets-scan hook: pre-commit trampoline + CI gate (IMPLEMENTED, §5).
   Gaps: binary files SKIPPED (`secrets.rs`); untracked files never
@@ -134,14 +134,14 @@ is trusted); customers attacking each other's browsers outside our pages.
   `xtask/src/secrets.rs:21-44`, `:87-183`; `xtask/src/main.rs:96-98`,
   `:319-370`, `:373-402`; `.githooks/pre-commit`.
 - Deploy: localhost-only bind `main.rs:239`; zig tarball sha-pinned
-  (`staging.md` § Steps 5); SSH key never in repo.
+  (`deploy.md` § Steps 5); SSH key never in repo.
 
 PLANNED (owning doc): rate limits + lockout (`SECURITY.md` Baseline);
 Origin/CSRF + security headers + `__Host-` cookies (same); token hashing
 (demo-login comment); real auth playbook (`auth-playbook.md`);
 TPM-sealed config (`secure-config.md`); ACME issuance + unit install
 (`acme.md`, `apostille.service` — both drafted, need root);
-offsite audit ship + backup drills (`staging.md` § Watch, `SECURITY.md` Q8);
+offsite audit ship + backup drills (`deploy.md` § Watch, `SECURITY.md` Q8);
 upload allowlist/magic-bytes/EXIF/redaction pipeline (F8/F9,
 `SECURITY.md` Uploads).
 
@@ -150,9 +150,9 @@ upload allowlist/magic-bytes/EXIF/redaction pipeline (F8/F9,
 - ACCEPTED (slice): demo auth with no password and plaintext tokens —
   safe ONLY while data stays synthetic and the slice stays localhost /
   author-audience. Real auth before any PII (`roadmap.md` §2).
-- ACCEPTED: env-only secrets — box has NO TPM (`staging.md` § Hosts), so the
+- ACCEPTED: env-only secrets — box has NO TPM (`deploy.md` § Hosts), so the
   TPM design's fallback is ACTIVE. Revisit on hardware change.
-- RESIDUAL: staging-gated deploys are the process now (`staging.md`
+- RESIDUAL: staging-gated deploys are the process now (`deploy.md`
   § Steps); the plant gate + `ship-release.sh` rails are that gate, built.
 - RESIDUAL: supply chain — `cargo install cargo-zigbuild` unpinned, no
   `cargo audit`/`cargo-deny` in CI yet, no npm audit gate; `Cargo.lock` +

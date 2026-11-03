@@ -1,5 +1,5 @@
 //! `GET /apostille/api/v1/admin/stats` — the admin dashboard's one
-//! read (B3), shaped as `docs/lanes/contracts/admin-stats.json`: KPIs,
+//! read (B3), shaped as `docs/contracts/admin-stats.json`: KPIs,
 //! Meta telemetry tiles, two series and the recent activity feed.
 //! Staff-only, model-free. Tables a lane has not landed yet count as
 //! zero, so the dashboard renders on any store.
@@ -211,7 +211,7 @@ mod tests {
         db::migrate_p2(&p2).unwrap();
         let v = stats(&conn, Some(&p2), store.root(), 1_793_750_400);
         let seed: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../docs/lanes/contracts/admin-stats.json"
+            "../../../docs/contracts/admin-stats.json"
         ))
         .unwrap();
         for key in seed["kpis"].as_object().unwrap().keys() {

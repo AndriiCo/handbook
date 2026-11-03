@@ -1,7 +1,6 @@
 //! Staff order API: list, detail, refund, advance.
 //!
-//! Owner: lane SA-24 commerce (`docs/lanes/sa-24.md`). First cut landed
-//! by the builder (P332). Staff see the `customer_ref`, never an email;
+//! Staff see the `customer_ref`, never an email;
 //! refunds go through Stripe idempotently and only for paid orders.
 
 use axum::{

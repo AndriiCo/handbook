@@ -5,7 +5,7 @@ Builds and full test suites run on the `plant` box (reached as
 deploy candidate is validated by the full suite on plant; a red
 gate stops the job before anything is staged for production.
 
-## Rules (mirrored in AGENTS.md §8)
+## Rules (mirrored in docs/ops/deploy.md § Plant)
 
 - Never root on plant. Never ask for root. Everything runs as
   the unprivileged plant user in `~/apostille-pipeline/`.
@@ -78,4 +78,4 @@ time, 10 s poll. Worst-case pickup after a reboot is ~60 s.
   The deploy step (a later slice) must re-check both before
   shipping. No stamp, no ship — no flag ever skips this gate.
   (`ops-deploy.sh --skip-accept` is a different gate — the prod DB
-  `build` row — scoped by AGENTS.md §8, not this pipeline.)
+  `build` row — scoped by docs/ops/deploy.md, not this pipeline.)

@@ -1,6 +1,6 @@
 # World-archive rights and access review (RO-4)
 
-Operator-ordered addendum work (`docs/ops/push-plan.md`, ADDENDUM 2026-11-02).
+Operator-ordered addendum work (ADDENDUM 2026-11-02).
 Read-only research. No code changed. No production contact. No secrets.
 
 Method: polite one-off fetches with `handbook-rights-review/0.1`

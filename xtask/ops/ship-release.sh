@@ -1,5 +1,5 @@
 #!/bin/bash
-# ship-release.sh — Mac-side release build + stage for one SHA (AGENTS.md §7
+# ship-release.sh — Mac-side release build + stage for one SHA (docs/ops/deploy.md
 # "How to deploy", steps 1-6). Ends by printing the exact ops-deploy.sh
 # invocation; it never deploys (step 7 stays an explicit builder action).
 #
@@ -41,7 +41,7 @@ poll_healthz() {
     return 1
 }
 
-# Plant stamp gate (AGENTS.md §8: no stamp with ci_green, no ship).
+# Plant stamp gate (docs/ops/deploy.md: no stamp with ci_green, no ship).
 # Stamp files are acceptance/<sha12>.json on plant.
 check_stamp() {
     local sha12 out
@@ -52,7 +52,7 @@ check_stamp() {
     echo "stamp OK: $out"
 }
 
-# Full root-process probe (AGENTS.md §7: the two lines must print
+# Full root-process probe (docs/ops/deploy.md: the two lines must print
 # nothing — checked again right before ops-deploy.sh). The [a] keeps
 # pgrep from matching the remote shell running it.
 check_roots() {
@@ -87,7 +87,7 @@ check_roots rails
 echo "rails OK"
 
 echo "== 2. prod-before scoreboard"
-node .agents/scoreboard/scoreboard.mjs --out web/shots/prod-before.json 2>&1 | tail -2
+node xtask/ops/scoreboard.mjs --out web/shots/prod-before.json 2>&1 | tail -2
 
 echo "== 3. worktree build"
 # zig 0.17.0 for cargo-zigbuild: the /tmp copy while macOS has not purged

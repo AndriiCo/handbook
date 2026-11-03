@@ -719,7 +719,7 @@ impl MetaRestClient {
 
     /// One strict-JSON chat call for any pipeline (plans, offices,
     /// cross-checks, form maps, link triage), per
-    /// `.agents/meta-api-findings.md`: no temperature, explicit
+    /// `docs/meta-api.md` (checklist): no temperature, explicit
     /// `reasoning_effort`, streamed with usage, stable developer prefix
     /// plus `prompt_cache_key`, jittered retries honouring Retry-After,
     /// refusal and truncation checks. Every HTTP attempt is recorded.

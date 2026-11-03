@@ -1,8 +1,7 @@
 //! Reconciler: re-fetches open Checkout sessions (staging, which Stripe
 //! cannot reach, and missed webhooks) and drives paid orders to labels.
 //!
-//! Owner: lane SA-24 commerce (`docs/lanes/sa-24.md`). First cut landed
-//! by the builder (P332). One tick a minute, only while Stripe keys are
+//! One tick a minute, only while Stripe keys are
 //! configured; each open session is re-read at most once per tick and
 //! settled through `orders::settle` (Stripe's own record decides).
 

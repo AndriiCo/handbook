@@ -470,7 +470,7 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		id: 'meta-model',
 		title: 'Meta model API',
 		summary:
-			'Key and budget for every Meta model call: fact drafts, page plans, offices, cross-checks, form maps, translations, call transcripts and the xtask analyze and atlas runs. Only synthetic or public text may be sent, and every call follows .agents/meta-api-findings.md.',
+			'Key and budget for every Meta model call: fact drafts, page plans, offices, cross-checks, form maps, translations, call transcripts and the xtask analyze and atlas runs. Only synthetic or public text may be sent, and every call follows the checklist in docs/meta-api.md.',
 		setup: [
 			'Create an API key on the Meta developer platform (docs: https://dev.meta.ai/docs) and copy the LLM_ value once. (verify the console menu name)',
 			'Paste it into meta.api_key. A wrong key fails the first call with 401. Staging on plant uses its own staging-only key, never this one.',

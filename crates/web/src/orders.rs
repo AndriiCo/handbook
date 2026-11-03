@@ -3,9 +3,7 @@
 //! in p2.sqlite, a backing `form_submission` per order, the state
 //! machine, delivery options, and `billing:{customer_ref}` events.
 //!
-//! Owner: lane SA-24 commerce (`docs/lanes/sa-24.md`). C1 (dark) landed
-//! by the builder (P325) while the lane session could not start: orders
-//! are created and tracked, the free printable address label works end
+//! Orders are created and tracked, the free printable address label works end
 //! to end, and every paid tier answers 503 `paid_tiers_paused` until C2
 //! (Stripe Checkout) and the carrier ledger (SA-25 C3) land.
 //!
@@ -2245,7 +2243,7 @@ mod tests {
     #[test]
     fn contract_seeds_match_the_served_shapes() {
         let seed: Value = serde_json::from_str(include_str!(
-            "../../../docs/lanes/contracts/order-options.json"
+            "../../../docs/contracts/order-options.json"
         ))
         .unwrap();
         let d =
@@ -2258,7 +2256,7 @@ mod tests {
             assert!(v["options"][0].get(key).is_some(), "card key {key}");
         }
         let order: Value =
-            serde_json::from_str(include_str!("../../../docs/lanes/contracts/order.json")).unwrap();
+            serde_json::from_str(include_str!("../../../docs/contracts/order.json")).unwrap();
         let (_tmp, p2) = p2_store();
         let id = create_order(&p2, "cust-1", (7, "S"), &body("mail_kit"), &d, "test", 1).unwrap();
         let mine = order_view(&p2, &id, "S").unwrap().unwrap();

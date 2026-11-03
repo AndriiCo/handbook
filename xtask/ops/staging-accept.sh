@@ -2,11 +2,11 @@
 # staging-accept.sh — staging acceptance (Appendix J D5): full
 # scoreboard --out staging-accept.json + live demo take, then the
 # staging-green verdict. Runs on the Mac against staging on plant
-# through the ssh tunnel (docs/ops/staging.md: public 18318).
+# through the ssh tunnel (docs/ops/deploy.md: public 18318).
 #
 #   xtask/ops/staging-accept.sh --sha <full-sha> [--base <url>]
 #
-# Verdict rule (staging.md step 4): staging-green iff the full
+# Verdict rule (docs/ops/deploy.md step 5): staging-green iff the full
 # scoreboard is 9/10 with ONLY operator-owned S1 red AND the live
 # demo take is 3/3. Anything else ABORTs with the red rows named.
 # Never edits the tree to make a row pass; never starts the tunnel
@@ -62,7 +62,7 @@ if [ -n "${DRY_RUN:-}" ]; then
         echo "DRY-RUN: fixture scoreboard 9/10 (only S1 red)"
     fi
 else
-    node .agents/scoreboard/scoreboard.mjs --base "$BASE" --out "$OUT" 2>&1 | tail -12 \
+    node xtask/ops/scoreboard.mjs --base "$BASE" --out "$OUT" 2>&1 | tail -12 \
         || { echo "ABORT: scoreboard run failed outright (see above)"; exit 1; }
 fi
 

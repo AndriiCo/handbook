@@ -29,9 +29,8 @@
 //!
 //! New tables arrive ONLY via `CREATE TABLE IF NOT EXISTS` (hard rule:
 //! never `ALTER`/`DROP`/`RENAME`, never touch `SCHEMA_VERSION`).
-//! [`migrate_translate_tables`] is idempotent; the builder calls it
-//! beside the existing migrations at boot (exact snippet in
-//! `docs/lanes/sa-20.md`).
+//! [`migrate_translate_tables`] is idempotent and runs beside the
+//! existing migrations at boot.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;

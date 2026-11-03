@@ -12,7 +12,7 @@ import {
 	planSubmit
 } from '../src/lib/admin/contact-entry.js';
 
-// Synthetic vectors only (AGENTS.md §7): 555-01xx numbers and
+// Synthetic vectors only (docs/ops/deploy.md): 555-01xx numbers and
 // example.gov / example.test addresses, never a real office contact.
 
 test('URLs with a scheme, bare hosts and their warnings', () => {

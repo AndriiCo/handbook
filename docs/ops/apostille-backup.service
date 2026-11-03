@@ -5,7 +5,7 @@
 # One-shot nightly backup: both SQLite DBs via the backup API (never
 # raw-copy a WAL-mode DB) + tar of the file dirs into
 # /var/lib/apostille-backups/daily/YYYY-MM-DD/, 7 daily + 4 weekly.
-# Triggered by apostille-backup.timer at 02:30. Spec: docs/ops/staging.md § Watch.
+# Triggered by apostille-backup.timer at 02:30. Spec: docs/ops/deploy.md § Watch.
 #
 # Install (as root, once): copy this file + apostille-backup.timer to
 # /etc/systemd/system/, `systemctl daemon-reload && systemctl enable

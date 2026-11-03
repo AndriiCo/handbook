@@ -448,7 +448,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
     )
 }
 
-// ===== MISSION WIN lane hooks (B0, docs/ops/mission-win.md) =====
+// ===== Module hooks =====
 // One place for every lane-owned module's DDL and routes, so lanes
 // never edit this file and prod + test routers stay identical. The
 // builder adds a line here when a lane needs a new hook.

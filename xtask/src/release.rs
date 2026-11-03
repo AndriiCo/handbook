@@ -379,7 +379,7 @@ pub fn poll_health_with(url: &str, interval_ms: u64, tries: u32) -> Result<(), S
     Err(format!("health poll {url} never ok: {last}"))
 }
 
-/// [`poll_health_with`] with the release-train settle budget:
+/// [`poll_health_with`] with the longer settle budget:
 /// every 250 ms, up to 15 s total.
 pub fn poll_health(url: &str) -> Result<(), String> {
     poll_health_with(url, 250, 60)

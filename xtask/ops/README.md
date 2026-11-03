@@ -1,54 +1,22 @@
-# Root-action scripts (AGENTS.md §7)
+# Ops scripts
 
-One script per operator action that needs privilege. The agent
-stages these to `/home/hal/apostille/scripts/` on the server.
-Every script runs as hal (pinned sudo grants installed once by
-`ops-hal-access.sh`) or root — `bash <script>`, no placeholders.
+The release path and its checks are described in
+[docs/ops/deploy.md](../../docs/ops/deploy.md). Rebuilding a host from
+nothing is `cargo xtask setup` plus `cargo xtask provision`.
 
-Rules for every script in this dir:
+| Script | Runs on | As | Purpose |
+|---|---|---|---|
+| `ship-release.sh <sha>` | Mac | you | Stamp and rails checks, prod-before scoreboard, cross-build in a throwaway worktree, stage to production. Never deploys |
+| `ops-deploy.sh <stage-dir> --skip-accept` | production | hal | Install the unit, `xtask deploy` (swap, restart, smoke, auto-revert), prune |
+| `staging-accept.sh --sha <sha>` | Mac | you | Staging scoreboard plus a live demo take; prints the staging-green verdict |
+| `scoreboard.mjs` | Mac | you | Release checks against a base URL (`--base`, `--out`, `--only`) |
+| `ops-gp2-proposals.sh` | production | hal | Fetch and draft proposals for the hero authorities |
+| `ops-a2-record.sh`, `a2-record.py` | production | hal | Record the photo-precheck verdicts for the public sample |
+| `ops-a5-eval.sh` | production | hal | Re-run the gold-set eval behind the home page's quality numbers |
 
-- Zero placeholders: derive values (VERSION/SHA from staging,
-  build numbers from the DB) or prompt for secrets (hidden entry,
-  never on the cmdline or in history).
-- Fail fast with `ABORT: <reason>`; never plow past a failure.
-- End by printing the evidence the agent needs pasted back.
-- `bash -n` clean (and shellcheck-clean when available) before
-  every commit.
-
-Scripts:
-
-- `ops-hal-access.sh` — ONE-TIME root setup: installs the pinned
-  sudoers drop-in so hal deploys autonomously afterwards.
-- `ops-deploy.sh <staging-dir> [--skip-accept]` — install the
-  staged unit file (diff shown first), run the accept gate +
-  `xtask deploy`, verify the health stamp. `--skip-accept` is an
-  explicit, announced escape hatch for content/schema-free
-  releases when prod has no build row (agent confirms per
-  release; never the default).
-- `ops-acme-enable.sh` — guard on the fixed binary, flip
-  `acme.enabled`, unpin the file cert, restart, poll health,
-  print issuance evidence.
-- `ops-acme-add-www.sh` — guard on fixed binary + ACME mode +
-  www DNS, set the 3-name `acme.domains`, drop the persisted
-  pair (account kept), restart, verify 3 SANs + www serving.
-- `ops-staff-access.sh <cn>` — root: verify the newest live
-  client cert for a CN, export it as PKCS#12 for browser
-  install, print staff user_ids for passkey login.
-- `ops-loop-first-run.sh` — root: step-3 unpark (pinned
-  `apostille-loop` wrapper + grant, sweep pair, KEK-gated
-  `analyze --check` via the hal path, residue checks).
-- `ops-units-reinstall.sh` — root: validate + install the 8
-  watch/mail/instruct/backup unit files from
-  `units-staging/` (F1/F2 gates), enable watch + mail only.
-- `ops-backup-enable.sh` — root: first backup run + daily
-  verify + `backup-verify` restore proof, then enable the
-  backup timer (the enable decision, executed with proof).
-- `ops-hcch-seed.sh` — root: A2 HCCH seed (dir-scoped
-  packs-load of hcch.json, staff fetch-url of the ONE URI
-  derived from the source row, hcch-poll unblock proof).
-- `ops-drill3-run.sh` — root: drill 3, ONE full run (newest
-  daily → scratch restore → loopback re-port → scratch boot
-  as andrii-ai → healthz + packs + config-verify → envelope
-  attestation without disclosure → teardown). Run 3×.
-- `ops-packs-seed.sh` — root: full seed (packs-load of ALL
-  live packs, load-only, never fetch; counts before/after).
+One-time provisioning scripts kept until `xtask provision` has rebuilt a
+host end to end (they are superseded by it): `ops-hal-access.sh`,
+`ops-rootless-access.sh`, `ops-units-reinstall.sh`,
+`ops-backup-enable.sh`, `ops-acme-enable.sh`, `ops-acme-add-www.sh`,
+`ops-packs-seed.sh`, `ops-hcch-seed.sh`, `ops-loop-first-run.sh`,
+`ops-drill3-run.sh`.

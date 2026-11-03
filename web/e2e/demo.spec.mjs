@@ -1,4 +1,4 @@
-// Demo gate (AGENTS.md §4): walks GP1→GP4 public scenes, records
+// Demo gate: walks GP1→GP4 public scenes, records
 // `web/shots/demo/`, fails on console errors or banned strings.
 // Fixture mode is the default (`npm run demo`): the local `build`
 // output plus route mocks, so the gate is data-independent.
