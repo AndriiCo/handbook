@@ -1106,6 +1106,11 @@ pub mod keys {
     /// Max Meta model calls per UTC day, counted from `model_call`
     /// rows (every pipeline). Default 400.
     pub const META_DAILY_CALL_CAP: &str = "meta.daily_call_cap";
+    // ---- P392 work queue: plant workers over WebSocket ----
+    /// Shared bearer token plant workers present on
+    /// `/apostille/api/v1/worker/ws` (>= 32 chars). Secret: presence-only
+    /// in UI; the same value lives in the worker's `worker.env`.
+    pub const WORKER_TOKEN: &str = "worker.token";
 
     /// Keys removed from the registry (admin client certificates and the
     /// split-port admin listener are gone). A stored row is ignored: the
@@ -1210,6 +1215,7 @@ pub mod keys {
         (COMPILE_DAILY_RUNS, super::ConfigType::Text),
         (TRACKING_POLL_ENABLED, super::ConfigType::Bool),
         (META_DAILY_CALL_CAP, super::ConfigType::Text),
+        (WORKER_TOKEN, super::ConfigType::Secret),
     ];
 }
 
@@ -2357,8 +2363,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_92_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 92);
+    fn registry_holds_93_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 93);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -2373,7 +2379,7 @@ mod runtime_tests {
         // epa_account), five bools (orders.enabled, labels.customer_live,
         // usps.live, plan.auto_compose, tracking.poll_enabled), 16 text.
         // P373 removes tls.client_ca_file and net.admin_https_port (text)
-        // and admin.require_cert (bool).
+        // and admin.require_cert (bool). P392 adds worker.token (secret).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -2382,7 +2388,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (12, 63, 17));
+        assert_eq!(counts, (12, 63, 18));
     }
 
     #[test]

@@ -1,0 +1,100 @@
+# research.nonparty (P392): legalization sources for UN member states
+# that are NOT parties to the 1961 Apostille Convention (plus the Holy
+# See and the State of Palestine). Pack data only: the plant worker
+# (`xtask/src/worker/research_nonparty.rs`) derives the country list
+# from the two recorded sources below (UN members minus HCCH parties),
+# runs `find-sources` then `extract-chain` once per country through the
+# Meta Model API, fetches every proposed URL with the repo's own fetch
+# code (`ingest::fetch`), and drops every URL and value that a quote
+# check against the fetched bytes does not confirm. Output: one
+# `packs/world-nonparty/<ISO2>.json` per country, all `needs_review`.
+# No `-contributor` model: inputs are public pages, but the rule stays
+# opt-in. Queue a run from the admin Work queue page:
+#   {"kind": "research.nonparty", "payload": {"countries": ["EG"]}}
+
+[run]
+out = "out/atlas-nonparty"
+effort = "low"
+
+[[models]]
+name = "spark"
+id = "muse-spark-1.3"
+mode = "standard"
+context_window = 1048576
+max_output_tokens = 4096
+rpm = 3000
+tpm = 4000000
+# Fill from https://dev.meta.ai/docs/pricing-rate-limits before costing runs.
+input_per_1m = 0.0
+output_per_1m = 0.0
+
+[[sources]]
+name = "un-members"
+url = "../../../evals/world-nonparty/un-member-states.html"
+kind = "html"
+refresh = "never"
+
+[[sources]]
+name = "hcch-status"
+url = "../../../evals/world/status-table-cid41.html"
+kind = "html"
+refresh = "never"
+
+[[tasks]]
+name = "find-sources"
+model = "spark"
+protocol = "fast"
+instructions = """You help a legalization handbook find official sources for ONE
+country that is not a party to the 1961 Hague Apostille Convention, so a
+US public document needs consular legalization before it is used there.
+The user message names the country and its ISO 3166-1 alpha-2 code.
+
+Return JSON matching the schema:
+- dos_url: the US Department of State "Judicial Assistance Country
+  Information" page for this country on https://travel.state.gov, or
+  null when you are not confident of the exact URL.
+- pages: up to 5 official government pages that explain how foreign (US)
+  documents are legalized or authenticated for use in this country:
+  the Ministry of Foreign Affairs legalization or consular page, and the
+  legalization page of its embassy or consulates in the United States.
+  Each page: url (https), kind (mfa | embassy | consulate | other), and
+  why (one short sentence).
+
+Only official government domains; never apostille or courier services,
+law firms, forums or aggregators. Do not guess URLs: every URL is
+fetched and checked, and invented ones are discarded. Fewer, correct
+URLs are better than many. Return JSON only."""
+schema = "schemas/nonparty-find-sources.json"
+verify = "none"
+allow_contributor = false
+inputs = ["un-members", "hcch-status"]
+
+[[tasks]]
+name = "extract-chain"
+model = "spark"
+protocol = "fast"
+instructions = """You read official pages about ONE country that is not a party to the
+1961 Apostille Convention and extract how a US-issued public document is
+legalized for use there. The user message names the country, then lists
+each page as "PAGE <n> <url>" followed by the page text.
+
+Return JSON matching the schema:
+- authority: the foreign authority that performs the final
+  legalization (for example a Ministry of Foreign Affairs department, or
+  the embassy or a consulate in the United States), as
+  {name, source_url, quote}, or null when the pages do not say.
+- steps: the legalization chain in order, from the US side to the
+  foreign side, each {title, detail, source_url, quote}. title is a
+  short step name; detail is one or two plain sentences.
+- notes: one or two sentences on anything the pages leave unclear.
+
+Rules: every quote is copied VERBATIM from the text of the page named
+by source_url: one sentence or phrase, 12 to 300 characters, no
+ellipses, no paraphrase. source_url must be one of the listed page
+URLs. Use only the listed pages, never outside knowledge. A value whose
+quote is not found word for word on its page is discarded. Return JSON
+only."""
+schema = "schemas/nonparty-extract-chain.json"
+verify = "none"
+allow_contributor = false
+inputs = ["un-members", "hcch-status"]

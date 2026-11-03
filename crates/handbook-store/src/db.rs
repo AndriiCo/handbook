@@ -60,7 +60,7 @@ pub fn open_p2(store: &Store) -> Result<Connection> {
 /// writer, many readers), `busy_timeout=5000` (wait out lock contention
 /// instead of failing), `synchronous=NORMAL` (WAL-safe durability),
 /// and `foreign_keys=ON` (deletes that would orphan a child row fail).
-fn apply_pragmas(conn: &Connection) -> Result<()> {
+pub(crate) fn apply_pragmas(conn: &Connection) -> Result<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "busy_timeout", 5000)?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -124,7 +124,7 @@ pub fn migrate_p2(conn: &Connection) -> Result<()> {
 /// versions and the squashed baseline (or newer than this binary).
 /// Ad-hoc error via the same `ToSqlConversionFailure` carrier db.rs
 /// already uses for non-SQLite failures.
-fn version_gap(db: &str, version: i32, current: i32) -> HandbookError {
+pub(crate) fn version_gap(db: &str, version: i32, current: i32) -> HandbookError {
     let remedy = if version < current {
         format!(
             "upgrade it through the last incremental release first \

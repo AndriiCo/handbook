@@ -359,6 +359,15 @@ fn parse_status_table(html: &str) -> Vec<PartyRow> {
     parties
 }
 
+/// Canonical party names off the status table (same row rule); the
+/// `research.nonparty` worker subtracts them from the UN member list.
+pub(crate) fn party_names(html: &str) -> Vec<String> {
+    parse_status_table(html)
+        .into_iter()
+        .map(|party| party.name)
+        .collect()
+}
+
 /// Best-effort party count for the summary line (same row rule).
 fn status_count(html: &str) -> usize {
     parse_status_table(html).len()
@@ -798,7 +807,7 @@ fn strip_tags(html: &str) -> String {
 /// later `;` and eat the text between. Unknown well-formed entities
 /// pass through untouched (both sides of the quote check share this
 /// function, so they still compare equal).
-fn html_unescape(text: &str) -> String {
+pub(crate) fn html_unescape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(amp) = rest.find('&') {
@@ -948,7 +957,7 @@ fn normalize(text: &str) -> String {
         .to_lowercase()
 }
 
-fn collapse_ws(text: &str) -> String {
+pub(crate) fn collapse_ws(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -979,7 +988,7 @@ fn host_of(url: &str) -> Option<String> {
 /// party on the live cid=41 table (checked 2026-11-02); `None` means
 /// "unknown to this build" and the pack falls back to the `ZZ` stem.
 /// Kosovo has no assigned code, so the user-assigned `XK` applies.
-fn party_iso2(party: &str) -> Option<&'static str> {
+pub(crate) fn party_iso2(party: &str) -> Option<&'static str> {
     Some(match party {
         "Albania" => "AL",
         "Algeria" => "DZ",

@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NonpartyFindSources",
+  "type": "object",
+  "required": ["dos_url", "pages"],
+  "properties": {
+    "dos_url": {"type": ["string", "null"]},
+    "pages": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["url", "kind"],
+        "properties": {
+          "url": {"type": "string"},
+          "kind": {"type": "string", "enum": ["mfa", "embassy", "consulate", "other"]},
+          "why": {"type": "string"}
+        }
+      }
+    }
+  }
+}

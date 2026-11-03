@@ -1,0 +1,17 @@
+{
+  "client": [
+    {"type": "hello", "worker": "plant", "capabilities": ["research.nonparty", "scrape.urls", "eval.gold", "precheck.glimmer"], "version": "0.1.0"},
+    {"type": "checkout"},
+    {"type": "heartbeat", "id": 7, "lease": "0123456789abcdef0123456789abcdef"},
+    {"type": "complete", "id": 7, "lease": "0123456789abcdef0123456789abcdef", "content_type": "application/json", "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "result_b64": "e30=", "summary": {"packs": 1}},
+    {"type": "fail", "id": 7, "lease": "0123456789abcdef0123456789abcdef", "error": "meta api: rate limited", "retryable": true}
+  ],
+  "server": [
+    {"type": "welcome", "worker": "plant", "lease_secs": 300, "heartbeat_secs": 60, "max_result_bytes": 16777216},
+    {"type": "job", "id": 7, "kind": "research.nonparty", "payload": {"countries": ["EG"]}, "lease": "0123456789abcdef0123456789abcdef", "lease_expires_at": 1793750700, "attempt": 1},
+    {"type": "idle", "retry_after_secs": 15},
+    {"type": "lease", "id": 7, "lease_expires_at": 1793750760},
+    {"type": "ack", "id": 7, "status": "done"},
+    {"type": "error", "code": "lease_lost", "error": "lease expired or not yours", "id": 7}
+  ]
+}

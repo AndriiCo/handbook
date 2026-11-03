@@ -222,9 +222,19 @@ blocks it):
 
 ## Plant
 
-- Never root, never ask for root; home directory only.
+- Never root, never ask for root. Plant may write its home directory,
+  `/srv/scratch/apostille/` (models, fetch and Meta-call caches, worker
+  scratch: `work/`, `meta-cache/`, `fetch-cache/`, `models/`) and
+  `/srv/backup/apostille/` (plant-local backups and rollbacks only;
+  production backups stay on andrii.ai). Operator decision 2026-11-03.
 - No production credentials on plant, no SSH from plant to
-  production, no production database copies.
+  production, no production database copies. The one link is
+  outbound: plant workers (`cargo xtask worker`) dial
+  `wss://andrii.ai/apostille/api/v1/worker/ws` with the sealed
+  `worker.token` and check queued jobs out of production's
+  `work.sqlite` (operator decision 2026-11-03; spec
+  `docs/specs/work-queue.md`, runbook `ops/plant-pipeline/README.md`
+  § Work-queue worker). Production never connects to plant.
 - The gate is asynchronous: `submit.sh` returns in seconds; never
   block on it. The pipeline keeps the newest 3 runs
   (`ops/plant-pipeline/README.md` is its runbook).

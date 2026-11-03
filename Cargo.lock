@@ -4309,8 +4309,10 @@ dependencies = [
  "tokio",
  "toml",
  "tower",
+ "tungstenite",
  "ureq",
  "voice",
+ "webpki-roots",
  "zeroize",
 ]
 

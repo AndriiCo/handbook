@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NonpartyExtractChain",
+  "type": "object",
+  "required": ["authority", "steps"],
+  "properties": {
+    "authority": {
+      "type": ["object", "null"],
+      "required": ["name", "source_url", "quote"],
+      "properties": {
+        "name": {"type": "string"},
+        "source_url": {"type": "string"},
+        "quote": {"type": "string"}
+      }
+    },
+    "steps": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["title", "source_url", "quote"],
+        "properties": {
+          "title": {"type": "string"},
+          "detail": {"type": "string"},
+          "source_url": {"type": "string"},
+          "quote": {"type": "string"}
+        }
+      }
+    },
+    "notes": {"type": "string"}
+  }
+}
