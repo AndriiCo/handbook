@@ -4,6 +4,13 @@
 # invocation; it never deploys (step 7 stays an explicit builder action).
 #
 #   xtask/ops/ship-release.sh [<sha>] [--allow-today-overlap]   # default: HEAD
+#   xtask/ops/ship-release.sh <sha> --migration-ack <prod backup path>
+#
+# --migration-ack is the operator's migration path (docs/ops/deploy.md
+# § Rails): a SHA with a schema/migration delta vs live ships only
+# when it names a backup of /var/lib/apostille/handbook.sqlite taken on
+# production in the last 2 hours (non-empty, readable as hal). No older
+# binary opens the migrated store, so that backup IS the rollback.
 #
 # --allow-today-overlap is an accepted no-op (kept so old orders and
 # wrapper scripts keep parsing; D1 removed the day gate from this
@@ -16,8 +23,17 @@ set -u
 cd "$(git rev-parse --show-toplevel)"
 SHA="${1:-$(git rev-parse HEAD)}"
 OVERLAP=""
-[ "${2:-}" = "--allow-today-overlap" ] && OVERLAP="--allow-today-overlap"
-[ -z "$OVERLAP" ] && [ -n "${2:-}" ] && { echo "ABORT: unknown flag: $2 (only --allow-today-overlap)"; exit 2; }
+MIGRATION_ACK=""
+case "${2:-}" in
+    "") ;;
+    --allow-today-overlap) OVERLAP="--allow-today-overlap" ;;
+    --migration-ack)
+        MIGRATION_ACK="${3:-}"
+        [[ "$MIGRATION_ACK" =~ ^/var/lib/apostille/[A-Za-z0-9._/-]+$ ]] \
+            || { echo "ABORT: --migration-ack needs the backup path under /var/lib/apostille/"; exit 2; }
+        ;;
+    *) echo "ABORT: unknown flag: $2 (only --allow-today-overlap, --migration-ack <path>)"; exit 2 ;;
+esac
 [ -n "$OVERLAP" ] && echo "NOTE: --allow-today-overlap accepted (no-op: no day gate in this script)"
 git cat-file -e "$SHA^{commit}" 2>/dev/null || { echo "ABORT: not a commit: $SHA"; exit 2; }
 VERSION="$(git rev-parse --short=7 "$SHA")"
@@ -78,9 +94,18 @@ git cat-file -e "$LIVE_SHA^{commit}" 2>/dev/null || { echo "ABORT: live SHA $LIV
 echo "live SHA: $LIVE_SHA"
 HITS="$(git diff "$LIVE_SHA" "$SHA" -- crates xtask \
     | grep -E '^[-+]pub const (P2_)?SCHEMA_VERSION|^\+.*\b(ALTER|DROP) (TABLE|INDEX|COLUMN)|^\+.*\bRENAME (TO|COLUMN)\b' || true)"
-[ -z "$HITS" ] || { echo "ABORT: schema delta vs live $LIVE_SHA — take the migration path with the author:"; echo "$HITS"; exit 1; }
+MIGRATES=""
+[ -z "$HITS" ] || MIGRATES="schema delta vs live $LIVE_SHA:
+$HITS"
 [ -z "$(git diff --stat "$LIVE_SHA" "$SHA" -- crates/handbook-store/migrations)" ] \
-    || { echo "ABORT: migrations differ from live $LIVE_SHA — take the migration path with the author"; exit 1; }
+    || MIGRATES="${MIGRATES:-migrations differ from live $LIVE_SHA}"
+if [ -n "$MIGRATES" ]; then
+    [ -n "$MIGRATION_ACK" ] || { echo "ABORT: $MIGRATES"; echo "(operator migration path: back up handbook.sqlite on production, then --migration-ack <path>)"; exit 1; }
+    ssh andrii.ai "test -s '$MIGRATION_ACK' && find '$MIGRATION_ACK' -mmin -120 | grep -q ." \
+        || { echo "ABORT: --migration-ack $MIGRATION_ACK is missing, empty or older than 2 h on production"; exit 1; }
+    echo "MIGRATION ACK: $MIGRATES"
+    echo "MIGRATION ACK: rollback = restore $MIGRATION_ACK (no older binary opens the migrated store)"
+fi
 git show "$SHA:docs/ops/apostille.service" | ssh andrii.ai 'diff /etc/systemd/system/apostille.service - >/dev/null' \
     || { echo "ABORT: unit file drifted — sync docs/ops/apostille.service first"; exit 1; }
 check_roots rails

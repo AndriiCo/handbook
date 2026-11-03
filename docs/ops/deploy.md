@@ -92,6 +92,14 @@ ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "
   `RENAME` SQL is not a deploy but an operator step: no older binary
   opens a migrated database, so neither the smoke revert nor a
   rollback undoes it. Add tables with `CREATE TABLE IF NOT EXISTS`.
+  The operator step, on the operator's order only: as `hal`, back up
+  the store online right before shipping
+  (`echo ".backup /var/lib/apostille/pre-v<N>-<UTC>.sqlite" | sudo -n
+  -u andrii-ai /usr/local/sbin/apostille-sqlite`), then
+  `ship-release.sh <sha> --migration-ack <that path>` (refused unless
+  the file is non-empty and under 2 hours old) and deploy as usual.
+  Rollback is restoring that file with the service stopped; the
+  migration must also be listed in `HARD_MIGRATIONS` (release.rs).
 - A SHA whose `docs/ops/apostille.service` differs from the
   installed unit is an operator step too (a rollback does not
   restore the unit).
