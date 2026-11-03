@@ -2543,6 +2543,11 @@ mod tests {
         for uri in [
             "/apostille/api/v1/admin/stats",
             "/apostille/api/v1/admin/model-calls",
+            "/apostille/api/v1/admin/orders",
+            "/apostille/api/v1/admin/plans",
+            "/apostille/api/v1/admin/offices",
+            "/apostille/api/v1/admin/form-maps",
+            "/apostille/api/v1/admin/fact-checks?slug=usa-wa-sos",
         ] {
             let get = |host: &'static str, session: Option<&'static str>| {
                 admin_request("GET", uri, Some(host), session, None, None, None)

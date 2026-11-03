@@ -37,7 +37,6 @@ const PAID: &[&str] = &["label_fedex", "label_usps", "mail_kit"];
 
 /// Allowed status transitions (contracts.md). `needs_staff`, `refunded`
 /// and `canceled` are side states reachable from any live state.
-#[allow(dead_code)] // C2 (Stripe) and SA-25 C3 drive status moves through it.
 pub fn can_transition(from: &str, to: &str) -> bool {
     let live = !matches!(from, "delivered" | "refunded" | "canceled");
     match (from, to) {
@@ -101,7 +100,26 @@ pub fn migrate_p2_tables(p2: &Connection) -> rusqlite::Result<()> {
             leg TEXT,
             FOREIGN KEY(order_id) REFERENCES customer_order(id)
         );
-        CREATE INDEX IF NOT EXISTS order_event_order ON order_event(order_id, at);",
+        CREATE INDEX IF NOT EXISTS order_event_order ON order_event(order_id, at);
+        CREATE TABLE IF NOT EXISTS order_payment (
+            order_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL UNIQUE,
+            checkout_url TEXT NOT NULL,
+            amount_cents INTEGER NOT NULL,
+            currency TEXT NOT NULL,
+            livemode INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            payment_intent TEXT,
+            created_at INTEGER NOT NULL,
+            paid_at INTEGER,
+            refund_id TEXT,
+            FOREIGN KEY(order_id) REFERENCES customer_order(id)
+        );
+        CREATE TABLE IF NOT EXISTS stripe_event (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL,
+            received_at INTEGER NOT NULL
+        );",
     )
 }
 
@@ -618,7 +636,13 @@ pub fn order_view(
         "return_to": {"name": ret["name"], "city": ret["city"], "region": ret["region"],
                       "postal_code": ret["postal_code"], "country": ret["country"]},
         "legs": legs, "form_fill_id": fill, "events": events,
-        "receipt": Value::Null, "actions": actions,
+        "receipt": p2
+            .query_row("SELECT paid_at, refund_id FROM order_payment WHERE order_id = ?1 AND status = 'paid'", [&id], |r| {
+                Ok(json!({"paid_at": r.get::<_, i64>(0)?, "receipt_url": Value::Null, "refunded": r.get::<_, Option<String>>(1)?.is_some()}))
+            })
+            .optional()?
+            .unwrap_or(Value::Null),
+        "actions": actions,
         "topic": format!("billing:{customer_ref}"),
     })))
 }
@@ -932,13 +956,394 @@ async fn get_label(
         .into_response()
 }
 
-/// Quote and Checkout: paused until C2 (Stripe) and the carrier ledger.
-async fn quote(Path(_id): Path<String>) -> Response {
-    paused()
+// ------------------------------------------------------------ money (C2)
+
+/// Price lines for an order kind, from operator config only. Carrier
+/// label tiers stay unpriced (paused) until live carrier rates land
+/// (SA-25 CR1); the mailing kit is an operator-set all-in price.
+pub fn price_lines(kind: &str, sw: &Switches) -> Option<Vec<(String, i64)>> {
+    match kind {
+        "mail_kit" => sw.kit_price_cents.map(|c| {
+            vec![(
+                "Mailing kit with prepaid envelopes both ways".to_string(),
+                c,
+            )]
+        }),
+        _ => None,
+    }
 }
 
-async fn checkout(Path(_id): Path<String>) -> Response {
-    paused()
+fn is_demo(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|c| c.split(';').any(|p| p.trim().starts_with("demo_session=")))
+}
+
+/// Owner check + stores, or the error response.
+fn owned(
+    state: &AppState,
+    headers: &HeaderMap,
+    id: &str,
+) -> Result<(Connection, Connection, String, String, String), Box<Response>> {
+    let Some(customer_ref) = crate::p2::caller_customer_ref(state, headers) else {
+        return Err(Box::new(err(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized",
+            None,
+        )));
+    };
+    let Some((meta, p2)) = open_stores(state) else {
+        return Err(Box::new(store_unavailable()));
+    };
+    match owner_of(&p2, id) {
+        Some((owner, slug, kind)) if owner == customer_ref => {
+            Ok((meta, p2, customer_ref, slug, kind))
+        }
+        _ => Err(Box::new(err(StatusCode::NOT_FOUND, "unknown order", None))),
+    }
+}
+
+fn event(p2: &Connection, id: &str, kind: &str, text: &str, now: i64) {
+    let _ = p2.execute(
+        "INSERT INTO order_event(order_id, at, kind, text, leg) VALUES (?1, ?2, ?3, ?4, NULL)",
+        rusqlite::params![id, now, kind, text],
+    );
+}
+
+fn set_status(p2: &Connection, id: &str, from: &str, to: &str, now: i64) -> bool {
+    can_transition(from, to)
+        && p2
+            .execute(
+                "UPDATE customer_order SET status = ?1, updated_at = ?2 WHERE id = ?3 AND status = ?4",
+                rusqlite::params![to, now, id, from],
+            )
+            .unwrap_or(0)
+            == 1
+}
+
+/// `POST /orders/{id}/quote` — owner; prices from operator config.
+async fn quote(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if !crate::passkey::origin_ok(&headers, state.admin_mtls_off)
+        || !crate::passkey::csrf_echo_ok(&headers)
+    {
+        return crate::passkey::csrf_fail();
+    }
+    let (meta, p2, _customer, _slug, kind) = match owned(&state, &headers, &id) {
+        Ok(v) => v,
+        Err(r) => return *r,
+    };
+    let sw = switches(&state, &meta);
+    if !(sw.orders_enabled && sw.stripe_key) {
+        return paused();
+    }
+    let Some(lines) = price_lines(&kind, &sw) else {
+        return paused();
+    };
+    let total: i64 = lines.iter().map(|l| l.1).sum();
+    let max = state
+        .kek
+        .as_deref()
+        .and_then(|kek| {
+            state
+                .config_cache
+                .text(&meta, kek, config::keys::ORDERS_MAX_ORDER_CENTS)
+                .ok()
+                .flatten()
+        })
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(15_000);
+    if total > max {
+        return paused();
+    }
+    let status: String = p2
+        .query_row(
+            "SELECT status FROM customer_order WHERE id = ?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .unwrap_or_default();
+    let now = unix_now();
+    let currency = if sw.currency.is_empty() {
+        "usd".to_string()
+    } else {
+        sw.currency.clone()
+    };
+    let amount = json!({"currency": currency, "total_cents": total,
+                        "lines": lines.iter().map(|(l, c)| json!({"label": l, "cents": c})).collect::<Vec<_>>()});
+    if status == "draft" && !set_status(&p2, &id, "draft", "quoted", now) {
+        return err(StatusCode::CONFLICT, "order cannot be quoted now", None);
+    }
+    if !matches!(status.as_str(), "draft" | "quoted") {
+        return err(StatusCode::CONFLICT, "order cannot be quoted now", None);
+    }
+    let _ = p2.execute(
+        "UPDATE customer_order SET amount_json = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![amount.to_string(), now, id],
+    );
+    Json(json!({"order_id": id, "mode": if sw.stripe_live { "live" } else { "test" }, "currency": amount["currency"],
+                "total_cents": total, "expires_at": now + 1_800, "lines": amount["lines"], "carrier_quotes": []}))
+    .into_response()
+}
+
+/// `POST /orders/{id}/checkout` — owner; hosted Checkout session.
+async fn checkout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if !crate::passkey::origin_ok(&headers, state.admin_mtls_off)
+        || !crate::passkey::csrf_echo_ok(&headers)
+    {
+        return crate::passkey::csrf_fail();
+    }
+    let (meta, p2, _customer, _slug, kind) = match owned(&state, &headers, &id) {
+        Ok(v) => v,
+        Err(r) => return *r,
+    };
+    let sw = switches(&state, &meta);
+    let Some(keys) = crate::stripe::keys(&state, &meta).filter(|_| sw.orders_enabled) else {
+        return paused();
+    };
+    if keys.live() && is_demo(&headers) {
+        return err(
+            StatusCode::FORBIDDEN,
+            "demo sessions never pay in live mode",
+            None,
+        );
+    }
+    let (status, amount, mode): (String, String, String) = match p2.query_row(
+        "SELECT status, amount_json, mode FROM customer_order WHERE id = ?1",
+        [&id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    ) {
+        Ok(v) => v,
+        Err(_) => return store_unavailable(),
+    };
+    if (mode == "live") != keys.live() {
+        return paused(); // order created under the other mode
+    }
+    if status == "awaiting_payment"
+        && let Ok(url) = p2.query_row(
+            "SELECT checkout_url FROM order_payment WHERE order_id = ?1 AND status = 'open'",
+            [&id],
+            |r| r.get::<_, String>(0),
+        )
+    {
+        return Json(json!({"checkout_url": url})).into_response();
+    }
+    if status != "quoted" || price_lines(&kind, &sw).is_none() {
+        return err(StatusCode::CONFLICT, "quote the order first", None);
+    }
+    let amount: Value = serde_json::from_str(&amount).unwrap_or(json!({}));
+    let lines: Vec<(String, i64)> = amount["lines"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|l| Some((l["label"].as_str()?.to_string(), l["cents"].as_i64()?)))
+        .collect();
+    let base = state.notify_base.trim_end_matches('/').to_string();
+    let req = crate::stripe::CheckoutRequest {
+        order_id: id.clone(),
+        currency: amount["currency"].as_str().unwrap_or("usd").to_string(),
+        lines: lines.clone(),
+        success_url: format!("{base}/orders/{id}?checkout=success"),
+        cancel_url: format!("{base}/order?order={id}&step=pay&checkout=cancel"),
+    };
+    let created =
+        tokio::task::spawn_blocking(move || crate::stripe::create_checkout(&keys, &req)).await;
+    let (session_id, url) = match created {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => return err(StatusCode::BAD_GATEWAY, "checkout unavailable", Some(&e)),
+        Err(_) => return store_unavailable(),
+    };
+    let now = unix_now();
+    let total: i64 = lines.iter().map(|l| l.1).sum();
+    let ok = p2
+        .execute(
+            "INSERT OR REPLACE INTO order_payment(order_id, session_id, checkout_url, amount_cents, currency, livemode, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7)",
+            rusqlite::params![id, session_id, url, total, amount["currency"].as_str().unwrap_or("usd"), i64::from(mode == "live"), now],
+        )
+        .is_ok()
+        && set_status(&p2, &id, "quoted", "awaiting_payment", now);
+    if !ok {
+        return store_unavailable();
+    }
+    event(&p2, &id, "checkout.started", "Checkout opened", now);
+    Json(json!({"checkout_url": url})).into_response()
+}
+
+/// What `settle` did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Settled {
+    Paid,
+    AlreadyPaid,
+    NotPaidYet,
+    Mismatch(String),
+}
+
+/// Settle one order against Stripe's own record of its session: paid
+/// only when Stripe says paid AND amount, currency and livemode match
+/// the order. Idempotent. Publishes `order.paid` on `billing:` + `ops`.
+pub fn settle(
+    state: &AppState,
+    keys: &crate::stripe::Keys,
+    order_id: &str,
+) -> Result<Settled, String> {
+    let store = Store::new(&state.store_root);
+    let p2 = db::open_p2(&store).map_err(|e| e.to_string())?;
+    let (session_id, amount, currency, livemode, pay_status): (String, i64, String, i64, String) = p2
+        .query_row(
+            "SELECT session_id, amount_cents, currency, livemode, status FROM order_payment WHERE order_id = ?1",
+            [order_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .map_err(|_| "no checkout for this order".to_string())?;
+    if pay_status == "paid" {
+        return Ok(Settled::AlreadyPaid);
+    }
+    let session = crate::stripe::retrieve_session(keys, &session_id)?;
+    let verdict = judge_session(&session, order_id, amount, &currency, livemode == 1);
+    if verdict != Settled::Paid {
+        return Ok(verdict);
+    }
+    let (customer_ref, kind, status): (String, String, String) = p2
+        .query_row(
+            "SELECT customer_ref, kind, status FROM customer_order WHERE id = ?1",
+            [order_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(|e| e.to_string())?;
+    let now = unix_now();
+    let tx = p2.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE order_payment SET status = 'paid', paid_at = ?1, payment_intent = ?2 WHERE order_id = ?3 AND status != 'paid'",
+        rusqlite::params![now, session["payment_intent"].as_str(), order_id],
+    )
+    .map_err(|e| e.to_string())?;
+    if !set_status(&tx, order_id, &status, "paid", now) {
+        return Ok(Settled::Mismatch(format!(
+            "order is {status}, not awaiting payment"
+        )));
+    }
+    event(
+        &tx,
+        order_id,
+        "order.paid",
+        &format!(
+            "Paid {} ({})",
+            dollars(amount),
+            if livemode == 1 { "live" } else { "test mode" }
+        ),
+        now,
+    );
+    // Next step: kits go to the packing queue; carrier-label orders wait
+    // for staff until the label ledger (SA-25 C3) buys them.
+    let next = if kind == "mail_kit" {
+        ("labels_ready", "packing")
+    } else {
+        ("label_purchasing", "needs_staff")
+    };
+    if kind == "mail_kit" {
+        let _ = tx.execute(
+            "UPDATE customer_order SET status = 'packing', updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, order_id],
+        );
+        event(&tx, order_id, "kit.queued", "Kit queued for packing", now);
+    } else {
+        let _ = tx.execute(
+            "UPDATE customer_order SET status = 'needs_staff', updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, order_id],
+        );
+        event(
+            &tx,
+            order_id,
+            "order.needs_staff",
+            "Our team is buying your labels",
+            now,
+        );
+    }
+    let _ = next;
+    tx.commit().map_err(|e| e.to_string())?;
+    let topic = format!("billing:{customer_ref}");
+    state.bus.publish(
+        &topic,
+        json!({"type": "order.paid", "topic": topic, "order_id": order_id, "at": now}).to_string(),
+    );
+    crate::ws_bus::publish_ops(
+        &state.bus,
+        "order.paid",
+        json!({"order_id": order_id, "kind": kind}),
+        now,
+    );
+    Ok(Settled::Paid)
+}
+
+/// The money check, pure (unit-tested).
+pub fn judge_session(
+    session: &Value,
+    order_id: &str,
+    amount: i64,
+    currency: &str,
+    live: bool,
+) -> Settled {
+    if session["metadata"]["order_id"].as_str() != Some(order_id) {
+        return Settled::Mismatch("session belongs to another order".into());
+    }
+    if session["payment_status"].as_str() != Some("paid") {
+        return Settled::NotPaidYet;
+    }
+    if session["amount_total"].as_i64() != Some(amount) {
+        return Settled::Mismatch("amount differs from the quote".into());
+    }
+    if session["currency"]
+        .as_str()
+        .map(str::to_lowercase)
+        .as_deref()
+        != Some(&currency.to_lowercase())
+    {
+        return Settled::Mismatch("currency differs".into());
+    }
+    if session["livemode"].as_bool() != Some(live) {
+        return Settled::Mismatch("live/test mode differs".into());
+    }
+    Settled::Paid
+}
+
+fn dollars(cents: i64) -> String {
+    format!("${}.{:02}", cents / 100, cents % 100)
+}
+
+/// `POST /orders/{id}/confirm` — owner; the success redirect lands
+/// here so staging (no webhooks) and missed webhooks still settle.
+async fn confirm(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if !crate::passkey::origin_ok(&headers, state.admin_mtls_off)
+        || !crate::passkey::csrf_echo_ok(&headers)
+    {
+        return crate::passkey::csrf_fail();
+    }
+    let (meta, p2, _customer, slug, _kind) = match owned(&state, &headers, &id) {
+        Ok(v) => v,
+        Err(r) => return *r,
+    };
+    if let Some(keys) = crate::stripe::keys(&state, &meta) {
+        let (st, oid) = (state.clone(), id.clone());
+        let _ = tokio::task::spawn_blocking(move || settle(&st, &keys, &oid)).await;
+    }
+    let name = authority_of(&meta, &slug).map(|(_, n)| n).unwrap_or(slug);
+    match order_view(&p2, &id, &name) {
+        Ok(Some(v)) => Json(v).into_response(),
+        _ => store_unavailable(),
+    }
 }
 
 /// Customer routes, merged into the `/api/v1/p2` nest (paths are
@@ -952,6 +1357,7 @@ pub fn p2_routes() -> Router<AppState> {
         .route("/orders/{id}/labels/{leg}", get(get_label))
         .route("/orders/{id}/quote", axum::routing::post(quote))
         .route("/orders/{id}/checkout", axum::routing::post(checkout))
+        .route("/orders/{id}/confirm", axum::routing::post(confirm))
 }
 
 #[cfg(test)]
@@ -1055,6 +1461,57 @@ mod tests {
                 .all(|c| c["enabled"] == false && c["reason"].is_string())
         );
         assert!(none["destination"].is_null());
+    }
+
+    #[test]
+    fn stripe_session_must_match_amount_currency_mode_and_order() {
+        let s = json!({"metadata": {"order_id": "ord_a"}, "payment_status": "paid", "amount_total": 4900, "currency": "usd", "livemode": false});
+        assert_eq!(
+            judge_session(&s, "ord_a", 4900, "usd", false),
+            Settled::Paid
+        );
+        assert!(
+            matches!(
+                judge_session(&s, "ord_b", 4900, "usd", false),
+                Settled::Mismatch(_)
+            ),
+            "replayed onto another order"
+        );
+        assert!(
+            matches!(
+                judge_session(&s, "ord_a", 5900, "usd", false),
+                Settled::Mismatch(_)
+            ),
+            "amount"
+        );
+        assert!(
+            matches!(
+                judge_session(&s, "ord_a", 4900, "eur", false),
+                Settled::Mismatch(_)
+            ),
+            "currency"
+        );
+        assert!(
+            matches!(
+                judge_session(&s, "ord_a", 4900, "usd", true),
+                Settled::Mismatch(_)
+            ),
+            "test payment for a live order"
+        );
+        let open = json!({"metadata": {"order_id": "ord_a"}, "payment_status": "unpaid", "amount_total": 4900, "currency": "usd", "livemode": false});
+        assert_eq!(
+            judge_session(&open, "ord_a", 4900, "usd", false),
+            Settled::NotPaidYet
+        );
+        let sw = Switches {
+            kit_price_cents: Some(4900),
+            ..Default::default()
+        };
+        assert_eq!(price_lines("mail_kit", &sw).unwrap()[0].1, 4900);
+        assert!(
+            price_lines("label_fedex", &sw).is_none(),
+            "no carrier rates yet: never a guessed price"
+        );
     }
 
     #[test]
@@ -1166,6 +1623,37 @@ mod tests {
         assert!(
             v["return_to"].get("line1").is_none(),
             "street stays out of the view"
+        );
+    }
+
+    #[test]
+    fn reconciler_picks_open_sessions_in_its_window() {
+        let (_tmp, p2) = p2_store();
+        let d =
+            destination(&[f(203, "po_box", "Send to PO Box 4000, Olympia, WA 98504.")]).unwrap();
+        let now = 10_000;
+        for (age, status) in [(5, "open"), (60, "open"), (60, "paid"), (100_000, "open")] {
+            let id = create_order(
+                &p2,
+                "cust-1",
+                (7, "S"),
+                &body("mail_kit"),
+                &d,
+                "test",
+                now - age,
+            )
+            .unwrap();
+            p2.execute(
+                "INSERT INTO order_payment(order_id, session_id, checkout_url, amount_cents, currency, livemode, status, created_at)
+                 VALUES (?1, ?2, 'https://checkout.stripe.com/x', 4900, 'usd', 0, ?3, ?4)",
+                rusqlite::params![id, format!("cs_test_{id}"), status, now - age],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            crate::reconcile::due(&p2, now).len(),
+            1,
+            "too new, paid and expired sessions are skipped"
         );
     }
 
