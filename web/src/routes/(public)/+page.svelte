@@ -480,7 +480,7 @@
 						}}
 					>
 						<summary
-							class="flex min-h-11 cursor-pointer list-none items-center gap-3 py-2 [&::-webkit-details-marker]:hidden"
+							class="country-summary flex min-h-11 cursor-pointer list-none items-center gap-3 py-2"
 						>
 							<ChevronRightIcon
 								class="size-4 flex-none text-ink-muted transition-transform group-open:rotate-90 motion-reduce:transition-none"
@@ -529,6 +529,11 @@
 </section>
 
 <style>
+	/* Safari keeps its disclosure triangle without this (list-none
+	   covers the others); the chevron is the marker. */
+	.country-summary::-webkit-details-marker {
+		display: none;
+	}
 	@media (prefers-reduced-motion: no-preference) {
 		.hero-pin {
 			animation: hero-rise 300ms var(--ease-out-quint) both;
