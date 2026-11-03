@@ -237,3 +237,4 @@
 | 328 | 2026-11-03 01:21Z | Staging accept found GP4 red on a cold load: stepper now renders while the index loads; O1 live recorded | check, tailwind, shots /order, demo 3/3 |
 | 329 | 2026-11-03 01:37Z | F1 (SA-23, builder): official PDF forms — AcroForm map by Spark, label guard, fill-and-flatten | forms 20 + web 352 tests, clippy clean |
 | 330 | 2026-11-03 01:41Z | M3 (SA-23, builder): Wonder cross-check over the whole sidecar, quote-guarded verdicts | web 354 green; operator page: prod VPN blocker |
+| 331 | 2026-11-03 01:45Z | E1 (SA-23, builder): staff upload of an official PDF/HTML as a staff_verified capture with a lopdf text layer | web 355 green, clippy clean; M3 live: 26 facts, 25 supported |

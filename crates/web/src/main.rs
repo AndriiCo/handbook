@@ -53,6 +53,7 @@ mod telemetry;
 mod tracking;
 mod translate;
 mod unfurl;
+mod uploads;
 mod ws_bus;
 
 use axum::{
@@ -504,6 +505,7 @@ fn mission_admin_routers(state: &AppState) -> Router {
 fn mission_admin_routes(state: &AppState) -> Router {
     telemetry::admin_router(state.clone())
         .merge(admin_stats::admin_router(state.clone()))
+        .merge(uploads::admin_router(state.clone()))
         .merge(plan::admin_router(state.clone()))
         .merge(compile::admin_router(state.clone()))
         .merge(factcheck::admin_router(state.clone()))
