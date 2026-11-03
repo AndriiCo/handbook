@@ -1,4 +1,61 @@
-# Operator — Monday 2026-11-02 (Pacific; updated ~04:10 PST)
+# Operator — MISSION WIN (updated Mon 11-02 ~17:35 PST)
+
+Plan: `docs/ops/mission-win.md` (you approved it 11-02). Production is
+still `0.1.0+4dcd234`. Landed on `main` since: P314 plan, P315/11c0e56
+meta-1 prompt v2 (selectable, v1 stays default; live eval at the merge:
+quote_found 1.000, value_in_quote 1.000, topic_accuracy 0.667, 30 cases,
+muse-spark-1.3), P316 lane hooks + 26 config keys + contracts + lane
+briefs, P317 shots lane registries, P318 admin console shell
+(sidebar, ⌘K, env badge, live dot) + admin `/version`. Plant: two old
+pipeline runs pruned (/home 16% used, 203 G free).
+
+## Open now, in order
+
+0. **Your edits (agents never touch these files).** Commit, then tell
+   the builder "step 0 done":
+   - `AGENTS.md` §7 Freeze: replace "the last code deploy is Mon 11-02"
+     with "the last code deploy is Wed 11-04 09:00 PST", and "From Tue
+     11-03 00:00 PST" with "From Wed 11-04 09:00 PST"; §1 Scope: add "The
+     operator ordered on 11-02: Stripe payments, live USPS and FedEx
+     postage, mailing kits (MISSION WIN); this lifts specs decisions 10
+     and 37 and the p2 door-kit non-goal"; §6: raise write-capable
+     subagents to 7 and allow them in Rust crates for lanes SA-22..SA-25
+     (or keep the cap and start the lanes as sessions, next line).
+   - `.agents/goal.md`: Calendar (deploys to Wed 09:00, lane merges to
+     Wed 07:30), Lanes = SA-22..SA-29 from `docs/lanes/sa-*.md`
+     (branches `sa-<NN>/<name>`), priorities = the plan's protected core.
+   - `.agents/roles/builder.md:71` ("No lane merges after Monday 15:00")
+     → "Wed 07:30 PST"; `:76` freeze line → Wed 11-04 09:00 PST.
+   - Promote the briefs `docs/lanes/sa-22.md` … `sa-29.md` to role files
+     if you want them under `.agents/roles/`.
+1. **Start the lane sessions from the desktop app.** Over Remote
+   Control the app refuses session starts, so type "start the lanes"
+   in the Claude desktop app. Until then: the web lanes SA-26/27/28 run
+   as worktree subagents (allowed today, web only, ≤3); the builder does
+   SA-22 M1 (telemetry) itself for T1; SA-23, SA-24, SA-25 and SA-29
+   (judge kit) wait for sessions.
+2. **Sandbox credentials on plant (0600, never pasted in chat).** Create
+   FedEx developer-portal TEST project keys + test account, confirm the
+   USPS TEM credentials, Stripe test-mode keys, then on plant:
+   `install -m 600 /dev/null ~/.config/apostille/stripe-test.env` (lines
+   `STRIPE_SECRET_KEY=` and `STRIPE_WEBHOOK_SECRET=`), the same for
+   `fedex-sandbox.env` (`FEDEX_CLIENT_ID=`, `FEDEX_CLIENT_SECRET=`,
+   `FEDEX_ACCOUNT=`) and `usps-tem.env` (`USPS_CLIENT_ID=`,
+   `USPS_CLIENT_SECRET=`, `USPS_CRID=`, `USPS_MID=`, `USPS_EPA_ACCOUNT=`).
+   Paste back only "env files installed". Without FedEx sandbox keys,
+   FedEx stays on recorded synthetic fixtures until a capped live buy.
+3. **Monday evening.** Approve usa-wa-sos's 17 proposals in production
+   `/review` (≥8 accepted, keep 2 proposed for the video); add official
+   Viet Nam seed URLs in admin Workers → fetch (production has 0 for
+   vietnam); commit `web/src/lib/assets/brand/google.svg` and
+   `apple.svg` (GP3); re-run `ops-a5-eval.sh` and `ops-a2-record.sh`
+   (A5's 72 h window ends Tue 20:29 PST).
+4. **Train T1 ~21:30 PST** (builder, no action from you): shell,
+   meta-1, telemetry, runtime-only cleanup if green. Report lands here.
+
+---
+
+## Earlier today (Monday 2026-11-02, ~04:10 PST)
 
 DEPLOYED ~10:35 PST on your "deploy now": production runs
 `0.1.0+4dcd234` (previous `2b4bc8d` kept for rollback; flags

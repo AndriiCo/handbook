@@ -219,3 +219,4 @@
 | 316 | 2026-11-03 00:15Z | Execute the plan. Muse workers stopped. Clear old releases from plant in order | B0 hooks, keys, cache, ops topic, contracts, 8 lane briefs, judge stub |
 | 317 | 2026-11-03 00:18Z | B0: shots lane registries (routes, API fixtures, WS events, admin build) | shots / green; lanes register screens in e2e/fixtures/lanes |
 | 318 | 2026-11-03 00:26Z | B1+B2: admin console shell (sidebar, breadcrumbs, cmd-K, env badge, live dot), shadcn primit | shell live; demo 3/3, shots 48, smoke, check green |
+| 319 | 2026-11-03 00:32Z | M1 (SA-22 step 1, builder): chat_json + per-attempt model_call telemetry, admin model-calls, daily cap | agent 60, web 330, clippy+fmt clean; operator page updated |

@@ -5,7 +5,9 @@
 //! [`StubClient`] fixtures and the [`MetaRestClient`] skeleton.
 
 use std::fmt;
-use std::time::Duration;
+use std::io::Read;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use contracts::model::{
     CitationRef, DraftRequest, DraftResponse, ModelClient, ModelError, ProposedRecord, Usage,
@@ -133,6 +135,80 @@ fn jitter_ms(range_ms: u64) -> u64 {
         .min(range_ms / 2)
 }
 
+/// One Meta HTTP attempt as telemetry sees it (M1): every POST the
+/// client sends — retries included — yields exactly one record, so
+/// daily caps and p50/p95 count real calls. No request or response
+/// text rides here, only shape and spend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallRecord {
+    /// Model id from the request body (`muse-spark-1.3`, …).
+    pub model: String,
+    /// Which pipeline sent it (`draft`, `plan`, `factcheck`, …).
+    pub pipeline: &'static str,
+    /// Server-allocated run id, when the call belongs to a run.
+    pub run_id: Option<u64>,
+    /// 1-based attempt number within one logical request.
+    pub attempt: u32,
+    /// Wall time from send to the last body byte.
+    pub latency_ms: u64,
+    /// Wall time from send to the first body byte (the first SSE
+    /// event), when a body arrived.
+    pub ttft_ms: Option<u64>,
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cached_tokens: u32,
+    pub reasoning_tokens: u32,
+    /// `ok | refusal | length | parse_error | http_4xx | http_5xx |
+    /// timeout | transport`.
+    pub outcome: &'static str,
+    /// HTTP status, when a response arrived.
+    pub http_status: Option<u16>,
+}
+
+/// Sink for [`CallRecord`]s (the web crate writes `model_call` rows).
+/// Called on the client's blocking thread; implementations must not
+/// panic and should swallow their own storage errors.
+pub trait CallObserver: Send + Sync {
+    fn record(&self, call: &CallRecord);
+}
+
+/// One strict-JSON chat call ([`MetaRestClient::chat_json`]): the
+/// shared shape for every pipeline beyond drafting (plans, offices,
+/// cross-checks, form maps, link triage).
+#[derive(Debug, Clone)]
+pub struct ChatJsonRequest<'a> {
+    /// `muse-spark-1.3` or `muse-wonder-1.0`.
+    pub model: &'a str,
+    /// Stable standing rules (the cacheable `developer` prefix): no
+    /// per-run values here.
+    pub developer: &'a str,
+    /// Per-run values (`user` message).
+    pub user: String,
+    /// `json_schema.name` (alphanumeric + `_`).
+    pub schema_name: &'a str,
+    /// Strict-subset JSON schema for the reply.
+    pub schema: serde_json::Value,
+    /// `low | medium | high` (never omitted: findings F4).
+    pub reasoning_effort: &'a str,
+    /// Stable per prompt version, so the prefix cache hits.
+    pub prompt_cache_key: String,
+    pub max_completion_tokens: u32,
+    /// Telemetry labels for this call.
+    pub pipeline: &'static str,
+    pub run_id: Option<u64>,
+}
+
+/// A parsed strict-JSON reply plus its spend.
+#[derive(Debug, Clone)]
+pub struct ChatJsonResponse {
+    pub value: serde_json::Value,
+    pub usage: Usage,
+    /// Wall time of the successful attempt.
+    pub latency_ms: u64,
+    /// Attempts it took (1 = first try).
+    pub attempts: u32,
+}
+
 /// Live Meta Models API client (blocking ureq, like the voice client).
 ///
 /// Auth: Model API key auth only — the OAuth2 handshake cannot mint
@@ -148,6 +224,9 @@ pub struct MetaRestClient {
     stream_agent: ureq::Agent,
     base_url: String,
     api_key: String,
+    observer: Option<Arc<dyn CallObserver>>,
+    pipeline: &'static str,
+    run_id: Option<u64>,
 }
 
 impl fmt::Debug for MetaRestClient {
@@ -182,7 +261,95 @@ impl MetaRestClient {
             stream_agent: ureq::Agent::new_with_config(stream_config),
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
+            observer: None,
+            pipeline: "draft",
+            run_id: None,
         }
+    }
+
+    /// Report every HTTP attempt to `observer`, labelled with
+    /// `pipeline` and `run_id` (drafts default to pipeline `draft`).
+    #[must_use]
+    pub fn with_observer(
+        mut self,
+        observer: Arc<dyn CallObserver>,
+        pipeline: &'static str,
+        run_id: Option<u64>,
+    ) -> Self {
+        self.observer = Some(observer);
+        self.pipeline = pipeline;
+        self.run_id = run_id;
+        self
+    }
+
+    fn observe(&self, call: CallRecord) {
+        if let Some(observer) = &self.observer {
+            observer.record(&call);
+        }
+    }
+
+    /// Record one finished attempt: non-2xx and transport failures as
+    /// their HTTP class, a 2xx as `ok` or the parse failure it hit.
+    fn observe_attempt(
+        &self,
+        model: &str,
+        pipeline: &'static str,
+        run_id: Option<u64>,
+        raw: &Result<RawResponse, ModelError>,
+        parsed: Option<(&'static str, Usage)>,
+    ) {
+        if self.observer.is_none() {
+            return;
+        }
+        let zero = Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cached_tokens: 0,
+            reasoning_tokens: 0,
+        };
+        let call = match raw {
+            Ok(r) => {
+                let (outcome, usage) = match parsed {
+                    Some(p) => p,
+                    None if (400..500).contains(&r.status) => ("http_4xx", zero),
+                    None if r.status >= 500 => ("http_5xx", zero),
+                    None => ("parse_error", zero),
+                };
+                CallRecord {
+                    model: model.to_string(),
+                    pipeline,
+                    run_id,
+                    attempt: r.attempt,
+                    latency_ms: r.latency_ms,
+                    ttft_ms: r.ttft_ms,
+                    input_tokens: usage.input_tokens,
+                    output_tokens: usage.output_tokens,
+                    cached_tokens: usage.cached_tokens,
+                    reasoning_tokens: usage.reasoning_tokens,
+                    outcome,
+                    http_status: Some(r.status),
+                }
+            }
+            Err(e) => {
+                let text = e.to_string();
+                let timed_out = text.contains("timeout") || text.contains("timed out");
+                CallRecord {
+                    model: model.to_string(),
+                    pipeline,
+                    run_id,
+                    attempt: 0,
+                    latency_ms: 0,
+                    ttft_ms: None,
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cached_tokens: 0,
+                    reasoning_tokens: 0,
+                    outcome: if timed_out { "timeout" } else { "transport" },
+                    http_status: None,
+                }
+            }
+        };
+        self.observe(call);
     }
 
     /// Health/auth probe for `xtask analyze --check`: `GET /models`
@@ -232,11 +399,25 @@ impl MetaRestClient {
     /// (400/401/402/403/404/413) never retry. The only other retry in
     /// this crate is the narrowed re-draft on truncation/refusal, a
     /// different request (halved records) — never the same body twice.
-    fn post_chat(&self, body: &serde_json::Value) -> Result<RawResponse, ModelError> {
+    ///
+    /// Telemetry: every retried attempt is recorded here; the attempt
+    /// this returns is recorded by the caller once it knows the parse
+    /// outcome (`observe_attempt`), so each POST counts exactly once.
+    fn post_chat(
+        &self,
+        body: &serde_json::Value,
+        pipeline: &'static str,
+        run_id: Option<u64>,
+    ) -> Result<RawResponse, ModelError> {
         let url = format!("{}/chat/completions", self.base_url);
+        let model = body["model"].as_str().unwrap_or("unknown").to_string();
         let mut attempt_no = 0u32;
         loop {
-            let attempt = self.post_sse(&url, body);
+            let started = Instant::now();
+            let mut attempt = self.post_sse(&url, body, started);
+            if let Ok(r) = attempt.as_mut() {
+                r.attempt = attempt_no + 1;
+            }
             let retry_after = match &attempt {
                 Err(ModelError::Transport(_)) => None,
                 Ok(r) if matches!(r.status, 429 | 500 | 502 | 503 | 504) => r.retry_after_secs,
@@ -245,12 +426,18 @@ impl MetaRestClient {
             if attempt_no >= MAX_ATTEMPTS - 1 {
                 return attempt;
             }
+            self.observe_attempt(&model, pipeline, run_id, &attempt, None);
             attempt_no += 1;
             std::thread::sleep(retry_delay(RETRY_BASE_SECS, attempt_no, retry_after));
         }
     }
 
-    fn post_sse(&self, url: &str, body: &serde_json::Value) -> Result<RawResponse, ModelError> {
+    fn post_sse(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        started: Instant,
+    ) -> Result<RawResponse, ModelError> {
         let response = self
             .stream_agent
             .post(url)
@@ -265,14 +452,31 @@ impl MetaRestClient {
             .get("Retry-After")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.trim().parse().ok());
-        let body = response
-            .into_body()
-            .read_to_vec()
-            .map_err(|e| ModelError::Transport(e.to_string()))?;
+        // Read the stream in chunks so the first event's arrival time
+        // (TTFT for telemetry) is known; same bytes as read_to_vec.
+        let mut reader = response.into_body().into_reader();
+        let mut out = Vec::new();
+        let mut buf = [0u8; 16 * 1024];
+        let mut ttft_ms = None;
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .map_err(|e| ModelError::Transport(e.to_string()))?;
+            if n == 0 {
+                break;
+            }
+            if ttft_ms.is_none() {
+                ttft_ms = Some(elapsed_ms(started));
+            }
+            out.extend_from_slice(&buf[..n]);
+        }
         Ok(RawResponse {
             status,
-            body,
+            body: out,
             retry_after_secs,
+            latency_ms: elapsed_ms(started),
+            ttft_ms,
+            attempt: 1,
         })
     }
 
@@ -292,8 +496,16 @@ impl MetaRestClient {
             status,
             body,
             retry_after_secs: None,
+            latency_ms: 0,
+            ttft_ms: None,
+            attempt: 1,
         })
     }
+}
+
+/// Milliseconds since `started`, saturating.
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 /// Short server phrase only (voice precedent): bodies can echo request
@@ -308,6 +520,10 @@ struct RawResponse {
     status: u16,
     body: Vec<u8>,
     retry_after_secs: Option<u64>,
+    /// Telemetry: send → last byte, send → first byte, 1-based attempt.
+    latency_ms: u64,
+    ttft_ms: Option<u64>,
+    attempt: u32,
 }
 
 /// `json_schema` response format for [`DraftResponse`]: schema-constrained
@@ -465,7 +681,25 @@ impl MetaRestClient {
         previous_failure: Option<&str>,
     ) -> Result<DraftResponse, ModelError> {
         let body = draft_body(req, previous_failure);
-        let response = self.post_chat(&body)?;
+        let raw = self.post_chat(&body, self.pipeline, self.run_id);
+        let parsed = match &raw {
+            Ok(r) if (200..300).contains(&r.status) => Some(parse_stream(&r.body)),
+            _ => None,
+        };
+        self.observe_attempt(
+            DRAFT_MODEL,
+            self.pipeline,
+            self.run_id,
+            &raw,
+            parsed.as_ref().map(|p| match p {
+                Ok(resp) => ("ok", resp.usage.clone()),
+                Err(e) => (failure_outcome(e), zero_usage()),
+            }),
+        );
+        let response = raw?;
+        if let Some(parsed) = parsed {
+            return parsed;
+        }
         if response.status == 401 {
             return Err(ModelError::Auth(
                 "meta api: unauthorized (check meta.api_key)".to_string(),
@@ -474,10 +708,101 @@ impl MetaRestClient {
         if response.status == 402 {
             return Err(ModelError::BudgetExceeded);
         }
-        if !(200..300).contains(&response.status) {
-            return Err(short_status("meta api", response.status, &response.body));
+        Err(short_status("meta api", response.status, &response.body))
+    }
+
+    /// One strict-JSON chat call for any pipeline (plans, offices,
+    /// cross-checks, form maps, link triage), per
+    /// `.agents/meta-api-findings.md`: no temperature, explicit
+    /// `reasoning_effort`, streamed with usage, stable developer prefix
+    /// plus `prompt_cache_key`, jittered retries honouring Retry-After,
+    /// refusal and truncation checks. Every HTTP attempt is recorded.
+    ///
+    /// # Errors
+    ///
+    /// [`ModelError::Auth`] (401 / empty key), [`ModelError::BudgetExceeded`]
+    /// (402), [`ModelError::Transport`] (other non-2xx, I/O),
+    /// [`ModelError::BadOutput`] (refusal, truncation, non-JSON).
+    pub fn chat_json(&self, req: &ChatJsonRequest<'_>) -> Result<ChatJsonResponse, ModelError> {
+        if self.api_key.is_empty() {
+            return Err(ModelError::Auth("meta api key not configured".to_string()));
         }
-        parse_stream(&response.body)
+        let body = json!({
+            "model": req.model,
+            "messages": [
+                {"role": "developer", "content": req.developer.trim()},
+                {"role": "user", "content": req.user},
+            ],
+            "reasoning_effort": req.reasoning_effort,
+            "max_completion_tokens": req.max_completion_tokens,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": req.schema_name, "strict": true, "schema": req.schema},
+            },
+            "prompt_cache_key": req.prompt_cache_key,
+            "stream": true,
+            "stream_options": {"include_usage": true},
+        });
+        let raw = self.post_chat(&body, req.pipeline, req.run_id);
+        let parsed = match &raw {
+            Ok(r) if (200..300).contains(&r.status) => {
+                Some(collect_stream(&r.body).and_then(|(content, usage)| {
+                    serde_json::from_str::<serde_json::Value>(&content)
+                        .map(|value| (value, usage_from(&usage)))
+                        .map_err(|e| {
+                            ModelError::BadOutput(format!("completion: content not json: {e}"))
+                        })
+                }))
+            }
+            _ => None,
+        };
+        self.observe_attempt(
+            req.model,
+            req.pipeline,
+            req.run_id,
+            &raw,
+            parsed.as_ref().map(|p| match p {
+                Ok((_, usage)) => ("ok", usage.clone()),
+                Err(e) => (failure_outcome(e), zero_usage()),
+            }),
+        );
+        let response = raw?;
+        if let Some(parsed) = parsed {
+            let (value, usage) = parsed?;
+            return Ok(ChatJsonResponse {
+                value,
+                usage,
+                latency_ms: response.latency_ms,
+                attempts: response.attempt,
+            });
+        }
+        if response.status == 401 {
+            return Err(ModelError::Auth(
+                "meta api: unauthorized (check meta.api_key)".to_string(),
+            ));
+        }
+        if response.status == 402 {
+            return Err(ModelError::BudgetExceeded);
+        }
+        Err(short_status("meta api", response.status, &response.body))
+    }
+}
+
+/// Telemetry outcome for a 2xx whose body failed to parse.
+fn failure_outcome(e: &ModelError) -> &'static str {
+    match e {
+        ModelError::BadOutput(reason) if reason.contains("model refused") => "refusal",
+        ModelError::BadOutput(reason) if reason.contains("truncated") => "length",
+        _ => "parse_error",
+    }
+}
+
+fn zero_usage() -> Usage {
+    Usage {
+        input_tokens: 0,
+        output_tokens: 0,
+        cached_tokens: 0,
+        reasoning_tokens: 0,
     }
 }
 
@@ -487,6 +812,13 @@ impl MetaRestClient {
 /// `stream_options.include_usage`, a trailing `usage` chunk. `[DONE]`
 /// ends the lane; anything else is ignored (keep-alives, comments).
 fn parse_stream(body: &[u8]) -> Result<DraftResponse, ModelError> {
+    let (content, usage) = collect_stream(body)?;
+    records_from_content(&content, &usage)
+}
+
+/// The content string + raw usage object of one complete stream, after
+/// the `[DONE]`, refusal and `finish_reason` checks.
+fn collect_stream(body: &[u8]) -> Result<(String, serde_json::Value), ModelError> {
     let bad = |why: &str| ModelError::BadOutput(format!("stream: {why}"));
     let text = std::str::from_utf8(body).map_err(|e| bad(&format!("not utf-8: {e}")))?;
     let mut content = String::new();
@@ -541,7 +873,7 @@ fn parse_stream(body: &[u8]) -> Result<DraftResponse, ModelError> {
         Some("length") => return Err(bad("truncated (finish_reason=length)")),
         other => return Err(bad(&format!("finish_reason={other:?}"))),
     }
-    records_from_content(&content, &usage)
+    Ok((content, usage))
 }
 
 /// Parse records + usage out of one complete content string. Every
@@ -598,6 +930,25 @@ fn records_from_content(
             confidence,
         });
     }
+    let counted = usage_from(usage);
+    // Required by the schema, but tolerate absence (a summary must
+    // never fail a draft — it quarantines in the UI, unused here).
+    // Truncated to 500 chars on a char boundary.
+    let summary: String = inner["summary"]
+        .as_str()
+        .unwrap_or("")
+        .chars()
+        .take(500)
+        .collect();
+    Ok(DraftResponse {
+        records: out,
+        usage: counted,
+        summary,
+    })
+}
+
+/// Token counts from one stream's `usage` object.
+fn usage_from(usage: &serde_json::Value) -> Usage {
     // `usage` is optional on the wire; record when present.
     // Counts above u32::MAX saturate (4B tokens/call is impossible).
     let tokens = |name: &str| {
@@ -615,7 +966,7 @@ fn records_from_content(
             .and_then(|n| n.as_u64())
             .map(|n| u32::try_from(n).unwrap_or(u32::MAX))
     };
-    let counted = Usage {
+    Usage {
         input_tokens: tokens("prompt_tokens"),
         output_tokens: tokens("completion_tokens"),
         cached_tokens: nested("prompt_tokens_details", "cached_tokens")
@@ -624,21 +975,7 @@ fn records_from_content(
         reasoning_tokens: nested("completion_tokens_details", "reasoning_tokens")
             .or_else(|| (tokens("reasoning_tokens") != 0).then_some(tokens("reasoning_tokens")))
             .unwrap_or(0),
-    };
-    // Required by the schema, but tolerate absence (a summary must
-    // never fail a draft — it quarantines in the UI, unused here).
-    // Truncated to 500 chars on a char boundary.
-    let summary: String = inner["summary"]
-        .as_str()
-        .unwrap_or("")
-        .chars()
-        .take(500)
-        .collect();
-    Ok(DraftResponse {
-        records: out,
-        usage: counted,
-        summary,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -889,6 +1226,152 @@ mod tests {
             seen.recv_timeout(Duration::from_secs(10)).unwrap();
         }
         handle.join().unwrap();
+    }
+
+    /// Collects every telemetry record (M1).
+    #[derive(Default)]
+    struct Recorder(std::sync::Mutex<Vec<CallRecord>>);
+
+    impl CallObserver for Recorder {
+        fn record(&self, call: &CallRecord) {
+            self.0.lock().unwrap().push(call.clone());
+        }
+    }
+
+    #[test]
+    fn observer_records_every_attempt_including_the_retried_429() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let seen_calls = calls.clone();
+        let (base, seen, handle) = stub(2, move |_, _| {
+            if seen_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                (
+                    429,
+                    r#"{"error": {"type": "rate_limit_error"}}"#.to_string(),
+                )
+            } else {
+                (
+                    200,
+                    sse_stream(
+                        serde_json::json!({"role": "assistant", "content": r#"{"records": []}"#}),
+                        "stop",
+                    ),
+                )
+            }
+        });
+        let recorder = std::sync::Arc::new(Recorder::default());
+        let client = MetaRestClient::new(base, "stub-key".to_string()).with_observer(
+            recorder.clone(),
+            "draft",
+            Some(7),
+        );
+        client.draft_records(&sample_request()).expect("retry wins");
+        for _ in 0..2 {
+            seen.recv_timeout(Duration::from_secs(10)).unwrap();
+        }
+        handle.join().unwrap();
+        let rows = recorder.0.lock().unwrap().clone();
+        assert_eq!(rows.len(), 2, "one record per HTTP attempt");
+        assert_eq!(
+            (rows[0].outcome, rows[0].http_status, rows[0].attempt),
+            ("http_4xx", Some(429), 1)
+        );
+        assert_eq!(
+            (rows[1].outcome, rows[1].http_status, rows[1].attempt),
+            ("ok", Some(200), 2)
+        );
+        assert!(
+            rows.iter()
+                .all(|r| r.model == DRAFT_MODEL && r.run_id == Some(7))
+        );
+        assert!(rows[1].ttft_ms.is_some());
+    }
+
+    #[test]
+    fn chat_json_sends_strict_schema_and_parses_the_reply() {
+        let (base, seen, handle) = stub(1, |_, _| {
+            (
+                200,
+                sse_stream(
+                    serde_json::json!({"role": "assistant", "content": r#"{"verdict": "supported"}"#}),
+                    "stop",
+                ),
+            )
+        });
+        let recorder = std::sync::Arc::new(Recorder::default());
+        let client = MetaRestClient::new(base, "stub-key".to_string()).with_observer(
+            recorder.clone(),
+            "draft",
+            None,
+        );
+        let resp = client
+            .chat_json(&ChatJsonRequest {
+                model: "muse-wonder-1.0",
+                developer: "Check the claim against the text.",
+                user: "claim + text".to_string(),
+                schema_name: "FactCheckV1",
+                schema: serde_json::json!({"type": "object", "properties": {"verdict": {"type": "string"}},
+                    "required": ["verdict"], "additionalProperties": false}),
+                reasoning_effort: "low",
+                prompt_cache_key: "factcheck-v1".to_string(),
+                max_completion_tokens: 2048,
+                pipeline: "factcheck",
+                run_id: Some(3),
+            })
+            .expect("parsed");
+        assert_eq!(resp.value["verdict"], "supported");
+        assert_eq!(resp.attempts, 1);
+        let sent = seen.recv_timeout(Duration::from_secs(10)).unwrap();
+        handle.join().unwrap();
+        let json_start = sent.find("\n{").expect("body after head") + 1;
+        let v: serde_json::Value = serde_json::from_str(&sent[json_start..]).unwrap();
+        assert_eq!(v["reasoning_effort"], "low");
+        assert_eq!(v["prompt_cache_key"], "factcheck-v1");
+        assert_eq!(v["response_format"]["json_schema"]["strict"], true);
+        assert_eq!(v["messages"][0]["role"], "developer");
+        assert!(v.get("temperature").is_none(), "sampling untouched");
+        let rows = recorder.0.lock().unwrap().clone();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (rows[0].model.as_str(), rows[0].pipeline, rows[0].outcome),
+            ("muse-wonder-1.0", "factcheck", "ok")
+        );
+    }
+
+    #[test]
+    fn chat_json_refusal_is_bad_output_and_recorded_as_refusal() {
+        let (base, _seen, handle) = stub(1, |_, _| {
+            (
+                200,
+                sse_stream(
+                    serde_json::json!({"role": "assistant", "refusal": "no"}),
+                    "stop",
+                ),
+            )
+        });
+        let recorder = std::sync::Arc::new(Recorder::default());
+        let client = MetaRestClient::new(base, "stub-key".to_string()).with_observer(
+            recorder.clone(),
+            "plan",
+            None,
+        );
+        let err = client
+            .chat_json(&ChatJsonRequest {
+                model: "muse-spark-1.3",
+                developer: "Compose.",
+                user: "facts".to_string(),
+                schema_name: "RenderPlanV1",
+                schema: serde_json::json!({"type": "object"}),
+                reasoning_effort: "high",
+                prompt_cache_key: "plan-v1".to_string(),
+                max_completion_tokens: 8192,
+                pipeline: "plan",
+                run_id: None,
+            })
+            .expect_err("refusal");
+        handle.join().unwrap();
+        assert!(matches!(err, ModelError::BadOutput(_)));
+        assert_eq!(recorder.0.lock().unwrap()[0].outcome, "refusal");
     }
 
     #[test]

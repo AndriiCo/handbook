@@ -80,6 +80,6 @@ Seeds: `ws-events.json`.
   `timezone_source`: `quoted | staff_confirmed` (no tz otherwise, so no
   "Open now").
 - `model_call.outcome`: `ok | refusal | length | http_4xx | http_5xx |
-  timeout | parse_error`; `pipeline`: `draft | factcheck | offices | plan
+  timeout | transport | parse_error`; `pipeline`: `draft | factcheck | offices | plan
   | forms | triage | precheck | voice`.
 - Cross-check verdict: `supported | contradicted | not_found`.

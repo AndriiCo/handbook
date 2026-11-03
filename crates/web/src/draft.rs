@@ -233,6 +233,13 @@ pub async fn draft_capture(
             .into_response();
     }
     let now = unix_now();
+    if crate::telemetry::over_daily_cap(&conn, &state, now) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error": "daily model-call cap reached (meta.daily_call_cap)"})),
+        )
+            .into_response();
+    }
     let Some(run_id) = state.draft_runs.start(capture_id, slug.clone(), now) else {
         return (
             StatusCode::TOO_MANY_REQUESTS,
@@ -493,7 +500,13 @@ impl DraftTask {
                 row.get(0)
             })
             .unwrap_or(0);
-        let client = live_client(&conn, self.kek.as_deref())?;
+        // M1: every HTTP attempt lands in `model_call` (trace latency,
+        // daily cap, dashboard tiles).
+        let client = live_client(&conn, self.kek.as_deref())?.with_observer(
+            crate::telemetry::DbObserver::new(self.store_root.clone()),
+            "draft",
+            Some(self.run_id),
+        );
         let mut sources = HashMap::new();
         sources.insert("fixture".to_string(), self.text.clone());
         let req = handbook_agent::runner::RunRequest {
