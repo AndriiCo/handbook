@@ -252,3 +252,4 @@
 | 343 | 2026-11-03 03:18Z | Review fixes grounding + Meta API + perf (#17-#24, #26, #48-#54, #57) | web 372, agent 60 green; clippy clean |
 | 344 | 2026-11-03 03:20Z | Review #35: staff upload parses PDFs on the blocking pool | web 373 green |
 | 345 | 2026-11-03 03:25Z | J2: cargo xtask judge/up --port-base N (public N, admin N+1) | xtask 148 green, clippy clean |
+| 346 | 2026-11-03 03:32Z | T2 deploy: 39b8430 (review fixes P339-P344) to production | prod 5/10 → 5/10, no regressions; flags announced |

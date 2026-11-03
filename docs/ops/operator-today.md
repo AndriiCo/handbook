@@ -1,4 +1,4 @@
-# Operator — MISSION WIN (updated Mon 11-02 ~17:20 PST)
+# Operator — MISSION WIN (updated Mon 11-02 ~19:40 PST)
 
 Plan: `docs/ops/mission-win.md` (you approved it 11-02). Production is
 still `0.1.0+4dcd234`. On `main` since (all plant-gated green so far):
@@ -20,6 +20,22 @@ still `0.1.0+4dcd234`. On `main` since (all plant-gated green so far):
 Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
 
 ## Open now, in order
+
+**T2 DEPLOYED (~19:35 PST):** production runs `0.1.0+39b8430` (previous
+`cfb625b`; kept `cfb625b`, `e25fd3e`; pruned `4dcd234`). Flags announced
+per §7: `--skip-accept --allow-today-overlap`. Plant stamp
+`39b843032ce3.json` (`ci_green`), staging-green 9/10 + live demo 3/3,
+prod-before 5/10 → prod-after 5/10, zero regressions (only P0's version
+changed; A2 52 → 87 ms). Ships P339-P344: the review fixes — money paths
+(checkout claim before Stripe, idempotency bucket, webhook records only
+after settle, refunds in one transaction, staff advance never moves
+money states), abuse limits (network-keyed buckets, daily order and fill
+caps), grounding guards (whole-token numbers, exact fee cents, quoted
+hours ranges, Wonder verdicts re-checked against the statement),
+official-form fill-and-flatten (radio on-states, inherited resources,
+read-only/unprintable refusals), erasure of orders and fills, and PDF
+parsing off the async runtime. A fresh adversarial re-review of these
+fixes is running; anything it confirms ships as T2b tonight.
 
 **HOTFIX DEPLOYED (~19:00 PST):** production runs `0.1.0+cfb625b`
 (previous `e25fd3e`). The post-T1 adversarial review found a remote abort:
