@@ -1,0 +1,26 @@
+{
+	"routes": {
+		"/authority/usa-wa-sos?path=diploma": {
+			"name": "gp2-plan-wa-diploma",
+			"ready": "Your apostille plan"
+		}
+	},
+	"api": [
+		{ "path": "/api/v1/authorities/usa-wa-sos/plan$", "fixture": "plan-usa-wa-sos.json" },
+		{ "path": "/api/v1/authorities/[^/]+/plan$", "fixture": "plan-empty.json" }
+	],
+	"ws": [
+		{
+			"topic": "^authority:usa-wa-sos$",
+			"events": [
+				{
+					"type": "plan_accepted",
+					"topic": "authority:usa-wa-sos",
+					"plan_id": 12,
+					"version": 3,
+					"at": 1793750400
+				}
+			]
+		}
+	]
+}
