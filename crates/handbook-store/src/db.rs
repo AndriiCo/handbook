@@ -124,7 +124,7 @@ pub fn migrate_p2(conn: &Connection) -> Result<()> {
 /// versions and the squashed baseline (or newer than this binary).
 /// Ad-hoc error via the same `ToSqlConversionFailure` carrier db.rs
 /// already uses for non-SQLite failures.
-pub(crate) fn version_gap(db: &str, version: i32, current: i32) -> HandbookError {
+fn version_gap(db: &str, version: i32, current: i32) -> HandbookError {
     let remedy = if version < current {
         format!(
             "upgrade it through the last incremental release first \

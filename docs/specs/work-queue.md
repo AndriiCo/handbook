@@ -15,11 +15,13 @@ staff /work page ──POST──▶ andrii.ai  work.sqlite ◀──wss── p
 
 ## 1. Storage: `work.sqlite`
 
-A separate database next to `handbook.sqlite` and `p2.sqlite`, with
-its own baseline (`crates/handbook-store/migrations/work_schema_baseline.sql`)
-and `user_version` (`WORK_SCHEMA_VERSION`, independent of the handbook
-schema). Opened only through `handbook_store::work::open`, migrated by
-`handbook_store::work::migrate` (same refusal rules as `migrate_p2`).
+A separate database next to `handbook.sqlite` and `p2.sqlite`. Its
+tables are created at runtime with `CREATE … IF NOT EXISTS` DDL in
+`handbook_store::work::migrate` (the `telemetry::migrate_tables`
+pattern), never from `crates/handbook-store/migrations/`: the ship
+rails refuse any release that edits that directory or a schema-version
+constant, so changes here stay additive (new tables or indexes only).
+Opened only through `handbook_store::work::open`.
 
 `work_item`: `kind`, `payload_json`, `status`
 (`pending | leased | done | failed`), `lease_owner`
@@ -31,8 +33,8 @@ schema). Opened only through `handbook_store::work::open`, migrated by
 
 `audit` (append-only, triggers refuse UPDATE/DELETE) gets one row per
 `work_enqueue`, `work_checkout`, `work_complete`, `work_fail`,
-`work_requeue`, `work_expire` and `work_retry`, committed in the same
-transaction as the state change. Heartbeats are not audited.
+`work_requeue`, `work_expire`, `work_retry` and `work_stage`, committed
+in the same transaction as the change. Heartbeats are not audited.
 
 Leases: a checkout leases the oldest pending item whose kind the
 worker announced, for `LEASE_SECS` (300 s), and bumps `attempts`.
@@ -84,9 +86,19 @@ lease). The server pings every 30 s.
 | `GET /apostille/api/v1/admin/work-items/{id}` | one item + its audit trail |
 | `GET /apostille/api/v1/admin/work-items/{id}/result` | result bytes (`Content-Disposition: attachment`) |
 | `POST /apostille/api/v1/admin/work-items/{id}/retry` | failed → pending (attempts reset) |
+| `POST /apostille/api/v1/admin/work-items/{id}/stage-packs` | write a done `research.nonparty` bundle's packs to `<store>/packs-inbox/<id>/` |
 
 Shapes: `docs/contracts/admin-work-items.json`. `lease_owner` is the
-worker name only; lease tokens never leave the server. Unknown kinds,
+worker name only; lease tokens never leave the server. Every item
+carries `staged` (its inbox folder exists).
+
+Stage as packs: only a `done` `research.nonparty` item with a result
+stages (else 409). The result must be a `packs.v1` bundle whose packs
+each have a unique file-safe `pack` id (`[A-Za-z0-9_-]{1,64}`, else
+422); each becomes `<store>/packs-inbox/<id>/<pack>.json`, written in a
+temp folder and renamed into place, so re-staging replaces the folder
+whole. Full pack rules run when the staff Packs page loads the folder
+(`xtask packs-load`), not here. Unknown kinds,
 non-object payloads → 422; payloads over 64 KiB → 413.
 
 ## 4. Job kinds (`xtask/src/worker/`)

@@ -18,6 +18,7 @@
 		STATUSES,
 		WorkError,
 		auditLabel,
+		canStagePacks,
 		enqueueBody,
 		enqueueWork,
 		examplePayload,
@@ -34,6 +35,8 @@
 		resultHref,
 		resultView,
 		retryWork,
+		stagePacks,
+		stagedText,
 		statusChanges,
 		statusLabel,
 		statusTone,
@@ -50,6 +53,8 @@
 	import UnplugIcon from '@lucide/svelte/icons/unplug';
 	import InboxIcon from '@lucide/svelte/icons/inbox';
 	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
+	import PackagePlusIcon from '@lucide/svelte/icons/package-plus';
+	import PackageCheckIcon from '@lucide/svelte/icons/package-check';
 
 	// Production work queue (work-queue.md §3): staff enqueue jobs here,
 	// plant workers dial out over one WebSocket and check them out one
@@ -57,6 +62,8 @@
 	// (no ops-topic events for work items yet); the detail sheet
 	// re-reads when its row moves. Results download as a plain GET
 	// (cookie auth); POSTs carry the CSRF pair via work-client.js.
+	// A finished research.nonparty result can be staged into
+	// <store>/packs-inbox/<id>/ for the Packs page (re-staging overwrites).
 	const API = '/apostille/api/v1';
 
 	let list = $state<WorkList | null>(null);
@@ -87,6 +94,8 @@
 		error: string | null;
 	}>({ state: 'idle', view: null, error: null });
 	let retrying = $state<Record<number, true>>({});
+	let staging = $state<Record<number, true>>({});
+	let stageNote = $state<{ id: number; ok: boolean; text: string } | null>(null);
 
 	let poller: ReturnType<typeof poll> | null = null;
 	let seq = 0;
@@ -203,6 +212,28 @@
 		}
 	}
 
+	async function stage(id: number) {
+		if (staging[id]) return;
+		staging = { ...staging, [id]: true };
+		try {
+			const text = stagedText(await stagePacks(API, id));
+			stageNote = { id, ok: true, text };
+			toast.success(text);
+			refresh();
+			if (selectedId === id) void loadDetail(id, true);
+		} catch (err) {
+			const text = errorText(err, `Job ${id} could not be staged.`);
+			stageNote = { id, ok: false, text };
+			toast.error(text);
+			// 409 / 404: the row is not what this screen last read.
+			if (err instanceof WorkError && (err.status === 409 || err.status === 404)) refresh();
+		} finally {
+			const next = { ...staging };
+			delete next[id];
+			staging = next;
+		}
+	}
+
 	async function loadDetail(id: number, quiet = false) {
 		if (!quiet) {
 			detailState = 'loading';
@@ -231,7 +262,8 @@
 			row.updated_at !== d.updated_at ||
 			row.status !== d.status ||
 			row.attempts !== d.attempts ||
-			row.lease_expires_at !== d.lease_expires_at
+			row.lease_expires_at !== d.lease_expires_at ||
+			row.staged !== d.staged
 		) {
 			void loadDetail(row.id, true);
 		}
@@ -242,6 +274,7 @@
 			selectedId = id;
 			detail = null;
 			viewer = { state: 'idle', view: null, error: null };
+			stageNote = null;
 			void loadDetail(id);
 		}
 		sheetOpen = true;
@@ -253,6 +286,7 @@
 		selectedId = null;
 		detail = null;
 		viewer = { state: 'idle', view: null, error: null };
+		stageNote = null;
 		syncUrl();
 	}
 
@@ -337,6 +371,16 @@
 	>
 		<span aria-hidden="true" class={`size-1.5 rounded-full bg-current ${status === 'leased' ? 'motion-safe:animate-pulse' : ''}`}></span>
 		{statusLabel(status)}
+	</span>
+{/snippet}
+
+{#snippet stagedBadge(id: number)}
+	<span
+		class="inline-flex h-6 items-center gap-1 rounded-full border border-line bg-surface-2 px-2 text-xs font-medium whitespace-nowrap text-accent-strong"
+		title={`Staged in packs-inbox/${id}`}
+	>
+		<PackageCheckIcon class="size-3.5" aria-hidden="true" />
+		Staged
 	</span>
 {/snippet}
 
@@ -631,7 +675,12 @@
 										</button>
 										<span class="block font-mono text-xs text-ink-muted">{item.kind}</span>
 									</th>
-									<Table.Cell>{@render badge(item.status)}</Table.Cell>
+									<Table.Cell>
+										<div class="flex flex-wrap items-center gap-1.5">
+											{@render badge(item.status)}
+											{#if item.staged}{@render stagedBadge(item.id)}{/if}
+										</div>
+									</Table.Cell>
 									<Table.Cell class="hidden text-right font-mono text-sm tabular-nums sm:table-cell">
 										{item.attempts} / {item.max_attempts}
 									</Table.Cell>
@@ -687,6 +736,20 @@
 													<DownloadIcon aria-hidden="true" /><span class="hidden sm:inline">Download</span>
 												</Button>
 											{/if}
+											{#if canStagePacks(item)}
+												<Button
+													variant="outline"
+													size="sm"
+													disabled={!!staging[item.id]}
+													aria-label={`${item.staged ? 'Stage again' : 'Stage as packs'}: job ${item.id}`}
+													onclick={() => stage(item.id)}
+												>
+													{#if staging[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<PackagePlusIcon
+															aria-hidden="true"
+														/>{/if}
+													<span class="hidden sm:inline">{item.staged ? 'Stage again' : 'Stage as packs'}</span>
+												</Button>
+											{/if}
 											{#if item.status === 'failed'}
 												<Button
 													variant="outline"
@@ -736,6 +799,7 @@
 			{#if shown}
 				<div class="flex flex-wrap items-center gap-2 pt-1" aria-live="polite">
 					{@render badge(shown.status)}
+					{#if shown.staged}{@render stagedBadge(shown.id)}{/if}
 					{#if shown.lease_owner}
 						<span class="text-xs text-ink-muted">
 							<span class="font-mono">{shown.lease_owner}</span>{#if shown.lease_expires_at !== null}, {leaseText(shown.lease_expires_at, now)}{/if}
@@ -805,7 +869,36 @@
 						<Button variant="outline" href={resultHref(API, item.id)} download>
 							<DownloadIcon aria-hidden="true" /> Download
 						</Button>
+						{#if canStagePacks(item)}
+							<Button variant="outline" disabled={!!staging[item.id]} onclick={() => stage(item.id)}>
+								{#if staging[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<PackagePlusIcon
+										aria-hidden="true"
+									/>{/if}
+								{item.staged ? 'Stage again' : 'Stage as packs'}
+							</Button>
+						{/if}
 					</div>
+					{#if canStagePacks(item) || stageNote?.id === item.id}
+						<div aria-live="polite">
+							{#if stageNote?.id === item.id}
+								<p
+									class={`m-0 rounded-md border px-3 py-2 text-sm ${stageNote.ok ? 'border-verified bg-verified-bg' : 'border-error bg-error-bg'}`}
+								>
+									{stageNote.text}
+								</p>
+							{:else if item.staged}
+								<p class="m-0 text-sm text-ink-muted">
+									Already staged in <code class="font-mono text-xs">packs-inbox/{item.id}</code>; staging again
+									overwrites it.
+								</p>
+							{:else}
+								<p class="m-0 text-sm text-ink-muted">
+									Staging copies these packs into <code class="font-mono text-xs">packs-inbox/{item.id}</code> for the
+									Packs page.
+								</p>
+							{/if}
+						</div>
+					{/if}
 					<div class="flex flex-col gap-2" aria-live="polite">
 						{#if !isJsonType(result.content_type)}
 							<p class="m-0 text-sm text-ink-muted">Not JSON, so it does not show here: download it to read it.</p>

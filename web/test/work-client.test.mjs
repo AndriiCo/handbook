@@ -9,6 +9,7 @@ import {
 	MAX_PAYLOAD_BYTES,
 	WorkError,
 	auditLabel,
+	canStagePacks,
 	clockOffset,
 	enqueueBody,
 	enqueueWork,
@@ -23,12 +24,15 @@ import {
 	normalizeDetail,
 	normalizeItem,
 	normalizeList,
+	normalizeStage,
 	parseMaxAttempts,
 	parsePayload,
 	poll,
 	resultHref,
 	resultView,
 	retryWork,
+	stagePacks,
+	stagedText,
 	statusChanges,
 	statusLabel,
 	statusTone
@@ -50,6 +54,12 @@ test('normalizeList reads the contract list sample', () => {
 	assert.deepEqual(leased.payload, { countries: ['EG'] });
 	assert.deepEqual(done.result, { sha256: '0'.repeat(64), bytes: 1234, content_type: 'application/json' });
 	assert.deepEqual(done.summary, { pages: 1, failed: 0 });
+	// Every seed item carries `staged`; the sample has none staged yet.
+	for (const raw of CONTRACT.list.items) assert.equal(typeof raw.staged, 'boolean');
+	assert.deepEqual(
+		list.items.map((i) => i.staged),
+		CONTRACT.list.items.map((i) => i.staged)
+	);
 	assert.equal(list.workers[0].name, 'plant');
 	assert.equal(list.workers[0].job_id, 7);
 	assert.deepEqual(list.workers[0].capabilities, ['research.nonparty', 'scrape.urls', 'eval.gold', 'precheck.glimmer']);
@@ -75,6 +85,10 @@ test('normalizeList drops junk rows and defaults missing sections', () => {
 	]);
 	// A result without sha/bytes is no result.
 	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'done', result: { bytes: 3 } })?.result, null);
+	// `staged` defaults to false; only a real true counts.
+	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'done' })?.staged, false);
+	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'done', staged: 'yes' })?.staged, false);
+	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'done', staged: true })?.staged, true);
 });
 
 test('normalizeDetail reads the contract detail sample', () => {
@@ -86,6 +100,7 @@ test('normalizeDetail reads the contract detail sample', () => {
 		['work_enqueue', 'work_checkout', 'work_complete']
 	);
 	assert.equal(detail.audit[2].reason, '1234 bytes');
+	assert.equal(detail.item.staged, CONTRACT.detail.item.staged);
 	assert.equal(normalizeDetail({ audit: [] }), null);
 	assert.deepEqual(normalizeDetail({ item: CONTRACT.detail.item, audit: [{ at: 1 }, null] })?.audit, []);
 });
@@ -221,6 +236,31 @@ test('statusChanges announces only items that changed', () => {
 	assert.deepEqual(statusChanges(new Map(), items), []);
 });
 
+test('canStagePacks: finished research.nonparty with a result only', () => {
+	const done = { kind: 'research.nonparty', status: 'done', result: { sha256: 'a', bytes: 1, content_type: 'application/json' } };
+	assert.equal(canStagePacks(done), true);
+	assert.equal(canStagePacks({ ...done, staged: true }), true); // re-staging is allowed
+	assert.equal(canStagePacks({ ...done, kind: 'scrape.urls' }), false);
+	assert.equal(canStagePacks({ ...done, status: 'leased' }), false);
+	assert.equal(canStagePacks({ ...done, result: null }), false);
+	// The seed's done item is scrape.urls, so it does not qualify.
+	for (const item of normalizeList(CONTRACT.list)?.items ?? []) assert.equal(canStagePacks(item), false);
+});
+
+test('normalizeStage and stagedText read the contract stage sample', () => {
+	const out = normalizeStage(CONTRACT.stage_response, 9);
+	assert.deepEqual(out, { id: 9, dir: 'packs-inbox/9', packs: ['EG'], count: 1 });
+	assert.equal(stagedText(out), 'Staged 1 pack in packs-inbox/9 — load it from the Packs page.');
+	assert.equal(
+		stagedText({ id: 4, dir: 'packs-inbox/4', packs: ['EG', 'IQ'], count: 2 }),
+		'Staged 2 packs in packs-inbox/4 — load them from the Packs page.'
+	);
+	assert.equal(stagedText({ id: 4, dir: 'packs-inbox/4', packs: [], count: 0 }), 'The bundle held no packs; packs-inbox/4 is empty.');
+	// Missing fields fall back to the id and the inbox convention.
+	assert.deepEqual(normalizeStage({ packs: ['EG', 3, 'IQ'] }, 5), { id: 5, dir: 'packs-inbox/5', packs: ['EG', 'IQ'], count: 2 });
+	assert.deepEqual(normalizeStage(null, 5), { id: 5, dir: 'packs-inbox/5', packs: [], count: 0 });
+});
+
 test('listPath and resultHref', () => {
 	assert.equal(listPath('all'), '/admin/work-items?limit=50');
 	assert.equal(listPath('failed'), '/admin/work-items?limit=50&status=failed');
@@ -316,6 +356,18 @@ test('work items round-trip against a stub admin API', async () => {
 			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/5/retry') {
 				assert.ok(req.headers['x-csrf'], 'retry sends x-csrf');
 				json(200, CONTRACT.retry_response);
+			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/9/stage-packs') {
+				assert.ok(req.headers['x-csrf'], 'stage sends x-csrf');
+				assert.deepEqual(JSON.parse(body), {});
+				json(200, CONTRACT.stage_response);
+			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/6/stage-packs') {
+				json(409, { error: 'job 6 is scrape.urls, not research.nonparty' });
+			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/7/stage-packs') {
+				res.writeHead(422);
+				res.end();
+			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/99/stage-packs') {
+				res.writeHead(404);
+				res.end();
 			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/9/retry') {
 				json(403, { code: 'csrf_failed', error: 'request token rejected' });
 			} else if (req.url === '/api/v1/admin/work-items/6') {
@@ -347,6 +399,15 @@ test('work items round-trip against a stub admin API', async () => {
 		});
 		assert.deepEqual(await retryWork(base, 5), { id: 5, status: 'pending' });
 		await assert.rejects(retryWork(base, 9), /request token rejected/);
+		assert.deepEqual(await stagePacks(base, 9), { id: 9, dir: 'packs-inbox/9', packs: ['EG'], count: 1 });
+		await assert.rejects(stagePacks(base, 6), (err) => {
+			assert.ok(err instanceof WorkError);
+			assert.equal(err.status, 409);
+			assert.match(err.message, /scrape\.urls, not research\.nonparty/);
+			return true;
+		});
+		await assert.rejects(stagePacks(base, 7), (err) => err instanceof WorkError && err.status === 422 && /packs\.v1/.test(err.message));
+		await assert.rejects(stagePacks(base, 99), (err) => err instanceof WorkError && err.status === 404);
 		const detail = await fetchWorkItem(base, 6);
 		assert.equal(detail.audit.length, 3);
 		assert.equal(await fetchResultText(base, 6), '{"pages":[]}');
@@ -358,6 +419,10 @@ test('work items round-trip against a stub admin API', async () => {
 			'POST /api/v1/admin/work-items',
 			'POST /api/v1/admin/work-items/5/retry',
 			'POST /api/v1/admin/work-items/9/retry',
+			'POST /api/v1/admin/work-items/9/stage-packs',
+			'POST /api/v1/admin/work-items/6/stage-packs',
+			'POST /api/v1/admin/work-items/7/stage-packs',
+			'POST /api/v1/admin/work-items/99/stage-packs',
 			'GET /api/v1/admin/work-items/6',
 			'GET /api/v1/admin/work-items/6/result',
 			'GET /api/v1/admin/work-items/7/result',

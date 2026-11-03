@@ -1,9 +1,11 @@
 //! Work queue (`work.sqlite`): pending jobs that plant workers lease.
 //!
-//! Its own database file, baseline (`migrations/work_schema_baseline.sql`)
-//! and `user_version` ([`WORK_SCHEMA_VERSION`]), independent of
-//! `handbook.sqlite`'s [`crate::db::SCHEMA_VERSION`]. Every state change
-//! and its `audit` row commit in one transaction (B1). Lease tokens are
+//! Its own database file, created at runtime with `CREATE … IF NOT
+//! EXISTS` DDL ([`migrate`], the `telemetry::migrate_tables` pattern):
+//! nothing under `migrations/` and no schema-version constant changes,
+//! so the ship rails pass, and `handbook.sqlite` is never touched.
+//! Every state change and its `audit` row commit in one transaction
+//! (B1). Lease tokens are
 //! minted by the caller and stored inside `lease_owner`
 //! (`<worker>:<token>`): the token, not the socket, owns a lease, so a
 //! worker that reconnects mid-job can still heartbeat and complete.
@@ -13,12 +15,8 @@ use rusqlite::{Connection, OptionalExtension};
 
 use contracts::Result;
 
-use crate::db::{apply_pragmas, in_transaction, version_gap};
+use crate::db::{apply_pragmas, in_transaction};
 use crate::store::Store;
-
-/// Current work-queue schema version (`pragma user_version` on
-/// `work.sqlite`; independent of the handbook and P2 versions).
-pub const WORK_SCHEMA_VERSION: i32 = 1;
 
 /// Attempts an item gets when the enqueuer names none.
 pub const DEFAULT_MAX_ATTEMPTS: i64 = 3;
@@ -37,21 +35,58 @@ pub fn open(store: &Store) -> Result<Connection> {
     Ok(conn)
 }
 
-/// Apply pending work-queue migrations. Idempotent. Same baseline
-/// discipline as [`crate::db::migrate_p2`]: fresh databases get the v1
-/// snapshot in one transaction; any other version is refused loudly.
+/// Create the work-queue tables when missing. Idempotent, one
+/// transaction. Additive changes only (a new table, a new index): the
+/// ship rails refuse ALTER/DROP, so a reshaped table is a new table.
 pub fn migrate(conn: &Connection) -> Result<()> {
     in_transaction(conn, || {
-        let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version == 0 {
-            conn.execute_batch(include_str!("../migrations/work_schema_baseline.sql"))?;
-            conn.pragma_update(None, "user_version", WORK_SCHEMA_VERSION)?;
-        } else if version != WORK_SCHEMA_VERSION {
-            return Err(version_gap("work.sqlite", version, WORK_SCHEMA_VERSION));
-        }
+        conn.execute_batch(TABLES)?;
         Ok(())
     })
 }
+
+/// `work.sqlite` DDL (spec `docs/specs/work-queue.md` §1).
+const TABLES: &str = "
+CREATE TABLE IF NOT EXISTS work_item(
+  id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL,                 -- e.g. 'research.nonparty' (web lane vocabulary)
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending', 'leased', 'done', 'failed')),
+  lease_owner TEXT,                   -- '<worker>:<lease token>' while leased, else NULL
+  lease_expires_at INTEGER,           -- unix seconds while leased, else NULL
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+  max_attempts INTEGER NOT NULL DEFAULT 3 CHECK(max_attempts >= 1),
+  result_sha256 TEXT,                 -- store blob/xx/yy/<sha>, NULL until done
+  result_bytes INTEGER,
+  result_content_type TEXT,
+  summary_json TEXT,                  -- small worker-reported summary
+  error TEXT,                         -- last failure reason
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  CHECK((status = 'leased') = (lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_work_item_status ON work_item(status, id);
+CREATE TABLE IF NOT EXISTS audit(
+  id INTEGER PRIMARY KEY,
+  at INTEGER NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  entity_id INTEGER NOT NULL,
+  reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_work_audit_entity ON audit(entity, entity_id);
+CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit
+BEGIN
+  SELECT RAISE(ABORT, 'audit is append-only: UPDATE rejected');
+END;
+CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit
+BEGIN
+  SELECT RAISE(ABORT, 'audit is append-only: DELETE rejected');
+END;
+";
 
 /// Where a finished item's result bytes live (store blob address).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -409,6 +444,25 @@ pub fn fail(
     })
 }
 
+/// Audit an action on an item that changes no queue state (e.g. staff
+/// staging a result as packs). `false` when the item does not exist.
+pub fn note(
+    conn: &Connection,
+    id: i64,
+    actor: &str,
+    action: &str,
+    reason: &str,
+    now: i64,
+) -> Result<bool> {
+    in_transaction(conn, || {
+        if get_inner(conn, id)?.is_none() {
+            return Ok(false);
+        }
+        audit(conn, now, actor, action, id, reason)?;
+        Ok(true)
+    })
+}
+
 /// Staff retry: a `failed` item goes back to `pending` with its
 /// attempts reset. `false` for any other status.
 pub fn retry(conn: &Connection, id: i64, actor: &str, now: i64) -> Result<bool> {
@@ -544,16 +598,24 @@ mod tests {
     }
 
     #[test]
-    fn migrate_is_idempotent_and_versioned_independently() {
+    fn migrate_is_idempotent_and_keeps_rows() {
         let (_dir, conn) = fresh();
+        let id = add(&conn, "scrape.urls", 3, 100);
         migrate(&conn).unwrap();
-        let v: i32 = conn
-            .query_row("PRAGMA user_version", [], |r| r.get(0))
+        migrate(&conn).unwrap();
+        assert_eq!(get(&conn, id).unwrap().unwrap().kind, "scrape.urls");
+        // Not the handbook database: none of its tables live here.
+        let handbook: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('authority', 'fact', 'config')",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(v, WORK_SCHEMA_VERSION);
-        conn.pragma_update(None, "user_version", 99).unwrap();
-        let err = migrate(&conn).unwrap_err().to_string();
-        assert!(err.contains("work.sqlite is at schema v99"), "{err}");
+        assert_eq!(handbook, 0);
+        assert!(note(&conn, id, "staff-1", "work_stage", "1 pack", 101).unwrap());
+        assert!(!note(&conn, id + 1, "staff-1", "work_stage", "x", 101).unwrap());
+        assert_eq!(actions(&conn, id), ["work_enqueue", "work_stage"]);
     }
 
     #[test]

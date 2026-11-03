@@ -6,6 +6,9 @@
 // GET  {apiBase}/admin/work-items/{id}        → { item, audit }
 // GET  {apiBase}/admin/work-items/{id}/result → result bytes (attachment)
 // POST {apiBase}/admin/work-items/{id}/retry  → { id, status } (failed → pending)
+// POST {apiBase}/admin/work-items/{id}/stage-packs → { id, dir, packs, count }
+//      (done research.nonparty with a result only: 409 otherwise, 422 when
+//      the result is not a packs.v1 bundle; re-staging overwrites)
 //
 // Shapes: docs/contracts/admin-work-items.json. `lease_owner` is the
 // worker name only; lease tokens never leave the server. Unknown kinds
@@ -39,6 +42,7 @@ import { authError, readErrorBody } from './http-errors.js';
  * @property {WorkResult | null} result
  * @property {unknown} summary
  * @property {unknown} payload
+ * @property {boolean} staged `<store>/packs-inbox/<id>/` exists
  */
 
 /**
@@ -78,6 +82,14 @@ import { authError, readErrorBody } from './http-errors.js';
  */
 
 /** @typedef {{ item: WorkItem, audit: AuditRow[] }} WorkDetail */
+
+/**
+ * @typedef {object} StageResult
+ * @property {number} id
+ * @property {string} dir store-relative, e.g. `packs-inbox/9`
+ * @property {string[]} packs ISO2 codes staged
+ * @property {number} count
+ */
 
 /** @type {WorkStatus[]} */
 export const STATUSES = ['pending', 'leased', 'done', 'failed'];
@@ -197,7 +209,8 @@ export function normalizeItem(row) {
 					}
 				: null,
 		summary: row.summary ?? null,
-		payload: row.payload ?? null
+		payload: row.payload ?? null,
+		staged: row.staged === true
 	};
 }
 
@@ -488,6 +501,46 @@ export function statusChanges(before, items) {
 }
 
 /**
+ * True when the server takes `stage-packs` for this item: a finished
+ * `research.nonparty` job with a result (anything else answers 409).
+ * Pure (tested).
+ * @param {Pick<WorkItem, 'kind' | 'status' | 'result'>} item
+ * @returns {boolean}
+ */
+export function canStagePacks(item) {
+	return item.kind === 'research.nonparty' && item.status === 'done' && item.result !== null;
+}
+
+/**
+ * Normalize a stage answer (falls back to the convention
+ * `packs-inbox/<id>` when `dir` is missing). Pure (tested).
+ * @param {any} data
+ * @param {number} id
+ * @returns {StageResult}
+ */
+export function normalizeStage(data, id) {
+	const packs = Array.isArray(data?.packs) ? data.packs.filter((/** @type {unknown} */ p) => typeof p === 'string') : [];
+	return {
+		id: typeof data?.id === 'number' ? data.id : id,
+		dir: typeof data?.dir === 'string' && data.dir !== '' ? data.dir : `packs-inbox/${id}`,
+		packs,
+		count: typeof data?.count === 'number' && Number.isFinite(data.count) ? data.count : packs.length
+	};
+}
+
+/**
+ * "Staged 1 pack in packs-inbox/9 — load it from the Packs page".
+ * Pure (tested).
+ * @param {StageResult} out
+ * @returns {string}
+ */
+export function stagedText(out) {
+	if (out.count === 0) return `The bundle held no packs; ${out.dir} is empty.`;
+	const one = out.count === 1;
+	return `Staged ${out.count} pack${one ? '' : 's'} in ${out.dir} — load ${one ? 'it' : 'them'} from the Packs page.`;
+}
+
+/**
  * Re-run `run` every `intervalMs` while the tab is visible: one run at
  * a time (the next is timed from when the last settles), paused while
  * `doc.hidden`, run at once when the tab comes back. `now()` runs
@@ -580,12 +633,14 @@ async function send(fetchFn, url, init, what) {
 
 /**
  * Throw the server's own words for a failed answer: auth failures via
- * the shared helper, an `{"error": "..."}` body verbatim otherwise.
+ * the shared helper, an `{"error": "..."}` body verbatim otherwise,
+ * then the caller's `hints` for a bare status.
  * @param {Response} res
  * @param {string} what
+ * @param {Record<number, string>} [hints]
  * @returns {Promise<void>}
  */
-async function throwForStatus(res, what) {
+async function throwForStatus(res, what, hints = {}) {
 	if (res.ok) return;
 	const body = await readErrorBody(res);
 	const auth = authError(res.status, body);
@@ -593,6 +648,7 @@ async function throwForStatus(res, what) {
 	const server = typeof body?.error === 'string' && body.error !== '' ? body.error : null;
 	const verb = res.status < 500 ? 'refused' : 'failed';
 	if (server) throw new WorkError(`${what} ${verb} (HTTP ${res.status}): ${server}`, res.status);
+	if (hints[res.status]) throw new WorkError(`${what} ${verb} (HTTP ${res.status}): ${hints[res.status]}`, res.status);
 	if (res.status === 413) throw new WorkError(`${what} refused (HTTP 413): the payload is over 64 KiB.`, 413);
 	if (res.status === 404) throw new WorkError(`${what}: not found (HTTP 404).`, 404);
 	throw new WorkError(`${what} ${verb}: HTTP ${res.status}.`, res.status);
@@ -619,9 +675,10 @@ async function readJson(res, what) {
  * @param {unknown} body
  * @param {string} what
  * @param {typeof fetch} fetchFn
+ * @param {Record<number, string>} [hints]
  * @returns {Promise<any>}
  */
-async function postWork(apiBase, path, body, what, fetchFn) {
+async function postWork(apiBase, path, body, what, fetchFn, hints) {
 	const res = await send(
 		fetchFn,
 		`${apiBase}${path}`,
@@ -632,7 +689,7 @@ async function postWork(apiBase, path, body, what, fetchFn) {
 		},
 		what
 	);
-	await throwForStatus(res, what);
+	await throwForStatus(res, what, hints);
 	return readJson(res, what);
 }
 
@@ -707,4 +764,22 @@ export async function retryWork(apiBase, id, fetchFn = fetch) {
 		id: typeof data?.id === 'number' ? data.id : id,
 		status: typeof data?.status === 'string' ? data.status : 'pending'
 	};
+}
+
+/**
+ * Copy a finished research.nonparty result into `<store>/packs-inbox/<id>/`
+ * for the Packs page (re-staging overwrites).
+ * @param {string} apiBase
+ * @param {number} id
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<StageResult>}
+ */
+export async function stagePacks(apiBase, id, fetchFn = fetch) {
+	const path = `/admin/work-items/${encodeURIComponent(String(id))}/stage-packs`;
+	const data = await postWork(apiBase, path, {}, `Staging job ${id}`, fetchFn, {
+		404: 'no such job.',
+		409: 'only a finished research.nonparty job with a result can be staged.',
+		422: 'the result is not a packs.v1 bundle.'
+	});
+	return normalizeStage(data, id);
 }

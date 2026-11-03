@@ -644,7 +644,15 @@ fn clean_content_type(value: Option<&str>) -> String {
 // Staff API
 // ---------------------------------------------------------------------------
 
-fn item_json(item: &work::WorkItem) -> Value {
+/// Where "Stage as packs" writes one item's pack files (the staff
+/// Packs page loads from here): `<store>/packs-inbox/<id>/`.
+pub(crate) const PACKS_INBOX: &str = "packs-inbox";
+
+fn inbox_dir(state: &AppState, id: i64) -> std::path::PathBuf {
+    state.store_root.join(PACKS_INBOX).join(id.to_string())
+}
+
+fn item_json(item: &work::WorkItem, staged: bool) -> Value {
     json!({
         "id": item.id,
         "kind": item.kind,
@@ -662,6 +670,7 @@ fn item_json(item: &work::WorkItem) -> Value {
         })),
         "summary": item.summary_json.as_deref().and_then(|s| serde_json::from_str::<Value>(s).ok()),
         "payload": serde_json::from_str::<Value>(&item.payload_json).unwrap_or(json!({})),
+        "staged": staged,
     })
 }
 
@@ -702,7 +711,10 @@ async fn list(
         })
         .collect();
     Json(json!({
-        "items": items.iter().map(item_json).collect::<Vec<_>>(),
+        "items": items
+            .iter()
+            .map(|item| item_json(item, inbox_dir(&state, item.id).is_dir()))
+            .collect::<Vec<_>>(),
         "workers": connected_workers(),
         "kinds": kinds,
         "counts": counts
@@ -778,7 +790,7 @@ async fn detail(_auth: AdminAuth, State(state): State<AppState>, Path(id): Path<
     };
     match (work::get(&conn, id), work::audit_for(&conn, id)) {
         (Ok(Some(item)), Ok(audit)) => Json(json!({
-            "item": item_json(&item),
+            "item": item_json(&item, inbox_dir(&state, id).is_dir()),
             "audit": audit.iter().map(|row| json!({
                 "at": row.at, "actor": row.actor, "action": row.action, "reason": row.reason,
             })).collect::<Vec<_>>(),
@@ -840,6 +852,120 @@ async fn retry(auth: AdminAuth, State(state): State<AppState>, Path(id): Path<i6
     }
 }
 
+/// A pack id safe as a file stem (`EG`, `usa-wa`): 1-64 of `[A-Za-z0-9_-]`.
+fn valid_pack_id(id: &str) -> bool {
+    (1..=64).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// Pack files out of a `packs.v1` bundle: `(stem, pretty JSON)` each.
+/// Shape checks only (object, safe unique id); the Packs page runs the
+/// full pack rules (`xtask packs-load`) before anything loads.
+fn bundle_packs(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, &'static str> {
+    let bundle: Value = serde_json::from_slice(bytes).map_err(|_| "result is not JSON")?;
+    if bundle["format"] != "packs.v1" {
+        return Err("result is not a packs.v1 bundle");
+    }
+    let packs = bundle["packs"]
+        .as_array()
+        .ok_or("bundle has no packs array")?;
+    let mut out: Vec<(String, Vec<u8>)> = Vec::with_capacity(packs.len());
+    for pack in packs {
+        let id = pack["pack"].as_str().filter(|id| valid_pack_id(id));
+        let Some(id) = id else {
+            return Err("a pack has no safe pack id");
+        };
+        if out.iter().any(|(stem, _)| stem == id) {
+            return Err("duplicate pack id in bundle");
+        }
+        let mut file = serde_json::to_vec_pretty(pack).expect("value serializes");
+        file.push(b'\n');
+        out.push((id.to_string(), file));
+    }
+    Ok(out)
+}
+
+/// Write `files` as `<dir>/<stem>.json`, replacing any earlier staging
+/// whole (staged in a sibling temp dir, then renamed into place).
+fn write_inbox(dir: &std::path::Path, files: &[(String, Vec<u8>)]) -> std::io::Result<()> {
+    let parent = dir.parent().expect("inbox dir has a parent");
+    std::fs::create_dir_all(parent)?;
+    let tmp = parent.join(format!(".tmp-{:016x}", rand::random::<u64>()));
+    std::fs::create_dir(&tmp)?;
+    let written = files
+        .iter()
+        .try_for_each(|(stem, bytes)| std::fs::write(tmp.join(format!("{stem}.json")), bytes));
+    if let Err(e) = written {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(e);
+    }
+    if dir.exists() {
+        std::fs::remove_dir_all(dir)?;
+    }
+    std::fs::rename(&tmp, dir)
+}
+
+/// `POST …/work-items/{id}/stage-packs`: a done `research.nonparty`
+/// result's packs land in `<store>/packs-inbox/<id>/` for the Packs
+/// page to load. Re-staging replaces the folder. Audited `work_stage`.
+async fn stage_packs(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Response {
+    let Some(conn) = open_work(&state) else {
+        return store_unavailable();
+    };
+    let item = match work::get(&conn, id) {
+        Ok(Some(item)) => item,
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such work item"),
+        Err(_) => return store_unavailable(),
+    };
+    let result = match (&item.result, item.kind.as_str(), item.status.as_str()) {
+        (Some(result), "research.nonparty", "done") => result,
+        _ => {
+            return json_error(
+                StatusCode::CONFLICT,
+                "only a done research.nonparty item with a result stages as packs",
+            );
+        }
+    };
+    let Ok(bytes) = Store::new(&state.store_root).read_blob(&result.sha256) else {
+        return store_unavailable();
+    };
+    let files = match bundle_packs(&bytes) {
+        Ok(files) => files,
+        Err(why) => return json_error(StatusCode::UNPROCESSABLE_ENTITY, why),
+    };
+    let dir = inbox_dir(&state, id);
+    if let Err(e) = write_inbox(&dir, &files) {
+        tracing::warn!("stage packs for work item {id}: {e}");
+        return store_unavailable();
+    }
+    let reason = format!("{} pack(s) to {PACKS_INBOX}/{id}", files.len());
+    if work::note(
+        &conn,
+        id,
+        &auth.user.user_id,
+        "work_stage",
+        &reason,
+        unix_now(),
+    )
+    .is_err()
+    {
+        return store_unavailable();
+    }
+    Json(json!({
+        "id": id,
+        "dir": format!("{PACKS_INBOX}/{id}"),
+        "packs": files.iter().map(|(stem, _)| stem).collect::<Vec<_>>(),
+        "count": files.len(),
+    }))
+    .into_response()
+}
+
 /// Worker socket route, merged into the PUBLIC `/apostille` API.
 pub(crate) fn public_routes() -> Router<AppState> {
     Router::new().route("/api/v1/worker/ws", get(ws_upgrade))
@@ -858,6 +984,10 @@ pub fn admin_router(state: AppState) -> Router {
             get(result),
         )
         .route("/apostille/api/v1/admin/work-items/{id}/retry", post(retry))
+        .route(
+            "/apostille/api/v1/admin/work-items/{id}/stage-packs",
+            post(stage_packs),
+        )
         .with_state(state)
 }
 
@@ -1398,6 +1528,115 @@ mod tests {
         }
     }
 
+    /// Put a finished item with `bytes` as its result straight into the
+    /// queue (the socket path is covered by the lifecycle test).
+    fn finished(fx: &Fixture, kind: &str, bytes: &[u8]) -> i64 {
+        let conn = fx.work();
+        let id = work::enqueue(
+            &conn,
+            &work::NewItem {
+                kind,
+                payload_json: "{}",
+                max_attempts: 3,
+                actor: "staff-1",
+                at: 1,
+            },
+        )
+        .unwrap();
+        let kinds = vec![kind.to_string()];
+        let lease = work::Checkout {
+            owner: "plant:t",
+            actor: "plant",
+            kinds: &kinds,
+            lease_secs: LEASE_SECS,
+            now: unix_now(),
+        };
+        work::checkout(&conn, &lease).unwrap().unwrap();
+        let sha = Store::new(&fx.state.store_root).write_blob(bytes).unwrap();
+        let result = work::ResultRef {
+            sha256: sha,
+            bytes: bytes.len() as i64,
+            content_type: "application/json".to_string(),
+        };
+        assert!(work::complete(&conn, id, "plant:t", "plant", Some(&result), None, 2).unwrap());
+        id
+    }
+
+    #[tokio::test]
+    async fn stage_packs_writes_the_inbox_and_refuses_other_results() {
+        let fx = Fixture::new(Some(TOKEN));
+        let uri = |id: i64| format!("/apostille/api/v1/admin/work-items/{id}/stage-packs");
+        let bundle = json!({"format": "packs.v1", "packs": [
+            {"pack": "EG", "version": 1, "authorities": []},
+            {"pack": "ER", "version": 1, "authorities": []}
+        ], "report": []});
+        let id = finished(&fx, "research.nonparty", bundle.to_string().as_bytes());
+        let (status, staged) = call_json(fx.admin(), staff("POST", &uri(id), None)).await;
+        assert_eq!(status, StatusCode::OK, "{staged}");
+        assert_eq!(staged["dir"], format!("packs-inbox/{id}"));
+        assert_eq!(staged["packs"], json!(["EG", "ER"]));
+        let dir = fx.state.store_root.join("packs-inbox").join(id.to_string());
+        let eg: Value =
+            serde_json::from_slice(&std::fs::read(dir.join("EG.json")).unwrap()).unwrap();
+        assert_eq!(eg["pack"], "EG");
+        // Re-staging replaces the folder whole.
+        std::fs::write(dir.join("stale.json"), b"{}").unwrap();
+        let (status, _) = call_json(fx.admin(), staff("POST", &uri(id), None)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!dir.join("stale.json").exists());
+        // The list and the detail say it is staged; the audit says who.
+        let (_, listed) = call_json(
+            fx.admin(),
+            staff("GET", "/apostille/api/v1/admin/work-items", None),
+        )
+        .await;
+        assert_eq!(listed["items"][0]["staged"], true);
+        let detail = format!("/apostille/api/v1/admin/work-items/{id}");
+        let (_, detail) = call_json(fx.admin(), staff("GET", &detail, None)).await;
+        let last = detail["audit"].as_array().unwrap().last().unwrap().clone();
+        assert_eq!(
+            (last["action"].as_str(), last["actor"].as_str()),
+            (Some("work_stage"), Some("staff-1"))
+        );
+
+        // Other kinds, unsafe ids and non-bundles are refused; nothing is written.
+        let scrape = finished(&fx, "scrape.urls", b"{}");
+        let (status, _) = call_json(fx.admin(), staff("POST", &uri(scrape), None)).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let evil = json!({"format": "packs.v1", "packs": [{"pack": "../../etc"}]});
+        let evil = finished(&fx, "research.nonparty", evil.to_string().as_bytes());
+        let (status, _) = call_json(fx.admin(), staff("POST", &uri(evil), None)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let not_bundle = finished(&fx, "research.nonparty", b"{\"pages\": []}");
+        let (status, _) = call_json(fx.admin(), staff("POST", &uri(not_bundle), None)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        for refused in [scrape, evil, not_bundle] {
+            assert!(
+                !fx.state
+                    .store_root
+                    .join("packs-inbox")
+                    .join(refused.to_string())
+                    .exists()
+            );
+        }
+        let (status, _) = call_json(fx.admin(), staff("POST", &uri(9999), None)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn bundle_packs_checks_ids() {
+        assert!(valid_pack_id("EG") && valid_pack_id("usa-wa"));
+        for bad in ["", "..", "a/b", "a.b", &"x".repeat(65)] {
+            assert!(!valid_pack_id(bad), "{bad:?}");
+        }
+        let dup = json!({"format": "packs.v1", "packs": [{"pack": "EG"}, {"pack": "EG"}]});
+        assert_eq!(
+            bundle_packs(dup.to_string().as_bytes()).unwrap_err(),
+            "duplicate pack id in bundle"
+        );
+        assert!(bundle_packs(b"not json").is_err());
+    }
+
     /// The admin contract seed matches what `item_json` emits.
     #[test]
     fn item_json_matches_the_contract_keys() {
@@ -1421,7 +1660,7 @@ mod tests {
             created_at: 1,
             updated_at: 2,
         };
-        let got = item_json(&item);
+        let got = item_json(&item, false);
         let want = seed["list"]["items"][0].as_object().unwrap();
         let mut got_keys: Vec<&String> = got.as_object().unwrap().keys().collect();
         let mut want_keys: Vec<&String> = want.keys().collect();

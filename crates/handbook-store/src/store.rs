@@ -46,8 +46,9 @@ impl Store {
         self.root.join("p2.sqlite")
     }
 
-    /// Path of the work-queue database (`migrations/work_schema_baseline.sql`;
-    /// spec `docs/specs/work-queue.md`). Opened only via [`crate::work::open`].
+    /// Path of the work-queue database (tables created at runtime by
+    /// [`crate::work::migrate`]; spec `docs/specs/work-queue.md`). Opened
+    /// only via [`crate::work::open`].
     pub fn work_db_path(&self) -> PathBuf {
         self.root.join("work.sqlite")
     }

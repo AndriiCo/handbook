@@ -30,6 +30,7 @@ const ADMIN_ROUTES = [
 	'/(admin)/staff-login',
 	'/(admin)/enrol',
 	'/(admin)/workers',
+	'/(admin)/work',
 	'/(admin)/calls',
 	'/(admin)/calls/[id]'
 ];
