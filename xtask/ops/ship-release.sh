@@ -90,6 +90,12 @@ echo "== 2. prod-before scoreboard"
 node .agents/scoreboard/scoreboard.mjs --out web/shots/prod-before.json 2>&1 | tail -2
 
 echo "== 3. worktree build"
+# zig 0.17.0 for cargo-zigbuild: the /tmp copy while macOS has not purged
+# it (the 11-03 00:00 sweep emptied its lib/), else Homebrew's.
+ZIG_TMP=/tmp/zig-aarch64-macos-0.17.0
+"$ZIG_TMP/zig" cc -v >/dev/null 2>&1 && export PATH="$ZIG_TMP:$PATH"
+[ "$(zig version 2>/dev/null)" = "0.17.0" ] && zig cc -v >/dev/null 2>&1 \
+    || { echo "ABORT: no working zig 0.17.0 (brew install zig)"; exit 1; }
 WT="../hb-ship-$VERSION"
 [ ! -e "$WT" ] || { echo "ABORT: $WT exists (remove it first)"; exit 1; }
 git worktree add --detach "$WT" "$SHA" || exit 1
@@ -99,7 +105,6 @@ else
     (cd "$WT/web" && npm ci --no-audit --no-fund) || exit 1
 fi
 export CARGO_TARGET_DIR="$PWD/target"
-export PATH="/tmp/zig-aarch64-macos-0.17.0:$PATH"
 (cd "$WT" && cargo zigbuild --release -p web -p xtask --target x86_64-unknown-linux-gnu) || exit 1
 R="$PWD/target/x86_64-unknown-linux-gnu/release"
 file "$R/web" | grep -q "ELF 64-bit" || { echo "ABORT: staged web is not an ELF binary"; exit 1; }
