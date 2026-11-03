@@ -243,3 +243,4 @@
 | 334 | 2026-11-03 02:02Z | Staging Run 20 recorded: e25fd3e staging-green; live chain accepted on the staging stand | 9/10 + demo 3/3; prod VPN blocks T1 |
 | 335 | 2026-11-03 02:12Z | SA-26 requests: synchronous compose preconditions, office run_id, step events; sm breakpoint in px | web 360 green, clippy clean |
 | 336 | 2026-11-03 02:19Z | CR1 slice (SA-25, builder): labels.fedex_base_url, allowlisted to the two FedEx roots | fedex tests 7 green, clippy clean |
+| 337 | 2026-11-03 02:28Z | VPN is up, ship T1 | e25fd3e live (prev 4dcd234); prod 5/10 → 5/10, no regressions |
