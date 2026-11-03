@@ -1,0 +1,61 @@
+{
+  "id": "ord_b3Nz8wQ1tY",
+  "kind": "address_label",
+  "status": "labels_ready",
+  "mode": "test",
+  "authority": {
+    "slug": "usa-wa-sos",
+    "name": "USA — Washington Secretary of State"
+  },
+  "path_id": "birth-certificate",
+  "created_at": 1793664000,
+  "updated_at": 1793664400,
+  "amount": {
+    "currency": "usd",
+    "total_cents": 0,
+    "lines": []
+  },
+  "return_to": {
+    "name": "SYNTHETIC Customer",
+    "city": "Springfield",
+    "region": "IL",
+    "postal_code": "62701",
+    "country": "US"
+  },
+  "legs": [
+    {
+      "role": "outbound",
+      "carrier": "usps",
+      "service": "USPS_FIRST_CLASS",
+      "shipment_id": 54,
+      "status": "label_ready",
+      "tracking_number": null,
+      "tracking_url": null,
+      "label_url": "/apostille/api/v1/p2/orders/ord_b3Nz8wQ1tY/labels/outbound.pdf",
+      "topic": "shipment:54"
+    }
+  ],
+  "form_fill_id": null,
+  "events": [
+    {
+      "at": 1793664000,
+      "kind": "order.created",
+      "text": "Order placed",
+      "leg": null
+    },
+    {
+      "at": 1793664400,
+      "kind": "label.ready",
+      "text": "Address label ready to print",
+      "leg": "outbound"
+    }
+  ],
+  "receipt": null,
+  "actions": [
+    {
+      "id": "download_labels",
+      "label": "Download label"
+    }
+  ],
+  "topic": "billing:cust_demo01"
+}

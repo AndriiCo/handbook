@@ -1,0 +1,9 @@
+[
+  {
+    "type": "tracking.update",
+    "topic": "shipment:51",
+    "shipment_id": 51,
+    "status": "in_transit",
+    "at": 1793757600
+  }
+]
