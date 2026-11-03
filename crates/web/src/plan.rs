@@ -1381,6 +1381,22 @@ mod live {
                     println!("PLAN {slug} {}", row.0);
                     println!("REPORT {slug} {}", row.1);
                     println!("PROVENANCE {slug} {}", row.2);
+                    // Staging stand only: accept the plan so the dossier shows it.
+                    if std::env::var("LIVE_ACCEPT_PLAN").as_deref() == Ok("1")
+                        && let Ok(Some(id)) = conn
+                            .query_row(
+                                "SELECT id FROM page_plan WHERE run_id = ?1",
+                                [run_id as i64],
+                                |r| r.get::<_, i64>(0),
+                            )
+                            .optional()
+                    {
+                        println!(
+                            "ACCEPT {slug} plan {id} {:?}",
+                            decide(&conn, id, true, "live-harness", unix_now())
+                                .map(|r| r.map(|r| r.status))
+                        );
+                    }
                 }
                 Err(e) => println!("LIVE {slug} FAILED {e}"),
             }
