@@ -1,0 +1,30 @@
+{
+	"slug": "usa-wa-sos",
+	"name": "USA — Washington Secretary of State",
+	"questions": [
+		{
+			"topic": "processing_time",
+			"question": "How many business days does a mailed apostille request take right now?",
+			"reason": "unconfirmed",
+			"why": "Drafted from a page but not yet confirmed by staff.",
+			"priority": "medium",
+			"fact_ids": [4102]
+		}
+	],
+	"contacts": [
+		{
+			"id": 501,
+			"kind": "email",
+			"value": "apostilles@example.gov",
+			"details": "",
+			"visibility": "private"
+		},
+		{
+			"id": 502,
+			"kind": "phone",
+			"value": "+13605550100",
+			"details": "ext. 2",
+			"visibility": "private"
+		}
+	]
+}

@@ -1,0 +1,59 @@
+{
+	"routes": {
+		"/config": { "name": "cw-config", "ready": "Payments (Stripe)", "build": "admin" },
+		"/config#stripe": { "name": "cw-config-stripe", "ready": "Hosted Checkout", "build": "admin" },
+		"/workers": { "name": "cw-workers", "ready": "Watch sweep", "build": "admin" },
+		"/workers?authority=usa-wa-sos&targets=https://www.example.gov/apostilles,example.gov/forms/request.pdf,http://example.test/fees,Desk@Example.GOV,(360)%20555-0142,555-01,apostilles@example.gov#sweep": {
+			"name": "cw-workers-sweep",
+			"ready": "Issuing office",
+			"build": "admin"
+		}
+	},
+	"api": [
+		{ "path": "^/apostille/api/v1/setup/status$", "json": { "setup_required": false } },
+		{ "path": "^/apostille/api/v1/config$", "fixture": "admin-config.json" },
+		{ "path": "^/apostille/api/v1/workers/status$", "fixture": "admin-workers-status.json" },
+		{ "path": "^/apostille/api/v1/workers/authorities$", "fixture": "admin-workers-authorities.json" },
+		{ "path": "^/apostille/api/v1/workers/captures$", "fixture": "admin-captures.json" },
+		{ "path": "^/apostille/api/v1/authorities$", "fixture": "authorities.json" },
+		{ "path": "^/apostille/api/v1/admin/authorities$", "fixture": "admin-staff-authorities.json" },
+		{
+			"path": "^/apostille/api/v1/admin/first-source/usa-wa-sos/questions$",
+			"fixture": "admin-first-source-questions.json"
+		},
+		{
+			"path": "^/apostille/api/v1/admin/first-source/[^/]+/questions$",
+			"json": { "slug": "", "name": "", "questions": [], "contacts": [] }
+		},
+		{
+			"method": "POST",
+			"path": "^/apostille/api/v1/workers/sweep$",
+			"json": {
+				"results": [
+					{
+						"slug": "usa-wa-sos",
+						"url": "https://www.example.gov/apostilles",
+						"outcome": "created",
+						"capture_id": 121,
+						"detail": null
+					}
+				],
+				"summary": { "total": 1, "created": 1, "duplicate": 0, "failed": 0, "skipped": 0 }
+			}
+		},
+		{
+			"method": "POST",
+			"path": "^/apostille/api/v1/admin/first-source/[^/]+/contacts$",
+			"status": 201,
+			"json": {
+				"id": 503,
+				"created": true,
+				"contacts": [
+					{ "id": 501, "kind": "email", "value": "apostilles@example.gov", "details": "", "visibility": "private" },
+					{ "id": 502, "kind": "phone", "value": "+13605550100", "details": "ext. 2", "visibility": "private" },
+					{ "id": 503, "kind": "email", "value": "desk@example.gov", "details": "", "visibility": "private" }
+				]
+			}
+		}
+	]
+}

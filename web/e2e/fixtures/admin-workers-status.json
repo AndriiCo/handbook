@@ -1,0 +1,10 @@
+{
+	"mode": "manual",
+	"fetch": { "backend": "ureq", "timeout_secs": 20, "max_body_bytes": 8388608 },
+	"queue": { "captures": 42, "sources": 12, "open_fetch_failures": 1 },
+	"last_sweep": {
+		"at": 1793740800,
+		"actor": "staff-synthetic",
+		"summary": "3 items: 2 created, 1 duplicate, 0 failed, 0 skipped"
+	}
+}

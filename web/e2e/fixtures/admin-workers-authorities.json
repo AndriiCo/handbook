@@ -1,0 +1,35 @@
+{
+	"authorities": [
+		{
+			"slug": "hcch",
+			"name": "HCCH — Apostille Section",
+			"sources": 2,
+			"captures": 6,
+			"last_capture_at": 1793660400,
+			"open_fetch_failures": 0,
+			"last_analysis_at": 1793661000,
+			"last_prompt_version": "facts-v7"
+		},
+		{
+			"slug": "usa-wa-sos",
+			"name": "USA — Washington Secretary of State",
+			"sources": 4,
+			"captures": 21,
+			"last_capture_at": 1793746100,
+			"open_fetch_failures": 1,
+			"last_analysis_at": 1793746400,
+			"last_prompt_version": "facts-v7"
+		},
+		{
+			"slug": "vietnam",
+			"name": "Vietnam — Ministry of Foreign Affairs",
+			"sources": 6,
+			"captures": 15,
+			"last_capture_at": 1792012800,
+			"open_fetch_failures": 0,
+			"last_analysis_at": null,
+			"last_prompt_version": null
+		}
+	],
+	"count": 3
+}
