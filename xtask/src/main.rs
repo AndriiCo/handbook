@@ -16,6 +16,7 @@ mod backup;
 mod brand_assets;
 mod build_handbook;
 mod config;
+mod config_import;
 mod crawl;
 mod demo_vietnam;
 mod eval;
@@ -63,6 +64,7 @@ fn main() {
         Some("packs-load") => run_packs_load(&args[1..]),
         Some("config-enroll") => config::run_enroll(&args[1..]),
         Some("config-set") => config::run_set(&args[1..]),
+        Some("config-import") => config_import::run(&args[1..]),
         Some("config-get") => config::run_get(&args[1..]),
         Some("config-verify") => config::run_verify(&args[1..]),
         Some("config-rotate") => config::run_rotate(&args[1..]),
@@ -119,6 +121,7 @@ Tasks:
   packs-validate  validate packs/*.json (F13; needs_review invariants)
   packs-load  load packs into a store [--store <path>] (never writes facts)
   config-enroll|set|get|verify|rotate  encrypted config (see secure-config.md)
+  config-import  seal many keys from one JSON payload in one transaction (--file|--stdin, --mode merge|replace, --dry-run, --enroll-if-empty)
   setup-key-mint  mint the first-boot setup key (§9; prints once)
   admin-invite  staff enrolment invite (spec customer-auth.md §5.1)
   admin-offboard  staff offboard: sessions, credentials, lock (§5.6)

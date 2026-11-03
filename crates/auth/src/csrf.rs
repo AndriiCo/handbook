@@ -3,7 +3,7 @@
 //! Mutations require all three: session cookie, an allowed `Origin`,
 //! and the `hb_csrf` cookie echoed in the `x-csrf` header.
 
-use crate::{ADMIN_HOST, PUBLIC_HOST};
+use crate::{admin_host, public_host};
 
 /// Fresh 256-bit CSRF token, hex.
 pub fn mint_token() -> String {
@@ -46,7 +46,7 @@ pub fn origin_allowed(origin: Option<&str>, dev_localhost: bool) -> bool {
     if rest.contains('/') {
         return false;
     }
-    if scheme == "https" && (rest == PUBLIC_HOST || rest == ADMIN_HOST) {
+    if scheme == "https" && (rest == public_host() || rest == admin_host()) {
         return true;
     }
     if dev_localhost && scheme == "http" {

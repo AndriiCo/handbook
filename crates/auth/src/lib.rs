@@ -25,10 +25,47 @@ pub const CSRF_COOKIE: &str = "hb_csrf";
 /// Header carrying the CSRF token echo on mutations.
 pub const CSRF_HEADER: &str = "x-csrf";
 
-/// Admin host (decided 2026-10-26; `.ui` was a typo).
+/// Production admin host: the default until [`init_hosts`] runs.
 pub const ADMIN_HOST: &str = "admin.andrii.ai";
-/// Public host.
+/// Production public host: the default until [`init_hosts`] runs.
 pub const PUBLIC_HOST: &str = "andrii.ai";
+
+static HOSTS: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+
+/// Fix the served host names once at boot from `net.public_host`: the
+/// admin host is `admin.<public>`. The first call wins; a blank or
+/// malformed name keeps the production defaults. Returns whether this
+/// call set them.
+pub fn init_hosts(public_host: &str) -> bool {
+    let host = public_host
+        .trim()
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    let valid = !host.is_empty()
+        && host.len() <= 200
+        && host.split('.').all(|label| {
+            !label.is_empty()
+                && label
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        });
+    if !valid {
+        return false;
+    }
+    HOSTS.set((host.clone(), format!("admin.{host}"))).is_ok()
+}
+
+/// The public host this server answers as (default [`PUBLIC_HOST`]).
+pub fn public_host() -> &'static str {
+    HOSTS
+        .get()
+        .map_or(PUBLIC_HOST, |(public, _)| public.as_str())
+}
+
+/// The admin host this server answers as (default [`ADMIN_HOST`]).
+pub fn admin_host() -> &'static str {
+    HOSTS.get().map_or(ADMIN_HOST, |(_, admin)| admin.as_str())
+}
 
 /// Customer idle timeout, seconds (24h; SECURITY.md wins).
 pub const CUSTOMER_IDLE_SECS: i64 = 86_400;
@@ -635,6 +672,25 @@ mod tests {
         assert_eq!(revoke_user_sessions(&conn, "u1").expect("revoke"), 2);
         assert_eq!(get_session(&conn, "a").expect("get"), None);
         delete_session(&conn, "b").expect("delete is idempotent");
+    }
+
+    #[test]
+    fn host_names_default_to_production_and_reject_garbage() {
+        // The process-wide names are not set in unit tests: defaults hold.
+        assert_eq!(public_host(), PUBLIC_HOST);
+        assert_eq!(admin_host(), ADMIN_HOST);
+        // Garbage never sets them (and leaves the defaults in place).
+        for bad in [
+            "",
+            "  ",
+            "exa mple.test",
+            "a..b",
+            "x/y",
+            "https://andrii.ai",
+        ] {
+            assert!(!init_hosts(bad), "{bad:?}");
+        }
+        assert_eq!(admin_host(), ADMIN_HOST);
     }
 
     #[test]

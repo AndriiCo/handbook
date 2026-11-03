@@ -26,14 +26,14 @@ use axum::{
 use tower::ServiceExt as _;
 
 /// True when a raw `Host` header value addresses the admin branch:
-/// exactly [`ADMIN_HOST`](auth::ADMIN_HOST), case-insensitive,
+/// exactly [`auth::admin_host`], case-insensitive,
 /// with an optional `:port` suffix stripped. No loopback/dev
 /// exception here — plain-HTTP dev keeps its own two listeners
 /// and never routes through this dispatcher.
 pub fn is_admin_host(host: &str) -> bool {
     host.split_once(':')
         .map_or(host, |(bare, _)| bare)
-        .eq_ignore_ascii_case(auth::ADMIN_HOST)
+        .eq_ignore_ascii_case(auth::admin_host())
 }
 
 /// Both branches for the dispatcher (cloned per request; `Router`

@@ -187,7 +187,7 @@
 			</Sidebar.Content>
 			<Sidebar.Footer>
 				<p class="m-0 px-2 text-xs text-ink-muted group-data-[collapsible=icon]:hidden" role="note">
-					Staff only — served from admin.andrii.ai. Every action is audited.
+					Staff only — every action is audited.
 				</p>
 			</Sidebar.Footer>
 			<Sidebar.Rail />

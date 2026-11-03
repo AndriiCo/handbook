@@ -195,7 +195,7 @@ pub async fn admin_host_guard(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let bare = host.split_once(':').map_or(host, |(h, _)| h).to_lowercase();
-    let ok = bare == auth::ADMIN_HOST
+    let ok = bare == auth::admin_host()
         || (state.admin_mtls_off && (bare == "localhost" || bare == "127.0.0.1"));
     if !ok {
         let peer = crate::admin_ip::peer_ip(&req);

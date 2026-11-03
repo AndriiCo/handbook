@@ -24,7 +24,7 @@ use auth::passkey as store;
 /// (fail closed on garbage RP values).
 pub fn build_webauthn(rp_id: &str, rp_name: &str, origin: &str) -> Option<Webauthn> {
     let url = url::Url::parse(origin).ok()?;
-    let admin_origin = url::Url::parse(&format!("https://{}", auth::ADMIN_HOST)).ok()?;
+    let admin_origin = url::Url::parse(&format!("https://{}", auth::admin_host())).ok()?;
     // `Webauthn` is 'static — builder borrows end at `build()`.
     WebauthnBuilder::new(rp_id, &url)
         .ok()?

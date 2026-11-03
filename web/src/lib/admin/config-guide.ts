@@ -77,7 +77,7 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		summary:
 			'Which IPs and ports the server binds and which host customers use. With TLS (pinned files or ACME) one listener on the HTTPS port serves andrii.ai and admin.andrii.ai by Host header, plus a port-80 redirector. With neither, the server runs plain HTTP on two ports (local dev and plant staging).',
 		setup: [
-			'Point DNS A/AAAA records for the public host, admin.andrii.ai and www at the server. The admin host name is fixed in code (admin.andrii.ai).',
+			'Point DNS A/AAAA records for the public host, admin.andrii.ai and www at the server. The admin host is always admin.<net.public_host> (admin.andrii.ai in production).',
 			'Set net.bind to the server address (or 0.0.0.0). The default 127.0.0.1 is loopback only. Add net.bind6 only if the host routes IPv6.',
 			'Leave net.https_port 443 and net.http_port 80 unless a proxy sits in front. Port 80 must stay reachable: it serves ACME http-01 challenges.',
 			'Turn on quic.enabled only when UDP on the HTTPS port is open in the firewall.',

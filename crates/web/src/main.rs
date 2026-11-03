@@ -961,11 +961,11 @@ fn explicit_tls_pair(cert: Option<String>, key: Option<String>) -> Result<Option
 /// (single-443 serves both hosts from one pair). Warning, not
 /// refusal — see [`mtls::cert_has_dns_san`].
 fn warn_unless_admin_san(cert_pem: &[u8]) {
-    match mtls::cert_has_dns_san(cert_pem, auth::ADMIN_HOST) {
+    match mtls::cert_has_dns_san(cert_pem, auth::admin_host()) {
         Ok(true) => {}
         Ok(false) => eprintln!(
             "WARNING: TLS certificate lacks the {} SAN — browsers on the admin host will fail closed; reissue with both SANs (single-443)",
-            auth::ADMIN_HOST
+            auth::admin_host()
         ),
         Err(e) => eprintln!("WARNING: {e} — cannot confirm the admin SAN is present"),
     }
@@ -1131,6 +1131,16 @@ async fn main() {
     if cfg.admin_mtls_off {
         eprintln!(
             "WARNING: admin.mtls_off — local-dev seams on (loopback admin hosts, test cert header; local dev only)"
+        );
+    }
+    // Host routing, CSRF origins and the admin passkey origin follow
+    // `net.public_host` (admin is `admin.<public_host>`), fixed once here.
+    if !auth::init_hosts(&cfg.public_host) {
+        eprintln!(
+            "WARNING: net.public_host {:?} is not a host name; serving as {} / {}",
+            cfg.public_host,
+            auth::public_host(),
+            auth::admin_host()
         );
     }
     // B2: every customer-facing URL builds from the public origin,

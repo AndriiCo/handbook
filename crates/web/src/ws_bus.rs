@@ -187,12 +187,14 @@ pub async fn ws_bus_upgrade(
     ws_bus_upgrade_inner(state, addr, params, headers, ws, false).await
 }
 
-/// The one origin that upgrades on the admin branch (pure:
-/// unit-tested). Browsers always send `Origin` on WS handshakes,
-/// so a missing one is a native client, never the staff console.
-pub const ADMIN_WS_ORIGIN: &str = "https://admin.andrii.ai";
+/// The one origin that upgrades on the admin branch. Browsers always
+/// send `Origin` on WS handshakes, so a missing one is a native client,
+/// never the staff console.
+pub fn admin_ws_origin() -> String {
+    format!("https://{}", auth::admin_host())
+}
 
-/// Admin-branch origin gate: exactly [`ADMIN_WS_ORIGIN`], plus —
+/// Admin-branch origin gate: exactly [`admin_ws_origin`], plus —
 /// only under the `admin_mtls_off` dev seam (tests, staging
 /// tunnel) — loopback `http` origins, the same seam the admin
 /// host guard admits. The public `https` origin never passes,
@@ -202,7 +204,7 @@ pub(crate) fn admin_origin_allowed(origin: Option<&str>, dev_seam: bool) -> bool
     let Some(o) = origin else {
         return false;
     };
-    if o == ADMIN_WS_ORIGIN {
+    if o == admin_ws_origin() {
         return true;
     }
     dev_seam && loopback_http_origin(o)
@@ -498,12 +500,12 @@ mod tests {
     #[test]
     fn admin_origin_gate_matches_configured_admin_host() {
         assert_eq!(
-            ADMIN_WS_ORIGIN,
-            format!("https://{}", auth::ADMIN_HOST),
+            admin_ws_origin(),
+            format!("https://{}", auth::admin_host()),
             "the gate must track the admin host, not a stale literal"
         );
         // Production shape (no dev seam): exactly the admin origin.
-        assert!(admin_origin_allowed(Some(ADMIN_WS_ORIGIN), false));
+        assert!(admin_origin_allowed(Some(&admin_ws_origin()), false));
         for bad in [
             None,
             Some("https://andrii.ai"),
