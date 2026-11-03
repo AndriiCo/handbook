@@ -55,6 +55,7 @@
 		"clsx": "^2.1.1",
 		"d3-geo": "^3.1.1",
 		"flag-icons": "^7.6.0",
+		"libphonenumber-js": "1.13.15",
 		"svelte-sonner": "^1.2.2",
 		"tailwind-merge": "^3.7.0",
 		"tailwind-variants": "3.3.1",

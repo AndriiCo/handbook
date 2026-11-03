@@ -265,3 +265,4 @@
 | 356 | 2026-11-03 12:56Z | Admin accept 'csrf check failed' + Workers 'session expired'; trace shows importmap JSON | h3 cookie lines joined (RFC 9114); extractor drops scripts; ingest 56, web 380 |
 | 357 | 2026-11-03 13:01Z | P356 failed the plant gate on rustfmt | cargo fmt on capture.rs; fmt check clean |
 | 358 | 2026-11-03 13:11Z | Bulk accept/reject per authority; open questions, contacts, email outreach API | /facts/bulk all-or-nothing; first_source.rs; web 389, clippy clean |
+| 359 | 2026-11-03 13:12Z | Phone numbers in international format on admin inputs | pin libphonenumber-js 1.13.15 (MIT, admin-only import) |
