@@ -115,6 +115,32 @@ pub fn have(bin: &str) -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+/// Make sure rustup has the std library for `triple`. The toolchain file
+/// pins only x86_64 (plant's rustup is system-wide and read-only to the
+/// build user), so a cross target such as aarch64 is added here, on the
+/// machine that cross-builds.
+pub fn ensure_target(triple: &str) -> Result<(), String> {
+    let installed = Command::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output()
+        .map_err(|e| format!("rustup: {e}"))?;
+    if String::from_utf8_lossy(&installed.stdout)
+        .lines()
+        .any(|l| l.trim() == triple)
+    {
+        return Ok(());
+    }
+    let status = Command::new("rustup")
+        .args(["target", "add", triple])
+        .status()
+        .map_err(|e| format!("rustup: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("rustup target add {triple} failed"))
+    }
+}
+
 /// Hardening flags for C code built by `cc` for `triple`.
 pub fn hardening_cflags() -> &'static str {
     "-O2 -fstack-protector-strong -fstack-clash-protection -D_FORTIFY_SOURCE=2"
@@ -158,6 +184,9 @@ pub fn cargo_release(
         return Err(
             "cross-building needs cargo-zigbuild (cargo install cargo-zigbuild) and zig".into(),
         );
+    }
+    if plan.zig {
+        ensure_target(triple)?;
     }
     let sub = if plan.zig { "zigbuild" } else { "build" };
     let mut cmd = Command::new("cargo");
