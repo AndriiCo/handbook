@@ -75,8 +75,22 @@ async fn upload(
     if !url.starts_with("https://") || url.len() > 500 || url.contains(char::is_whitespace) {
         return bad("source_url must be the official https URL the file came from");
     }
-    let text = match sidecar_text(&bytes) {
-        Ok(t) => t,
+    // PDF parsing is CPU-bound: keep it off the async workers (#35).
+    let (bytes, parsed) = match tokio::task::spawn_blocking(move || {
+        let text = sidecar_text(&bytes);
+        let fillable = bytes.starts_with(b"%PDF")
+            && forms::acro::fields(&bytes)
+                .map(|f| !f.is_empty())
+                .unwrap_or(false);
+        (bytes, text.map(|t| (t, fillable)))
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => return store_unavailable(),
+    };
+    let (text, fillable) = match parsed {
+        Ok(v) => v,
         Err(e) => return bad(&e),
     };
     let store = Store::new(&state.store_root);
@@ -122,10 +136,6 @@ async fn upload(
     match ingest::capture::ingest_bytes(&conn, &store, &input) {
         Ok(outcome) => {
             let id = outcome.capture_id();
-            let fillable = bytes.starts_with(b"%PDF")
-                && forms::acro::fields(&bytes)
-                    .map(|f| !f.is_empty())
-                    .unwrap_or(false);
             (
                 StatusCode::CREATED,
                 Json(json!({"capture_id": id, "duplicate": matches!(outcome, ingest::capture::IngestOutcome::Duplicate { .. }),

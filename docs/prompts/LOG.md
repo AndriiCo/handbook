@@ -250,3 +250,4 @@
 | 341 | 2026-11-03 03:06Z | Review fixes PDF set + #2: per-widget radio states, appearances burned in, inherited resources, q/Q isolation, fit/wrap/comb, Latin-1 refusal, read-only refusal, cycle-safe walk, /Annots page map, /Perms; JSON fill values; order stops on fill failure | forms 23, web 368, commerce 7/7, demo 3/3 |
 | 342 | 2026-11-03 03:12Z | Review fixes money + abuse (#11-#16, #25, #27, #28, #36-#46, #58) | web 370 green, clippy clean |
 | 343 | 2026-11-03 03:18Z | Review fixes grounding + Meta API + perf (#17-#24, #26, #48-#54, #57) | web 372, agent 60 green; clippy clean |
+| 344 | 2026-11-03 03:20Z | Review #35: staff upload parses PDFs on the blocking pool | web 373 green |
