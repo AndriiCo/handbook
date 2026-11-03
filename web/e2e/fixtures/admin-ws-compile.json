@@ -1,0 +1,24 @@
+[
+  { "type": "subscribed", "topic": "run:91" },
+  { "type": "compile.started", "topic": "run:91", "run_id": 91, "slug": "vietnam", "at": 1793750290 },
+  { "type": "compile.step", "topic": "run:91", "run_id": 91, "step": "capture", "status": "running", "at": 1793750290 },
+  {
+    "type": "compile.step",
+    "topic": "run:91",
+    "run_id": 91,
+    "step": "capture",
+    "status": "done",
+    "counts": { "pages": 3, "created": 2, "duplicate": 1, "failed": 0, "skipped": 0, "dropped": 0 },
+    "latency_ms": 4820,
+    "at": 1793750295
+  },
+  {
+    "type": "compile.step",
+    "topic": "run:91",
+    "run_id": 91,
+    "step": "extract",
+    "status": "running",
+    "counts": { "captures": 2 },
+    "at": 1793750295
+  }
+]

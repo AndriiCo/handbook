@@ -187,7 +187,7 @@ export function activityFromOps(msg: Loose): Activity | null {
 		case 'compile.done': {
 			const run = num(msg?.run_id);
 			return run
-				? { at, kind: type, text: `Compile run ${run} finished`, href: `/compile/${run}`, live: true }
+				? { at, kind: type, text: `Compile run ${run} finished`, href: `/dashboard?compile=${run}`, live: true }
 				: null;
 		}
 		case 'plan_accepted': {

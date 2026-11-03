@@ -194,7 +194,7 @@
       "at": 1793749500,
       "kind": "compile.done",
       "text": "Compile run 88 finished: 6 facts, 1 office, 1 plan proposed",
-      "href": "/compile/88"
+      "href": "/dashboard?compile=88"
     }
   ]
 }

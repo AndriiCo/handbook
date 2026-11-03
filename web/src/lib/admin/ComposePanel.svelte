@@ -8,14 +8,11 @@
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import Notice from '#lib/public-ui/Notice.svelte';
 	import AuthorityPicker from './AuthorityPicker.svelte';
+	import StepIcon from './StepIcon.svelte';
 	import { ComposeRun, type ComposeKind, type ComposeSummary, type StepDef, type StepState } from './compose.svelte.js';
 	import type { AuthorityOption } from './authorities.js';
 	import { fmtCompact, fmtMs, fmtPct, modelName } from './format.js';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
-	import CircleIcon from '@lucide/svelte/icons/circle';
-	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
-	import CircleXIcon from '@lucide/svelte/icons/circle-x';
-	import CircleDashedIcon from '@lucide/svelte/icons/circle-dashed';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 
@@ -212,20 +209,6 @@
 	const motion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 200;
 </script>
 
-{#snippet stepIcon(state: StepState)}
-	{#if state === 'active'}
-		<LoaderCircleIcon class="mt-0.5 size-4 flex-none text-accent-strong motion-safe:animate-spin" aria-hidden="true" />
-	{:else if state === 'done'}
-		<CircleCheckIcon class="mt-0.5 size-4 flex-none text-verified" aria-hidden="true" />
-	{:else if state === 'failed'}
-		<CircleXIcon class="mt-0.5 size-4 flex-none text-error" aria-hidden="true" />
-	{:else if state === 'skipped'}
-		<CircleDashedIcon class="mt-0.5 size-4 flex-none text-ink-muted" aria-hidden="true" />
-	{:else}
-		<CircleIcon class="mt-0.5 size-4 flex-none text-ink-muted" aria-hidden="true" />
-	{/if}
-{/snippet}
-
 {#snippet failure()}
 	<Notice variant={run.failKind === 'cap' ? 'warning' : 'error'} heading={failHeading}>
 		<p class="m-0 break-words">{run.error}</p>
@@ -300,7 +283,7 @@
 					{#each run.steps as step, i (step.id)}
 						{@const state = run.stepState(i)}
 						<li class={pillCls(state)} aria-current={state === 'active' ? 'step' : undefined}>
-							{@render stepIcon(state)}
+							<StepIcon {state} />
 							<span>{state === 'active' ? step.active : step.label}</span>
 							{#if state === 'active' && step.id === 'compose' && run.elapsedMs !== null}
 								<span class="font-mono tabular-nums">{secs(run.elapsedMs)}</span>
@@ -313,7 +296,7 @@
 					{#each run.steps as step, i (step.id)}
 						{@const state = run.stepState(i)}
 						<li class={stepCls(state)} aria-current={state === 'active' ? 'step' : undefined}>
-							{@render stepIcon(state)}
+							<StepIcon {state} />
 							<span class="flex min-w-0 flex-col">
 								<span class="text-sm font-medium">{state === 'active' ? step.active : step.label}</span>
 								<span class="font-mono text-xs break-words text-ink-muted tabular-nums">{detail(step, state)}</span>

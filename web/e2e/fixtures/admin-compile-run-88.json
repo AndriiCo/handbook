@@ -1,0 +1,59 @@
+{
+  "run_id": 88,
+  "slug": "usa-wa-sos",
+  "status": "done",
+  "started_at": 1793749360,
+  "finished_at": 1793749500,
+  "summary": {
+    "capture": {
+      "pages": 4,
+      "created": 2,
+      "duplicate": 2,
+      "failed": 0,
+      "skipped": 0,
+      "dropped": 0
+    },
+    "extract": {
+      "captures": 2,
+      "proposed": 6,
+      "rejected": 1,
+      "waiting": 0
+    },
+    "cross_check": {
+      "captures": 2,
+      "checked": 2,
+      "failed": 0
+    },
+    "offices": {
+      "status": "done",
+      "summary": {
+        "proposed": [
+          33
+        ],
+        "dropped": 0,
+        "model": "muse-spark-1.3",
+        "latency_ms": 5240,
+        "input_tokens": 2860,
+        "output_tokens": 690,
+        "cached_tokens": 1920,
+        "reasoning_tokens": 540
+      }
+    },
+    "plan": {
+      "status": "done",
+      "summary": {
+        "plan_id": 14,
+        "version": 5,
+        "passed": true,
+        "blocks": 6,
+        "dropped": 1,
+        "latency_ms": 14630,
+        "input_tokens": 21480,
+        "output_tokens": 1870,
+        "cached_tokens": 15360,
+        "reasoning_tokens": 2410
+      }
+    },
+    "stopped_by_cap": false
+  }
+}
