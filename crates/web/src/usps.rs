@@ -258,10 +258,13 @@ impl<T: HttpTransport> LabelLink for UspsLink<T> {
 }
 
 /// The USPS link for one customer order (blocking: two token calls).
+/// `reserve`: buys that must still fit under `usps.live_daily_cap` (the
+/// quote reserves both legs; the buyer checks each leg itself).
 pub(crate) fn customer_link(
     state: &AppState,
     meta: &Connection,
     stripe_live: bool,
+    reserve: i64,
 ) -> Result<Box<dyn LabelLink>, String> {
     if !state.label_cfg.usps_certified {
         return Err("usps api not certified yet (usps.certified)".to_string());
@@ -271,10 +274,9 @@ pub(crate) fn customer_link(
     if !mode_ok(&creds.base, stripe_live, caps.live) {
         return Err("usps endpoint does not match the payment mode".to_string());
     }
-    if stripe_live {
+    if stripe_live && reserve > 0 {
         let p2 = db::open_p2(&Store::new(&state.store_root)).map_err(|e| e.to_string())?;
-        // Two legs per order: refuse the order if both would not fit.
-        if live_buys_today(&p2, crate::unix_now()).saturating_add(2) > caps.daily_cap {
+        if live_buys_today(&p2, crate::unix_now()).saturating_add(reserve) > caps.daily_cap {
             return Err("usps live daily cap reached (usps.live_daily_cap)".to_string());
         }
     }

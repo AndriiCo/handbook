@@ -655,7 +655,14 @@ fn label_bytes<T: HttpTransport>(
     for path in ["labelUrl", "label_url", "label/url"] {
         if let Some(Value::String(url)) = walk(json, path) {
             let response = transport.get(url, bearer)?;
-            check_ok(&response)?;
+            // The purchase already answered 2xx: a failed download must
+            // never read as the carrier refusing the shipment.
+            if !(200..300).contains(&response.status) {
+                return Err(LabelError::BadResponse(format!(
+                    "label download answered http {} after the purchase",
+                    response.status
+                )));
+            }
             if response.body.starts_with(b"%PDF-") {
                 return Ok(response.body);
             }
@@ -873,6 +880,50 @@ mod tests {
             "https://apis-tem.usps.com/labels/v3/label/9405%205111"
         );
         assert_eq!(client.transport.last_headers.borrow().len(), 1);
+    }
+
+    #[test]
+    fn a_failed_download_after_purchase_is_never_a_refusal() {
+        // 2xx purchase that points at a label URL; the download answers 422.
+        struct Split;
+        impl HttpTransport for Split {
+            fn post_json(
+                &self,
+                _: &str,
+                _: &str,
+                _: Option<&str>,
+                _: &Value,
+            ) -> Result<HttpResponse, TransportError> {
+                Ok(HttpResponse {
+                    status: 200,
+                    body: br#"{"trackingNumber":"9405","labelUrl":"https://example.test/l.pdf"}"#
+                        .to_vec(),
+                })
+            }
+            fn get(&self, _: &str, _: &str) -> Result<HttpResponse, TransportError> {
+                Ok(HttpResponse {
+                    status: 422,
+                    body: b"{}".to_vec(),
+                })
+            }
+            fn delete(&self, _: &str, _: &str) -> Result<HttpResponse, TransportError> {
+                Ok(HttpResponse {
+                    status: 200,
+                    body: Vec::new(),
+                })
+            }
+        }
+        let client = FedExClient::new(FEDEX_BASE_SANDBOX, Split, true);
+        let payload = crate::payload::tests::sample_payload();
+        let request = BuyRequest {
+            payload: &payload,
+            direction: Direction::Outbound,
+            payment_ref: "acct-synthetic",
+        };
+        assert!(matches!(
+            client.buy("b", &request),
+            Err(LabelError::BadResponse(_))
+        ));
     }
 
     #[test]

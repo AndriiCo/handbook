@@ -128,6 +128,12 @@ impl DraftRuns {
         self.next.fetch_add(1, Ordering::SeqCst) + 1
     }
 
+    /// Move the counter past `stored`, so ids persisted by an earlier
+    /// boot (the `compile_run` table) are never handed out again.
+    pub fn bump_past(&self, stored: u64) {
+        self.next.fetch_max(stored, Ordering::SeqCst);
+    }
+
     /// Allocate a run, or `None` when [`MAX_RUNNING`] are in flight.
     pub fn start(&self, capture_id: i64, slug: String, now: i64) -> Option<u64> {
         let mut runs = self.runs.lock().expect("draft-runs lock poisoned");

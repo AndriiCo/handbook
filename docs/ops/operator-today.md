@@ -33,6 +33,25 @@ Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
    (the Mailer group shows the steps; staging uses the file mailer).
 4. **Washington SOS alert:** sos.wa.gov posted on 11/02 that apostille
    services are unavailable; check it before recording the WA scenes.
+5. **Deploy decision for P373-P378 (yours; freeze in force).** On main,
+   not in production: the dead config keys are gone (`tls.client_ca_file`,
+   `admin.require_cert`, `net.admin_https_port`; a stored value is ignored
+   with one boot warning), First-boot setup leads `/config`, and every
+   formerly Reserved key now runs real code: auto-compose and a Compile
+   run (Dashboard → Compile an authority), customer-paid FedEx and USPS
+   labels (carrier quote + `orders.fee_label_cents`, bought after payment
+   through a once-per-leg ledger, refund on a carrier refusal), the kit
+   ship-from address, the USPS v3 client (OAuth, payment authorization,
+   `usps.live` with its caps) and the tracking poller. Every new switch is
+   off by default, so a deploy changes nothing customers see until you
+   turn one on. USPS request shapes follow the documented v3 examples but
+   have not yet been run against the USPS test environment.
+   After a deploy, in this order: set `orders.ship_from` (JSON, with a
+   phone) and `orders.fee_label_cents`; FedEx sandbox keys +
+   `labels.fedex_base_url` sandbox; USPS keys on TEM + `usps.certified`;
+   then `labels.customer_live` and one Stripe test-mode order per carrier;
+   `tracking.poll_enabled` last. Production postage needs a live Stripe
+   key, the production carrier roots and (USPS) `usps.live`.
 
 **9460b26 DEPLOYED (Tue 11-03 ~07:56 PST, on your "Deploy 9460b26" —
 inside the AGENTS.md §7 freeze, by your explicit order):** production

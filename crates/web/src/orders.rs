@@ -480,8 +480,9 @@ impl ReturnTo {
             && is_zip(self.postal_code.trim())
             && self.country == "US"
             && self.phone.as_deref().is_none_or(|p| {
-                let digits = p.bytes().filter(u8::is_ascii_digit).count();
-                (7..=15).contains(&digits)
+                // A US number: 10 digits, or 11 with the country code 1.
+                let digits: String = p.chars().filter(char::is_ascii_digit).collect();
+                (digits.len() == 10 || (digits.len() == 11 && digits.starts_with('1')))
                     && p.len() <= 24
                     && p.bytes()
                         .all(|b| b.is_ascii_digit() || b" +-().".contains(&b))
@@ -1433,7 +1434,13 @@ async fn checkout(
             return paused();
         }
         let caps = crate::customer_labels::caps(&state, &meta);
-        if crate::customer_labels::buys_today(&p2, now).saturating_add(2) > caps.daily_cap {
+        let usps_full = kind == "label_usps"
+            && sw.stripe_live
+            && crate::usps::live_buys_today(&p2, now).saturating_add(2)
+                > crate::usps::live_caps(&state, &meta).daily_cap;
+        if usps_full
+            || crate::customer_labels::buys_today(&p2, now).saturating_add(2) > caps.daily_cap
+        {
             return paused_because(
                 "Label buying reached today's limit. Try again tomorrow or choose another option.",
             );
@@ -1516,8 +1523,27 @@ async fn checkout(
     if total > max || today >= cap {
         return paused();
     }
-    // Claim first: only one checkout can move quoted → awaiting_payment.
-    if !set_status(&p2, &id, "quoted", "awaiting_payment", now) {
+    // Claim first: only one checkout can move quoted → awaiting_payment,
+    // and only while the stored quote is still the one priced above (a
+    // re-quote racing this request must not change what Stripe charges).
+    let quotes_json = serde_json::to_string(
+        &stored["carrier_quotes"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+    )
+    .unwrap_or_else(|_| "[]".to_string());
+    let claimed = p2
+        .execute(
+            "UPDATE customer_order SET status = 'awaiting_payment', updated_at = ?1
+             WHERE id = ?2 AND status = 'quoted'
+               AND json_extract(amount_json, '$.total_cents') = ?3
+               AND COALESCE(json_extract(amount_json, '$.carrier_quotes'), '[]') = json(?4)",
+            rusqlite::params![now, id, total, quotes_json],
+        )
+        .unwrap_or(0)
+        == 1;
+    if !claimed {
         return err(StatusCode::CONFLICT, "order changed; reload it", None);
     }
     let bucket = now / 600;
@@ -1862,8 +1888,13 @@ mod tests {
             ..bad.clone()
         };
         assert!(phone("+1 (360) 555-0100").valid());
+        assert!(phone("360.555.0100").valid());
         assert!(!phone("call me").valid());
         assert!(!phone("12").valid());
+        assert!(
+            !phone("+44 20 7946 0000").valid(),
+            "a US address takes a US number"
+        );
         // The ship-from JSON parses into the same shape, or reads as unset.
         let ship = parse_ship_from(
             r#"{"name":"Example Co","line1":"1 Example Way","city":"Seattle","region":"WA","postal_code":"98101","phone":"+13605550100"}"#,

@@ -44,6 +44,8 @@ const STALE_SECS: i64 = 3_600;
 /// Boot DDL on the metadata DB (`handbook.sqlite`): `CREATE TABLE IF
 /// NOT EXISTS` only — no ALTER, DROP or RENAME (AGENTS.md §7).
 pub fn migrate_tables(conn: &Connection) -> rusqlite::Result<()> {
+    // A run lives in a tokio task: after a restart a `running` row is
+    // dead, and the one-running-per-slug index below must not trip on it.
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS compile_run (
             id INTEGER PRIMARY KEY,
@@ -56,6 +58,11 @@ pub fn migrate_tables(conn: &Connection) -> rusqlite::Result<()> {
          );
          CREATE INDEX IF NOT EXISTS idx_compile_run_started ON compile_run(started_at);
          CREATE INDEX IF NOT EXISTS idx_compile_run_slug ON compile_run(slug, status);
+         UPDATE compile_run SET status = 'failed', finished_at = started_at,
+                summary_json = json_object('error', 'interrupted')
+          WHERE status = 'running';
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_compile_run_one_running
+             ON compile_run(slug) WHERE status = 'running';
          -- Captures a Compile run already drafted: one that yielded no
          -- proposal is not re-drafted (and re-billed) by every later run.
          CREATE TABLE IF NOT EXISTS compile_drafted (
@@ -186,17 +193,30 @@ async fn start(
         )
             .into_response();
     }
+    // The run counter restarts at boot; stored ids must never repeat.
+    let stored_max: i64 = conn
+        .query_row("SELECT COALESCE(MAX(id), 0) FROM compile_run", [], |r| {
+            r.get(0)
+        })
+        .unwrap_or(0);
+    state.draft_runs.bump_past(stored_max.max(0) as u64);
     let run_id = state.draft_runs.reserve_id();
     let actor = auth.user.user_id.clone();
-    if conn
-        .execute(
-            "INSERT INTO compile_run(id, slug, actor, status, started_at)
-             VALUES (?1, ?2, ?3, 'running', ?4)",
-            rusqlite::params![run_id as i64, body.slug, actor, now],
-        )
-        .is_err()
-    {
-        return store_unavailable();
+    if let Err(e) = conn.execute(
+        "INSERT INTO compile_run(id, slug, actor, status, started_at)
+         VALUES (?1, ?2, ?3, 'running', ?4)",
+        rusqlite::params![run_id as i64, body.slug, actor, now],
+    ) {
+        // The one-running-per-slug index: a concurrent start won.
+        return if e.to_string().contains("UNIQUE") {
+            (
+                StatusCode::CONFLICT,
+                Json(json!({"error": "a Compile run is already going for this authority"})),
+            )
+                .into_response()
+        } else {
+            store_unavailable()
+        };
     }
     let _ = conn.execute(
         "INSERT INTO audit(at, actor, action, entity, entity_id, before_ref, after_ref, reason)
@@ -680,6 +700,41 @@ mod tests {
             [now],
         )
         .expect_err("status is checked");
+    }
+
+    #[test]
+    fn run_ids_never_repeat_a_stored_one_after_a_restart() {
+        // A fresh boot's counter starts at 0; stored ids must be skipped.
+        let runs = crate::draft::DraftRuns::default();
+        runs.bump_past(41);
+        assert_eq!(runs.reserve_id(), 42);
+        runs.bump_past(10); // never moves backwards
+        assert_eq!(runs.reserve_id(), 43);
+        // A row a restart orphaned is closed at boot, and only one run per
+        // authority can be running.
+        let conn = memory();
+        conn.execute(
+            "INSERT INTO compile_run(id, slug, actor, status, started_at)
+             VALUES (1, 'x', 's', 'running', 5)",
+            [],
+        )
+        .unwrap();
+        migrate_tables(&conn).unwrap();
+        let status: String = conn
+            .query_row("SELECT status FROM compile_run WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, "failed");
+        let insert = |id: i64| {
+            conn.execute(
+                "INSERT INTO compile_run(id, slug, actor, status, started_at)
+                 VALUES (?1, 'x', 's', 'running', 6)",
+                [id],
+            )
+        };
+        insert(2).unwrap();
+        assert!(insert(3).is_err(), "a second running run for one slug");
     }
 
     #[test]

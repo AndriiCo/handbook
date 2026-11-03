@@ -324,11 +324,14 @@ impl<T: HttpTransport> LabelLink for FedexLink<T> {
 }
 
 /// The production link for `kind`, with a fresh bearer (blocking).
+/// `reserve`: label buys this call must still fit under the live USPS
+/// cap (2 at quote time; 0 for the buyer, which checks per leg).
 fn connect(
     state: &AppState,
     meta: &Connection,
     kind: &str,
     stripe_live: bool,
+    reserve: i64,
 ) -> Result<Box<dyn LabelLink>, String> {
     match kind {
         "label_fedex" => {
@@ -346,7 +349,7 @@ fn connect(
                 transport: UreqTransport::new(),
             }))
         }
-        "label_usps" => crate::usps::customer_link(state, meta, stripe_live),
+        "label_usps" => crate::usps::customer_link(state, meta, stripe_live, reserve),
         _ => Err("not a carrier label order".to_string()),
     }
 }
@@ -509,7 +512,7 @@ pub fn quote_order(
     let phone = ship_from_phone(state, &meta);
     let legs = order_legs(&p2, order_id, phone.as_deref())
         .map_err(|e| QuoteError::Carrier(e.to_string()))?;
-    let link = connect(state, &meta, kind, stripe_live).map_err(QuoteError::Carrier)?;
+    let link = connect(state, &meta, kind, stripe_live, 2).map_err(QuoteError::Carrier)?;
     quote_with(link.as_ref(), &legs, caps)
 }
 
@@ -575,7 +578,7 @@ fn tick(state: &AppState) {
     drop(p2);
     for id in ids {
         let _ = buy_order(state, &id, &|state, meta, kind, live| {
-            connect(state, meta, kind, live)
+            connect(state, meta, kind, live, 0)
         });
     }
 }
@@ -631,9 +634,39 @@ pub(crate) fn buy_order(state: &AppState, order_id: &str, connector: &Connector)
         serde_json::from_str::<Value>(&amount).unwrap_or(json!({}))["carrier_quotes"].clone(),
     )
     .unwrap_or_default();
+    // Live USPS postage also answers to its own caps (`usps.live_*`).
+    let usps_live = (kind == "label_usps" && live).then(|| crate::usps::live_caps(state, &meta));
+    let max_cents = usps_live.map_or(caps.max_cents, |u| caps.max_cents.min(u.max_cents));
     let mut link: Option<Box<dyn LabelLink>> = None;
+    let mut bought_here = false;
     for leg in &legs {
         let now = unix_now();
+        // Staff may have moved the order (a refund) while a leg was out:
+        // never buy past that, and flag any label already bought.
+        let current: String = p2
+            .query_row(
+                "SELECT status FROM customer_order WHERE id = ?1",
+                [order_id],
+                |r| r.get(0),
+            )
+            .unwrap_or_default();
+        if current != "label_purchasing" {
+            if bought_here {
+                crate::ws_bus::publish_ops(
+                    &state.bus,
+                    "label.void_needed",
+                    json!({"order_id": order_id, "status": current}),
+                    now,
+                );
+            }
+            return BuyEnd::Skipped;
+        }
+        if let Some(u) = usps_live
+            && crate::usps::live_buys_today(&p2, now) >= u.daily_cap
+        {
+            return ctx
+                .to_staff("Today's USPS label limit is reached; our team will buy your labels.");
+        }
         let existing: Option<String> = p2
             .query_row(
                 "SELECT status FROM label_purchase WHERE order_id = ?1 AND leg = ?2",
@@ -687,7 +720,7 @@ pub(crate) fn buy_order(state: &AppState, order_id: &str, connector: &Connector)
             }
         }
         let quoted = quotes.iter().find(|q| q.leg == leg.role).map(|q| q.cents);
-        if quoted.is_none_or(|c| c > caps.max_cents) {
+        if quoted.is_none_or(|c| c > max_cents) {
             ctx.mark(leg, "failed", "quote missing or over the per-label limit");
             return ctx.to_staff("Your label price needs a check by our team.");
         }
@@ -714,9 +747,21 @@ pub(crate) fn buy_order(state: &AppState, order_id: &str, connector: &Connector)
                     .record_bought(&store, leg, carrier.carrier(), &outcome)
                     .is_err()
                 {
+                    // Keep what staff need to void it: the tracking number.
                     ctx.mark(leg, "unknown", "bought, but the label could not be stored");
+                    let _ = p2.execute(
+                        "UPDATE label_purchase SET tracking_no = ?1, cost_cents = ?2
+                         WHERE order_id = ?3 AND leg = ?4",
+                        rusqlite::params![
+                            outcome.tracking_no,
+                            outcome.postage_cost_cents,
+                            order_id,
+                            leg.role
+                        ],
+                    );
                     return ctx.to_staff("Your label needs a check by our team.");
                 }
+                bought_here = true;
             }
             Err(LabelError::Api { status, message }) if status == 400 || status == 422 => {
                 ctx.mark(leg, "failed", &format!("http {status}: {message}"));
@@ -942,7 +987,15 @@ impl Ctx<'_> {
             .unwrap_or(None)
             .flatten();
         let refunded = match (crate::stripe::keys(self.state, meta), intent) {
-            (Some(keys), Some(intent)) => crate::stripe::refund(&keys, self.order_id, &intent).ok(),
+            (Some(keys), Some(intent)) => {
+                match crate::stripe::refund(&keys, self.order_id, &intent) {
+                    Ok(id) => Some(id),
+                    Err(e) => {
+                        tracing::warn!(order = %self.order_id, error = %e, "automatic refund refused by Stripe");
+                        None
+                    }
+                }
+            }
             _ => None,
         };
         let Some(refund_id) = refunded else {
