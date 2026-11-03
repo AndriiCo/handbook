@@ -13,6 +13,7 @@
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import GlobeIcon from '@lucide/svelte/icons/globe';
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import PackageIcon from '@lucide/svelte/icons/package';
 	import PhoneIcon from '@lucide/svelte/icons/phone';
@@ -48,7 +49,8 @@
 				// first" or "By authority" (bulk). /triage stays as a page.
 				{ label: 'Review', href: resolve('/(admin)/review'), icon: ListChecksIcon, keywords: 'facts approve queue triage bulk by authority' },
 				{ label: 'Trace', href: resolve('/(admin)/trace'), icon: ActivityIcon, keywords: 'draft model tokens latency' },
-				{ label: 'Workers', href: resolve('/(admin)/workers'), icon: DatabaseIcon, keywords: 'fetch captures sweep' }
+				{ label: 'Workers', href: resolve('/(admin)/workers'), icon: DatabaseIcon, keywords: 'fetch captures sweep' },
+				{ label: 'Packs', href: resolve('/(admin)/packs'), icon: GlobeIcon, keywords: 'authorities world load countries' }
 			]
 		},
 		{

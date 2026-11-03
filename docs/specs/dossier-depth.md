@@ -88,9 +88,13 @@ drops unknown kinds, so older pages degrade safely.
    production only through the operator's /review approvals.
 
 Slugs: use `usa-ny-dos`, `usa-or-sos`, `usa-ca-sos`, `usa-nv-sos` (the
-`packs/usa-*.json` convention). Do not also load `packs/world/US.json`
-into the same store: it would add duplicate `us-*` rows. With P362
-each of these also answers at `usa/<state>` and `us/<code>`.
+`packs/usa-*.json` convention). `packs/world/US.json` carries the
+curated slug for every curated state (and `usdos-authentications`), so
+loading curated packs first and then the world set merges its rows
+into the curated dossiers (P397; pinned by
+`world_rows_merge_into_curated_dossiers`). A new curated state pack
+must rename its `us-*` row in `packs/world/US.json` the same way. With
+P362 each of these also answers at `usa/<state>` and `us/<code>`.
 
 ## Official sources (government domains; fetched 2026-11-03)
 

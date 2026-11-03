@@ -785,6 +785,66 @@ mod tests {
     }
 
     #[test]
+    fn committed_world_packs_validate_clean() {
+        for sub in ["world", "world-nonparty"] {
+            let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../packs")
+                .join(sub);
+            if dir.is_dir() {
+                let errors = validate_dir(&dir);
+                assert!(errors.is_empty(), "{sub}: {errors:?}");
+            }
+        }
+    }
+
+    /// Curated + world packs in load order (curated first, as admin
+    /// "Load packs" and ops-packs-seed.sh do) never mint two rows for
+    /// one US jurisdiction: world rows for a curated dossier carry the
+    /// curated slug and merge into it.
+    #[test]
+    fn world_rows_merge_into_curated_dossiers() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../packs");
+        let dir = tempfile::tempdir().unwrap();
+        let store = handbook_store::store::Store::new(dir.path());
+        store.init().unwrap();
+        let conn = handbook_store::db::open(&store).unwrap();
+        handbook_store::db::migrate(&conn).unwrap();
+        let mut slugs = 0;
+        for sub in [root.clone(), root.join("world")] {
+            let mut files: Vec<_> = std::fs::read_dir(&sub)
+                .unwrap()
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x == "json"))
+                .collect();
+            files.sort();
+            for path in files {
+                let pack: Pack = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                slugs += pack.authorities.len();
+                load_pack(&conn, &pack, "test", 1_800_000_000).unwrap();
+            }
+        }
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM authority WHERE id <> 0", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        // Exactly the six curated US dossiers are shared.
+        assert_eq!(rows, i64::try_from(slugs).unwrap() - 6);
+        let dupes: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM (
+                   SELECT region FROM authority
+                   WHERE kind = 'state' AND region <> ''
+                     AND country IN ('USA', 'United States of America')
+                   GROUP BY region HAVING COUNT(*) > 1)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(dupes, 0, "one row per US state");
+    }
+
+    #[test]
     fn committed_packs_validate_clean() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../packs");
         let errors = validate_dir(&dir);

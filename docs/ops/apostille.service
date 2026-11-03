@@ -3,7 +3,7 @@
 #
 # Install (as root, once): copy to /etc/systemd/system/apostille.service,
 # `systemctl daemon-reload && systemctl enable --now apostille`.
-# Ships via `ops-deploy.sh` as hal (docs/ops/deploy.md § Steps); the
+# Ships via `ops-deploy.sh` as hal (docs/ops/staging.md § Steps); the
 # /usr/local/sbin/apostille-ship script stays as reviewed fallback.
 #
 # Privilege summary: runs as andrii-ai:andrii-ai, keeps ONLY

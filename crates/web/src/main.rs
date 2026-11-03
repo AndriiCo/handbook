@@ -17,6 +17,7 @@
 mod admin;
 mod admin_ip;
 mod admin_orders;
+mod admin_packs;
 mod admin_stats;
 mod admin_voice;
 mod admin_workers;
@@ -521,6 +522,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(fulfilment::admin_router(state.clone()))
         .merge(admin_orders::admin_router(state.clone()))
         .merge(first_source::admin_router(state.clone()))
+        .merge(admin_packs::admin_router(state.clone()))
 }
 
 /// Public router with explicit state (admin routes are NEVER here —

@@ -8,7 +8,7 @@
       "country": "United States of America",
       "region": "",
       "name": "U.S. Department of State — Office of Authentications",
-      "slug": "us-dos-auth"
+      "slug": "usdos-authentications"
     },
     {
       "kind": "office",
@@ -57,7 +57,7 @@
       "country": "United States of America",
       "region": "California",
       "name": "California Secretary of State",
-      "slug": "us-ca-sos"
+      "slug": "usa-ca-sos"
     },
     {
       "kind": "state",
@@ -85,7 +85,7 @@
       "country": "United States of America",
       "region": "Florida",
       "name": "Florida Department of State",
-      "slug": "us-fl-dos"
+      "slug": "usa-fl-dos"
     },
     {
       "kind": "state",
@@ -246,7 +246,7 @@
       "country": "United States of America",
       "region": "New York",
       "name": "New York Department of State",
-      "slug": "us-ny-dos"
+      "slug": "usa-ny-dos"
     },
     {
       "kind": "state",
@@ -323,7 +323,7 @@
       "country": "United States of America",
       "region": "Texas",
       "name": "Texas Secretary of State",
-      "slug": "us-tx-sos"
+      "slug": "usa-tx-sos"
     },
     {
       "kind": "state",
@@ -351,7 +351,7 @@
       "country": "United States of America",
       "region": "Washington",
       "name": "Washington Secretary of State",
-      "slug": "us-wa-sos"
+      "slug": "usa-wa-sos"
     },
     {
       "kind": "state",
@@ -426,13 +426,13 @@
     },
     {
       "name": "dos.myflorida.com",
-      "authority": "us-fl-dos",
+      "authority": "usa-fl-dos",
       "status": "unverified",
       "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     },
     {
       "name": "dos.ny.gov",
-      "authority": "us-ny-dos",
+      "authority": "usa-ny-dos",
       "status": "unverified",
       "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     },
@@ -582,7 +582,7 @@
     },
     {
       "name": "travel.state.gov",
-      "authority": "us-dos-auth",
+      "authority": "usdos-authentications",
       "status": "unverified",
       "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     },
@@ -618,7 +618,7 @@
     },
     {
       "name": "www.hcch.net",
-      "authority": "us-dos-auth",
+      "authority": "usdos-authentications",
       "status": "unverified",
       "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     },
@@ -678,7 +678,7 @@
     },
     {
       "name": "www.secstate.wa.gov",
-      "authority": "us-wa-sos",
+      "authority": "usa-wa-sos",
       "status": "unverified",
       "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     },
@@ -690,7 +690,7 @@
     },
     {
       "name": "www.sos.ca.gov",
-      "authority": "us-ca-sos",
+      "authority": "usa-ca-sos",
       "status": "unverified",
       "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     },
@@ -756,7 +756,7 @@
     },
     {
       "name": "www.sos.texas.gov",
-      "authority": "us-tx-sos",
+      "authority": "usa-tx-sos",
       "status": "unverified",
       "notes": "Seen on SA-17 North-America roster pages for United States of America (staff capture pending)."
     },
@@ -775,14 +775,14 @@
   ],
   "watch": [
     {
-      "authority": "us-dos-auth",
+      "authority": "usdos-authentications",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=76&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for United States of America (citation page; staff capture pending)."
     },
     {
-      "authority": "us-dos-auth",
+      "authority": "usdos-authentications",
       "kind": "website_official",
       "uri": "https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html",
       "cadence": "weekly",
@@ -831,7 +831,7 @@
       "notes": "Official site of the Arkansas Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "us-ca-sos",
+      "authority": "usa-ca-sos",
       "kind": "website_official",
       "uri": "https://www.sos.ca.gov/",
       "cadence": "weekly",
@@ -859,7 +859,7 @@
       "notes": "Official site of the Delaware Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "us-fl-dos",
+      "authority": "usa-fl-dos",
       "kind": "website_official",
       "uri": "https://dos.myflorida.com/",
       "cadence": "weekly",
@@ -1020,7 +1020,7 @@
       "notes": "Official site of the New Mexico Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "us-ny-dos",
+      "authority": "usa-ny-dos",
       "kind": "website_official",
       "uri": "https://dos.ny.gov",
       "cadence": "weekly",
@@ -1097,7 +1097,7 @@
       "notes": "Official site of the Tennessee Secretary of State (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "us-tx-sos",
+      "authority": "usa-tx-sos",
       "kind": "website_official",
       "uri": "https://www.sos.texas.gov/",
       "cadence": "weekly",
@@ -1125,7 +1125,7 @@
       "notes": "Official site of the Secretary of the Commonwealth of Virginia (SA-17 North-America roster; staff capture pending; W-7)."
     },
     {
-      "authority": "us-wa-sos",
+      "authority": "usa-wa-sos",
       "kind": "website_official",
       "uri": "http://www.secstate.wa.gov/",
       "cadence": "weekly",
@@ -1198,7 +1198,7 @@
   "chain_steps": [
     {
       "id": "us-index",
-      "authority": "us-dos-auth",
+      "authority": "usdos-authentications",
       "order": 0,
       "title": "Verify North-America issuing-office roster",
       "detail": "Confirm every listed issuing office and official URL for United States of America against a staff capture of the cited pages (deterministic).",
@@ -1207,7 +1207,7 @@
     },
     {
       "id": "us-dos-auth-verify",
-      "authority": "us-dos-auth",
+      "authority": "usdos-authentications",
       "order": 1,
       "title": "Verify issuing office: U.S. Department of State — Office of Authentications",
       "detail": "Confirm the U.S. Department of State — Office of Authentications designation and its official URL against a staff capture (deterministic).",
@@ -1270,7 +1270,7 @@
     },
     {
       "id": "us-ca-sos-verify",
-      "authority": "us-ca-sos",
+      "authority": "usa-ca-sos",
       "order": 8,
       "title": "Verify issuing office: California",
       "detail": "Confirm the California Secretary of State designation and its official URL against a staff capture (deterministic).",
@@ -1306,7 +1306,7 @@
     },
     {
       "id": "us-fl-dos-verify",
-      "authority": "us-fl-dos",
+      "authority": "usa-fl-dos",
       "order": 12,
       "title": "Verify issuing office: Florida",
       "detail": "Confirm the Florida Department of State designation and its official URL against a staff capture (deterministic).",
@@ -1513,7 +1513,7 @@
     },
     {
       "id": "us-ny-dos-verify",
-      "authority": "us-ny-dos",
+      "authority": "usa-ny-dos",
       "order": 35,
       "title": "Verify issuing office: New York",
       "detail": "Confirm the New York Department of State designation and its official URL against a staff capture (deterministic).",
@@ -1612,7 +1612,7 @@
     },
     {
       "id": "us-tx-sos-verify",
-      "authority": "us-tx-sos",
+      "authority": "usa-tx-sos",
       "order": 46,
       "title": "Verify issuing office: Texas",
       "detail": "Confirm the Texas Secretary of State designation and its official URL against a staff capture (deterministic).",
@@ -1648,7 +1648,7 @@
     },
     {
       "id": "us-wa-sos-verify",
-      "authority": "us-wa-sos",
+      "authority": "usa-wa-sos",
       "order": 50,
       "title": "Verify issuing office: Washington",
       "detail": "Confirm the Washington Secretary of State designation and its official URL against a staff capture (deterministic).",
@@ -1739,7 +1739,7 @@
   ],
   "observations": [
     {
-      "authority": "us-dos-auth",
+      "authority": "usdos-authentications",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): United States of America is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
@@ -1747,7 +1747,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-dos-auth",
+      "authority": "usdos-authentications",
       "topic": "contacts",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): U.S. Department of State — Office of Authentications is the designated apostille issuing office for United States of America.",
       "source_uri": "https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html",
@@ -1755,7 +1755,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-dos-auth",
+      "authority": "usdos-authentications",
       "topic": "website",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html is the official website of the U.S. Department of State — Office of Authentications.",
       "source_uri": "https://travel.state.gov/content/travel/en/legal/travel-legal-considerations/internl-judicial-asst/authentications-and-apostilles/requesting-authentication-services.html",
@@ -1859,7 +1859,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-ca-sos",
+      "authority": "usa-ca-sos",
       "topic": "contacts",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): California Secretary of State is the designated apostille issuing office for California.",
       "source_uri": "https://www.sos.ca.gov/",
@@ -1867,7 +1867,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-ca-sos",
+      "authority": "usa-ca-sos",
       "topic": "website",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sos.ca.gov/ is the official website of the California Secretary of State.",
       "source_uri": "https://www.sos.ca.gov/",
@@ -1923,7 +1923,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-fl-dos",
+      "authority": "usa-fl-dos",
       "topic": "contacts",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Florida Department of State is the designated apostille issuing office for Florida.",
       "source_uri": "https://dos.myflorida.com/",
@@ -1931,7 +1931,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-fl-dos",
+      "authority": "usa-fl-dos",
       "topic": "website",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://dos.myflorida.com/ is the official website of the Florida Department of State.",
       "source_uri": "https://dos.myflorida.com/",
@@ -2291,7 +2291,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-ny-dos",
+      "authority": "usa-ny-dos",
       "topic": "contacts",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): New York Department of State is the designated apostille issuing office for New York.",
       "source_uri": "https://dos.ny.gov",
@@ -2299,7 +2299,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-ny-dos",
+      "authority": "usa-ny-dos",
       "topic": "website",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://dos.ny.gov is the official website of the New York Department of State.",
       "source_uri": "https://dos.ny.gov",
@@ -2467,7 +2467,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-tx-sos",
+      "authority": "usa-tx-sos",
       "topic": "contacts",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Texas Secretary of State is the designated apostille issuing office for Texas.",
       "source_uri": "https://www.sos.texas.gov/",
@@ -2475,7 +2475,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-tx-sos",
+      "authority": "usa-tx-sos",
       "topic": "website",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): https://www.sos.texas.gov/ is the official website of the Texas Secretary of State.",
       "source_uri": "https://www.sos.texas.gov/",
@@ -2531,7 +2531,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-wa-sos",
+      "authority": "usa-wa-sos",
       "topic": "contacts",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): Washington Secretary of State is the designated apostille issuing office for Washington.",
       "source_uri": "http://www.secstate.wa.gov/",
@@ -2539,7 +2539,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "us-wa-sos",
+      "authority": "usa-wa-sos",
       "topic": "website",
       "statement": "OBSERVED (SA-17 North-America roster; staff capture pending): http://www.secstate.wa.gov/ is the official website of the Washington Secretary of State.",
       "source_uri": "http://www.secstate.wa.gov/",
