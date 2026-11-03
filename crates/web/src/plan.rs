@@ -947,9 +947,9 @@ async fn public_plan(
     req: Request,
 ) -> Response {
     let now = unix_now();
-    let ip =
-        crate::admin_ip::peer_ip(&req).map_or_else(|| "unknown".to_string(), |ip| ip.to_string());
-    if !PLAN_LIMITS.check(&format!("plan:{ip}"), now, 60, 60) {
+    // Per IPv4 address or IPv6 /64; a full map admits new readers.
+    let ip = crate::admin_ip::rate_key(crate::admin_ip::peer_ip(&req));
+    if !PLAN_LIMITS.check_read(&format!("plan:{ip}"), now, 60, 60) {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(json!({"error": "rate limited"})),

@@ -60,12 +60,15 @@ pub fn stats(
         "offices_accepted": scalar(conn, "SELECT COUNT(*) FROM office_record WHERE status = 'accepted'", []),
         "forms_active": scalar(conn, "SELECT COUNT(*) FROM form_template WHERE status = 'active'", []),
         "orders_today": p2.map_or(0, |p2| scalar(p2, "SELECT COUNT(*) FROM customer_order WHERE created_at >= ?1", [today])),
-        "paid_cents_7d": p2.map_or(0, |p2| scalar(
-            p2,
-            "SELECT SUM(json_extract(amount_json, '$.total_cents')) FROM customer_order
-             WHERE created_at >= ?1 AND status NOT IN ('draft', 'quoted', 'awaiting_payment', 'canceled', 'refunded')",
-            [now - 7 * day],
-        )),
+        "paid_cents_7d": p2.map_or(0, |p2| {
+            // Live money captured and not refunded (review #58).
+            scalar(
+                p2,
+                "SELECT SUM(amount_cents) FROM order_payment
+                 WHERE status = 'paid' AND livemode = 1 AND refund_id IS NULL AND paid_at >= ?1",
+                [now - 7 * day],
+            )
+        }),
         "needs_staff": p2.map_or(0, |p2| scalar(p2, "SELECT COUNT(*) FROM customer_order WHERE status = 'needs_staff'", [])),
     });
 

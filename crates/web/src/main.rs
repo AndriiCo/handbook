@@ -2670,6 +2670,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn staff_advance_never_moves_money_states() {
+        // Review #12/#28: advance is for fulfilment; paid/refunded/
+        // canceled-after-payment go through settle and refund only.
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let store = Store::new(&fx.state.store_root);
+        let p2 = db::open_p2(&store).unwrap();
+        let dest = orders::destination(&[orders::FactText {
+            id: 203,
+            topic: "po_box".into(),
+            text: "Send to PO Box 4000, Olympia, WA 98504.".into(),
+        }])
+        .unwrap();
+        let body = |kind: &str| orders::CreateBody {
+            slug: "usa-wa-sos".into(),
+            kind: kind.into(),
+            path_id: None,
+            form_fill_id: None,
+            return_to: orders::ReturnTo {
+                name: "SYNTHETIC Customer".into(),
+                line1: "1 Example St".into(),
+                line2: None,
+                city: "Springfield".into(),
+                region: "IL".into(),
+                postal_code: "62701".into(),
+                country: "US".into(),
+            },
+        };
+        let free = orders::create_order(
+            &p2,
+            "cust-1",
+            (7, "S"),
+            &body("address_label"),
+            &dest,
+            "test",
+            1,
+        )
+        .unwrap();
+        let kit =
+            orders::create_order(&p2, "cust-1", (7, "S"), &body("mail_kit"), &dest, "test", 1)
+                .unwrap();
+        let advance = |id: &str, to: &str| {
+            admin_request(
+                "POST",
+                &format!("/apostille/api/v1/admin/orders/{id}/advance"),
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                Some(serde_json::json!({"to": to})),
+            )
+        };
+        let full = || admin::router(fx.state.clone()).merge(mission_admin_routers(&fx.state));
+        for (id, to, want) in [
+            (&free, "refunded", StatusCode::CONFLICT),
+            (&free, "paid", StatusCode::CONFLICT),
+            (&kit, "labels_ready", StatusCode::CONFLICT), // unpaid kit
+            (&kit, "canceled", StatusCode::OK),           // unpaid → may cancel
+            (&free, "in_transit", StatusCode::OK),        // free label, customer mails it
+        ] {
+            let res = full().oneshot(advance(id, to)).await.unwrap();
+            assert_eq!(res.status(), want, "{id} → {to}");
+        }
+    }
+
+    #[tokio::test]
+    async fn order_create_rejects_bad_ids_before_any_work() {
+        // Review #16: path_id and form_fill_id are validated (and a fill
+        // must belong to the caller) before an order row exists.
+        let fx = fixture();
+        make_session(&fx.state.store_root, "cust-sess", auth::Role::Customer);
+        for (path, fill) in [
+            (serde_json::json!("x".repeat(500)), serde_json::Value::Null),
+            (serde_json::json!("Bad Path!"), serde_json::Value::Null),
+            (serde_json::Value::Null, serde_json::json!("fil_../../etc")),
+        ] {
+            let body = serde_json::json!({
+                "slug": "usa-wa-sos", "kind": "address_label", "path_id": path, "form_fill_id": fill,
+                "return_to": {"name": "A", "line1": "1 A St", "city": "B", "region": "WA", "postal_code": "98501"}
+            });
+            let req = Request::builder()
+                .method("POST")
+                .uri("/apostille/api/v1/p2/orders")
+                .header("origin", "https://andrii.ai")
+                .header("content-type", "application/json")
+                .header(auth::CSRF_HEADER, "tok")
+                .header(
+                    "cookie",
+                    format!("{}=cust-sess; {}=tok", auth::PUB_COOKIE, auth::CSRF_COOKIE),
+                )
+                .body(Body::from(body.to_string()))
+                .unwrap();
+            let res = public_router_for(&fx.state).oneshot(req).await.unwrap();
+            assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        }
+    }
+
+    #[tokio::test]
     async fn publish_rejects_oversized_body() {
         // M1: arbitrary-JSON fan-out is capped; normal events flow.
         let fx = fixture();

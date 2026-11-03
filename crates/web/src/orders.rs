@@ -44,6 +44,8 @@ pub fn can_transition(from: &str, to: &str) -> bool {
         (_, "refunded") => live && from != "draft",
         ("draft", "quoted" | "labels_ready") => true,
         ("quoted", "awaiting_payment" | "quoted") => true,
+        // An expired Checkout session hands the order back for re-quoting.
+        ("awaiting_payment", "quoted") => true,
         ("awaiting_payment", "paid") => true,
         ("paid", "label_purchasing") => true,
         ("label_purchasing", "labels_ready") => true,
@@ -302,6 +304,16 @@ static ORDER_LIMITS: LazyLock<crate::passkey::RateBuckets> =
     LazyLock::new(crate::passkey::RateBuckets::default);
 static READ_LIMITS: LazyLock<crate::passkey::RateBuckets> =
     LazyLock::new(crate::passkey::RateBuckets::default);
+/// Network-keyed write limits: demo logins mint customer refs freely,
+/// so per-customer buckets alone do not bound one caller (review #15).
+static NET_LIMITS: LazyLock<crate::passkey::RateBuckets> =
+    LazyLock::new(crate::passkey::RateBuckets::default);
+/// Max orders one customer may create per rolling day.
+const MAX_ORDERS_PER_DAY: i64 = 30;
+/// A quote is honoured at checkout for this long.
+const QUOTE_TTL_SECS: i64 = 1_800;
+/// Checkout sessions live this long (Stripe minimum is 30 minutes).
+const SESSION_TTL_SECS: i64 = 3_600;
 
 fn err(status: StatusCode, error: &str, reason: Option<&str>) -> Response {
     (status, Json(json!({"error": error, "reason": reason}))).into_response()
@@ -361,7 +373,9 @@ fn switches(state: &AppState, meta: &Connection) -> Switches {
             .flatten()
             .unwrap_or(false),
         stripe_key: stripe.as_ref().is_some_and(|k| !k.is_empty()),
-        stripe_live: stripe.as_ref().is_some_and(|k| k.starts_with(b"sk_live")),
+        stripe_live: stripe
+            .as_ref()
+            .is_some_and(|k| k.starts_with(b"sk_live") || k.starts_with(b"rk_live")),
         kit_price_cents: cache
             .text(meta, kek, config::keys::ORDERS_KIT_PRICE_CENTS)
             .ok()
@@ -697,9 +711,8 @@ async fn get_options(
     Query(q): Query<OptionsQuery>,
     req: axum::extract::Request,
 ) -> Response {
-    let ip =
-        crate::admin_ip::peer_ip(&req).map_or_else(|| "unknown".to_string(), |ip| ip.to_string());
-    if !READ_LIMITS.check(&format!("oo:{ip}"), unix_now(), 60, 60) {
+    let ip = crate::admin_ip::rate_key(crate::admin_ip::peer_ip(&req));
+    if !READ_LIMITS.check_read(&format!("oo:{ip}"), unix_now(), 60, 60) {
         return err(StatusCode::TOO_MANY_REQUESTS, "rate limited", None);
     }
     let Ok(meta) = db::open(&Store::new(&state.store_root)) else {
@@ -713,6 +726,7 @@ async fn get_options(
 /// `POST /orders` — signed-in customer, CSRF double-submit, 10/min.
 async fn create(
     State(state): State<AppState>,
+    crate::admin_ip::PeerIp(peer): crate::admin_ip::PeerIp,
     headers: HeaderMap,
     Json(body): Json<CreateBody>,
 ) -> Response {
@@ -729,11 +743,38 @@ async fn create(
         );
     };
     let now = unix_now();
-    if !ORDER_LIMITS.check(&format!("oc:{customer_ref}"), now, 10, 60) {
+    if !ORDER_LIMITS.check(&format!("oc:{customer_ref}"), now, 10, 60)
+        || !NET_LIMITS.check(
+            &format!("oc:{}", crate::admin_ip::rate_key(peer)),
+            now,
+            20,
+            60,
+        )
+    {
         return err(StatusCode::TOO_MANY_REQUESTS, "rate limited", None);
     }
     if !KINDS.contains(&body.kind.as_str()) {
         return err(StatusCode::UNPROCESSABLE_ENTITY, "unknown kind", None);
+    }
+    let path_ok = body.path_id.as_deref().is_none_or(|p| {
+        !p.is_empty()
+            && p.len() <= 64
+            && p.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+    });
+    let fill_ok = body.form_fill_id.as_deref().is_none_or(|f| {
+        f.len() == 14
+            && f.starts_with("fil_")
+            && f[4..]
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    });
+    if !path_ok || !fill_ok {
+        return err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid path or form fill",
+            None,
+        );
     }
     if !body.return_to.valid() {
         return err(
@@ -748,6 +789,30 @@ async fn create(
     let Some((authority_id, authority_name)) = authority_of(&meta, &body.slug) else {
         return err(StatusCode::NOT_FOUND, "unknown authority", None);
     };
+    let recent: i64 = p2
+        .query_row(
+            "SELECT COUNT(*) FROM customer_order WHERE customer_ref = ?1 AND created_at >= ?2",
+            rusqlite::params![customer_ref, now - 86_400],
+            |r| r.get(0),
+        )
+        .unwrap_or(i64::MAX);
+    if recent >= MAX_ORDERS_PER_DAY {
+        return err(StatusCode::TOO_MANY_REQUESTS, "too many orders today", None);
+    }
+    if let Some(fill) = body.form_fill_id.as_deref() {
+        let mine = p2
+            .query_row(
+                "SELECT 1 FROM form_fill WHERE id = ?1 AND customer_ref = ?2",
+                rusqlite::params![fill, customer_ref],
+                |_| Ok(()),
+            )
+            .optional()
+            .unwrap_or(None)
+            .is_some();
+        if !mine {
+            return err(StatusCode::UNPROCESSABLE_ENTITY, "unknown form fill", None);
+        }
+    }
     let facts = fact_texts(&state, &meta, &body.slug);
     let Some(dest) = destination(&facts) else {
         return err(
@@ -979,13 +1044,6 @@ pub fn price_lines(kind: &str, sw: &Switches) -> Option<Vec<(String, i64)>> {
     }
 }
 
-fn is_demo(headers: &HeaderMap) -> bool {
-    headers
-        .get(header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|c| c.split(';').any(|p| p.trim().starts_with("demo_session=")))
-}
-
 /// Owner check + stores, or the error response.
 fn owned(
     state: &AppState,
@@ -1079,7 +1137,7 @@ async fn quote(
     } else {
         sw.currency.clone()
     };
-    let amount = json!({"currency": currency, "total_cents": total,
+    let amount = json!({"currency": currency, "total_cents": total, "quoted_at": now,
                         "lines": lines.iter().map(|(l, c)| json!({"label": l, "cents": c})).collect::<Vec<_>>()});
     if status == "draft" && !set_status(&p2, &id, "draft", "quoted", now) {
         return err(StatusCode::CONFLICT, "order cannot be quoted now", None);
@@ -1087,16 +1145,26 @@ async fn quote(
     if !matches!(status.as_str(), "draft" | "quoted") {
         return err(StatusCode::CONFLICT, "order cannot be quoted now", None);
     }
-    let _ = p2.execute(
-        "UPDATE customer_order SET amount_json = ?1, updated_at = ?2 WHERE id = ?3",
-        rusqlite::params![amount.to_string(), now, id],
-    );
+    if p2
+        .execute(
+            "UPDATE customer_order SET amount_json = ?1, updated_at = ?2
+             WHERE id = ?3 AND status IN ('draft', 'quoted')",
+            rusqlite::params![amount.to_string(), now, id],
+        )
+        .unwrap_or(0)
+        != 1
+    {
+        return err(StatusCode::CONFLICT, "order cannot be quoted now", None);
+    }
     Json(json!({"order_id": id, "mode": if sw.stripe_live { "live" } else { "test" }, "currency": amount["currency"],
-                "total_cents": total, "expires_at": now + 1_800, "lines": amount["lines"], "carrier_quotes": []}))
+                "total_cents": total, "expires_at": now + QUOTE_TTL_SECS, "lines": amount["lines"], "carrier_quotes": []}))
     .into_response()
 }
 
 /// `POST /orders/{id}/checkout` — owner; hosted Checkout session.
+/// Re-prices from config (a stale or changed quote must be re-quoted),
+/// enforces the daily paid-order cap and max order, claims the order
+/// before calling Stripe, and replaces a session that has expired.
 async fn checkout(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1107,15 +1175,21 @@ async fn checkout(
     {
         return crate::passkey::csrf_fail();
     }
-    let (meta, p2, _customer, _slug, kind) = match owned(&state, &headers, &id) {
+    let (meta, p2, customer_ref, _slug, kind) = match owned(&state, &headers, &id) {
         Ok(v) => v,
         Err(r) => return *r,
     };
+    let now = unix_now();
+    if !ORDER_LIMITS.check(&format!("ok:{customer_ref}"), now, 10, 60) {
+        return err(StatusCode::TOO_MANY_REQUESTS, "rate limited", None);
+    }
     let sw = switches(&state, &meta);
     let Some(keys) = crate::stripe::keys(&state, &meta).filter(|_| sw.orders_enabled) else {
         return paused();
     };
-    if keys.live() && is_demo(&headers) {
+    // The resolved identity decides, not a stray cookie (review #45):
+    // demo_login only ever mints `demo-` refs.
+    if keys.live() && customer_ref.starts_with("demo-") {
         return err(
             StatusCode::FORBIDDEN,
             "demo sessions never pay in live mode",
@@ -1133,29 +1207,112 @@ async fn checkout(
     if (mode == "live") != keys.live() {
         return paused(); // order created under the other mode
     }
-    if status == "awaiting_payment"
-        && let Ok(url) = p2.query_row(
-            "SELECT checkout_url FROM order_payment WHERE order_id = ?1 AND status = 'open'",
-            [&id],
-            |r| r.get::<_, String>(0),
-        )
-    {
-        return Json(json!({"checkout_url": url})).into_response();
+    let mut status = status;
+    if status == "awaiting_payment" {
+        let open: Option<(String, String, i64)> = p2
+            .query_row(
+                "SELECT session_id, checkout_url, created_at FROM order_payment
+                 WHERE order_id = ?1 AND status = 'open'",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .unwrap_or(None);
+        match open {
+            Some((_, url, created)) if now - created < SESSION_TTL_SECS - 300 => {
+                return Json(json!({"checkout_url": url})).into_response();
+            }
+            _ => {
+                // Dead or missing session: let settle decide (it marks an
+                // expired session and hands the order back to `quoted`).
+                let (st, oid, k) = (state.clone(), id.clone(), keys.clone());
+                match tokio::task::spawn_blocking(move || settle(&st, &k, &oid)).await {
+                    Ok(Ok(Settled::Expired)) => status = "quoted".to_string(),
+                    Ok(Ok(Settled::Paid | Settled::AlreadyPaid)) => {
+                        return err(StatusCode::CONFLICT, "this order is already paid", None);
+                    }
+                    _ => {
+                        return err(
+                            StatusCode::CONFLICT,
+                            "checkout is still open; try again shortly",
+                            None,
+                        );
+                    }
+                }
+            }
+        }
     }
-    if status != "quoted" || price_lines(&kind, &sw).is_none() {
+    if status != "quoted" {
         return err(StatusCode::CONFLICT, "quote the order first", None);
     }
-    let amount: Value = serde_json::from_str(&amount).unwrap_or(json!({}));
-    let lines: Vec<(String, i64)> = amount["lines"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|l| Some((l["label"].as_str()?.to_string(), l["cents"].as_i64()?)))
-        .collect();
+    let stored: Value = serde_json::from_str(&amount).unwrap_or(json!({}));
+    let Some(lines) = price_lines(&kind, &sw) else {
+        return paused();
+    };
+    let total: i64 = lines.iter().map(|l| l.1).sum();
+    let currency = if sw.currency.is_empty() {
+        "usd".to_string()
+    } else {
+        sw.currency.clone()
+    };
+    let fresh = stored["quoted_at"]
+        .as_i64()
+        .is_some_and(|t| now - t <= QUOTE_TTL_SECS);
+    if !fresh
+        || stored["total_cents"].as_i64() != Some(total)
+        || stored["currency"].as_str() != Some(currency.as_str())
+    {
+        return err(
+            StatusCode::CONFLICT,
+            "quote_expired",
+            Some("Prices were updated. Review the new total and pay again."),
+        );
+    }
+    let max = state
+        .kek
+        .as_deref()
+        .and_then(|kek| {
+            state
+                .config_cache
+                .text(&meta, kek, config::keys::ORDERS_MAX_ORDER_CENTS)
+                .ok()
+                .flatten()
+        })
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(15_000);
+    let cap = state
+        .kek
+        .as_deref()
+        .and_then(|kek| {
+            state
+                .config_cache
+                .text(&meta, kek, config::keys::ORDERS_DAILY_CAP)
+                .ok()
+                .flatten()
+        })
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(20);
+    let today: i64 = p2
+        .query_row(
+            "SELECT COUNT(*) FROM order_payment WHERE created_at >= ?1 AND status IN ('open', 'paid')",
+            [now - now.rem_euclid(86_400)],
+            |r| r.get(0),
+        )
+        .unwrap_or(i64::MAX);
+    if total > max || today >= cap {
+        return paused();
+    }
+    // Claim first: only one checkout can move quoted → awaiting_payment.
+    if !set_status(&p2, &id, "quoted", "awaiting_payment", now) {
+        return err(StatusCode::CONFLICT, "order changed; reload it", None);
+    }
+    let bucket = now / 600;
     let base = state.notify_base.trim_end_matches('/').to_string();
     let req = crate::stripe::CheckoutRequest {
         order_id: id.clone(),
-        currency: amount["currency"].as_str().unwrap_or("usd").to_string(),
+        expires_at: bucket * 600 + SESSION_TTL_SECS,
+        bucket,
+        currency: currency.clone(),
         lines: lines.clone(),
         success_url: format!("{base}/orders/{id}?checkout=success"),
         cancel_url: format!("{base}/order?order={id}&step=pay&checkout=cancel"),
@@ -1164,19 +1321,31 @@ async fn checkout(
         tokio::task::spawn_blocking(move || crate::stripe::create_checkout(&keys, &req)).await;
     let (session_id, url) = match created {
         Ok(Ok(v)) => v,
-        Ok(Err(e)) => return err(StatusCode::BAD_GATEWAY, "checkout unavailable", Some(&e)),
-        Err(_) => return store_unavailable(),
+        other => {
+            if let Ok(Err(e)) = &other {
+                tracing::warn!(order = %id, error = %e, "checkout: Stripe refused the session");
+            }
+            let _ = set_status(&p2, &id, "awaiting_payment", "quoted", now);
+            return err(
+                StatusCode::BAD_GATEWAY,
+                "checkout unavailable",
+                Some("Payment is unavailable right now. Please try again shortly."),
+            );
+        }
     };
-    let now = unix_now();
-    let total: i64 = lines.iter().map(|l| l.1).sum();
     let ok = p2
         .execute(
-            "INSERT OR REPLACE INTO order_payment(order_id, session_id, checkout_url, amount_cents, currency, livemode, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7)",
-            rusqlite::params![id, session_id, url, total, amount["currency"].as_str().unwrap_or("usd"), i64::from(mode == "live"), now],
+            "INSERT INTO order_payment(order_id, session_id, checkout_url, amount_cents, currency, livemode, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7)
+             ON CONFLICT(order_id) DO UPDATE SET session_id = excluded.session_id,
+                 checkout_url = excluded.checkout_url, amount_cents = excluded.amount_cents,
+                 currency = excluded.currency, livemode = excluded.livemode, status = 'open',
+                 created_at = excluded.created_at, paid_at = NULL, payment_intent = NULL
+             WHERE order_payment.status != 'paid'",
+            rusqlite::params![id, session_id, url, total, currency, i64::from(mode == "live"), now],
         )
-        .is_ok()
-        && set_status(&p2, &id, "quoted", "awaiting_payment", now);
+        .unwrap_or(0)
+        == 1;
     if !ok {
         return store_unavailable();
     }
@@ -1190,12 +1359,18 @@ pub enum Settled {
     Paid,
     AlreadyPaid,
     NotPaidYet,
+    /// The session expired unpaid; the order is back to `quoted`.
+    Expired,
     Mismatch(String),
 }
 
 /// Settle one order against Stripe's own record of its session: paid
-/// only when Stripe says paid AND amount, currency and livemode match
-/// the order. Idempotent. Publishes `order.paid` on `billing:` + `ops`.
+/// only when Stripe says paid AND order id, amount, currency and
+/// livemode match. Idempotent and race-safe (the payment row flips
+/// once). A matching payment is never dropped: if staff moved the
+/// order meanwhile, the money is recorded and the order goes to
+/// needs_staff (review #11). Publishes `order.paid` on `billing:` +
+/// `ops`.
 pub fn settle(
     state: &AppState,
     keys: &crate::stripe::Keys,
@@ -1214,7 +1389,43 @@ pub fn settle(
         return Ok(Settled::AlreadyPaid);
     }
     let session = crate::stripe::retrieve_session(keys, &session_id)?;
+    let now = unix_now();
+    if session["status"].as_str() == Some("expired")
+        && session["payment_status"].as_str() != Some("paid")
+    {
+        let tx = p2.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute(
+            "UPDATE order_payment SET status = 'expired' WHERE order_id = ?1 AND status = 'open'",
+            [order_id],
+        )
+        .map_err(|e| e.to_string())?;
+        if set_status(&tx, order_id, "awaiting_payment", "quoted", now) {
+            event(
+                &tx,
+                order_id,
+                "checkout.expired",
+                "Checkout timed out; review the total to pay",
+                now,
+            );
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        return Ok(Settled::Expired);
+    }
     let verdict = judge_session(&session, order_id, amount, &currency, livemode == 1);
+    if let Settled::Mismatch(why) = &verdict {
+        let _ = p2.execute(
+            "UPDATE order_payment SET status = 'mismatch' WHERE order_id = ?1 AND status = 'open'",
+            [order_id],
+        );
+        event(
+            &p2,
+            order_id,
+            "order.needs_staff",
+            &format!("Payment check failed: {why}"),
+            now,
+        );
+        return Ok(verdict);
+    }
     if verdict != Settled::Paid {
         return Ok(verdict);
     }
@@ -1225,17 +1436,16 @@ pub fn settle(
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|e| e.to_string())?;
-    let now = unix_now();
     let tx = p2.unchecked_transaction().map_err(|e| e.to_string())?;
-    tx.execute(
-        "UPDATE order_payment SET status = 'paid', paid_at = ?1, payment_intent = ?2 WHERE order_id = ?3 AND status != 'paid'",
-        rusqlite::params![now, session["payment_intent"].as_str(), order_id],
-    )
-    .map_err(|e| e.to_string())?;
-    if !set_status(&tx, order_id, &status, "paid", now) {
-        return Ok(Settled::Mismatch(format!(
-            "order is {status}, not awaiting payment"
-        )));
+    let flipped = tx
+        .execute(
+            "UPDATE order_payment SET status = 'paid', paid_at = ?1, payment_intent = ?2
+             WHERE order_id = ?3 AND status != 'paid'",
+            rusqlite::params![now, session["payment_intent"].as_str(), order_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if flipped == 0 {
+        return Ok(Settled::AlreadyPaid); // a concurrent settle won
     }
     event(
         &tx,
@@ -1248,33 +1458,40 @@ pub fn settle(
         ),
         now,
     );
-    // Next step: kits go to the packing queue; carrier-label orders wait
-    // for staff until the label ledger (SA-25 C3) buys them.
-    let next = if kind == "mail_kit" {
-        ("labels_ready", "packing")
+    if set_status(&tx, order_id, &status, "paid", now) {
+        // Kits go to the packing queue; carrier-label orders wait for
+        // staff until the label ledger (SA-25 C3) buys them.
+        let (to, kind_event, text) = if kind == "mail_kit" {
+            ("packing", "kit.queued", "Kit queued for packing")
+        } else {
+            (
+                "needs_staff",
+                "order.needs_staff",
+                "Our team is buying your labels",
+            )
+        };
+        tx.execute(
+            "UPDATE customer_order SET status = ?1, updated_at = ?2 WHERE id = ?3 AND status = 'paid'",
+            rusqlite::params![to, now, order_id],
+        )
+        .map_err(|e| e.to_string())?;
+        event(&tx, order_id, kind_event, text, now);
     } else {
-        ("label_purchasing", "needs_staff")
-    };
-    if kind == "mail_kit" {
+        // Paid while staff had moved the order: keep the money on record
+        // and hand it to staff (refund or fulfil), never drop it.
         let _ = tx.execute(
-            "UPDATE customer_order SET status = 'packing', updated_at = ?1 WHERE id = ?2",
-            rusqlite::params![now, order_id],
-        );
-        event(&tx, order_id, "kit.queued", "Kit queued for packing", now);
-    } else {
-        let _ = tx.execute(
-            "UPDATE customer_order SET status = 'needs_staff', updated_at = ?1 WHERE id = ?2",
+            "UPDATE customer_order SET status = 'needs_staff', updated_at = ?1 WHERE id = ?2
+             AND status NOT IN ('refunded', 'delivered')",
             rusqlite::params![now, order_id],
         );
         event(
             &tx,
             order_id,
             "order.needs_staff",
-            "Our team is buying your labels",
+            &format!("Payment received while the order was {status}"),
             now,
         );
     }
-    let _ = next;
     tx.commit().map_err(|e| e.to_string())?;
     let topic = format!("billing:{customer_ref}");
     state.bus.publish(
@@ -1337,11 +1554,24 @@ async fn confirm(
     {
         return crate::passkey::csrf_fail();
     }
-    let (meta, p2, _customer, slug, _kind) = match owned(&state, &headers, &id) {
+    let (meta, p2, customer, slug, _kind) = match owned(&state, &headers, &id) {
         Ok(v) => v,
         Err(r) => return *r,
     };
-    if let Some(keys) = crate::stripe::keys(&state, &meta) {
+    let open = p2
+        .query_row(
+            "SELECT 1 FROM order_payment WHERE order_id = ?1 AND status = 'open' AND created_at >= ?2",
+            rusqlite::params![id, unix_now() - SESSION_TTL_SECS - 600],
+            |_| Ok(()),
+        )
+        .optional()
+        .unwrap_or(None)
+        .is_some();
+    // One Stripe read per confirm, throttled per customer (review #27).
+    if open
+        && ORDER_LIMITS.check(&format!("of:{customer}"), unix_now(), 10, 60)
+        && let Some(keys) = crate::stripe::keys(&state, &meta)
+    {
         let (st, oid) = (state.clone(), id.clone());
         let _ = tokio::task::spawn_blocking(move || settle(&st, &keys, &oid)).await;
     }

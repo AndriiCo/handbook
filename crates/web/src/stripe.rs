@@ -97,6 +97,11 @@ fn read(resp: Result<ureq::http::Response<ureq::Body>, ureq::Error>) -> Result<V
 #[derive(Debug, Clone)]
 pub struct CheckoutRequest {
     pub order_id: String,
+    /// Absolute session expiry; with `bucket` it makes every retry of
+    /// the same attempt byte-identical (Stripe rejects a reused
+    /// Idempotency-Key whose parameters differ).
+    pub expires_at: i64,
+    pub bucket: i64,
     pub currency: String,
     pub lines: Vec<(String, i64)>,
     pub success_url: String,
@@ -115,7 +120,7 @@ pub fn checkout_form(req: &CheckoutRequest) -> Vec<(String, String)> {
             "payment_intent_data[metadata][order_id]".to_string(),
             req.order_id.clone(),
         ),
-        ("expires_at".to_string(), (unix_now() + 3_600).to_string()),
+        ("expires_at".to_string(), req.expires_at.to_string()),
     ];
     for (i, (label, cents)) in req.lines.iter().enumerate() {
         f.push((format!("line_items[{i}][quantity]"), "1".to_string()));
@@ -147,7 +152,7 @@ pub fn create_checkout(keys: &Keys, req: &CheckoutRequest) -> Result<(String, St
             .header("Stripe-Version", API_VERSION)
             .header(
                 "Idempotency-Key",
-                &format!("{}-checkout-{total}", req.order_id),
+                &format!("{}-checkout-{total}-{}", req.order_id, req.bucket),
             )
             .send_form(form.iter().map(|(k, v)| (k.as_str(), v.as_str()))),
     )?;
@@ -283,14 +288,19 @@ async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
     let (Some(id), Some(kind)) = (event["id"].as_str(), event["type"].as_str()) else {
         return (StatusCode::BAD_REQUEST, Json(json!({"error": "bad event"}))).into_response();
     };
-    let fresh = p2
-        .execute(
-            "INSERT OR IGNORE INTO stripe_event(id, type, received_at) VALUES (?1, ?2, ?3)",
-            rusqlite::params![id, kind, unix_now()],
-        )
-        .unwrap_or(0)
-        == 1;
-    if !fresh {
+    // Seen before (processed successfully) → done. An event is only
+    // recorded after it settles, so a transient failure answers 500 and
+    // Stripe retries it (review #36).
+    let seen: Option<i64> = match p2
+        .query_row("SELECT 1 FROM stripe_event WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
+        .optional()
+    {
+        Ok(v) => v,
+        Err(_) => return store_unavailable(),
+    };
+    if seen.is_some() {
         return Json(json!({"received": true, "duplicate": true})).into_response();
     }
     if matches!(
@@ -311,10 +321,27 @@ async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
             .unwrap_or(None);
         if let Some(order_id) = order_id {
             let st = state.clone();
-            let _ =
+            let settled =
                 tokio::task::spawn_blocking(move || crate::orders::settle(&st, &keys, &order_id))
                     .await;
+            if !matches!(settled, Ok(Ok(_))) {
+                tracing::warn!(event = %id, "stripe webhook: settle failed; Stripe will retry");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "retry"})),
+                )
+                    .into_response();
+            }
         }
+    }
+    if p2
+        .execute(
+            "INSERT OR IGNORE INTO stripe_event(id, type, received_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![id, kind, unix_now()],
+        )
+        .is_err()
+    {
+        return store_unavailable();
     }
     Json(json!({"received": true})).into_response()
 }
@@ -393,6 +420,8 @@ mod tests {
     fn checkout_form_carries_order_metadata_and_lines() {
         let f = checkout_form(&CheckoutRequest {
             order_id: "ord_q7Hm2xR4kP".into(),
+            expires_at: 1_793_754_000,
+            bucket: 2_989_584,
             currency: "usd".into(),
             lines: vec![("Mailing kit".into(), 4900)],
             success_url: "https://example.test/apostille/orders/ord_q7Hm2xR4kP?checkout=success"

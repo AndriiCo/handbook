@@ -125,7 +125,7 @@ async fn refund(
         )
         .optional()
         .unwrap_or(None);
-    let Some((pay_status, Some(intent), order_status, customer)) = row.filter(|r| r.0 == "paid")
+    let Some((_pay_status, Some(intent), order_status, customer)) = row.filter(|r| r.0 == "paid")
     else {
         return (
             StatusCode::CONFLICT,
@@ -133,10 +133,21 @@ async fn refund(
         )
             .into_response();
     };
-    if !crate::orders::can_transition(&order_status, "refunded") {
+    // Any paid payment can be refunded once, whatever staff did to the
+    // order meanwhile (review #11); only a refunded one cannot.
+    let already = p2
+        .query_row(
+            "SELECT 1 FROM order_payment WHERE order_id = ?1 AND refund_id IS NOT NULL",
+            [&id],
+            |_| Ok(()),
+        )
+        .optional()
+        .unwrap_or(None)
+        .is_some();
+    if already || order_status == "refunded" {
         return (
             StatusCode::CONFLICT,
-            Json(json!({"error": format!("a {order_status} order cannot be refunded")})),
+            Json(json!({"error": "already refunded"})),
         )
             .into_response();
     }
@@ -145,24 +156,37 @@ async fn refund(
         match tokio::task::spawn_blocking(move || crate::stripe::refund(&k, &oid, &intent)).await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
-                return (StatusCode::BAD_GATEWAY, Json(json!({"error": e}))).into_response();
+                tracing::warn!(order = %id, error = %e, "refund: Stripe refused");
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({"error": "Stripe refused the refund; check the dashboard"})),
+                )
+                    .into_response();
             }
             Err(_) => return store_unavailable(),
         };
     let now = unix_now();
-    let _ = pay_status;
-    let _ = p2.execute(
-        "UPDATE order_payment SET refund_id = ?1 WHERE order_id = ?2",
-        rusqlite::params![refund_id, id],
-    );
-    let _ = p2.execute(
-        "UPDATE customer_order SET status = 'refunded', updated_at = ?1 WHERE id = ?2",
-        rusqlite::params![now, id],
-    );
-    let _ = p2.execute(
-        "INSERT INTO order_event(order_id, at, kind, text, leg) VALUES (?1, ?2, 'order.refunded', 'Refunded in full', NULL)",
-        rusqlite::params![id, now],
-    );
+    let written = (|| -> rusqlite::Result<()> {
+        let tx = p2.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE order_payment SET refund_id = ?1 WHERE order_id = ?2",
+            rusqlite::params![refund_id, id],
+        )?;
+        tx.execute(
+            "UPDATE customer_order SET status = 'refunded', updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, id],
+        )?;
+        tx.execute(
+            "INSERT INTO order_event(order_id, at, kind, text, leg) VALUES (?1, ?2, 'order.refunded', 'Refunded in full', NULL)",
+            rusqlite::params![id, now],
+        )?;
+        tx.commit()
+    })();
+    if let Err(e) = written {
+        // Stripe has refunded (idempotent key): a retry records it.
+        tracing::error!(order = %id, error = %e, "refund done at Stripe but not recorded; retry");
+        return store_unavailable();
+    }
     let _ = meta.execute(
         "INSERT INTO audit(at, actor, action, entity, entity_id, reason) VALUES (?1, ?2, 'order_refund', 'order', 0, ?3)",
         rusqlite::params![now, auth.user.user_id, id],
@@ -211,10 +235,49 @@ async fn advance(
         )
             .into_response();
     };
-    if !crate::orders::can_transition(&from, &body.to) {
+    // Fulfilment moves only: money states go through settle, refund
+    // and quote, and an order mid-checkout is never moved (#12, #28).
+    let fulfilment = matches!(
+        body.to.as_str(),
+        "label_purchasing"
+            | "labels_ready"
+            | "packing"
+            | "shipped"
+            | "in_transit"
+            | "delivered"
+            | "needs_staff"
+    );
+    let cancel_unpaid = body.to == "canceled" && matches!(from.as_str(), "draft" | "quoted");
+    if from == "awaiting_payment"
+        || !(fulfilment || cancel_unpaid)
+        || !crate::orders::can_transition(&from, &body.to)
+    {
         return (
             StatusCode::CONFLICT,
-            Json(json!({"error": format!("{from} → {} is not allowed", body.to)})),
+            Json(json!({"error": format!("{from} → {} is not a staff move (refund paid orders instead)", body.to)})),
+        )
+            .into_response();
+    }
+    let paid = p2
+        .query_row(
+            "SELECT 1 FROM order_payment WHERE order_id = ?1 AND status = 'paid'",
+            [&id],
+            |_| Ok(()),
+        )
+        .optional()
+        .unwrap_or(None)
+        .is_some();
+    let kind: String = p2
+        .query_row(
+            "SELECT kind FROM customer_order WHERE id = ?1",
+            [&id],
+            |r| r.get(0),
+        )
+        .unwrap_or_default();
+    if fulfilment && kind != "address_label" && !paid {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "this order is not paid"})),
         )
             .into_response();
     }
@@ -228,10 +291,19 @@ async fn advance(
         _ => "Order updated",
     };
     let note: String = body.note.unwrap_or_default().chars().take(200).collect();
-    let _ = p2.execute(
-        "UPDATE customer_order SET status = ?1, updated_at = ?2 WHERE id = ?3",
-        rusqlite::params![body.to, now, id],
-    );
+    let moved = p2
+        .execute(
+            "UPDATE customer_order SET status = ?1, updated_at = ?2 WHERE id = ?3 AND status = ?4",
+            rusqlite::params![body.to, now, id, from],
+        )
+        .unwrap_or(0);
+    if moved != 1 {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "order changed; reload it"})),
+        )
+            .into_response();
+    }
     let _ = p2.execute(
         "INSERT INTO order_event(order_id, at, kind, text, leg) VALUES (?1, ?2, ?3, ?4, NULL)",
         rusqlite::params![

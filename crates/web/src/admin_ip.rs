@@ -70,6 +70,39 @@ pub fn slash64(ip: std::net::Ipv6Addr) -> String {
     std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0).to_string() + "/64"
 }
 
+/// The socket peer as an extractor that never rejects (`None` when the
+/// stack supplied no `ConnectInfo`, e.g. in router unit tests).
+pub struct PeerIp(pub Option<IpAddr>);
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for PeerIp {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _: &S,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(PeerIp(
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|c| c.0.ip()),
+        ))
+    }
+}
+
+/// Rate-limit key for a peer: the IPv4 address (v4-mapped included) or
+/// the IPv6 /64, so rotating privacy addresses share one budget.
+pub fn rate_key(ip: Option<IpAddr>) -> String {
+    match ip {
+        Some(IpAddr::V4(v4)) => v4.to_string(),
+        Some(IpAddr::V6(v6)) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.to_string(),
+            None => slash64(v6),
+        },
+        None => "unknown".to_string(),
+    }
+}
+
 /// One structured denial shape for every admin-branch 403: human
 /// text (kept backward-compatible), the machine `code`, and the
 /// detected peer `ip`.

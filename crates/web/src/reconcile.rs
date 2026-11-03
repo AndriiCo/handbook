@@ -10,8 +10,8 @@ use handbook_store::{db, store::Store};
 
 use crate::{AppState, unix_now};
 
-/// Sessions older than this are left to expire on Stripe's side.
-const MAX_AGE_SECS: i64 = 26 * 3_600;
+/// Sessions live an hour; one more pass after that marks them expired.
+const MAX_AGE_SECS: i64 = 3_600 + 1_800;
 /// Give the buyer a moment on the Checkout page before polling.
 const MIN_AGE_SECS: i64 = 20;
 const TICK: std::time::Duration = std::time::Duration::from_secs(60);
@@ -20,7 +20,7 @@ const TICK: std::time::Duration = std::time::Duration::from_secs(60);
 pub fn due(p2: &rusqlite::Connection, now: i64) -> Vec<String> {
     p2.prepare(
         "SELECT order_id FROM order_payment WHERE status = 'open' AND created_at <= ?1 AND created_at >= ?2
-         ORDER BY created_at LIMIT 20",
+         ORDER BY created_at DESC LIMIT 20",
     )
     .and_then(|mut s| s.query_map([now - MIN_AGE_SECS, now - MAX_AGE_SECS], |r| r.get(0))?.collect())
     .unwrap_or_default()
@@ -40,11 +40,8 @@ fn tick(state: &AppState) {
     for order_id in due(&p2, unix_now()) {
         match crate::orders::settle(state, &keys, &order_id) {
             Ok(crate::orders::Settled::Mismatch(why)) => {
+                // settle already flagged the row and the order for staff.
                 tracing::warn!(order = %order_id, %why, "reconcile: session does not match the order");
-                let _ = p2.execute(
-                    "UPDATE order_payment SET status = 'mismatch' WHERE order_id = ?1 AND status = 'open'",
-                    [&order_id],
-                );
             }
             Ok(_) => {}
             Err(e) => tracing::warn!(order = %order_id, error = %e, "reconcile: settle failed"),

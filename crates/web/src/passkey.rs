@@ -74,6 +74,29 @@ impl RateBuckets {
         queue.push_back(now);
         true
     }
+
+    /// Like [`RateBuckets::check`], for model-free public reads: when the
+    /// map is full of live keys a *new* key is admitted unrecorded
+    /// instead of refused, so a flood of distinct callers can never lock
+    /// every visitor out of a read page (callers already in the map keep
+    /// their own budget). Auth endpoints keep the fail-closed `check`.
+    pub fn check_read(&self, key: &str, now: i64, limit: u32, window_secs: i64) -> bool {
+        {
+            let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if map.len() > 8192 && !map.contains_key(key) {
+                map.retain(|_, q: &mut VecDeque<i64>| {
+                    while q.front().is_some_and(|&t| now - t >= window_secs) {
+                        q.pop_front();
+                    }
+                    !q.is_empty()
+                });
+                if map.len() > 8192 {
+                    return true;
+                }
+            }
+        }
+        self.check(key, now, limit, window_secs)
+    }
 }
 
 fn origin_of(headers: &HeaderMap) -> Option<&str> {

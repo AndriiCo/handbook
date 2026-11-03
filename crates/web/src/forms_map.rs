@@ -575,6 +575,7 @@ fn fill_id() -> String {
 async fn fill(
     State(state): State<AppState>,
     headers: HeaderMap,
+    crate::admin_ip::PeerIp(peer): crate::admin_ip::PeerIp,
     Path(form_id): Path<i64>,
     Json(body): Json<FillBody>,
 ) -> Response {
@@ -591,7 +592,14 @@ async fn fill(
             .into_response();
     };
     let now = unix_now();
-    if !FILL_LIMITS.check(&format!("ff:{customer_ref}"), now, 10, 60) {
+    if !FILL_LIMITS.check(&format!("ff:{customer_ref}"), now, 10, 60)
+        || !FILL_LIMITS.check(
+            &format!("fn:{}", crate::admin_ip::rate_key(peer)),
+            now,
+            20,
+            60,
+        )
+    {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(json!({"error": "rate limited"})),
@@ -603,6 +611,21 @@ async fn fill(
         return store_unavailable();
     };
     let _ = migrate_p2_tables(&p2);
+    // Stored fills are files: cap them per customer and day (#15).
+    let recent: i64 = p2
+        .query_row(
+            "SELECT COUNT(*) FROM form_fill WHERE customer_ref = ?1 AND created_at >= ?2",
+            rusqlite::params![customer_ref, now - 86_400],
+            |r| r.get(0),
+        )
+        .unwrap_or(i64::MAX);
+    if recent >= 30 {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error": "too many filled forms today"})),
+        )
+            .into_response();
+    }
     let row: Option<(i64, String)> = conn
         .query_row(
             "SELECT capture_id, fields_json FROM form_map WHERE id = ?1 AND status = 'accepted'",
