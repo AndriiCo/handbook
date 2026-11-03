@@ -746,7 +746,9 @@ async fn demo_login(
     // M1/H4: per-IP rate limit on mint-as-anyone (10/min). The sweep
     // below bounds table rows; this bounds the mint rate (and token
     // guessing through `me`, which shares the stored hash).
-    let ip = passkey::client_ip(addr);
+    // Keyed by network (IPv4 address or IPv6 /64), so rotating
+    // addresses inside one /64 cannot mint refs freely (re-review #9).
+    let ip = crate::admin_ip::rate_key(Some(addr.ip()));
     if !state.demo_limits.check(&format!("dl:{ip}"), now, 10, 60) {
         return (
             StatusCode::TOO_MANY_REQUESTS,

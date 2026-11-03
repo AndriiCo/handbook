@@ -812,20 +812,26 @@ fn entail(
             spend.add(&resp);
             // Fail closed (review #17): a block stays only with an explicit
             // supported verdict; a missing verdict counts as unsupported.
-            let verdicts: HashMap<String, (bool, String)> = resp.value["verdicts"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|v| {
-                    Some((
-                        v["block_id"].as_str()?.to_string(),
-                        (
-                            v["supported"] == true,
-                            v["reason"].as_str().unwrap_or("").to_string(),
-                        ),
-                    ))
-                })
-                .collect();
+            // Duplicate verdicts fold with AND: any "unsupported" for a
+            // block drops it (re-review #24).
+            let mut verdicts: HashMap<String, (bool, String)> = HashMap::new();
+            for v in resp.value["verdicts"].as_array().into_iter().flatten() {
+                let Some(id) = v["block_id"].as_str() else {
+                    continue;
+                };
+                let (sup, reason) = (
+                    v["supported"] == true,
+                    v["reason"].as_str().unwrap_or("").to_string(),
+                );
+                verdicts
+                    .entry(id.to_string())
+                    .and_modify(|e| {
+                        if !sup {
+                            *e = (false, reason.clone());
+                        }
+                    })
+                    .or_insert((sup, reason));
+            }
             let unsupported: HashMap<String, String> = plan
                 .blocks
                 .iter()

@@ -24,6 +24,10 @@ pub struct AcroField {
     pub page: Option<u32>,
     /// Max length (`/MaxLen`), when set.
     pub max_len: Option<u32>,
+    /// `Ff` bit 1: the form computes or locks this field, so a fill
+    /// never writes it (a map must not ask the customer for it).
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 /// Errors are short strings: PDFs come from official sites and the
@@ -247,6 +251,7 @@ pub fn fields(bytes: &[u8]) -> Result<Vec<AcroField>, AcroError> {
             options,
             page,
             max_len,
+            read_only: ff & 1 != 0,
         });
     }
     Ok(out)
@@ -372,17 +377,49 @@ fn bbox_to_rect(doc: &Document, ap: ObjectId, rect: [f32; 4]) -> Option<[f32; 6]
     ])
 }
 
-/// Helvetica advance widths are ~0.5 em on average for form text.
-const AVG_ADVANCE: f32 = 0.52;
+/// Helvetica advance width of one character in em (the standard
+/// Type 1 metrics; anything else counts as a wide 0.75 em), so all-caps
+/// values shrink enough to fit (re-review #4: a 0.52 em average cut
+/// them off).
+fn char_em(c: char) -> f32 {
+    match c {
+        ' ' | '.' | ',' | ':' | ';' | '/' | '!' | 'I' | 'f' | 't' | '[' | ']' => 0.278,
+        'i' | 'j' | 'l' => 0.222,
+        '\'' => 0.191,
+        '"' => 0.355,
+        '-' | '(' | ')' | 'r' => 0.333,
+        '0'..='9' | 'a' | 'b' | 'd' | 'e' | 'g' | 'h' | 'n' | 'o' | 'p' | 'q' | 'u' | '#' | '$' => {
+            0.556
+        }
+        'c' | 'k' | 's' | 'v' | 'x' | 'y' | 'z' | 'J' => 0.5,
+        'L' => 0.556,
+        'F' | 'T' | 'Z' => 0.611,
+        'A' | 'B' | 'E' | 'K' | 'P' | 'S' | 'V' | 'X' | 'Y' | '&' => 0.667,
+        'C' | 'D' | 'H' | 'N' | 'R' | 'U' | 'w' => 0.722,
+        'G' | 'O' | 'Q' => 0.778,
+        'M' | 'm' => 0.833,
+        'W' => 0.944,
+        '@' => 1.015,
+        _ => 0.75,
+    }
+}
+
+/// Width of `text` in em, with a 3% margin for kerning-free rendering.
+fn text_em(text: &str) -> f32 {
+    text.chars().map(char_em).sum::<f32>() * 1.03
+}
+
+/// Smallest font size a fill prints at; a value that does not fit at
+/// this size is refused, never clipped.
+const MIN_SIZE: f32 = 5.0;
 
 /// Break `text` into lines that fit `width` at `size` (word wrap).
 fn wrap(text: &str, size: f32, width: f32) -> Vec<String> {
-    let per_line = ((width / (size * AVG_ADVANCE)).floor() as usize).max(1);
     let mut lines = Vec::new();
     for para in text.split('\n') {
         let mut line = String::new();
         for word in para.split_whitespace() {
-            if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > per_line {
+            if !line.is_empty() && text_em(&format!("{line} {word}")) * size > width {
                 lines.push(std::mem::take(&mut line));
             }
             if !line.is_empty() {
@@ -556,22 +593,53 @@ pub fn fill_flatten(bytes: &[u8], values: &BTreeMap<String, String>) -> Result<V
                             .then_some(field.max_len)
                             .flatten()
                             .filter(|n| *n > 0);
+                        // Bounded: a crafted /DA size or rect can never
+                        // make the shrink loop below spin (re-review #33).
                         let mut size = da_size
                             .unwrap_or((h_pts * 0.65).clamp(6.0, 11.0))
-                            .min(h_pts.max(4.0));
+                            .min(h_pts.max(4.0))
+                            .clamp(MIN_SIZE, 72.0);
                         let text = v.to_string();
+                        // MaxLen is the form's own limit: refuse, never
+                        // truncate (re-review #5: comb dates lost digits).
+                        if let Some(n) = field.max_len
+                            && n > 0
+                            && text.chars().count() > n as usize
+                        {
+                            return Err(AcroError(format!(
+                                "field {:?} allows at most {n} characters",
+                                field.name
+                            )));
+                        }
+                        let too_long = || {
+                            AcroError(format!(
+                                "the value for field {:?} is too long to print in its box",
+                                field.name
+                            ))
+                        };
                         let lines = if multiline {
-                            loop {
+                            let mut fitted = None;
+                            for _ in 0..160 {
                                 let lines = wrap(&text, size, w_pts);
-                                if lines.len() as f32 * size * 1.15 <= h_pts || size <= 5.0 {
-                                    break lines;
+                                let fits = lines.len() as f32 * size * 1.15 <= h_pts
+                                    && lines.iter().all(|l| text_em(l) * size <= w_pts);
+                                if fits {
+                                    fitted = Some(lines);
+                                    break;
                                 }
-                                size -= 0.5;
+                                if size <= MIN_SIZE {
+                                    break;
+                                }
+                                size = (size - 0.5).max(MIN_SIZE);
                             }
+                            fitted.ok_or_else(too_long)?
                         } else {
-                            let fit = w_pts / (text.chars().count().max(1) as f32 * AVG_ADVANCE);
                             if comb.is_none() {
-                                size = size.min(fit).max(5.0);
+                                let fit = w_pts / text_em(&text).max(0.01);
+                                if fit < MIN_SIZE {
+                                    return Err(too_long());
+                                }
+                                size = size.min(fit);
                             }
                             vec![text]
                         };
@@ -642,7 +710,8 @@ pub fn fill_flatten(bytes: &[u8], values: &BTreeMap<String, String>) -> Result<V
                     if let (Some(cells), Some(line)) = (comb, lines.first()) {
                         let cell = (x1 - x0) / cells as f32;
                         for (i, b) in line.iter().take(cells as usize).enumerate() {
-                            let x = x0 + cell * i as f32 + (cell - size * AVG_ADVANCE) / 2.0;
+                            let x =
+                                x0 + cell * i as f32 + (cell - size * char_em(*b as char)) / 2.0;
                             ops.push(Operation::new(
                                 "Tm",
                                 vec![
@@ -1029,6 +1098,32 @@ pub(crate) mod tests {
         let mut latin = BTreeMap::new();
         latin.insert("RequesterName".to_string(), "José Müller".to_string());
         assert!(fill_flatten(&src, &latin).is_ok(), "Latin-1 names print");
+    }
+
+    #[test]
+    fn values_that_cannot_fit_are_refused_not_clipped() {
+        // Re-review #4: widths come from Helvetica metrics, so all caps
+        // shrink more than lower case, and what cannot fit at the
+        // minimum size is refused.
+        assert!(text_em("WWWWWW") > 2.0 * text_em("iiiiii"));
+        let src = sample_form();
+        let mut caps = BTreeMap::new();
+        caps.insert(
+            "RequesterName".to_string(),
+            "MARIA-JOSEFINA DE LA CRUZ SAMPLE".to_string(),
+        );
+        assert!(
+            fill_flatten(&src, &caps).is_ok(),
+            "a long all-caps name shrinks to fit"
+        );
+        let mut huge = BTreeMap::new();
+        huge.insert("RequesterName".to_string(), "W".repeat(80));
+        assert!(
+            fill_flatten(&src, &huge)
+                .unwrap_err()
+                .0
+                .contains("too long to print")
+        );
     }
 
     #[test]

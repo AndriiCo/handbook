@@ -314,6 +314,35 @@ pub fn erase_customer_data(
                 .is_some())
         };
         if has("customer_order")? {
+            // Money outlives the erasure (re-review #35): an open or
+            // captured, unrefunded payment is copied, without the
+            // customer ref or any address, into an additive ledger so
+            // staff can still refund it or expire its session.
+            if has("order_payment")? {
+                p2.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS erased_payment (
+                        order_id TEXT PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        payment_intent TEXT,
+                        amount_cents INTEGER NOT NULL,
+                        currency TEXT NOT NULL,
+                        livemode INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        paid_at INTEGER,
+                        erased_at INTEGER NOT NULL
+                    );",
+                )?;
+                p2.execute(
+                    "INSERT OR REPLACE INTO erased_payment(order_id, session_id, payment_intent, amount_cents,
+                         currency, livemode, status, paid_at, erased_at)
+                     SELECT p.order_id, p.session_id, p.payment_intent, p.amount_cents, p.currency,
+                            p.livemode, p.status, p.paid_at, ?2
+                     FROM order_payment p JOIN customer_order o ON o.id = p.order_id
+                     WHERE o.customer_ref = ?1
+                       AND (p.status = 'open' OR (p.status = 'paid' AND p.refund_id IS NULL))",
+                    rusqlite::params![customer_ref, now],
+                )?;
+            }
             for (table, col) in [
                 ("order_event", "order_id"),
                 ("order_shipment", "order_id"),
@@ -1282,7 +1311,32 @@ mod tests {
         )
         .unwrap();
 
+        // A paid, unrefunded order (re-review #35): its payment must
+        // survive the erasure in the de-identified ledger.
+        p2.execute_batch(
+            "CREATE TABLE IF NOT EXISTS customer_order (id TEXT PRIMARY KEY, customer_ref TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS order_payment (order_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                 checkout_url TEXT NOT NULL, amount_cents INTEGER NOT NULL, currency TEXT NOT NULL,
+                 livemode INTEGER NOT NULL, status TEXT NOT NULL, payment_intent TEXT,
+                 created_at INTEGER NOT NULL, paid_at INTEGER, refund_id TEXT);
+             INSERT INTO customer_order VALUES ('ord_a', 'u-1'), ('ord_b', 'u-2');
+             INSERT INTO order_payment VALUES ('ord_a', 'cs_a', 'u', 4900, 'usd', 0, 'paid', 'pi_a', 1000, 1100, NULL);
+             INSERT INTO order_payment VALUES ('ord_b', 'cs_b', 'u', 4900, 'usd', 0, 'paid', 'pi_b', 1000, 1100, NULL);",
+        )
+        .unwrap();
         let report = erase_customer_data(&hb, &p2, &store, "u-1", 2000).unwrap();
+        let kept: (String, String, i64, i64) = p2
+            .query_row(
+                "SELECT order_id, payment_intent, amount_cents, erased_at FROM erased_payment",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(kept, ("ord_a".to_string(), "pi_a".to_string(), 4900, 2000));
+        let left: i64 = p2
+            .query_row("SELECT COUNT(*) FROM order_payment", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 1, "the stranger's payment stays, u-1's is erased");
         assert_eq!(
             report,
             EraseReport {
@@ -1292,7 +1346,7 @@ mod tests {
                 label_defaults: 1,
                 captures: 2,
                 blobs: 2,
-                orders: 0,
+                orders: 1,
             }
         );
         // PII rows gone; the stranger's rows survive.

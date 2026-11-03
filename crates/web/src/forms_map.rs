@@ -37,6 +37,11 @@ pub const FORMS_MODEL: &str = "muse-spark-1.3";
 const PROMPT: &str = include_str!("../prompts/forms-v1.md");
 const PER_RUN_MARKER: &str = "<!-- PER-RUN -->";
 const TYPES: &[&str] = &["text", "date", "number", "checkbox", "select"];
+/// Function words a lone label quote may not be (they ground nothing).
+const STOPWORDS: &[&str] = &[
+    "the", "a", "an", "of", "to", "and", "or", "for", "in", "on", "by", "at", "is", "be", "if",
+    "no", "yes",
+];
 const MAX_FILL_VALUE: usize = 200;
 
 fn norm(s: &str) -> String {
@@ -60,16 +65,24 @@ fn guard_field(
     let Some(field) = acro.iter().find(|f| f.name == name) else {
         return Err(format!("{name:?} is not a field of this PDF"));
     };
+    // The PDF computes or locks it: a fill would refuse the value, so
+    // it is never asked for (re-review #6, also covers older proposals).
+    if field.read_only {
+        return Err(format!("{name}: read-only field"));
+    }
     let (label, quote, help, ty) = (s("label"), s("label_quote"), s("help"), s("type"));
     if label.is_empty() || label.chars().count() > 80 {
         return Err(format!("{name}: label empty or too long"));
     }
     let q = norm(&quote);
-    // A real printed label: 8+ chars and 2+ words, found in the text
-    // layer on word boundaries (review #24). The visitor label stays a
-    // plain-language paraphrase shown next to this quote.
-    if q.len() < 8
-        || q.split_whitespace().count() < 2
+    // A real printed label found in the text layer on word boundaries
+    // (review #24). One-word labels (Name, Date, Signature) are the
+    // common case on request forms (re-review #2), so only an empty,
+    // 1-2 char or function-word quote is refused. The visitor label
+    // stays a plain-language paraphrase shown next to this quote.
+    let one_word = q.split_whitespace().count() == 1;
+    if q.len() < 3
+        || (one_word && STOPWORDS.contains(&q.as_str()))
         || !format!(" {text_norm} ").contains(&format!(" {q} "))
     {
         return Err(format!("{name}: label quote is not in the PDF's text"));
@@ -270,7 +283,9 @@ pub fn compose_blocking(
     let acro = forms::acro::fields(&bytes).map_err(|e| e.to_string())?;
     let fillable: Vec<&forms::acro::AcroField> = acro
         .iter()
-        .filter(|f| matches!(f.kind.as_str(), "text" | "checkbox" | "radio" | "choice"))
+        .filter(|f| {
+            !f.read_only && matches!(f.kind.as_str(), "text" | "checkbox" | "radio" | "choice")
+        })
         .collect();
     if fillable.is_empty() {
         return Err(
@@ -536,6 +551,9 @@ pub fn admin_router(state: AppState) -> Router {
 
 static FILL_LIMITS: LazyLock<crate::passkey::RateBuckets> =
     LazyLock::new(crate::passkey::RateBuckets::default);
+/// Network-keyed fill limits, in their own map (re-review #9).
+static FILL_NET_LIMITS: LazyLock<crate::passkey::RateBuckets> =
+    LazyLock::new(crate::passkey::RateBuckets::default);
 
 #[derive(Debug, Deserialize)]
 pub struct FillBody {
@@ -598,13 +616,15 @@ async fn fill(
             .into_response();
     };
     let now = unix_now();
-    if !FILL_LIMITS.check(&format!("ff:{customer_ref}"), now, 10, 60)
-        || !FILL_LIMITS.check(
-            &format!("fn:{}", crate::admin_ip::rate_key(peer)),
-            now,
-            20,
-            60,
-        )
+    // Network first, in its own map: a flood of fresh customer refs
+    // from one network is refused before it can fill the per-customer
+    // map (re-review #9).
+    if !FILL_NET_LIMITS.check_write(
+        &format!("fn:{}", crate::admin_ip::rate_key(peer)),
+        now,
+        20,
+        60,
+    ) || !FILL_LIMITS.check_write(&format!("ff:{customer_ref}"), now, 10, 60)
     {
         return (
             StatusCode::TOO_MANY_REQUESTS,
@@ -647,24 +667,39 @@ async fn fill(
         )
             .into_response();
     };
+    let mapped: Vec<Value> = serde_json::from_str(&fields).unwrap_or_default();
+    let allowed: Vec<&str> = mapped.iter().filter_map(|f| f["name"].as_str()).collect();
+    // Every posted key and string is checked before normalising, which
+    // drops false/null/blank entries (re-review #10).
+    if let Some((bad, _)) = body.values.iter().find(|(k, v)| {
+        !allowed.contains(&k.as_str())
+            || v.as_str()
+                .is_some_and(|s| s.chars().count() > MAX_FILL_VALUE)
+    }) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": format!("field {bad:?} is not on this form or too long")})),
+        )
+            .into_response();
+    }
     let values = match fill_values(&body.values) {
         Ok(v) => v,
         Err(e) => {
             return (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"error": e}))).into_response();
         }
     };
-    let mapped: Vec<Value> = serde_json::from_str(&fields).unwrap_or_default();
-    let allowed: Vec<&str> = mapped.iter().filter_map(|f| f["name"].as_str()).collect();
-    if let Some(bad) = values
+    if let Some((bad, _)) = values
         .iter()
-        .find(|(k, v)| !allowed.contains(&k.as_str()) || v.chars().count() > MAX_FILL_VALUE)
+        .find(|(_, v)| v.chars().count() > MAX_FILL_VALUE)
     {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"error": format!("field {:?} is not on this form or too long", bad.0)})),
+            Json(json!({"error": format!("field {bad:?} is not on this form or too long")})),
         )
             .into_response();
     }
+    // Only the validated, normalised values are stored.
+    let stored = serde_json::to_string(&values).unwrap_or_default();
     let Ok((_, bytes)) = capture_pdf(&store, &conn, capture_id) else {
         return store_unavailable();
     };
@@ -697,7 +732,7 @@ async fn fill(
     if p2
         .execute(
             "INSERT INTO form_fill(id, customer_ref, form_map_id, values_json, pdf_path, sha256, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![id, customer_ref, form_id, serde_json::to_string(&body.values).unwrap_or_default(), rel, sha, now],
+            rusqlite::params![id, customer_ref, form_id, stored, rel, sha, now],
         )
         .is_err()
     {
@@ -782,6 +817,40 @@ pub fn p2_routes() -> Router<AppState> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn one_word_labels_ground_and_read_only_fields_drop() {
+        // Re-review #2/#7: Name, Date, Signature are the common labels.
+        let text = norm("Name: ____ Date: ____ Signature: ____ Total amount enclosed: ____ the");
+        let field = |name: &str, read_only: bool| forms::acro::AcroField {
+            name: name.into(),
+            kind: "text".into(),
+            options: vec![],
+            page: Some(1),
+            max_len: None,
+            read_only,
+        };
+        let acro = vec![
+            field("Name", false),
+            field("Date", false),
+            field("Total", true),
+        ];
+        let raw = |name: &str, quote: &str| json!({"name": name, "label": "Your name", "help": "", "type": "text", "required": true, "prefill_topic": "", "label_quote": quote});
+        assert!(guard_field(&raw("Name", "Name"), &acro, &text).is_ok());
+        assert!(guard_field(&raw("Date", "Date"), &acro, &text).is_ok());
+        assert!(
+            guard_field(&raw("Name", "the"), &acro, &text).is_err(),
+            "a function word grounds nothing"
+        );
+        assert!(guard_field(&raw("Name", "Na"), &acro, &text).is_err());
+        assert!(
+            guard_field(&raw("Name", "Address"), &acro, &text).is_err(),
+            "not in the text"
+        );
+        // Re-review #6: a computed field is never asked for.
+        let total = guard_field(&raw("Total", "Total amount enclosed"), &acro, &text);
+        assert!(total.unwrap_err().contains("read-only"));
+    }
+
     fn acro() -> Vec<forms::acro::AcroField> {
         vec![
             forms::acro::AcroField {
@@ -790,6 +859,7 @@ mod tests {
                 options: vec![],
                 page: Some(1),
                 max_len: None,
+                read_only: false,
             },
             forms::acro::AcroField {
                 name: "ReturnMail".into(),
@@ -797,6 +867,7 @@ mod tests {
                 options: vec!["Yes".into()],
                 page: Some(1),
                 max_len: None,
+                read_only: false,
             },
         ]
     }
@@ -842,6 +913,7 @@ mod tests {
             options: vec!["Mail".into(), "Pickup".into()],
             page: Some(1),
             max_len: None,
+            read_only: false,
         }];
         let raw = json!({"fields": [{"name": "Delivery", "label": "How it comes back", "help": "", "type": "checkbox", "required": true, "prefill_topic": "", "label_quote": "Return by mail"}]});
         let (kept, _) = guard_map(&raw, &radio, "Return by mail or pickup");

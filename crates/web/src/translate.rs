@@ -437,11 +437,72 @@ fn number_tokens(hay: &str) -> Vec<(usize, usize, String)> {
     out
 }
 
-/// True when `hay` holds a whole number token with exactly `digits` —
-/// `15` never matches inside `150`, nor `4022` inside `40228` (review
-/// P338 #4: the old substring scan accepted both).
+fn is_range_sep(c: char) -> bool {
+    matches!(c, '-' | '/' | '\u{2013}' | '\u{2014}')
+}
+
+/// Digits of each side of a range/compound token (`8:00-4:30` →
+/// `800`, `430`; `98504-0228` → `98504`, `0228`); one entry when the
+/// token has no range separator.
+fn range_parts(raw: &str) -> Vec<String> {
+    raw.split(is_range_sep)
+        .map(|p| p.chars().filter(char::is_ascii_digit).collect::<String>())
+        .filter(|d| !d.is_empty())
+        .collect()
+}
+
+/// The hour of an on-the-hour time (`8:00` → `8`), so `8 AM` and
+/// `8:00 a.m.` ground each other; never for `4:30`.
+fn whole_hour(raw: &str) -> Option<String> {
+    let (h, m) = raw.trim().split_once(':')?;
+    (m == "00" && !h.is_empty() && h.len() <= 2 && h.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| h.to_string())
+}
+
+/// Every digit string `hay` grounds: each whole token, each side of a
+/// range token, and the hour of an `H:00` time.
+fn grounded_numbers(hay: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (s, e, d) in number_tokens(hay) {
+        let raw = &hay[s..e];
+        out.push(d);
+        for part in raw.split(is_range_sep) {
+            let digits: String = part.chars().filter(char::is_ascii_digit).collect();
+            if !digits.is_empty() {
+                out.push(digits);
+            }
+            if let Some(h) = whole_hour(part) {
+                out.push(h);
+            }
+        }
+    }
+    out
+}
+
+/// True when `hay` grounds `digits` as a whole number — `15` never
+/// matches inside `150`, nor `4022` inside `40228` (review P338 #4: the
+/// old substring scan accepted both) — or as one side of a range
+/// (`98504` in `98504-0228`, `800` in `8:00-4:30`) or the hour of an
+/// `H:00` time.
 fn contains_digit_run(hay: &str, digits: &str) -> bool {
-    digits.is_empty() || number_tokens(hay).iter().any(|(_, _, d)| d == digits)
+    digits.is_empty() || grounded_numbers(hay).iter().any(|d| d == digits)
+}
+
+/// A number span of the original survives in `hay`: as a whole, or —
+/// for a range span (`9-5`, `8:00-4:30`) — side by side; an `H:00`
+/// span also survives as its bare hour (`8:00` ~ `8 AM`).
+fn number_grounded(hay: &str, span_text: &str, digits: &str) -> bool {
+    if contains_digit_run(hay, digits) {
+        return true;
+    }
+    let parts = range_parts(span_text);
+    if parts.len() > 1 {
+        return span_text.split(is_range_sep).zip(&parts).all(|(raw, d)| {
+            contains_digit_run(hay, d)
+                || whole_hour(raw).is_some_and(|h| contains_digit_run(hay, &h))
+        });
+    }
+    whole_hour(span_text).is_some_and(|h| contains_digit_run(hay, &h))
 }
 
 /// True when `hay` holds `digits` as a whole token next to `sym`
@@ -455,36 +516,35 @@ fn contains_money(hay: &str, sym: char, digits: &str) -> bool {
 }
 
 /// Every `$` amount written in `text`, in cents (`$150` → 15000,
-/// `$15.00` → 1500, `$1,500` → 150000). A trailing `.d`/`.dd` is a
-/// decimal; any other `.`/`,` is grouping.
+/// `$15.00` → 1500, `$1,500` → 150000, `15,00 $` → 1500). A trailing
+/// `.d`/`.dd` or `,d`/`,dd` is a decimal; any other `.`/`,` is grouping.
 pub fn dollar_amounts_cents(text: &str) -> Vec<i64> {
-    let mut out = Vec::new();
-    for (s, e, _) in number_tokens(text) {
-        let money = adjacent_symbol_before(text, s) == Some('$')
-            || adjacent_symbol_after(text, e) == Some('$');
-        if !money {
-            continue;
+    number_tokens(text)
+        .into_iter()
+        .filter(|(s, e, _)| {
+            adjacent_symbol_before(text, *s) == Some('$')
+                || adjacent_symbol_after(text, *e) == Some('$')
+        })
+        .filter_map(|(s, e, _)| cents_of(&text[s..e]))
+        .collect()
+}
+
+/// One written amount in cents (`15.00`, `1,500`, `15,00`); `None` for
+/// non-amounts or overflow.
+fn cents_of(raw: &str) -> Option<i64> {
+    let raw: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_digit() || matches!(c, '.' | ','))
+        .collect();
+    let (whole, cents) = match raw.rsplit_once(['.', ',']) {
+        Some((w, f)) if !f.is_empty() && f.len() <= 2 && f.bytes().all(|b| b.is_ascii_digit()) => {
+            (w.to_string(), format!("{f:0<2}"))
         }
-        let raw: String = text[s..e]
-            .chars()
-            .filter(|c| c.is_ascii_digit() || matches!(c, '.' | ','))
-            .collect();
-        let (whole, cents) = match raw.rsplit_once('.') {
-            Some((w, f))
-                if !f.is_empty() && f.len() <= 2 && f.bytes().all(|b| b.is_ascii_digit()) =>
-            {
-                (w.to_string(), format!("{f:0<2}"))
-            }
-            _ => (raw.clone(), "00".to_string()),
-        };
-        let whole: String = whole.chars().filter(char::is_ascii_digit).collect();
-        if let (Ok(w), Ok(c)) = (whole.parse::<i64>(), cents.parse::<i64>())
-            && let Some(total) = w.checked_mul(100).and_then(|v| v.checked_add(c))
-        {
-            out.push(total);
-        }
-    }
-    out
+        _ => (raw.clone(), "00".to_string()),
+    };
+    let whole: String = whole.chars().filter(char::is_ascii_digit).collect();
+    let (w, c) = (whole.parse::<i64>().ok()?, cents.parse::<i64>().ok()?);
+    w.checked_mul(100)?.checked_add(c)
 }
 
 /// Re-extraction guard: every protected span of `original` must survive
@@ -496,7 +556,13 @@ pub fn guard_ok(original: &str, translated: &str) -> bool {
     protected_spans(original)
         .into_iter()
         .all(|span| match span.kind {
-            ProtectedKind::Number => contains_digit_run(translated, &span.digits),
+            ProtectedKind::Number => number_grounded(translated, &span.text, &span.digits),
+            // Dollars compare by value (`$1,500` never grounds `$15.00`,
+            // `15,00 $` grounds `$15.00`); other symbols by digits.
+            ProtectedKind::Money('$') => match cents_of(&span.text) {
+                Some(cents) => dollar_amounts_cents(translated).contains(&cents),
+                None => contains_money(translated, '$', &span.digits),
+            },
             ProtectedKind::Money(sym) => contains_money(translated, sym, &span.digits),
             ProtectedKind::PoBox => {
                 lower.contains("po box") && contains_digit_run(translated, &span.digits)
@@ -1234,8 +1300,12 @@ mod tests {
         assert!(!contains_digit_run("Mail to PO Box 40228", "4022"));
         assert!(contains_digit_run("open 8:00 AM to 4:30 PM", "800"));
         assert!(
-            !contains_digit_run("open 8:00 AM to 4:30 PM", "8"),
-            "8 is not 8:00"
+            contains_digit_run("open 8:00 AM to 4:30 PM", "8"),
+            "8 AM is 8:00 (on the hour)"
+        );
+        assert!(
+            !contains_digit_run("open 8:00 AM to 4:30 PM", "4"),
+            "4 PM is not 4:30"
         );
         assert!(
             contains_digit_run("25 000 personas", "25000"),
@@ -1248,6 +1318,40 @@ mod tests {
         );
         assert!(guard_ok("The fee is $15.", "La tarifa es de $15."));
         assert!(!guard_ok("The fee is $15.", "La tarifa es de $150."));
+    }
+
+    #[test]
+    fn ranges_hours_and_zip_plus_four_ground_their_parts() {
+        // Review P346 #3: whole-token matching broke equivalent times and ZIPs.
+        assert!(guard_ok(
+            "Open 8 AM to 5 PM",
+            "Open Monday through Friday, 8:00 a.m. to 5:00 p.m."
+        ));
+        assert!(guard_ok("8:00 AM to 5:00 PM", "Monday–Friday 8 AM–5 PM"));
+        assert!(guard_ok("8:00 AM to 4:30 PM", "Monday - Friday 8:00-4:30"));
+        assert!(guard_ok("9 AM to 5 PM", "Mon-Fri 9-5"));
+        assert!(guard_ok("Mon-Fri 9-5", "9 AM to 5 PM"));
+        assert!(guard_ok(
+            "Olympia, WA 98504",
+            "PO Box 40228, Olympia, WA 98504-0228"
+        ));
+        assert!(guard_ok(
+            "Walk in weekdays 8 AM to 5 PM or mail PO Box 40228",
+            "Walk-in 8:00 a.m.–5:00 p.m.; mail PO Box 40228, Olympia, WA 98504-0228"
+        ));
+        // Still refused: a different half hour, a different box, a longer number.
+        assert!(!guard_ok("8:00 AM to 4 PM", "8:00-4:30"));
+        assert!(!guard_ok("PO Box 4022", "PO Box 40228"));
+        assert!(!guard_ok("Fee $15", "Fee $150"));
+    }
+
+    #[test]
+    fn dollars_compare_by_value() {
+        // Review P346 #22: digit strings let $1,500 ground $15.00.
+        assert!(!guard_ok("The fee is $1,500.", "The fee is $15.00."));
+        assert!(guard_ok("The fee is $15.", "La tarifa es de 15,00 $."));
+        assert!(guard_ok("The fee is $1,500.", "Les frais sont de 1 500 $."));
+        assert!(guard_ok("The fee is $15.00.", "The fee is $15."));
     }
 
     #[test]

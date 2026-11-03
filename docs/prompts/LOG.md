@@ -255,3 +255,4 @@
 | 346 | 2026-11-03 03:32Z | T2 deploy: 39b8430 (review fixes P339-P344) to production | prod 5/10 → 5/10, no regressions; flags announced |
 | 347 | 2026-11-03 03:45Z | J2: recorded Muse Spark replay for keyless judge boots (analyze, eval, staff draft) | agent+xtask+web green, clippy clean |
 | 348 | 2026-11-03 04:01Z | W1c: admin Orders page (/staff-orders) + sidebar link | shots 20 OK, demo 3/3, check/imports/tailwind/builds green |
+| 349 | 2026-11-03 04:15Z | Re-review fixes (T2b): quote renew, paid-only cap, limiter policies, number ranges, form labels, PDF fit | web 377, agent 63, store 39, forms 24; clippy clean |

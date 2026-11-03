@@ -743,13 +743,14 @@ async fn create(
         );
     };
     let now = unix_now();
-    if !ORDER_LIMITS.check(&format!("oc:{customer_ref}"), now, 10, 60)
-        || !NET_LIMITS.check(
-            &format!("oc:{}", crate::admin_ip::rate_key(peer)),
-            now,
-            20,
-            60,
-        )
+    // Network first: a flood of fresh demo refs is refused before it
+    // can fill the per-customer map (re-review #9).
+    if !NET_LIMITS.check_write(
+        &format!("oc:{}", crate::admin_ip::rate_key(peer)),
+        now,
+        20,
+        60,
+    ) || !ORDER_LIMITS.check_write(&format!("oc:{customer_ref}"), now, 10, 60)
     {
         return err(StatusCode::TOO_MANY_REQUESTS, "rate limited", None);
     }
@@ -1180,7 +1181,7 @@ async fn checkout(
         Err(r) => return *r,
     };
     let now = unix_now();
-    if !ORDER_LIMITS.check(&format!("ok:{customer_ref}"), now, 10, 60) {
+    if !ORDER_LIMITS.check_write(&format!("ok:{customer_ref}"), now, 10, 60) {
         return err(StatusCode::TOO_MANY_REQUESTS, "rate limited", None);
     }
     let sw = switches(&state, &meta);
@@ -1258,14 +1259,23 @@ async fn checkout(
     let fresh = stored["quoted_at"]
         .as_i64()
         .is_some_and(|t| now - t <= QUOTE_TTL_SECS);
-    if !fresh
-        || stored["total_cents"].as_i64() != Some(total)
+    // The total is re-priced from config right here, so a stale quote
+    // at the same price and currency is simply renewed; only a changed
+    // price sends the customer back to review it (re-review #0).
+    if stored["total_cents"].as_i64() != Some(total)
         || stored["currency"].as_str() != Some(currency.as_str())
     {
         return err(
             StatusCode::CONFLICT,
             "quote_expired",
             Some("Prices were updated. Review the new total and pay again."),
+        );
+    }
+    if !fresh {
+        let _ = p2.execute(
+            "UPDATE customer_order SET amount_json = json_set(amount_json, '$.quoted_at', ?1)
+             WHERE id = ?2 AND status = 'quoted'",
+            rusqlite::params![now, id],
         );
     }
     let max = state
@@ -1292,15 +1302,33 @@ async fn checkout(
         })
         .and_then(|v| v.trim().parse::<i64>().ok())
         .unwrap_or(20);
+    // The cap counts captured payments in this mode (abandoned
+    // sessions never consume it, re-review #1); one customer may hold
+    // at most two open sessions, which bounds the overshoot.
     let today: i64 = p2
         .query_row(
-            "SELECT COUNT(*) FROM order_payment WHERE created_at >= ?1 AND status IN ('open', 'paid')",
-            [now - now.rem_euclid(86_400)],
+            "SELECT COUNT(*) FROM order_payment WHERE status = 'paid' AND paid_at >= ?1 AND livemode = ?2",
+            rusqlite::params![now - now.rem_euclid(86_400), i64::from(mode == "live")],
             |r| r.get(0),
         )
         .unwrap_or(i64::MAX);
     if total > max || today >= cap {
         return paused();
+    }
+    let open_sessions: i64 = p2
+        .query_row(
+            "SELECT COUNT(*) FROM order_payment p JOIN customer_order o ON o.id = p.order_id
+             WHERE o.customer_ref = ?1 AND p.status = 'open' AND p.order_id != ?2 AND p.created_at >= ?3",
+            rusqlite::params![customer_ref, id, now - SESSION_TTL_SECS],
+            |r| r.get(0),
+        )
+        .unwrap_or(i64::MAX);
+    if open_sessions >= 2 {
+        return err(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many open checkouts",
+            Some("Finish or close your other checkout first."),
+        );
     }
     // Claim first: only one checkout can move quoted → awaiting_payment.
     if !set_status(&p2, &id, "quoted", "awaiting_payment", now) {
@@ -1569,7 +1597,7 @@ async fn confirm(
         .is_some();
     // One Stripe read per confirm, throttled per customer (review #27).
     if open
-        && ORDER_LIMITS.check(&format!("of:{customer}"), unix_now(), 10, 60)
+        && ORDER_LIMITS.check_write(&format!("of:{customer}"), unix_now(), 10, 60)
         && let Some(keys) = crate::stripe::keys(&state, &meta)
     {
         let (st, oid) = (state.clone(), id.clone());
@@ -1613,7 +1641,15 @@ mod tests {
         assert!(!is_zip("1234é"));
         assert!(!is_zip("é"));
         assert!(!is_zip("98501-é234"));
-        assert!(us_address_in("İİİ at PO Box 4000, Olympia, WA 98504").is_some());
+        // The slice must be the right one, not merely present (re-review
+        // #37): Unicode lowercasing used to shift the offsets.
+        let a = us_address_in("İİİ at PO Box 4000, Olympia, WA 98504").unwrap();
+        assert!(a.street.ends_with("PO Box 4000"), "street {:?}", a.street);
+        assert_eq!(
+            (a.city.as_str(), a.state.as_str(), a.zip.as_str()),
+            ("Olympia", "WA", "98504")
+        );
+        assert!(a.is_po_box());
         assert!(us_address_in("Hà Nội, Đống Đa, VN 100000").is_none());
         let bad = ReturnTo {
             name: "A".into(),

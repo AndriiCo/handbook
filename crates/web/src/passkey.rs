@@ -43,25 +43,76 @@ pub fn test_webauthn() -> Webauthn {
 }
 
 /// In-memory rate buckets (spec decision 0.6): single server, no
-/// new table. Atomic check-and-decrement; oversized maps shed
-/// expired entries first, then fail closed.
+/// new table. Atomic check-and-decrement. A key already in the map
+/// always keeps its own budget; when the map is full of live keys, a
+/// *new* key gets the caller's [`WhenFull`] policy.
 #[derive(Debug, Default)]
 pub struct RateBuckets {
     inner: Mutex<HashMap<String, VecDeque<i64>>>,
 }
 
+/// What a full map does with a key it has not seen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WhenFull {
+    /// Auth endpoints: fail closed for newcomers.
+    RefuseNew,
+    /// Model-free public reads: admit unrecorded, so a flood of
+    /// distinct callers never locks every visitor out of a page.
+    AdmitNew,
+    /// Customer writes (behind a network bucket): evict the stalest
+    /// key, so a flood of fresh refs never refuses every customer.
+    EvictOldest,
+}
+
+const MAX_KEYS: usize = 8192;
+
 impl RateBuckets {
+    /// Fail-closed check for auth endpoints.
     pub fn check(&self, key: &str, now: i64, limit: u32, window_secs: i64) -> bool {
+        self.check_with(key, now, limit, window_secs, WhenFull::RefuseNew)
+    }
+
+    /// Check for model-free public reads (see [`WhenFull::AdmitNew`]).
+    pub fn check_read(&self, key: &str, now: i64, limit: u32, window_secs: i64) -> bool {
+        self.check_with(key, now, limit, window_secs, WhenFull::AdmitNew)
+    }
+
+    /// Check for per-customer write buckets that sit behind a network
+    /// bucket (see [`WhenFull::EvictOldest`]).
+    pub fn check_write(&self, key: &str, now: i64, limit: u32, window_secs: i64) -> bool {
+        self.check_with(key, now, limit, window_secs, WhenFull::EvictOldest)
+    }
+
+    fn check_with(
+        &self,
+        key: &str,
+        now: i64,
+        limit: u32,
+        window_secs: i64,
+        full: WhenFull,
+    ) -> bool {
         let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if map.len() > 8192 {
+        if map.len() >= MAX_KEYS && !map.contains_key(key) {
             map.retain(|_, q: &mut VecDeque<i64>| {
                 while q.front().is_some_and(|&t| now - t >= window_secs) {
                     q.pop_front();
                 }
                 !q.is_empty()
             });
-            if map.len() > 8192 {
-                return false;
+            if map.len() >= MAX_KEYS {
+                match full {
+                    WhenFull::RefuseNew => return false,
+                    WhenFull::AdmitNew => return true,
+                    WhenFull::EvictOldest => {
+                        let stalest = map
+                            .iter()
+                            .min_by_key(|(_, q)| q.back().copied().unwrap_or(i64::MIN))
+                            .map(|(k, _)| k.clone());
+                        if let Some(k) = stalest {
+                            map.remove(&k);
+                        }
+                    }
+                }
             }
         }
         let queue = map.entry(key.to_string()).or_default();
@@ -73,29 +124,6 @@ impl RateBuckets {
         }
         queue.push_back(now);
         true
-    }
-
-    /// Like [`RateBuckets::check`], for model-free public reads: when the
-    /// map is full of live keys a *new* key is admitted unrecorded
-    /// instead of refused, so a flood of distinct callers can never lock
-    /// every visitor out of a read page (callers already in the map keep
-    /// their own budget). Auth endpoints keep the fail-closed `check`.
-    pub fn check_read(&self, key: &str, now: i64, limit: u32, window_secs: i64) -> bool {
-        {
-            let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-            if map.len() > 8192 && !map.contains_key(key) {
-                map.retain(|_, q: &mut VecDeque<i64>| {
-                    while q.front().is_some_and(|&t| now - t >= window_secs) {
-                        q.pop_front();
-                    }
-                    !q.is_empty()
-                });
-                if map.len() > 8192 {
-                    return true;
-                }
-            }
-        }
-        self.check(key, now, limit, window_secs)
     }
 }
 
@@ -1122,6 +1150,47 @@ mod tests {
         // After the window passes the shed entries expire and the
         // gate opens again.
         assert!(buckets.check("victim", 2000, 1_000_000, 60));
+    }
+
+    #[test]
+    fn full_maps_keep_known_callers_and_apply_their_policy() {
+        // Re-review #34 / #9: a full map used to refuse every key,
+        // including callers it already held.
+        let fill = |b: &RateBuckets| {
+            for i in 0..MAX_KEYS {
+                let _ = b.check_read(&format!("k-{i}"), 1000, 1_000_000, 60);
+            }
+        };
+        let auth = RateBuckets::default();
+        fill(&auth);
+        assert!(
+            auth.check("k-7", 1001, 1_000_000, 60),
+            "a known caller keeps its budget"
+        );
+        assert!(
+            !auth.check("newcomer", 1001, 1_000_000, 60),
+            "auth stays fail-closed"
+        );
+
+        let read = RateBuckets::default();
+        fill(&read);
+        assert!(read.check_read("k-7", 1001, 1_000_000, 60));
+        assert!(
+            read.check_read("newcomer", 1001, 1_000_000, 60),
+            "reads admit newcomers"
+        );
+
+        let write = RateBuckets::default();
+        fill(&write);
+        assert!(
+            write.check_write("customer", 1001, 2, 60),
+            "writes evict the stalest key"
+        );
+        assert!(write.check_write("customer", 1002, 2, 60));
+        assert!(
+            !write.check_write("customer", 1003, 2, 60),
+            "and still enforce the limit"
+        );
     }
 
     #[test]

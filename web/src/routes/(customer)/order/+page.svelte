@@ -468,6 +468,13 @@
 			return;
 		}
 		busy = null;
+		if (r.status === 409 && (r.body as { error?: string })?.error === 'quote_expired') {
+			// Prices changed since the quote: fetch the new total and let
+			// the customer review it before paying.
+			await requote();
+			payError ??= 'Prices were updated. Review the new total, then pay.';
+			return;
+		}
 		payError = 'Checkout did not open. Your order is saved; try again in a moment.';
 	}
 
