@@ -95,8 +95,8 @@
 		<Notice variant="error" heading="Packs unavailable"><p>{listError}</p></Notice>
 	{:else if listing === null}
 		<div role="status" aria-label="Working" class="space-y-2">
-			<div class="h-4 animate-pulse rounded bg-gray-200"></div>
-			<div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>
+			<div class="h-4 animate-pulse rounded bg-surface-2"></div>
+			<div class="h-4 w-2/3 animate-pulse rounded bg-surface-2"></div>
 		</div>
 	{:else}
 		<p class="text-sm">
@@ -104,14 +104,14 @@
 		</p>
 		<ul class="m-0 list-none space-y-3 p-0">
 			{#each listing.sets as s (s.set)}
-				<li class="flex items-center gap-3 rounded border p-4">
+				<li class="flex items-center gap-3 rounded border border-line p-4">
 					<div class="min-w-0 flex-1">
 						<p class="m-0 font-medium">{LABEL[s.set] ?? s.set}</p>
-						<p class="m-0 text-sm text-gray-600">{s.packs} pack file(s) in this release</p>
+						<p class="m-0 text-sm text-ink-muted">{s.packs} pack file(s) in this release</p>
 					</div>
 					<button
 						type="button"
-						class="min-h-11 rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+						class="min-h-11 rounded border border-accent-fill bg-accent-fill px-4 py-2 text-accent-ink disabled:opacity-50"
 						disabled={s.packs === 0 || busy !== null || listing.running}
 						onclick={() => load(s.set)}
 					>
@@ -126,12 +126,15 @@
 		<Notice variant="error" heading="Load failed"><p>{loadError}</p></Notice>
 	{/if}
 	{#if result}
-		<section aria-label="Load result" class="space-y-2 rounded border p-4">
-			<h2 class="font-bold">
+		<section aria-label="Load result" class="space-y-2 rounded border border-line p-4">
+			<h2 class={`font-bold ${result.ok ? 'text-success' : 'text-error'}`}>
 				{result.ok ? 'Loaded' : 'Refused'}: {LABEL[result.set] ?? result.set}
 			</h2>
-			<p class="text-sm">Authorities: {result.before ?? '—'} → {result.after ?? '—'}</p>
-			<pre class="max-h-80 overflow-auto rounded bg-gray-100 p-2 text-xs whitespace-pre-wrap">{result.stdout}{result.stderr}</pre>
+			<p class="text-sm text-ink">
+				Authorities: {result.before ?? '—'} → {result.after ?? '—'}
+			</p>
+			<pre
+				class="max-h-80 overflow-auto rounded border border-line bg-surface p-2 text-xs whitespace-pre-wrap text-ink">{result.stdout}{result.stderr}</pre>
 		</section>
 	{/if}
 </main>

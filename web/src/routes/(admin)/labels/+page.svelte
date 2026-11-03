@@ -196,12 +196,12 @@
 		allowlisted destination ZIPs only. One purchase per order leg.
 	</p>
 
-	<section aria-label="Live caps" class="rounded border p-4">
+	<section aria-label="Live caps" class="rounded border border-line p-4">
 		<h2 class="font-bold">Live caps</h2>
 		{#if capsState === 'working'}
 			<div role="status" aria-label="Working" class="space-y-2">
-				<div class="h-4 animate-pulse rounded bg-gray-200"></div>
-				<div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>
+				<div class="h-4 animate-pulse rounded bg-surface-2"></div>
+				<div class="h-4 w-2/3 animate-pulse rounded bg-surface-2"></div>
 			</div>
 		{:else if capsState === 'ready' && caps}
 			<ul class="list-disc pl-5 text-sm">
@@ -211,19 +211,19 @@
 			</ul>
 		{:else}
 			<Notice variant="error" heading="Caps unavailable"><p>{capsError ?? 'Unknown error.'}</p></Notice>
-			<button type="button" class="mt-2 rounded bg-blue-600 px-4 py-2 text-white" onclick={loadCaps}>
+			<button type="button" class="mt-2 rounded border border-accent-fill bg-accent-fill px-4 py-2 text-accent-ink" onclick={loadCaps}>
 				Retry
 			</button>
 		{/if}
 	</section>
 
-	<section aria-label="Shipment" class="space-y-3 rounded border p-4">
+	<section aria-label="Shipment" class="space-y-3 rounded border border-line p-4">
 		<h2 class="font-bold">Shipment</h2>
 		<div>
 			<label for="fedex-order" class="block text-sm font-bold">Order ID</label>
 			<input
 				id="fedex-order"
-				class="mt-1 w-full rounded border p-2"
+				class="mt-1 w-full rounded border border-line bg-bg p-2 text-ink"
 				type="text"
 				autocomplete="off"
 				bind:value={orderId}
@@ -232,14 +232,14 @@
 		<div class="flex gap-4">
 			<div>
 				<label for="fedex-leg" class="block text-sm font-bold">Leg</label>
-				<select id="fedex-leg" class="mt-1 rounded border p-2" bind:value={leg}>
+				<select id="fedex-leg" class="mt-1 rounded border border-line bg-bg p-2 text-ink" bind:value={leg}>
 					<option value="outbound">Outbound</option>
 					<option value="return">Return</option>
 				</select>
 			</div>
 			<div>
 				<label for="fedex-service" class="block text-sm font-bold">Service</label>
-				<select id="fedex-service" class="mt-1 rounded border p-2" bind:value={service}>
+				<select id="fedex-service" class="mt-1 rounded border border-line bg-bg p-2 text-ink" bind:value={service}>
 					<option value="overnight">Overnight</option>
 					<option value="two_day">2Day</option>
 					<option value="ground">Ground</option>
@@ -247,7 +247,7 @@
 			</div>
 			<div>
 				<label for="fedex-parcel" class="block text-sm font-bold">Parcel</label>
-				<select id="fedex-parcel" class="mt-1 rounded border p-2" bind:value={parcel}>
+				<select id="fedex-parcel" class="mt-1 rounded border border-line bg-bg p-2 text-ink" bind:value={parcel}>
 					<option value="letter_envelope">Letter envelope</option>
 					<option value="flat_envelope">Flat envelope</option>
 				</select>
@@ -259,21 +259,21 @@
 	</section>
 
 	{#snippet addressFields(id: string, title: string, a: Address)}
-		<fieldset class="space-y-3 rounded border p-4">
+		<fieldset class="space-y-3 rounded border border-line p-4">
 			<legend class="px-1 font-bold">{title}</legend>
 			<div>
 				<label for={`${id}-name`} class="block text-sm font-bold">Name</label>
-				<input id={`${id}-name`} class="mt-1 w-full rounded border p-2" type="text" autocomplete="off" bind:value={a.name} />
+				<input id={`${id}-name`} class="mt-1 w-full rounded border border-line bg-bg p-2 text-ink" type="text" autocomplete="off" bind:value={a.name} />
 			</div>
 			<div>
 				<label for={`${id}-street`} class="block text-sm font-bold">Street</label>
-				<input id={`${id}-street`} class="mt-1 w-full rounded border p-2" type="text" autocomplete="off" bind:value={a.street1} />
+				<input id={`${id}-street`} class="mt-1 w-full rounded border border-line bg-bg p-2 text-ink" type="text" autocomplete="off" bind:value={a.street1} />
 			</div>
 			<div>
 				<label for={`${id}-phone`} class="block text-sm font-bold">Contact phone</label>
 				<input
 					id={`${id}-phone`}
-					class="mt-1 w-full rounded border p-2"
+					class="mt-1 w-full rounded border border-line bg-bg p-2 text-ink"
 					type="tel"
 					inputmode="tel"
 					autocomplete="off"
@@ -284,15 +284,15 @@
 			<div class="flex gap-4">
 				<div class="flex-1">
 					<label for={`${id}-city`} class="block text-sm font-bold">City</label>
-					<input id={`${id}-city`} class="mt-1 w-full rounded border p-2" type="text" autocomplete="off" bind:value={a.city} />
+					<input id={`${id}-city`} class="mt-1 w-full rounded border border-line bg-bg p-2 text-ink" type="text" autocomplete="off" bind:value={a.city} />
 				</div>
 				<div>
 					<label for={`${id}-state`} class="block text-sm font-bold">State</label>
-					<input id={`${id}-state`} class="mt-1 w-24 rounded border p-2" type="text" autocomplete="off" bind:value={a.state_province} />
+					<input id={`${id}-state`} class="mt-1 w-24 rounded border border-line bg-bg p-2 text-ink" type="text" autocomplete="off" bind:value={a.state_province} />
 				</div>
 				<div>
 					<label for={`${id}-zip`} class="block text-sm font-bold">ZIP</label>
-					<input id={`${id}-zip`} class="mt-1 w-32 rounded border p-2" type="text" inputmode="numeric" autocomplete="off" bind:value={a.postal} />
+					<input id={`${id}-zip`} class="mt-1 w-32 rounded border border-line bg-bg p-2 text-ink" type="text" inputmode="numeric" autocomplete="off" bind:value={a.postal} />
 				</div>
 			</div>
 		</fieldset>
@@ -301,11 +301,11 @@
 	{@render addressFields('fedex-from', 'Ship from', from)}
 	{@render addressFields('fedex-to', 'Ship to', to)}
 
-	<section aria-label="Quote" class="space-y-3 rounded border p-4">
+	<section aria-label="Quote" class="space-y-3 rounded border border-line p-4">
 		<h2 class="font-bold">Rate quote</h2>
 		<button
 			type="button"
-			class="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+			class="rounded border border-accent-fill bg-accent-fill px-4 py-2 text-accent-ink disabled:opacity-50"
 			disabled={!formReady || quoteState === 'working'}
 			onclick={quote}
 		>
@@ -313,7 +313,7 @@
 		</button>
 		{#if quoteState === 'working'}
 			<div role="status" aria-label="Working">
-				<div class="h-4 w-1/2 animate-pulse rounded bg-gray-200"></div>
+				<div class="h-4 w-1/2 animate-pulse rounded bg-surface-2"></div>
 			</div>
 		{:else if quoteState === 'done' && quoteCents !== null}
 			<Notice variant="info" heading="Quote"
@@ -324,14 +324,14 @@
 		{/if}
 	</section>
 
-	<section aria-label="Purchase" class="space-y-3 rounded border p-4">
+	<section aria-label="Purchase" class="space-y-3 rounded border border-line p-4">
 		<h2 class="font-bold">Purchase</h2>
 		{#if formReady && !buyReady}
 			<p class="text-sm">FedEx needs a 10-digit contact phone for both addresses.</p>
 		{/if}
 		<button
 			type="button"
-			class="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+			class="rounded border border-accent-fill bg-accent-fill px-4 py-2 text-accent-ink disabled:opacity-50"
 			disabled={!buyReady || buyState === 'working'}
 			onclick={buy}
 		>
@@ -339,7 +339,7 @@
 		</button>
 		{#if buyState === 'working'}
 			<div role="status" aria-label="Working">
-				<div class="h-4 w-1/2 animate-pulse rounded bg-gray-200"></div>
+				<div class="h-4 w-1/2 animate-pulse rounded bg-surface-2"></div>
 			</div>
 		{:else if buyState === 'done' && tracking}
 			<Notice variant="success" heading="Label bought">
@@ -357,11 +357,11 @@
 		{/if}
 	</section>
 
-	<section aria-label="Void" class="space-y-3 rounded border p-4">
+	<section aria-label="Void" class="space-y-3 rounded border border-line p-4">
 		<h2 class="font-bold">Void</h2>
 		<button
 			type="button"
-			class="rounded bg-red-700 px-4 py-2 text-white disabled:opacity-50"
+			class="rounded border border-error bg-error-bg px-4 py-2 text-error disabled:opacity-50"
 			disabled={!formReady || buyState !== 'done' || voidState === 'working'}
 			onclick={voidLabel}
 		>
@@ -369,7 +369,7 @@
 		</button>
 		{#if voidState === 'working'}
 			<div role="status" aria-label="Working">
-				<div class="h-4 w-1/2 animate-pulse rounded bg-gray-200"></div>
+				<div class="h-4 w-1/2 animate-pulse rounded bg-surface-2"></div>
 			</div>
 		{:else if voidState === 'done' && voidMsg}
 			<Notice variant="success" heading="Voided"><p>{voidMsg}</p></Notice>
