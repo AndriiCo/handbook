@@ -22,4 +22,6 @@ ureq = { version = "3", default-features = false, features = [
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 
 [dev-dependencies]
+# The change-draft fixtures ingest through the real sweep path.
+ingest = { path = "../ingest" }
 tempfile = "3"

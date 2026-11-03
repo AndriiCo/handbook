@@ -3,7 +3,8 @@
 -- Fresh databases apply this file once and stamp user_version=11.
 -- Databases at v1..v10 MUST upgrade through the last incremental
 -- release first (migrate() refuses them loudly, never silently).
--- Future migrations resume the N+1 convention (012_*.sql).
+-- Later migrations resume the N+1 convention: 012_service_notice.sql
+-- (v12) runs on top of this file for fresh and v11 databases alike.
 
 CREATE VIRTUAL TABLE capture_fts USING fts5(capture_id UNINDEXED, body);
 CREATE TABLE build(

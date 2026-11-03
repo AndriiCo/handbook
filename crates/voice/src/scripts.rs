@@ -291,7 +291,7 @@ mod tests {
                 "{topic:?}"
             );
         }
-        assert_eq!(contracts::topics::Topic::ALL.len(), 25);
+        assert_eq!(contracts::topics::Topic::ALL.len(), 26);
     }
 
     #[test]

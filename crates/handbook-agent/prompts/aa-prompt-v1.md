@@ -21,6 +21,10 @@ Rules:
 6. For non-English evidence, quote and record values verbatim in the
    source language; never translate a value — the byte-exact
    validator rejects translations.
+7. A notice that changes whether or when the office serves people —
+   a closure, an outage, a suspended or unavailable service, a changed
+   or reduced schedule — is topic `service_notice` with field
+   `notice`; quote the notice itself, dates included when stated.
 
 <!-- PER-RUN -->
 

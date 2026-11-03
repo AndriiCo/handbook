@@ -1388,6 +1388,7 @@ dependencies = [
  "callcache",
  "contracts",
  "handbook-store",
+ "ingest",
  "rusqlite",
  "rustls",
  "serde_json",

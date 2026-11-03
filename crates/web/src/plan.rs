@@ -85,6 +85,7 @@ pub(crate) const TOPICS: &[&str] = &[
     "notarization",
     "authentication",
     "dropbox",
+    "service_notice",
 ];
 
 /// Topics a block kind may rest on (`step`/`callout`: any but

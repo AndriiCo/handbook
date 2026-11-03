@@ -13,7 +13,9 @@ use std::str::FromStr;
 ///
 /// The wire form is the snake_case string (e.g. `"po_box"`); see
 /// [`Topic::as_str`]. `po_box` is deliberately its own topic, not part
-/// of `mailing` (see `docs/specs/TOPICS.md`).
+/// of `mailing`; `service_notice` (closures, outages, suspended
+/// services) is a dated banner, never a guide step (see
+/// `docs/specs/TOPICS.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Topic {
     Hours,
@@ -41,11 +43,12 @@ pub enum Topic {
     Notarization,
     Authentication,
     Dropbox,
+    ServiceNotice,
 }
 
 impl Topic {
     /// Every topic, for iteration and exhaustive tests.
-    pub const ALL: [Topic; 25] = [
+    pub const ALL: [Topic; 26] = [
         Topic::Hours,
         Topic::Fees,
         Topic::Forms,
@@ -71,6 +74,7 @@ impl Topic {
         Topic::Notarization,
         Topic::Authentication,
         Topic::Dropbox,
+        Topic::ServiceNotice,
     ];
 
     /// The snake_case wire form stored in `fact.topic`.
@@ -101,6 +105,7 @@ impl Topic {
             Topic::Notarization => "notarization",
             Topic::Authentication => "authentication",
             Topic::Dropbox => "dropbox",
+            Topic::ServiceNotice => "service_notice",
         }
     }
 
@@ -134,6 +139,7 @@ impl Topic {
             "notarization" => Ok(Topic::Notarization),
             "authentication" => Ok(Topic::Authentication),
             "dropbox" => Ok(Topic::Dropbox),
+            "service_notice" => Ok(Topic::ServiceNotice),
             _ => Err(UnknownTopic(input.to_string())),
         }
     }
@@ -171,7 +177,7 @@ mod tests {
 
     #[test]
     fn all_topics_roundtrip() {
-        assert_eq!(Topic::ALL.len(), 25);
+        assert_eq!(Topic::ALL.len(), 26);
         for topic in Topic::ALL {
             assert_eq!(topic.to_string(), topic.as_str());
             assert_eq!(Topic::parse(topic.as_str()).unwrap(), topic);
@@ -179,6 +185,7 @@ mod tests {
         }
         assert_eq!(Topic::parse("po_box").unwrap(), Topic::PoBox);
         assert_eq!(Topic::Dropbox.to_string(), "dropbox");
+        assert_eq!(Topic::ServiceNotice.to_string(), "service_notice");
     }
 
     #[test]

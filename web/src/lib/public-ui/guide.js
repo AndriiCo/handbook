@@ -4,8 +4,9 @@
 // module parses them into labelled items grouped into a fixed step
 // order over the frozen topic vocabulary
 // (crates/contracts/src/topics.rs). Only staff-accepted facts enter;
-// `phone_script` never renders publicly. Pure: no window/fetch, so
-// node tests drive it directly.
+// `phone_script` never renders publicly, and `service_notice` facts
+// are a dated banner above the guide (see `serviceNotices`), never a
+// step. Pure: no window/fetch, so node tests drive it directly.
 
 /**
  * Fixed guide steps: stable ids, titles, and their topics.
@@ -36,6 +37,70 @@ export const GUIDE_STEPS = [
 	{ id: 'timing', title: 'How long it takes', topics: ['processing_time'] },
 	{ id: 'trouble', title: 'If something goes wrong', topics: ['rejections', 'contacts'] }
 ];
+
+/** Topic of dated service notices (closures, outages): banner only. */
+export const NOTICE_TOPIC = 'service_notice';
+
+/**
+ * Banner rows for accepted `service_notice` facts, newest capture
+ * first (ties: newest fact first): the notice text, its verbatim
+ * quote, source and captured date. Uncited notices never render: a
+ * banner that changes someone's plans must show where it came from.
+ * @param {any[]} facts
+ * @returns {{ id: number, text: string, quote: string, sourceUrl: string, capturedAt: string }[]}
+ */
+export function serviceNotices(facts) {
+	return (facts ?? [])
+		.filter((f) => f?.status === 'accepted' && f?.topic === NOTICE_TOPIC)
+		.map((f) => {
+			const cite = Array.isArray(f.citations) ? f.citations[0] : null;
+			return {
+				id: f.id ?? 0,
+				text: parseStatement(f.statement).value,
+				quote: String(cite?.quote ?? ''),
+				sourceUrl: String(cite?.source_url ?? ''),
+				capturedAt: String(cite?.captured_at ?? '')
+			};
+		})
+		.filter((n) => n.quote && n.sourceUrl.startsWith('https://') && n.capturedAt)
+		.sort((a, b) =>
+			a.capturedAt === b.capturedAt ? b.id - a.id : a.capturedAt < b.capturedAt ? 1 : -1
+		);
+}
+
+/**
+ * "What changed" panels from `GET /authorities/{slug}/changes`: one
+ * per source with any added or removed line, newest change first.
+ * Malformed rows are dropped, never guessed at.
+ * @param {unknown} body
+ * @returns {{ sourceUrl: string, date: string, since: string, added: string[], removed: string[], more: number }[]}
+ */
+export function changePanels(body) {
+	/** @type {any} */
+	const raw = body;
+	/** @type {any[]} */
+	const rows = Array.isArray(raw?.changes) ? raw.changes : [];
+	/** @param {unknown} v @returns {string[]} */
+	const lines = (v) => (Array.isArray(v) ? v.filter((l) => typeof l === 'string' && l) : []);
+	/** @param {unknown} v @returns {number} */
+	const count = (v) => (typeof v === 'number' && v > 0 ? v : 0);
+	/** @type {{ sourceUrl: string, date: string, since: string, added: string[], removed: string[], more: number }[]} */
+	const panels = [];
+	for (const c of rows) {
+		if (typeof c?.source_url !== 'string' || !c.source_url.startsWith('https://')) continue;
+		if (typeof c?.captured_at !== 'string') continue;
+		const panel = {
+			sourceUrl: c.source_url,
+			date: c.captured_at.split('T')[0],
+			since: typeof c.previous_captured_at === 'string' ? c.previous_captured_at.split('T')[0] : '',
+			added: lines(c.added),
+			removed: lines(c.removed),
+			more: count(c.more_added) + count(c.more_removed)
+		};
+		if (panel.added.length + panel.removed.length > 0) panels.push(panel);
+	}
+	return panels.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
 
 /**
  * Split "{field}: {value}" into its key and readable value; anything
@@ -237,7 +302,8 @@ export function staleMark(fact, now) {
  */
 export function buildGuide(facts, now) {
 	const list = (facts ?? []).filter(
-		(f) => f?.status === 'accepted' && f?.topic !== 'phone_script'
+		(f) =>
+			f?.status === 'accepted' && f?.topic !== 'phone_script' && f?.topic !== NOTICE_TOPIC
 	);
 	const steps = [];
 	for (const step of GUIDE_STEPS) {

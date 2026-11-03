@@ -750,7 +750,10 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(daily.join("manifest.json")).unwrap())
                 .unwrap();
         assert_eq!(manifest["backup_date"], "2026-10-29");
-        assert_eq!(manifest["handbook_user_version"], 11);
+        assert_eq!(
+            manifest["handbook_user_version"],
+            handbook_store::db::SCHEMA_VERSION
+        );
         assert_eq!(manifest["p2_user_version"], 2);
 
         // Backup reads the live store only: bytes + dir entries equal.

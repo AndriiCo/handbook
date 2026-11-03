@@ -52,6 +52,11 @@ double-submit pair except the Stripe webhook.
 | POST `/apostille/api/v1/admin/work-items/{id}/retry` | admin | staff | yes | — | P392 | `retry_response` |
 | POST `/apostille/api/v1/admin/work-items/{id}/stage-packs` | admin | staff | yes | — | P392 | `stage_response`; files in `<store>/packs-inbox/{id}/` |
 | GET `/apostille/api/v1/worker/ws` (WebSocket) | public | plant worker (`worker.token` bearer) | n/a | 8 sockets/IP | P392 | `worker-frames.json` |
+| GET `/apostille/api/v1/admin/sources/{id}/captures` | admin | staff | n/a | — | SA-14 (P394) | `{source, captures: [{id, captured_at, kind, trust, sha256, bytes, previous_id, reread, added, removed}], count}` |
+| GET `/apostille/api/v1/admin/captures/{id}/diff` | admin | staff | n/a | — | SA-14 (P394) | `{capture, previous, reread, missing_sidecar, added, removed, lines: [{op: same\|added\|removed, text, old_line, new_line} \| {op: gap, lines}]}` |
+| POST `/apostille/api/v1/admin/captures/{id}/draft-changes` | admin | staff | yes | daily cap | SA-14 (P394) | `{outcome: drafted\|skipped, reason?, added_lines, proposed, rejected, suppressed, fact_ids}` |
+| POST `/apostille/api/v1/admin/changes/draft-pending` | admin | staff | yes | daily cap | SA-14 (P394) | `{runs: [{capture_id, outcome, …}], count}` |
+| GET `/apostille/api/v1/authorities/{slug}/changes` | public | anyone | n/a | — | SA-14 (P394) | `{authority, changes: [{source_url, captured_at, previous_captured_at, added, removed, more_added, more_removed}]}` |
 
 Every admin route gets an `admin-denial` case (no session → 401/403 on
 the admin host, and the public host never serves it).

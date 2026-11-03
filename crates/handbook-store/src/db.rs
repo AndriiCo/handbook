@@ -3,7 +3,8 @@
 //! Fresh databases start from the `migrations/schema_baseline.sql`
 //! snapshot (= v11; the 001–011 incrementals were squashed away in
 //! prompt 055 after prod reached v11 — see git history). Later
-//! migrations add `N+1` files and extend [`migrate`]. The P2
+//! migrations add `N+1` files and extend [`migrate`]: `012` widens
+//! the `fact.topic` CHECK for `service_notice`. The P2
 //! customer-PII database (`p2.sqlite`) has its own baseline
 //! (`migrations/p2_schema_baseline.sql`, = P2 v2) and its own
 //! [`migrate_p2`].
@@ -15,7 +16,11 @@ use contracts::{HandbookError, Result};
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 11;
+pub const SCHEMA_VERSION: i32 = 12;
+
+/// Version the squashed `schema_baseline.sql` stamps; every later
+/// version is one `0NN_*.sql` step on top of it.
+pub const BASELINE_VERSION: i32 = 11;
 
 /// Current P2 customer-PII schema version (`pragma user_version` on
 /// `p2.sqlite`; independent of [`SCHEMA_VERSION`]).
@@ -71,21 +76,35 @@ pub(crate) fn apply_pragmas(conn: &Connection) -> Result<()> {
 /// Apply pending migrations. Idempotent.
 ///
 /// Fresh (`user_version = 0`) databases get the v11 baseline
-/// snapshot in one transaction, so a crash or error can never
-/// leave a half-applied schema behind. Databases already at
-/// [`SCHEMA_VERSION`] are untouched. Anything in between (v1–v10)
-/// is refused loudly: the incremental path was squashed away, so
-/// those databases must first open under the last incremental
-/// release (≤ dc400a9) or be restored from a v11 backup — silently
-/// stamping them current would corrupt the version contract.
+/// snapshot, then every later step, in one transaction, so a crash
+/// or error can never leave a half-applied schema behind (a fresh
+/// database is therefore exactly "v11 + the steps"). Databases at
+/// [`BASELINE_VERSION`] or later take only their missing steps;
+/// databases already at [`SCHEMA_VERSION`] are untouched. Anything
+/// below the baseline (v1–v10) is refused loudly: the incremental
+/// path was squashed away, so those databases must first open under
+/// the last incremental release (≤ dc400a9) or be restored from a
+/// v11 backup — silently stamping them current would corrupt the
+/// version contract. A version above [`SCHEMA_VERSION`] (a newer
+/// binary wrote it) is refused the same way.
 pub fn migrate(conn: &Connection) -> Result<()> {
     in_transaction(conn, || {
-        let version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        let mut version: i32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         if version == 0 {
             conn.execute_batch(include_str!("../migrations/schema_baseline.sql"))?;
-            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        } else if version != SCHEMA_VERSION {
-            return Err(version_gap("handbook.sqlite", version, SCHEMA_VERSION));
+            conn.pragma_update(None, "user_version", BASELINE_VERSION)?;
+            version = BASELINE_VERSION;
+        } else if !(BASELINE_VERSION..=SCHEMA_VERSION).contains(&version) {
+            return Err(version_gap(
+                "handbook.sqlite",
+                version,
+                BASELINE_VERSION,
+                SCHEMA_VERSION,
+            ));
+        }
+        if version < 12 {
+            conn.execute_batch(include_str!("../migrations/012_service_notice.sql"))?;
+            conn.pragma_update(None, "user_version", 12)?;
         }
         Ok(())
     })?;
@@ -109,7 +128,12 @@ pub fn migrate_p2(conn: &Connection) -> Result<()> {
             conn.execute_batch(include_str!("../migrations/p2_schema_baseline.sql"))?;
             conn.pragma_update(None, "user_version", P2_SCHEMA_VERSION)?;
         } else if version != P2_SCHEMA_VERSION {
-            return Err(version_gap("p2.sqlite", version, P2_SCHEMA_VERSION));
+            return Err(version_gap(
+                "p2.sqlite",
+                version,
+                P2_SCHEMA_VERSION,
+                P2_SCHEMA_VERSION,
+            ));
         }
         Ok(())
     })?;
@@ -121,22 +145,23 @@ pub fn migrate_p2(conn: &Connection) -> Result<()> {
 }
 
 /// Loud refusal for databases stranded between the old incremental
-/// versions and the squashed baseline (or newer than this binary).
-/// Ad-hoc error via the same `ToSqlConversionFailure` carrier db.rs
-/// already uses for non-SQLite failures.
-fn version_gap(db: &str, version: i32, current: i32) -> HandbookError {
-    let remedy = if version < current {
+/// versions and the squashed `baseline` (or newer than this binary's
+/// `current`). Ad-hoc error via the same `ToSqlConversionFailure`
+/// carrier db.rs already uses for non-SQLite failures.
+fn version_gap(db: &str, version: i32, baseline: i32, current: i32) -> HandbookError {
+    let remedy = if version < baseline {
         format!(
             "upgrade it through the last incremental release first \
-             (≤ dc400a9 applies v{version}→v{current} step by step), \
-             or restore from a v{current} backup"
+             (≤ dc400a9 applies v{version}→v{baseline} step by step), \
+             or restore from a v{baseline} backup"
         )
     } else {
         format!("it was written by a newer binary (v{version} > v{current}); upgrade this binary")
     };
     HandbookError::Db(rusqlite::Error::ToSqlConversionFailure(Box::new(
         std::io::Error::other(format!(
-            "{db} is at schema v{version}, this binary baselines v{current}: {remedy}"
+            "{db} is at schema v{version}, this binary baselines v{baseline} \
+             and migrates to v{current}: {remedy}"
         )),
     )))
 }
@@ -1792,6 +1817,314 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, 8);
+    }
+
+    /// A v11 database exactly as prod holds it: the squashed baseline
+    /// alone, stamped 11 (no 012 step).
+    fn v11_database() -> (tempfile::TempDir, Store, Connection) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        store.init().unwrap();
+        let conn = open(&store).unwrap();
+        conn.execute_batch(include_str!("../migrations/schema_baseline.sql"))
+            .unwrap();
+        conn.pragma_update(None, "user_version", BASELINE_VERSION)
+            .unwrap();
+        (dir, store, conn)
+    }
+
+    type FactRow = (
+        i64,
+        i64,
+        i64,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        String,
+    );
+
+    fn fact_rows(conn: &Connection) -> Vec<FactRow> {
+        conn.prepare(
+            "SELECT id, authority_id, capture_id, topic, statement, status, created_by,
+                    created_at, citation_start, citation_end, reasoning
+             FROM fact ORDER BY id",
+        )
+        .unwrap()
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+                r.get(10)?,
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+    }
+
+    fn fk_list(conn: &Connection, table: &str) -> Vec<(String, String, String)> {
+        conn.prepare(&format!(
+            "SELECT \"table\", \"from\", \"to\" FROM pragma_foreign_key_list('{table}')
+             ORDER BY \"from\""
+        ))
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+    }
+
+    fn insert_fact(
+        conn: &Connection,
+        authority: i64,
+        capture: i64,
+        topic: &str,
+    ) -> rusqlite::Result<usize> {
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement, status, created_at)
+             VALUES (?1, ?2, ?3, 'notice: closed', 'proposed', 9)",
+            rusqlite::params![authority, capture, topic],
+        )
+    }
+
+    #[test]
+    fn migrate_v11_to_v12_keeps_every_row_and_fk() {
+        let (_dir, store, conn) = v11_database();
+        let authority = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "Washington",
+                name: "WA Secretary of State",
+                slug: "usa-wa-sos",
+                actor: "test",
+                at: 1_800_000_000,
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO source(authority_id, kind, uri) VALUES (?1, 'website_official',
+             'https://www.sos.wa.gov/')",
+            [authority],
+        )
+        .unwrap();
+        let source = conn.last_insert_rowid();
+        let sha = store.write_blob(b"v11 capture").unwrap();
+        conn.execute(
+            "INSERT INTO capture(authority_id, source_id, captured_at, kind, path,
+                                 bytes_raw, bytes_stored, sha256, trust)
+             VALUES (?1, ?2, 5, 'warc', 'x', 11, 11, ?3, 'official')",
+            rusqlite::params![authority, source, sha],
+        )
+        .unwrap();
+        let capture = conn.last_insert_rowid();
+        for (topic, status, start, end, reasoning) in [
+            ("fees", "accepted", 0, 12, "fee row"),
+            ("hours", "proposed", 3, 20, ""),
+            ("po_box", "superseded", -1, -1, "old box"),
+            ("dropbox", "rejected", 1, 9, "SUPERSEDES #0"),
+        ] {
+            conn.execute(
+                "INSERT INTO fact(authority_id, capture_id, topic, statement, status,
+                                  created_by, created_at, citation_start, citation_end,
+                                  reasoning)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'muse-spark-1.3 via test', 7, ?6, ?7, ?8)",
+                rusqlite::params![
+                    authority,
+                    capture,
+                    topic,
+                    format!("{topic}: value"),
+                    status,
+                    start,
+                    end,
+                    reasoning
+                ],
+            )
+            .unwrap();
+        }
+        // An unattributed fact on the id-0 sentinel capture survives too.
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement, status, created_at)
+             VALUES (?1, 0, 'address', 'address: x', 'proposed', 8)",
+            [authority],
+        )
+        .unwrap();
+        let ship_to: i64 = conn
+            .query_row("SELECT MIN(id) FROM fact", [], |r| r.get(0))
+            .unwrap();
+        conn.execute(
+            "UPDATE authority SET ship_to_fact_id = ?1 WHERE id = ?2",
+            [ship_to, authority],
+        )
+        .unwrap();
+        // A boot-DDL child table (web `fact_translation` shape) whose
+        // REFERENCES fact(id) must survive the rebuild.
+        conn.execute_batch(
+            "CREATE TABLE fact_translation(
+               id INTEGER PRIMARY KEY,
+               fact_id INTEGER NOT NULL REFERENCES fact(id),
+               lang TEXT NOT NULL, statement TEXT NOT NULL DEFAULT '')",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO fact_translation(fact_id, lang, statement) VALUES (?1, 'es', 'tarifa')",
+            [ship_to],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id)
+             VALUES (1, 'test', 'fact_accept', 'fact', ?1)",
+            [ship_to],
+        )
+        .unwrap();
+        // v11 refuses the new topic.
+        insert_fact(&conn, authority, capture, "service_notice")
+            .expect_err("v11 CHECK must reject service_notice");
+
+        let facts_before = fact_rows(&conn);
+        let fact_fks_before = fk_list(&conn, "fact");
+        let authority_fks_before = fk_list(&conn, "authority");
+        let audits_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM audit", [], |r| r.get(0))
+            .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 12);
+        assert_eq!(fact_rows(&conn), facts_before);
+        assert_eq!(fk_list(&conn, "fact"), fact_fks_before);
+        assert_eq!(fk_list(&conn, "authority"), authority_fks_before);
+        assert_eq!(
+            fk_list(&conn, "fact_translation"),
+            vec![("fact".to_string(), "fact_id".to_string(), "id".to_string())]
+        );
+        let ship_after: i64 = conn
+            .query_row(
+                "SELECT ship_to_fact_id FROM authority WHERE id = ?1",
+                [authority],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(ship_after, ship_to);
+        let translated: String = conn
+            .query_row(
+                "SELECT statement FROM fact_translation WHERE fact_id = ?1",
+                [ship_to],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(translated, "tarifa");
+        let audits_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM audit", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(audits_after, audits_before);
+        assert_eq!(audit_trigger_count(&conn), 2);
+        let dangling: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(dangling, 0);
+        let integrity: String = conn
+            .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(integrity, "ok");
+        let index: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index'
+                 AND name = 'idx_fact_lookup' AND tbl_name = 'fact'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(index, 1);
+        let leftovers: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'fact_new%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(leftovers, 0);
+
+        // The widened CHECK takes the new topic and still refuses junk;
+        // FKs are still enforced in both directions.
+        insert_fact(&conn, authority, capture, "service_notice").unwrap();
+        insert_fact(&conn, authority, capture, "bitcoin").expect_err("unknown topic");
+        insert_fact(&conn, 9_999, capture, "fees").expect_err("dangling authority");
+        conn.execute("DELETE FROM fact WHERE id = ?1", [ship_to])
+            .expect_err("authority.ship_to_fact_id still guards its fact");
+
+        // Re-running is a no-op.
+        migrate(&conn).unwrap();
+        assert_eq!(fact_rows(&conn).len(), facts_before.len() + 1);
+    }
+
+    fn schema_of(conn: &Connection) -> Vec<(String, String, String)> {
+        conn.prepare(
+            "SELECT type, name, COALESCE(sql, '') FROM sqlite_master
+             WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
+        )
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+    }
+
+    #[test]
+    fn fresh_schema_equals_v11_plus_the_step() {
+        let (_fresh_dir, _fresh_store, fresh) = migrated();
+        let (_old_dir, _old_store, upgraded) = v11_database();
+        migrate(&upgraded).unwrap();
+        assert_eq!(schema_of(&fresh), schema_of(&upgraded));
+        let version: i32 = fresh
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn migrate_refuses_every_version_outside_baseline_to_current() {
+        for stale in [1, 10, SCHEMA_VERSION + 1, 99] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = Store::new(dir.path());
+            store.init().unwrap();
+            let conn = open(&store).unwrap();
+            conn.pragma_update(None, "user_version", stale).unwrap();
+            let err = migrate(&conn).unwrap_err().to_string();
+            assert!(err.contains(&format!("schema v{stale}")), "{err}");
+            let remedy = if stale < BASELINE_VERSION {
+                "incremental"
+            } else {
+                "newer binary"
+            };
+            assert!(err.contains(remedy), "{stale}: {err}");
+            let version: i32 = conn
+                .query_row("PRAGMA user_version", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(version, stale, "refusal must not restamp");
+            let tables: i64 = conn
+                .query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(tables, 0, "refusal must not touch the schema");
+        }
     }
 
     #[test]

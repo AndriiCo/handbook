@@ -105,10 +105,17 @@
         },
         {
             "authority": "usa-wa-sos",
-            "cadence": "weekly",
+            "cadence": "daily",
             "kind": "website_official",
-            "notes": "Apostilles program hub (services, locations, authenticity search); fetcher 200 2026-10-31.",
+            "notes": "Apostilles program hub (services, locations, authenticity search); fetcher 200 2026-10-31. Daily since 2026-11-03: service notices (11/02 apostille-services-unavailable) drafted from added lines.",
             "uri": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "SOS home page: site-wide service-notice banners (11/02 apostille services unavailable). Daily; only added lines are drafted, as service_notice.",
+            "uri": "https://www.sos.wa.gov/"
         }
     ]
 }

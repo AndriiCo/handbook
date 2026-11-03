@@ -60,13 +60,21 @@ pub const MAX_RELEASES: usize = 4;
 /// - 006 soft: two NEW STRICT tables, nothing existing changed.
 /// - 007 soft: one new table + two ADD COLUMNs.
 /// - p2_001 soft: separate `p2.sqlite`, untouched by old code.
+/// - 012 HARD: rebuilds `fact` (`fact_new` + copy + DROP + RENAME) to
+///   add the `service_notice` topic to its CHECK (P394).
 ///
 /// When a new HARD migration lands, append its number here with
 /// the reason — the rollback guard reads this table.
-pub const HARD_MIGRATIONS: &[(i32, &str)] = &[(
-    5,
-    "005_constraints: table rebuilds adding CHECK/FK enforcement",
-)];
+pub const HARD_MIGRATIONS: &[(i32, &str)] = &[
+    (
+        5,
+        "005_constraints: table rebuilds adding CHECK/FK enforcement",
+    ),
+    (
+        12,
+        "012_service_notice: fact table rebuild widening the topic CHECK",
+    ),
+];
 
 /// Per-release manifest, stored as `releases/<version>/release.toml`.
 /// Written by [`deploy`], read by [`rollback`]'s guard. Field spec

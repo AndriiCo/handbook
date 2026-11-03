@@ -3,9 +3,11 @@
 - Status: FROZEN 2026-10-26 (night run; enforced by `topics.rs` +
   migration 005 `fact.topic` CHECK). Changes need a new migration
   and author sign-off.
+- 2026-11-03 (P394, operator sign-off): `service_notice` added,
+  migration `012_service_notice.sql` widens the CHECK (v11 → v12).
 - Code: `crates/contracts/src/topics.rs` (`Topic`, closed enum —
   `parse` rejects unknown input, no `Other` variant).
-- Every `fact.topic` value MUST be one of the 25 strings below.
+- Every `fact.topic` value MUST be one of the 26 strings below.
 - Owner column = the stream that validates and signs off facts of that
   topic. S2's analysis proposes facts for every topic from captures;
   the owner below has the final say before publish. S1 owns the enum
@@ -38,6 +40,19 @@
 | `notarization` | S6 | Notarization prerequisites | "Must this be notarized first?" "Remote notarization accepted?" |
 | `authentication` | S6 | Authentication vs apostille distinction | "Is this an apostille or an authentication?" "SoS authentication ≠ apostille?" |
 | `dropbox` | S6 | Physical drop-box rules | "Is there an after-hours dropbox?" "When is it emptied?" |
+| `service_notice` | S2 | Dated notice that changes whether or when the office serves people: closures, outages, suspended or unavailable services, changed schedules | "Are apostille services unavailable right now?" "Since when?" |
+
+## `service_notice`: a banner, not a step
+
+- Drafted from what a watched page ADDED since its previous capture
+  (P394 change-only drafts), so an outage banner on the WA SOS pages
+  becomes a cited `proposed` fact a person approves.
+- Accepted notices render as a banner at the top of the dossier
+  (statement, quote, source, captured date; newest first). They are
+  never a guide step, and two notices never "conflict" (they stack);
+  followers get them through the normal notify digest, with no
+  "was:" line.
+- Planned holiday closures stay `holiday_hours`.
 
 ## `po_box`: own topic, merge guidance, batching rule
 

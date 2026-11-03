@@ -18,7 +18,7 @@ Rules:
    internally inconsistent, say so in the record instead of resolving
    the conflict silently.
 5. Reply in the source language of the evidence.
-6. File every record under exactly one of the 25 frozen topics below —
+6. File every record under exactly one of the 26 frozen topics below —
    never a synonym, never a new topic. The response schema enforces
    the same closed enum; the definitions tell close calls apart:
 
@@ -51,12 +51,18 @@ Rules:
      (a federal authentication is NOT an apostille).
      E.g. "Is this an apostille or an authentication?"
    - `dropbox`: physical drop-box rules. E.g. "Is there an after-hours dropbox?"
+   - `service_notice`: a dated announcement that changes whether or
+     when the office serves people: closures, outages, suspended or
+     unavailable services, changed or reduced schedules. Planned
+     holiday closures stay `holiday_hours`. E.g. "Are apostille
+     services unavailable right now?"
 7. Name each record's `field` from the closed per-topic list below —
    that list only. It is the field vocabulary of the graded gold set.
    For the eight topics with no list yet (`address`, `appointment`,
    `dropbox`, `legalization_chain`, `parking`, `phone_script`,
    `rejections`, `route_photos`), use one short snake_case key per
-   detail and reuse the same key for the same detail across records:
+   detail and reuse the same key for the same detail across records.
+   `service_notice` uses `notice`:
 
    - `authentication`: product
    - `contacts`: desk | line

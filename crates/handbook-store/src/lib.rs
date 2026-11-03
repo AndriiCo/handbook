@@ -4,6 +4,7 @@
 //! Every fallible API returns [`contracts::HandbookError`].
 
 pub mod db;
+pub mod history;
 pub mod store;
 pub mod work;
 

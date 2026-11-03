@@ -53,8 +53,14 @@ pub struct FactView {
     pub conflicts: Vec<ConflictView>,
 }
 
+/// Topics whose facts never conflict: `service_notice` facts are
+/// dated announcements that stack (newest first in the dossier
+/// banner), so a second notice is news, not a disagreement.
+pub const NON_CONFLICTING_TOPICS: &[&str] = &["service_notice"];
+
 /// Sibling facts that disagree: same authority + topic, different
 /// statement, still live (`accepted`/`proposed`). Capped at 10.
+/// Always empty for [`NON_CONFLICTING_TOPICS`].
 pub fn sibling_conflicts(
     conn: &Connection,
     authority_id: i64,
@@ -62,6 +68,9 @@ pub fn sibling_conflicts(
     statement: &str,
     exclude_id: i64,
 ) -> Vec<ConflictView> {
+    if NON_CONFLICTING_TOPICS.contains(&topic) {
+        return Vec::new();
+    }
     conn.prepare(
         "SELECT id, statement, status FROM fact
          WHERE authority_id = ?1 AND topic = ?2 AND id != ?3
@@ -205,7 +214,7 @@ fn sidecar_slice(store_root: &std::path::Path, capture_id: i64, start: i64, end:
 }
 
 /// Unix seconds → `YYYY-MM-DDTHH:MM:SSZ` (civil-from-days, no date crate).
-fn iso8601(unix: i64) -> String {
+pub(crate) fn iso8601(unix: i64) -> String {
     let days = unix.div_euclid(86_400);
     let secs = unix.rem_euclid(86_400);
     // Howard Hinnant's civil-from-days.

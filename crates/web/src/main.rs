@@ -53,6 +53,7 @@ mod readyz;
 mod reconcile;
 mod reports;
 mod setup;
+mod source_history;
 mod staff_passkey;
 mod stripe;
 mod telemetry;
@@ -483,6 +484,7 @@ fn mission_public_routes() -> Router<AppState> {
     plan::public_routes()
         .merge(stripe::public_routes())
         .merge(worker::public_routes())
+        .merge(source_history::public_routes())
 }
 
 /// Lane-owned customer routes (merged into the `/api/v1/p2` nest).
@@ -529,6 +531,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(first_source::admin_router(state.clone()))
         .merge(admin_packs::admin_router(state.clone()))
         .merge(worker::admin_router(state.clone()))
+        .merge(source_history::admin_router(state.clone()))
 }
 
 /// Public router with explicit state (admin routes are NEVER here —
@@ -1297,6 +1300,8 @@ async fn main() {
     reconcile::spawn(&state);
     tracking::spawn(&state);
     customer_labels::spawn(&state);
+    // P403: changed web captures draft from their added lines only.
+    source_history::spawn(&state);
     let public = public_router(
         state.clone(),
         &cfg.static_dir,
