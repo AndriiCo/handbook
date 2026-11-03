@@ -964,6 +964,15 @@ pub mod keys {
     pub const PATHS_SPA_DIR: &str = "paths.spa_dir";
     pub const PATHS_ADMIN_SPA_DIR: &str = "paths.admin_spa_dir";
     pub const PATHS_ACME_CHALLENGE_DIR: &str = "paths.acme_challenge_dir";
+    /// Meta call record/replay cache (`docs/ops/call-cache.md`).
+    /// Default `<store>/meta-cache`; `$META_CACHE_DIR` and xtask
+    /// `--meta-cache` override it. Holds raw model answers (drafts,
+    /// transcripts): keep it on the store volume, owner-only.
+    pub const PATHS_META_CACHE_DIR: &str = "paths.meta_cache_dir";
+    /// URL fetch cache (blobs + `manifest.jsonl`). Default
+    /// `<store>/fetch-cache`; `$FETCH_CACHE_DIR` and xtask
+    /// `--fetch-cache` override it.
+    pub const PATHS_FETCH_CACHE_DIR: &str = "paths.fetch_cache_dir";
     pub const NET_BIND: &str = "net.bind";
     pub const NET_BIND6: &str = "net.bind6";
     pub const NET_PORT: &str = "net.port";
@@ -1104,8 +1113,15 @@ pub mod keys {
     /// Carrier tracking poller switch. Default false.
     pub const TRACKING_POLL_ENABLED: &str = "tracking.poll_enabled";
     /// Max Meta model calls per UTC day, counted from `model_call`
-    /// rows (every pipeline). Default 400.
+    /// rows (every pipeline). Default 400. The call cache's ledger
+    /// (`<meta-cache>/ledger/`) enforces the same cap for xtask, atlas
+    /// and worker runs; cache hits never count.
     pub const META_DAILY_CALL_CAP: &str = "meta.daily_call_cap";
+    /// Call-cache mode: `record` (default: hits replay, misses call
+    /// live and store), `replay-only` (offline; a miss is an error) or
+    /// `refresh` (always call, overwrite). `$META_CACHE_MODE` and
+    /// xtask `--cache-mode` override it.
+    pub const META_CACHE_MODE: &str = "meta.cache_mode";
 
     /// Keys removed from the registry (admin client certificates and the
     /// split-port admin listener are gone). A stored row is ignored: the
@@ -1122,6 +1138,8 @@ pub mod keys {
         (PATHS_SPA_DIR, super::ConfigType::Text),
         (PATHS_ADMIN_SPA_DIR, super::ConfigType::Text),
         (PATHS_ACME_CHALLENGE_DIR, super::ConfigType::Text),
+        (PATHS_META_CACHE_DIR, super::ConfigType::Text),
+        (PATHS_FETCH_CACHE_DIR, super::ConfigType::Text),
         (NET_BIND, super::ConfigType::Text),
         (NET_BIND6, super::ConfigType::Text),
         (NET_PORT, super::ConfigType::Text),
@@ -1210,7 +1228,36 @@ pub mod keys {
         (COMPILE_DAILY_RUNS, super::ConfigType::Text),
         (TRACKING_POLL_ENABLED, super::ConfigType::Bool),
         (META_DAILY_CALL_CAP, super::ConfigType::Text),
+        (META_CACHE_MODE, super::ConfigType::Text),
     ];
+}
+
+/// The call-cache rows (`docs/ops/call-cache.md`), read per call so
+/// an admin change applies without a restart. Each is `None` when
+/// unset, blank or unreadable (the caller falls back to its default).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CallCacheRows {
+    pub meta_cache_dir: Option<String>,
+    pub fetch_cache_dir: Option<String>,
+    pub cache_mode: Option<String>,
+    pub daily_call_cap: Option<String>,
+}
+
+/// Read [`CallCacheRows`]; never fails (a bad row reads as unset).
+pub fn call_cache_rows(conn: &Connection, kek: &Kek) -> CallCacheRows {
+    let text = |key: &str| {
+        get_text_for_job(conn, kek, key)
+            .ok()
+            .flatten()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    CallCacheRows {
+        meta_cache_dir: text(keys::PATHS_META_CACHE_DIR),
+        fetch_cache_dir: text(keys::PATHS_FETCH_CACHE_DIR),
+        cache_mode: text(keys::META_CACHE_MODE),
+        daily_call_cap: text(keys::META_DAILY_CALL_CAP),
+    }
 }
 
 /// Raw row fetch shared by the runtime `*_for_job` readers.
@@ -2357,8 +2404,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_92_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 92);
+    fn registry_holds_95_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 95);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -2373,7 +2420,8 @@ mod runtime_tests {
         // epa_account), five bools (orders.enabled, labels.customer_live,
         // usps.live, plan.auto_compose, tracking.poll_enabled), 16 text.
         // P373 removes tls.client_ca_file and net.admin_https_port (text)
-        // and admin.require_cert (bool).
+        // and admin.require_cert (bool). P391 adds three text keys
+        // (paths.meta_cache_dir, paths.fetch_cache_dir, meta.cache_mode).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -2382,7 +2430,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (12, 63, 17));
+        assert_eq!(counts, (12, 66, 17));
     }
 
     #[test]

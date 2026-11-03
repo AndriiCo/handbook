@@ -4,6 +4,7 @@ members = [
     "crates/acme",
     "crates/atlas",
     "crates/auth",
+    "crates/callcache",
     "crates/instruct",
     "crates/config",
     "crates/contracts",

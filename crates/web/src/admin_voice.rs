@@ -384,19 +384,22 @@ async fn hangup(
 /// the compiled Meta default. `None` fails closed, never a stub.
 fn meta_transcribe_client(
     state: &AppState,
-) -> Option<media::VoiceFileClient<media::UreqTransport>> {
+) -> Option<media::VoiceFileClient<media::CachedTransport<media::UreqTransport>>> {
     let store = Store::new(&state.store_root);
     let conn = db::open(&store).ok()?;
+    // Re-transcribing the same recording replays from the call cache.
+    let transport = || {
+        media::CachedTransport::new(
+            media::UreqTransport::new(),
+            crate::call_cache::meta_cache(&conn, state.kek.as_deref()),
+        )
+    };
     if let Ok(key) = std::env::var("META_API_KEY")
         && !key.is_empty()
     {
         let base = sealed_meta_base(&conn, state.kek.as_deref())
             .unwrap_or_else(|| media::redact::META_API_BASE.to_string());
-        return Some(media::VoiceFileClient::new(
-            &base,
-            Some(key),
-            media::UreqTransport::new(),
-        ));
+        return Some(media::VoiceFileClient::new(&base, Some(key), transport()));
     }
     let kek = state.kek.as_deref()?;
     let (cfg, _warnings) = config::RuntimeConfig::load(&conn, kek).ok()?;
@@ -412,7 +415,7 @@ fn meta_transcribe_client(
     Some(media::VoiceFileClient::new(
         &base,
         Some(key.as_str().to_string()),
-        media::UreqTransport::new(),
+        transport(),
     ))
 }
 

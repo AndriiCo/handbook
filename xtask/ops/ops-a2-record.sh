@@ -1,7 +1,8 @@
 #!/bin/bash
 # A2 demo-precheck recording: run live SAM 3.1 + Muse Spark ONCE per
 # synthetic sample, install the verdict JSONs into prod. Re-running
-# overwrites the recordings (same samples, fresh boxes/verdicts).
+# replays the cached answers (same verdicts, no spend); export
+# META_CACHE_MODE=refresh for fresh boxes/verdicts.
 # The public endpoint serves these files verbatim: zero marginal model
 # cost, no key on the serving path.
 #
@@ -43,7 +44,12 @@ echo "recordings before: $(ls "$DESTDIR"/*.json 2>/dev/null | wc -l)"
 echo "=== 1. live recording (one SAM + one Spark call per sample)"
 rm -rf "$OUTDIR"
 mkdir -p "$OUTDIR" || { echo "ABORT: cannot create $OUTDIR"; exit 1; }
+# Call cache (docs/ops/call-cache.md): a rerun replays recorded SAM and
+# Spark answers instead of re-spending. hal-owned, so it never fights
+# the service user over /var/lib/apostille/meta-cache permissions.
+A2_CACHE="${META_CACHE_DIR:-$HOME/apostille-cache/meta-cache}"
 META_API_KEY="$META_API_KEY" python3 "$RECORDER" --png-dir "$PNGDIR" --out-dir "$OUTDIR" \
+    --meta-cache "$A2_CACHE" \
     || { echo "ABORT: recording failed (output above; nothing installed)"; exit 1; }
 
 echo "=== 2. validate recordings (contract shape for the endpoint)"

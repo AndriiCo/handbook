@@ -1,0 +1,16 @@
+[package]
+name = "callcache"
+version = "0.1.0"
+edition = "2024"
+
+# Record/replay caches for every Meta Model API call and every URL
+# fetch (operator decision 2026-11-03: reruns never re-spend budget).
+# No HTTP here: callers keep their own transports and hand the cache
+# a closure for the live call.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"

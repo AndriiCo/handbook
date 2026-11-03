@@ -25,13 +25,19 @@
 //! (only parties with a recorded `authority-sid*.html` are processed);
 //! `--live` fetches every party from `www.hcch.net` instead.
 //!
+//! Every live page fetch lands in the fetch cache and every Spark call
+//! in the Meta call cache (`docs/ops/call-cache.md`): a rerun replays
+//! both, and `--live --cache-mode replay-only` reruns fully offline.
+//!
 //! Wiring (builder): `mod world;` plus
 //! `Some("world-index") => world::run(&args[1..]),`
 //! in `xtask/src/main.rs`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
+
+use callcache::{CacheMode, FetchCache, MetaCache};
 
 use crate::{flag, unix_now};
 
@@ -113,10 +119,10 @@ pub fn run(args: &[String]) {
         }),
     };
 
+    let fetch_cache = crate::call_cache::fetch_cache(args);
     let status_html = if live {
-        let path = fetch_live(STATUS_TABLE_URL);
-        std::fs::read_to_string(&path).unwrap_or_else(|e| {
-            eprintln!("world-index: read fetched table: {e}");
+        fetch_page(&fetch_cache, STATUS_TABLE_URL).unwrap_or_else(|reason| {
+            eprintln!("world-index: fetch {STATUS_TABLE_URL}: {reason}");
             std::process::exit(1);
         })
     } else {
@@ -140,9 +146,15 @@ pub fn run(args: &[String]) {
         std::process::exit(1);
     }
 
+    let meta_cache = live_model.then(|| crate::call_cache::meta_cache(args));
+    let offline = meta_cache
+        .as_ref()
+        .is_some_and(|c| c.mode() == CacheMode::ReplayOnly);
     let model_key = if live_model {
         match std::env::var("META_API_KEY") {
             Ok(key) if !key.trim().is_empty() => Some(key),
+            // Replay-only never sends the key.
+            _ if offline => Some(String::new()),
             _ => {
                 eprintln!("world-index: --live-model needs META_API_KEY in the environment");
                 std::process::exit(2);
@@ -167,9 +179,8 @@ pub fn run(args: &[String]) {
             party.sid
         );
         let authority_html = if live {
-            politeness_pause();
-            match try_fetch(&authority_url) {
-                Ok(path) => Some(std::fs::read_to_string(&path).unwrap_or_default()),
+            match fetch_page(&fetch_cache, &authority_url) {
+                Ok(html) => Some(html),
                 Err(reason) => {
                     eprintln!("world-index: {}: authority page: {reason}", party.name);
                     None
@@ -194,9 +205,8 @@ pub fn run(args: &[String]) {
         let mut pages: Vec<(String, String)> = Vec::new();
         for link in &links {
             let details_html = if live {
-                politeness_pause();
-                match try_fetch(&link.url) {
-                    Ok(path) => std::fs::read_to_string(&path).unwrap_or_default(),
+                match fetch_page(&fetch_cache, &link.url) {
+                    Ok(html) => html,
                     Err(reason) => {
                         eprintln!("world-index: {}: {}: {reason}", party.name, link.url);
                         continue;
@@ -214,8 +224,13 @@ pub fn run(args: &[String]) {
         }
         if index.names.is_empty() && index.urls.is_empty() {
             index.origin = "none";
-            if let Some(key) = model_key.as_deref() {
-                match spark_fill(party, &authority_url, &pages, base_url.as_str(), key) {
+            if let (Some(key), Some(cache)) = (model_key.as_deref(), meta_cache.as_deref()) {
+                let meta = SparkCall {
+                    base_url: base_url.as_str(),
+                    key,
+                    cache,
+                };
+                match spark_fill(party, &authority_url, &pages, &meta) {
                     Ok(filled) => index = filled,
                     Err(reason) => eprintln!("world-index: {}: spark: {reason}", party.name),
                 }
@@ -241,6 +256,9 @@ pub fn run(args: &[String]) {
         out_dir.display(),
         archive_dir.display()
     );
+    if let Some(cache) = &meta_cache {
+        println!("world-index: {}", cache.summary());
+    }
 }
 
 impl PartyIndex {
@@ -295,38 +313,78 @@ fn politeness_pause() {
     std::thread::sleep(POLITENESS);
 }
 
-/// Fetch one URL with `curl` into a temp file; the path outlives the
-/// call (the caller reads it). `curl -f` fails closed on HTTP errors.
-fn try_fetch(url: &str) -> Result<PathBuf, String> {
+/// One page through the fetch cache: a recorded answer is served from
+/// disk (no politeness pause, no network); a miss waits the politeness
+/// budget, fetches with `curl` and records the answer whatever its
+/// status. Non-2xx answers are errors here, as `curl -f` made them.
+fn fetch_page(cache: &FetchCache, url: &str) -> Result<String, String> {
+    let record = cache
+        .fetch(url, || {
+            politeness_pause();
+            curl_fetch(url)
+        })
+        .map_err(|e| match e {
+            callcache::CallError::Live(reason) => reason,
+            callcache::CallError::Cache(e) => e.to_string(),
+        })?;
+    if !(200..300).contains(&record.status) {
+        return Err(format!("http {}", record.status));
+    }
+    Ok(String::from_utf8_lossy(&record.body).into_owned())
+}
+
+/// Fetch one URL with `curl`: status, headers and body (temp files are
+/// removed before returning).
+fn curl_fetch(url: &str) -> Result<callcache::Fetched, String> {
     let dir = std::env::temp_dir().join("handbook-world-index");
     std::fs::create_dir_all(&dir).map_err(|e| format!("temp dir: {e}"))?;
-    let out = dir.join(format!("fetch-{}.html", unix_now_nanos()));
-    let status = Command::new("curl")
+    let stamp = unix_now_nanos();
+    let out = dir.join(format!("fetch-{stamp}.html"));
+    let hdr = dir.join(format!("fetch-{stamp}.hdr"));
+    let run = Command::new("curl")
         .args([
-            "-fsS",
+            "-sS",
             "--compressed",
             "-m",
             FETCH_SECS,
             "-A",
             CRAWL_UA,
-            "-o",
+            "-D",
         ])
+        .arg(&hdr)
+        .arg("-o")
         .arg(&out)
+        .args(["-w", "%{http_code}"])
         .arg(url)
-        .status()
+        .output()
         .map_err(|e| format!("run curl: {e} (is it installed?)"))?;
-    if status.success() {
-        Ok(out)
-    } else {
-        Err(format!("curl exit {}", status.code().unwrap_or(-1)))
+    let body = std::fs::read(&out).unwrap_or_default();
+    let head = std::fs::read_to_string(&hdr).unwrap_or_default();
+    let _ = std::fs::remove_file(&out);
+    let _ = std::fs::remove_file(&hdr);
+    if !run.status.success() {
+        return Err(format!("curl exit {}", run.status.code().unwrap_or(-1)));
     }
+    let status = String::from_utf8_lossy(&run.stdout)
+        .trim()
+        .parse()
+        .unwrap_or(0);
+    Ok(callcache::Fetched {
+        status,
+        headers: header_pairs(&head),
+        body,
+        head: None,
+        request: None,
+    })
 }
 
-fn fetch_live(url: &str) -> PathBuf {
-    try_fetch(url).unwrap_or_else(|reason| {
-        eprintln!("world-index: fetch {url}: {reason}");
-        std::process::exit(1);
-    })
+/// `name: value` pairs of a `curl -D` dump (lowercase names).
+fn header_pairs(head: &str) -> Vec<(String, String)> {
+    head.lines()
+        .skip(1)
+        .filter_map(|line| line.split_once(':'))
+        .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_string()))
+        .collect()
 }
 
 fn unix_now_nanos() -> u128 {
@@ -1380,12 +1438,18 @@ struct SparkAuthority {
 /// fetched details pages (url + html); the model sees their text,
 /// and every returned name/URL must still pass the quote check
 /// against the cited page — failures are dropped, never emitted.
+/// Where a Spark call goes and how it is cached.
+struct SparkCall<'a> {
+    base_url: &'a str,
+    key: &'a str,
+    cache: &'a MetaCache,
+}
+
 fn spark_fill(
     party: &PartyRow,
     authority_url: &str,
     pages: &[(String, String)],
-    base_url: &str,
-    key: &str,
+    meta: &SparkCall<'_>,
 ) -> Result<PartyIndex, String> {
     let mut combined = String::new();
     for (url, html) in pages {
@@ -1399,7 +1463,7 @@ fn spark_fill(
     }
     let started = std::time::Instant::now();
     let body = spark_body(&combined, authority_url);
-    let (reply, prompt_tokens, completion_tokens) = spark_post(base_url, key, &body)?;
+    let (reply, prompt_tokens, completion_tokens) = spark_post(meta, &body)?;
     let authorities = parse_spark_output(&reply)?;
     let mut index = PartyIndex::empty(party, authority_url);
     index.origin = "spark";
@@ -1523,11 +1587,26 @@ fn spark_body(page_text: &str, source_url: &str) -> serde_json::Value {
 /// file, never on the command line). Retries transport failures and
 /// 429/5xx with jitter, honouring `Retry-After`; other statuses are
 /// terminal. Returns the raw reply body plus token usage.
+///
+/// A recorded answer (same canonical body) replays from the call cache
+/// with no curl at all; every live attempt is admitted against and
+/// counted toward the daily cap; a 2xx reply is stored.
 fn spark_post(
-    base_url: &str,
-    key: &str,
+    meta: &SparkCall<'_>,
     body: &serde_json::Value,
 ) -> Result<(Vec<u8>, u64, u64), String> {
+    let (base_url, key, cache) = (meta.base_url, meta.key, meta.cache);
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+    let cache_key = callcache::meta::json_key(&url, body);
+    if let Some(hit) = cache.lookup(&cache_key).map_err(|e| e.to_string())? {
+        let (prompt_tokens, completion_tokens) = reply_usage(&hit.body);
+        return Ok((hit.body, prompt_tokens, completion_tokens));
+    }
+    let request = callcache::meta::Request {
+        method: "POST",
+        url: &url,
+        model: DRAFT_MODEL,
+    };
     let dir = std::env::temp_dir().join("handbook-world-index");
     std::fs::create_dir_all(&dir).map_err(|e| format!("temp dir: {e}"))?;
     let stamp = unix_now_nanos();
@@ -1551,9 +1630,9 @@ fn spark_post(
             .map_err(|e| format!("write config: {e}"))?;
         write_cfg(&mut cfg, key)?;
     }
-    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let mut attempt_no = 0u32;
     loop {
+        cache.admit(&cache_key).map_err(|e| e.to_string())?;
         let code = Command::new("curl")
             .args(["-sS", "-m", "300", "-X", "POST", "--config"])
             .arg(&cfg_path)
@@ -1570,12 +1649,14 @@ fn spark_post(
         // Best effort: drop the key-bearing config at once.
         let _ = std::fs::remove_file(&cfg_path);
         if !code.status.success() {
+            cache.spent(&request, 0);
             return Err("curl transport failure".to_string());
         }
         let status: u16 = String::from_utf8_lossy(&code.stdout)
             .trim()
             .parse()
             .unwrap_or(0);
+        cache.spent(&request, status);
         let reply = std::fs::read(&out_path).unwrap_or_default();
         if status == 429 || (500..=504).contains(&status) {
             if attempt_no + 1 >= MAX_ATTEMPTS {
@@ -1591,6 +1672,8 @@ fn spark_post(
         if !(200..300).contains(&status) {
             return Err(format!("meta api: http {status}: {}", clipped(&reply)));
         }
+        // A full disk must not discard an answer already paid for.
+        let _ = cache.store(&cache_key, &request, status, &reply);
         let (prompt_tokens, completion_tokens) = reply_usage(&reply);
         return Ok((reply, prompt_tokens, completion_tokens));
     }

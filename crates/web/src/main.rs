@@ -22,6 +22,7 @@ mod admin_voice;
 mod admin_workers;
 mod approval;
 mod authority_path;
+mod call_cache;
 mod compile;
 mod customer_labels;
 mod demo_precheck;

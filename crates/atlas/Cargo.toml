@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 base64 = "0.22"
+callcache = { path = "../callcache" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

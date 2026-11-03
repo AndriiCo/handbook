@@ -699,6 +699,9 @@ pub struct MetaTranslateClient {
     agent: ureq::Agent,
     base_url: String,
     api_key: String,
+    /// Record/replay cache (`docs/ops/call-cache.md`): a re-translate
+    /// of the same statement replays instead of re-spending.
+    cache: Option<std::sync::Arc<callcache::MetaCache>>,
 }
 
 impl MetaTranslateClient {
@@ -714,7 +717,33 @@ impl MetaTranslateClient {
             agent: ureq::Agent::new_with_config(config),
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key,
+            cache: None,
         }
+    }
+
+    /// Serve repeat requests from `cache`; live calls count toward the
+    /// daily cap in its ledger.
+    #[must_use]
+    pub fn with_cache(mut self, cache: std::sync::Arc<callcache::MetaCache>) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
+    /// One live POST: status + raw body.
+    fn post(&self, url: &str, body: &serde_json::Value) -> Result<(u16, Vec<u8>), TranslateError> {
+        let response = self
+            .agent
+            .post(url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .send_json(body)
+            .map_err(|e| TranslateError::Transport(e.to_string()))?;
+        let status = response.status().as_u16();
+        let body = response
+            .into_body()
+            .read_to_vec()
+            .map_err(|e| TranslateError::Transport(e.to_string()))?;
+        Ok((status, body))
     }
 }
 
@@ -735,18 +764,25 @@ impl Translator for MetaTranslateClient {
             ));
         }
         let url = format!("{}/chat/completions", self.base_url);
-        let response = self
-            .agent
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .send_json(translate_body(lang, statement))
-            .map_err(|e| TranslateError::Transport(e.to_string()))?;
-        let status = response.status().as_u16();
-        let body = response
-            .into_body()
-            .read_to_vec()
-            .map_err(|e| TranslateError::Transport(e.to_string()))?;
+        let request = translate_body(lang, statement);
+        let (status, body) = match &self.cache {
+            Some(cache) => {
+                let key = callcache::meta::json_key(&url, &request);
+                let req = callcache::meta::Request {
+                    method: "POST",
+                    url: &url,
+                    model: TRANSLATE_MODEL,
+                };
+                match cache.call(&key, &req, || self.post(&url, &request)) {
+                    Ok(answer) => (answer.status, answer.body),
+                    Err(callcache::CallError::Live(e)) => return Err(e),
+                    Err(callcache::CallError::Cache(e)) => {
+                        return Err(TranslateError::Transport(e.to_string()));
+                    }
+                }
+            }
+            None => self.post(&url, &request)?,
+        };
         if status == 401 {
             return Err(TranslateError::Auth("meta api: unauthorized".to_string()));
         }
@@ -775,10 +811,10 @@ fn live_client(
     if let Ok(key) = std::env::var("META_API_KEY")
         && !key.is_empty()
     {
-        return Ok(MetaTranslateClient::new(
-            handbook_agent::model::META_BASE_URL.to_string(),
-            key,
-        ));
+        return Ok(
+            MetaTranslateClient::new(handbook_agent::model::META_BASE_URL.to_string(), key)
+                .with_cache(crate::call_cache::meta_cache(conn, kek)),
+        );
     }
     let Some(kek) = kek else {
         return Err("meta api key not configured".to_string());
@@ -796,7 +832,8 @@ fn live_client(
     } else {
         cfg.meta_base_url
     };
-    Ok(MetaTranslateClient::new(base, key.as_str().to_string()))
+    Ok(MetaTranslateClient::new(base, key.as_str().to_string())
+        .with_cache(crate::call_cache::meta_cache(conn, Some(kek))))
 }
 
 /// One stored translation row.

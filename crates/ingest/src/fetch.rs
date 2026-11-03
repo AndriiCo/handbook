@@ -5,9 +5,20 @@
 //! No retries, no redirects policy beyond `ureq` defaults. Fetch
 //! failures are data for an F1 `task(kind='validate_fact')`, never
 //! silent skips (see `xtask fetch-url`).
+//!
+//! [`FetchCache`] (operator decision 2026-11-03: every URL fetched is
+//! saved to disk and reusable on reruns) wraps the same GET:
+//! [`fetch_url_cached`] / [`fetch_url_conditional_cached`] record every
+//! answer (body blob + `manifest.jsonl` line with `url, fetched_at,
+//! status, headers, sha256`) and, in `replay-only` mode, rerun a sweep
+//! or crawl from disk with no network. Sweeps want `refresh` (archive
+//! every fetch, still see changes); one-shot pulls want `record`.
 
 use std::fmt;
 use std::time::Duration;
+
+pub use callcache::fetch::Fetched as RawFetch;
+pub use callcache::{CacheMode, FetchCache, FetchRecord};
 
 /// Largest fetch body kept in memory (8 MiB). Anything larger is
 /// rejected: the thin watch has no paging story yet.
@@ -88,6 +99,86 @@ pub fn fetch_url_conditional(
     etag: Option<&str>,
     last_modified: Option<&str>,
 ) -> Result<FetchOutcome, FetchError> {
+    let raw = get_raw(url, timeout, etag, last_modified)?;
+    outcome_from(url, raw.status, &raw.headers, raw.body)
+}
+
+/// [`fetch_url`] through `cache` (see the module docs for modes).
+///
+/// # Errors
+///
+/// As [`fetch_url`]; a replay-only miss is [`FetchError::Transport`].
+pub fn fetch_url_cached(
+    cache: &FetchCache,
+    url: &str,
+    timeout: Duration,
+) -> Result<Fetched, FetchError> {
+    match fetch_url_conditional_cached(cache, url, timeout, None, None)? {
+        FetchOutcome::Fetched(fetched) => Ok(fetched),
+        FetchOutcome::NotModified => Err(FetchError::HttpStatus(304)),
+    }
+}
+
+/// [`fetch_url_conditional`] through `cache`: a live answer (2xx, 304
+/// or an error status) is recorded before it is returned; a stored one
+/// is replayed through the same status mapping.
+///
+/// # Errors
+///
+/// As [`fetch_url_conditional`]; a replay-only miss or a cache write
+/// failure is [`FetchError::Transport`].
+pub fn fetch_url_conditional_cached(
+    cache: &FetchCache,
+    url: &str,
+    timeout: Duration,
+    etag: Option<&str>,
+    last_modified: Option<&str>,
+) -> Result<FetchOutcome, FetchError> {
+    let record = cache
+        .fetch(url, || get_raw(url, timeout, etag, last_modified))
+        .map_err(|e| match e {
+            callcache::CallError::Live(e) => e,
+            callcache::CallError::Cache(e) => FetchError::Transport(format!("{url}: {e}")),
+        })?;
+    outcome_from(url, record.status, &record.headers, record.body)
+}
+
+/// Status mapping shared by live and replayed answers.
+fn outcome_from(
+    url: &str,
+    status: u16,
+    headers: &[(String, String)],
+    bytes: Vec<u8>,
+) -> Result<FetchOutcome, FetchError> {
+    if status == 304 {
+        return Ok(FetchOutcome::NotModified);
+    }
+    if !(200..300).contains(&status) {
+        return Err(FetchError::HttpStatus(status));
+    }
+    let header = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
+    };
+    Ok(FetchOutcome::Fetched(Fetched {
+        url: url.to_string(),
+        status,
+        bytes,
+        etag: header("etag"),
+        last_modified: header("last-modified"),
+    }))
+}
+
+/// One GET: status, every response header (lowercase names, wire
+/// order) and, for a 2xx, the capped body.
+fn get_raw(
+    url: &str,
+    timeout: Duration,
+    etag: Option<&str>,
+    last_modified: Option<&str>,
+) -> Result<RawFetch, FetchError> {
     install_crypto_provider();
     let agent = agent_with_timeout_status_ok(timeout);
     let mut request = agent.get(url).header(
@@ -102,42 +193,38 @@ pub fn fetch_url_conditional(
     }
     let mut response = request.call().map_err(|e| map_ureq_error(e, url))?;
     let status = response.status().as_u16();
-    if status == 304 {
-        return Ok(FetchOutcome::NotModified);
-    }
-    if !(200..300).contains(&status) {
-        return Err(FetchError::HttpStatus(status));
-    }
-    // Capture validators before the body read (headers borrow the
-    // response immutably; the body needs it mutably).
-    let etag = response
+    // Headers before the body read (headers borrow the response
+    // immutably; the body needs it mutably).
+    let headers: Vec<(String, String)> = response
         .headers()
-        .get("etag")
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
-    let last_modified = response
-        .headers()
-        .get("last-modified")
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
-    use std::io::Read as _;
+        .iter()
+        .filter_map(|(k, v)| {
+            Some((
+                k.as_str().to_ascii_lowercase(),
+                v.to_str().ok()?.to_string(),
+            ))
+        })
+        .collect();
     let mut body = Vec::new();
-    response
-        .body_mut()
-        .as_reader()
-        .take(MAX_BODY_BYTES + 1)
-        .read_to_end(&mut body)
-        .map_err(|e| FetchError::Transport(format!("{url}: read body: {e}")))?;
-    if body.len() as u64 > MAX_BODY_BYTES {
-        return Err(FetchError::TooLarge);
+    if (200..300).contains(&status) {
+        use std::io::Read as _;
+        response
+            .body_mut()
+            .as_reader()
+            .take(MAX_BODY_BYTES + 1)
+            .read_to_end(&mut body)
+            .map_err(|e| FetchError::Transport(format!("{url}: read body: {e}")))?;
+        if body.len() as u64 > MAX_BODY_BYTES {
+            return Err(FetchError::TooLarge);
+        }
     }
-    Ok(FetchOutcome::Fetched(Fetched {
-        url: url.to_string(),
+    Ok(RawFetch {
         status,
-        bytes: body,
-        etag,
-        last_modified,
-    }))
+        headers,
+        body,
+        head: None,
+        request: None,
+    })
 }
 
 fn map_ureq_error(e: ureq::Error, url: &str) -> FetchError {
@@ -258,6 +345,76 @@ fn robots_disallows_all(body: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Port-0 loopback stub answering `n` GETs with `status` + `body`.
+    fn serve(n: usize, status: u16, body: &'static str) -> String {
+        use std::io::{Read as _, Write as _};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/fees", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for _ in 0..n {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                let reply = format!(
+                    "HTTP/1.1 {status} OK\r\nETag: \"v1\"\r\nContent-Length: {}\r\n\
+                     Connection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(reply.as_bytes()).unwrap();
+            }
+        });
+        url
+    }
+
+    #[test]
+    fn cached_fetch_hits_disk_and_reruns_offline() {
+        let dir = tempfile::tempdir().unwrap();
+        let url = serve(1, 200, "fee: $15");
+        let cache = FetchCache::new(dir.path(), CacheMode::Record);
+        let live = fetch_url_cached(&cache, &url, Duration::from_secs(5)).unwrap();
+        assert_eq!(live.bytes, b"fee: $15");
+        assert_eq!(live.etag.as_deref(), Some("\"v1\""));
+        // The stub served its one answer; a second GET would fail.
+        let again = fetch_url_cached(&cache, &url, Duration::from_secs(5)).unwrap();
+        assert_eq!(again, live);
+        let rerun = FetchCache::new(dir.path(), CacheMode::ReplayOnly);
+        assert_eq!(
+            fetch_url_cached(&rerun, &url, Duration::from_secs(5)).unwrap(),
+            live
+        );
+        let manifest = std::fs::read_to_string(rerun.manifest_path()).unwrap();
+        assert!(manifest.contains("\"etag\"") && manifest.contains(&url));
+        assert!(matches!(
+            fetch_url_cached(&rerun, "http://127.0.0.1:9/never", Duration::from_secs(1)),
+            Err(FetchError::Transport(_))
+        ));
+    }
+
+    #[test]
+    fn refresh_records_not_modified_and_error_statuses() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = FetchCache::new(dir.path(), CacheMode::Refresh);
+        let url = serve(1, 304, "");
+        let outcome = fetch_url_conditional_cached(
+            &cache,
+            &url,
+            Duration::from_secs(5),
+            Some("\"v1\""),
+            None,
+        );
+        assert_eq!(outcome.unwrap(), FetchOutcome::NotModified);
+        let url = serve(1, 404, "");
+        assert_eq!(
+            fetch_url_cached(&cache, &url, Duration::from_secs(5)),
+            Err(FetchError::HttpStatus(404))
+        );
+        let rerun = FetchCache::new(dir.path(), CacheMode::ReplayOnly);
+        assert_eq!(
+            fetch_url_cached(&rerun, &url, Duration::from_secs(5)),
+            Err(FetchError::HttpStatus(404))
+        );
+    }
     use std::io::{Read, Write};
     use std::net::TcpListener;
 

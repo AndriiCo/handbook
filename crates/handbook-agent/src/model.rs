@@ -9,6 +9,7 @@ use std::io::Read;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use callcache::{CacheError, MetaCache};
 use contracts::model::{
     CitationRef, DraftRequest, DraftResponse, ModelClient, ModelError, ProposedRecord, Usage,
 };
@@ -95,7 +96,7 @@ pub const PROMPT_VERSION_V2: &str = "aa-prompt-v2";
 /// generations exist; anything else reads as v1 (the only producers
 /// are `runner::PROMPT_VERSION` and the eval `--prompt` flag, which
 /// rejects unknown values, so the fallback is unreachable).
-fn template_for(version: &str) -> &'static str {
+pub(crate) fn template_for(version: &str) -> &'static str {
     if version == PROMPT_VERSION_V2 {
         include_str!("../prompts/aa-prompt-v2.md")
     } else {
@@ -227,6 +228,9 @@ pub struct MetaRestClient {
     observer: Option<Arc<dyn CallObserver>>,
     pipeline: &'static str,
     run_id: Option<u64>,
+    /// Record/replay cache: a hit skips the network, the observer and
+    /// the daily cap (`docs/ops/call-cache.md`).
+    cache: Option<Arc<MetaCache>>,
 }
 
 impl fmt::Debug for MetaRestClient {
@@ -264,7 +268,17 @@ impl MetaRestClient {
             observer: None,
             pipeline: "draft",
             run_id: None,
+            cache: None,
         }
+    }
+
+    /// Serve repeat requests from `cache` and count live calls in its
+    /// daily ledger (operator decision 2026-11-03: reruns never
+    /// re-spend budget).
+    #[must_use]
+    pub fn with_cache(mut self, cache: Arc<MetaCache>) -> Self {
+        self.cache = Some(cache);
+        self
     }
 
     /// Report every HTTP attempt to `observer`, labelled with
@@ -298,7 +312,8 @@ impl MetaRestClient {
         raw: &Result<RawResponse, ModelError>,
         parsed: Option<(&'static str, Usage)>,
     ) {
-        if self.observer.is_none() {
+        // A cache hit is not a model call: no row, no cap spend.
+        if self.observer.is_none() || matches!(raw, Ok(r) if r.cached) {
             return;
         }
         let zero = Usage {
@@ -411,17 +426,45 @@ impl MetaRestClient {
     ) -> Result<RawResponse, ModelError> {
         let url = format!("{}/chat/completions", self.base_url);
         let model = body["model"].as_str().unwrap_or("unknown").to_string();
+        let cached = self
+            .cache
+            .as_deref()
+            .map(|cache| (cache, callcache::meta::json_key(&url, body)));
+        if let Some((cache, key)) = &cached
+            && let Some(hit) = cache.lookup(key).map_err(cache_error)?
+        {
+            return Ok(RawResponse {
+                status: hit.status,
+                body: hit.body,
+                retry_after_secs: None,
+                latency_ms: 0,
+                ttft_ms: None,
+                attempt: 1,
+                cached: true,
+            });
+        }
+        let request = callcache::meta::Request {
+            method: "POST",
+            url: &url,
+            model: &model,
+        };
         let mut attempt_no = 0u32;
-        loop {
+        let result = loop {
+            if let Some((cache, key)) = &cached {
+                cache.admit(key).map_err(cache_error)?;
+            }
             let started = Instant::now();
             let mut attempt = self.post_sse(&url, body, started);
+            if let Some((cache, _)) = &cached {
+                cache.spent(&request, attempt.as_ref().map_or(0, |r| r.status));
+            }
             if let Ok(r) = attempt.as_mut() {
                 r.attempt = attempt_no + 1;
             }
             let retry_after = match &attempt {
                 Err(ModelError::Transport(_)) => None,
                 Ok(r) if matches!(r.status, 429 | 500 | 502 | 503 | 504) => r.retry_after_secs,
-                _ => return attempt,
+                _ => break attempt,
             };
             // A server asking for longer than we will wait (or an HTTP
             // date we do not parse) gets its answer back, never an early
@@ -429,12 +472,17 @@ impl MetaRestClient {
             if attempt_no >= MAX_ATTEMPTS - 1
                 || retry_after.is_some_and(|s| s > MAX_RETRY_AFTER_SECS)
             {
-                return attempt;
+                break attempt;
             }
             self.observe_attempt(&model, pipeline, run_id, &attempt, None);
             attempt_no += 1;
             std::thread::sleep(retry_delay(RETRY_BASE_SECS, attempt_no, retry_after));
+        };
+        if let (Some((cache, key)), Ok(r)) = (&cached, &result) {
+            // A full disk must not discard an answer already paid for.
+            let _ = cache.store(key, &request, r.status, &r.body);
         }
+        result
     }
 
     fn post_sse(
@@ -483,6 +531,7 @@ impl MetaRestClient {
             latency_ms: elapsed_ms(started),
             ttft_ms,
             attempt: 1,
+            cached: false,
         })
     }
 
@@ -505,7 +554,17 @@ impl MetaRestClient {
             latency_ms: 0,
             ttft_ms: None,
             attempt: 1,
+            cached: false,
         })
+    }
+}
+
+/// Cache refusals as model errors: the cap is the budget error every
+/// caller already handles; a replay-only miss reads as transport.
+fn cache_error(e: CacheError) -> ModelError {
+    match e {
+        CacheError::OverBudget { .. } => ModelError::BudgetExceeded,
+        other => ModelError::Transport(other.to_string()),
     }
 }
 
@@ -530,6 +589,8 @@ struct RawResponse {
     latency_ms: u64,
     ttft_ms: Option<u64>,
     attempt: u32,
+    /// Served from the call cache (no HTTP happened).
+    cached: bool,
 }
 
 /// `json_schema` response format for [`DraftResponse`]: schema-constrained
@@ -1253,6 +1314,65 @@ mod tests {
             seen.recv_timeout(Duration::from_secs(10)).unwrap();
         }
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn cached_redraft_makes_zero_http_calls_and_spends_nothing() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let seen_calls = calls.clone();
+        let records = r#"{"records": []}"#.to_string();
+        // One exchange only: a second HTTP call would find no stub.
+        let (base, seen, handle) = stub(1, move |_, _| {
+            seen_calls.fetch_add(1, Ordering::SeqCst);
+            let delta = serde_json::json!({"role": "assistant", "content": records.clone()});
+            (200, sse_stream(delta, "stop"))
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cache =
+            Arc::new(MetaCache::new(dir.path(), callcache::CacheMode::Record).with_budget(5));
+        let observer = Arc::new(Recorder::default());
+        let client = MetaRestClient::new(base, "stub-key".to_string())
+            .with_cache(cache.clone())
+            .with_observer(observer.clone(), "draft", None);
+        let live = client.draft_records(&sample_request()).expect("live draft");
+        seen.recv_timeout(Duration::from_secs(10)).unwrap();
+        handle.join().unwrap();
+        let again = client
+            .draft_records(&sample_request())
+            .expect("cached draft");
+        assert_eq!(again, live);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        // One telemetry row and one ledger line: the hit counted nowhere.
+        assert_eq!(observer.0.lock().unwrap().len(), 1);
+        assert_eq!(cache.budget().unwrap().used(callcache::unix_now()), 1);
+        assert_eq!(cache.counts(), (1, 1));
+
+        // Offline: replay-only answers from disk with no server at all,
+        // and a request it never saw fails closed instead of dialing.
+        let offline = Arc::new(MetaCache::new(dir.path(), callcache::CacheMode::ReplayOnly));
+        let client = MetaRestClient::new("http://127.0.0.1:9".to_string(), "k".to_string())
+            .with_cache(offline);
+        assert_eq!(client.draft_records(&sample_request()).unwrap(), live);
+        let mut other = sample_request();
+        other.input_text.push_str(" (revised)");
+        assert!(matches!(
+            client.draft_records(&other),
+            Err(ModelError::Transport(msg)) if msg.contains("replay-only")
+        ));
+    }
+
+    #[test]
+    fn daily_cap_in_the_cache_ledger_stops_live_calls() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache =
+            Arc::new(MetaCache::new(dir.path(), callcache::CacheMode::Record).with_budget(0));
+        let client = MetaRestClient::new("http://127.0.0.1:9".to_string(), "k".to_string())
+            .with_cache(cache);
+        assert_eq!(
+            client.draft_records(&sample_request()),
+            Err(ModelError::BudgetExceeded)
+        );
     }
 
     /// Collects every telemetry record (M1).

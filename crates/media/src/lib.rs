@@ -30,7 +30,9 @@ pub use redact::{
 };
 pub use transcribe::{TranscribeError, Transcript, TranscriptTurn, VoiceFileClient};
 pub use transcript::{Annotation, AnnotationKind, TranscriptError, apply_fix};
-pub use transport::{HttpResponse, HttpTransport, MultipartFile, TransportError, UreqTransport};
+pub use transport::{
+    CachedTransport, HttpResponse, HttpTransport, MultipartFile, TransportError, UreqTransport,
+};
 pub use upload::{
     GRANT_VERSION, Intake, MAX_UPLOAD_BYTES, MediaKind, RightsGrant, Trust, UploadError,
     intake_upload,
