@@ -2528,6 +2528,7 @@ mod tests {
             "/apostille/api/v1/admin/fact-checks?slug=usa-wa-sos",
             "/apostille/api/v1/admin/authorities",
             "/apostille/api/v1/admin/first-source/emails",
+            "/apostille/api/v1/admin/compile",
         ] {
             let get = |host: &'static str, session: Option<&'static str>| {
                 admin_request("GET", uri, Some(host), session, None, None, None)
@@ -2647,6 +2648,214 @@ mod tests {
                 .unwrap();
             assert_eq!(res.status(), want, "{uri} {slug}");
         }
+    }
+
+    /// Seal one config value in the fixture store and drop the cache.
+    fn seal(fx: &Fixture, key: &str, key_type: config::ConfigType, value: &[u8]) {
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        config::set_value(
+            &conn,
+            fx.state.kek.as_deref().unwrap(),
+            &config::SetValue {
+                version: 1,
+                key,
+                key_type,
+                plaintext: value,
+                now: unix_now(),
+                actor: "test",
+            },
+        )
+        .unwrap();
+        fx.state.config_cache.invalidate();
+    }
+
+    fn add_test_authority(fx: &Fixture, slug: &str) -> i64 {
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "TS",
+                name: "Test SOS",
+                slug,
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        conn.query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn compile_runs_walk_the_pipeline_under_the_daily_cap() {
+        // Never bill a real model from a unit test.
+        if std::env::var("META_API_KEY").is_ok_and(|k| !k.is_empty()) {
+            return;
+        }
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        add_test_authority(&fx, "compile-sos");
+        let post = |body: serde_json::Value| {
+            admin::router(fx.state.clone())
+                .merge(mission_admin_routers(&fx.state))
+                .oneshot(admin_request(
+                    "POST",
+                    "/apostille/api/v1/admin/compile",
+                    Some("admin.andrii.ai"),
+                    Some("staff-1"),
+                    Some("csrf-token"),
+                    Some("https://admin.andrii.ai"),
+                    Some(body),
+                ))
+        };
+        let res = post(serde_json::json!({"slug": "no-such"})).await.unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let res = post(serde_json::json!({"slug": "compile-sos", "seed_urls": ["http://x.test/"]}))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        seal(
+            &fx,
+            config::keys::COMPILE_DAILY_RUNS,
+            config::ConfigType::Text,
+            b"1",
+        );
+        let res = post(serde_json::json!({"slug": "compile-sos"}))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let v: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+        let run_id = v["run_id"].as_i64().unwrap();
+        assert_eq!(v["topic"], format!("run:{run_id}"));
+
+        // Nothing to capture, draft or compose: every step is a skip and
+        // the run still finishes as done, with its summary stored.
+        let mut row = (String::new(), String::new());
+        for _ in 0..200 {
+            let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+            row = conn
+                .query_row(
+                    "SELECT status, summary_json FROM compile_run WHERE id = ?1",
+                    [run_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            if row.0 != "running" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        assert_eq!(row.0, "done", "summary: {}", row.1);
+        let summary: serde_json::Value = serde_json::from_str(&row.1).unwrap();
+        assert_eq!(summary["capture"]["pages"], 0);
+        assert_eq!(summary["plan"]["status"], "skipped");
+
+        // compile.daily_runs = 1: the second run today is refused.
+        let res = post(serde_json::json!({"slug": "compile-sos"}))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        // A running row blocks a second run for the same authority.
+        seal(
+            &fx,
+            config::keys::COMPILE_DAILY_RUNS,
+            config::ConfigType::Text,
+            b"5",
+        );
+        {
+            let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+            conn.execute(
+                "INSERT INTO compile_run(id, slug, actor, status, started_at)
+                 VALUES (900001, 'compile-sos', 'staff-1', 'running', ?1)",
+                [unix_now()],
+            )
+            .unwrap();
+        }
+        let res = post(serde_json::json!({"slug": "compile-sos"}))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+
+        // compile.daily_runs = 0 stops every run.
+        seal(
+            &fx,
+            config::keys::COMPILE_DAILY_RUNS,
+            config::ConfigType::Text,
+            b"0",
+        );
+        let res = post(serde_json::json!({"slug": "compile-sos"}))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn auto_compose_is_off_by_default_and_coalesces_per_slug() {
+        if std::env::var("META_API_KEY").is_ok_and(|k| !k.is_empty()) {
+            return;
+        }
+        let fx = fixture();
+        let authority = add_test_authority(&fx, "auto-sos");
+        {
+            let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+            conn.execute(
+                "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                      bytes_raw, bytes_stored, sha256, trust)
+                 VALUES (?1, 1761000000, 'file', 'p', 0, 0, 's', 'staff_verified')",
+                [authority],
+            )
+            .unwrap();
+            let cap = conn.last_insert_rowid();
+            for topic in ["hours", "fees", "mailing"] {
+                conn.execute(
+                    "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                                       status, created_by, created_at,
+                                       citation_start, citation_end)
+                     VALUES (?1, ?2, ?3, 'synthetic', 'accepted', 't', 1, 0, 9)",
+                    rusqlite::params![authority, cap, topic],
+                )
+                .unwrap();
+            }
+        }
+        let mut ops = fx.state.bus.subscribe("ops");
+        // Off by default: nothing starts.
+        plan::auto_compose_after_accept(&fx.state, "auto-sos");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(ops.try_recv().is_err(), "auto-compose ran while off");
+
+        // On: three accepts in a burst run one compose plus one
+        // follow-up (the burst folds), never three.
+        seal(
+            &fx,
+            config::keys::PLAN_AUTO_COMPOSE,
+            config::ConfigType::Bool,
+            b"1",
+        );
+        for _ in 0..3 {
+            plan::auto_compose_after_accept(&fx.state, "auto-sos");
+        }
+        let mut started = 0;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            match tokio::time::timeout(std::time::Duration::from_millis(200), ops.recv()).await {
+                Ok(Ok(msg)) => {
+                    let v: serde_json::Value = serde_json::from_str(&msg).unwrap();
+                    if v["type"] == "plan_auto_compose" {
+                        assert_eq!(v["slug"], "auto-sos");
+                        started += 1;
+                    }
+                }
+                _ if started >= 2 => break,
+                _ => {}
+            }
+        }
+        assert_eq!(started, 2, "one run plus one folded follow-up");
     }
 
     #[tokio::test]

@@ -124,7 +124,6 @@ impl DraftRuns {
     /// Reserve a fresh id from the one run counter without registering a
     /// draft run, so other run kinds (Compile, plan compose) stream on
     /// `run:{id}` without colliding with draft ids.
-    #[allow(dead_code)] // B0 seam: SA-22 `compile.rs` is the caller.
     pub fn reserve_id(&self) -> u64 {
         self.next.fetch_add(1, Ordering::SeqCst) + 1
     }
@@ -592,6 +591,47 @@ impl DraftTask {
             proposed_ids,
         })
     }
+}
+
+/// One draft pass over a capture's sidecar, run inline: the Compile
+/// run's extract step (blocking: call inside `spawn_blocking`). It skips
+/// the draft-run registry (the Compile run is the run) but fans new
+/// proposals out to `/review` like a staff draft. Returns (proposed,
+/// rejected).
+pub(crate) fn draft_capture_blocking(
+    state: &AppState,
+    capture_id: i64,
+    slug: &str,
+    run_id: u64,
+) -> Result<(usize, usize), String> {
+    let store = handbook_store::store::Store::new(&state.store_root);
+    let sidecar = store.root().join("text").join(format!("{capture_id}.txt"));
+    let text = std::fs::read_to_string(&sidecar).unwrap_or_default();
+    if text.trim().is_empty() {
+        return Err("capture has no extracted text".to_string());
+    }
+    let task = DraftTask {
+        bus: state.bus.clone(),
+        store_root: state.store_root.clone(),
+        kek: state.kek.clone(),
+        runs: state.draft_runs.clone(),
+        run_id,
+        capture_id,
+        slug: slug.to_string(),
+        text,
+        replay: replay_corpus(state),
+    };
+    let outcome = task.draft_blocking()?;
+    let now = unix_now();
+    for fact_id in &outcome.proposed_ids {
+        state.bus.publish(
+            "proposals",
+            json!({"type": "proposal.created", "topic": "proposals",
+                   "fact_id": fact_id, "authority": slug, "at": now})
+            .to_string(),
+        );
+    }
+    Ok((outcome.proposed, outcome.rejected))
 }
 
 /// One finished analyzer pass, as the run registry and step events read it.

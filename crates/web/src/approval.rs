@@ -788,6 +788,8 @@ pub async fn bulk_decide(
             json!({"fact_id": body.ids[0], "fact_ids": body.ids, "slug": body.authority}),
             now,
         );
+        // `plan.auto_compose`: one compose per batch, not per fact.
+        crate::plan::auto_compose_after_accept(&state, &body.authority);
     }
     let results: Vec<serde_json::Value> = decided
         .iter()
@@ -1022,6 +1024,8 @@ fn decide_inner(
         // SA-20: queue es/fr translation rows (best-effort;
         // staff-triggered render).
         let _ = crate::translate::request_after_accept(conn, id, decision.now);
+        // `plan.auto_compose`: a fresh plan proposal (off by default).
+        crate::plan::auto_compose_after_accept(state, &fact.slug);
     }
     let view = fact_view(conn, &state.store_root, &fact, false);
     if let Some((rule_id, deduped)) = rule {

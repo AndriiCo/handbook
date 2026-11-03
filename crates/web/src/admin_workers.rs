@@ -358,19 +358,19 @@ async fn list_authorities(_auth: AdminAuth, State(state): State<AppState>) -> im
 }
 
 /// One validated fetch request: an authority slug plus a URL.
-struct FetchRequest {
-    slug: String,
-    url: String,
-    source_kind: String,
-    trust: String,
+pub(crate) struct FetchRequest {
+    pub(crate) slug: String,
+    pub(crate) url: String,
+    pub(crate) source_kind: String,
+    pub(crate) trust: String,
 }
 
 /// Outcome of one [`fetch_one`] call.
-struct FetchOutcome {
-    outcome: &'static str,
-    capture_id: Option<i64>,
+pub(crate) struct FetchOutcome {
+    pub(crate) outcome: &'static str,
+    pub(crate) capture_id: Option<i64>,
     status: Option<u16>,
-    detail: Option<String>,
+    pub(crate) detail: Option<String>,
 }
 
 impl FetchOutcome {
@@ -413,7 +413,7 @@ impl FetchOutcome {
 
 /// Only absolute http(s) URLs are fetchable (same gate as the seed
 /// shape; `fetch_url` would fail them as transport errors anyway).
-fn http_url(url: &str) -> bool {
+pub(crate) fn http_url(url: &str) -> bool {
     url.starts_with("http://") || url.starts_with("https://")
 }
 
@@ -480,7 +480,12 @@ fn record_fetch_failure(
 /// Run one fetch + ingest synchronously (blocking: network + sqlite).
 /// Opens its own connection; call only inside `spawn_blocking`.
 /// Robots gate, failure tasks, and dedup mirror `xtask fetch-url`.
-fn fetch_one(store_root: &FsPath, req: &FetchRequest, actor: &str, now: i64) -> FetchOutcome {
+pub(crate) fn fetch_one(
+    store_root: &FsPath,
+    req: &FetchRequest,
+    actor: &str,
+    now: i64,
+) -> FetchOutcome {
     let store = Store::new(store_root);
     let Ok(conn) = db::open(&store) else {
         return FetchOutcome::failed("store unavailable".to_string());

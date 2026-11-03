@@ -1114,7 +1114,7 @@ pub struct ComposeBody {
 
 /// The compose run: Spark composes, the gate validates, Wonder checks
 /// entailment, and the result is stored as a proposed plan.
-fn compose_blocking(
+pub(crate) fn compose_blocking(
     store_root: &std::path::Path,
     kek: Option<&config::Kek>,
     slug: &str,
@@ -1276,58 +1276,40 @@ async fn compose(
     State(state): State<AppState>,
     Json(body): Json<ComposeBody>,
 ) -> Response {
+    match start_compose(&state, &body.slug, None) {
+        Ok(run_id) => (
+            StatusCode::ACCEPTED,
+            Json(json!({"run_id": run_id, "topic": format!("run:{run_id}")})),
+        )
+            .into_response(),
+        Err((status, body)) => (status, Json(body)).into_response(),
+    }
+}
+
+/// Start one compose run for `slug` (the staff button, auto-compose
+/// and the Compile run share it). Preconditions answer synchronously:
+/// a run that cannot start is an error now, never a `compose.failed`
+/// the console subscribed too late to hear. `on_done` runs once the
+/// compose task ends, whatever its outcome.
+pub(crate) fn start_compose(
+    state: &AppState,
+    slug: &str,
+    on_done: Option<Box<dyn FnOnce() + Send>>,
+) -> Result<u64, (StatusCode, serde_json::Value)> {
     let store = handbook_store::store::Store::new(&state.store_root);
     let Ok(conn) = db::open(&store) else {
-        return store_unavailable();
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({"error": "store unavailable"}),
+        ));
     };
-    let known: bool = conn
-        .query_row(
-            "SELECT 1 FROM authority WHERE slug = ?1",
-            [&body.slug],
-            |_| Ok(true),
-        )
-        .optional()
-        .unwrap_or(None)
-        .unwrap_or(false);
-    if !known {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "unknown authority"})),
-        )
-            .into_response();
-    }
-    let now = unix_now();
-    if crate::telemetry::over_daily_cap(&conn, &state, now) {
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(json!({"error": "daily model-call cap reached (meta.daily_call_cap)"})),
-        )
-            .into_response();
-    }
-    // Preconditions answer synchronously: a run that cannot start is a
-    // 422 now, never a `compose.failed` the console subscribed too late
-    // to hear.
-    let accepted: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM fact f JOIN authority a ON a.id = f.authority_id
-             WHERE a.slug = ?1 AND f.status = 'accepted' AND f.topic != 'phone_script'",
-            [&body.slug],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-    if accepted < MIN_FACTS as i64 {
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({"error": format!("needs at least {MIN_FACTS} accepted facts (has {accepted})"), "accepted": accepted})),
-        )
-            .into_response();
-    }
+    compose_preconditions(&conn, state, slug)?;
     drop(conn);
     let run_id = state.draft_runs.reserve_id();
     let bus = state.bus.clone();
     let store_root = state.store_root.clone();
     let kek: Option<Arc<config::Kek>> = state.kek.clone();
-    let slug = body.slug.clone();
+    let slug = slug.to_string();
     tokio::spawn(async move {
         publish_run(
             &bus,
@@ -1361,12 +1343,132 @@ async fn compose(
                 json!({"error": format!("compose task failed: {join}")}),
             ),
         }
+        if let Some(done) = on_done {
+            done();
+        }
     });
-    (
-        StatusCode::ACCEPTED,
-        Json(json!({"run_id": run_id, "topic": format!("run:{run_id}")})),
-    )
-        .into_response()
+    Ok(run_id)
+}
+
+/// Why `slug` cannot compose right now: unknown (404), the daily
+/// model-call cap (429) or fewer than [`MIN_FACTS`] accepted facts (422).
+pub(crate) fn compose_preconditions(
+    conn: &rusqlite::Connection,
+    state: &AppState,
+    slug: &str,
+) -> Result<(), (StatusCode, serde_json::Value)> {
+    let known: bool = conn
+        .query_row("SELECT 1 FROM authority WHERE slug = ?1", [slug], |_| {
+            Ok(true)
+        })
+        .optional()
+        .unwrap_or(None)
+        .unwrap_or(false);
+    if !known {
+        return Err((StatusCode::NOT_FOUND, json!({"error": "unknown authority"})));
+    }
+    if crate::telemetry::over_daily_cap(conn, state, unix_now()) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            json!({"error": "daily model-call cap reached (meta.daily_call_cap)"}),
+        ));
+    }
+    let accepted: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fact f JOIN authority a ON a.id = f.authority_id
+             WHERE a.slug = ?1 AND f.status = 'accepted' AND f.topic != 'phone_script'",
+            [slug],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if accepted < MIN_FACTS as i64 {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            json!({"error": format!("needs at least {MIN_FACTS} accepted facts (has {accepted})"), "accepted": accepted}),
+        ));
+    }
+    Ok(())
+}
+
+/// Slugs with an auto-compose in flight; `true` = more facts were
+/// accepted meanwhile, so run once more when this one ends.
+static AUTO_INFLIGHT: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, bool>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// `plan.auto_compose` (default off): after an accept, compose a fresh
+/// plan proposal for the authority. One run per slug at a time; accepts
+/// that land while it runs fold into a single follow-up run, so a batch
+/// of approvals never churns plans. Best effort: a run that cannot start
+/// (too few facts, daily cap) is skipped with a log line, and the accept
+/// itself never waits on or fails because of it.
+pub(crate) fn auto_compose_after_accept(state: &AppState, slug: &str) {
+    if !auto_compose_on(state) {
+        return;
+    }
+    {
+        let mut inflight = AUTO_INFLIGHT.lock().expect("auto-compose lock poisoned");
+        if let Some(again) = inflight.get_mut(slug) {
+            *again = true;
+            return;
+        }
+        inflight.insert(slug.to_string(), false);
+    }
+    start_auto(state.clone(), slug.to_string());
+}
+
+fn auto_compose_on(state: &AppState) -> bool {
+    let Some(kek) = state.kek.as_deref() else {
+        return false;
+    };
+    let store = handbook_store::store::Store::new(&state.store_root);
+    let Ok(conn) = db::open(&store) else {
+        return false;
+    };
+    state
+        .config_cache
+        .bool(&conn, kek, config::keys::PLAN_AUTO_COMPOSE)
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+}
+
+fn start_auto(state: AppState, slug: String) {
+    let done_state = state.clone();
+    let done_slug = slug.clone();
+    let on_done: Box<dyn FnOnce() + Send> = Box::new(move || {
+        let again = {
+            let mut inflight = AUTO_INFLIGHT.lock().expect("auto-compose lock poisoned");
+            if inflight.get(&done_slug) == Some(&true) {
+                inflight.insert(done_slug.clone(), false);
+                true
+            } else {
+                inflight.remove(&done_slug);
+                false
+            }
+        };
+        if again {
+            start_auto(done_state, done_slug);
+        }
+    });
+    match start_compose(&state, &slug, Some(on_done)) {
+        Ok(run_id) => crate::ws_bus::publish_ops(
+            &state.bus,
+            "plan_auto_compose",
+            json!({"slug": slug, "run_id": run_id}),
+            unix_now(),
+        ),
+        Err((_, why)) => {
+            AUTO_INFLIGHT
+                .lock()
+                .expect("auto-compose lock poisoned")
+                .remove(&slug);
+            eprintln!(
+                "plan.auto_compose: {slug} skipped: {}",
+                why["error"].as_str().unwrap_or("not composable")
+            );
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

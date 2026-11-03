@@ -101,7 +101,7 @@ impl CallObserver for DbObserver {
 }
 
 /// Start of the UTC day containing `now`.
-fn utc_day_start(now: i64) -> i64 {
+pub(crate) fn utc_day_start(now: i64) -> i64 {
     now - now.rem_euclid(86_400)
 }
 
