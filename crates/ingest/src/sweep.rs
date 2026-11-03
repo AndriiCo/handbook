@@ -6,7 +6,14 @@
 //! (304 → liveness only; identical extracted text → skip; SimHash
 //! near-dup → skip). Every skip still advances `last_checked_at`, so
 //! the sweep never re-pays for an unchanged page. Fetch failures are
-//! recorded as `validate_fact` tasks, never silent.
+//! recorded as `validate_fact` tasks, never silent, and advance the
+//! check time too: a dead URL waits one cadence instead of holding a
+//! slot at the head of the queue (oldest check first) forever.
+//!
+//! A SimHash near-dup still ingests when the page gained a new line of
+//! prose (`gained_lines`): a one-sentence closure banner on a long page
+//! moves the fingerprint by ≤3 bits, and that notice is exactly what
+//! the watch exists to see.
 //!
 //! HCCH (`poll_hcch`): the same core scoped to the `hcch` authority's
 //! website source(s), plus one high-priority task on content change.
@@ -132,6 +139,7 @@ pub fn poll_source(
     timeout: Duration,
 ) -> SourceOutcome {
     if !(row.uri.starts_with("http://") || row.uri.starts_with("https://")) {
+        let _ = touch_checked(conn, row.id, now);
         return SourceOutcome::Skipped {
             reason: "not http".to_string(),
         };
@@ -146,6 +154,7 @@ pub fn poll_source(
         if !verdict.allowed {
             let reason = "robots disallow".to_string();
             record_fetch_failure(conn, row, &reason, actor, now);
+            let _ = touch_checked(conn, row.id, now);
             return SourceOutcome::Skipped { reason };
         }
     }
@@ -160,6 +169,7 @@ pub fn poll_source(
         Err(e) => {
             let reason = e.to_string();
             record_fetch_failure(conn, row, &reason, actor, now);
+            let _ = touch_checked(conn, row.id, now);
             return SourceOutcome::Failed { reason };
         }
     };
@@ -185,7 +195,9 @@ pub fn poll_source(
     // Near-dup: keep the ORIGINAL fingerprint as the baseline (updating
     // it would let slow drift walk forever without ever ingesting).
     let fingerprint = simhash(&text);
-    if is_near_dup(row.simhash, fingerprint) {
+    if is_near_dup(row.simhash, fingerprint)
+        && !previous_text(conn, store, row.id).is_some_and(|prev| gained_lines(&prev, &text))
+    {
         let _ = touch_validators(conn, row.id, validators.0, validators.1, now);
         return SourceOutcome::NearDuplicate;
     }
@@ -206,9 +218,10 @@ pub fn poll_source(
     ) {
         Ok(outcome) => outcome,
         Err(e) => {
-            return SourceOutcome::Failed {
-                reason: format!("ingest: {e}"),
-            };
+            let reason = format!("ingest: {e}");
+            record_fetch_failure(conn, row, &reason, actor, now);
+            let _ = touch_checked(conn, row.id, now);
+            return SourceOutcome::Failed { reason };
         }
     };
     let _ = update_state(
@@ -224,6 +237,43 @@ pub fn poll_source(
         IngestOutcome::Created { capture_id } => SourceOutcome::Created { capture_id },
         IngestOutcome::Duplicate { capture_id } => SourceOutcome::Duplicate { capture_id },
     }
+}
+
+/// Sidecar text of the newest capture of `source_id`, if any.
+fn previous_text(conn: &Connection, store: &Store, source_id: i64) -> Option<String> {
+    let id: i64 = conn
+        .query_row(
+            "SELECT id FROM capture WHERE source_id = ?1
+             ORDER BY captured_at DESC, id DESC LIMIT 1",
+            [source_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()??;
+    std::fs::read_to_string(store.root().join("text").join(format!("{id}.txt"))).ok()
+}
+
+/// True when `new` holds a line of prose that `old` lacks. Lines are
+/// compared case- and space-folded with digits masked, so a bumped
+/// date or counter is never "new"; only lines of at least 16
+/// characters with 8 letters count, so nav crumbs and buttons don't.
+pub fn gained_lines(old: &str, new: &str) -> bool {
+    fn fold(line: &str) -> Option<String> {
+        let folded = line
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_digit() { '#' } else { c })
+            .collect::<String>();
+        let letters = folded.chars().filter(|c| c.is_alphabetic()).count();
+        (folded.chars().count() >= 16 && letters >= 8).then_some(folded)
+    }
+    let seen: std::collections::HashSet<String> = old.lines().filter_map(fold).collect();
+    new.lines()
+        .filter_map(fold)
+        .any(|line| !seen.contains(&line))
 }
 
 fn update_robots(conn: &Connection, source_id: i64, verdict: &str, now: i64) -> Result<()> {
@@ -407,13 +457,16 @@ pub fn poll_hcch(
         }
         return Ok(HcchOutcome::NotModified);
     }
-    // Before/after pointers for the staffer who diffs the table.
+    // Before/after pointers for the staffer who diffs the table: the
+    // previous capture of the SAME source (another HCCH page's capture
+    // would diff against the wrong table).
     let prev: Option<i64> = conn
         .query_row(
             "SELECT id FROM capture
-             WHERE authority_id = ?1 AND id < ?2
+             WHERE source_id = (SELECT source_id FROM capture WHERE id = ?1)
+               AND id < ?1
              ORDER BY id DESC LIMIT 1",
-            rusqlite::params![rows[0].authority_id, created[0]],
+            [created[0]],
             |row| row.get(0),
         )
         .optional()?;
@@ -739,6 +792,82 @@ mod tests {
             .unwrap();
         assert_eq!(kind, "validate_fact");
         assert!(title.starts_with("fetch failed: "), "{title}");
+        // A dead URL waits one cadence: it no longer heads the queue.
+        let id = row(&conn, "t-sos").id;
+        assert_eq!(state(&conn, id).4, NOW);
+        assert!(due_sources(&conn, NOW, 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn poll_near_dup_with_a_new_banner_line_still_ingests() {
+        let (_dir, store, conn) = migrated();
+        let auth = authority(&conn, "t-sos");
+        let (url, server) = serve(
+            "HTTP/1.0 200 OK",
+            &[],
+            b"<p>Apostille services by mail and in person.</p><p>Updated 11/01/2026</p>",
+        );
+        let id = add_source(&conn, auth, "website_official", &url);
+        let first = poll_source(
+            &conn,
+            &store,
+            &row(&conn, "t-sos"),
+            "official",
+            "test",
+            NOW,
+            Duration::from_secs(5),
+        );
+        assert!(matches!(first, SourceOutcome::Created { .. }), "{first:?}");
+        server.join().unwrap();
+        const BANNER: &[u8] = b"<p>Apostille services are currently unavailable.</p>\
+            <p>Apostille services by mail and in person.</p><p>Updated 11/02/2026</p>";
+        // Force the SimHash gate to call it a near-dup: only the
+        // gained line can let it through.
+        let fingerprint = simhash(&extract_text(BANNER));
+        conn.execute(
+            "UPDATE source SET simhash = ?1 WHERE id = ?2",
+            rusqlite::params![i64::from_be_bytes(fingerprint.to_be_bytes()), id],
+        )
+        .unwrap();
+        let (url2, server2) = serve("HTTP/1.0 200 OK", &[], BANNER);
+        conn.execute(
+            "UPDATE source SET uri = ?1 WHERE id = ?2",
+            rusqlite::params![url2, id],
+        )
+        .unwrap();
+        let second = poll_source(
+            &conn,
+            &store,
+            &row(&conn, "t-sos"),
+            "official",
+            "test",
+            NOW + 100,
+            Duration::from_secs(5),
+        );
+        assert!(
+            matches!(second, SourceOutcome::Created { .. }),
+            "{second:?}"
+        );
+        assert_eq!(capture_count(&conn, auth), 2);
+        server2.join().unwrap();
+    }
+
+    #[test]
+    fn gained_lines_ignores_dates_case_and_short_crumbs() {
+        let old = "Apostille services by mail.\nUpdated 11/01/2026 at 9:00\nHome";
+        assert!(!gained_lines(
+            old,
+            "APOSTILLE  services by mail.\nUpdated 11/03/2026 at 9:30"
+        ));
+        assert!(!gained_lines(
+            old,
+            "Apostille services by mail.\nMenu\nSearch"
+        ));
+        assert!(gained_lines(
+            old,
+            "Apostille services are unavailable until 11/10.\nHome"
+        ));
+        assert!(!gained_lines(old, ""));
     }
 
     #[test]
@@ -760,6 +889,10 @@ mod tests {
             SourceOutcome::Skipped {
                 reason: "not http".to_string()
             }
+        );
+        assert!(
+            due_sources(&conn, NOW, 10).unwrap().is_empty(),
+            "skip advances"
         );
         let tasks: i64 = conn
             .query_row("SELECT COUNT(*) FROM task", [], |row| row.get(0))

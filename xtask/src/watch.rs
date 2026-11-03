@@ -7,8 +7,44 @@
 
 use crate::{flag, open_db, open_store, unix_now};
 
-const DEFAULT_LIMIT: i64 = 25;
+// World scale: ~1,000 sources on mostly weekly cadence is ~150 due a
+// day; the daily timer passes no --limit.
+const DEFAULT_LIMIT: i64 = 150;
 const FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// Gap between two requests to one host inside a sweep (the crawl's
+/// politeness: 2 s, 10 s for hcch.net — every world pack cites it).
+const HOST_GAP: std::time::Duration = std::time::Duration::from_secs(2);
+const HCCH_GAP: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// `host` of an http(s) URI (lowercase, no port), or "" for anything else.
+fn host_of(uri: &str) -> String {
+    let rest = uri
+        .strip_prefix("https://")
+        .or_else(|| uri.strip_prefix("http://"))
+        .unwrap_or("");
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.rsplit('@').next().unwrap_or("");
+    host.split(':').next().unwrap_or("").to_ascii_lowercase()
+}
+
+/// Sleep until `host` may be fetched again, then mark it fetched now.
+fn wait_for_host(last: &mut std::collections::HashMap<String, std::time::Instant>, host: &str) {
+    if host.is_empty() {
+        return;
+    }
+    let gap = if host == "hcch.net" || host.ends_with(".hcch.net") {
+        HCCH_GAP
+    } else {
+        HOST_GAP
+    };
+    if let Some(at) = last.get(host) {
+        let since = at.elapsed();
+        if since < gap {
+            std::thread::sleep(gap - since);
+        }
+    }
+    last.insert(host.to_string(), std::time::Instant::now());
+}
 
 fn trust_flag(args: &[String], cmd: &str) -> String {
     let trust = flag(args, "trust").unwrap_or_else(|| "official".to_string());
@@ -46,7 +82,9 @@ pub fn run_sweep(args: &[String]) {
     });
     let (mut created, mut dup, mut fresh, mut neardup, mut failed, mut skipped) =
         (0, 0, 0, 0, 0, 0);
+    let mut last_fetch = std::collections::HashMap::new();
     for row in &rows {
+        wait_for_host(&mut last_fetch, &host_of(&row.uri));
         match ingest::sweep::poll_source(&conn, &store, row, &trust, &actor, now, FETCH_TIMEOUT) {
             ingest::sweep::SourceOutcome::Created { capture_id } => {
                 println!("fetched: {} capture={capture_id}", row.uri);
@@ -174,5 +212,28 @@ pub fn run_hcch(args: &[String]) {
             eprintln!("hcch-poll: database error: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn host_of_strips_scheme_userinfo_port_and_path() {
+        assert_eq!(host_of("https://www.HCCH.net/en/x?sid=1"), "www.hcch.net");
+        assert_eq!(host_of("http://u:p@example.gov:8080/a"), "example.gov");
+        assert_eq!(host_of("ftp://example.com/x"), "");
+    }
+
+    #[test]
+    fn wait_for_host_spaces_repeat_hosts_only() {
+        let mut last = std::collections::HashMap::new();
+        let start = std::time::Instant::now();
+        wait_for_host(&mut last, "a.example");
+        wait_for_host(&mut last, "b.example");
+        assert!(start.elapsed() < HOST_GAP, "distinct hosts never wait");
+        wait_for_host(&mut last, "a.example");
+        assert!(start.elapsed() >= HOST_GAP, "a repeat host waits the gap");
     }
 }

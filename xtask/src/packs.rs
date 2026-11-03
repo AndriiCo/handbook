@@ -427,6 +427,15 @@ pub struct LoadReport {
     pub tasks: usize,
 }
 
+/// The sweep's `poll_cadence_sec` for a validated pack cadence.
+fn cadence_secs(cadence: &str) -> i64 {
+    match cadence {
+        "hourly" => 3_600,
+        "weekly" => 604_800,
+        _ => 86_400,
+    }
+}
+
 /// Load one validated pack into an already-migrated store.
 ///
 /// Writes `authority`, `domain`, `source`, and `task` rows only —
@@ -514,9 +523,17 @@ pub fn load_pack(
                     format!("cadence:{}; {}", seed.cadence, seed.notes)
                 };
                 conn.execute(
-                    "INSERT INTO source(authority_id, kind, uri, domain_id, notes)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    rusqlite::params![authority_id, seed.kind, seed.uri, domain_id, notes],
+                    "INSERT INTO source(authority_id, kind, uri, domain_id, notes,
+                                        poll_cadence_sec)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![
+                        authority_id,
+                        seed.kind,
+                        seed.uri,
+                        domain_id,
+                        notes,
+                        cadence_secs(&seed.cadence)
+                    ],
                 )?;
                 report.sources += 1;
             }
@@ -749,6 +766,22 @@ mod tests {
             count("fact"),
             count("capture"),
         )
+    }
+
+    #[test]
+    fn load_sets_the_sweep_cadence_from_the_pack() {
+        let (mut pack, _raw) = minimal_pack();
+        pack.watch[0].cadence = "weekly".to_string();
+        let dir = tempfile::tempdir().unwrap();
+        let store = handbook_store::store::Store::new(dir.path());
+        store.init().unwrap();
+        let conn = handbook_store::db::open(&store).unwrap();
+        handbook_store::db::migrate(&conn).unwrap();
+        load_pack(&conn, &pack, "test", 1_800_000_000).unwrap();
+        let secs: i64 = conn
+            .query_row("SELECT poll_cadence_sec FROM source", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(secs, 604_800);
     }
 
     #[test]
