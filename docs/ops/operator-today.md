@@ -33,8 +33,9 @@ Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
    (the Mailer group shows the steps; staging uses the file mailer).
 4. **Washington SOS alert:** sos.wa.gov posted on 11/02 that apostille
    services are unavailable; check it before recording the WA scenes.
-5. **Deploy decision for P373-P378 (yours; freeze in force).** On main,
-   not in production: the dead config keys are gone (`tls.client_ca_file`,
+5. **Deploy decision for candidate `a2abb38` (P373-P379; yours, the freeze
+   is in force).** Plant stamp green and staging-green 9/10 (only S1) + live
+   demo 3/3 on that exact SHA (Tue ~09:35 PST). On main, not in production: the dead config keys are gone (`tls.client_ca_file`,
    `admin.require_cert`, `net.admin_https_port`; a stored value is ignored
    with one boot warning), First-boot setup leads `/config`, and every
    formerly Reserved key now runs real code: auto-compose and a Compile
