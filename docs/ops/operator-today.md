@@ -34,14 +34,19 @@ the deploy.
 
 **Deploy decision (yours).** AGENTS.md §7 still says no deploys from Tue
 11-03 00:00 PST; your verbal extension to Wed 11-04 ~09:00 is not in the
-file. Commit the step-0 edit (or tell the builder "deploy") to ship
-P356-P363: the HTTP/3 cookie fix, clean capture text (scripts dropped;
-a Retry re-captures an unchanged page), bulk accept/reject per
-authority, First source (open questions, contacts, email outreach with
+file. Commit the step-0 edit (or tell the builder "deploy") to ship the
+candidate **`9460b26` (P356-P369)**: plant stamp green, staging-green
+9/10 (only S1) + live demo 3/3 on that exact SHA (Tue ~06:40 PST). It
+carries the HTTP/3 cookie fix, clean capture text (scripts dropped; a
+Retry re-captures an unchanged page), bulk accept/reject per authority
+(Review "By authority"; Triage folded in), First source (open questions
+on Calls, an Email page with Muse Spark drafts, human review, send, and
 reply threading), readable dossier addresses (`/authority/usa/washington`,
-`/authority/us/wa`, county paths), and the admin config/workers/calls
-screens. Default if you say nothing: no deploy; everything stays on main
-and staging.
+`/authority/us/wa`, county paths), the grouped Config setup guide and
+the Workers sweep picker with phone/email/URL chips. An adversarial
+review of the server work found and fixed (P366) a crash in the new
+text extractor before it ever shipped. Default if you say nothing: no
+deploy; everything stays on main and staging.
 
 **After the deploy:** in admin Workers, press Retry on the Viet Nam MOFA
 capture (its old text is the portal's script blob); the new capture has
