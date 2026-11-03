@@ -24,6 +24,21 @@ export interface PlanBlock {
 	show_for: string[];
 }
 
+export interface Dropped {
+	id: string;
+	reason: string;
+}
+
+/** Run spend stored beside a composed plan (`provenance.run`). */
+export interface RunSpend {
+	run_id: number | null;
+	latency_ms: number | null;
+	input_tokens: number;
+	output_tokens: number;
+	cached_tokens: number;
+	reasoning_tokens: number;
+}
+
 export interface PlanProposal {
 	id: number;
 	authority_slug: string;
@@ -37,14 +52,19 @@ export interface PlanProposal {
 		blocks: PlanBlock[];
 		hide_topics: string[];
 	};
-	validator: { passed: boolean; checks: Guard[]; dropped_blocks: string[] };
+	validator: { passed: boolean; checks: Guard[]; dropped_blocks: Dropped[] };
 	diff: { added: string[]; removed: string[]; changed: string[] };
 	current_version: number | null;
+	/** `provenance.run` of the compose run, when the server stored one. */
+	spend: RunSpend | null;
+	/** Models that touched this plan, by role (`provenance.models`). */
+	models: { model: string; role: string }[];
 }
 
 export interface OfficeProposal {
 	id: number;
 	authority_slug: string;
+	run_id: number | null;
 	name: string;
 	status: string;
 	visit: { kind: string; appointment_required: boolean; notes: string; fact_ids: number[] } | null;
@@ -104,13 +124,47 @@ export interface FormMap {
 type Loose = any;
 
 const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const maybeNum = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+// The validator stores `{id, reason}` per dropped block (plan.rs
+// `Dropped`); older rows and the seed carry bare ids.
+const dropped = (v: unknown): Dropped[] =>
+	arr<Loose>(v)
+		.map((d) =>
+			typeof d === 'string'
+				? { id: d, reason: '' }
+				: d && typeof d.id === 'string'
+					? { id: d.id, reason: typeof d.reason === 'string' ? d.reason : '' }
+					: null
+		)
+		.filter((d): d is Dropped => d !== null);
+
+function spendOf(run: Loose): RunSpend | null {
+	if (!run || typeof run !== 'object') return null;
+	return {
+		run_id: maybeNum(run.run_id),
+		latency_ms: maybeNum(run.latency_ms),
+		input_tokens: num(run.input_tokens),
+		output_tokens: num(run.output_tokens),
+		cached_tokens: num(run.cached_tokens),
+		reasoning_tokens: num(run.reasoning_tokens)
+	};
+}
+
 const guards = (v: unknown): Guard[] =>
 	arr<Loose>(v)
 		.filter((g) => g && typeof g.id === 'string')
 		.map((g) => ({ id: g.id, ok: g.ok === true, detail: typeof g.detail === 'string' ? g.detail : '' }));
 
-export async function fetchPlans(status = 'proposed'): Promise<PlanProposal[]> {
-	const body = await getJson<Loose>(`/admin/plans?status=${encodeURIComponent(status)}`, 'Page plans');
+function listQuery(status: string, slug?: string): string {
+	const q = new URLSearchParams({ status });
+	if (slug) q.set('slug', slug);
+	return q.toString();
+}
+
+export async function fetchPlans(status = 'proposed', slug?: string): Promise<PlanProposal[]> {
+	const body = await getJson<Loose>(`/admin/plans?${listQuery(status, slug)}`, 'Page plans');
 	return arr<Loose>(body?.plans)
 		.filter((p) => p && typeof p.id === 'number' && p.plan && typeof p.plan === 'object')
 		.map((p) => ({
@@ -131,24 +185,29 @@ export async function fetchPlans(status = 'proposed'): Promise<PlanProposal[]> {
 			validator: {
 				passed: p.validator?.passed === true,
 				checks: guards(p.validator?.checks),
-				dropped_blocks: arr<string>(p.validator?.dropped_blocks)
+				dropped_blocks: dropped(p.validator?.dropped_blocks)
 			},
 			diff: {
 				added: arr<string>(p.diff?.added),
 				removed: arr<string>(p.diff?.removed),
 				changed: arr<string>(p.diff?.changed)
 			},
-			current_version: typeof p.current_version === 'number' ? p.current_version : null
+			current_version: typeof p.current_version === 'number' ? p.current_version : null,
+			spend: spendOf(p.provenance?.run),
+			models: arr<Loose>(p.provenance?.models)
+				.filter((m) => m && typeof m.model === 'string')
+				.map((m) => ({ model: m.model, role: typeof m.role === 'string' ? m.role : '' }))
 		}));
 }
 
-export async function fetchOffices(status = 'proposed'): Promise<OfficeProposal[]> {
-	const body = await getJson<Loose>(`/admin/offices?status=${encodeURIComponent(status)}`, 'Offices');
+export async function fetchOffices(status = 'proposed', slug?: string): Promise<OfficeProposal[]> {
+	const body = await getJson<Loose>(`/admin/offices?${listQuery(status, slug)}`, 'Offices');
 	return arr<Loose>(body?.offices)
 		.filter((o) => o && typeof o.id === 'number' && typeof o.name === 'string')
 		.map((o) => ({
 			...o,
 			authority_slug: String(o.authority_slug ?? ''),
+			run_id: maybeNum(o.run_id),
 			status: String(o.status ?? 'proposed'),
 			visit: o.visit ?? null,
 			address: o.address ?? null,
@@ -197,14 +256,18 @@ export async function fetchFormMaps(status = 'proposed'): Promise<FormMap[]> {
 
 export type ProposalKind = 'plans' | 'offices' | 'form-maps';
 
-/** Accept or reject one proposal; resolves to the server's status. */
+/**
+ * Accept or reject one proposal; resolves to the server's status.
+ * `extra` rides on accept only (offices: a staff-confirmed `timezone`).
+ */
 export async function decide(
 	kind: ProposalKind,
 	id: number,
 	action: 'accept' | 'reject',
-	reason?: string
+	reason?: string,
+	extra?: Record<string, unknown>
 ): Promise<string> {
-	const body = action === 'reject' ? { reason: reason ?? '' } : {};
+	const body = action === 'reject' ? { reason: reason ?? '' } : { ...(extra ?? {}) };
 	const out = await postJson<Loose>(`/admin/${kind}/${id}/${action}`, body, action === 'accept' ? 'Accept' : 'Reject');
 	return typeof out?.status === 'string' ? out.status : action === 'accept' ? 'accepted' : 'rejected';
 }
@@ -222,6 +285,19 @@ export async function fetchFactChecks(slug: string): Promise<FactCheck[]> {
 	const body = await getJson<Loose>(`/admin/fact-checks?slug=${encodeURIComponent(slug)}`, 'Fact checks');
 	return arr<Loose>(body?.checks).filter((c) => c && typeof c.fact_id === 'number' && typeof c.verdict === 'string');
 }
+
+/**
+ * IANA zones staff may confirm at office accept: exactly the allowlist
+ * in crates/web/src/offices.rs `ZONES` (anything else is ignored there).
+ */
+export const OFFICE_ZONES: { value: string; label: string }[] = [
+	{ value: 'America/Los_Angeles', label: 'Pacific (Los Angeles)' },
+	{ value: 'America/Denver', label: 'Mountain (Denver)' },
+	{ value: 'America/Chicago', label: 'Central (Chicago)' },
+	{ value: 'America/New_York', label: 'Eastern (New York)' },
+	{ value: 'Asia/Ho_Chi_Minh', label: 'Indochina (Ho Chi Minh City)' },
+	{ value: 'Europe/Amsterdam', label: 'Central European (Amsterdam)' }
+];
 
 /** "08:00" → "8:00 AM" without inventing a timezone. */
 export function clock24(hhmm: string): string {

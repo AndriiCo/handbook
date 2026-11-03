@@ -10,6 +10,8 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import BarChart from '#lib/admin/BarChart.svelte';
+	import ComposePanel from '#lib/admin/ComposePanel.svelte';
+	import type { ComposeKind } from '#lib/admin/compose.svelte.js';
 	import { getJson, errorText } from '#lib/admin/admin-api.js';
 	import {
 		activityFromOps,
@@ -56,6 +58,8 @@
 	let nowSec = $state(Math.floor(Date.now() / 1000));
 	let reduceMotion = $state(false);
 	let refetchTimer: ReturnType<typeof setTimeout> | null = null;
+	let composeKind = $state<ComposeKind>('plans');
+	let composeBusy = $state(false);
 
 	async function load(quiet = false) {
 		if (quiet) refreshing = true;
@@ -312,6 +316,40 @@
 					</li>
 				{/each}
 			</ul>
+		</section>
+
+		<section aria-labelledby="compose" class="flex flex-col gap-3">
+			<div class="flex flex-wrap items-end justify-between gap-2">
+				<div class="flex min-w-0 flex-col gap-1">
+					<h2 id="compose" class="m-0 text-h3 font-semibold">Compose with Meta models</h2>
+					<p class="m-0 text-sm text-ink-muted">
+						Start a Muse Spark run and watch it pass the validator into the review queue.
+					</p>
+				</div>
+				<div class="inline-flex gap-1 rounded-md border border-line bg-card p-1" role="group" aria-label="What to compose">
+					<Button
+						size="sm"
+						variant={composeKind === 'plans' ? 'secondary' : 'ghost'}
+						aria-pressed={composeKind === 'plans'}
+						disabled={composeBusy}
+						onclick={() => (composeKind = 'plans')}
+					>
+						Page plan
+					</Button>
+					<Button
+						size="sm"
+						variant={composeKind === 'offices' ? 'secondary' : 'ghost'}
+						aria-pressed={composeKind === 'offices'}
+						disabled={composeBusy}
+						onclick={() => (composeKind = 'offices')}
+					>
+						Offices
+					</Button>
+				</div>
+			</div>
+			{#key composeKind}
+				<ComposePanel compact kind={composeKind} bind:busy={composeBusy} />
+			{/key}
 		</section>
 
 		<section aria-labelledby="meta" class="flex flex-col gap-3">

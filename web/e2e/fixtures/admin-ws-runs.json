@@ -1,0 +1,48 @@
+[
+  {
+    "type": "compose.started",
+    "topic": "run:94",
+    "run_id": 94,
+    "slug": "usa-wa-sos",
+    "model": "muse-spark-1.3",
+    "at": 1793750681
+  },
+  {
+    "type": "compose.done",
+    "topic": "run:94",
+    "run_id": 94,
+    "plan_id": 14,
+    "version": 5,
+    "passed": true,
+    "blocks": 6,
+    "dropped": 1,
+    "latency_ms": 14630,
+    "input_tokens": 21480,
+    "output_tokens": 1870,
+    "cached_tokens": 15360,
+    "reasoning_tokens": 2410,
+    "at": 1793750700
+  },
+  {
+    "type": "offices.started",
+    "topic": "run:95",
+    "run_id": 95,
+    "slug": "usa-wa-sos",
+    "at": 1793750706
+  },
+  {
+    "type": "offices.done",
+    "topic": "run:95",
+    "run_id": 95,
+    "slug": "usa-wa-sos",
+    "proposed": [33],
+    "dropped": 0,
+    "model": "muse-spark-1.3",
+    "latency_ms": 5240,
+    "input_tokens": 2860,
+    "output_tokens": 690,
+    "cached_tokens": 1920,
+    "reasoning_tokens": 540,
+    "at": 1793750712
+  }
+]
