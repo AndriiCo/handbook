@@ -55,9 +55,15 @@
 	let resolvedSlugs = $state<Record<string, string>>({});
 	let unknownPath = $state(false);
 	const slug = $derived(trail.includes('/') ? (resolvedSlugs[trail] ?? '') : trail);
-	// Canonical address and breadcrumbs, from the resolver or the index row.
-	let canonicalPath = $state<string | null>(null);
-	let crumbs = $state<{ path: string; label: string; slug: string | null }[]>([]);
+	// Canonical address and breadcrumbs, from the resolver or the index
+	// row, each tagged with the slug it belongs to (a client-side jump to
+	// another dossier must never reuse the previous one's).
+	let canonical = $state<{ slug: string; path: string } | null>(null);
+	let crumbsOf = $state<{
+		slug: string;
+		list: { path: string; label: string; slug: string | null }[];
+	} | null>(null);
+	const crumbs = $derived(crumbsOf && crumbsOf.slug === slug ? crumbsOf.list : []);
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
@@ -220,8 +226,10 @@
 			const rows = res.body?.authorities;
 			const found = Array.isArray(rows) ? rows.find((a) => a?.slug === current) : null;
 			if (found && typeof found.path === 'string' && found.path) {
-				canonicalPath = found.path;
-				if (crumbs.length === 0) crumbs = crumbsFor(found.path, rows);
+				canonical = { slug: current, path: found.path };
+				if (crumbsOf?.slug !== current) {
+					crumbsOf = { slug: current, list: crumbsFor(found.path, rows) };
+				}
 			}
 			if (found && typeof found.name === 'string' && found.name) authorityName = found.name;
 			if (found && typeof found.country === 'string' && found.country)
@@ -266,7 +274,7 @@
 	// A readable path resolves to its slug once (public, model-free read).
 	$effect(() => {
 		const t = trail;
-		unknownPath = false;
+		unknownPath = t === '';
 		if (!t.includes('/') || resolvedSlugs[t]) return;
 		let cancelled = false;
 		get(`/authorities/resolve?path=${encodeURIComponent(t)}`)
@@ -276,11 +284,16 @@
 					unknownPath = true;
 					return;
 				}
-				if (typeof res.body.canonical === 'string') canonicalPath = res.body.canonical;
+				if (typeof res.body.canonical === 'string') {
+					canonical = { slug: res.body.slug, path: res.body.canonical };
+				}
 				if (Array.isArray(res.body.crumbs)) {
-					crumbs = res.body.crumbs
-						.slice(0, -1)
-						.filter((c: any) => typeof c?.path === 'string' && typeof c?.label === 'string');
+					crumbsOf = {
+						slug: res.body.slug,
+						list: res.body.crumbs
+							.slice(0, -1)
+							.filter((c: any) => typeof c?.path === 'string' && typeof c?.label === 'string')
+					};
 				}
 				resolvedSlugs = { ...resolvedSlugs, [t]: res.body.slug };
 			})
@@ -296,8 +309,8 @@
 	// /authority/usa-wa-sos and /authority/us/wa read /authority/usa/washington.
 	let swappedFor = '';
 	$effect(() => {
-		const canon = canonicalPath;
 		const current = slug;
+		const canon = canonical && canonical.slug === current ? canonical.path : null;
 		if (!canon || !current || canon === trail || swappedFor === current) return;
 		swappedFor = current;
 		const href = resolve('/(public)/authority/[...trail]', { trail: canon });

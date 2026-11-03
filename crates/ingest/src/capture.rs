@@ -65,15 +65,21 @@ pub fn ingest_bytes(
     input: &IngestInput<'_>,
 ) -> Result<IngestOutcome> {
     let sha = sha256_hex(input.bytes);
-    let existing: Option<i64> = conn
+    let existing: Option<(i64, String)> = conn
         .query_row(
-            "SELECT id FROM capture WHERE authority_id = ?1 AND sha256 = ?2
+            "SELECT id, kind FROM capture WHERE authority_id = ?1 AND sha256 = ?2
              ORDER BY id DESC LIMIT 1",
             rusqlite::params![input.authority_id, sha],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
-    if let Some(capture_id) = existing {
+    if let Some((capture_id, kind)) = existing {
+        // A different capture kind means a different extractor (an
+        // uploaded PDF's text layer vs a fetch's tag stripper): never
+        // supersede across kinds.
+        if kind != input.kind {
+            return Ok(IngestOutcome::Duplicate { capture_id });
+        }
         // Same bytes, same text: nothing new. Same bytes but the text
         // extractor now reads them differently (e.g. it learned to drop
         // script bodies): store a fresh capture with the clean text and
@@ -209,7 +215,11 @@ pub fn extract_text(bytes: &[u8]) -> String {
                 .next()
                 .is_some_and(|c| c.is_ascii_alphabetic() || matches!(c, '/' | '!' | '?'));
         if !starts_tag {
-            let next = rest[1..].find('<').map_or(s.len(), |n| i + 1 + n);
+            // Step past the run's first char by its real width (it may be
+            // multi-byte: Cyrillic, Vietnamese, a BOM, U+FFFD) before
+            // looking for the next tag.
+            let step = rest.chars().next().map_or(1, char::len_utf8);
+            let next = rest[step..].find('<').map_or(s.len(), |n| i + step + n);
             // Source line breaks are layout, not structure: only
             // block elements start a line.
             let run = decode_entities(&s[i..next]);
@@ -488,6 +498,42 @@ mod tests {
             "PO Box 40220"
         );
         assert_eq!(extract_text(b"plain"), "plain");
+    }
+
+    #[test]
+    fn extract_text_survives_multibyte_runs_boms_and_binary() {
+        assert_eq!(extract_text("<p>Апостиль</p>".as_bytes()), "Апостиль");
+        assert_eq!(
+            extract_text("<td>€15</td><td>\u{a0}x</td>".as_bytes()),
+            "€15 | x"
+        );
+        assert_eq!(
+            extract_text("\u{feff}<p>Đại sứ quán</p>".as_bytes()),
+            "\u{feff}\nĐại sứ quán"
+        );
+        assert_eq!(
+            extract_text(b"<p>\xff\xfe tail</p>"),
+            "\u{fffd}\u{fffd} tail"
+        );
+        // Binary noise (a PDF stream) never panics.
+        let mut blob: Vec<u8> = b"%PDF-1.7 <</Type /Page>> stream\n".to_vec();
+        for i in 0u32..4096 {
+            blob.push((i.wrapping_mul(2_654_435_761) >> 13) as u8);
+        }
+        let _ = extract_text(&blob);
+    }
+
+    #[test]
+    fn an_upload_is_never_superseded_by_a_fetch_of_the_same_bytes() {
+        let (_dir, store, conn) = migrated();
+        let a = authority(&conn, "synthetic-sos");
+        let bytes = b"%PDF-1.7 binary";
+        let mut upload = input(a, bytes, "Fee $15 per document");
+        upload.kind = "file";
+        let first = ingest_bytes(&conn, &store, &upload).unwrap();
+        let fetched = ingest_bytes(&conn, &store, &input(a, bytes, "PDF-1.7 binary")).unwrap();
+        assert!(matches!(fetched, IngestOutcome::Duplicate { .. }));
+        assert_eq!(fetched.capture_id(), first.capture_id());
     }
 
     #[test]

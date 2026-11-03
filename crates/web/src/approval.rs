@@ -544,6 +544,18 @@ fn unprocessable(msg: &str) -> axum::response::Response {
         .into_response()
 }
 
+/// True when the authority already publishes a different statement
+/// on this topic (the proposal would change a published fact).
+fn changes_published_fact(conn: &Connection, fact: &StoredFact) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM fact
+                       WHERE authority_id = ?1 AND topic = ?2 AND id != ?3
+                         AND status = 'accepted' AND statement != ?4)",
+        rusqlite::params![fact.authority_id, fact.topic, fact.id, fact.statement],
+        |row| row.get(0),
+    )
+}
+
 /// Latest Wonder verdict on a fact, tolerating a store without the
 /// `fact_check` table.
 fn latest_verdict(conn: &Connection, fact_id: i64) -> Option<String> {
@@ -667,15 +679,7 @@ pub async fn bulk_decide(
                 Some((_, fact))
                     if to == "accepted"
                         && body.require_verified
-                        && sibling_conflicts(
-                            &conn,
-                            fact.authority_id,
-                            &fact.topic,
-                            &fact.statement,
-                            id,
-                        )
-                        .iter()
-                        .any(|c| c.status == "accepted") =>
+                        && changes_published_fact(&conn, fact)? =>
                 {
                     Some((422, "changes a published fact; review it on its own"))
                 }

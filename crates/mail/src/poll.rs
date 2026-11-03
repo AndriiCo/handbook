@@ -320,8 +320,9 @@ fn fetch_one(
 }
 
 /// First-source threading: an office's reply names our outreach
-/// `Message-ID` in In-Reply-To or References. Link the first sent
-/// outreach email it answers to this capture and mark it replied.
+/// `Message-ID` in In-Reply-To or References. Link the outreach email
+/// it answers to this capture (the newest reply wins, so an early
+/// auto-reply never hides the office's real answer) and mark it replied.
 /// A store without the (web-owned, additive) `outreach_email` table
 /// links nothing. Returns the linked email id.
 pub fn link_outreach_reply(
@@ -354,8 +355,7 @@ pub fn link_outreach_reply(
             .optional()?;
         if let Some(email) = email {
             conn.execute(
-                "UPDATE outreach_email SET status = 'replied',
-                        reply_capture_id = COALESCE(reply_capture_id, ?1)
+                "UPDATE outreach_email SET status = 'replied', reply_capture_id = ?1
                  WHERE id = ?2",
                 rusqlite::params![capture_id, email],
             )?;
@@ -559,7 +559,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(link_outreach_reply(&conn, 9, &reply).unwrap(), Some(4));
-        // A second reply keeps the first reply's capture.
+        // A later reply (the real answer after an auto-reply) wins.
         assert_eq!(link_outreach_reply(&conn, 10, &reply).unwrap(), Some(4));
         let (status, capture): (String, i64) = conn
             .query_row(
@@ -568,7 +568,7 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!((status.as_str(), capture), ("replied", 9));
+        assert_eq!((status.as_str(), capture), ("replied", 10));
         // An unsent draft is never matched.
         let stray = crate::mime::parse(
             b"From: x@example.gov\r\nReferences: <outreach-5-cd@andrii.ai>\r\n\r\nHi.",

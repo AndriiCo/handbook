@@ -272,3 +272,4 @@
 | 363 | 2026-11-03 13:27Z | What it takes to publish NY-depth dossiers (NY, WA, OR, CA, NV, Egypt) | docs/specs/dossier-depth.md: 4 gaps, build order, official sources |
 | 364 | 2026-11-03 13:30Z | Prove outreach draft→edit→send end to end; bulk approvals read as one ledger line | route test (file mailer, Message-ID, 409 on resend); operator page updated (P363b) |
 | 365 | 2026-11-03 13:39Z | Merge review by-authority bulk view; Triage folded into Review | AuthorityGroups + /facts/bulk client; web test 137, shots 20, demo 3/3, e2e 9/9 |
+| 366 | 2026-11-03 13:52Z | Fix the verified findings of the P356-P364 adversarial review | extractor panic on multibyte runs (critical); no cross-kind supersede; detached send; task text; dossier canonical; web 394 |

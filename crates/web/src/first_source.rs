@@ -302,25 +302,26 @@ pub fn open_questions(
         }
     }
 
-    // Open staff tasks (validate_fact, correction, call, email_check, visit).
+    // Open staff tasks from the system (pack observations, drafting
+    // follow-ups, call/email/visit tasks): title only. `correction`
+    // tasks carry a customer's own note, so they never become a
+    // question that is emailed, dialled or sent to a model.
     let mut stmt = conn.prepare(
-        "SELECT title, detail FROM task
+        "SELECT title FROM task
          WHERE authority_id = ?1 AND status IN ('open', 'batched', 'in_progress')
+           AND kind IN ('validate_fact', 'call', 'email_check', 'visit')
          ORDER BY priority DESC, id",
     )?;
-    let rows = stmt.query_map([authority_id], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-    })?;
+    let rows = stmt.query_map([authority_id], |r| r.get::<_, String>(0))?;
     for row in rows {
-        let (title, detail) = row?;
-        let text = if detail.trim().is_empty() {
-            title
-        } else {
-            format!("{title}: {detail}")
-        };
+        let title = row?;
+        let title = title.trim();
+        if title.is_empty() || looks_personal(title) {
+            continue;
+        }
         push(
             "contacts",
-            clip(text.trim(), voice::scripts::MAX_QUESTION_CHARS),
+            clip(title, voice::scripts::MAX_QUESTION_CHARS),
             Reason::OpenTask,
             Vec::new(),
         );
@@ -690,15 +691,19 @@ fn clean_questions(raw: &[String]) -> Result<Vec<String>, &'static str> {
     Ok(qs)
 }
 
+/// Customer-shaped data: an email address, an order id, or a long
+/// unbroken digit run (account, card, tracking or case numbers).
+/// Separated groups (a ZIP+4, an office phone, a date) are public
+/// procedure text and pass.
 fn looks_personal(text: &str) -> bool {
     let mut run = 0usize;
     for c in text.chars() {
         if c.is_ascii_digit() {
             run += 1;
-            if run >= 7 {
+            if run >= 9 {
                 return true;
             }
-        } else if !matches!(c, ' ' | '-' | '.' | '(' | ')') {
+        } else {
             run = 0;
         }
     }
@@ -903,7 +908,8 @@ async fn send_email(
     let now = unix_now();
     let sent_today: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM outreach_email WHERE status IN ('sent', 'replied') AND sent_at >= ?1",
+            "SELECT COUNT(*) FROM outreach_email
+             WHERE (status IN ('sent', 'replied') AND sent_at >= ?1) OR status = 'sending'",
             [now - 86_400],
             |r| r.get(0),
         )
@@ -934,46 +940,58 @@ async fn send_email(
         return store_unavailable();
     };
     drop(conn);
-    let (to, subject, body, mid) = (
-        email.to.clone(),
-        email.subject.clone(),
-        email.body.clone(),
-        message_id.clone(),
-    );
-    let sent = tokio::task::spawn_blocking(move || {
-        mailer.send_with_headers(&to, &subject, &body, &[("Message-ID", &mid)])
-    })
-    .await;
+    // The send and its bookkeeping run in a detached task: if the
+    // request is cut off (the admin request budget), the email still
+    // ends sent or failed with its audit row, never stuck in 'sending'.
+    let root = state.store_root.clone();
+    let actor = auth.user.user_id.clone();
+    let finish = tokio::spawn(async move {
+        let (to, subject, body, mid) = (
+            email.to.clone(),
+            email.subject.clone(),
+            email.body.clone(),
+            message_id.clone(),
+        );
+        let sent = tokio::task::spawn_blocking(move || {
+            mailer.send_with_headers(&to, &subject, &body, &[("Message-ID", &mid)])
+        })
+        .await;
+        let (status, error) = match sent {
+            Ok(Ok(())) => ("sent", String::new()),
+            Ok(Err(e)) => ("failed", format!("{e:?}")),
+            Err(e) => ("failed", format!("send task failed: {e}")),
+        };
+        let Ok(conn) = db::open(&Store::new(&root)) else {
+            return status;
+        };
+        let _ = conn.execute(
+            "UPDATE outreach_email SET status = ?1, error = ?2, sent_at = ?3 WHERE id = ?4",
+            rusqlite::params![status, error, (status == "sent").then_some(now), id],
+        );
+        let _ = conn.execute(
+            "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+             VALUES (?1, ?2, ?3, 'outreach_email', ?4, ?5)",
+            rusqlite::params![
+                now,
+                actor,
+                if status == "sent" {
+                    "outreach_email_sent"
+                } else {
+                    "outreach_email_failed"
+                },
+                id,
+                email.slug,
+            ],
+        );
+        if status == "sent" {
+            remember_contact(&conn, &email.slug, "email", &email.to, "");
+        }
+        status
+    });
+    let status = finish.await.unwrap_or("failed");
     let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
         return store_unavailable();
     };
-    let (status, error) = match sent {
-        Ok(Ok(())) => ("sent", String::new()),
-        Ok(Err(e)) => ("failed", format!("{e:?}")),
-        Err(e) => ("failed", format!("send task failed: {e}")),
-    };
-    let _ = conn.execute(
-        "UPDATE outreach_email SET status = ?1, error = ?2, sent_at = ?3 WHERE id = ?4",
-        rusqlite::params![status, error, (status == "sent").then_some(now), id],
-    );
-    let _ = conn.execute(
-        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
-         VALUES (?1, ?2, ?3, 'outreach_email', ?4, ?5)",
-        rusqlite::params![
-            now,
-            auth.user.user_id,
-            if status == "sent" {
-                "outreach_email_sent"
-            } else {
-                "outreach_email_failed"
-            },
-            id,
-            email.slug,
-        ],
-    );
-    if status == "sent" {
-        remember_contact(&conn, &email.slug, "email", &email.to, "");
-    }
     match load_email(&conn, id) {
         Ok(Some(email)) if status == "sent" => Json(json!({"email": email})).into_response(),
         Ok(Some(email)) => (
@@ -1395,14 +1413,20 @@ mod tests {
         for personal in [
             "Did you receive ord_k2Lp9vW3sQ?",
             "Is jane@example.test on file?",
-            "Status of case 555 0100 123?",
+            "Status of case 5550100123?",
         ] {
             assert!(
                 clean_questions(&[personal.to_string()]).is_err(),
                 "{personal}"
             );
         }
-        assert!(clean_questions(&["Is the fee $20 per document in 2026?".to_string()]).is_ok());
+        for public in [
+            "Is the fee $20 per document in 2026?",
+            "We list: \"PO Box 40234, Olympia, WA 98504-0234\". Is that still correct?",
+            "Is (518) 474-4429 the status line?",
+        ] {
+            assert!(clean_questions(&[public.to_string()]).is_ok(), "{public}");
+        }
     }
 
     #[test]
