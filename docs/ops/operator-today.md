@@ -1,4 +1,4 @@
-# Operator — MISSION WIN (updated Mon 11-02 ~19:40 PST)
+# Operator — MISSION WIN (updated Mon 11-02 ~21:55 PST)
 
 Plan: `docs/ops/mission-win.md` (you approved it 11-02). Production is
 still `0.1.0+4dcd234`. On `main` since (all plant-gated green so far):
@@ -20,6 +20,47 @@ still `0.1.0+4dcd234`. On `main` since (all plant-gated green so far):
 Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
 
 ## Open now, in order
+
+**T2b DEPLOYED (~21:50 PST):** production runs `0.1.0+78a9ca2`
+(previous `39b8430`; kept `39b8430`, `cfb625b`; pruned `e25fd3e`). Flags
+announced per §7: `--skip-accept --allow-today-overlap`. Plant stamp
+`78a9ca252f3c.json` (`ci_green`), staging-green 9/10 + live demo 3/3,
+prod-before 5/10 → prod-after 5/10, zero regressions (only P0's version
+changed). Ships P345-P354: the re-review fixes (checkout renews a
+same-price quote and re-quotes on a real change; the daily cap counts
+captured payments only; rate limiters keep known callers and key by
+network; one-word form labels ground, read-only fields are never asked
+for or printed; fills refuse values that cannot fit or exceed MaxLen;
+erasure keeps a de-identified ledger of open/paid payments), the staff
+Orders console (`/staff-orders`), and the judge kit. Number grounding
+stays production's whole-token rule plus ZIP+4 heads and dollars by
+value: three verify rounds of a clock-time matcher kept grounding times
+in the wrong half of the day, so equivalent time formats (8 AM vs 8:00
+a.m.) fail closed — a block or translation is dropped, never wrong.
+
+**Judge kit (J2, no deploy needed — judges run it from the repo):**
+`cargo xtask judge` now drafts with 60 recorded `muse-spark-1.3`
+responses (`evals/replay/drafts-spark.jsonl`, recorded on plant from the
+synthetic gold captures) instead of the offline stub: 66 proposals across
+4 authorities, eval quote_found 1.000; the staff "Draft from this
+capture" replays too (labelled "recorded", loopback dev seam only).
+`--port-base N` moves both ports. Proven on plant from a fresh checkout
+(`judge --check --port-base 28318`, keyless). Not proven: the passkey
+enrol in a real browser at `/config`.
+
+**Deferred low findings (re-review of P338-P344; none can abort the
+server), for T3 after your step 0:** orders #11 mismatch on a captured
+payment, #12 awaiting_payment wedge, #13 reuse of an expired session URL
+for ≤5 min; forms #14 label/help not tied to the quote, #32 unticking a
+default-checked box; offices #15 clause splitter drops some hours ranges,
+#16 "12 p" time form, #17 "P.O. Box" drops the mailing address; #18
+cross-check "carries" guard can demote a supported verdict; plans #19
+per-unit fee check, #23 weekday-range parsing; streets #20/#21; PDF
+#25 dangling /P, #26/#27/#28 checkbox appearance edge cases, #29 field
+borders, #30 rotated widgets, #31 /DR fonts. All 38 with
+status: `docs/reviews/rereview-p338-p344.md`. Also deferred from the
+verify rounds: a context-aware time matcher (8 AM ~ 8:00 a.m.), per-key
+windows in the rate limiter, and a stronger shrink-to-fit test.
 
 **T2 DEPLOYED (~19:35 PST):** production runs `0.1.0+39b8430` (previous
 `cfb625b`; kept `cfb625b`, `e25fd3e`; pruned `4dcd234`). Flags announced

@@ -261,3 +261,4 @@
 | 352 | 2026-11-03 04:54Z | Verify of P351: count ranges are no hour ranges, am/pm kept, US-only date order, printed values stored | web 379; clippy clean |
 | 353 | 2026-11-03 05:15Z | Verify of P352: strict clock matching, never across halves; range halves resolved; Spanish a. m. | web 379; clippy clean |
 | 354 | 2026-11-03 05:37Z | Drop clock-time matching: numbers ground on whole tokens as production; ZIP+4 head + dollars by value kept | web 379; clippy clean |
+| 355 | 2026-11-03 05:48Z | T2b deploy: 78a9ca2 (P345-P354) to production; review status doc | prod 5/10 → 5/10, no regressions; flags announced |
