@@ -50,11 +50,10 @@ Plant: two old pipeline runs pruned (/home 16% used, ~200 G free).
       submission whatever the row says.
    b. **Video.** Replace README line 6 with the YouTube, Vimeo or Loom
       URL.
-   c. **Public repo.** `gh repo edit AndriiCo/handbook --visibility public
-      --accept-visibility-change-consequences` publishes the full history,
-      including `docs/ops/security-review-2026-10-27.md` (open findings;
-      the scrub list proposed moving it out, which history would not
-      undo) and the ops pages. The builder flips it on your explicit word.
+   c. **Public repo: decided Tue 11-03, keep it private.** S1's visibility
+      check stays red on purpose. Making it public later would publish
+      the full history (including `docs/ops/security-review-2026-10-27.md`
+      and the ops pages); the builder does it only on your explicit word.
 6. **Deploy decision for candidate `a2abb38` (P373-P379; yours, the freeze
    is in force).** Plant stamp green and staging-green 9/10 (only S1) + live
    demo 3/3 on that exact SHA (Tue ~09:35 PST). On main, not in production: the dead config keys are gone (`tls.client_ca_file`,
