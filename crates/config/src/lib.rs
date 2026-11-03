@@ -1070,7 +1070,8 @@ pub mod keys {
     pub const ORDERS_DAILY_CAP: &str = "orders.daily_cap";
     /// Max total per order, in cents. Default 15000.
     pub const ORDERS_MAX_ORDER_CENTS: &str = "orders.max_order_cents";
-    /// FedEx API root (sandbox or prod). Default the sandbox root.
+    /// FedEx API root: `https://apis-sandbox.fedex.com` or the production
+    /// root; anything else (or unset) reads as production.
     pub const LABELS_FEDEX_BASE_URL: &str = "labels.fedex_base_url";
     /// Customer-paid FedEx buys switch (separate from staff `labels.live`).
     pub const LABELS_CUSTOMER_LIVE: &str = "labels.customer_live";

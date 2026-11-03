@@ -260,16 +260,39 @@ async fn get_caps(State(state): State<AppState>, _auth: AdminAuth) -> impl IntoR
     .into_response()
 }
 
+/// FedEx API root from `labels.fedex_base_url`, allowlisted to the two
+/// FedEx roots (credentials travel there, so never an arbitrary host);
+/// unset or anything else stays on production, as before this key.
+pub(crate) fn fedex_base(state: &AppState) -> &'static str {
+    let configured = state.kek.as_deref().and_then(|kek| {
+        let conn =
+            handbook_store::db::open(&handbook_store::store::Store::new(&state.store_root)).ok()?;
+        state
+            .config_cache
+            .text(&conn, kek, config::keys::LABELS_FEDEX_BASE_URL)
+            .ok()
+            .flatten()
+    });
+    base_from(configured.as_deref())
+}
+
+fn base_from(configured: Option<&str>) -> &'static str {
+    match configured.map(|v| v.trim().trim_end_matches('/')) {
+        Some(labels::FEDEX_BASE_SANDBOX) => labels::FEDEX_BASE_SANDBOX,
+        _ => labels::FEDEX_BASE_PROD,
+    }
+}
+
 /// Blocking OAuth client-credentials fetch. Secrets stay in this
 /// scope; transport errors never include them (labels guarantee).
-fn fetch_bearer(client_id: &str, client_secret: &str) -> Result<String, LiveError> {
+fn fetch_bearer(base: &str, client_id: &str, client_secret: &str) -> Result<String, LiveError> {
     crate::oauth::ensure_provider();
     let config = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .timeout_global(Some(std::time::Duration::from_secs(30)))
         .build();
     let agent = ureq::Agent::new_with_config(config);
-    let url = oauth_token_url(labels::FEDEX_BASE_PROD);
+    let url = oauth_token_url(base);
     let pairs = oauth_token_pairs(client_id, client_secret);
     let response = agent
         .post(&url)
@@ -315,9 +338,10 @@ async fn post_quote(
     };
     let payload = body.payload;
     let cfg = live.live_config();
+    let base = fedex_base(&state);
     let out = tokio::task::spawn_blocking(move || {
-        let bearer = fetch_bearer(cred_id.as_str(), cred_secret.as_str())?;
-        let shipment = LiveShipment::new(labels::FEDEX_BASE_PROD, UreqTransport::default());
+        let bearer = fetch_bearer(base, cred_id.as_str(), cred_secret.as_str())?;
+        let shipment = LiveShipment::new(base, UreqTransport::default());
         let request = BuyRequest {
             payload: &payload,
             direction: Direction::Outbound,
@@ -380,9 +404,10 @@ async fn post_purchase(
     let quoted_cents = body.quoted_cents;
     let cfg = live.live_config();
     let order_id_owned = order_id.clone();
+    let base = fedex_base(&state);
     let out = tokio::task::spawn_blocking(move || {
-        let bearer = fetch_bearer(cred_id.as_str(), cred_secret.as_str())?;
-        let shipment = LiveShipment::new(labels::FEDEX_BASE_PROD, UreqTransport::default());
+        let bearer = fetch_bearer(base, cred_id.as_str(), cred_secret.as_str())?;
+        let shipment = LiveShipment::new(base, UreqTransport::default());
         let key = idempotency_key(&order_id_owned, leg);
         let replayed = ledger.find(&key).is_some();
         let request = BuyRequest {
@@ -469,9 +494,10 @@ async fn post_void(
     let actor = auth.user.user_id.clone();
     let order_id = body.order_id.trim().to_string();
     let cfg = live.live_config();
+    let base = fedex_base(&state);
     let out = tokio::task::spawn_blocking(move || {
-        let bearer = fetch_bearer(cred_id.as_str(), cred_secret.as_str())?;
-        let shipment = LiveShipment::new(labels::FEDEX_BASE_PROD, UreqTransport::default());
+        let bearer = fetch_bearer(base, cred_id.as_str(), cred_secret.as_str())?;
+        let shipment = LiveShipment::new(base, UreqTransport::default());
         let mut ledger = ledger;
         shipment.void(
             VoidParams {
@@ -501,6 +527,24 @@ async fn post_void(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fedex_base_is_allowlisted() {
+        assert_eq!(base_from(None), labels::FEDEX_BASE_PROD);
+        assert_eq!(
+            base_from(Some("https://apis-sandbox.fedex.com/")),
+            labels::FEDEX_BASE_SANDBOX
+        );
+        assert_eq!(
+            base_from(Some("https://evil.test")),
+            labels::FEDEX_BASE_PROD,
+            "never an arbitrary host"
+        );
+        assert_eq!(
+            base_from(Some("https://apis.fedex.com")),
+            labels::FEDEX_BASE_PROD
+        );
+    }
     use axum::{body::Body, http::Request};
     use tower::ServiceExt as _;
 
