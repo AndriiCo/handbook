@@ -461,6 +461,7 @@ fn migrate_mission_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
 /// Lane-owned P2-DB DDL (`CREATE TABLE IF NOT EXISTS` only).
 fn migrate_mission_p2(p2: &rusqlite::Connection) -> rusqlite::Result<()> {
     orders::migrate_p2_tables(p2)?;
+    forms_map::migrate_p2_tables(p2)?;
     p2_labels::migrate_p2_tables(p2)?;
     tracking::migrate_p2_tables(p2)
 }

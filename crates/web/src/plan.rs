@@ -63,7 +63,7 @@ const BANNED: &[&str] = &[
 ];
 
 /// The frozen fact topics (DB CHECK), for the `hide_topics` enum.
-const TOPICS: &[&str] = &[
+pub(crate) const TOPICS: &[&str] = &[
     "hours",
     "fees",
     "forms",

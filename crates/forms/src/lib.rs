@@ -11,6 +11,7 @@
 //! Start at [`TemplateRegistry`], [`validate_submission`], and the
 //! [`FormRenderer`] trait ([`PdfRenderer`], [`HtmlPrintRenderer`]).
 
+pub mod acro;
 pub mod registry;
 pub mod render;
 pub mod template;
