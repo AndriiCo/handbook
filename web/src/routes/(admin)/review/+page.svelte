@@ -16,9 +16,12 @@
 	import PlanReview from '#lib/admin/PlanReview.svelte';
 	import OfficeReview from '#lib/admin/OfficeReview.svelte';
 	import FormMapReview from '#lib/admin/FormMapReview.svelte';
+	import AuthorityGroups from '#lib/admin/AuthorityGroups.svelte';
 	import {
 		acceptBody,
 		acceptFact,
+		bulkBody,
+		bulkDecide,
 		createRule,
 		fetchQueue,
 		fetchQueueItem,
@@ -29,6 +32,7 @@
 		revokeRule,
 		ruleBody
 	} from '#lib/admin/review-client.js';
+	import { isVerified, markChanged, plural, riskCls, riskiestFirst, riskOf, splitBlocked, WONDER } from '#lib/admin/review-signals.js';
 	import { getJson, postJson, errorText } from '#lib/admin/admin-api.js';
 	import { fetchFactChecks, type FactCheck } from '#lib/admin/proposals.js';
 	import { ago, modelName } from '#lib/admin/format.js';
@@ -38,6 +42,8 @@
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import InboxIcon from '@lucide/svelte/icons/inbox';
+	import ListOrderedIcon from '@lucide/svelte/icons/list-ordered';
+	import LandmarkIcon from '@lucide/svelte/icons/landmark';
 
 	interface QueueItem {
 		id: number;
@@ -138,7 +144,14 @@
 	let selectedId = $state<number | null>(null);
 	let checks = $state<Record<number, FactCheck>>({});
 	let batchActing = $state(false);
+	let batchNote = $state<{ text: string; pass: number[] } | null>(null);
 	let reduceMotion = $state(false);
+	// Facts tab layout: the risk-sorted table + detail pane (default,
+	// the demo's take), or proposals grouped per authority with bulk
+	// decisions (`?view=authority`). Mounted with {#if}, never both.
+	type View = 'risk' | 'authority';
+	let view = $state<View>('risk');
+	let focusFact = $state<number | null>(null);
 
 	let rules = $state<SuppressRule[]>([]);
 	let rulesState = $state<'loading' | 'ready' | 'failed'>('loading');
@@ -277,54 +290,18 @@
 
 	const nowSec = () => Math.max(Date.now() / 1000, ...items.map((i) => i.created_at));
 
-	// Riskiest first: changed value vs live sibling, conflict, missing
-	// citation, low-trust source. The one-word badge says why.
-	const TRUSTED = new Set(['official', 'staff_verified']);
-
-	function riskOf(item: QueueItem): { rank: number; badge: string | null } {
-		if (item.diff) return { rank: 0, badge: 'Changed' };
-		if (item.blast_radius?.conflict) return { rank: 1, badge: 'Conflict' };
-		if (!item.citations || item.citations.length === 0) return { rank: 2, badge: 'Uncited' };
-		if (!TRUSTED.has(item.provenance?.trust)) return { rank: 3, badge: 'Low-trust' };
-		return { rank: 4, badge: null };
-	}
-
-	function riskCls(badge: string): string {
-		if (badge === 'Changed') return 'border-changed text-changed';
-		if (badge === 'Conflict' || badge === 'Uncited') return 'border-error text-error';
-		return 'border-line text-ink-muted';
-	}
-
-	// "Verified" = quote-verified by the deterministic gate (every
-	// queued row passed it) with a citation, no live value changed, no
-	// conflicting sibling, and Muse Wonder did not contradict it.
-	function isVerified(item: QueueItem): boolean {
-		return (
-			item.citations.length > 0 &&
-			!item.diff &&
-			!item.blast_radius.conflict &&
-			checks[item.id]?.verdict !== 'contradicted'
-		);
-	}
-
-	const WONDER: Record<string, { label: string; cls: string }> = {
-		supported: { label: 'Wonder: supported', cls: 'border-verified text-verified' },
-		contradicted: { label: 'Wonder: contradicted', cls: 'border-error text-error' },
-		not_found: { label: 'Wonder: not found', cls: 'border-line text-ink-muted' }
-	};
-
-	let sorted = $derived(
-		items
-			.map((item, index) => ({ item, index }))
-			.sort((a, b) => riskOf(a.item).rank - riskOf(b.item).rank || a.index - b.index)
-			.map((row) => row.item)
-	);
+	let sorted = $derived(riskiestFirst(items));
 	const selected = $derived(sorted.find((i) => i.id === selectedId) ?? null);
 	const selectedCard = $derived(selected ? (ui[selected.id] ?? null) : null);
 	const open = $derived(sorted.filter((i) => !decided[i.id]));
 	const batch = $derived(
 		selected
-			? open.filter((i) => i.provenance.capture_id === selected.provenance.capture_id && isVerified(i))
+			? open.filter(
+					(i) =>
+						i.authority_slug === selected.authority_slug &&
+						i.provenance.capture_id === selected.provenance.capture_id &&
+						isVerified(i, checks[i.id])
+				)
 			: []
 	);
 
@@ -366,33 +343,14 @@
 		}
 	}
 
-	// Word-level change marks via common prefix/suffix trim (page
-	// display only — the server stores the verbatim statements).
-	interface DiffSeg {
-		text: string;
-		changed: boolean;
-	}
-
-	function markChanged(base: string, next: string): { base: DiffSeg[]; next: DiffSeg[] } {
-		const a = base.split(/(\s+)/);
-		const b = next.split(/(\s+)/);
-		let pre = 0;
-		while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
-		let suf = 0;
-		while (suf < a.length - pre && suf < b.length - pre && a[a.length - 1 - suf] === b[b.length - 1 - suf])
-			suf++;
-		const segs = (words: string[]): DiffSeg[] =>
-			words.map((text, i) => ({ text, changed: i >= pre && i < words.length - suf }));
-		return { base: segs(a), next: segs(b) };
-	}
-
 	function syncUrl() {
 		const params = new URLSearchParams(location.search);
 		for (const [key, value] of [
 			['authority', authority.trim()],
 			['topic', topic.trim()],
 			['limit', limit !== 50 ? String(limit) : ''],
-			['tab', tab !== 'facts' ? tab : '']
+			['tab', tab !== 'facts' ? tab : ''],
+			['view', view === 'authority' ? 'authority' : '']
 		] as const) {
 			if (value) params.set(key, value);
 			else params.delete(key);
@@ -417,10 +375,10 @@
 		checks = next;
 	}
 
-	async function loadQueue(afterId?: number, append = false) {
+	async function loadQueue(afterId?: number, append = false, quiet = false) {
 		if (append) {
 			loadingMore = true;
-		} else {
+		} else if (!quiet) {
 			loadState = 'loading';
 			loadError = null;
 		}
@@ -440,12 +398,61 @@
 			loadState = 'ready';
 			ensureSelection();
 			void loadChecks();
+			void openDeepLink();
 		} catch (err) {
 			loadError = err instanceof Error ? err.message : 'Review queue failed.';
-			loadState = append ? loadState : 'failed';
+			if (quiet) toast.error(loadError);
+			else loadState = append ? loadState : 'failed';
 		} finally {
 			loadingMore = false;
 		}
+	}
+
+	// `?fact=<id>` (dashboard activity links): select that row, reading
+	// it on its own when it sits beyond the loaded page.
+	let deepLinked = false;
+	async function openDeepLink() {
+		if (deepLinked || focusFact === null) return;
+		deepLinked = true;
+		const id = focusFact;
+		if (!items.some((i) => i.id === id)) {
+			try {
+				const item = await fetchQueueItem(api(), id);
+				cardUi(item.id);
+				items = [item, ...items];
+				queueCount += 1;
+			} catch {
+				refreshNote = `Fact #${id} is not waiting for review any more.`;
+				focusFact = null;
+				return;
+			}
+		}
+		select(id);
+	}
+
+	// By-authority view: every proposal of one authority (the queue
+	// pages 25-200 rows across all of them), merged by id.
+	async function loadAllFor(slug: string) {
+		const out = await fetchQueue(api(), { authority: slug, limit: 200 });
+		for (const row of out.items) cardUi(row.id);
+		const known = new Set(items.map((i) => i.id));
+		items = [...items, ...out.items.filter((i) => !known.has(i.id))];
+		void loadChecks();
+	}
+
+	function setView(next: View) {
+		if (view === next) return;
+		view = next;
+		syncUrl();
+		if (next === 'risk') ensureSelection();
+	}
+
+	function openInQueue(slug: string) {
+		authority = slug;
+		view = 'risk';
+		selectedId = null;
+		syncUrl();
+		void loadQueue();
 	}
 
 	function applyFilters(event: SubmitEvent) {
@@ -520,6 +527,9 @@
 		if ([25, 50, 100, 200].includes(raw)) limit = raw;
 		const wanted = params.get('tab');
 		if (wanted && TABS.includes(wanted as Tab) && wanted !== 'facts') setTab(wanted);
+		if (params.get('view') === 'authority') view = 'authority';
+		const fact = Number(params.get('fact'));
+		if (Number.isInteger(fact) && fact > 0) focusFact = fact;
 		void loadQueue();
 		void loadRules();
 		void loadSuppressions();
@@ -581,17 +591,57 @@
 		}
 	}
 
-	async function acceptBatch() {
-		if (batchActing || batch.length === 0) return;
+	// Per-capture batch: ONE all-or-nothing POST /facts/bulk (one
+	// audit header, one dossier event). A blocked batch changed
+	// nothing: every optimistic row rolls back, the refused rows say
+	// why, and the rest can go again as a fresh batch.
+	async function acceptBatch(only?: number[]) {
+		if (batchActing) return;
+		const rows = only ? items.filter((i) => only.includes(i.id) && !decided[i.id]) : batch;
+		if (rows.length === 0) return;
+		const slug = rows[0].authority_slug;
+		const capture = rows[0].provenance.capture_id;
+		const ids = rows.map((i) => i.id).slice(0, 100);
+		const body = bulkBody('accept', slug, ids, { requireVerified: true });
+		if (!body) return;
 		batchActing = true;
-		const capture = batch[0].provenance.capture_id;
-		const ids = batch.map((i) => i.id);
-		let ok = 0;
+		batchNote = null;
 		for (const id of ids) {
-			if (await accept(id, true)) ok += 1;
+			cardUi(id).error = null;
+			decided[id] = 'accepted';
 		}
-		batchActing = false;
-		if (ok > 0) toast.success(`Accepted ${ok} verified fact${ok === 1 ? '' : 's'} from capture #${capture}.`);
+		if (selectedId !== null && ids.includes(selectedId)) select(nextOpen(selectedId));
+		try {
+			const out = await bulkDecide(api(), body);
+			if (out.ok) {
+				for (const r of out.results) decided[r.id] = r.status ?? 'accepted';
+				toast.success(`Accepted ${plural(out.count, 'verified fact')} from capture #${capture} — the ${slug} dossier updates live.`);
+				return;
+			}
+			for (const id of ids) delete decided[id];
+			const { refused, passing } = splitBlocked(out.results);
+			for (const r of refused) cardUi(r.id).error = `Held back from the batch: ${r.tag}.`;
+			const pass = passing.filter((id) => ids.includes(id));
+			const text = `Nothing accepted: ${refused.length} of ${ids.length} blocked.`;
+			batchNote = { text, pass };
+			toast.error(
+				text,
+				pass.length > 0 ? { action: { label: `Accept the ${pass.length} that pass`, onClick: () => void acceptBatch(pass) } } : undefined
+			);
+			select(refused[0]?.id ?? ids[0]);
+			if (refused.some((r) => r.code === 409)) {
+				refreshNote = 'Some of the batch was decided elsewhere — refreshing.';
+				void loadQueue(undefined, false, true);
+			}
+		} catch (err) {
+			for (const id of ids) delete decided[id];
+			const message = err instanceof Error ? err.message : 'Batch accept failed.';
+			batchNote = { text: `Nothing accepted: ${message}`, pass: [] };
+			toast.error(`Nothing accepted: ${message}`);
+			select(ids[0]);
+		} finally {
+			batchActing = false;
+		}
 	}
 
 	function startEdit(item: QueueItem) {
@@ -657,9 +707,12 @@
 		}
 	}
 
-	// j/k move, a accept, r reject — facts tab only, never while typing.
+	// j/k move, a accept, r reject — facts tab, risk view only, never
+	// while typing. Shift+key belongs to the by-authority view (Shift+A
+	// accepts a whole group there), which handles its own keys.
 	function onKey(e: KeyboardEvent) {
-		if (tab !== 'facts' || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+		if (tab !== 'facts' || view !== 'risk') return;
+		if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat) return;
 		const t = e.target as HTMLElement | null;
 		if (t && (t.closest('input, textarea, select, [contenteditable="true"]') || t.isContentEditable)) return;
 		if (document.querySelector('[role="dialog"]')) return;
@@ -727,6 +780,36 @@
 
 <svelte:window onkeydown={onKey} />
 
+{#snippet filters()}
+	<form class="flex min-w-0 flex-1 flex-wrap items-end gap-2" onsubmit={applyFilters} aria-label="Filter the queue">
+		<label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-ink-muted" for="filter-authority">
+			Authority
+			<Input id="filter-authority" class="h-9" bind:value={authority} autocomplete="off" />
+		</label>
+		<label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-ink-muted" for="filter-topic">
+			Topic
+			<Input id="filter-topic" class="h-9" bind:value={topic} autocomplete="off" />
+		</label>
+		<Button type="submit" variant="outline" size="lg">Filter</Button>
+	</form>
+{/snippet}
+{#snippet viewSwitch()}
+	<div class="inline-flex w-fit flex-none gap-1 rounded-md border border-line bg-surface p-1" role="group" aria-label="Facts layout">
+		{#each [['risk', 'Riskiest first'], ['authority', 'By authority']] as [value, label] (value)}
+			<Button
+				size="sm"
+				variant="ghost"
+				class={view === value ? 'bg-background text-foreground shadow-sm hover:bg-background' : 'text-ink-muted'}
+				aria-pressed={view === value}
+				onclick={() => setView(value as View)}
+			>
+				{#if value === 'risk'}<ListOrderedIcon aria-hidden="true" />{:else}<LandmarkIcon aria-hidden="true" />{/if}
+				{label}
+			</Button>
+		{/each}
+	</div>
+{/snippet}
+
 <svelte:head>
 	<title>Review queue — Admin — Apostille Handbook</title>
 </svelte:head>
@@ -741,8 +824,14 @@
 			</p>
 		</div>
 		<p class={`m-0 hidden items-center gap-1 text-xs text-ink-muted ${tab === 'facts' ? 'md:flex' : ''}`}>
-			<Kbd>j</Kbd><Kbd>k</Kbd> move <span aria-hidden="true">·</span> <Kbd>a</Kbd> accept
-			<span aria-hidden="true">·</span> <Kbd>r</Kbd> reject
+			<Kbd>j</Kbd><Kbd>k</Kbd> move <span aria-hidden="true">·</span>
+			{#if view === 'authority'}
+				<Kbd>x</Kbd> check <span aria-hidden="true">·</span> <Kbd>a</Kbd> accept <span aria-hidden="true">·</span>
+				<Kbd>Shift</Kbd><Kbd>A</Kbd> accept group <span aria-hidden="true">·</span>
+			{:else}
+				<Kbd>a</Kbd> accept <span aria-hidden="true">·</span>
+			{/if}
+			<Kbd>r</Kbd> reject
 		</p>
 	</header>
 
@@ -762,19 +851,47 @@
 		</div>
 
 		<Tabs.Content value="facts" class="flex flex-col gap-8">
+			{#if view === 'authority'}
+				<div class="flex flex-col gap-4">
+					<div class="flex flex-col gap-3 md:flex-row md:items-end">
+						{@render viewSwitch()}
+						{@render filters()}
+					</div>
+					{#if loadState === 'loading'}
+						<div class="flex flex-col gap-4" role="status" aria-label="Loading proposals by authority">
+							{#each [0, 1] as i (i)}
+								<Skeleton class="h-48 rounded-lg" />
+							{/each}
+						</div>
+					{:else if loadState === 'failed'}
+						<Notice variant="error" heading="The review queue could not load.">
+							<p class="m-0">{loadError}</p>
+							<p class="mt-3 mb-0"><Button variant="outline" onclick={() => loadQueue()}>Try again</Button></p>
+						</Notice>
+					{:else}
+						<AuthorityGroups
+							{items}
+							{checks}
+							bind:decided
+							{reduceMotion}
+							focusId={focusFact}
+							onLoadAll={topic.trim() ? undefined : loadAllFor}
+							onRefresh={() => {
+								refreshNote = 'Some facts were decided elsewhere — refreshing.';
+								void loadQueue(undefined, false, true);
+							}}
+							onDecided={(status) => {
+								if (status === 'rejected') void loadSuppressions();
+							}}
+							onOpenQueue={openInQueue}
+						/>
+					{/if}
+				</div>
+			{:else}
 			<div class="grid items-start gap-4 lg:grid-cols-5">
 				<div class="flex min-w-0 flex-col gap-3 lg:col-span-3">
-					<form class="flex flex-wrap items-end gap-2" onsubmit={applyFilters} aria-label="Filter the queue">
-						<label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-ink-muted" for="filter-authority">
-							Authority
-							<Input id="filter-authority" class="h-9" bind:value={authority} autocomplete="off" />
-						</label>
-						<label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-ink-muted" for="filter-topic">
-							Topic
-							<Input id="filter-topic" class="h-9" bind:value={topic} autocomplete="off" />
-						</label>
-						<Button type="submit" variant="outline" size="lg">Filter</Button>
-					</form>
+					{@render viewSwitch()}
+					{@render filters()}
 
 					{#if loadState === 'loading'}
 						<div class="flex flex-col gap-2" role="status" aria-label="Loading the review queue">
@@ -967,7 +1084,7 @@
 									</div>
 									<div>
 										<dt class="text-xs text-ink-muted">Open tasks</dt>
-										<dd class="m-0"><a href={resolve('/(admin)/triage')}>{item.blast_radius.open_tasks}</a></dd>
+										<dd class="m-0">{item.blast_radius.open_tasks}</dd>
 									</div>
 									<div class="min-w-0">
 										<dt class="text-xs text-ink-muted">Evidence sidecar</dt>
@@ -996,12 +1113,24 @@
 									</div>
 									{#if batch.length >= 2}
 										<div>
-											<Button variant="secondary" size="lg" disabled={batchActing} onclick={acceptBatch}>
+											<Button variant="secondary" size="lg" disabled={batchActing} onclick={() => acceptBatch()}>
 												<CheckCheckIcon aria-hidden="true" />
 												Accept all verified from this capture ({batch.length})
 											</Button>
 										</div>
 									{/if}
+								{/if}
+								{#if batchNote}
+									<div class="flex flex-wrap items-center gap-2 rounded-sm bg-error-bg px-3 py-2 text-sm" role="alert">
+										<TriangleAlertIcon class="size-4 flex-none text-error" aria-hidden="true" />
+										<span class="min-w-0 flex-1 font-semibold">{batchNote.text}</span>
+										{#if batchNote.pass.length > 0}
+											{@const pass = batchNote.pass}
+											<Button size="sm" variant="outline" disabled={batchActing} onclick={() => acceptBatch(pass)}>
+												Accept the {pass.length} that pass
+											</Button>
+										{/if}
+									</div>
 								{/if}
 
 								{#if card.editing}
@@ -1071,6 +1200,7 @@
 					{/if}
 				</aside>
 			</div>
+			{/if}
 
 			<div class="grid items-start gap-4 lg:grid-cols-2">
 				<section aria-labelledby="blocked" class="flex flex-col gap-2">

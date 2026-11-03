@@ -9,7 +9,6 @@
 	import { Separator } from '#lib/components/ui/separator/index.js';
 	import { Kbd } from '#lib/components/ui/kbd/index.js';
 	import { subscribe } from '#lib/live.svelte';
-	import InboxIcon from '@lucide/svelte/icons/inbox';
 	import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
 	import ActivityIcon from '@lucide/svelte/icons/activity';
@@ -44,8 +43,9 @@
 		{
 			label: 'Content',
 			items: [
-				{ label: 'Review', href: resolve('/(admin)/review'), icon: ListChecksIcon, keywords: 'facts approve queue' },
-				{ label: 'Triage', href: resolve('/(admin)/triage'), icon: InboxIcon, keywords: 'mail inbox' },
+				// Review and the old Triage list are one screen now: "Riskiest
+				// first" or "By authority" (bulk). /triage stays as a page.
+				{ label: 'Review', href: resolve('/(admin)/review'), icon: ListChecksIcon, keywords: 'facts approve queue triage bulk by authority' },
 				{ label: 'Trace', href: resolve('/(admin)/trace'), icon: ActivityIcon, keywords: 'draft model tokens latency' },
 				{ label: 'Workers', href: resolve('/(admin)/workers'), icon: DatabaseIcon, keywords: 'fetch captures sweep' }
 			]

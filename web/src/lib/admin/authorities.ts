@@ -45,3 +45,41 @@ export function fetchAuthorities(): Promise<AuthorityOption[]> {
 	}
 	return cached;
 }
+
+/** One row of the staff index: display name plus the true proposed total. */
+export interface StaffAuthority {
+	slug: string;
+	name: string;
+	/** Every proposed fact of this authority (the queue pages only a slice). */
+	proposed_count: number | null;
+}
+
+let staffCached: Promise<StaffAuthority[]> | null = null;
+
+/**
+ * Staff authority index on the admin host (`GET /admin/authorities`,
+ * which also counts proposed facts; the public `/authorities` route is
+ * not served there). Cached like `fetchAuthorities`; a failure clears
+ * the cache so the next caller re-reads. `fresh` drops the cache after
+ * a decision changed the counts.
+ */
+export function fetchStaffAuthorities(fresh = false): Promise<StaffAuthority[]> {
+	if (fresh) staffCached = null;
+	if (!staffCached) {
+		staffCached = getJson<Loose>('/admin/authorities', 'Authorities')
+			.then((body: Loose) =>
+				(Array.isArray(body?.authorities) ? (body.authorities as Loose[]) : [])
+					.filter((r) => r && typeof r.slug === 'string' && r.slug)
+					.map((r) => ({
+						slug: r.slug as string,
+						name: typeof r.name === 'string' && r.name ? (r.name as string) : (r.slug as string),
+						proposed_count: typeof r.proposed_count === 'number' ? (r.proposed_count as number) : null
+					}))
+			)
+			.catch((err) => {
+				staffCached = null;
+				throw err;
+			});
+	}
+	return staffCached;
+}
