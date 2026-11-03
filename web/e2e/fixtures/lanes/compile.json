@@ -1,0 +1,47 @@
+{
+  "routes": {
+    "/dashboard?compile=91": {
+      "name": "compile-dashboard-live",
+      "ready": "3 pages",
+      "build": "admin"
+    },
+    "/dashboard?compile=88": {
+      "name": "compile-dashboard-done",
+      "ready": "Run 88 done.",
+      "build": "admin"
+    }
+  },
+  "api": [
+    {
+      "path": "^/apostille/api/v1/admin/compile$",
+      "fixture": "admin-compile-runs.json"
+    },
+    {
+      "method": "POST",
+      "path": "^/apostille/api/v1/admin/compile$",
+      "status": 202,
+      "json": { "run_id": 92, "topic": "run:92" }
+    },
+    {
+      "path": "^/apostille/api/v1/admin/compile/91$",
+      "json": {
+        "run_id": 91,
+        "slug": "vietnam",
+        "status": "running",
+        "started_at": 1793750290,
+        "finished_at": null,
+        "summary": {}
+      }
+    },
+    {
+      "path": "^/apostille/api/v1/admin/compile/88$",
+      "fixture": "admin-compile-run-88.json"
+    }
+  ],
+  "ws": [
+    {
+      "topic": "^run:91$",
+      "fixture": "admin-ws-compile.json"
+    }
+  ]
+}

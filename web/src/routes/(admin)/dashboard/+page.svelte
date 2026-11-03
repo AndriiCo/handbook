@@ -3,6 +3,7 @@
 	import { fly } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import Heading from '#lib/components/brand/Heading.svelte';
 	import Notice from '#lib/public-ui/Notice.svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -11,6 +12,7 @@
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import BarChart from '#lib/admin/BarChart.svelte';
 	import ComposePanel from '#lib/admin/ComposePanel.svelte';
+	import CompilePanel from '#lib/admin/CompilePanel.svelte';
 	import type { ComposeKind } from '#lib/admin/compose.svelte.js';
 	import { getJson, errorText } from '#lib/admin/admin-api.js';
 	import {
@@ -107,6 +109,11 @@
 	// Relative times read against the server snapshot when it is ahead
 	// of this browser's clock (skewed staff laptops never show "-3 min").
 	const now = $derived(Math.max(nowSec, stats?.generated_at ?? 0));
+	// `?compile={run}` (activity rows, shared links) opens that run.
+	const compileRun = $derived.by(() => {
+		const n = Number(page.url.searchParams.get('compile'));
+		return Number.isInteger(n) && n > 0 ? n : null;
+	});
 	const feed = $derived(stats ? mergeActivity(stats.activity, live) : []);
 	const motion = $derived(reduceMotion ? 0 : 200);
 
@@ -317,6 +324,8 @@
 				{/each}
 			</ul>
 		</section>
+
+		<CompilePanel {now} openRun={compileRun} />
 
 		<section aria-labelledby="compose" class="flex flex-col gap-3">
 			<div class="flex flex-wrap items-end justify-between gap-2">

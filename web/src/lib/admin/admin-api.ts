@@ -7,21 +7,25 @@ import { authError, readErrorBody } from './http-errors.js';
 
 export const API = '/apostille/api/v1';
 
-/** Error carrying the HTTP status (0 = network / unreadable body). */
+/** Error carrying the HTTP status (0 = network / unreadable body) and
+ * the parsed JSON error body, when there was one (a 409 names the run
+ * already going). */
 export class ApiError extends Error {
 	status: number;
-	constructor(message: string, status: number) {
+	body: Record<string, unknown> | null;
+	constructor(message: string, status: number, body: Record<string, unknown> | null = null) {
 		super(message);
 		this.status = status;
+		this.body = body;
 	}
 }
 
 async function fail(res: Response, what: string): Promise<never> {
 	const body = await readErrorBody(res);
 	const auth = authError(res.status, body);
-	if (auth) throw new ApiError(auth, res.status);
+	if (auth) throw new ApiError(auth, res.status, body);
 	const detail = typeof body?.error === 'string' && body.error ? `: ${body.error}` : '';
-	throw new ApiError(`${what} failed (HTTP ${res.status})${detail}.`, res.status);
+	throw new ApiError(`${what} failed (HTTP ${res.status})${detail}.`, res.status, body);
 }
 
 async function readBody<T>(res: Response, what: string): Promise<T> {
