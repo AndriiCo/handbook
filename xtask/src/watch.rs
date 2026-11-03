@@ -83,9 +83,25 @@ pub fn run_sweep(args: &[String]) {
     let (mut created, mut dup, mut fresh, mut neardup, mut failed, mut skipped) =
         (0, 0, 0, 0, 0, 0);
     let mut last_fetch = std::collections::HashMap::new();
+    // The sweep is always live (`refresh`), but every answer is kept in
+    // the fetch cache with its manifest line, so any rerun or audit can
+    // replay exactly what was downloaded.
+    let cache = callcache::FetchCache::new(
+        crate::call_cache::settings(args).fetch_dir,
+        callcache::CacheMode::Refresh,
+    );
     for row in &rows {
         wait_for_host(&mut last_fetch, &host_of(&row.uri));
-        match ingest::sweep::poll_source(&conn, &store, row, &trust, &actor, now, FETCH_TIMEOUT) {
+        match ingest::sweep::poll_source_with(
+            &conn,
+            &store,
+            row,
+            &trust,
+            &actor,
+            now,
+            FETCH_TIMEOUT,
+            Some(&cache),
+        ) {
             ingest::sweep::SourceOutcome::Created { capture_id } => {
                 println!("fetched: {} capture={capture_id}", row.uri);
                 created += 1;

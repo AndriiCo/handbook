@@ -30,7 +30,9 @@ use contracts::Result;
 use handbook_store::store::{Store, sha256_hex};
 
 use crate::capture::{IngestInput, IngestOutcome, extract_text, ingest_bytes};
-use crate::fetch::{FetchOutcome, check_robots, fetch_url_conditional};
+use crate::fetch::{
+    FetchOutcome, check_robots, fetch_url_conditional, fetch_url_conditional_cached,
+};
 use crate::simhash::{is_near_dup, simhash};
 
 /// One website `source` row with its fetch state.
@@ -138,6 +140,23 @@ pub fn poll_source(
     now: i64,
     timeout: Duration,
 ) -> SourceOutcome {
+    poll_source_with(conn, store, row, trust, actor, now, timeout, None)
+}
+
+/// [`poll_source`], recording every answer in `cache` when given (the
+/// scheduled sweep passes a `refresh`-mode [`callcache::FetchCache`]:
+/// always live, every response kept on disk with its manifest line).
+#[allow(clippy::too_many_arguments)]
+pub fn poll_source_with(
+    conn: &Connection,
+    store: &Store,
+    row: &SourceRow,
+    trust: &str,
+    actor: &str,
+    now: i64,
+    timeout: Duration,
+    cache: Option<&callcache::FetchCache>,
+) -> SourceOutcome {
     if !(row.uri.starts_with("http://") || row.uri.starts_with("https://")) {
         let _ = touch_checked(conn, row.id, now);
         return SourceOutcome::Skipped {
@@ -160,7 +179,11 @@ pub fn poll_source(
     }
     let etag = (!row.etag.is_empty()).then_some(row.etag.as_str());
     let stamp = (!row.last_modified.is_empty()).then_some(row.last_modified.as_str());
-    let fetched = match fetch_url_conditional(&row.uri, timeout, etag, stamp) {
+    let answer = match cache {
+        Some(cache) => fetch_url_conditional_cached(cache, &row.uri, timeout, etag, stamp),
+        None => fetch_url_conditional(&row.uri, timeout, etag, stamp),
+    };
+    let fetched = match answer {
         Ok(FetchOutcome::NotModified) => {
             let _ = touch_checked(conn, row.id, now);
             return SourceOutcome::NotModified;
@@ -850,6 +873,36 @@ mod tests {
         );
         assert_eq!(capture_count(&conn, auth), 2);
         server2.join().unwrap();
+    }
+
+    #[test]
+    fn poll_with_a_cache_keeps_every_answer_on_disk() {
+        let (dir, store, conn) = migrated();
+        let auth = authority(&conn, "t-sos");
+        let (url, server) = serve("HTTP/1.0 200 OK", &[], b"<p>Fee $8 per document.</p>");
+        add_source(&conn, auth, "website_official", &url);
+        let cache = callcache::FetchCache::new(
+            dir.path().join("fetch-cache"),
+            callcache::CacheMode::Refresh,
+        );
+        let outcome = poll_source_with(
+            &conn,
+            &store,
+            &row(&conn, "t-sos"),
+            "official",
+            "test",
+            NOW,
+            Duration::from_secs(5),
+            Some(&cache),
+        );
+        assert!(
+            matches!(outcome, SourceOutcome::Created { .. }),
+            "{outcome:?}"
+        );
+        let saved = cache.latest(&url).expect("answer recorded");
+        assert_eq!(saved.status, 200);
+        assert_eq!(saved.body, b"<p>Fee $8 per document.</p>");
+        server.join().unwrap();
     }
 
     #[test]
