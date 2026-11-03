@@ -67,13 +67,23 @@ pub fn ingest_bytes(
     let sha = sha256_hex(input.bytes);
     let existing: Option<i64> = conn
         .query_row(
-            "SELECT id FROM capture WHERE authority_id = ?1 AND sha256 = ?2",
+            "SELECT id FROM capture WHERE authority_id = ?1 AND sha256 = ?2
+             ORDER BY id DESC LIMIT 1",
             rusqlite::params![input.authority_id, sha],
             |row| row.get(0),
         )
         .optional()?;
     if let Some(capture_id) = existing {
-        return Ok(IngestOutcome::Duplicate { capture_id });
+        // Same bytes, same text: nothing new. Same bytes but the text
+        // extractor now reads them differently (e.g. it learned to drop
+        // script bodies): store a fresh capture with the clean text and
+        // leave the old one, whose byte offsets existing facts cite.
+        let stored =
+            std::fs::read_to_string(store.root().join("text").join(format!("{capture_id}.txt")))
+                .ok();
+        if stored.as_deref().is_none_or(|old| old == input.text) {
+            return Ok(IngestOutcome::Duplicate { capture_id });
+        }
     }
 
     // Idempotent content write; safe to do before the transaction.
@@ -280,7 +290,21 @@ fn decode_entities(text: &str) -> String {
     out
 }
 
+/// HTML's Latin-1 letter entities, in code point order from U+00C0.
+const LATIN1_FROM_C0: [&str; 64] = [
+    "Agrave", "Aacute", "Acirc", "Atilde", "Auml", "Aring", "AElig", "Ccedil", "Egrave", "Eacute",
+    "Ecirc", "Euml", "Igrave", "Iacute", "Icirc", "Iuml", "ETH", "Ntilde", "Ograve", "Oacute",
+    "Ocirc", "Otilde", "Ouml", "times", "Oslash", "Ugrave", "Uacute", "Ucirc", "Uuml", "Yacute",
+    "THORN", "szlig", "agrave", "aacute", "acirc", "atilde", "auml", "aring", "aelig", "ccedil",
+    "egrave", "eacute", "ecirc", "euml", "igrave", "iacute", "icirc", "iuml", "eth", "ntilde",
+    "ograve", "oacute", "ocirc", "otilde", "ouml", "divide", "oslash", "ugrave", "uacute", "ucirc",
+    "uuml", "yacute", "thorn", "yuml",
+];
+
 fn entity(name: &str) -> Option<char> {
+    if let Some(i) = LATIN1_FROM_C0.iter().position(|n| *n == name) {
+        return char::from_u32(0xC0 + i as u32);
+    }
     if let Some(num) = name.strip_prefix('#') {
         let code = match num.strip_prefix(['x', 'X']) {
             Some(hex) => u32::from_str_radix(hex, 16).ok()?,
@@ -467,6 +491,24 @@ mod tests {
     }
 
     #[test]
+    fn same_bytes_with_new_text_make_a_fresh_capture() {
+        let (_dir, store, conn) = migrated();
+        let a = authority(&conn, "synthetic-sos");
+        let bytes = b"<script>x</script><p>Fee $15</p>";
+        let first = ingest_bytes(&conn, &store, &input(a, bytes, "x Fee $15")).unwrap();
+        let again = ingest_bytes(&conn, &store, &input(a, bytes, "x Fee $15")).unwrap();
+        assert!(matches!(again, IngestOutcome::Duplicate { .. }));
+        assert_eq!(again.capture_id(), first.capture_id());
+        // The extractor now drops the script: same bytes, new capture.
+        let clean = ingest_bytes(&conn, &store, &input(a, bytes, "Fee $15")).unwrap();
+        assert!(matches!(clean, IngestOutcome::Created { .. }));
+        assert_ne!(clean.capture_id(), first.capture_id());
+        // And from then on the clean capture is the duplicate target.
+        let after = ingest_bytes(&conn, &store, &input(a, bytes, "Fee $15")).unwrap();
+        assert_eq!(after.capture_id(), clean.capture_id());
+    }
+
+    #[test]
     fn extract_text_drops_scripts_styles_and_comments() {
         // Shape of a Liferay portal page: an importmap and inline
         // scripts in <head>, a comment, entities, a fee table.
@@ -482,7 +524,7 @@ mod tests {
         assert!(!text.contains("var a"), "{text}");
         assert!(!text.contains("hidden"), "{text}");
         assert!(
-            text.starts_with("Trang ch\u{1ee7} - C\u{1ed5}ng th&ocirc;ng tin\n"),
+            text.starts_with("Trang ch\u{1ee7} - C\u{1ed5}ng th\u{f4}ng tin\n"),
             "{text}"
         );
         assert!(text.contains("Fee: $15 & up"), "{text}");
