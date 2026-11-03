@@ -74,6 +74,10 @@ export function topicLabel(topic) {
 	return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// Short spellings in curated packs that name the same country as a
+// world pack's formal HCCH name; grouping only, never a rename.
+const COUNTRY_ALIASES = new Map([['usa', 'United States of America']]);
+
 /**
  * Group the index by `authority.country` for the world-scale home
  * index: countries A→Z (rows with no country last, as
@@ -85,7 +89,8 @@ export function topicLabel(topic) {
 export function groupByCountry(authorities) {
 	const byCountry = new Map();
 	for (const a of authorities ?? []) {
-		const country = String(a?.country ?? '').trim();
+		const raw = String(a?.country ?? '').trim();
+		const country = COUNTRY_ALIASES.get(raw.toLowerCase()) ?? raw;
 		let g = byCountry.get(country);
 		if (!g) {
 			g = { country, rows: [], facts: 0 };

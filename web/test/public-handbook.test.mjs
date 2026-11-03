@@ -93,6 +93,17 @@ test('groupByCountry sorts countries A→Z, International last, facts first', ()
 	);
 });
 
+test('groupByCountry files curated USA rows under the formal world name', () => {
+	const groups = groupByCountry([
+		{ slug: 'usa-wa-sos', name: 'Washington SOS', country: 'USA', fact_count: 14 },
+		{ slug: 'us-or-sos', name: 'Oregon SOS', country: 'United States of America' }
+	]);
+	assert.deepEqual(
+		groups.map((g) => [g.country, g.rows.map((a) => a.slug)]),
+		[['United States of America', ['usa-wa-sos', 'us-or-sos']]]
+	);
+});
+
 test('groupByCountry holds a world-scale index in one row per country', () => {
 	const rows = [];
 	for (let c = 0; c < 200; c++) {
