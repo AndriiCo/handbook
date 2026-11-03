@@ -178,10 +178,23 @@ fn detect_arch(f: &SetupFile, name: &str) -> Result<build::Arch, String> {
                 build::Arch::X86_64
             }
         }),
-        TargetKind::Docker => match target.platform.as_deref().and_then(build::Arch::parse) {
-            Some(arch) => Ok(arch),
-            None => build::detect_docker(),
-        },
+        TargetKind::Docker => {
+            let daemon = build::detect_docker()?;
+            match target.platform.as_deref().and_then(build::Arch::parse) {
+                // systemd cannot set up its unit sandboxes under user-mode
+                // emulation (sshd, dbus and tmp.mount fail), so the
+                // rehearsal runs on the daemon's own CPU only.
+                Some(arch) if arch != daemon => Err(format!(
+                    "this Docker host is {} and systemd does not boot under {} emulation; \
+                     rehearse {} on a {} Docker host (set platform: auto here)",
+                    daemon.docker_platform(),
+                    arch.docker_platform(),
+                    arch.triple(),
+                    arch.docker_platform()
+                )),
+                _ => Ok(daemon),
+            }
+        }
         TargetKind::Plant | TargetKind::Server => {
             build::detect_ssh(target.ssh.as_deref().unwrap_or_default(), None)
         }

@@ -188,9 +188,12 @@ throwaway TLS CA live in `private/rehearsal/`. The hosts are
 reach the ports). To try passkeys there, trust
 `private/rehearsal/ca.pem` in your browser yourself and paste the setup
 key the run prints into admin `/config`. `setup wipe --target docker` deletes the
-container; the next run rebuilds it from nothing. Set
-`targets.docker.platform: linux/amd64` to rehearse the x86_64 build
-under emulation.
+container; the next run rebuilds it from nothing. The rehearsal runs
+on the Docker host's own CPU: systemd does not boot under user-mode
+emulation (sshd, dbus and `tmp.mount` fail), so on an Apple-silicon Mac
+it rehearses arm64, and x86_64 is proven by the hardened x86_64
+cross-build plus staging on plant. On an x86_64 Docker host the same
+command rehearses x86_64.
 
 **Brand files.** The wizard's brand step lists Apple, Google, Meta,
 the FIDO passkey icon and the Vogun face: the owner's terms, what they
