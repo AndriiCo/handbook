@@ -9,6 +9,10 @@
 // POST {apiBase}/suppress-rules      {statement, ...}      → { id }
 // POST {apiBase}/suppress-rules/{id}/revoke               → { status }
 // GET  {apiBase}/suppressions[?authority&limit&after_id]  → { suppressions, count }
+// GET  {apiBase}/facts?status=proposed[&authority&limit≤200] → { facts: FactView[], count }
+// POST {apiBase}/facts/bulk {decision, authority, ids[1..100], reason?, suppress?, require_verified?}
+//      200 → { authority, decision, count, bulk_audit_id, results }
+//      409/422 with `results` → nothing changed; each id says ok or why not
 //
 // The agent's `reasoning` field renders only under an explicit
 // do-not-trust label: it is untrusted model output, never evidence.
@@ -29,6 +33,8 @@ import { authError, readErrorBody } from './http-errors.js';
  * @property {number} start_byte
  * @property {number} end_byte
  * @property {string} quote
+ * @property {string} [source_url] `/facts` rows only (the gate's https source)
+ * @property {string} [captured_at] `/facts` rows only (ISO 8601)
  */
 
 /**
@@ -236,6 +242,102 @@ export function rejectBody(reason, suppress) {
 }
 
 /**
+ * @typedef {object} BulkBody
+ * @property {'accept' | 'reject'} decision
+ * @property {string} authority
+ * @property {number[]} ids
+ * @property {string} [reason]
+ * @property {{ scope: string, lock_topic?: boolean }} [suppress]
+ * @property {boolean} [require_verified]
+ */
+
+/**
+ * Build a bulk decision body. Pure (tested). Returns null when invalid
+ * — the server re-validates the same rules: 1-100 distinct positive
+ * ids of ONE authority; reject needs a 1-1024 char reason; suppress
+ * is reject-only (scope `authority` or `global`); require_verified is
+ * accept-only.
+ * @param {unknown} decision
+ * @param {unknown} authority
+ * @param {unknown} ids
+ * @param {{ reason?: unknown, suppress?: unknown, requireVerified?: unknown }} [opts]
+ * @returns {BulkBody | null}
+ */
+export function bulkBody(decision, authority, ids, opts = {}) {
+	if (decision !== 'accept' && decision !== 'reject') return null;
+	if (typeof authority !== 'string' || !/^[a-z0-9-]{1,80}$/.test(authority)) return null;
+	if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) return null;
+	if (!ids.every((id) => Number.isInteger(id) && id > 0)) return null;
+	if (new Set(ids).size !== ids.length) return null;
+	/** @type {BulkBody} */
+	const body = { decision, authority, ids: [...ids] };
+	const { reason, suppress, requireVerified } = opts;
+	if (reason !== undefined && reason !== null && typeof reason !== 'string') return null;
+	const text = typeof reason === 'string' ? reason.trim() : '';
+	if (text.length > 1024) return null;
+	if (decision === 'reject' && text.length === 0) return null;
+	if (text) body.reason = text;
+	if (suppress !== undefined && suppress !== null) {
+		if (decision !== 'reject') return null;
+		const rule = rejectBody('x', suppress)?.suppress;
+		if (!rule) return null;
+		body.suppress = rule;
+	}
+	if (requireVerified !== undefined && requireVerified !== null && requireVerified !== false) {
+		if (requireVerified !== true || decision !== 'accept') return null;
+		body.require_verified = true;
+	}
+	return body;
+}
+
+/**
+ * Adapt one `/facts` row (FactView: the accept gate's citations, the
+ * conflict banner) to the review row shape the signals read. The diff
+ * base mirrors the queue's enrich(): newest accepted sibling, else the
+ * newest live one. Trust is unknown here (''). Returns null for
+ * unknown shapes. Pure (tested).
+ * @param {any} row
+ * @returns {QueueItem | null}
+ */
+export function factViewToItem(row) {
+	if (!row || typeof row.id !== 'number' || typeof row.authority_slug !== 'string') return null;
+	if (typeof row.topic !== 'string' || typeof row.statement !== 'string') return null;
+	if (typeof row.created_at !== 'number') return null;
+	const conflicts = [];
+	for (const c of Array.isArray(row.conflicts) ? row.conflicts : []) {
+		if (!c || typeof c.id !== 'number' || typeof c.statement !== 'string') continue;
+		conflicts.push({ id: c.id, statement: c.statement, status: typeof c.status === 'string' ? c.status : '' });
+	}
+	const base = [...conflicts].reverse().find((c) => c.status === 'accepted') ?? conflicts[conflicts.length - 1];
+	const citations = [];
+	for (const c of Array.isArray(row.citations) ? row.citations : []) {
+		if (!c || typeof c.quote !== 'string') continue;
+		citations.push({
+			capture_id: 0,
+			start_byte: 0,
+			end_byte: 0,
+			quote: c.quote,
+			source_url: typeof c.source_url === 'string' ? c.source_url : undefined,
+			captured_at: typeof c.captured_at === 'string' ? c.captured_at : undefined
+		});
+	}
+	return {
+		id: row.id,
+		authority_slug: row.authority_slug,
+		topic: row.topic,
+		statement: row.statement,
+		status: typeof row.status === 'string' ? row.status : 'proposed',
+		created_by: typeof row.created_by === 'string' ? row.created_by : '',
+		created_at: row.created_at,
+		diff: base ? { base_statement: base.statement, base_fact_id: base.id, base_status: base.status } : null,
+		citations,
+		reasoning_untrusted: null,
+		blast_radius: { conflict: row.conflict === true || conflicts.length > 0, conflicts, open_tasks: 0 },
+		provenance: { capture_id: 0, capture_kind: '', trust: '', authenticity: '', sidecar: '' }
+	};
+}
+
+/**
  * Build a standalone suppress-rule body. Pure (tested). Returns null
  * when invalid — the server re-validates (statement 1–2000 chars,
  * reason ≤1024, topic against the frozen enum).
@@ -426,6 +528,103 @@ export async function rejectFact(apiBase, id, body, fetchFn = fetch) {
 	const data = await postReview(apiBase, `/facts/${id}/reject`, body, 'Reject', fetchFn);
 	if (!data || typeof data.status !== 'string') throw new Error('Reject returned an unexpected shape.');
 	return { status: data.status };
+}
+
+/**
+ * Proposed facts straight from the approval API (`/facts`, id order,
+ * at most 200, citations already through the accept gate), adapted to
+ * review rows. 401/403 throw the server's answer verbatim.
+ * @param {string} apiBase
+ * @param {{ authority?: string, limit?: number }} [params]
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<{ items: QueueItem[], count: number }>}
+ */
+export async function fetchProposedFacts(apiBase, params = {}, fetchFn = fetch) {
+	const query = queryString({ status: 'proposed', authority: params.authority, limit: params.limit ?? 200 });
+	const res = await fetchFn(`${apiBase}/facts${query}`, { credentials: 'same-origin' });
+	await throwForStatus(res, 'Proposed facts');
+	const data = await readJson(res, 'Proposed facts');
+	const facts = data?.facts;
+	if (!Array.isArray(facts)) throw new Error('Proposed facts returned an unexpected shape.');
+	const items = facts.map(factViewToItem).filter((row) => row !== null);
+	return { items, count: typeof data.count === 'number' ? data.count : items.length };
+}
+
+/**
+ * @typedef {object} BulkResult
+ * @property {number} id
+ * @property {boolean} ok
+ * @property {string} [status]
+ * @property {number} [code]
+ * @property {string} [error]
+ */
+
+/**
+ * @typedef {{ ok: true, authority: string, decision: string, count: number, bulk_audit_id: number | null, results: BulkResult[] }
+ *   | { ok: false, status: number, error: string, results: BulkResult[] }} BulkOutcome
+ */
+
+/**
+ * @param {any} rows
+ * @returns {BulkResult[]}
+ */
+function bulkResults(rows) {
+	if (!Array.isArray(rows)) return [];
+	return rows
+		.filter((r) => r && typeof r.id === 'number' && typeof r.ok === 'boolean')
+		.map((r) => ({
+			id: r.id,
+			ok: r.ok,
+			...(typeof r.status === 'string' ? { status: r.status } : {}),
+			...(typeof r.code === 'number' ? { code: r.code } : {}),
+			...(typeof r.error === 'string' ? { error: r.error } : {})
+		}));
+}
+
+/**
+ * One all-or-nothing decision over many facts of one authority. A
+ * blocked batch (409 stale / 422 refused, with per-id `results`)
+ * resolves `{ ok: false, ... }` — nothing changed on the server —
+ * so the page can roll back and tag rows; every other failure throws.
+ * @param {string} apiBase
+ * @param {BulkBody} body
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<BulkOutcome>}
+ */
+export async function bulkDecide(apiBase, body, fetchFn = fetch) {
+	const res = await fetchFn(`${apiBase}/facts/bulk`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', ...csrfHeaders() },
+		credentials: 'same-origin',
+		body: JSON.stringify(body)
+	});
+	if (res.status === 409 || res.status === 422) {
+		let data = null;
+		try {
+			data = await res.clone().json();
+		} catch {
+			data = null;
+		}
+		if (data && Array.isArray(data.results)) {
+			return {
+				ok: false,
+				status: res.status,
+				error: typeof data.error === 'string' ? data.error : 'batch blocked; nothing changed',
+				results: bulkResults(data.results)
+			};
+		}
+	}
+	await throwForStatus(res, 'Bulk decision');
+	const data = await readJson(res, 'Bulk decision');
+	if (!data || !Array.isArray(data.results)) throw new Error('Bulk decision returned an unexpected shape.');
+	return {
+		ok: true,
+		authority: typeof data.authority === 'string' ? data.authority : body.authority,
+		decision: typeof data.decision === 'string' ? data.decision : body.decision,
+		count: typeof data.count === 'number' ? data.count : data.results.length,
+		bulk_audit_id: typeof data.bulk_audit_id === 'number' ? data.bulk_audit_id : null,
+		results: bulkResults(data.results)
+	};
 }
 
 /**

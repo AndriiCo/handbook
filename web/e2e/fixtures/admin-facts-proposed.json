@@ -1,0 +1,161 @@
+{
+  "facts": [
+    {
+      "id": 7,
+      "authority_slug": "vietnam",
+      "topic": "fees",
+      "statement": "Legalization at the Consular Department costs 300,000 VND per document.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793749800,
+      "citations": [
+        {
+          "quote": "The Consular Department charges 300,000 VND for each legalized document copy presented at the counter.",
+          "source_url": "https://lanhsuvietnam.gov.vn/",
+          "captured_at": "2026-10-20T09:00:00Z"
+        }
+      ],
+      "conflict": false,
+      "conflicts": []
+    },
+    {
+      "id": 8,
+      "authority_slug": "vietnam",
+      "topic": "hours",
+      "statement": "The Consular Department receives documents Monday to Friday, 8:00 to 11:30.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793749800,
+      "citations": [
+        {
+          "quote": "Documents are received from Monday to Friday, 8:00 to 11:30 (SYNTHETIC fixture text).",
+          "source_url": "https://lanhsuvietnam.gov.vn/",
+          "captured_at": "2026-10-20T09:00:00Z"
+        }
+      ],
+      "conflict": false,
+      "conflicts": []
+    },
+    {
+      "id": 9,
+      "authority_slug": "vietnam",
+      "topic": "processing_time",
+      "statement": "Legalization takes 3 working days from receipt.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793749800,
+      "citations": [
+        {
+          "quote": "Results are returned within 3 working days of receipt (SYNTHETIC fixture text).",
+          "source_url": "https://lanhsuvietnam.gov.vn/",
+          "captured_at": "2026-10-20T09:00:00Z"
+        }
+      ],
+      "conflict": true,
+      "conflicts": [
+        { "id": 41, "statement": "Legalization takes 5 working days from receipt.", "status": "accepted" }
+      ]
+    },
+    {
+      "id": 10,
+      "authority_slug": "vietnam",
+      "topic": "documents",
+      "statement": "Each document needs a certified Vietnamese translation before legalization.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793753400,
+      "citations": [
+        {
+          "quote": "Foreign-language papers must be accompanied by a certified Vietnamese translation (SYNTHETIC fixture text).",
+          "source_url": "https://lanhsuvietnam.gov.vn/",
+          "captured_at": "2026-10-20T09:00:00Z"
+        }
+      ],
+      "conflict": false,
+      "conflicts": []
+    },
+    {
+      "id": 12,
+      "authority_slug": "usa-wa-sos",
+      "topic": "mailing",
+      "statement": "Mailed requests go to PO Box 4000, Olympia, WA 98504.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793746200,
+      "citations": [
+        {
+          "quote": "Mail your request to the Apostille Program, PO Box 4000, Olympia, WA 98504 (SYNTHETIC fixture text).",
+          "source_url": "https://www.sos.wa.gov/",
+          "captured_at": "2026-10-21T16:30:00Z"
+        }
+      ],
+      "conflict": true,
+      "conflicts": [
+        { "id": 33, "statement": "Mailed requests go to PO Box 40220, Olympia, WA 98504.", "status": "accepted" }
+      ]
+    },
+    {
+      "id": 14,
+      "authority_slug": "usa-wa-sos",
+      "topic": "fees",
+      "statement": "Each apostille costs $15 per document.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793746200,
+      "citations": [
+        {
+          "quote": "The fee is $15 for each apostille or certificate issued (SYNTHETIC fixture text).",
+          "source_url": "https://www.sos.wa.gov/",
+          "captured_at": "2026-10-21T16:30:00Z"
+        }
+      ],
+      "conflict": false,
+      "conflicts": []
+    },
+    {
+      "id": 15,
+      "authority_slug": "usa-wa-sos",
+      "topic": "processing_time",
+      "statement": "Walk-in requests are completed the same business day.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793749800,
+      "citations": [
+        {
+          "quote": "In-person requests are generally processed while you wait, the same business day (SYNTHETIC fixture text).",
+          "source_url": "https://www.sos.wa.gov/",
+          "captured_at": "2026-10-21T16:30:00Z"
+        }
+      ],
+      "conflict": false,
+      "conflicts": []
+    },
+    {
+      "id": 13,
+      "authority_slug": "hcch",
+      "topic": "membership",
+      "statement": "The Apostille Convention has 128 Contracting Parties.",
+      "status": "proposed",
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "created_at": 1793742600,
+      "citations": [
+        {
+          "quote": "SYNTHETIC fixture text: the status table lists 128 Contracting Parties to the Convention.",
+          "source_url": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
+          "captured_at": "2026-10-20T09:00:00Z"
+        }
+      ],
+      "conflict": false,
+      "conflicts": []
+    }
+  ],
+  "count": 8
+}

@@ -1,0 +1,29 @@
+{
+  "routes": {
+    "/review?view=authority": {
+      "name": "rb-review-by-authority",
+      "ready": "Accept all verified",
+      "build": "admin"
+    },
+    "/triage": {
+      "name": "rb-triage",
+      "ready": "Accept all verified",
+      "build": "admin"
+    }
+  },
+  "api": [
+    {
+      "path": "^/apostille/api/v1/facts$",
+      "fixture": "admin-facts-proposed.json"
+    },
+    {
+      "path": "^/apostille/api/v1/admin/authorities$",
+      "fixture": "admin-authorities.json"
+    },
+    {
+      "method": "POST",
+      "path": "^/apostille/api/v1/facts/bulk$",
+      "fixture": "admin-facts-bulk.json"
+    }
+  ]
+}

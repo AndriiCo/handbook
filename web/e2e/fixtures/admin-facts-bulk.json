@@ -1,0 +1,10 @@
+{
+  "authority": "vietnam",
+  "decision": "accept",
+  "count": 2,
+  "bulk_audit_id": 501,
+  "results": [
+    { "id": 7, "ok": true, "status": "accepted" },
+    { "id": 8, "ok": true, "status": "accepted" }
+  ]
+}
