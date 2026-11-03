@@ -1,0 +1,22 @@
+{
+ "email": {
+  "id": 32,
+  "slug": "usa-wa-sos",
+  "to": "apostille-desk@sos-wa.example.test",
+  "subject": "Apostille procedures at the Washington Secretary of State: four short questions",
+  "body": "Hello USA — Washington Secretary of State team,\n\nWe keep a public guide to apostilles from your office, and we want every step in it to match how you work today. Would you help us with a short reply to the questions below?\n\n1. We list: \"per_document: SYNTHETIC FIXTURE: the fee is eight dollars for each document.\". Is that still correct?\n2. What is the full mailing address for mail-in requests, and is a different street address used for FedEx or UPS?\n3. What steps must a document complete before it reaches your office, for example a county clerk certification?\n4. We list: \"po_box: SYNTHETIC FIXTURE: requests by mail go to the PO box printed on the request form.\". Is that still correct?\n\nThank you for your time and for the work your office does. A reply to this email is all we need, and no attachments are necessary.\n\nApostille Handbook research team\nhttps://andrii.ai/apostille",
+  "questions": [
+   "We list: \"per_document: SYNTHETIC FIXTURE: the fee is eight dollars for each document.\". Is that still correct?",
+   "What is the full mailing address for mail-in requests, and is a different street address used for FedEx or UPS?",
+   "What steps must a document complete before it reaches your office, for example a county clerk certification?",
+   "We list: \"po_box: SYNTHETIC FIXTURE: requests by mail go to the PO box printed on the request form.\". Is that still correct?"
+  ],
+  "status": "draft",
+  "model": "muse-spark-1.3",
+  "note": "",
+  "error": "",
+  "drafted_at": 1793697200,
+  "sent_at": null,
+  "reply_capture_id": null
+ }
+}

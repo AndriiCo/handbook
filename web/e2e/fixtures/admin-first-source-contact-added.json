@@ -1,0 +1,33 @@
+{
+ "id": 44,
+ "contacts": [
+  {
+   "id": 41,
+   "kind": "email",
+   "value": "apostille-desk@sos-wa.example.test",
+   "details": "Apostille desk (synthetic)",
+   "visibility": "private"
+  },
+  {
+   "id": 42,
+   "kind": "email",
+   "value": "corporations@sos-wa.example.test",
+   "details": "",
+   "visibility": "private"
+  },
+  {
+   "id": 43,
+   "kind": "phone",
+   "value": "+13605550142",
+   "details": "Apostille line",
+   "visibility": "private"
+  },
+  {
+   "id": 44,
+   "kind": "email",
+   "value": "help@sos-wa.example.test",
+   "details": "",
+   "visibility": "private"
+  }
+ ]
+}

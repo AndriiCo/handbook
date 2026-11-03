@@ -1,0 +1,117 @@
+{
+ "slug": "usa-wa-sos",
+ "name": "USA — Washington Secretary of State",
+ "questions": [
+  {
+   "topic": "fees",
+   "question": "We list: \"per_document: SYNTHETIC FIXTURE: the fee is eight dollars for each document.\". Is that still correct?",
+   "reason": "contradicted",
+   "why": "The source page now says something different from what we publish.",
+   "priority": "high",
+   "fact_ids": [
+    104
+   ]
+  },
+  {
+   "topic": "contacts",
+   "question": "Verify usa-wa-sos observation (po_box): SYNTHETIC FIXTURE: the request form names a PO box for mail-in requests.",
+   "reason": "open_task",
+   "why": "A staff task is open for this office.",
+   "priority": "high",
+   "fact_ids": []
+  },
+  {
+   "topic": "mailing",
+   "question": "What is the full mailing address for mail-in requests, and is a different street address used for FedEx or UPS?",
+   "reason": "missing_core",
+   "why": "Applicants need this before they send anything, and no page we captured states it.",
+   "priority": "high",
+   "fact_ids": []
+  },
+  {
+   "topic": "legalization_chain",
+   "question": "What steps must a document complete before it reaches your office, for example a county clerk certification?",
+   "reason": "missing_core",
+   "why": "Applicants need this before they send anything, and no page we captured states it.",
+   "priority": "high",
+   "fact_ids": []
+  },
+  {
+   "topic": "po_box",
+   "question": "We list: \"po_box: SYNTHETIC FIXTURE: requests by mail go to the PO box printed on the request form.\". Is that still correct?",
+   "reason": "unconfirmed",
+   "why": "Muse Spark drafted this from a page; nobody has confirmed it yet.",
+   "priority": "medium",
+   "fact_ids": [
+    110
+   ]
+  },
+  {
+   "topic": "hours",
+   "question": "We list: \"weekday: SYNTHETIC FIXTURE: walk-in hours are weekdays nine to four.\". Is that still correct?",
+   "reason": "not_found",
+   "why": "The cross-check could not find this fact in the page it cites.",
+   "priority": "medium",
+   "fact_ids": [
+    109
+   ]
+  },
+  {
+   "topic": "payment",
+   "question": "Which payment methods do you accept, and exactly whom should a check or money order be payable to?",
+   "reason": "stale",
+   "why": "Our newest source for this is over a year old.",
+   "priority": "low",
+   "fact_ids": [
+    106
+   ]
+  },
+  {
+   "topic": "walkin",
+   "question": "Do you accept walk-in requests, and is there a daily limit or cutoff time?",
+   "reason": "missing",
+   "why": "No page we captured states this.",
+   "priority": "low",
+   "fact_ids": []
+  },
+  {
+   "topic": "appointment",
+   "question": "Is an appointment required for in-person service, and how is it booked?",
+   "reason": "missing",
+   "why": "No page we captured states this.",
+   "priority": "low",
+   "fact_ids": []
+  },
+  {
+   "topic": "id_requirements",
+   "question": "What ID must an applicant show at the counter?",
+   "reason": "missing",
+   "why": "No page we captured states this.",
+   "priority": "low",
+   "fact_ids": []
+  }
+ ],
+ "contacts": [
+  {
+   "id": 41,
+   "kind": "email",
+   "value": "apostille-desk@sos-wa.example.test",
+   "details": "Apostille desk (synthetic)",
+   "visibility": "private"
+  },
+  {
+   "id": 42,
+   "kind": "email",
+   "value": "corporations@sos-wa.example.test",
+   "details": "",
+   "visibility": "private"
+  },
+  {
+   "id": 43,
+   "kind": "phone",
+   "value": "+13605550142",
+   "details": "Apostille line",
+   "visibility": "private"
+  }
+ ]
+}

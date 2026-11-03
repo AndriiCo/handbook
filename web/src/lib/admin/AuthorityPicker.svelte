@@ -7,21 +7,34 @@
 	import { fetchAuthorities, type AuthorityOption } from './authorities.js';
 	import { errorText } from './admin-api.js';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
+	import CircleSlashIcon from '@lucide/svelte/icons/circle-slash';
 
 	// Searchable authority combobox (shadcn Popover + Command): staff
 	// type a country, region or slug. Reads the shared authority list.
+	// Optional, additive: `clearable` adds a "No authority" row,
+	// `placeholder` names the empty trigger, `showContacts` adds the
+	// contact count to each row (First source screens), `onChange`
+	// fires on a pick.
 	let {
 		value = $bindable(''),
 		id,
 		label = 'Authority',
 		disabled = false,
-		onLoaded
+		clearable = false,
+		placeholder = 'Choose an authority',
+		showContacts = false,
+		onLoaded,
+		onChange
 	}: {
 		value?: string;
 		id: string;
 		label?: string;
 		disabled?: boolean;
+		clearable?: boolean;
+		placeholder?: string;
+		showContacts?: boolean;
 		onLoaded?: (rows: AuthorityOption[]) => void;
+		onChange?: (slug: string) => void;
 	} = $props();
 
 	let open = $state(false);
@@ -51,6 +64,7 @@
 	function choose(slug: string) {
 		value = slug;
 		open = false;
+		onChange?.(slug);
 		void tick().then(() => trigger?.focus());
 	}
 
@@ -84,7 +98,7 @@
 						aria-labelledby={`${id}-label ${id}-value`}
 					>
 						<span id={`${id}-value`} class={`min-w-0 truncate ${selected ? 'text-ink' : 'text-ink-muted'}`}>
-							{selected ? selected.name : 'Choose an authority'}
+							{selected ? selected.name : placeholder}
 						</span>
 						<ChevronsUpDownIcon class="size-4 flex-none opacity-60" aria-hidden="true" />
 					</Button>
@@ -96,6 +110,17 @@
 					<Command.List aria-label="Authorities">
 						<Command.Empty>No authority matches.</Command.Empty>
 						<Command.Group>
+							{#if clearable}
+								<Command.Item
+									value="__none__"
+									keywords={['none', 'clear', 'no authority']}
+									onSelect={() => choose('')}
+									data-checked={value === ''}
+								>
+									<CircleSlashIcon class="text-ink-muted" aria-hidden="true" />
+									<span class="truncate text-ink-muted">No authority</span>
+								</Command.Item>
+							{/if}
 							{#each rows as row (row.slug)}
 								<Command.Item
 									value={row.slug}
@@ -106,7 +131,8 @@
 									<span class="flex min-w-0 flex-1 flex-col">
 										<span class="truncate">{row.name}</span>
 										<span class="truncate font-mono text-xs text-ink-muted">
-											{row.slug} · {row.fact_count} fact{row.fact_count === 1 ? '' : 's'}
+											{row.slug} · {row.fact_count} fact{row.fact_count === 1 ? '' : 's'}{#if showContacts}
+												· {row.contact_count} contact{row.contact_count === 1 ? '' : 's'}{/if}
 										</span>
 									</span>
 								</Command.Item>

@@ -1,0 +1,98 @@
+{
+  "routes": {
+    "/calls": {
+      "name": "fs-calls",
+      "ready": "Recent calls",
+      "build": "admin"
+    },
+    "/calls?authority=usa-wa-sos": {
+      "name": "fs-calls-wa",
+      "ready": "per_document: SYNTHETIC FIXTURE",
+      "build": "admin"
+    },
+    "/email": {
+      "name": "fs-email",
+      "ready": "Recent outreach",
+      "build": "admin"
+    },
+    "/email?authority=usa-wa-sos": {
+      "name": "fs-email-wa",
+      "ready": "of 12 ticked",
+      "build": "admin"
+    },
+    "/email?authority=usa-wa-sos&email=31": {
+      "name": "fs-email-draft",
+      "ready": "Review before sending",
+      "build": "admin"
+    }
+  },
+  "api": [
+    {
+      "path": "^/apostille/api/v1/admin/authorities$",
+      "fixture": "admin-authorities.json"
+    },
+    {
+      "path": "^/apostille/api/v1/calls$",
+      "fixture": "admin-calls.json"
+    },
+    {
+      "path": "^/apostille/api/v1/admin/first-source/usa-wa-sos/questions$",
+      "fixture": "admin-first-source-questions-usa-wa-sos.json"
+    },
+    {
+      "method": "POST",
+      "path": "^/apostille/api/v1/admin/first-source/[^/]+/contacts$",
+      "fixture": "admin-first-source-contact-added.json",
+      "status": 201
+    },
+    {
+      "path": "^/apostille/api/v1/admin/first-source/emails$",
+      "fixture": "admin-outreach-emails.json"
+    },
+    {
+      "method": "POST",
+      "path": "^/apostille/api/v1/admin/first-source/emails$",
+      "fixture": "admin-outreach-email-drafted.json",
+      "status": 201
+    },
+    {
+      "method": "PUT",
+      "path": "^/apostille/api/v1/admin/first-source/emails/31$",
+      "fixture": "admin-outreach-email-31.json"
+    },
+    {
+      "method": "POST",
+      "path": "^/apostille/api/v1/admin/first-source/emails/[0-9]+/send$",
+      "status": 503,
+      "json": {
+        "error": "no mailer configured (mailer.provider in /config)"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "^/apostille/api/v1/admin/first-source/emails/[0-9]+/discard$",
+      "json": {
+        "email": {
+          "id": 31,
+          "slug": "usa-wa-sos",
+          "to": "apostille-desk@sos-wa.example.test",
+          "subject": "Apostille procedures at the Washington Secretary of State: four short questions",
+          "body": "Hello USA — Washington Secretary of State team,\n\nWe keep a public guide to apostilles from your office, and we want every step in it to match how you work today. Would you help us with a short reply to the questions below?\n\n1. We list: \"per_document: SYNTHETIC FIXTURE: the fee is eight dollars for each document.\". Is that still correct?\n2. What is the full mailing address for mail-in requests, and is a different street address used for FedEx or UPS?\n3. What steps must a document complete before it reaches your office, for example a county clerk certification?\n4. We list: \"po_box: SYNTHETIC FIXTURE: requests by mail go to the PO box printed on the request form.\". Is that still correct?\n\nThank you for your time and for the work your office does. A reply to this email is all we need, and no attachments are necessary.\n\nApostille Handbook research team\nhttps://andrii.ai/apostille",
+          "questions": [
+            "We list: \"per_document: SYNTHETIC FIXTURE: the fee is eight dollars for each document.\". Is that still correct?",
+            "What is the full mailing address for mail-in requests, and is a different street address used for FedEx or UPS?",
+            "What steps must a document complete before it reaches your office, for example a county clerk certification?",
+            "We list: \"po_box: SYNTHETIC FIXTURE: requests by mail go to the PO box printed on the request form.\". Is that still correct?"
+          ],
+          "status": "discarded",
+          "model": "muse-spark-1.3",
+          "note": "",
+          "error": "",
+          "drafted_at": 1793695400,
+          "sent_at": null,
+          "reply_capture_id": null
+        }
+      }
+    }
+  ]
+}

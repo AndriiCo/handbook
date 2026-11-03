@@ -1,0 +1,34 @@
+{
+ "authorities": [
+  {
+   "slug": "hcch",
+   "name": "HCCH — Apostille Section",
+   "country": "Netherlands",
+   "region": "",
+   "kind": "office",
+   "fact_count": 1,
+   "proposed_count": 0,
+   "contact_count": 1
+  },
+  {
+   "slug": "usa-wa-sos",
+   "name": "USA — Washington Secretary of State",
+   "country": "United States",
+   "region": "Washington",
+   "kind": "state",
+   "fact_count": 9,
+   "proposed_count": 1,
+   "contact_count": 3
+  },
+  {
+   "slug": "vietnam",
+   "name": "Vietnam — Ministry of Foreign Affairs",
+   "country": "Vietnam",
+   "region": "",
+   "kind": "country",
+   "fact_count": 3,
+   "proposed_count": 2,
+   "contact_count": 1
+  }
+ ]
+}
