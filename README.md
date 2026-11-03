@@ -137,7 +137,7 @@ Number provenance (measured this turn vs carried):
 - 106 authorities = 59 + 33 + 14 — parsed from the pack files this turn.
 - FedEx caps (2/day, $60, off by default) — read from `crates/config/src/lib.rs` defaults this turn.
 - Planted faults 181/182 — carried from the README's cited 2026-11-02 re-measurement; not re-run this turn.
-- S1 submission row is still red and stays honest: proprietary LICENSE kept (never MIT), repo visibility private per scoreboard, video line operator-owned (lands 11-03).
+- S1 submission row stays honest: the source code is source-available under PolyForm Noncommercial 1.0.0 (not an OSI licence, so the row's MIT/Apache check stays red), repo visibility is the operator's call, and the video line is operator-owned.
 
 ## What's next
 
@@ -210,7 +210,8 @@ web/                     public + admin SPAs (SvelteKit, adapter-static)
 xtask/                   task runner (`cargo xtask ci` = fmt check, clippy, tests)
 docs/prompts/            complete log of prompts and responses
 AGENTS.md                working agreements for coding agents
-LICENSE                  proprietary license, Andrii Co.
+LICENSE                  PolyForm Noncommercial 1.0.0 (source code)
+LICENSE-CONTENT.md       handbook content, all rights reserved
 ```
 
 Build, test, and lint:
@@ -267,8 +268,21 @@ alongside the work it produced.
 
 ## License
 
-Proprietary. Copyright (c) 2026 Andrii Co. All rights reserved.
-See [LICENSE](LICENSE).
+The source code is source-available under the
+[PolyForm Noncommercial License 1.0.0](LICENSE): free for
+noncommercial use (personal, research, education, nonprofit and
+government); commercial use needs a separate license. The licensing
+notes at the top of [LICENSE](LICENSE) explain that terms for new
+licensees may change, that other agreements (click-wrap or otherwise)
+may alter your rights, and how to get a mutual or timestamped
+acceptance: email license@andrii.ai with the full license text and your
+or your company's details.
+
+The Apostille Handbook content (handbook text, data, facts, forms,
+images and documentation) stays all rights reserved; see
+[LICENSE-CONTENT.md](LICENSE-CONTENT.md).
+
+Copyright (c) 2026 Andrii Co.
 
 Brand font: headings use Vogun Medium (Yukita Creative), a proprietary
 face licensed to Andrii Co. It is staged at build time from

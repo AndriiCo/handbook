@@ -168,8 +168,8 @@ KEK=/path/to/kek-file STORE=/var/lib/apostille
 set() { cargo xtask config-set --store "$STORE" --kek-file "$KEK" \
   --key "$1" --type "$2" --value "$3"; }
 # From the current apostille.service Environment= lines:
-set net.bind text 199.184.91.41
-set net.bind6 text 2602:f337:ed:4841:4c07:3930:3030:9000
+set net.bind text <server IPv4>
+set net.bind6 text <server IPv6>
 set paths.spa_dir text /srv/apostille/current/spa
 set net.public_host text andrii.ai
 set tls.cert_file text /var/lib/apostille/tls/cert.pem

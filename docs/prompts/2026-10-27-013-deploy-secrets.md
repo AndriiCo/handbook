@@ -9,7 +9,7 @@
 
 The login credentials for web-server are stored on this mashine
 and you can login via "ssh andrii-ai" to it. You can use only
-199.184.91.41 and 2602:f337:ed:4841:4c07:3930:3030:9000 to serve
+<server IPv4> and <server IPv6> to serve
 andrii.ai content and do any web-research. I will provide
 additional box for staging environment and testing later (make a
 plan to use it effectively), but for now you can build a binary

@@ -286,3 +286,4 @@
 | 378 | 2026-11-03 17:06Z | Config guide: every formerly Reserved key documented as live code | Reserved label gone; orders/labels/usps/pipeline setup steps rewritten; web 180, e2e 26, demo 3/3 |
 | 379 | 2026-11-03 17:23Z | Fix the verified findings of the P374-P376 money-path review | download≠refusal, USPS live cap, run ids, claim guard, phone; web 410 |
 | 380 | 2026-11-03 17:30Z | Staging acceptance of the P373-P379 candidate | a2abb38: plant green, staging 9/10 (S1 only) + demo 3/3 |
+| 381 | 2026-11-03 17:47Z | Adopt PolyForm NonCommercial for the source code; close the S1 gap | LICENSE = notice + verbatim PolyForm NC 1.0.0; content all rights reserved; scrub + history scan clean |

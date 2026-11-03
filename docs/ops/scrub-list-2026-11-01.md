@@ -11,7 +11,7 @@ Global findings (whole scope):
 - No emails, phone numbers, PEM blocks, or key-like tokens anywhere.
 - Hostnames are only `andrii.ai`, `admin.andrii.ai`, `www.andrii.ai`
   (all public) plus the alias `plant` (no DNS name, IP or key in repo).
-- One public server IP (`199.184.91.41`) in two prompt files, plus one
+- One public server IP (`<server IPv4>`) in two prompt files, plus one
   public IPv6 in one of them — redact (rows below).
 - `169.254.169.254` in `security-review-2026-10-27.md` is the well-known
   link-local metadata address inside an exploit description — keep.
