@@ -622,6 +622,27 @@ impl HttpTransport for RefTransport<'_> {
     ) -> Result<crate::client::HttpResponse, TransportError> {
         self.inner.delete(url, bearer)
     }
+
+    fn post_json_with(
+        &self,
+        url: &str,
+        bearer: &str,
+        accept: Option<&str>,
+        headers: &[(&str, &str)],
+        body: &Value,
+    ) -> Result<crate::client::HttpResponse, TransportError> {
+        self.inner
+            .post_json_with(url, bearer, accept, headers, body)
+    }
+
+    fn delete_with(
+        &self,
+        url: &str,
+        bearer: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<crate::client::HttpResponse, TransportError> {
+        self.inner.delete_with(url, bearer, headers)
+    }
 }
 
 // ---------------------------------------------------------------------------

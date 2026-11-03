@@ -27,6 +27,8 @@ pub mod manual;
 pub mod payload;
 pub mod printable;
 pub mod purchase;
+pub mod track;
+pub mod usps;
 
 pub use carrier::{Carrier, CarrierError, MailHop, carrier_for_hop, service_name};
 pub use client::{

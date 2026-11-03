@@ -55,6 +55,42 @@ pub trait HttpTransport {
     fn get(&self, url: &str, bearer: &str) -> Result<HttpResponse, TransportError>;
 
     fn delete(&self, url: &str, bearer: &str) -> Result<HttpResponse, TransportError>;
+
+    /// POST with extra request headers (USPS reads its payment token
+    /// from `X-Payment-Authorization-Token`). A transport that cannot
+    /// set headers refuses rather than silently dropping one.
+    fn post_json_with(
+        &self,
+        url: &str,
+        bearer: &str,
+        accept: Option<&str>,
+        headers: &[(&str, &str)],
+        body: &Value,
+    ) -> Result<HttpResponse, TransportError> {
+        if headers.is_empty() {
+            self.post_json(url, bearer, accept, body)
+        } else {
+            Err(TransportError::new(
+                "this transport cannot send extra headers",
+            ))
+        }
+    }
+
+    /// DELETE with extra request headers (see [`Self::post_json_with`]).
+    fn delete_with(
+        &self,
+        url: &str,
+        bearer: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<HttpResponse, TransportError> {
+        if headers.is_empty() {
+            self.delete(url, bearer)
+        } else {
+            Err(TransportError::new(
+                "this transport cannot send extra headers",
+            ))
+        }
+    }
 }
 
 /// Live [`HttpTransport`] over ureq (rustls, pure Rust).
@@ -111,12 +147,46 @@ impl HttpTransport for UreqTransport {
     }
 
     fn delete(&self, url: &str, bearer: &str) -> Result<HttpResponse, TransportError> {
-        let response = self
+        self.delete_with(url, bearer, &[])
+    }
+
+    fn post_json_with(
+        &self,
+        url: &str,
+        bearer: &str,
+        accept: Option<&str>,
+        headers: &[(&str, &str)],
+        body: &Value,
+    ) -> Result<HttpResponse, TransportError> {
+        let mut request = self
+            .agent
+            .post(url)
+            .header("Authorization", format!("Bearer {bearer}"))
+            .header("Content-Type", "application/json");
+        if let Some(accept) = accept {
+            request = request.header("Accept", accept.to_string());
+        }
+        for (name, value) in headers {
+            request = request.header(*name, value.to_string());
+        }
+        let response = request.send_json(body).map_err(TransportError::from_ureq)?;
+        finish(response)
+    }
+
+    fn delete_with(
+        &self,
+        url: &str,
+        bearer: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<HttpResponse, TransportError> {
+        let mut request = self
             .agent
             .delete(url)
-            .header("Authorization", format!("Bearer {bearer}"))
-            .call()
-            .map_err(TransportError::from_ureq)?;
+            .header("Authorization", format!("Bearer {bearer}"));
+        for (name, value) in headers {
+            request = request.header(*name, value.to_string());
+        }
+        let response = request.call().map_err(TransportError::from_ureq)?;
         finish(response)
     }
 }
@@ -249,23 +319,34 @@ pub struct UspsClient<T: HttpTransport> {
     base_url: String,
     transport: T,
     certified: bool,
-    paper: crate::PaperSize,
 }
 
 impl<T: HttpTransport> UspsClient<T> {
+    /// USPS always images a 4x6 PDF (`imageInfo.labelType`); the paper a
+    /// customer prints it on is recorded on our label row only.
     pub fn new(base_url: &str, transport: T, certified: bool) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             transport,
             certified,
-            paper: crate::PaperSize::FourBySix,
         }
     }
 
-    /// Prepaid paper size for bought labels (Option B). Defaults to 4x6.
-    pub fn with_paper(mut self, paper: crate::PaperSize) -> Self {
-        self.paper = paper;
-        self
+    /// Cancel a label bought with `payment_token` (the label API reads
+    /// the same payment header on DELETE; TEM: confirm).
+    pub fn cancel_paid(
+        &self,
+        bearer: &str,
+        payment_token: &str,
+        tracking_no: &str,
+    ) -> Result<(), LabelError> {
+        check_tracking(tracking_no)?;
+        let encoded = tracking_no.trim().replace(' ', "%20");
+        let url = format!("{}/labels/v3/label/{encoded}", self.base_url);
+        let headers = [(crate::usps::PAYMENT_HEADER, payment_token)];
+        let response = self.transport.delete_with(&url, bearer, &headers)?;
+        check_ok(&response)?;
+        Ok(())
     }
 
     fn label_url(&self, direction: Direction) -> String {
@@ -290,21 +371,24 @@ impl<T: HttpTransport> LabelClient for UspsClient<T> {
             return Err(LabelError::NotReady);
         }
         check_payment_ref(request.payment_ref)?;
-        let body = usps_label_body_with_paper(request, self.paper);
-        let response = self.transport.post_json(
+        let body = usps_label_body(request);
+        let headers = [(crate::usps::PAYMENT_HEADER, request.payment_ref)];
+        let response = self.transport.post_json_with(
             &self.label_url(request.direction),
             bearer,
             Some(USPS_LABELS_ACCEPT),
+            &headers,
             &body,
         )?;
         check_ok(&response)?;
         let json: Value = serde_json::from_slice(&response.body)
             .map_err(|e| LabelError::BadResponse(e.to_string()))?;
-        let tracking_no = find_tracking(&json).ok_or_else(|| {
+        let (tracking, postage) = crate::usps::label_metadata(&json);
+        let tracking_no = tracking.or_else(|| find_tracking(&json)).ok_or_else(|| {
             LabelError::BadResponse("no tracking number in usps answer".to_string())
         })?;
         let label_pdf = label_bytes(&json, &self.transport, bearer)?;
-        let postage_cost_cents = find_cents(&json);
+        let postage_cost_cents = postage.or_else(|| find_cents(&json));
         Ok(BuyOutcome {
             tracking_no,
             label_pdf,
@@ -391,49 +475,13 @@ impl<T: HttpTransport> LabelClient for FedExClient<T> {
     }
 }
 
-/// USPS Labels v3 label request body. Field names follow the public
-/// migration guide + catalog; verify against the v3 spec at
-/// integration (sandbox) time.
+/// USPS Labels v3 label request body ([`crate::usps::label_body`]),
+/// mailed today. The payment token travels as a header, never here.
 pub fn usps_label_body(request: &BuyRequest) -> Value {
-    usps_label_body_with_paper(request, crate::PaperSize::FourBySix)
-}
-
-/// [`usps_label_body`] with an explicit prepaid paper size (Option B).
-/// The default body keeps 4x6 so existing callers are unaffected.
-pub fn usps_label_body_with_paper(request: &BuyRequest, paper: crate::PaperSize) -> Value {
-    let payload = request.payload;
-    let dims = payload.parcel.dims();
-    json!({
-        "fromAddress": usps_address(&payload.from),
-        "toAddress": usps_address(&payload.to),
-        "packageDescription": {
-            // USPS bills in ounces/pounds; grams convert up (ceil).
-            "weightLbs": 0,
-            "weightOz": dims.weight_g.div_ceil(28),
-            "lengthIn": (dims.length_cm / 2.54).ceil() as u32,
-            "widthIn": (dims.width_cm / 2.54).ceil() as u32,
-            "heightIn": (dims.height_cm / 2.54).ceil() as u32,
-            "mailClass": usps_mail_class(payload.service),
-        },
-        "labelSpecification": {
-            "imageType": "PDF",
-            "paperSize": paper.usps_label_option(),
-        },
-        "paymentAuthorizationToken": request.payment_ref,
-    })
-}
-
-fn usps_address(address: &crate::PostalAddress) -> Value {
-    json!({
-        "name": address.name,
-        "streetAddress": address.street1,
-        "secondaryAddress": address.street2,
-        "city": address.city,
-        "state": address.state_province,
-        "zipCode": address.postal,
-        "country": address.country,
-        "phone": address.phone,
-    })
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    crate::usps::label_body(request.payload, request.direction, now)
 }
 
 /// FedEx Ship v1 shipment body. Enum spellings follow the public Ship
@@ -671,6 +719,7 @@ mod tests {
         pub(crate) last_bearer: RefCell<String>,
         pub(crate) last_accept: RefCell<Option<String>>,
         pub(crate) last_body: RefCell<Value>,
+        pub(crate) last_headers: RefCell<Vec<(String, String)>>,
     }
 
     impl StubTransport {
@@ -684,6 +733,7 @@ mod tests {
                 last_bearer: RefCell::new(String::new()),
                 last_accept: RefCell::new(None),
                 last_body: RefCell::new(Value::Null),
+                last_headers: RefCell::new(Vec::new()),
             }
         }
     }
@@ -713,6 +763,34 @@ mod tests {
             *self.last_url.borrow_mut() = url.to_string();
             *self.last_bearer.borrow_mut() = bearer.to_string();
             Ok(self.response.borrow().clone())
+        }
+
+        fn post_json_with(
+            &self,
+            url: &str,
+            bearer: &str,
+            accept: Option<&str>,
+            headers: &[(&str, &str)],
+            body: &Value,
+        ) -> Result<HttpResponse, TransportError> {
+            *self.last_headers.borrow_mut() = headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            self.post_json(url, bearer, accept, body)
+        }
+
+        fn delete_with(
+            &self,
+            url: &str,
+            bearer: &str,
+            headers: &[(&str, &str)],
+        ) -> Result<HttpResponse, TransportError> {
+            *self.last_headers.borrow_mut() = headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            self.delete(url, bearer)
         }
     }
 
@@ -752,8 +830,91 @@ mod tests {
             Some(USPS_LABELS_ACCEPT.to_string())
         );
         let body = client.transport.last_body.borrow();
-        assert_eq!(body["packageDescription"]["mailClass"], json!("PRIORITY"));
-        assert_eq!(body["paymentAuthorizationToken"], json!("pay-synthetic"));
+        assert_eq!(
+            body["packageDescription"]["mailClass"],
+            json!("PRIORITY_MAIL")
+        );
+        assert_eq!(body["imageInfo"]["labelType"], json!("4X6LABEL"));
+        // The payment token is a header, never in the body (shipping-design §5.1).
+        assert!(body.get("paymentAuthorizationToken").is_none());
+        assert_eq!(
+            *client.transport.last_headers.borrow(),
+            vec![(
+                "X-Payment-Authorization-Token".to_string(),
+                "pay-synthetic".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn usps_v3_label_metadata_answers_parse() {
+        use base64::Engine as _;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(b"%PDF-1.4 synthetic v3");
+        let answer = serde_json::to_vec(&json!({
+            "labelMetadata": {"trackingNumber": "9405 5111 0000 0000 0000 00", "postage": 9.85},
+            "labelImage": encoded,
+        }))
+        .unwrap();
+        let client = UspsClient::new(USPS_BASE_TEST, StubTransport::canned(200, &answer), true);
+        let payload = crate::payload::tests::sample_payload();
+        let request = BuyRequest {
+            payload: &payload,
+            direction: Direction::Outbound,
+            payment_ref: "pay-synthetic",
+        };
+        let outcome = client.buy("bearer-synthetic", &request).unwrap();
+        assert_eq!(outcome.tracking_no, "9405 5111 0000 0000 0000 00");
+        assert_eq!(outcome.postage_cost_cents, Some(985));
+        client
+            .cancel_paid("bearer-synthetic", "pay-synthetic", "9405 5111")
+            .unwrap();
+        assert_eq!(
+            *client.transport.last_url.borrow(),
+            "https://apis-tem.usps.com/labels/v3/label/9405%205111"
+        );
+        assert_eq!(client.transport.last_headers.borrow().len(), 1);
+    }
+
+    #[test]
+    fn a_transport_without_header_support_refuses_instead_of_dropping() {
+        struct Plain;
+        impl HttpTransport for Plain {
+            fn post_json(
+                &self,
+                _: &str,
+                _: &str,
+                _: Option<&str>,
+                _: &Value,
+            ) -> Result<HttpResponse, TransportError> {
+                Ok(HttpResponse {
+                    status: 200,
+                    body: Vec::new(),
+                })
+            }
+            fn get(&self, _: &str, _: &str) -> Result<HttpResponse, TransportError> {
+                Ok(HttpResponse {
+                    status: 200,
+                    body: Vec::new(),
+                })
+            }
+            fn delete(&self, _: &str, _: &str) -> Result<HttpResponse, TransportError> {
+                Ok(HttpResponse {
+                    status: 200,
+                    body: Vec::new(),
+                })
+            }
+        }
+        assert!(
+            Plain
+                .post_json_with("u", "b", None, &[("X", "y")], &Value::Null)
+                .is_err()
+        );
+        assert!(
+            Plain
+                .post_json_with("u", "b", None, &[], &Value::Null)
+                .is_ok()
+        );
+        assert!(Plain.delete_with("u", "b", &[("X", "y")]).is_err());
     }
 
     #[test]
@@ -860,22 +1021,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn with_paper_reaches_the_wire() {
-        let transport = StubTransport::canned(200, &usps_answer());
-        let client =
-            UspsClient::new(USPS_BASE_TEST, transport, true).with_paper(crate::PaperSize::Letter);
-        let payload = crate::payload::tests::sample_payload();
-        let request = BuyRequest {
-            payload: &payload,
-            direction: Direction::Outbound,
-            payment_ref: "pay-synthetic",
-        };
-        client.buy("bearer-synthetic", &request).unwrap();
-        let body = client.transport.last_body.borrow();
-        assert_eq!(body["labelSpecification"]["paperSize"], json!("LETTER"));
-    }
-
     /// The live transport against a stub HTTP server on an ephemeral
     /// port (`port 0`): proves the real request path — method, auth
     /// header, accept header, JSON body — without touching carriers.
@@ -928,7 +1073,12 @@ mod tests {
         let wire_json: serde_json::Value = serde_json::from_str(wire_body).unwrap();
         assert_eq!(
             wire_json["packageDescription"]["mailClass"],
-            serde_json::json!("PRIORITY"),
+            serde_json::json!("PRIORITY_MAIL"),
+            "{seen}"
+        );
+        // The payment token reaches the wire as its header.
+        assert!(
+            head_lower.contains("x-payment-authorization-token: pay-synthetic\r\n"),
             "{seen}"
         );
     }

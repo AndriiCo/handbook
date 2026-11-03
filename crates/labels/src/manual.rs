@@ -276,7 +276,7 @@ mod tests {
             };
             assert_eq!(task.status, LabelStatus::Pending);
             assert!(task.api_error.is_some());
-            assert_eq!(task.payload_json["labelSpecification"]["imageType"], "PDF");
+            assert_eq!(task.payload_json["imageInfo"]["imageType"], "PDF");
         }
     }
 

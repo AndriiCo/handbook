@@ -905,21 +905,32 @@ async fn purchase_prepaid(
         );
     }
     // Certified: buy over HTTP on a blocking thread (ureq is blocking).
-    // No OAuth in this slice: the bearer is empty, which only stub
-    // backends accept. TEM OAuth is a credentialing follow-up; the
-    // sandbox guard above is what keeps real money safe.
+    // With USPS credentials set, a real TEM bearer and payment token;
+    // without them only a loopback stub answers (empty bearer). The
+    // sandbox guard above keeps this path off production postage: live
+    // USPS postage is bought only for paid orders (`customer_labels`).
     // No connection is alive across the await below (each phase
     // opens its own; `Connection` is `!Sync`).
     let payload = shipment.payload.clone();
     let base_url = state.label_cfg.usps_base_url.clone();
+    let token_state = state.clone();
     let bought = tokio::task::spawn_blocking(move || {
-        let client = UspsClient::new(&base_url, UreqTransport::new(), true).with_paper(paper);
+        let (bearer, payment) = match crate::usps::test_tokens(&token_state) {
+            Some(Ok(tokens)) => tokens,
+            Some(Err(e)) => {
+                return Err(labels::LabelError::Transport(labels::TransportError::new(
+                    e,
+                )));
+            }
+            None => (String::new(), "sandbox-unbilled".to_string()),
+        };
+        let client = UspsClient::new(&base_url, UreqTransport::new(), true);
         let request = BuyRequest {
             payload: &payload,
             direction,
-            payment_ref: "sandbox-unbilled",
+            payment_ref: &payment,
         };
-        client.buy("", &request)
+        client.buy(&bearer, &request)
     })
     .await;
     let bought = bought.unwrap_or_else(|e| {
@@ -1028,7 +1039,7 @@ fn queue_manual(
         direction,
         payment_ref: "sandbox-unbilled",
     };
-    let payload_json = labels::client::usps_label_body_with_paper(&request, paper).to_string();
+    let payload_json = labels::client::usps_label_body(&request).to_string();
     let inserted = p2.execute(
         "INSERT INTO shipping_label(shipment_id, direction, carrier, service, tracking_no,
                                    payload_json, status, created_at, purchase_option,
@@ -1405,9 +1416,16 @@ async fn void_label(
         }
         let base_url = state.label_cfg.usps_base_url.clone();
         let tracking = row.tracking_no.clone();
+        let token_state = state.clone();
         let cancelled = tokio::task::spawn_blocking(move || {
             let client = UspsClient::new(&base_url, UreqTransport::new(), true);
-            client.cancel("", &tracking)
+            match crate::usps::test_tokens(&token_state) {
+                Some(Ok((bearer, payment))) => client.cancel_paid(&bearer, &payment, &tracking),
+                Some(Err(e)) => Err(labels::LabelError::Transport(labels::TransportError::new(
+                    e,
+                ))),
+                None => client.cancel("", &tracking),
+            }
         })
         .await;
         let cancelled = cancelled.unwrap_or_else(|e| {
@@ -2007,8 +2025,17 @@ mod tests {
         );
         let wire_body = seen[0].split("\r\n\r\n").nth(1).unwrap_or("");
         let wire: serde_json::Value = serde_json::from_str(wire_body).unwrap();
-        assert_eq!(wire["packageDescription"]["mailClass"], "PRIORITY");
-        assert_eq!(wire["labelSpecification"]["paperSize"], "LETTER");
+        // The documented v3 shape: imageInfo, PRIORITY_MAIL, and the
+        // payment token as a header (no credentials here: the stub token).
+        assert_eq!(wire["packageDescription"]["mailClass"], "PRIORITY_MAIL");
+        assert_eq!(wire["imageInfo"]["labelType"], "4X6LABEL");
+        assert!(
+            seen[0]
+                .to_ascii_lowercase()
+                .contains("x-payment-authorization-token: sandbox-unbilled\r\n"),
+            "{}",
+            seen[0]
+        );
         // ...but the cost IS recorded server-side.
         let store = Store::new(&fixture.state.store_root);
         let p2 = db::open_p2(&store).unwrap();

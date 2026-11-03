@@ -3107,6 +3107,109 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tracking_moves_orders_on_the_carriers_word_and_stops_when_delivered() {
+        use labels::track::{TrackingScan, TrackingStatus};
+        let fx = fixture();
+        seal(
+            &fx,
+            config::keys::LABELS_CUSTOMER_LIVE,
+            config::ConfigType::Bool,
+            b"1",
+        );
+        let id = paid_label_order(&fx);
+        let sandbox = |_: &AppState, _: &rusqlite::Connection, _: &str, _: bool| {
+            Ok(Box::new(customer_labels::FedexLink {
+                base: labels::FEDEX_BASE_SANDBOX.to_string(),
+                bearer: "synthetic".to_string(),
+                account: "000000000".to_string(),
+                transport: labels::live::SandboxTransport::new(
+                    labels::live::FixtureSet::synthetic(),
+                ),
+            }) as Box<dyn customer_labels::LabelLink>)
+        };
+        assert_eq!(
+            customer_labels::buy_order(&fx.state, &id, &sandbox),
+            customer_labels::BuyEnd::Ready
+        );
+        {
+            // The recorded fixture reuses one number; give each leg its own.
+            let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+            p2.execute(
+                "UPDATE order_shipment SET tracking_number = 'SYNTH-' || role WHERE order_id = ?1",
+                [&id],
+            )
+            .unwrap();
+        }
+        let mut billing = fx.state.bus.subscribe("billing:cust-1");
+        let scan = |code: &str, text: &str, at: &str| TrackingScan {
+            code: code.into(),
+            text: text.into(),
+            at: at.into(),
+            place: "OLYMPIA, WA".into(),
+        };
+        let calls = std::cell::RefCell::new(Vec::<String>::new());
+        let moving = |_: &str, tn: &str| -> Result<tracking::Fetched, String> {
+            calls.borrow_mut().push(tn.to_string());
+            Ok((
+                Some(TrackingStatus::InTransit),
+                vec![scan("IT", "In transit", "2026-11-04T08:00:00")],
+            ))
+        };
+        let now = 1_900_000_000;
+        assert_eq!(tracking::poll_once(&fx.state, now, &moving), 2);
+        assert_eq!(order_status(&fx, &id), "in_transit");
+        let msg: serde_json::Value =
+            serde_json::from_str(&billing.try_recv().expect("tracking.update")).unwrap();
+        assert_eq!(msg["type"], "tracking.update");
+        assert_eq!(msg["order_id"], id);
+        // Polled again too soon: nothing is fetched.
+        assert_eq!(tracking::poll_once(&fx.state, now + 60, &moving), 0);
+        assert_eq!(calls.borrow().len(), 2);
+        // An hour later the same scans are duplicates: no new events.
+        assert_eq!(tracking::poll_once(&fx.state, now + 3_700, &moving), 0);
+        // The return leg delivered: the order is done, and a delivered
+        // number is never polled again.
+        let delivered = |_: &str, tn: &str| -> Result<tracking::Fetched, String> {
+            calls.borrow_mut().push(tn.to_string());
+            let status = if tn.ends_with("return") {
+                TrackingStatus::Delivered
+            } else {
+                TrackingStatus::InTransit
+            };
+            Ok((
+                Some(status),
+                vec![scan("DL", "Delivered", "2026-11-06T10:00:00")],
+            ))
+        };
+        assert_eq!(tracking::poll_once(&fx.state, now + 7_400, &delivered), 2);
+        assert_eq!(order_status(&fx, &id), "delivered");
+        let before = calls.borrow().len();
+        tracking::poll_once(&fx.state, now + 20_000, &delivered);
+        assert!(
+            calls.borrow()[before..].is_empty(),
+            "a delivered order is never polled again"
+        );
+        // A carrier error is recorded and skipped, never fatal.
+        let id2 = paid_label_order(&fx);
+        assert_eq!(
+            customer_labels::buy_order(&fx.state, &id2, &sandbox),
+            customer_labels::BuyEnd::Ready
+        );
+        {
+            let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+            p2.execute(
+                "UPDATE order_shipment SET tracking_number = 'SYNTH2-' || role WHERE order_id = ?1",
+                [&id2],
+            )
+            .unwrap();
+        }
+        let failing =
+            |_: &str, _: &str| -> Result<tracking::Fetched, String> { Err("http 503".into()) };
+        assert_eq!(tracking::poll_once(&fx.state, now + 30_000, &failing), 0);
+        assert_eq!(order_status(&fx, &id2), "labels_ready");
+    }
+
+    #[tokio::test]
     async fn staff_advance_never_moves_money_states() {
         // Review #12/#28: advance is for fulfilment; paid/refunded/
         // canceled-after-payment go through settle and refund only.

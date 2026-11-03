@@ -169,6 +169,20 @@ fn fedex_creds(state: &AppState, meta: &Connection) -> Option<FedexCreds> {
     })
 }
 
+/// FedEx base and a fresh bearer for read-only calls (tracking), or
+/// `None` while credentials are unset (blocking).
+pub(crate) fn fedex_bearer(
+    state: &AppState,
+    meta: &Connection,
+) -> Option<Result<(String, String), String>> {
+    let creds = fedex_creds(state, meta)?;
+    Some(
+        crate::fedex_live::fetch_bearer(creds.base, &creds.client_id, &creds.client_secret)
+            .map(|bearer| (creds.base.to_string(), bearer))
+            .map_err(|e| e.to_string()),
+    )
+}
+
 /// Test money only buys test postage, live money only live postage.
 pub fn fedex_mode_ok(base: &str, stripe_live: bool) -> bool {
     (base == labels::FEDEX_BASE_PROD) == stripe_live
@@ -241,6 +255,28 @@ impl HttpTransport for By<'_> {
 
     fn delete(&self, url: &str, bearer: &str) -> Result<HttpResponse, TransportError> {
         self.0.delete(url, bearer)
+    }
+
+    // The header-carrying calls must forward too: the trait's default
+    // refuses extra headers, which would drop USPS's payment token.
+    fn post_json_with(
+        &self,
+        url: &str,
+        bearer: &str,
+        accept: Option<&str>,
+        headers: &[(&str, &str)],
+        body: &Value,
+    ) -> Result<HttpResponse, TransportError> {
+        self.0.post_json_with(url, bearer, accept, headers, body)
+    }
+
+    fn delete_with(
+        &self,
+        url: &str,
+        bearer: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<HttpResponse, TransportError> {
+        self.0.delete_with(url, bearer, headers)
     }
 }
 
