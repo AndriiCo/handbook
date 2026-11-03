@@ -3606,6 +3606,145 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn outreach_email_is_drafted_reviewed_and_sent_with_our_message_id() {
+        if std::env::var("META_API_KEY").is_ok_and(|k| !k.is_empty()) {
+            eprintln!("skip: META_API_KEY is set; this test must not call the model");
+            return;
+        }
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "New York",
+                name: "Synthetic NY DoS",
+                slug: "synthetic-ny-dos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        drop(conn);
+        let mail_dir = fx.state.store_root.join("mail-out");
+        std::fs::create_dir_all(&mail_dir).unwrap();
+        let mut state = fx.state.clone();
+        state.mailer = Some(magic::Mailer::File(magic::FileMailer {
+            dir: mail_dir.clone(),
+        }));
+        let call = |method: &str, uri: &str, body: Option<serde_json::Value>| {
+            admin_request(
+                method,
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("tok"),
+                Some("https://admin.andrii.ai"),
+                body,
+            )
+        };
+        let app = || admin::router(state.clone()).merge(mission_admin_routers(&state));
+        let read = |res: axum::response::Response| async move {
+            let status = res.status();
+            let v: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+            (status, v)
+        };
+
+        // No model key here: the fixed template drafts, and says so.
+        let (status, v) = read(
+            app()
+                .oneshot(call(
+                    "POST",
+                    "/apostille/api/v1/admin/first-source/emails",
+                    Some(
+                        json!({"slug": "synthetic-ny-dos", "to": "Apostille@Example.gov",
+                                "questions": ["What is the fee per document?",
+                                              "Which form should applicants use?"]}),
+                    ),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{v}");
+        let email = &v["email"];
+        let id = email["id"].as_i64().unwrap();
+        assert_eq!(email["status"], "draft");
+        assert_eq!(email["model"], "template");
+        assert_eq!(email["to"], "apostille@example.gov");
+        assert!(
+            email["body"]
+                .as_str()
+                .unwrap()
+                .contains("1. What is the fee per document?\n2. Which form should applicants use?")
+        );
+
+        // Staff edit, then send: one file in the outbox with our Message-ID.
+        let (status, v) = read(
+            app()
+                .oneshot(call(
+                    "PUT",
+                    &format!("/apostille/api/v1/admin/first-source/emails/{id}"),
+                    Some(
+                        json!({"to": "apostille@example.gov", "subject": "Two questions",
+                                "body": "Hello,\n\n1. What is the fee per document?\n\nThanks."}),
+                    ),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        let (status, v) = read(
+            app()
+                .oneshot(call(
+                    "POST",
+                    &format!("/apostille/api/v1/admin/first-source/emails/{id}/send"),
+                    None,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        assert_eq!(v["email"]["status"], "sent");
+        let files: Vec<_> = std::fs::read_dir(&mail_dir).unwrap().collect();
+        assert_eq!(files.len(), 1);
+        let sent = std::fs::read_to_string(files[0].as_ref().unwrap().path()).unwrap();
+        assert!(sent.contains("Subject: Two questions"), "{sent}");
+        assert!(
+            sent.contains(&format!("Message-ID: <outreach-{id}-")),
+            "{sent}"
+        );
+
+        // A sent email is final: no second send, no edit.
+        let res = app()
+            .oneshot(call(
+                "POST",
+                &format!("/apostille/api/v1/admin/first-source/emails/{id}/send"),
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        // The address we wrote to is now on file as a contact.
+        let (_, v) = read(
+            app()
+                .oneshot(call(
+                    "GET",
+                    "/apostille/api/v1/admin/first-source/synthetic-ny-dos/contacts",
+                    None,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(v["contacts"][0]["value"], "apostille@example.gov");
+    }
+
+    #[tokio::test]
     async fn readable_addresses_serve_the_dossier_with_one_canonical_path() {
         let fx = fixture();
         let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();

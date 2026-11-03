@@ -330,7 +330,9 @@
 		return subscribe(`authority:${current}`, (msg) => {
 			if (current !== slug) return;
 			if (msg?.type === 'fact_accepted') {
-				pushLiveEvent();
+				// A bulk approval is one event carrying every id.
+				const n = Array.isArray(msg?.fact_ids) ? msg.fact_ids.length : 1;
+				pushLiveEvent(n > 1 ? `${n} new facts approved by staff` : undefined);
 				if (typeof msg?.fact_id === 'number') pendingFlashFactId = msg.fact_id;
 				void reload(current).catch(() => {});
 				void loadPlan(current, true);

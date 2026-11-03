@@ -270,3 +270,4 @@
 | 361 | 2026-11-03 13:17Z | Office replies thread back to the outreach email; contacts list | In-Reply-To/References → replied + reply capture; GET contacts; mail 27 |
 | 362 | 2026-11-03 13:26Z | Slugs as usa/washington with us/wa aliases, 3-level county paths | authority_path: derived US state paths + explicit rows; [...trail] dossier; shots 24, demo 3/3 |
 | 363 | 2026-11-03 13:27Z | What it takes to publish NY-depth dossiers (NY, WA, OR, CA, NV, Egypt) | docs/specs/dossier-depth.md: 4 gaps, build order, official sources |
+| 364 | 2026-11-03 13:30Z | Prove outreach draft→edit→send end to end; bulk approvals read as one ledger line | route test (file mailer, Message-ID, 409 on resend); operator page updated (P363b) |
