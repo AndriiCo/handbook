@@ -36,6 +36,11 @@ if (!css) {
 let defined = new Set();
 defined.add('masthead');
 defined.add('menus');
+// Tailwind v4 variant markers: `group` / `peer` emit no rule of their
+// own (they only anchor `group-*:` / `peer-*:` variants, which are
+// checked like any other utility).
+defined.add('group');
+defined.add('peer');
 {
 	const app = readFileSync(join(root, 'src', 'app.css'), 'utf8');
 	for (const m of app.matchAll(/\.([a-zA-Z][\w-]*)/g)) defined.add(m[1]);

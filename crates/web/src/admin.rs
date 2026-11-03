@@ -343,6 +343,7 @@ pub fn router(state: AppState) -> Router {
         // the admin JS bundle (client-routable) but must 404 server-side.
         .route("/mock/{*rest}", get(admin_not_found))
         .route("/apostille/api/v1/me", get(admin_me))
+        .route("/apostille/api/v1/admin/version", get(admin_version))
         .route("/apostille/api/v1/facts", get(approval::list_facts))
         .route(
             "/apostille/api/v1/facts/{id}/accept",
@@ -493,6 +494,28 @@ async fn root_to_review() -> impl IntoResponse {
         StatusCode::SEE_OTHER,
         [(header::LOCATION, HeaderValue::from_static("/review"))],
     )
+}
+
+/// Admin shell env badge: build version, environment label, process
+/// start and schema versions. The label is `production` when the public
+/// origin is andrii.ai, else `APOSTILLE_ENV_LABEL` (staging and judge
+/// boots set it), else `local`. Staff-only, no secrets.
+async fn admin_version(_auth: AdminAuth, State(state): State<AppState>) -> impl IntoResponse {
+    let env = if state.notify_base.starts_with("https://andrii.ai/") {
+        "production".to_string()
+    } else {
+        std::env::var("APOSTILLE_ENV_LABEL")
+            .ok()
+            .filter(|v| matches!(v.as_str(), "staging" | "local" | "judge"))
+            .unwrap_or_else(|| "local".to_string())
+    };
+    Json(json!({
+        "version": crate::FULL_VERSION,
+        "env": env,
+        "started_at": crate::STARTED_AT.get().copied().unwrap_or(0),
+        "schema": db::SCHEMA_VERSION,
+        "p2_schema": db::P2_SCHEMA_VERSION,
+    }))
 }
 
 async fn get_config(auth: AdminAuth, State(state): State<AppState>) -> impl IntoResponse {

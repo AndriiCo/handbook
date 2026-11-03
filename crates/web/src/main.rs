@@ -75,6 +75,9 @@ use tower_http::services::{ServeDir, ServeFile};
 /// Every deploy rebuilds, so `/healthz` always names the release.
 const FULL_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "+", env!("BUILD_SHA"));
 
+/// Unix seconds at boot (admin `/version` env badge).
+static STARTED_AT: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+
 /// Transport that delivered the request (`"tcp"` or `"quic"`).
 /// TCP listeners stamp it via [`insert_tcp_transport`]; the QUIC
 /// bridge stamps it when building the bridged request. Absent in
@@ -1002,6 +1005,7 @@ async fn redirect_to_https(State(host): State<String>, uri: axum::http::Uri) -> 
 
 #[tokio::main]
 async fn main() {
+    let _ = STARTED_AT.set(unix_now());
     // Structured access logs to stdout (journald collects). `info`
     // default; `debug` only on staging via RUST_LOG, never prod.
     tracing_subscriber::fmt()
@@ -2456,6 +2460,48 @@ mod tests {
         anon.close(None).await.unwrap();
 
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn admin_version_is_staff_only_and_names_the_build() {
+        // B2 env badge: staff read the build + env label; no session
+        // is refused, and the public host never serves the route.
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let get = |session: Option<&'static str>| {
+            admin_request(
+                "GET",
+                "/apostille/api/v1/admin/version",
+                Some("admin.andrii.ai"),
+                session,
+                None,
+                None,
+                None,
+            )
+        };
+        let res = admin_router_for(&fx.state)
+            .oneshot(get(Some("staff-1")))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(res.into_body(), 1 << 16)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(v["version"], FULL_VERSION);
+        assert_eq!(v["schema"], db::SCHEMA_VERSION);
+        assert!(matches!(
+            v["env"].as_str(),
+            Some("local" | "staging" | "judge")
+        ));
+        let res = admin_router_for(&fx.state)
+            .oneshot(get(None))
+            .await
+            .unwrap();
+        assert!(matches!(
+            res.status(),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+        ));
     }
 
     #[tokio::test]

@@ -5,6 +5,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { goto, onNavigate } from '$app/navigation';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { STRINGS, resolveLocale, persistLocale, LOCALES, type Locale } from '#lib/i18n';
 	import { listAuthorities } from '#lib/public-ui/handbook.js';
@@ -25,6 +26,10 @@
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
+
+	// The admin console (admin build only) brings its own sidebar shell:
+	// no public masthead, footer or reading-width container there.
+	const isAdmin = $derived(page.route.id?.startsWith('/(admin)') ?? false);
 
 	type Theme = 'light' | 'dark' | 'auto';
 	const THEME_KEY = 'theme';
@@ -224,6 +229,11 @@
 <!-- Theme-init snippet lives in src/app.html: the SPA fallback shell is not
      prerendered, so layout <svelte:head> content would never reach it. -->
 <!-- "masthead"/"menus" tokens stay: app.css @media print hides ".masthead .menus". -->
+{#if isAdmin}
+	<Tooltip.Provider>
+		{@render children()}
+	</Tooltip.Provider>
+{:else}
 <a
 	class="absolute -left-[9999px] focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:rounded-sm focus-visible:bg-bg focus-visible:px-4 focus-visible:py-2"
 	href="#content"
@@ -448,5 +458,6 @@
 		</p>
 	</div>
 </footer>
+{/if}
 
 <Toaster />

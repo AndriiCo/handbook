@@ -243,6 +243,15 @@ async function mockAdmin(page) {
 	await page.route('**/apostille/api/v1/suppressions*', (route) =>
 		route.fulfill({ json: { suppressions: [], count: 0 } })
 	);
+	// Verifier-blocked list on /review: empty, like a clean run (the
+	// SPA fallback would otherwise answer HTML and the section would
+	// show a parse error on camera).
+	await page.route('**/apostille/api/v1/draft-runs/recent*', (route) =>
+		route.fulfill({ json: { rejections: [], count: 0 } })
+	);
+	await page.route('**/apostille/api/v1/admin/version', (route) =>
+		route.fulfill({ json: { version: '0.1.0+demo', env: 'staging', started_at: 0, schema: 11, p2_schema: 2 } })
+	);
 	await page.route('**/apostille/api/v1/workers/captures*', (route) =>
 		route.fulfill({
 			json: {
@@ -278,6 +287,10 @@ async function mockAdmin(page) {
 	// the review scene's live feed logs no console error.
 	await page.routeWebSocket('**/apostille/ws/bus*', (ws) => {
 		const topic = new URL(ws.url()).searchParams.get('topic') ?? '';
+		if (topic === 'ops') {
+			ws.send(JSON.stringify({ type: 'subscribed', topic }));
+			return;
+		}
 		if (!topic.startsWith('run:')) return;
 		const runId = Number(topic.slice(4));
 		ws.send(
