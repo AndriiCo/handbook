@@ -1,0 +1,50 @@
+{
+	"routes": {
+		"/order?destination=usa-wa-sos&step=document": {
+			"name": "gp4-order-document",
+			"ready": "Diploma or transcript"
+		},
+		"/order?destination=usa-wa-sos&path=birth-certificate&step=form": {
+			"name": "gp4-order-form",
+			"ready": "Your full name"
+		},
+		"/order?destination=usa-wa-sos&path=birth-certificate&kind=mail_kit&step=delivery": {
+			"name": "gp4-order-delivery",
+			"ready": "Mailing kit shipped to you"
+		}
+	},
+	"api": [
+		{
+			"path": "/api/v1/p2/orders/options$",
+			"fixture": "orders-options.json"
+		},
+		{
+			"method": "POST",
+			"path": "/api/v1/p2/orders$",
+			"fixture": "orders-created.json",
+			"status": 201
+		},
+		{
+			"method": "POST",
+			"path": "/api/v1/p2/orders/[^/]+/quote$",
+			"fixture": "orders-quote.json"
+		},
+		{
+			"method": "POST",
+			"path": "/api/v1/p2/orders/[^/]+/checkout$",
+			"fixture": "orders-paused.json",
+			"status": 503
+		},
+		{
+			"method": "POST",
+			"path": "/api/v1/p2/forms/[^/]+/fill$",
+			"fixture": "orders-form-fill.json",
+			"status": 201
+		},
+		{
+			"path": "/api/v1/authorities/usa-wa-sos/plan$",
+			"fixture": "orders-plan.json"
+		}
+	],
+	"ws": []
+}

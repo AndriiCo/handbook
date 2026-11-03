@@ -1,0 +1,391 @@
+{
+  "slug": "usa-wa-sos",
+  "plan": {
+    "id": 12,
+    "version": 3,
+    "status": "accepted",
+    "accepted_at": 1793750400,
+    "headline": "Get a Washington apostille in person the same day, or by mail in about a week.",
+    "paths": [
+      {
+        "id": "birth-certificate",
+        "label": "Birth certificate",
+        "fact_ids": [
+          201
+        ]
+      },
+      {
+        "id": "diploma",
+        "label": "Diploma or transcript",
+        "fact_ids": [
+          201
+        ]
+      }
+    ],
+    "blocks": [
+      {
+        "id": "b1",
+        "kind": "step",
+        "title": "Check your document is a certified copy",
+        "body": "Bring the certified copy, not a photocopy.",
+        "fact_ids": [
+          206
+        ],
+        "show_for": []
+      },
+      {
+        "id": "b2",
+        "kind": "office",
+        "office_ids": [
+          31
+        ],
+        "fact_ids": [
+          202,
+          204,
+          205
+        ],
+        "show_for": []
+      },
+      {
+        "id": "b3",
+        "kind": "fees",
+        "lines": [
+          {
+            "label": "Apostille",
+            "amount_cents": 1500,
+            "per": "document",
+            "fact_id": 201
+          }
+        ],
+        "fact_ids": [
+          201
+        ],
+        "show_for": []
+      },
+      {
+        "id": "b4",
+        "kind": "forms",
+        "form_ids": [
+          41
+        ],
+        "fact_ids": [
+          206
+        ],
+        "show_for": []
+      },
+      {
+        "id": "b5",
+        "kind": "mail",
+        "title": "Or mail it",
+        "body": "Mailed requests go to the PO Box, so use USPS.",
+        "fact_ids": [
+          203
+        ],
+        "show_for": []
+      },
+      {
+        "id": "b6",
+        "kind": "callout",
+        "tone": "warning",
+        "title": "Not for use inside the US",
+        "body": "Washington apostilles are for use abroad only.",
+        "fact_ids": [
+          201
+        ],
+        "show_for": [
+          "diploma"
+        ]
+      },
+      {
+        "id": "b7",
+        "kind": "timing",
+        "title": "Same day in person",
+        "body": "Walk-in requests are processed the same day.",
+        "fact_ids": [
+          205
+        ],
+        "show_for": []
+      }
+    ],
+    "hide_topics": [
+      "phone_script"
+    ]
+  },
+  "facts": [
+    {
+      "id": 201,
+      "authority_slug": "usa-wa-sos",
+      "topic": "fees",
+      "status": "accepted",
+      "statement": "SYNTHETIC FIXTURE: The apostille fee is $15 per document.",
+      "conflict": false,
+      "conflicts": [],
+      "created_at": 1793664000,
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "citations": [
+        {
+          "captured_at": "2026-11-02T18:00:00Z",
+          "quote": "The fee is $15 per document.",
+          "source_url": "https://example.test/apostille/faq"
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "authority_slug": "usa-wa-sos",
+      "topic": "hours",
+      "status": "accepted",
+      "statement": "SYNTHETIC FIXTURE: The counter is open Monday to Friday, 8:00 AM to 4:30 PM.",
+      "conflict": false,
+      "conflicts": [],
+      "created_at": 1793664000,
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "citations": [
+        {
+          "captured_at": "2026-11-02T18:00:00Z",
+          "quote": "open Monday through Friday, 8:00 a.m. to 4:30 p.m.",
+          "source_url": "https://example.test/apostille/faq"
+        }
+      ]
+    },
+    {
+      "id": 203,
+      "authority_slug": "usa-wa-sos",
+      "topic": "po_box",
+      "status": "accepted",
+      "statement": "SYNTHETIC FIXTURE: Mailed requests go to PO Box 4000.",
+      "conflict": false,
+      "conflicts": [],
+      "created_at": 1793664000,
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "citations": [
+        {
+          "captured_at": "2026-11-02T18:00:00Z",
+          "quote": "Mail requests to PO Box 4000",
+          "source_url": "https://example.test/apostille/faq"
+        }
+      ]
+    },
+    {
+      "id": 204,
+      "authority_slug": "usa-wa-sos",
+      "topic": "address",
+      "status": "accepted",
+      "statement": "SYNTHETIC FIXTURE: Walk-in service is at 100 Fixture Way, Olympia, WA 98501.",
+      "conflict": false,
+      "conflicts": [],
+      "created_at": 1793664000,
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "citations": [
+        {
+          "captured_at": "2026-11-02T18:00:00Z",
+          "quote": "100 Fixture Way, Olympia, WA 98501",
+          "source_url": "https://example.test/apostille/faq"
+        }
+      ]
+    },
+    {
+      "id": 205,
+      "authority_slug": "usa-wa-sos",
+      "topic": "walkin",
+      "status": "accepted",
+      "statement": "SYNTHETIC FIXTURE: Walk-in requests are processed the same day.",
+      "conflict": false,
+      "conflicts": [],
+      "created_at": 1793664000,
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "citations": [
+        {
+          "captured_at": "2026-11-02T18:00:00Z",
+          "quote": "Walk-in requests are processed the same day",
+          "source_url": "https://example.test/apostille/faq"
+        }
+      ]
+    },
+    {
+      "id": 206,
+      "authority_slug": "usa-wa-sos",
+      "topic": "forms",
+      "status": "accepted",
+      "statement": "SYNTHETIC FIXTURE: Include the Apostille Request Form with every order.",
+      "conflict": false,
+      "conflicts": [],
+      "created_at": 1793664000,
+      "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+      "citations": [
+        {
+          "captured_at": "2026-11-02T18:00:00Z",
+          "quote": "include the Apostille Request Form",
+          "source_url": "https://example.test/apostille/faq"
+        }
+      ]
+    }
+  ],
+  "offices": [
+    {
+      "id": 31,
+      "authority_slug": "usa-wa-sos",
+      "name": "SYNTHETIC Apostille Counter",
+      "status": "accepted",
+      "visit": {
+        "kind": "walk_in",
+        "appointment_required": false,
+        "notes": "Same-day processing for walk-in requests.",
+        "fact_ids": [
+          205
+        ]
+      },
+      "address": {
+        "line1": "100 Fixture Way",
+        "line2": null,
+        "city": "Olympia",
+        "region": "WA",
+        "postal_code": "98501",
+        "country": "US",
+        "fact_id": 204
+      },
+      "mail": {
+        "po_box": "PO Box 4000",
+        "line1": "PO Box 4000",
+        "city": "Olympia",
+        "region": "WA",
+        "postal_code": "98504",
+        "country": "US",
+        "usps_only": true,
+        "fact_id": 203
+      },
+      "hours": [
+        {
+          "days": [
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri"
+          ],
+          "open": "08:00",
+          "close": "16:30",
+          "fact_id": 202
+        }
+      ],
+      "timezone": "America/Los_Angeles",
+      "timezone_source": "staff_confirmed",
+      "phone": null,
+      "directions_url": "https://www.openstreetmap.org/search?query=100%20Fixture%20Way%20Olympia%20WA",
+      "fact_ids": [
+        202,
+        203,
+        204,
+        205
+      ],
+      "accepted_at": 1793750400
+    }
+  ],
+  "forms": [
+    {
+      "id": 41,
+      "authority_slug": "usa-wa-sos",
+      "title": "SYNTHETIC Apostille Request Form",
+      "status": "active",
+      "official_url": "https://example.test/apostille/request-form.pdf",
+      "source_fact_id": 206,
+      "fillable": true,
+      "fields": [
+        {
+          "name": "RequesterName",
+          "label": "Your full name",
+          "help": "As it should appear on the return envelope.",
+          "type": "text",
+          "required": true,
+          "options": [],
+          "prefill_topic": null,
+          "label_quote": "Name of person requesting"
+        },
+        {
+          "name": "Country",
+          "label": "Country where the document will be used",
+          "help": "The apostille names this country.",
+          "type": "text",
+          "required": true,
+          "options": [],
+          "prefill_topic": null,
+          "label_quote": "Country of destination"
+        },
+        {
+          "name": "DocCount",
+          "label": "Number of documents",
+          "help": "Each document is charged separately.",
+          "type": "number",
+          "required": true,
+          "options": [],
+          "prefill_topic": "fees",
+          "label_quote": "Number of documents"
+        },
+        {
+          "name": "ReturnMail",
+          "label": "Return by mail",
+          "help": "",
+          "type": "checkbox",
+          "required": false,
+          "options": [],
+          "prefill_topic": "mailing",
+          "label_quote": "Return by mail"
+        }
+      ],
+      "accepted_at": 1793750400
+    }
+  ],
+  "provenance": {
+    "models": [
+      {
+        "model": "muse-spark-1.3",
+        "role": "extract"
+      },
+      {
+        "model": "muse-wonder-1.0",
+        "role": "cross_check"
+      },
+      {
+        "model": "muse-spark-1.3",
+        "role": "compose"
+      }
+    ],
+    "validator": {
+      "passed": true,
+      "checks": 18,
+      "dropped_blocks": 0,
+      "report_url": null
+    },
+    "cross_check": {
+      "supported": 6,
+      "contradicted": 0,
+      "not_found": 0,
+      "checked_before_accept": true
+    },
+    "run": {
+      "run_id": 88,
+      "latency_ms": 8420,
+      "p95_ms": 11800,
+      "input_tokens": 21450,
+      "output_tokens": 1830,
+      "cached_tokens": 15200,
+      "reasoning_tokens": 2410
+    },
+    "approved": {
+      "by": "Staff reviewer",
+      "at": 1793750400
+    },
+    "sources": [
+      {
+        "url": "https://example.test/apostille/faq",
+        "captured_at": "2026-11-02T18:00:00Z"
+      }
+    ]
+  }
+}
