@@ -264,6 +264,11 @@ async function mockAdmin(page) {
 	await page.route('**/apostille/api/v1/admin/model-calls*', (route) =>
 		route.fulfill({ json: modelCalls })
 	);
+	// Staff authority index (P358): /review mounts the compose pickers
+	// (every tab's content renders), which read it on the admin host.
+	await page.route('**/apostille/api/v1/admin/authorities', (route) =>
+		route.fulfill({ json: authorities })
+	);
 	await page.route('**/apostille/api/v1/admin/version', (route) =>
 		route.fulfill({ json: { version: '0.1.0+demo', env: 'staging', started_at: 0, schema: 11, p2_schema: 2 } })
 	);

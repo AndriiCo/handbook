@@ -273,3 +273,4 @@
 | 364 | 2026-11-03 13:30Z | Prove outreach draft→edit→send end to end; bulk approvals read as one ledger line | route test (file mailer, Message-ID, 409 on resend); operator page updated (P363b) |
 | 365 | 2026-11-03 13:39Z | Merge review by-authority bulk view; Triage folded into Review | AuthorityGroups + /facts/bulk client; web test 137, shots 20, demo 3/3, e2e 9/9 |
 | 366 | 2026-11-03 13:52Z | Fix the verified findings of the P356-P364 adversarial review | extractor panic on multibyte runs (critical); no cross-kind supersede; detached send; task text; dossier canonical; web 394 |
+| 367 | 2026-11-03 13:57Z | Merge First source web: calls open questions + autocomplete, Email outreach page | nav Email; web test 147, shots 32, demo 3/3, e2e 22/22 |

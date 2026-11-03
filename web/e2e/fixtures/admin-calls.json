@@ -1,0 +1,24 @@
+{
+ "calls": [
+  {
+   "call_id": "call_8Fq2Lm4Tz9",
+   "status": "completed",
+   "authority": "usa-wa-sos",
+   "started_at": 1793686400,
+   "ended_at": 1793686700,
+   "recording_status": "stopped",
+   "questions_asked": 4,
+   "questions_total": 5
+  },
+  {
+   "call_id": "call_3Rk7Vn1Hx5",
+   "status": "failed",
+   "authority": null,
+   "started_at": 1793600000,
+   "ended_at": 1793600010,
+   "recording_status": "none",
+   "questions_asked": 0,
+   "questions_total": 3
+  }
+ ]
+}

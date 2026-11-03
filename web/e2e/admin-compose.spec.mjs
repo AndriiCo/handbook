@@ -28,6 +28,8 @@ async function mockReview(page, { plansBody = () => plans, officesBody = () => o
 	// Fallback first: Playwright runs the newest matching route first.
 	await page.route('**/apostille/api/v1/**', (route) => route.fulfill({ json: {} }));
 	await page.route(at('/authorities'), (route) => route.fulfill({ json: authorities }));
+	// The admin host serves the staff index (the picker's source since P358).
+	await page.route(at('/admin/authorities'), (route) => route.fulfill({ json: authorities }));
 	await page.route(at('/queue'), (route) => route.fulfill({ json: { items: [], count: 0 } }));
 	await page.route(at('/admin/plans'), (route) => route.fulfill({ json: plansBody() }));
 	await page.route(at('/admin/offices'), (route) => route.fulfill({ json: officesBody() }));

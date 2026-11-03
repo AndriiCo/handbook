@@ -1,15 +1,45 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { fly } from 'svelte/transition';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import Notice from '../../../lib/public-ui/Notice.svelte';
+	import { toast } from 'svelte-sonner';
+	import Heading from '#lib/components/brand/Heading.svelte';
+	import Notice from '#lib/public-ui/Notice.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import AuthorityPicker from '#lib/admin/AuthorityPicker.svelte';
+	import OpenQuestions from '#lib/admin/OpenQuestions.svelte';
+	import { OpenQuestionsState } from '#lib/admin/first-source.svelte.js';
+	import type { AuthorityOption } from '#lib/admin/authorities.js';
+	import { ago, dateTime } from '#lib/admin/format.js';
+	import {
+		MAX_CALL_QUESTIONS,
+		TOP_N,
+		appendQuestions,
+		emailHref,
+		parseEmailQuery,
+		phoneContacts,
+		phoneLabel,
+		questionLines,
+		toE164
+	} from '#lib/admin/outreach-client.js';
 	import {
 		defaultScript,
 		dialBody,
 		dialCall,
 		e164Valid,
 		fetchCalls
-	} from '../../../lib/admin/calls-client.js';
+	} from '#lib/admin/calls-client.js';
+	import PhoneOutgoingIcon from '@lucide/svelte/icons/phone-outgoing';
+	import PhoneIcon from '@lucide/svelte/icons/phone';
+	import MailIcon from '@lucide/svelte/icons/mail';
+	import ScrollTextIcon from '@lucide/svelte/icons/scroll-text';
+	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	interface CallSummary {
 		call_id: string;
@@ -22,9 +52,11 @@
 		questions_total: number;
 	}
 
-	// Voice calls (voice-telnyx.md §7): dial form + recent calls.
-	// The admin API keeps the /apostille prefix on the admin origin,
-	// so the root is literal (same as the config page).
+	// Voice calls (voice-telnyx.md §7), First source: pick the office,
+	// add what its facts still leave open (ranked by the server from
+	// the fact store), dial. The dial contract is unchanged: the
+	// questions box is the source of truth. The admin API keeps the
+	// /apostille prefix on the admin origin, so the root is literal.
 	const api = () => `/apostille/api/v1`;
 
 	let calls = $state<CallSummary[]>([]);
@@ -37,12 +69,31 @@
 	let consent = $state(false);
 	let dialing = $state(false);
 	let dialError = $state<string | null>(null);
+	let names = $state<Record<string, string>>({});
+	let rows = $state<Record<string, AuthorityOption>>({});
+	let picker = $state<AuthorityPicker | null>(null);
+	let reduceMotion = $state(false);
+	let nowSec = $state(Math.floor(Date.now() / 1000));
+
+	const open = new OpenQuestionsState();
+	const motion = $derived(reduceMotion ? 0 : 200);
+	const lines = $derived(questionLines(questionsText));
+	const authorityName = $derived(names[authority] ?? (open.set?.name || authority));
+	const phones = $derived(open.slug === authority ? phoneContacts(open.contacts) : []);
+	const picked = $derived(rows[authority] ?? null);
+	// "Email these questions instead": the script if it has lines,
+	// else the strongest open questions.
+	const emailQuestions = $derived(
+		lines.length > 0 ? lines : open.questions.slice(0, TOP_N).map((q) => q.question)
+	);
+	const emailLink = $derived(emailHref(resolve('/(admin)/email'), authority, emailQuestions));
 
 	async function load() {
 		loadState = 'loading';
 		loadError = null;
 		try {
 			calls = await fetchCalls(api());
+			nowSec = Math.floor(Date.now() / 1000);
 			loadState = 'ready';
 		} catch (err) {
 			loadError = err instanceof Error ? err.message : 'Call list failed.';
@@ -50,33 +101,63 @@
 		}
 	}
 
-	onMount(load);
+	function syncUrl() {
+		const params = new URLSearchParams(location.search);
+		if (authority) params.set('authority', authority);
+		else params.delete('authority');
+		const query = params.toString();
+		history.replaceState(history.state, '', query ? `?${query}` : location.pathname);
+	}
 
-	function questions(): string[] {
-		return questionsText
-			.split('\n')
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0);
+	function pick(slug: string) {
+		authority = slug;
+		open.select(slug);
+		syncUrl();
+	}
+
+	function onLoaded(list: AuthorityOption[]) {
+		names = Object.fromEntries(list.map((r) => [r.slug, r.name]));
+		rows = Object.fromEntries(list.map((r) => [r.slug, r]));
+	}
+
+	const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+
+	onMount(() => {
+		reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const wanted = parseEmailQuery(location.search).authority;
+		if (wanted) pick(wanted);
+		void load();
+		return () => open.dispose();
+	});
+
+	function add(newLines: string[]) {
+		const out = appendQuestions(questionsText, newLines);
+		questionsText = out.text;
+		if (out.full) toast.info(`The call script is full: ${MAX_CALL_QUESTIONS} questions at most.`);
+		else if (out.added > 1) toast.success(`Added ${out.added} questions to the call script.`);
 	}
 
 	function loadScript() {
-		const have = new Set(questions());
-		const missing = defaultScript().filter((line) => !have.has(line));
-		if (missing.length === 0) return;
-		questionsText = questionsText.trimEnd();
-		questionsText += (questionsText.length > 0 ? '\n' : '') + missing.join('\n');
+		const out = appendQuestions(questionsText, defaultScript());
+		questionsText = out.text;
+	}
+
+	function tidyNumber() {
+		const e164 = toE164(to);
+		if (e164) to = e164;
 	}
 
 	async function dial(event: SubmitEvent) {
 		event.preventDefault();
 		dialError = null;
-		const body = dialBody(to.trim(), authority, questions(), consent);
+		tidyNumber();
+		const body = dialBody(to.trim(), authority, lines, consent);
 		if (!body) {
 			dialError = !e164Valid(to.trim())
 				? 'Enter the office number as E.164 (e.g. +13605550100).'
 				: !consent
 					? 'Confirm you will announce the recording to the callee.'
-					: 'Check the questions (1–20 lines, each 1–280 chars).';
+					: `Check the questions (1–${MAX_CALL_QUESTIONS} lines, each 1–280 chars).`;
 			return;
 		}
 		dialing = true;
@@ -89,102 +170,231 @@
 			dialing = false;
 		}
 	}
+
+	const STATUS_TONE: Record<string, string> = {
+		completed: 'border-verified bg-verified-bg text-verified',
+		in_progress: 'border-line bg-surface-2 text-accent-strong',
+		ringing: 'border-line bg-surface-2 text-accent-strong',
+		queued: 'border-line bg-surface-2 text-accent-strong',
+		failed: 'border-error bg-error-bg text-error'
+	};
+	const statusTone = (s: string) => STATUS_TONE[s] ?? 'border-line bg-surface text-ink-muted';
+	const statusText = (s: string) => s.replaceAll('_', ' ');
 </script>
 
 <svelte:head>
 	<title>Voice calls — Admin — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Voice calls</h1>
-
-<Notice variant="warning" heading="All-party consent.">
-	<p>
-		Washington requires every party's consent to record. Announce the recording when the
-		callee answers, before asking anything. Dialing is staff-only and audited.
-	</p>
-</Notice>
-
-<section aria-labelledby="dial">
-	<h2 id="dial">Dial an office</h2>
-	<form onsubmit={dial}>
-		<p>
-			<label class="grid max-w-[36rem] gap-1 font-bold" for="to">
-				Office number (E.164)
-				<input
-					class="p-2 font-normal"
-					id="to"
-					type="tel"
-					bind:value={to}
-					placeholder="+13605550100"
-					autocomplete="off"
-				/>
-			</label>
+<div class="mt-6 flex flex-col gap-6 pb-12">
+	<header class="flex flex-col gap-1">
+		<Heading level={1} eyebrow="First source">Voice calls</Heading>
+		<p class="m-0 max-w-prose text-sm text-ink-muted">
+			Ask the office itself when its published pages leave a question open. Pick the office, add
+			what its facts still need, then dial.
 		</p>
-		<p>
-			<label class="grid max-w-[36rem] gap-1 font-bold" for="authority">
-				Authority slug (optional)
-				<input
-					class="p-2 font-normal"
-					id="authority"
-					type="text"
+	</header>
+
+	<Card.Root>
+		<Card.Content class="flex flex-col gap-4 lg:flex-row lg:items-end">
+			<div class="min-w-0 flex-1 lg:max-w-md">
+				<AuthorityPicker
+					bind:this={picker}
 					bind:value={authority}
-					placeholder="usa-wa-sos"
-					autocomplete="off"
+					id="authority"
+					label="Office (optional)"
+					placeholder="No authority"
+					clearable
+					showContacts
+					{onLoaded}
+					onChange={pick}
 				/>
-			</label>
-		</p>
-		<p>
-			<label class="grid max-w-[36rem] gap-1 font-bold" for="questions">
-				Questions to ask (one per line, up to 20)
-				<textarea
-					class="p-2 font-normal"
-					id="questions"
-					rows="4"
-					bind:value={questionsText}
-					placeholder={'Current apostille fee?\nForm revision and where to mail?'}
-				></textarea>
-			</label>
-		</p>
-		<p>
-			<button type="button" onclick={loadScript}>Load default script</button>
-		</p>
-		<p>
-			<label class="flex max-w-[36rem] items-start gap-2" for="consent">
-				<input id="consent" type="checkbox" bind:checked={consent} />
-				I will announce that this call is recorded before asking anything.
-			</label>
-		</p>
-		{#if dialError}
-			<p class="font-bold text-error" role="alert">{dialError}</p>
-		{/if}
-		<p><button type="submit" disabled={dialing}>{dialing ? 'Dialing…' : 'Dial'}</button></p>
-	</form>
-</section>
+			</div>
+			{#if picked}
+				<dl class="m-0 flex flex-wrap gap-x-6 gap-y-1 text-sm lg:pb-2" in:fly={{ y: -4, duration: motion }}>
+					<div class="flex items-baseline gap-1.5">
+						<dt class="sr-only">Accepted facts</dt>
+						<dd class="m-0 font-semibold tabular-nums">{plural(picked.fact_count, 'accepted fact')}</dd>
+					</div>
+					<div class="flex items-baseline gap-1.5">
+						<dt class="sr-only">Waiting in Review</dt>
+						<dd class={`m-0 tabular-nums ${picked.proposed_count > 0 ? 'text-changed' : 'text-ink-muted'}`}>
+							{picked.proposed_count} waiting in Review
+						</dd>
+					</div>
+					<div class="flex items-baseline gap-1.5">
+						<dt class="sr-only">Contacts</dt>
+						<dd class="m-0 text-ink-muted tabular-nums">{plural(picked.contact_count, 'contact')} on file</dd>
+					</div>
+				</dl>
+			{:else}
+				<p class="m-0 text-sm text-ink-muted lg:pb-2">
+					Optional: a call without an office is logged unassigned and gets no ranked questions.
+				</p>
+			{/if}
+			{#if phones.length > 0}
+				<div class="flex min-w-0 flex-col gap-1 lg:ml-auto" in:fly={{ y: -4, duration: motion }}>
+					<span class="text-xs font-medium text-ink-muted">Numbers on file</span>
+					<div class="flex flex-wrap gap-2">
+						{#each phones as phone (phone.id)}
+							<Button
+								variant={to === phone.value ? 'secondary' : 'outline'}
+								size="lg"
+								class="font-mono"
+								aria-pressed={to === phone.value}
+								onclick={() => (to = phone.value)}
+							>
+								<PhoneIcon aria-hidden="true" />
+								{phoneLabel(phone.value)}
+								{#if phone.details}<span class="font-sans text-xs text-ink-muted">{phone.details}</span>{/if}
+							</Button>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		</Card.Content>
+	</Card.Root>
 
-<section aria-labelledby="recent">
-	<h2 id="recent">Recent calls</h2>
-	{#if loadState === 'loading'}
-		<p>Loading…</p>
-	{:else if loadState === 'failed'}
-		<p class="font-bold text-error" role="alert">{loadError}</p>
-		<p><button type="button" onclick={load}>Retry</button></p>
-	{:else if calls.length === 0}
-		<p class="text-ink-muted">No calls yet.</p>
-	{:else}
-		<ul class="m-0 mt-4 list-none p-0 pb-8">
-			{#each calls as call (call.call_id)}
-				<li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line py-[0.7rem]">
-					<a
-						class="inline-flex min-h-11 items-center font-bold"
-						href={`${resolve('/(admin)/calls')}/${encodeURIComponent(call.call_id)}`}
-					>
-						{call.authority ?? 'call'} — {call.status}
-					</a>
-					<span class="text-sm text-ink-muted">
-						{call.questions_asked}/{call.questions_total} asked · recording {call.recording_status}
-					</span>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-</section>
+	<div class="grid items-start gap-6 xl:grid-cols-2">
+		<OpenQuestions
+			state={open}
+			name={authorityName}
+			script={questionsText}
+			{motion}
+			onAdd={add}
+			onPick={() => picker?.focus()}
+			onDefault={loadScript}
+		/>
+
+		<!-- Phones: with no office picked, the dial form comes first. -->
+		<Card.Root class={`min-w-0 ${authority ? '' : 'order-first xl:order-none'}`}>
+			<Card.Header>
+				<Card.Title><h2 class="m-0 text-h3 font-semibold">Dial an office</h2></Card.Title>
+				<Card.Description class="text-ink-muted">
+					Washington requires every party's consent to record. Dialing is staff-only and audited.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<form class="flex flex-col gap-4" onsubmit={dial}>
+					<label class="flex flex-col gap-1" for="to">
+						<span class="text-xs font-medium text-ink-muted">Office number (E.164)</span>
+						<Input
+							id="to"
+							type="tel"
+							class="h-9 font-mono"
+							bind:value={to}
+							onblur={tidyNumber}
+							placeholder="e.g. +13605550100"
+							autocomplete="off"
+						/>
+					</label>
+					<label class="flex flex-col gap-1" for="questions">
+						<span class="flex items-baseline justify-between gap-2 text-xs font-medium text-ink-muted">
+							Call script (one question per line)
+							<span class="font-mono tabular-nums">{lines.length} / {MAX_CALL_QUESTIONS}</span>
+						</span>
+						<Textarea
+							id="questions"
+							class="min-h-32"
+							bind:value={questionsText}
+							placeholder="Add questions from the ranked list, or type your own."
+						/>
+					</label>
+					<div class="flex flex-wrap gap-2">
+						<Button type="button" variant="outline" onclick={loadScript}>
+							<ScrollTextIcon aria-hidden="true" />
+							Load the default script
+						</Button>
+						{#if questionsText.trim()}
+							<Button type="button" variant="ghost" onclick={() => (questionsText = '')}>Clear</Button>
+						{/if}
+					</div>
+					<label class="flex items-start gap-2 text-sm" for="consent">
+						<input id="consent" class="mt-1 size-4 flex-none accent-accent-strong" type="checkbox" bind:checked={consent} />
+						I will announce that this call is recorded before asking anything.
+					</label>
+					{#if dialError}
+						<Notice variant="error" heading="Not dialed.">
+							<p class="m-0">{dialError}</p>
+						</Notice>
+					{/if}
+					<div class="flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+						{#if authority}
+							<Button variant="outline" size="lg" href={emailLink}>
+								<MailIcon aria-hidden="true" />
+								Email these questions instead
+							</Button>
+						{:else}
+							<span class="text-xs text-ink-muted">Pick an office to email it instead.</span>
+						{/if}
+						<Button type="submit" size="lg" disabled={dialing}>
+							{#if dialing}
+								<LoaderCircleIcon class="motion-safe:animate-spin" aria-hidden="true" />
+								Dialing…
+							{:else}
+								<PhoneOutgoingIcon aria-hidden="true" />
+								Dial
+							{/if}
+						</Button>
+					</div>
+				</form>
+			</Card.Content>
+		</Card.Root>
+	</div>
+
+	<section class="flex flex-col gap-3" aria-labelledby="recent">
+		<h2 id="recent" class="m-0 text-h3 font-semibold">Recent calls</h2>
+		{#if loadState === 'loading'}
+			<div class="overflow-hidden rounded-lg border border-line bg-card" role="status" aria-label="Loading calls">
+				<div class="flex flex-col divide-y divide-line">
+					{#each [0, 1, 2] as i (i)}
+						<div class="flex items-center gap-4 px-4 py-3">
+							<Skeleton class="h-4 w-48 rounded-xs" />
+							<Skeleton class="hidden h-4 flex-1 rounded-xs md:block" />
+							<Skeleton class="h-6 w-24 rounded-full" />
+						</div>
+					{/each}
+				</div>
+			</div>
+		{:else if loadState === 'failed'}
+			<Notice variant="error" heading="Calls could not load.">
+				<p class="m-0">{loadError}</p>
+				<p class="mt-3 mb-0"><Button variant="outline" onclick={load}>Try again</Button></p>
+			</Notice>
+		{:else if calls.length === 0}
+			<div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-line bg-card px-6 py-10 text-center">
+				<PhoneIcon class="size-8 text-ink-muted" aria-hidden="true" />
+				<p class="m-0 text-h3 font-semibold">No calls yet</p>
+				<p class="m-0 max-w-prose text-sm text-ink-muted">
+					Each call lands here with its questions, transcript and recording state.
+				</p>
+				<Button variant="outline" onclick={() => document.getElementById('to')?.focus()}>Start a call</Button>
+			</div>
+		{:else}
+			<ul class="m-0 flex list-none flex-col divide-y divide-line overflow-hidden rounded-lg border border-line bg-card p-0">
+				{#each calls as call (call.call_id)}
+					<li>
+						<a
+							class="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-ink no-underline hover:bg-muted/50 focus-visible:bg-muted/50"
+							href={`${resolve('/(admin)/calls')}/${encodeURIComponent(call.call_id)}`}
+						>
+							<span class="min-w-0 flex-1 truncate font-medium">
+								{call.authority ? (names[call.authority] ?? call.authority) : 'No authority'}
+							</span>
+							<span class="text-xs text-ink-muted tabular-nums">
+								{call.questions_asked}/{call.questions_total} asked · recording {call.recording_status}
+							</span>
+							<span class={`inline-flex h-6 items-center rounded-full border px-2 text-xs font-medium capitalize ${statusTone(call.status)}`}>
+								{statusText(call.status)}
+							</span>
+							<time class="text-xs text-ink-muted" datetime={new Date(call.started_at * 1000).toISOString()} title={dateTime(call.started_at)}>
+								{ago(call.started_at, Math.max(nowSec, call.started_at))}
+							</time>
+							<ChevronRightIcon class="size-4 text-ink-muted" aria-hidden="true" />
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</section>
+</div>

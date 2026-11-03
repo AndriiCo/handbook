@@ -16,6 +16,7 @@
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import PackageIcon from '@lucide/svelte/icons/package';
 	import PhoneIcon from '@lucide/svelte/icons/phone';
+	import MailIcon from '@lucide/svelte/icons/mail';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
@@ -59,7 +60,10 @@
 		},
 		{
 			label: 'First source',
-			items: [{ label: 'Voice calls', href: resolve('/(admin)/calls'), icon: PhoneIcon, keywords: 'phone telnyx' }]
+			items: [
+				{ label: 'Voice calls', href: resolve('/(admin)/calls'), icon: PhoneIcon, keywords: 'phone telnyx open questions' },
+				{ label: 'Email', href: resolve('/(admin)/email'), icon: MailIcon, keywords: 'email outreach office reply questions' }
+			]
 		},
 		{
 			label: 'System',
