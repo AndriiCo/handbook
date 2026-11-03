@@ -1,8 +1,8 @@
 // Admin config API client (secure-config.md §1.5). Admin-only: never
 // imported from (public) or (customer) routes.
 //
-// GET  {apiBase}/config        → [{ key, type, value?|set? }]
-// PUT  {apiBase}/config/{key}  → { set: true } (secrets) or saved row
+// GET  {apiBase}/config        → { keys: [{ key, type, value?|set?, updated_at }], started_at }
+// PUT  {apiBase}/config/{key}  → { key, type, set: true, updated_at }
 // SECRET values are write-only: the server never returns them and this
 // module never renders or stores one — set-new-only.
 
@@ -20,6 +20,7 @@ import { authError, readErrorBody } from './http-errors.js';
  * @property {boolean} saving
  * @property {string | null} error
  * @property {boolean} [saved]
+ * @property {number} [updated_at] unix seconds of the last save (server clock)
  */
 
 /**
@@ -30,17 +31,28 @@ import { authError, readErrorBody } from './http-errors.js';
  */
 export function normalizeRow(row) {
 	if (!row || typeof row.key !== 'string' || typeof row.type !== 'string') return null;
+	const stamp = typeof row.updated_at === 'number' ? { updated_at: row.updated_at } : {};
+	const fresh = { dirty: false, saving: false, error: null };
 	if (row.type === 'bool') {
 		if (typeof row.value !== 'boolean') return null;
-		return { key: row.key, type: 'bool', value: row.value, dirty: false, saving: false, error: null };
+		return { key: row.key, type: 'bool', value: row.value, ...fresh, ...stamp };
 	}
 	if (row.type === 'text') {
 		if (typeof row.value !== 'string') return null;
-		return { key: row.key, type: 'text', value: row.value, dirty: false, saving: false, error: null };
+		return { key: row.key, type: 'text', value: row.value, ...fresh, ...stamp };
 	}
 	if (row.type === 'secret') {
 		if (typeof row.set !== 'boolean') return null;
-		return { key: row.key, type: 'secret', set: row.set, draft: '', dirty: false, saving: false, error: null };
+		return {
+			key: row.key,
+			type: 'secret',
+			set: row.set,
+			draft: '',
+			dirty: false,
+			saving: false,
+			error: null,
+			...stamp
+		};
 	}
 	return null;
 }
@@ -105,6 +117,18 @@ export function csrfHeaders(jar = undefined) {
  * @returns {Promise<ConfigRow[]>}
  */
 export async function fetchConfig(apiBase, fetchFn = fetch) {
+	return (await fetchConfigWithStart(apiBase, fetchFn)).rows;
+}
+
+/**
+ * Rows plus the running process's `started_at` from the same answer,
+ * so "saved since the last start" compares one server's clock.
+ * `startedAt` is null when the server predates the field.
+ * @param {string} apiBase
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<{ rows: ConfigRow[], startedAt: number | null }>}
+ */
+export async function fetchConfigWithStart(apiBase, fetchFn = fetch) {
 	const res = await fetchFn(`${apiBase}/config`, { credentials: 'same-origin' });
 	// Auth failures show the server's answer verbatim (the 403
 	// body names the detected IP) via the shared helper. The guard
@@ -127,14 +151,17 @@ export async function fetchConfig(apiBase, fetchFn = fetch) {
 	}
 	const rows = Array.isArray(data) ? data : data?.keys;
 	if (!Array.isArray(rows)) throw new Error('Config API returned an unexpected shape.');
-	return rows.map(normalizeRow).filter((row) => row !== null);
+	const startedAt = typeof data?.started_at === 'number' ? data.started_at : null;
+	return { rows: rows.map(normalizeRow).filter((row) => row !== null), startedAt };
 }
 
 /**
+ * Save one key. Resolves the server's `updated_at` for the write
+ * (null from a server that does not send it).
  * @param {string} apiBase
  * @param {ConfigRow} row
  * @param {typeof fetch} [fetchFn]
- * @returns {Promise<true>}
+ * @returns {Promise<{ updatedAt: number | null }>}
  */
 export async function saveConfigKey(apiBase, row, fetchFn = fetch) {
 	const res = await fetchFn(`${apiBase}/config/${encodeURIComponent(row.key)}`, {
@@ -155,5 +182,10 @@ export async function saveConfigKey(apiBase, row, fetchFn = fetch) {
 		throw new Error(`Rejected by the server (422) — check the value for “${row.key}”.`);
 	}
 	if (!res.ok) throw new Error(`Save failed: HTTP ${res.status}.`);
-	return true;
+	try {
+		const data = await res.json();
+		return { updatedAt: typeof data?.updated_at === 'number' ? data.updated_at : null };
+	} catch {
+		return { updatedAt: null };
+	}
 }

@@ -7,11 +7,16 @@
 //! every outcome is appended to `fedex_live_audit`. Live money moves
 //! only when `labels.live` is on and the caps/allowlist/credentials
 //! rows are set — otherwise 503, fail closed.
+//!
+//! The label PDF FedEx returns is written to the content-addressed
+//! blob store and indexed in `fedex_live_label` in the same
+//! transaction as the ledger row, so staff can download it again
+//! (`GET …/fedex-live/label/{order_id}/{leg}`, staff session only).
 
 use axum::{
     Json, Router,
-    extract::State,
-    http::StatusCode,
+    extract::{Path, State},
+    http::{HeaderValue, StatusCode, header},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -73,6 +78,10 @@ pub fn router(state: AppState) -> Router {
         .route("/apostille/api/v1/fedex-live/quote", post(post_quote))
         .route("/apostille/api/v1/fedex-live/purchase", post(post_purchase))
         .route("/apostille/api/v1/fedex-live/void", post(post_void))
+        .route(
+            "/apostille/api/v1/fedex-live/label/{order_id}/{leg}",
+            get(get_label),
+        )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             csrf_guard,
@@ -180,6 +189,7 @@ fn load_ledger(conn: &Connection, today_start: i64) -> Result<MemLedger, rusqlit
             tracking_no,
             carrier_service,
             quoted_cents,
+            label_pdf: Vec::new(),
         };
         if created_at >= today_start {
             ledger.record_buy(&key, label);
@@ -199,14 +209,36 @@ struct NewLedgerRow<'a> {
     stored: &'a StoredLabel,
     created_at: i64,
     quoted_cents: Option<i64>,
+    /// Blob address of the label PDF, when it reached the store.
+    label_sha256: Option<&'a str>,
 }
 
+/// Ledger row, label index row and audit rows in one transaction:
+/// a bought leg is never recorded without its audit trail.
 fn persist_outcome(
     conn: &Connection,
     new_ledger: Option<NewLedgerRow<'_>>,
     audits: &[AuditRow],
 ) -> Result<(), rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
+    persist_rows(&tx, new_ledger, audits)?;
+    tx.commit()
+}
+
+fn persist_rows(
+    conn: &Connection,
+    new_ledger: Option<NewLedgerRow<'_>>,
+    audits: &[AuditRow],
+) -> Result<(), rusqlite::Error> {
     if let Some(row) = new_ledger {
+        if let Some(sha) = row.label_sha256 {
+            conn.execute(
+                "INSERT OR IGNORE INTO fedex_live_label(
+                   idempotency_key, tracking_no, label_sha256, content_type, created_at
+                 ) VALUES (?1, ?2, ?3, 'application/pdf', ?4)",
+                rusqlite::params![row.key, row.stored.tracking_no, sha, row.created_at],
+            )?;
+        }
         conn.execute(
             "INSERT OR IGNORE INTO fedex_live_ledger(
                idempotency_key, order_id, leg, tracking_no,
@@ -237,6 +269,51 @@ fn persist_outcome(
         )?;
     }
     Ok(())
+}
+
+/// Write a fresh buy's PDF to the blob store. `None` when there is
+/// nothing to keep (a replay) or the write failed; the purchase still
+/// records its ledger row either way, because the money is spent.
+fn store_label_pdf(store: &Store, stored: &StoredLabel) -> Option<String> {
+    if stored.label_pdf.is_empty() {
+        return None;
+    }
+    match store.write_blob(&stored.label_pdf) {
+        Ok(sha) => Some(sha),
+        Err(e) => {
+            tracing::error!(error = %e, "fedex live label pdf not stored");
+            None
+        }
+    }
+}
+
+/// Staff download path for one leg's label PDF.
+fn label_url(order_id: &str, leg: Leg) -> String {
+    let segment: String = order_id
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect();
+    format!(
+        "/apostille/api/v1/fedex-live/label/{segment}/{}",
+        leg.as_str()
+    )
+}
+
+/// The stored label row for one leg: `(tracking_no, label_sha256)`.
+fn find_label(conn: &Connection, key: &str) -> Result<Option<(String, String)>, rusqlite::Error> {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row(
+        "SELECT tracking_no, label_sha256 FROM fedex_live_label WHERE idempotency_key = ?1",
+        [key],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
 }
 
 async fn get_caps(State(state): State<AppState>, _auth: AdminAuth) -> impl IntoResponse {
@@ -325,6 +402,27 @@ fn validate_payload(payload: &ShipmentPayload) -> Result<(), String> {
         .join("; "))
 }
 
+/// FedEx Ship requires a contact phone on both ends (10 digits for
+/// US/CA after [`labels::client::fedex_phone`] drops a leading `1`).
+fn require_phones(payload: &ShipmentPayload) -> Result<(), String> {
+    for (side, address) in [("ship-from", &payload.from), ("ship-to", &payload.to)] {
+        let raw = address.phone.as_deref().unwrap_or_default();
+        let digits = labels::client::fedex_phone(raw, &address.country);
+        let nanp = matches!(address.country.trim(), "US" | "CA");
+        let ok = if nanp {
+            digits.len() == 10
+        } else {
+            (7..=15).contains(&digits.len())
+        };
+        if !ok {
+            return Err(format!(
+                "{side} phone is required: FedEx needs a contact number (10 digits in the US)"
+            ));
+        }
+    }
+    Ok(())
+}
+
 async fn post_quote(
     State(state): State<AppState>,
     _auth: AdminAuth,
@@ -334,7 +432,11 @@ async fn post_quote(
         return err(StatusCode::UNPROCESSABLE_ENTITY, message);
     }
     let live = state.fedex_live.clone();
-    let Some((cred_id, cred_secret)) = live.bearer_pair() else {
+    // Rate's `accountNumber.value` must be the shipper account: an
+    // empty one is refused by FedEx (and was, before P393).
+    let account = live.account.clone().unwrap_or_default();
+    let Some((cred_id, cred_secret)) = live.bearer_pair().filter(|_| !account.trim().is_empty())
+    else {
         return err(
             StatusCode::SERVICE_UNAVAILABLE,
             "live fedex buys are not configured",
@@ -349,7 +451,7 @@ async fn post_quote(
         let request = BuyRequest {
             payload: &payload,
             direction: Direction::Outbound,
-            payment_ref: "",
+            payment_ref: &account,
         };
         shipment.quote(&cfg, &bearer, &request)
     })
@@ -374,6 +476,9 @@ async fn post_purchase(
         return err(StatusCode::UNPROCESSABLE_ENTITY, "order_id is required");
     }
     if let Err(message) = validate_payload(&body.payload) {
+        return err(StatusCode::UNPROCESSABLE_ENTITY, message);
+    }
+    if let Err(message) = require_phones(&body.payload) {
         return err(StatusCode::UNPROCESSABLE_ENTITY, message);
     }
     let live = state.fedex_live.clone();
@@ -446,6 +551,11 @@ async fn post_purchase(
         return err(StatusCode::BAD_GATEWAY, "empty buy outcome");
     };
     let key = idempotency_key(&order_id, leg);
+    let label_sha = if replayed {
+        None
+    } else {
+        store_label_pdf(&Store::new(&state.store_root), stored)
+    };
     let new_row = if replayed {
         None
     } else {
@@ -456,12 +566,68 @@ async fn post_purchase(
             stored,
             created_at: now,
             quoted_cents,
+            label_sha256: label_sha.as_deref(),
         })
     };
     if persist_outcome(&conn, new_row, &audits).is_err() {
         return err(StatusCode::SERVICE_UNAVAILABLE, "ledger persist failed");
     }
-    Json(serde_json::json!({ "tracking_no": stored.tracking_no, "replayed": replayed }))
+    let has_label = matches!(find_label(&conn, &key), Ok(Some(_)));
+    Json(serde_json::json!({
+        "tracking_no": stored.tracking_no,
+        "replayed": replayed,
+        "label_url": has_label.then(|| label_url(&order_id, leg)),
+    }))
+    .into_response()
+}
+
+/// Staff download of one leg's label PDF (`fedex_live_label` row →
+/// blob). Same staff session + IP + host guards as every route here.
+async fn get_label(
+    State(state): State<AppState>,
+    _auth: AdminAuth,
+    Path((order_id, leg)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let leg = match parse_leg(&leg) {
+        Ok(leg) => leg,
+        Err(message) => return err(StatusCode::NOT_FOUND, message),
+    };
+    let Some(conn) = open(&state) else {
+        return err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "metadata store unavailable",
+        );
+    };
+    let key = idempotency_key(&order_id, leg);
+    let (tracking_no, sha) = match find_label(&conn, &key) {
+        Ok(Some(row)) => row,
+        Ok(None) => return err(StatusCode::NOT_FOUND, "no label pdf for this leg"),
+        Err(_) => return err(StatusCode::SERVICE_UNAVAILABLE, "ledger unavailable"),
+    };
+    let Ok(bytes) = Store::new(&state.store_root).read_blob(&sha) else {
+        return crate::store_unavailable();
+    };
+    let name: String = tracking_no
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
+    let Ok(disposition) =
+        HeaderValue::from_str(&format!("attachment; filename=\"fedex-{name}.pdf\""))
+    else {
+        return crate::store_unavailable();
+    };
+    (
+        StatusCode::OK,
+        [
+            (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/pdf"),
+            ),
+            (header::CONTENT_DISPOSITION, disposition),
+            (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+        ],
+        bytes,
+    )
         .into_response()
 }
 
@@ -478,7 +644,10 @@ async fn post_void(
         return err(StatusCode::UNPROCESSABLE_ENTITY, "order_id is required");
     }
     let live = state.fedex_live.clone();
-    let Some((cred_id, cred_secret)) = live.bearer_pair() else {
+    // FedEx's cancel body names the shipper account.
+    let account = live.account.clone().unwrap_or_default();
+    let Some((cred_id, cred_secret)) = live.bearer_pair().filter(|_| !account.trim().is_empty())
+    else {
         return err(
             StatusCode::SERVICE_UNAVAILABLE,
             "live fedex buys are not configured",
@@ -511,6 +680,7 @@ async fn post_void(
                 order_id: &order_id,
                 leg,
                 bearer: &bearer,
+                account: &account,
             },
             &mut ledger,
         )?;
@@ -732,6 +902,152 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(v["error"], "order_id is required");
+    }
+
+    #[tokio::test]
+    async fn purchase_requires_both_contact_phones() {
+        let (_tmp, state) = state();
+        let (status, v) = json(
+            router(state.clone())
+                .oneshot(request(
+                    "POST",
+                    "/apostille/api/v1/fedex-live/purchase",
+                    Some(serde_json::json!({
+                        "order_id": "o-1",
+                        "leg": "outbound",
+                        "payload": payload(),
+                    })),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            v["error"].as_str().unwrap().starts_with("ship-from phone"),
+            "{v}"
+        );
+        // Phones present (with a +1 prefix): the phone gate passes and
+        // the missing credentials answer instead.
+        let mut with_phones = payload();
+        with_phones["from"]["phone"] = serde_json::json!("+1 (360) 555-0100");
+        with_phones["to"]["phone"] = serde_json::json!("360-555-0199");
+        let (status, _v) = json(
+            router(state)
+                .oneshot(request(
+                    "POST",
+                    "/apostille/api/v1/fedex-live/purchase",
+                    Some(serde_json::json!({
+                        "order_id": "o-1",
+                        "leg": "outbound",
+                        "payload": with_phones,
+                    })),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn bought_label_pdf_is_stored_and_staff_download_it() {
+        let (_tmp, state) = state();
+        let conn = open(&state).unwrap();
+        let store = Store::new(&state.store_root);
+        let pdf = b"%PDF-1.4 fedex documented-shape label".to_vec();
+        let stored = StoredLabel {
+            tracking_no: "794953535000".to_string(),
+            carrier_service: "FEDEX_2_DAY".to_string(),
+            quoted_cents: Some(1_250),
+            label_pdf: pdf.clone(),
+        };
+        let sha = store_label_pdf(&store, &stored).expect("blob written");
+        let order_id = "ord 7/a";
+        let key = idempotency_key(order_id, Leg::Return);
+        persist_outcome(
+            &conn,
+            Some(NewLedgerRow {
+                key: &key,
+                order_id,
+                leg: "return",
+                stored: &stored,
+                created_at: 1_900_000_000,
+                quoted_cents: Some(1_250),
+                label_sha256: Some(&sha),
+            }),
+            &[AuditRow::new(
+                1_900_000_000,
+                "staff-1",
+                "bought",
+                &key,
+                "794953535000",
+            )],
+        )
+        .unwrap();
+        // Ledger, label index and audit landed together.
+        let count = |table: &str| -> i64 {
+            conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(
+            (
+                count("fedex_live_ledger"),
+                count("fedex_live_label"),
+                count("fedex_live_audit")
+            ),
+            (1, 1, 1)
+        );
+        // A replay hydrates the leg without bytes: nothing to re-store.
+        let ledger = load_ledger(&conn, 0).unwrap();
+        let replay = ledger.find(&key).unwrap();
+        assert!(replay.label_pdf.is_empty());
+        assert_eq!(store_label_pdf(&store, replay), None);
+
+        let url = label_url(order_id, Leg::Return);
+        assert_eq!(url, "/apostille/api/v1/fedex-live/label/ord%207%2Fa/return");
+        let res = router(state.clone())
+            .oneshot(request("GET", &url, None))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()[header::CONTENT_TYPE], "application/pdf");
+        assert_eq!(
+            res.headers()[header::CONTENT_DISPOSITION],
+            "attachment; filename=\"fedex-794953535000.pdf\""
+        );
+        assert_eq!(res.headers()[header::CACHE_CONTROL], "no-store");
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        assert_eq!(body.as_ref(), pdf.as_slice());
+
+        // The other leg has no label; an unknown leg name is a 404 too.
+        for missing in [
+            label_url(order_id, Leg::Outbound),
+            "/apostille/api/v1/fedex-live/label/ord-1/sideways".to_string(),
+        ] {
+            let (status, _v) = json(
+                router(state.clone())
+                    .oneshot(request("GET", &missing, None))
+                    .await
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
+        }
+
+        // No staff session: refused before any bytes.
+        let anonymous = Request::builder()
+            .uri(&url)
+            .header("host", "admin.andrii.ai")
+            .extension(axum::extract::ConnectInfo(
+                "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+            ))
+            .body(Body::empty())
+            .unwrap();
+        let res = router(state).oneshot(anonymous).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]

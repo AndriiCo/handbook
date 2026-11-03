@@ -278,6 +278,16 @@ impl HttpTransport for By<'_> {
     ) -> Result<HttpResponse, TransportError> {
         self.0.delete_with(url, bearer, headers)
     }
+
+    // FedEx cancels with PUT; the default would refuse it.
+    fn put_json(
+        &self,
+        url: &str,
+        bearer: &str,
+        body: &Value,
+    ) -> Result<HttpResponse, TransportError> {
+        self.0.put_json(url, bearer, body)
+    }
 }
 
 pub(crate) struct FedexLink<T: HttpTransport> {
@@ -315,7 +325,9 @@ impl<T: HttpTransport> LabelLink for FedexLink<T> {
     }
 
     fn cancel(&self, tracking_no: &str) -> Result<(), LabelError> {
-        FedExClient::new(&self.base, By(&self.transport), true).cancel(&self.bearer, tracking_no)
+        FedExClient::new(&self.base, By(&self.transport), true)
+            .with_account(&self.account)
+            .cancel(&self.bearer, tracking_no)
     }
 
     fn payment_ref(&self) -> &str {

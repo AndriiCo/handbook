@@ -379,6 +379,21 @@ pub fn get_display(conn: &Connection, kek: &Kek, key: &str) -> Result<Option<Dis
     }
 }
 
+/// When each stored key was last written (`config.updated_at`, unix
+/// seconds), ordered by key; removed keys are left out like
+/// [`list_display`]. The admin page compares these with the process
+/// start to flag boot-time keys that still need a restart.
+pub fn list_updated_at(conn: &Connection) -> Result<Vec<(String, i64)>> {
+    let rows: Vec<(String, i64)> = conn
+        .prepare("SELECT key, updated_at FROM config ORDER BY key")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows
+        .into_iter()
+        .filter(|(key, _)| !keys::REMOVED.contains(&key.as_str()))
+        .collect())
+}
+
 /// Admin display read for all keys, ordered by key.
 pub fn list_display(conn: &Connection, kek: &Kek) -> Result<Vec<(String, DisplayValue)>> {
     let rows: Vec<(String, String, Vec<u8>, i64)> = conn

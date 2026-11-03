@@ -8,7 +8,9 @@
 	// the /apostille prefix on the admin origin, so the root is
 	// literal (same as the config/calls pages). Quote and purchase
 	// post the full carrier payload: a live buy needs real
-	// ship-from/ship-to addresses, never a ZIP alone.
+	// ship-from/ship-to addresses, never a ZIP alone. FedEx Ship
+	// requires a contact phone on both ends, so purchase waits for
+	// both; the bought label PDF stays downloadable from the store.
 	const api = () => `/apostille/api/v1/fedex-live`;
 
 	interface Caps {
@@ -25,6 +27,7 @@
 		state_province: string;
 		postal: string;
 		country: string;
+		phone: string;
 	}
 
 	const blankAddress = (): Address => ({
@@ -33,7 +36,8 @@
 		city: '',
 		state_province: '',
 		postal: '',
-		country: 'US'
+		country: 'US',
+		phone: ''
 	});
 
 	let caps = $state<Caps | null>(null);
@@ -52,6 +56,7 @@
 	let quoteError = $state<string | null>(null);
 
 	let tracking = $state<string | null>(null);
+	let labelUrl = $state<string | null>(null);
 	let buyState = $state<'idle' | 'working' | 'done' | 'failed'>('idle');
 	let buyError = $state<string | null>(null);
 
@@ -63,10 +68,17 @@
 		orderId.trim() ? `${orderId.trim()}:${leg}` : ''
 	);
 
+	// An empty phone is left out (the server treats a present phone
+	// as one to validate).
+	const wire = (a: Address) => {
+		const { phone, ...rest } = a;
+		return phone.trim() ? { ...rest, phone: phone.trim() } : rest;
+	};
+
 	function payload() {
 		return {
-			from,
-			to,
+			from: wire(from),
+			to: wire(to),
 			parcel: { preset: parcel },
 			service,
 			pairing_id: orderId.trim()
@@ -79,6 +91,13 @@
 	const formReady = $derived(
 		orderId.trim().length > 0 && !!addressReady(from) && !!addressReady(to)
 	);
+
+	// 10 digits for US numbers; a leading 1 / +1 is dropped server-side.
+	const phoneReady = (a: Address) => {
+		const digits = a.phone.replace(/\D/g, '');
+		return digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
+	};
+	const buyReady = $derived(formReady && phoneReady(from) && phoneReady(to));
 
 	async function loadCaps() {
 		capsState = 'working';
@@ -120,6 +139,7 @@
 		buyState = 'working';
 		buyError = null;
 		tracking = null;
+		labelUrl = null;
 		try {
 			const res = await fetch(`${api()}/purchase`, {
 				method: 'POST',
@@ -132,8 +152,9 @@
 				})
 			});
 			if (!res.ok) throw new Error(`purchase failed (${res.status})`);
-			const data = (await res.json()) as { tracking_no: string };
+			const data = (await res.json()) as { tracking_no: string; label_url?: string | null };
 			tracking = data.tracking_no;
+			labelUrl = data.label_url ?? null;
 			buyState = 'done';
 			voidState = 'idle';
 			voidMsg = null;
@@ -248,6 +269,18 @@
 				<label for={`${id}-street`} class="block text-sm font-bold">Street</label>
 				<input id={`${id}-street`} class="mt-1 w-full rounded border p-2" type="text" autocomplete="off" bind:value={a.street1} />
 			</div>
+			<div>
+				<label for={`${id}-phone`} class="block text-sm font-bold">Contact phone</label>
+				<input
+					id={`${id}-phone`}
+					class="mt-1 w-full rounded border p-2"
+					type="tel"
+					inputmode="tel"
+					autocomplete="off"
+					placeholder="360 555 0100"
+					bind:value={a.phone}
+				/>
+			</div>
 			<div class="flex gap-4">
 				<div class="flex-1">
 					<label for={`${id}-city`} class="block text-sm font-bold">City</label>
@@ -293,10 +326,13 @@
 
 	<section aria-label="Purchase" class="space-y-3 rounded border p-4">
 		<h2 class="font-bold">Purchase</h2>
+		{#if formReady && !buyReady}
+			<p class="text-sm">FedEx needs a 10-digit contact phone for both addresses.</p>
+		{/if}
 		<button
 			type="button"
 			class="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-			disabled={!formReady || buyState === 'working'}
+			disabled={!buyReady || buyState === 'working'}
 			onclick={buy}
 		>
 			Buy label
@@ -306,7 +342,16 @@
 				<div class="h-4 w-1/2 animate-pulse rounded bg-gray-200"></div>
 			</div>
 		{:else if buyState === 'done' && tracking}
-			<Notice variant="success" heading="Label bought"><p>Tracking: {tracking}</p></Notice>
+			<Notice variant="success" heading="Label bought">
+				<p>
+					Tracking: {tracking}
+					{#if labelUrl}
+						· <a class="font-bold underline" href={labelUrl} download>Label PDF</a>
+					{:else}
+						· Label PDF not stored; reprint it from FedEx Ship Manager.
+					{/if}
+				</p>
+			</Notice>
 		{:else if buyState === 'failed'}
 			<Notice variant="error" heading="Purchase failed"><p>{buyError ?? 'Unknown error.'}</p></Notice>
 		{/if}

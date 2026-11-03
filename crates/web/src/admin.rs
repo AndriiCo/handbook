@@ -532,23 +532,38 @@ async fn get_config(auth: AdminAuth, State(state): State<AppState>) -> impl Into
         Ok(conn) => conn,
         Err(_) => return store_unavailable(),
     };
+    // `updated_at` per key and the process `started_at` let the page
+    // flag boot-time keys saved since the last start (P393).
+    let updated: std::collections::HashMap<String, i64> = match config::list_updated_at(&conn) {
+        Ok(rows) => rows.into_iter().collect(),
+        Err(_) => return store_unavailable(),
+    };
     match config::list_display(&conn, kek) {
         Ok(keys) => {
             let rendered: Vec<serde_json::Value> = keys
                 .into_iter()
-                .map(|(key, value)| match value {
-                    config::DisplayValue::Bool(b) => {
-                        json!({"key": key, "type": "bool", "value": b})
-                    }
-                    config::DisplayValue::Text(s) => {
-                        json!({"key": key, "type": "text", "value": s})
-                    }
-                    config::DisplayValue::Secret { set } => {
-                        json!({"key": key, "type": "secret", "set": set})
-                    }
+                .map(|(key, value)| {
+                    let mut row = match value {
+                        config::DisplayValue::Bool(b) => {
+                            json!({"key": key, "type": "bool", "value": b})
+                        }
+                        config::DisplayValue::Text(s) => {
+                            json!({"key": key, "type": "text", "value": s})
+                        }
+                        config::DisplayValue::Secret { set } => {
+                            json!({"key": key, "type": "secret", "set": set})
+                        }
+                    };
+                    row["updated_at"] = json!(updated.get(&key).copied());
+                    row
                 })
                 .collect();
-            (StatusCode::OK, Json(json!({"keys": rendered}))).into_response()
+            let started_at = crate::STARTED_AT.get().copied().unwrap_or(0);
+            (
+                StatusCode::OK,
+                Json(json!({"keys": rendered, "started_at": started_at})),
+            )
+                .into_response()
         }
         Err(_) => store_unavailable(),
     }
@@ -677,7 +692,7 @@ async fn set_config(
     );
     (
         StatusCode::OK,
-        Json(json!({"key": key, "type": key_type.as_str(), "set": true})),
+        Json(json!({"key": key, "type": key_type.as_str(), "set": true, "updated_at": now})),
     )
         .into_response()
 }
