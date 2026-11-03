@@ -49,6 +49,10 @@ double-submit pair except the Stripe webhook.
 Every admin route gets an `admin-denial` case (no session → 401/403 on
 the admin host, and the public host never serves it).
 
+`GET /apostille/api/v1/authorities` rows now also carry `kind`
+(`country | state | province | office`) and `verified_at` (unix seconds
+of the newest staff accept, or null) — P320.
+
 ## WS events (ids only; the client re-reads the API)
 Seeds: `ws-events.json`.
 - `authority:{slug}` (anyone): `fact_accepted {fact_id}`,
@@ -62,8 +66,9 @@ Seeds: `ws-events.json`.
   status}`.
 - `run:{id}` (staff): `compile.step`, `compile.done` (and the existing
   draft-run steps).
-- `ops` (staff): `order.paid`, `order.needs_staff`, `compile.done`,
-  `model_call.error`, `plan_accepted`, `kit.packed`.
+- `ops` (staff): `fact_accepted {fact_id, slug}` (live since P320),
+  `order.paid`, `order.needs_staff`, `compile.done`, `model_call.error`,
+  `plan_accepted`, `kit.packed`.
 
 ## Enumerations
 - Order kind: `label_fedex | label_usps | mail_kit | address_label`.

@@ -17,6 +17,7 @@
 mod admin;
 mod admin_ip;
 mod admin_orders;
+mod admin_stats;
 mod admin_voice;
 mod admin_workers;
 mod approval;
@@ -477,6 +478,7 @@ fn mission_p2_routes() -> Router<AppState> {
 /// Lane-owned staff routers (ADMIN listener only).
 fn mission_admin_routers(state: &AppState) -> Router {
     telemetry::admin_router(state.clone())
+        .merge(admin_stats::admin_router(state.clone()))
         .merge(plan::admin_router(state.clone()))
         .merge(compile::admin_router(state.clone()))
         .merge(factcheck::admin_router(state.clone()))

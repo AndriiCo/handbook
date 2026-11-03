@@ -702,6 +702,13 @@ fn decide_inner(
                    "fact_id": id, "at": decision.now})
             .to_string(),
         );
+        // Dashboard activity feed (staff-only `ops`).
+        crate::ws_bus::publish_ops(
+            &state.bus,
+            "fact_accepted",
+            json!({"fact_id": id, "slug": fact.slug}),
+            decision.now,
+        );
         // SA-20: queue es/fr translation rows (best-effort;
         // staff-triggered render).
         let _ = crate::translate::request_after_accept(conn, id, decision.now);
@@ -804,8 +811,16 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
     };
     let rows: Vec<serde_json::Value> = conn
         .prepare(
+            // `kind` (country/state/province/office) drives the home
+            // lanes; `verified_at` is the newest staff accept of any of
+            // this authority's facts (audit `fact_accept`), so the UI
+            // never hardcodes either.
             "SELECT a.slug, a.name, a.country, a.region,
-                    COUNT(CASE WHEN f.status = 'accepted' THEN 1 END)
+                    COUNT(CASE WHEN f.status = 'accepted' THEN 1 END),
+                    a.kind,
+                    (SELECT MAX(au.at) FROM audit au JOIN fact f2 ON f2.id = au.entity_id
+                     WHERE au.entity = 'fact' AND au.action = 'fact_accept'
+                       AND f2.authority_id = a.id)
              FROM authority a LEFT JOIN fact f ON f.authority_id = a.id
              WHERE a.id != 0
              GROUP BY a.id ORDER BY a.slug",
@@ -818,6 +833,8 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
                     "country": row.get::<_, String>(2)?,
                     "region": row.get::<_, String>(3)?,
                     "fact_count": row.get::<_, i64>(4)?,
+                    "kind": row.get::<_, String>(5)?,
+                    "verified_at": row.get::<_, Option<i64>>(6)?,
                 }))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()

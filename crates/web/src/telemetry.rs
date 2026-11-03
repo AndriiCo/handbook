@@ -221,7 +221,6 @@ pub fn calls_view(
 }
 
 /// Per-model rollup since `since` (dashboard Meta tiles, B3 stats).
-#[allow(dead_code)] // B3 `/admin/stats` is the caller.
 pub fn by_model(conn: &Connection, since: i64) -> rusqlite::Result<Vec<serde_json::Value>> {
     let mut models = conn.prepare(
         "SELECT model, COUNT(*), SUM(outcome != 'ok'), SUM(input_tokens), SUM(output_tokens),

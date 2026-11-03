@@ -94,7 +94,6 @@ pub fn publish_authority_event(bus: &Bus, slug: &str, kind: &str, ids: serde_jso
 }
 
 /// Publish one event on the staff-only `ops` feed (dashboard activity).
-#[allow(dead_code)] // B0 seam: SA-24 orders, SA-22 compile, SA-26 dashboard.
 pub fn publish_ops(bus: &Bus, kind: &str, body: serde_json::Value, at: i64) {
     let mut msg = serde_json::json!({"type": kind, "topic": "ops", "at": at});
     if let (Some(obj), Some(extra)) = (msg.as_object_mut(), body.as_object()) {
