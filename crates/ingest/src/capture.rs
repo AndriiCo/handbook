@@ -137,9 +137,39 @@ const SKIP_ELEMENTS: &[&str] = &[
 /// Elements that start a new line, so headings, paragraphs and list
 /// items stay apart instead of running into one another.
 const BLOCK_ELEMENTS: &[&str] = &[
-    "address", "article", "aside", "blockquote", "br", "caption", "dd", "div", "dl", "dt",
-    "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6",
-    "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table", "title", "tr",
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "br",
+    "caption",
+    "dd",
+    "div",
+    "dl",
+    "dt",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "li",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "title",
+    "tr",
     "ul",
 ];
 
@@ -451,7 +481,10 @@ mod tests {
         assert!(!text.contains("color:red"), "{text}");
         assert!(!text.contains("var a"), "{text}");
         assert!(!text.contains("hidden"), "{text}");
-        assert!(text.starts_with("Trang ch\u{1ee7} - C\u{1ed5}ng th&ocirc;ng tin\n"), "{text}");
+        assert!(
+            text.starts_with("Trang ch\u{1ee7} - C\u{1ed5}ng th&ocirc;ng tin\n"),
+            "{text}"
+        );
         assert!(text.contains("Fee: $15 & up"), "{text}");
         assert!(text.contains("Item | Fee\nApostille | $15"), "{text}");
         assert!(text.contains("a < b"), "{text}");

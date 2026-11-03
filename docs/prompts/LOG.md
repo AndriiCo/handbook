@@ -263,3 +263,4 @@
 | 354 | 2026-11-03 05:37Z | Drop clock-time matching: numbers ground on whole tokens as production; ZIP+4 head + dollars by value kept | web 379; clippy clean |
 | 355 | 2026-11-03 05:48Z | T2b deploy: 78a9ca2 (P345-P354) to production; review status doc | prod 5/10 → 5/10, no regressions; flags announced |
 | 356 | 2026-11-03 12:56Z | Admin accept 'csrf check failed' + Workers 'session expired'; trace shows importmap JSON | h3 cookie lines joined (RFC 9114); extractor drops scripts; ingest 56, web 380 |
+| 357 | 2026-11-03 13:01Z | P356 failed the plant gate on rustfmt | cargo fmt on capture.rs; fmt check clean |
