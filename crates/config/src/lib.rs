@@ -389,6 +389,9 @@ pub fn list_display(conn: &Connection, kek: &Kek) -> Result<Vec<(String, Display
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut out = Vec::with_capacity(rows.len());
     for (key, type_text, value_enc, enc_version) in &rows {
+        if keys::REMOVED.contains(&key.as_str()) {
+            continue;
+        }
         let value = match type_text.as_str() {
             "bool" => decrypt_display(
                 kek,
@@ -966,14 +969,11 @@ pub mod keys {
     pub const NET_PORT: &str = "net.port";
     pub const NET_ADMIN_PORT: &str = "net.admin_port";
     pub const NET_HTTPS_PORT: &str = "net.https_port";
-    pub const NET_ADMIN_HTTPS_PORT: &str = "net.admin_https_port";
     pub const NET_HTTP_PORT: &str = "net.http_port";
     pub const NET_PUBLIC_HOST: &str = "net.public_host";
     pub const TLS_CERT_FILE: &str = "tls.cert_file";
     pub const TLS_KEY_FILE: &str = "tls.key_file";
-    pub const TLS_CLIENT_CA_FILE: &str = "tls.client_ca_file";
     pub const ADMIN_MTLS_OFF: &str = "admin.mtls_off";
-    pub const ADMIN_REQUIRE_CERT: &str = "admin.require_cert";
     pub const ADMIN_ALLOW_IPS: &str = "admin.allow_ips";
     pub const MEDIA_TERMS_READ: &str = "media.terms_read";
     pub const ACME_ENABLED: &str = "acme.enabled";
@@ -1107,6 +1107,15 @@ pub mod keys {
     /// rows (every pipeline). Default 400.
     pub const META_DAILY_CALL_CAP: &str = "meta.daily_call_cap";
 
+    /// Keys removed from the registry (admin client certificates and the
+    /// split-port admin listener are gone). A stored row is ignored: the
+    /// boot prints one warning and the admin list leaves it out.
+    pub const REMOVED: &[&str] = &[
+        "net.admin_https_port",
+        "tls.client_ca_file",
+        "admin.require_cert",
+    ];
+
     /// Every registered key with its type (admin UI + roundtrip tests).
     pub const ALL: &[(&str, super::ConfigType)] = &[
         (PATHS_STATIC_DIR, super::ConfigType::Text),
@@ -1118,14 +1127,11 @@ pub mod keys {
         (NET_PORT, super::ConfigType::Text),
         (NET_ADMIN_PORT, super::ConfigType::Text),
         (NET_HTTPS_PORT, super::ConfigType::Text),
-        (NET_ADMIN_HTTPS_PORT, super::ConfigType::Text),
         (NET_HTTP_PORT, super::ConfigType::Text),
         (NET_PUBLIC_HOST, super::ConfigType::Text),
         (TLS_CERT_FILE, super::ConfigType::Text),
         (TLS_KEY_FILE, super::ConfigType::Text),
-        (TLS_CLIENT_CA_FILE, super::ConfigType::Text),
         (ADMIN_MTLS_OFF, super::ConfigType::Bool),
-        (ADMIN_REQUIRE_CERT, super::ConfigType::Bool),
         (ADMIN_ALLOW_IPS, super::ConfigType::Text),
         (MEDIA_TERMS_READ, super::ConfigType::Bool),
         (ACME_ENABLED, super::ConfigType::Bool),
@@ -1457,17 +1463,12 @@ pub struct RuntimeConfig {
     pub port: u16,
     pub admin_port: u16,
     pub https_port: u16,
-    /// DEPRECATED (single-443): parsed but never bound. Kept so
-    /// existing rows do not become unknown keys mid-rollout.
-    pub admin_https_port: u16,
     pub quic_enabled: bool,
     pub http_port: u16,
     pub public_host: String,
     pub tls_cert: Option<String>,
     pub tls_key: Option<String>,
-    pub tls_client_ca: Option<String>,
     pub admin_mtls_off: bool,
-    pub admin_require_cert: bool,
     pub admin_allow_ips: Vec<IpNet>,
     pub media_terms_read: bool,
     pub acme_enabled: bool,
@@ -1540,15 +1541,12 @@ impl Default for RuntimeConfig {
             port: 3000,
             admin_port: 3001,
             https_port: 443,
-            admin_https_port: 444,
             quic_enabled: false,
             http_port: 80,
             public_host: "andrii.ai".to_string(),
             tls_cert: None,
             tls_key: None,
-            tls_client_ca: None,
             admin_mtls_off: false,
-            admin_require_cert: false,
             admin_allow_ips: loopback_allow_ips(),
             media_terms_read: false,
             acme_enabled: false,
@@ -1868,13 +1866,6 @@ impl RuntimeConfig {
         overlay_optional_text(
             conn,
             kek,
-            keys::TLS_CLIENT_CA_FILE,
-            &mut warnings,
-            &mut cfg.tls_client_ca,
-        )?;
-        overlay_optional_text(
-            conn,
-            kek,
             keys::ACME_EMAIL,
             &mut warnings,
             &mut cfg.acme_email,
@@ -1991,13 +1982,6 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.admin_mtls_off,
         )?;
-        overlay_bool(
-            conn,
-            kek,
-            keys::ADMIN_REQUIRE_CERT,
-            &mut warnings,
-            &mut cfg.admin_require_cert,
-        )?;
         // Fail closed: an unparsable allowlist locks the admin
         // listener to loopback (with a loud warning), never to the
         // previous value and never to the open internet.
@@ -2058,26 +2042,12 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.https_port,
         )?;
-        overlay_port(
-            conn,
-            kek,
-            keys::NET_ADMIN_HTTPS_PORT,
-            &mut warnings,
-            &mut cfg.admin_https_port,
-        )?;
-        // DEPRECATED (single-443): the value parses but no listener
-        // binds it. A SET row warns loudly; unset stays silent so
-        // existing DBs boot exactly as before.
-        match get_text_for_job(conn, kek, keys::NET_ADMIN_HTTPS_PORT) {
-            Ok(Some(_)) => warnings.push(format!(
-                "{} is deprecated and IGNORED: single-443 serves admin on {} — no listener is bound to this port",
-                keys::NET_ADMIN_HTTPS_PORT,
-                keys::NET_HTTPS_PORT
-            )),
-            Ok(None) => {}
-            // Wrong-typed rows already warned in overlay_port above.
-            Err(ConfigError::BadValue(_)) => {}
-            Err(e) => return Err(e),
+        // Removed keys: a stored row is read by nothing. Warn once so
+        // the operator can see it is inert; unset stays silent.
+        for key in keys::REMOVED {
+            if get_row(conn, key)?.is_some() {
+                warnings.push(format!("{key} was removed and its stored value is IGNORED"));
+            }
         }
         overlay_bool(
             conn,
@@ -2331,13 +2301,6 @@ impl RuntimeConfig {
                 "admin.mtls_off is dev-only; refusing release boot on non-loopback binds",
             ));
         }
-        // A required cert cannot be verified without a CA: refuse
-        // everywhere (first boot keeps the key off until certs exist).
-        if cfg.admin_require_cert && cfg.tls_client_ca.is_none() {
-            return Err(ConfigError::BadValue(
-                "admin.require_cert needs tls.client_ca_file; refusing boot",
-            ));
-        }
         Ok((cfg, warnings))
     }
 
@@ -2394,8 +2357,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_95_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 95);
+    fn registry_holds_92_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 92);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -2409,6 +2372,8 @@ mod runtime_tests {
         // stripe.webhook_secret, usps.client_id/client_secret/
         // epa_account), five bools (orders.enabled, labels.customer_live,
         // usps.live, plan.auto_compose, tracking.poll_enabled), 16 text.
+        // P373 removes tls.client_ca_file and net.admin_https_port (text)
+        // and admin.require_cert (bool).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -2417,7 +2382,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (13, 65, 17));
+        assert_eq!(counts, (12, 63, 17));
     }
 
     #[test]
@@ -2562,15 +2527,12 @@ mod runtime_tests {
         assert_eq!(cfg.port, 3000);
         assert_eq!(cfg.admin_port, 3001);
         assert_eq!(cfg.https_port, 443);
-        assert_eq!(cfg.admin_https_port, 444);
         assert!(!cfg.quic_enabled);
         assert_eq!(cfg.http_port, 80);
         assert_eq!(cfg.public_host, "andrii.ai");
         assert_eq!(cfg.tls_cert, None);
         assert_eq!(cfg.tls_key, None);
-        assert_eq!(cfg.tls_client_ca, None);
         assert!(!cfg.admin_mtls_off);
-        assert!(!cfg.admin_require_cert);
         assert_eq!(cfg.admin_allow_ips, loopback_allow_ips());
         assert!(!cfg.media_terms_read);
         assert!(!cfg.acme_enabled);
@@ -2633,14 +2595,12 @@ mod runtime_tests {
             (keys::NET_PORT, ConfigType::Text, "0"),
             (keys::NET_ADMIN_PORT, ConfigType::Text, "0"),
             (keys::NET_HTTPS_PORT, ConfigType::Text, "8443"),
-            (keys::NET_ADMIN_HTTPS_PORT, ConfigType::Text, "8444"),
+            ("net.admin_https_port", ConfigType::Text, "8444"),
             (keys::NET_HTTP_PORT, ConfigType::Text, "8080"),
             (keys::NET_PUBLIC_HOST, ConfigType::Text, "example.test"),
             (keys::TLS_CERT_FILE, ConfigType::Text, "/x/cert.pem"),
             (keys::TLS_KEY_FILE, ConfigType::Text, "/x/key.pem"),
-            (keys::TLS_CLIENT_CA_FILE, ConfigType::Text, "/x/ca.pem"),
             (keys::ADMIN_MTLS_OFF, ConfigType::Bool, "1"),
-            (keys::ADMIN_REQUIRE_CERT, ConfigType::Bool, "1"),
             (keys::MEDIA_TERMS_READ, ConfigType::Bool, "1"),
             (keys::ACME_ENABLED, ConfigType::Bool, "1"),
             (keys::ACME_DIRECTORY, ConfigType::Text, "staging"),
@@ -2711,11 +2671,11 @@ mod runtime_tests {
             put(&conn, &kek, key, key_type, plaintext.as_bytes());
         }
         let (cfg, warnings) = RuntimeConfig::load(&conn, &kek).expect("load full db");
-        // The deprecated `net.admin_https_port` row (set above) is the
+        // The removed `net.admin_https_port` row (set above) is the
         // ONLY warning; every other key overlays cleanly.
         assert_eq!(warnings.len(), 1, "warnings: {warnings:?}");
         assert!(
-            warnings[0].contains(keys::NET_ADMIN_HTTPS_PORT) && warnings[0].contains("deprecated"),
+            warnings[0].contains("net.admin_https_port") && warnings[0].contains("removed"),
             "warnings: {warnings:?}"
         );
         assert_eq!(cfg.static_dir, "static-x");
@@ -2734,15 +2694,12 @@ mod runtime_tests {
         assert_eq!(cfg.port, 0);
         assert_eq!(cfg.admin_port, 0);
         assert_eq!(cfg.https_port, 8443);
-        assert_eq!(cfg.admin_https_port, 8444);
         assert!(cfg.quic_enabled);
         assert_eq!(cfg.http_port, 8080);
         assert_eq!(cfg.public_host, "example.test");
         assert_eq!(cfg.tls_cert.as_deref(), Some("/x/cert.pem"));
         assert_eq!(cfg.tls_key.as_deref(), Some("/x/key.pem"));
-        assert_eq!(cfg.tls_client_ca.as_deref(), Some("/x/ca.pem"));
         assert!(cfg.admin_mtls_off); // debug build allows the dev seam
-        assert!(cfg.admin_require_cert);
         assert!(cfg.media_terms_read);
         assert!(cfg.acme_enabled);
         assert_eq!(cfg.acme_directory, "staging");
@@ -2812,7 +2769,7 @@ mod runtime_tests {
     }
 
     #[test]
-    fn deprecated_admin_https_port_warns_only_when_set() {
+    fn removed_keys_warn_when_stored_and_stay_out_of_the_admin_list() {
         let conn = memory();
         let kek = Kek::generate();
         let (_, warnings) = RuntimeConfig::load(&conn, &kek).expect("load empty db");
@@ -2820,19 +2777,34 @@ mod runtime_tests {
         put(
             &conn,
             &kek,
-            keys::NET_ADMIN_HTTPS_PORT,
+            "tls.client_ca_file",
             ConfigType::Text,
-            b"8444",
+            b"/x/ca.pem",
         );
-        let (cfg, warnings) = RuntimeConfig::load(&conn, &kek).expect("load");
-        assert_eq!(cfg.admin_https_port, 8444); // still parsed, never bound
-        assert_eq!(warnings.len(), 1, "warnings: {warnings:?}");
+        put(&conn, &kek, "admin.require_cert", ConfigType::Bool, b"1");
+        put(&conn, &kek, keys::NET_PORT, ConfigType::Text, b"3000");
+        // A stored require_cert used to refuse the boot without a CA;
+        // removed, it is inert.
+        let (_, warnings) = RuntimeConfig::load(&conn, &kek).expect("load");
+        assert_eq!(warnings.len(), 2, "warnings: {warnings:?}");
         assert!(
-            warnings[0].contains(keys::NET_ADMIN_HTTPS_PORT)
-                && warnings[0].contains("deprecated")
-                && warnings[0].contains(keys::NET_HTTPS_PORT),
+            warnings
+                .iter()
+                .all(|w| w.contains("removed") && w.contains("IGNORED")),
             "warnings: {warnings:?}"
         );
+        let listed: Vec<String> = list_display(&conn, &kek)
+            .expect("list")
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        assert_eq!(listed, vec![keys::NET_PORT.to_string()]);
+        for key in keys::REMOVED {
+            assert!(
+                !ALL_KEYS.iter().any(|(k, _)| k == key),
+                "{key} is removed but still registered"
+            );
+        }
     }
 
     #[test]
@@ -2930,21 +2902,6 @@ mod runtime_tests {
         put(&conn, &kek, keys::NET_PORT, ConfigType::Text, b"3000");
         let err = RuntimeConfig::load(&conn, &wrong).expect_err("wrong KEK must refuse");
         assert!(matches!(err, ConfigError::Crypto), "got: {err}");
-    }
-
-    #[test]
-    fn require_cert_without_ca_refuses_the_boot() {
-        let conn = memory();
-        let kek = Kek::generate();
-        put(
-            &conn,
-            &kek,
-            keys::ADMIN_REQUIRE_CERT,
-            ConfigType::Bool,
-            b"1",
-        );
-        let err = RuntimeConfig::load(&conn, &kek).expect_err("no CA must refuse");
-        assert!(matches!(err, ConfigError::BadValue(_)), "got: {err}");
     }
 
     #[test]

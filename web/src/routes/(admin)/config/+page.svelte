@@ -112,7 +112,6 @@
 		call: 'Read every call',
 		poll: 'Next mail poll',
 		reserved: 'Reserved',
-		retired: 'Retired',
 		locked: 'Server CLI only'
 	};
 
@@ -162,6 +161,10 @@
 		const id = decodeURIComponent(window.location.hash.slice(1));
 		if (!id) return;
 		if (GROUPS.some((g) => g.id === id)) guideOpen[id] = true;
+		const group = GROUPS.some((g) => g.id === id)
+			? id
+			: items.find((item) => `key-${item.entry.key}` === id)?.group.id;
+		if (group) pinActive(group);
 		void tick().then(() => document.getElementById(id)?.scrollIntoView({ block: 'start' }));
 	}
 
@@ -213,14 +216,23 @@
 	function appliesCls(applies: Applies): string {
 		const base = 'inline-flex h-6 items-center rounded-full px-2 text-xs font-medium';
 		if (applies === 'live' || applies === 'call') return `${base} bg-verified-bg text-verified`;
-		if (applies === 'reserved' || applies === 'retired') return `${base} bg-changed-bg text-changed`;
+		if (applies === 'reserved') return `${base} bg-changed-bg text-changed`;
 		if (applies === 'locked') return `${base} bg-surface-2 text-ink-muted`;
 		return `${base} border border-line text-ink-muted`;
 	}
 
 	// Table of contents: chips that scroll sideways on phones, a
-	// sticky list at xl. The group nearest the top is marked current.
+	// sticky list at xl. The group nearest the top is marked current,
+	// except right after a jump: the clicked group stays current until
+	// the reader scrolls (a short last group can never reach the top,
+	// so the observer alone would mark the group above it).
 	let activeId = $state<string | null>(null);
+	let pinnedId: string | null = null;
+
+	function pinActive(id: string) {
+		activeId = id;
+		pinnedId = id;
+	}
 
 	function tocCls(active: boolean, dim: boolean): string {
 		const base =
@@ -240,6 +252,7 @@
 		const observer = new IntersectionObserver(
 			(records) => {
 				for (const r of records) seen.set(r.target.id, r.isIntersecting);
+				if (pinnedId) return;
 				activeId = GROUPS.find((g) => seen.get(g.id))?.id ?? activeId;
 			},
 			{ rootMargin: '-64px 0px -60% 0px' }
@@ -248,7 +261,23 @@
 			const el = document.getElementById(g.id);
 			if (el) observer.observe(el);
 		}
-		return () => observer.disconnect();
+		// Only the reader's own scrolling releases a pin; the jump's
+		// own scroll events must not.
+		const release = () => {
+			pinnedId = null;
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) release();
+		};
+		window.addEventListener('wheel', release, { passive: true });
+		window.addEventListener('touchmove', release, { passive: true });
+		window.addEventListener('keydown', onKey);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('wheel', release);
+			window.removeEventListener('touchmove', release);
+			window.removeEventListener('keydown', onKey);
+		};
 	});
 
 	function countCls(set: number, total: number): string {
@@ -753,6 +782,7 @@
 								<li class="flex-none">
 									<a
 										href={`#${s.group.id}`}
+										onclick={() => pinActive(s.group.id)}
 										aria-current={activeId === s.group.id ? 'location' : undefined}
 										class={tocCls(activeId === s.group.id, s.shown.length === 0)}
 									>

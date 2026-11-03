@@ -17,10 +17,9 @@ export type ConfigType = 'bool' | 'text' | 'secret';
  * call     re-read on every request or model call.
  * poll     read by each `xtask mail-poll` run (apostille-mail.timer).
  * reserved registered, but no code reads it yet.
- * retired  ignored by the server (a set row only warns at boot).
  * locked   CLI-managed; the admin PUT answers 422.
  */
-export type Applies = 'boot' | 'live' | 'call' | 'poll' | 'reserved' | 'retired' | 'locked';
+export type Applies = 'boot' | 'live' | 'call' | 'poll' | 'reserved' | 'locked';
 
 export interface GuideKey {
 	key: string;
@@ -48,11 +47,32 @@ export const APPLIES_TEXT: Record<Applies, string> = {
 	call: 'Read on every call. No restart.',
 	poll: 'Read by the next mail-poll run.',
 	reserved: 'Reserved. No code reads this key yet, so saving it changes nothing today.',
-	retired: 'Retired. The server ignores it; a set value only prints a boot warning.',
 	locked: 'Managed from the server CLI. This page cannot change it.'
 };
 
 export const CONFIG_GUIDE: GuideGroup[] = [
+	{
+		id: 'setup',
+		title: 'First-boot setup',
+		summary:
+			'The gate for the first-boot wizard. Written only by xtask setup-key-mint on the server and erased when the first staff passkey enrols. This page cannot change it.',
+		setup: [
+			'Mint a key on the server with xtask setup-key-mint; it prints once and stops working 72 hours later.',
+			'Enrol the first staff passkey from the wizard; that erases the gate and this page takes over.'
+		],
+		keys: [
+			{
+				key: 'setup.key_hash',
+				type: 'secret',
+				label: 'Setup key hash',
+				what: 'SHA-256 of the minted setup key. Present means the setup window is open.',
+				how: 'Server CLI only.',
+				format: '64 hex characters. Never shown.',
+				applies: 'locked',
+				readOnly: true
+			}
+		]
+	},
 	{
 		id: 'net',
 		title: 'Network & listeners',
@@ -135,16 +155,6 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				format: 'Integer 1-65535. Example: 3001',
 				default: '3001',
 				applies: 'boot'
-			},
-			{
-				key: 'net.admin_https_port',
-				type: 'text',
-				label: 'Old admin HTTPS port',
-				what: 'Left over from the split-port layout. Single-443 serves admin on net.https_port; this value parses but nothing binds it, and a set row prints a boot warning.',
-				how: 'Leave unset.',
-				format: 'Integer. Ignored.',
-				default: '444 (ignored)',
-				applies: 'retired'
 			},
 			{
 				key: 'quic.enabled',
@@ -303,16 +313,6 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				format: 'Absolute path. Example: /var/lib/apostille/tls/key.pem. Empty = unset.',
 				default: 'unset',
 				applies: 'boot'
-			},
-			{
-				key: 'tls.client_ca_file',
-				type: 'text',
-				label: 'Client CA file',
-				what: 'Left over from admin client certificates, which are no longer requested. A set value only prints a boot warning; admin access is gated by admin.allow_ips.',
-				how: 'Leave empty.',
-				format: 'Absolute path. Ignored.',
-				default: 'unset',
-				applies: 'retired'
 			}
 		]
 	},
@@ -347,16 +347,6 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				format: 'On or off. Keep off on any public server.',
 				default: 'off',
 				applies: 'boot'
-			},
-			{
-				key: 'admin.require_cert',
-				type: 'bool',
-				label: 'Require client certificate',
-				what: 'Left over from admin client certificates. Nothing reads it except a boot check: on without tls.client_ca_file refuses to start.',
-				how: 'Leave off.',
-				format: 'On or off. Keep off.',
-				default: 'off',
-				applies: 'retired'
 			},
 			{
 				key: 'auth.rp_id',
@@ -1183,28 +1173,6 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				format: 'Integer. Example: 6',
 				default: '6',
 				applies: 'reserved'
-			}
-		]
-	},
-	{
-		id: 'setup',
-		title: 'First-boot setup',
-		summary:
-			'The gate for the first-boot wizard. Written only by xtask setup-key-mint on the server and erased when the first staff passkey enrols. This page cannot change it.',
-		setup: [
-			'Mint a key on the server with xtask setup-key-mint; it prints once and stops working 72 hours later.',
-			'Enrol the first staff passkey from the wizard; that erases the gate and this page takes over.'
-		],
-		keys: [
-			{
-				key: 'setup.key_hash',
-				type: 'secret',
-				label: 'Setup key hash',
-				what: 'SHA-256 of the minted setup key. Present means the setup window is open.',
-				how: 'Server CLI only.',
-				format: '64 hex characters. Never shown.',
-				applies: 'locked',
-				readOnly: true
 			}
 		]
 	}

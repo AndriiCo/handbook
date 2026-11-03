@@ -46,13 +46,11 @@ follow-up, see OQ-C4).
 | `PORT` | `net.port` | text (u16) | `3000` |
 | `ADMIN_PORT` | `net.admin_port` | text (u16) | `3001` |
 | `HTTPS_PORT` | `net.https_port` | text (u16) | `443` |
-| `ADMIN_HTTPS_PORT` | `net.admin_https_port` | text (u16) | `444` (**deprecated** since single-443; set row warns, nothing binds) |
 | `HTTP_PORT` | `net.http_port` | text (u16) | `80` |
 | `PUBLIC_HOST` | `net.public_host` | text | `andrii.ai` |
 | `TLS_CERT` | `tls.cert_file` | text (path, empty = unset) | empty |
 | `TLS_KEY` | `tls.key_file` | text (path, empty = unset) | empty |
 | `ADMIN_MTLS=off` | `admin.mtls_off` | bool | false |
-| _(none)_ | `admin.require_cert` | bool | false |
 | `MEDIA_TERMS_READ=1` | `media.terms_read` | bool | false |
 | `ACME_ENABLED=1` | `acme.enabled` | bool | false |
 | `ACME_DIRECTORY` | `acme.directory` | text (`prod`/`staging`/URL) | `prod` |
@@ -67,7 +65,6 @@ follow-up, see OQ-C4).
 | *(voice stream)* | `telnyx.connection_id` | text (empty = unset) | empty |
 | *(voice stream)* | `telnyx.webhook_public_key` | text (empty = unset) | empty |
 | *(voice stream)* | `telnyx.api_key` | **secret** | unset (= voice 503) |
-| *(mtls stream)* | `tls.client_ca_file` | text (path, empty = unset) | empty |
 | *(quic stream)* | `quic.enabled` | bool | false |
 
 Shapes are exactly secure-config.md §1.5 (`bool`/`text`/
@@ -130,10 +127,6 @@ rules in `RuntimeConfig::load`:
   This bakes the H6 fix (`security-review-2026-10-27.md`) into the
   migration: a persistent dev-bypass flag must not survive into a
   release binary. Deliberate delta, no env equivalent.
-- `admin.require_cert=true` without `tls.client_ca_file` →
-  **refuse to start** (all builds): a required cert cannot be
-  verified without a CA. First boot keeps the key off until
-  certs exist; the operator opts in afterwards.
 - KEK unavailable → **refuse to start** (old code booted degraded
   with env config + 503 on the config API). Deliberate delta:
   without the KEK no runtime setting is readable, and degraded
@@ -156,7 +149,7 @@ was needed or added. Each key renders as:
 |---|---|---|
 | `*.port`, `net.bind`, `net.bind6`, `net.public_host` | text input | u16/IP validated at next boot, not at PUT time |
 | `paths.*`, `tls.*`, `acme.directory`, `acme.domains`, `acme.email`, `acme.eab_kid`, `usps.base_url` | text input | paths/URLs validated at next boot |
-| `admin.mtls_off`, `admin.require_cert`, `media.terms_read`, `acme.enabled`, `usps.certified` | checkbox | `admin.mtls_off` refuses release boot when true; `admin.require_cert` refuses boot without a CA |
+| `admin.mtls_off`, `media.terms_read`, `acme.enabled`, `usps.certified` | checkbox | `admin.mtls_off` refuses release boot when true |
 | `acme.eab_hmac` | set-new secret input, presence-only read | write-only; never echoed |
 
 Every key is restart-required (read-once at boot). The
@@ -286,9 +279,11 @@ socket peer is the caller. No peer address fails closed.
   its IP, family, transport, and these fix steps. API paths keep
   the JSON denial (`code: ip_not_allowed`); `/_app/` assets get a
   bare 403.
-- Retired (kept as rows so existing DBs stay valid, never
-  consulted): `tls.client_ca_file` (warns when set),
-  `admin.require_cert`, and the cert half of `admin.mtls_off`
-  (the flag still gates the loopback-host and test-header dev
+- Removed from the registry (P373): `tls.client_ca_file`,
+  `admin.require_cert` and `net.admin_https_port`
+  (`config::keys::REMOVED`). A stored row is ignored: the boot
+  prints one warning, the admin list leaves it out and the admin
+  PUT refuses the key. The cert half of `admin.mtls_off` is gone
+  too (the flag still gates the loopback-host and test-header dev
   seams). Enrolment ceremonies no longer require a presented
   cert; a presented live cert still binds when present.

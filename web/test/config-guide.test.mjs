@@ -11,10 +11,10 @@ import {
 } from '../src/lib/admin/config-guide.ts';
 
 // Every registry key with its type, from crates/config/src/lib.rs keys::ALL
-// (registry_holds_95_typed_keys). Regenerate when the registry changes.
+// (registry_holds_92_typed_keys). Regenerate when the registry changes.
 const REGISTRY = [
 	['acme.directory', 'text'], ['acme.domains', 'text'], ['acme.eab_hmac', 'secret'], ['acme.eab_kid', 'text'], ['acme.email', 'text'], ['acme.enabled', 'bool'],
-	['admin.allow_ips', 'text'], ['admin.mtls_off', 'bool'], ['admin.require_cert', 'bool'],
+	['admin.allow_ips', 'text'], ['admin.mtls_off', 'bool'],
 	['apple.client_id', 'text'], ['apple.key_id', 'text'], ['apple.private_key', 'secret'], ['apple.team_id', 'text'],
 	['auth.origin', 'text'], ['auth.rp_id', 'text'], ['auth.rp_name', 'text'], ['compile.daily_runs', 'text'],
 	['google.client_id', 'text'], ['google.client_secret', 'secret'],
@@ -22,13 +22,13 @@ const REGISTRY = [
 	['mail.base_url', 'text'], ['mail.client_id', 'text'], ['mail.client_secret', 'secret'], ['mail.refresh_token', 'secret'], ['mail.token_url', 'text'],
 	['mailer.dir', 'text'], ['mailer.from', 'text'], ['mailer.host', 'text'], ['mailer.password', 'secret'], ['mailer.port', 'text'], ['mailer.provider', 'text'], ['mailer.username', 'text'],
 	['media.terms_read', 'bool'], ['meta.api_key', 'secret'], ['meta.base_url', 'text'], ['meta.client_id', 'text'], ['meta.client_secret', 'secret'], ['meta.daily_call_cap', 'text'],
-	['net.admin_https_port', 'text'], ['net.admin_port', 'text'], ['net.bind', 'text'], ['net.bind6', 'text'], ['net.http_port', 'text'], ['net.https_port', 'text'], ['net.port', 'text'], ['net.public_host', 'text'],
+	['net.admin_port', 'text'], ['net.bind', 'text'], ['net.bind6', 'text'], ['net.http_port', 'text'], ['net.https_port', 'text'], ['net.port', 'text'], ['net.public_host', 'text'],
 	['notify.daily_cap', 'text'], ['notify.enabled', 'bool'], ['notify.postal_address', 'text'],
 	['orders.currency', 'text'], ['orders.daily_cap', 'text'], ['orders.enabled', 'bool'], ['orders.fee_label_cents', 'text'], ['orders.kit_price_cents', 'text'], ['orders.max_order_cents', 'text'], ['orders.ship_from', 'text'],
 	['paths.acme_challenge_dir', 'text'], ['paths.admin_spa_dir', 'text'], ['paths.spa_dir', 'text'], ['paths.static_dir', 'text'],
 	['plan.auto_compose', 'bool'], ['quic.enabled', 'bool'], ['setup.key_hash', 'secret'], ['stripe.secret_key', 'secret'], ['stripe.webhook_secret', 'secret'],
 	['telnyx.api_key', 'secret'], ['telnyx.base_url', 'text'], ['telnyx.connection_id', 'text'], ['telnyx.from_number', 'text'], ['telnyx.webhook_public_key', 'text'],
-	['tls.cert_file', 'text'], ['tls.client_ca_file', 'text'], ['tls.key_file', 'text'], ['tracking.poll_enabled', 'bool'],
+	['tls.cert_file', 'text'], ['tls.key_file', 'text'], ['tracking.poll_enabled', 'bool'],
 	['usps.base_url', 'text'], ['usps.certified', 'bool'], ['usps.client_id', 'secret'], ['usps.client_secret', 'secret'], ['usps.crid', 'text'], ['usps.epa_account', 'secret'], ['usps.live', 'bool'], ['usps.live_daily_cap', 'text'], ['usps.live_max_usd', 'text'], ['usps.manifest_mid', 'text'], ['usps.mid', 'text']
 ];
 
@@ -36,7 +36,7 @@ test('guide covers every registry key once, with the registry type', () => {
 	const seen = guideKeys()
 		.map((k) => [k.key, k.type])
 		.sort((a, b) => a[0].localeCompare(b[0]));
-	assert.equal(REGISTRY.length, 95);
+	assert.equal(REGISTRY.length, 92);
 	assert.deepEqual(seen, REGISTRY);
 	assert.equal(CONFIG_GUIDE.length, 17);
 });

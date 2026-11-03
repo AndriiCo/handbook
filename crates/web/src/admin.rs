@@ -588,6 +588,13 @@ async fn set_config(
         )
             .into_response();
     }
+    if config::keys::REMOVED.contains(&key.as_str()) {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "this setting was removed; nothing reads it"})),
+        )
+            .into_response();
+    }
     let Some(key_type) = config::ConfigType::parse(&body.key_type) else {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,

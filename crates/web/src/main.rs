@@ -969,21 +969,12 @@ fn warn_unless_admin_san(cert_pem: &[u8]) {
 }
 
 /// Single-443 listener TLS: plain server TLS, no client-cert
-/// request. `tls.client_ca_file` is retired (admin auth is the
-/// `admin.allow_ips` IP allowlist now): a set key prints a loud
-/// warning and is otherwise ignored — never silently re-enabling
-/// cert prompts.
+/// request (admin access is gated by `admin.allow_ips` and a staff
+/// session).
 fn load_admin_tls_from_pem(
     cert_pem: &[u8],
     key_pem: &[u8],
-    ca_path: Option<&str>,
 ) -> Result<axum_server::tls_rustls::RustlsConfig, String> {
-    if ca_path.is_some() {
-        eprintln!(
-            "WARNING: tls.client_ca_file is retired — client certs are neither requested nor \
-             checked; admin access is gated by admin.allow_ips"
-        );
-    }
     let config = mtls::admin_server_config(cert_pem, key_pem, None)?;
     Ok(axum_server::tls_rustls::RustlsConfig::from_config(
         std::sync::Arc::new(config),
@@ -992,13 +983,11 @@ fn load_admin_tls_from_pem(
 
 /// Hot-reload the admin config after an ACME renewal: rebuild the
 /// whole `ServerConfig` (rustls has no in-place cert swap on a
-/// custom-built config) and swap it in. `ca_path` is accepted and
-/// ignored (see [`load_admin_tls_from_pem`]).
+/// custom-built config) and swap it in.
 fn reload_admin_tls(
     admin_tls: &axum_server::tls_rustls::RustlsConfig,
     cert_pem: &[u8],
     key_pem: &[u8],
-    _ca_path: Option<&str>,
 ) -> Result<(), String> {
     let config = mtls::admin_server_config(cert_pem, key_pem, None)?;
     admin_tls.reload_from_config(std::sync::Arc::new(config));
@@ -1324,7 +1313,7 @@ async fn main() {
     match explicit_tls_pair(cfg.tls_cert.clone(), cfg.tls_key.clone()) {
         Ok(Some((cert_pem, key_pem))) => {
             warn_unless_admin_san(&cert_pem);
-            match load_admin_tls_from_pem(&cert_pem, &key_pem, cfg.tls_client_ca.as_deref()) {
+            match load_admin_tls_from_pem(&cert_pem, &key_pem) {
                 Ok(admin_tls) => {
                     serve_tls(
                         public,
@@ -1394,35 +1383,24 @@ async fn serve_acme(public: Router, admin: Router, cfg: &config::RuntimeConfig, 
         std::process::exit(1);
     });
     warn_unless_admin_san(&pair.cert_pem);
-    let admin_tls =
-        load_admin_tls_from_pem(&pair.cert_pem, &pair.key_pem, cfg.tls_client_ca.as_deref())
-            .unwrap_or_else(|e| {
-                eprintln!("refusing to start: {e}");
-                std::process::exit(1);
-            });
+    let admin_tls = load_admin_tls_from_pem(&pair.cert_pem, &pair.key_pem).unwrap_or_else(|e| {
+        eprintln!("refusing to start: {e}");
+        std::process::exit(1);
+    });
     let quic_reloader = quic::QuicReloader::default();
     let loop_admin_tls = admin_tls.clone();
     let loop_quic = quic_reloader.clone();
     let loop_quic_enabled = cfg.quic_enabled;
-    let loop_ca = cfg.tls_client_ca.clone();
     tokio::spawn(async move {
         acme::renewal_loop(config, |cert, key| {
             let admin_tls = loop_admin_tls.clone();
             let loop_quic = loop_quic.clone();
-            let ca = loop_ca.clone();
             async move {
-                reload_admin_tls(&admin_tls, &cert, &key, ca.as_deref())?;
+                reload_admin_tls(&admin_tls, &cert, &key)?;
                 // QUIC serves the same pair: swap its crypto too so a
                 // renewal never leaves h3 on a stale certificate.
                 if loop_quic_enabled {
-                    let ca_pem = ca
-                        .as_deref()
-                        .map(|path| {
-                            std::fs::read(path)
-                                .map_err(|e| format!("read tls.client_ca_file={path}: {e}"))
-                        })
-                        .transpose()?;
-                    loop_quic.reload(&cert, &key, ca_pem.as_deref())?;
+                    loop_quic.reload(&cert, &key, None)?;
                 }
                 Ok(())
             }
@@ -1486,9 +1464,6 @@ fn spawn_challenge_servers(cfg: &config::RuntimeConfig) -> Vec<(SocketAddr, axum
 /// Plain-HTTP dev mode: public on `net.port` (default 3000) and
 /// admin on `net.admin_port` (default 3001), on every bind IP.
 async fn serve_http(public: Router, admin: Router, cfg: &config::RuntimeConfig) {
-    if cfg.tls_client_ca.is_some() {
-        eprintln!("WARNING: tls.client_ca_file is set but admin TLS is off — mTLS inert");
-    }
     let mut servers = tokio::task::JoinSet::new();
     let mut handles = Vec::new();
     for ip in cfg.bind_ips() {
@@ -1561,8 +1536,7 @@ struct TlsListener {
 }
 
 /// Every listener TLS mode binds, per bind IP: single-443 TCP on
-/// `net.https_port` (NO 444 — `net.admin_https_port` is deprecated
-/// and never bound), UDP QUIC on the same port iff
+/// `net.https_port` (no separate admin port), UDP QUIC on the same port iff
 /// `quic.enabled`, and the port-80 redirector.
 fn tls_listen_plan(cfg: &config::RuntimeConfig) -> Vec<TlsListener> {
     let mut plan = Vec::new();
@@ -1589,13 +1563,11 @@ fn tls_listen_plan(cfg: &config::RuntimeConfig) -> Vec<TlsListener> {
 /// serving BOTH branches by Host header, an HTTP→HTTPS redirector
 /// on `net.http_port` (80), and — iff `quic.enabled` — a UDP
 /// QUIC/h3 endpoint on the same port as 443, on every bind IP.
-/// Port 444 is gone: `net.admin_https_port` parses but binds
-/// nothing.
+/// Port 444 is gone: admin is Host-routed on the same listener.
 ///
 /// The single TCP listener uses the ADMIN TLS shape for every
-/// connection (optional client certs at the handshake, chain
-/// verification against `tls.client_ca_file` when set, peer-chain
-/// capture via [`mtls::MtlsAcceptor`]); the fingerprint layer runs
+/// connection (no client-cert request; peer-chain capture via
+/// [`mtls::MtlsAcceptor`] stays inert); the fingerprint layer runs
 /// on the admin branch only, and Host dispatch strips cert state
 /// from the public branch.
 ///
@@ -1633,12 +1605,7 @@ async fn serve_tls(
                 let addr = listener.addr;
                 let handle = axum_server::Handle::new();
                 handles.push(handle.clone());
-                let mtls = if cfg.tls_client_ca.is_some() {
-                    "public+admin, mTLS-capable"
-                } else {
-                    "public+admin"
-                };
-                eprintln!("listening on https://{addr}/apostille (single-443 {mtls})");
+                eprintln!("listening on https://{addr}/apostille (single-443 public+admin)");
                 servers.spawn({
                     let router = router
                         .clone()
@@ -1666,7 +1633,7 @@ async fn serve_tls(
                 // A UDP bind failure must fail the boot the same way
                 // a TCP bind failure does — so bind NOW, in the
                 // parent, before spawning the serve task.
-                let endpoint = bind_quic_listener(addr, &cert_pem, &key_pem, cfg);
+                let endpoint = bind_quic_listener(addr, &cert_pem, &key_pem);
                 quic_reloader.register(&endpoint);
                 quic_drain.push(endpoint.clone());
                 eprintln!("listening on udp://{addr} (quic/h3)");
@@ -1704,19 +1671,8 @@ async fn serve_tls(
 /// crypto from the serving pair (re-reading the CA file, like the
 /// TCP config) and bind. Refuses the boot on any failure — QUIC
 /// misconfiguration must never silently halve the service.
-fn bind_quic_listener(
-    addr: SocketAddr,
-    cert_pem: &[u8],
-    key_pem: &[u8],
-    cfg: &config::RuntimeConfig,
-) -> quinn::Endpoint {
-    let ca_pem = cfg.tls_client_ca.as_deref().map(|path| {
-        std::fs::read(path).unwrap_or_else(|e| {
-            eprintln!("refusing to start: read tls.client_ca_file={path}: {e}");
-            std::process::exit(1);
-        })
-    });
-    let config = quic::server_config(cert_pem, key_pem, ca_pem.as_deref()).unwrap_or_else(|e| {
+fn bind_quic_listener(addr: SocketAddr, cert_pem: &[u8], key_pem: &[u8]) -> quinn::Endpoint {
+    let config = quic::server_config(cert_pem, key_pem, None).unwrap_or_else(|e| {
         eprintln!("refusing to start: {e}");
         std::process::exit(1);
     });
@@ -5530,7 +5486,7 @@ mod tests {
 
     #[tokio::test]
     async fn ip_gate_no_ca_configured_returns_200() {
-        // No `tls.client_ca_file` (the production shape now): session
+        // No client CA (the production shape): session
         // + listed IP admit, with or without a client cert presented.
         let fx = strict_fixture();
         make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
@@ -5614,27 +5570,9 @@ mod tests {
             Some("no-such-key.pem".to_string()),
         )
         .expect_err("missing server files must fail");
-        let dir = tempfile::tempdir().unwrap();
         let (cert_pem, key_pem) = self_signed_localhost();
-        let (ca, _) = test_ca("test-admin-ca");
-        // A set CA path loads anyway (retired key: warned, ignored).
-        let ca_path = dir.path().join("ca.pem");
-        std::fs::write(&ca_path, ca.pem().as_bytes()).unwrap();
-        load_admin_tls_from_pem(&cert_pem, &key_pem, Some(ca_path.to_str().unwrap()))
-            .expect("set CA path loads (retired)");
-        // Missing and empty CA paths load too — nothing reads them.
-        load_admin_tls_from_pem(
-            &cert_pem,
-            &key_pem,
-            Some(dir.path().join("no-ca.pem").to_str().unwrap()),
-        )
-        .expect("missing CA loads (retired)");
-        let empty = dir.path().join("empty.pem");
-        std::fs::write(&empty, b"").unwrap();
-        load_admin_tls_from_pem(&cert_pem, &key_pem, Some(empty.to_str().unwrap()))
-            .expect("empty CA loads (retired)");
-        // No CA loads as plain TLS.
-        load_admin_tls_from_pem(&cert_pem, &key_pem, None).expect("no-CA pair loads");
+        load_admin_tls_from_pem(&cert_pem, &key_pem).expect("pair loads as plain TLS");
+        load_admin_tls_from_pem(b"not a cert", &key_pem).expect_err("bad cert must fail");
     }
 
     // ===== Single-443 + QUIC (goal-026) =====
@@ -5935,11 +5873,7 @@ mod tests {
         assert_eq!(plan[0].addr.port(), 443);
         assert_eq!(plan[1].kind, TlsListenerKind::Redirect);
         assert_eq!(plan[1].addr.port(), 80);
-        assert!(
-            plan.iter()
-                .all(|l| l.addr.port() != cfg.admin_https_port && l.addr.port() != 444),
-            "plan: {plan:?}"
-        );
+        assert!(plan.iter().all(|l| l.addr.port() != 444), "plan: {plan:?}");
         // QUIC on: a UDP entry on the SAME port as TCP.
         cfg.quic_enabled = true;
         let plan = tls_listen_plan(&cfg);

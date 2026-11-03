@@ -38,20 +38,18 @@ export const STEPS = [
 			{ key: 'net.bind6', type: 'text', label: 'Bind (IPv6)', hint: 'Optional. Unset means IPv4-only; :: listens dual-stack.', placeholder: '::' },
 			{ key: 'net.https_port', type: 'text', label: 'HTTPS port', hint: 'Default 443. HTTP/1.1 + QUIC share this port (single-443 routing).', placeholder: '443' },
 			{ key: 'net.http_port', type: 'text', label: 'HTTP port', hint: 'Default 80. Redirects to HTTPS and answers ACME challenges.', placeholder: '80' },
-			{ key: 'net.port', type: 'text', label: 'Legacy port', hint: 'Deprecated alias of the HTTPS port; leave unset on new installs.', placeholder: '' },
-			{ key: 'net.admin_https_port', type: 'text', label: 'Legacy admin port', hint: 'Deprecated: admin is Host-routed on 443 now. Leave unset.', placeholder: '' },
-			{ key: 'net.admin_port', type: 'text', label: 'Legacy admin (plain)', hint: 'Deprecated alongside the split-port layout. Leave unset.', placeholder: '' },
+			{ key: 'net.port', type: 'text', label: 'Plain-HTTP public port', hint: 'Plain-HTTP mode only (no TLS files and ACME off: local dev, plant staging). Leave unset on a TLS server.', placeholder: '' },
+			{ key: 'net.admin_port', type: 'text', label: 'Plain-HTTP admin port', hint: 'Plain-HTTP mode only, next to the public port. Leave unset on a TLS server.', placeholder: '' },
 			{ key: 'quic.enabled', type: 'bool', label: 'Enable QUIC', hint: 'Optional. HTTP/3 over UDP/443 via quinn+h3. Safe to enable.', placeholder: '' },
 			{ key: 'paths.static_dir', type: 'text', label: 'Static dir', hint: 'Required on prod: the compiled default is a repo-relative dev path. Immutable release payload.', placeholder: '/srv/apostille/current/static' },
 			{ key: 'paths.spa_dir', type: 'text', label: 'Public app dir', hint: 'Required on prod: the compiled default is a repo-relative dev path. Immutable release payload.', placeholder: '/srv/apostille/current/spa' },
 			{ key: 'paths.admin_spa_dir', type: 'text', label: 'Admin app dir', hint: 'Required on prod: the compiled default is a repo-relative dev path. Contains this wizard.', placeholder: '/srv/apostille/current/spa-admin' },
 			{ key: 'paths.acme_challenge_dir', type: 'text', label: 'ACME challenge dir', hint: 'Required on prod: the compiled default is a repo-relative dev path. Must be writable by the service user.', placeholder: '/srv/apostille/current/acme' },
 			{ key: 'tls.cert_file', type: 'text', label: 'TLS cert file', hint: 'Required on prod (no compiled default). The ACME manager writes the issued cert here.', placeholder: '/var/lib/apostille/tls/cert.pem' },
-			{ key: 'tls.key_file', type: 'text', label: 'TLS key file', hint: 'Required on prod (no compiled default). Never leaves the server.', placeholder: '/var/lib/apostille/tls/key.pem' },
-			{ key: 'tls.client_ca_file', type: 'text', label: 'Client CA file', hint: 'Retired: client certs are neither requested nor checked. Leave unset; a set key only warns.', placeholder: '' }
+			{ key: 'tls.key_file', type: 'text', label: 'TLS key file', hint: 'Required on prod (no compiled default). Never leaves the server.', placeholder: '/var/lib/apostille/tls/key.pem' }
 		],
 		guide: {
-			intro: 'No consoles to visit — but do not trust the compiled defaults: they are loopback/dev (127.0.0.1, repo paths, no TLS). A public server sets every field in this step except the deprecated ports. Values apply at boot — restart to reload.',
+			intro: 'No consoles to visit — but do not trust the compiled defaults: they are loopback/dev (127.0.0.1, repo paths, no TLS). A public server sets every field in this step except the two plain-HTTP ports. Values apply at boot — restart to reload.',
 			steps: [
 				'Set the public host to the apex domain (DNS A/AAAA already pointing at this server).',
 				'Set the IPv4 bind to 0.0.0.0 (all interfaces); add :: for IPv6 only if the host routes it.',
@@ -249,7 +247,6 @@ export const REQUIRED_KEYS = [
 	'paths.acme_challenge_dir',
 	'tls.cert_file',
 	'tls.key_file',
-	'tls.client_ca_file',
 	'acme.email',
 	'acme.domains',
 	'auth.rp_id',

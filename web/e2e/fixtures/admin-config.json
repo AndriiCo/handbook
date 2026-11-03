@@ -13,7 +13,6 @@
 		{ "key": "orders.kit_price_cents", "type": "text", "value": "4900" },
 		{ "key": "quic.enabled", "type": "text", "value": "1" },
 		{ "key": "setup.key_hash", "type": "secret", "set": true },
-		{ "key": "stripe.secret_key", "type": "secret", "set": true },
-		{ "key": "tls.client_ca_file", "type": "text", "value": "" }
+		{ "key": "stripe.secret_key", "type": "secret", "set": true }
 	]
 }

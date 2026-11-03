@@ -46,7 +46,6 @@ const REGISTRY_KEYS = [
 	'meta.base_url',
 	'meta.client_id',
 	'meta.client_secret',
-	'net.admin_https_port',
 	'net.admin_port',
 	'net.bind',
 	'net.bind6',
@@ -65,7 +64,6 @@ const REGISTRY_KEYS = [
 	'telnyx.from_number',
 	'telnyx.webhook_public_key',
 	'tls.cert_file',
-	'tls.client_ca_file',
 	'tls.key_file',
 	'usps.base_url',
 	'usps.certified'
