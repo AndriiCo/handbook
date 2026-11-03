@@ -65,7 +65,13 @@ fn guard_field(
         return Err(format!("{name}: label empty or too long"));
     }
     let q = norm(&quote);
-    if q.len() < 3 || !text_norm.contains(&q) {
+    // A real printed label: 8+ chars and 2+ words, found in the text
+    // layer on word boundaries (review #24). The visitor label stays a
+    // plain-language paraphrase shown next to this quote.
+    if q.len() < 8
+        || q.split_whitespace().count() < 2
+        || !format!(" {text_norm} ").contains(&format!(" {q} "))
+    {
         return Err(format!("{name}: label quote is not in the PDF's text"));
     }
     let lower_help = help.to_lowercase();

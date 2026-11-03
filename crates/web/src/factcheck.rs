@@ -45,11 +45,19 @@ fn squash(s: &str) -> String {
 /// Guard one verdict: a `supported` / `contradicted` verdict stands only
 /// when its quote (8+ chars) is a whitespace-normalised substring of the
 /// sidecar; otherwise it becomes `not_found` with an empty quote.
-pub fn guard_verdict(verdict: &str, quote: &str, sidecar_squashed: &str) -> (&'static str, String) {
+pub fn guard_verdict(
+    verdict: &str,
+    quote: &str,
+    sidecar_squashed: &str,
+    statement: &str,
+) -> (&'static str, String) {
     let q = squash(quote);
     let quoted = q.chars().count() >= 8 && sidecar_squashed.contains(&q);
+    // A supporting quote must carry the statement's numbers, amounts
+    // and PO boxes (review #49), not just any 8 characters of the page.
+    let carries = crate::translate::guard_ok(statement, quote);
     match (verdict, quoted) {
-        ("supported", true) => ("supported", quote.trim().chars().take(400).collect()),
+        ("supported", true) if carries => ("supported", quote.trim().chars().take(400).collect()),
         ("contradicted", true) => ("contradicted", quote.trim().chars().take(400).collect()),
         _ => ("not_found", String::new()),
     }
@@ -207,10 +215,16 @@ pub fn run_blocking(
             continue;
         };
         seen.push(fact_id);
+        let statement = facts
+            .iter()
+            .find(|f| f.0 == fact_id)
+            .map(|f| f.2.as_str())
+            .unwrap_or("");
         let (verdict, quote) = guard_verdict(
             c["verdict"].as_str().unwrap_or(""),
             c["quote"].as_str().unwrap_or(""),
             &squashed,
+            statement,
         );
         *counts.entry(verdict).or_default() += 1;
         let reason: String = c["reason"]
@@ -340,28 +354,69 @@ mod tests {
 
     #[test]
     fn verdicts_need_a_sidecar_quote() {
+        let side_b = squash("Apostilles cost $15 per document. Offices open at 8:00.");
+        assert_eq!(
+            guard_verdict(
+                "supported",
+                "Offices open at 8:00.",
+                &side_b,
+                "Apostilles cost $15 per document."
+            )
+            .0,
+            "not_found",
+            "an unrelated quote never supports a fact"
+        );
         let side = squash("Apostilles cost $15 per document.\n\nWalk-in   service is in Olympia.");
         assert_eq!(
-            guard_verdict("supported", "cost $15 per document", &side).0,
+            guard_verdict(
+                "supported",
+                "cost $15 per document",
+                &side,
+                "Apostilles cost $15 per document."
+            )
+            .0,
             "supported"
         );
         assert_eq!(
-            guard_verdict("supported", "Walk-in service is in Olympia", &side).0,
+            guard_verdict(
+                "supported",
+                "Walk-in service is in Olympia",
+                &side,
+                "Walk-in service is in Olympia."
+            )
+            .0,
             "supported",
             "whitespace-normalised"
         );
         assert_eq!(
-            guard_verdict("contradicted", "cost $20 per document", &side),
+            guard_verdict(
+                "contradicted",
+                "cost $20 per document",
+                &side,
+                "Apostilles cost $15 per document."
+            ),
             ("not_found", String::new()),
             "an unquoted contradiction is not believed"
         );
         assert_eq!(
-            guard_verdict("supported", "$15", &side).0,
+            guard_verdict(
+                "supported",
+                "$15",
+                &side,
+                "Apostilles cost $15 per document."
+            )
+            .0,
             "not_found",
             "too short to ground"
         );
         assert_eq!(
-            guard_verdict("bogus", "cost $15 per document", &side).0,
+            guard_verdict(
+                "bogus",
+                "cost $15 per document",
+                &side,
+                "Apostilles cost $15 per document."
+            )
+            .0,
             "not_found"
         );
     }

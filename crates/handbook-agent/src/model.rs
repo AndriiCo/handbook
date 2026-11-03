@@ -423,7 +423,12 @@ impl MetaRestClient {
                 Ok(r) if matches!(r.status, 429 | 500 | 502 | 503 | 504) => r.retry_after_secs,
                 _ => return attempt,
             };
-            if attempt_no >= MAX_ATTEMPTS - 1 {
+            // A server asking for longer than we will wait (or an HTTP
+            // date we do not parse) gets its answer back, never an early
+            // retry (review #53).
+            if attempt_no >= MAX_ATTEMPTS - 1
+                || retry_after.is_some_and(|s| s > MAX_RETRY_AFTER_SECS)
+            {
                 return attempt;
             }
             self.observe_attempt(&model, pipeline, run_id, &attempt, None);
@@ -451,7 +456,8 @@ impl MetaRestClient {
             .headers()
             .get("Retry-After")
             .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.trim().parse().ok());
+            // Seconds, or (HTTP-date) "later than we wait".
+            .map(|v| v.trim().parse().unwrap_or(u64::MAX));
         // Read the stream in chunks so the first event's arrival time
         // (TTFT for telemetry) is known; same bytes as read_to_vec.
         let mut reader = response.into_body().into_reader();
@@ -693,7 +699,7 @@ impl MetaRestClient {
             &raw,
             parsed.as_ref().map(|p| match p {
                 Ok(resp) => ("ok", resp.usage.clone()),
-                Err(e) => (failure_outcome(e), zero_usage()),
+                Err(e) => (failure_outcome(e), failed_usage(&raw)),
             }),
         );
         let response = raw?;
@@ -763,7 +769,7 @@ impl MetaRestClient {
             &raw,
             parsed.as_ref().map(|p| match p {
                 Ok((_, usage)) => ("ok", usage.clone()),
-                Err(e) => (failure_outcome(e), zero_usage()),
+                Err(e) => (failure_outcome(e), failed_usage(&raw)),
             }),
         );
         let response = raw?;
@@ -785,6 +791,27 @@ impl MetaRestClient {
             return Err(ModelError::BudgetExceeded);
         }
         Err(short_status("meta api", response.status, &response.body))
+    }
+}
+
+/// Token spend a failed (refused / truncated / unparseable) attempt
+/// still carried in its stream's usage chunk (review #54).
+fn failed_usage(raw: &Result<RawResponse, ModelError>) -> Usage {
+    let Ok(r) = raw else { return zero_usage() };
+    let text = String::from_utf8_lossy(&r.body);
+    let mut usage = serde_json::Value::Null;
+    for line in text.lines() {
+        if let Some(data) = line.trim().strip_prefix("data:")
+            && let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data.trim())
+            && let Some(u) = chunk.get("usage")
+        {
+            usage = u.clone();
+        }
+    }
+    if usage.is_null() {
+        zero_usage()
+    } else {
+        usage_from(&usage)
     }
 }
 

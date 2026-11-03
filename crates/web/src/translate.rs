@@ -344,10 +344,23 @@ pub fn protected_spans(text: &str) -> Vec<ProtectedSpan> {
         if after.len() < 2 {
             continue;
         }
-        let last = clean_word(&text[after[after.len() - 1].0..after[after.len() - 1].1]);
-        if !STREET_SUFFIXES.contains(&last.to_lowercase().as_str()) {
-            continue;
+        // The span ends at the first suffix word within the window, and
+        // never crosses sentence punctuation (review #19: "100 Fixture
+        // Way, Olympia" used to fall back to digits only).
+        let mut stop = None;
+        for k in 1..after.len() {
+            let prev = &text[after[k - 1].0..after[k - 1].1];
+            if prev.ends_with([',', ';', '.']) {
+                break;
+            }
+            let w = clean_word(&text[after[k].0..after[k].1]);
+            if STREET_SUFFIXES.contains(&w.to_lowercase().as_str()) {
+                stop = Some(k);
+                break;
+            }
         }
+        let Some(stop) = stop else { continue };
+        let after: Vec<(usize, usize)> = after[..=stop].to_vec();
         let first = clean_word(&text[after[0].0..after[0].1]);
         let first_ok = first
             .chars()
@@ -488,7 +501,15 @@ pub fn guard_ok(original: &str, translated: &str) -> bool {
             ProtectedKind::PoBox => {
                 lower.contains("po box") && contains_digit_run(translated, &span.digits)
             }
-            ProtectedKind::Street => translated.contains(&span.text),
+            ProtectedKind::Street => {
+                let norm = |t: &str| {
+                    t.split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                        .to_lowercase()
+                };
+                norm(translated).contains(&norm(span.text.trim_end_matches('.')))
+            }
         })
 }
 
@@ -1187,6 +1208,18 @@ pub async fn translation_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn street_spans_end_at_the_suffix_and_are_checked() {
+        assert!(guard_ok(
+            "Visit 100 Fixture Way, Olympia.",
+            "Walk-in service is at 100 Fixture Way, Olympia, WA 98501."
+        ));
+        assert!(!guard_ok(
+            "Visit 100 Invented Way, Olympia.",
+            "Walk-in service is at 100 Fixture Way, Olympia, WA 98501."
+        ));
+    }
 
     #[test]
     fn numbers_match_whole_tokens_only() {

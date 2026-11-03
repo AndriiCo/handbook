@@ -261,6 +261,88 @@ fn dollars(cents: i64) -> String {
     }
 }
 
+/// Times keep their am/pm and day names their meaning (review #48):
+/// every "4:30 PM" / "8 a.m." in block text must be written the same
+/// way (boundary-aware, am/pm consistent) in the cited text, and every
+/// weekday the block names must appear there too.
+fn times_and_days_ok(text: &str, cited: &str) -> bool {
+    let lower = text.to_lowercase();
+    let cited_lower = cited.to_lowercase();
+    const DAYS: &[&str] = &[
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ];
+    for day in DAYS {
+        if lower.contains(day) && !cited_lower.contains(day) {
+            let weekday = !matches!(*day, "saturday" | "sunday");
+            let range = [
+                "monday through friday",
+                "monday to friday",
+                "monday-friday",
+                "weekdays",
+                "monday – friday",
+            ];
+            if !(weekday && range.iter().any(|r| cited_lower.contains(r))) {
+                return false;
+            }
+        }
+    }
+    let chars: Vec<char> = lower.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_ascii_digit()
+            && (i == 0 || !chars[i - 1].is_ascii_digit() && chars[i - 1] != ':')
+        {
+            let mut j = i;
+            let mut tok = String::new();
+            while j < chars.len() && (chars[j].is_ascii_digit() || chars[j] == ':') {
+                tok.push(chars[j]);
+                j += 1;
+            }
+            let rest: String = chars[j..]
+                .iter()
+                .take(6)
+                .collect::<String>()
+                .trim_start()
+                .replace('.', "");
+            let ap = if rest.starts_with("am") {
+                Some(false)
+            } else if rest.starts_with("pm") {
+                Some(true)
+            } else {
+                None
+            };
+            if let Some(pm) = ap {
+                let (h, m) = match tok.split_once(':') {
+                    Some((h, m)) => (h.parse::<u32>().ok(), m.parse::<u32>().ok()),
+                    None => (tok.parse::<u32>().ok(), Some(0)),
+                };
+                let Some((h, m)) = h.zip(m).filter(|(h, m)| (1..=12).contains(h) && *m < 60) else {
+                    return false;
+                };
+                let h24 = match (h, pm) {
+                    (12, false) => 0,
+                    (12, true) => 12,
+                    (h, true) => h + 12,
+                    (h, false) => h,
+                };
+                if !crate::offices::time_written(&format!("{h24:02}:{m:02}"), cited) {
+                    return false;
+                }
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    true
+}
+
 /// Deterministic gate: returns the cleaned plan and its report. Blocks
 /// that fail any check are dropped (never repaired); the plan passes
 /// when its headline is grounded and at least one block survives.
@@ -299,7 +381,18 @@ pub fn validate_plan(plan: &RenderPlanV1, facts: &[Grounding]) -> (RenderPlanV1,
             && p.id
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
-        let facts_ok = p.fact_ids.iter().all(|id| by_id.contains_key(id));
+        // A path must rest on facts and its label on their text (#20).
+        let facts_ok = !p.fact_ids.is_empty() && p.fact_ids.iter().all(|id| by_id.contains_key(id));
+        let path_text: String = p
+            .fact_ids
+            .iter()
+            .filter_map(|id| by_id.get(id))
+            .map(|f| f.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let facts_ok = facts_ok
+            && banned_word(&p.label).is_none()
+            && crate::translate::guard_ok(&p.label, &path_text);
         if id_ok && facts_ok && !has_markup_or_url(&p.label) && p.label.chars().count() <= 60 {
             paths.push(p.clone());
         }
@@ -405,7 +498,8 @@ pub fn validate_plan(plan: &RenderPlanV1, facts: &[Grounding]) -> (RenderPlanV1,
             .map(|f| f.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        if !crate::translate::guard_ok(&text, &cited_text) {
+        if !crate::translate::guard_ok(&text, &cited_text) || !times_and_days_ok(&text, &cited_text)
+        {
             fail(
                 &mut counts,
                 &id,
@@ -423,7 +517,25 @@ pub fn validate_plan(plan: &RenderPlanV1, facts: &[Grounding]) -> (RenderPlanV1,
                     && by_id.get(&line.fact_id).is_some_and(|f| {
                         crate::translate::dollar_amounts_cents(&f.text).contains(&line.amount_cents)
                     });
-                if !fact_ok || !amount_ok || has_markup_or_url(&line.label) {
+                // Label and unit grounded too (#20): "per document" must be
+                // what the fact says, never the model's guess.
+                let fact_text = by_id
+                    .get(&line.fact_id)
+                    .map(|f| f.text.to_lowercase())
+                    .unwrap_or_default();
+                let per_ok = match line.per.as_str() {
+                    "none" => true,
+                    unit => {
+                        fact_text.contains(&format!("per {unit}"))
+                            || fact_text.contains(&format!("each {unit}"))
+                            || fact_text.contains(&format!("a {unit}"))
+                            || fact_text.contains(&format!("per {unit}s"))
+                    }
+                };
+                let label_ok = banned_word(&line.label).is_none()
+                    && crate::translate::guard_ok(&line.label, &fact_text);
+                if !fact_ok || !amount_ok || !per_ok || !label_ok || has_markup_or_url(&line.label)
+                {
                     bad_line = Some(format!(
                         "fee line {} {} not in fact {}",
                         line.label,
@@ -698,16 +810,29 @@ fn entail(
     match client.chat_json(&req) {
         Ok(resp) => {
             spend.add(&resp);
-            let unsupported: HashMap<String, String> = resp.value["verdicts"]
+            // Fail closed (review #17): a block stays only with an explicit
+            // supported verdict; a missing verdict counts as unsupported.
+            let verdicts: HashMap<String, (bool, String)> = resp.value["verdicts"]
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter(|v| v["supported"] == false)
                 .filter_map(|v| {
                     Some((
                         v["block_id"].as_str()?.to_string(),
-                        v["reason"].as_str().unwrap_or("").to_string(),
+                        (
+                            v["supported"] == true,
+                            v["reason"].as_str().unwrap_or("").to_string(),
+                        ),
                     ))
+                })
+                .collect();
+            let unsupported: HashMap<String, String> = plan
+                .blocks
+                .iter()
+                .filter_map(|b| match verdicts.get(&b.id) {
+                    Some((true, _)) => None,
+                    Some((false, why)) => Some((b.id.clone(), why.clone())),
+                    None => Some((b.id.clone(), "no verdict".to_string())),
                 })
                 .collect();
             let before = plan.blocks.len();
@@ -1047,7 +1172,6 @@ fn compose_blocking(
         &mut spend,
     );
     let checks = crate::factcheck::checks_for_slug(&conn, slug).unwrap_or_default();
-    let count = |v: &str| checks.iter().filter(|c| c["verdict"] == v).count();
     let mut sources: Vec<serde_json::Value> = Vec::new();
     for f in &facts {
         if !plan.blocks.iter().any(|b| b.fact_ids.contains(&f.id)) {
@@ -1059,15 +1183,37 @@ fn compose_blocking(
             }
         }
     }
+    let entail_ran = report
+        .checks
+        .iter()
+        .any(|c| c.id == "entailment" && !c.detail.contains("unavailable"));
+    let cited_ids: Vec<i64> = plan
+        .blocks
+        .iter()
+        .flat_map(|b| b.fact_ids.iter().copied())
+        .collect();
+    let checks: Vec<serde_json::Value> = checks
+        .into_iter()
+        .filter(|c| {
+            c["fact_id"]
+                .as_i64()
+                .is_some_and(|id| cited_ids.contains(&id))
+        })
+        .collect();
+    let count = |v: &str| checks.iter().filter(|c| c["verdict"] == v).count();
+    let mut models = vec![
+        json!({"model": facts.first().map(|f| f.drafted_by.split(" via ").next().unwrap_or(PLAN_MODEL).to_string()).unwrap_or_else(|| PLAN_MODEL.to_string()), "role": "extract"}),
+    ];
+    if entail_ran || !checks.is_empty() {
+        models.push(json!({"model": ENTAIL_MODEL, "role": "cross_check"}));
+    }
+    models.push(json!({"model": PLAN_MODEL, "role": "compose"}));
     let provenance = json!({
-        "models": [
-            {"model": facts.first().map(|f| f.drafted_by.split(" via ").next().unwrap_or(PLAN_MODEL).to_string()).unwrap_or_else(|| PLAN_MODEL.to_string()), "role": "extract"},
-            {"model": crate::plan::ENTAIL_MODEL, "role": "cross_check"},
-            {"model": PLAN_MODEL, "role": "compose"},
-        ],
+        "models": models,
         "validator": {
             "passed": report.passed,
             "checks": report.checks.len(),
+            "checks_ok": report.checks.iter().all(|c| c.ok),
             "dropped_blocks": report.dropped_blocks.len(),
         },
         "cross_check": {
@@ -1075,6 +1221,7 @@ fn compose_blocking(
             "contradicted": count("contradicted"),
             "not_found": count("not_found"),
             "checked_before_accept": !checks.is_empty(),
+            "entailment_ran": entail_ran,
         },
         "run": {
             "run_id": run_id,
@@ -1583,6 +1730,58 @@ mod tests {
             assert!(reasons.contains(&check), "{check} in {reasons:?}");
         }
         assert!(report.passed, "one grounded block survives");
+    }
+
+    #[test]
+    fn am_pm_days_paths_and_fee_units_are_grounded() {
+        // Review #48: 8:00 PM is not 8:00 AM; Saturday is not stated.
+        let p = plan(vec![
+            block("timing", "Hours", "Open until 4:30 AM.", &[202]),
+            block(
+                "timing",
+                "Weekend",
+                "Open Saturday 8:00 AM to 4:30 PM.",
+                &[202],
+            ),
+            block(
+                "timing",
+                "Weekdays",
+                "Open Monday to Friday, 8:00 AM to 4:30 PM.",
+                &[202],
+            ),
+        ]);
+        let (clean, report) = validate_plan(&p, &facts());
+        assert_eq!(clean.blocks.len(), 1, "{:#?}", report.dropped_blocks);
+        assert_eq!(clean.blocks[0].title, "Weekdays");
+        // Review #20: a path needs facts; a fee unit must be stated.
+        let mut p = plan(vec![block(
+            "step",
+            "Go same day",
+            "Walk-in requests are processed the same day.",
+            &[205],
+        )]);
+        p.paths.push(PlanPath {
+            id: "diploma".into(),
+            label: "Diploma".into(),
+            fact_ids: vec![],
+        });
+        let mut fee = block("fees", "It costs $15 per document", "", &[201]);
+        fee.lines = vec![FeeLine {
+            label: "Apostille".into(),
+            amount_cents: 1500,
+            per: "page".into(),
+            fact_id: 201,
+        }];
+        p.blocks.push(fee);
+        let (clean, _) = validate_plan(&p, &facts());
+        assert!(
+            clean.paths.iter().all(|x| x.id != "diploma"),
+            "factless path dropped"
+        );
+        assert!(
+            clean.blocks.iter().all(|b| b.kind != "fees"),
+            "per page is not what the fact says"
+        );
     }
 
     #[test]

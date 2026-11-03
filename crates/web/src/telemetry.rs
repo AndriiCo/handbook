@@ -129,7 +129,7 @@ pub fn over_daily_cap(conn: &Connection, state: &AppState, now: i64) -> bool {
                 .flatten()
         })
         .and_then(|v| v.trim().parse::<i64>().ok())
-        .filter(|cap| *cap > 0)
+        .filter(|cap| *cap >= 0) // 0 stops every run (review #57)
         .unwrap_or(DEFAULT_DAILY_CALL_CAP);
     calls_today(conn, now).map_or(true, |n| n >= cap)
 }

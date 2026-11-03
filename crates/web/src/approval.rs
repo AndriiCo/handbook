@@ -829,10 +829,12 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
             "SELECT a.slug, a.name, a.country, a.region,
                     COUNT(CASE WHEN f.status = 'accepted' THEN 1 END),
                     a.kind,
-                    (SELECT MAX(au.at) FROM audit au JOIN fact f2 ON f2.id = au.entity_id
-                     WHERE au.entity = 'fact' AND au.action = 'fact_accept'
-                       AND f2.authority_id = a.id)
+                    va.v
              FROM authority a LEFT JOIN fact f ON f.authority_id = a.id
+             LEFT JOIN (SELECT f2.authority_id AS aid, MAX(au.at) AS v
+                        FROM audit au JOIN fact f2 ON f2.id = au.entity_id
+                        WHERE au.entity = 'fact' AND au.action = 'fact_accept'
+                        GROUP BY f2.authority_id) va ON va.aid = a.id
              WHERE a.id != 0
              GROUP BY a.id ORDER BY a.slug",
         )

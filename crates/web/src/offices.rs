@@ -78,9 +78,42 @@ fn norm(s: &str) -> String {
         .join(" ")
 }
 
+/// `needle` written in `hay` on token boundaries (`" 100 "`, not the
+/// `100` inside `1000`; review #51).
 fn written_in(needle: &str, hay: &str) -> bool {
     let n = norm(needle);
-    !n.is_empty() && norm(hay).contains(&n)
+    !n.is_empty() && format!(" {} ", norm(hay)).contains(&format!(" {n} "))
+}
+
+/// Sentence-ish clauses of a fact (`.`/`;` + space, newlines), so a
+/// day and its hours must be written together (review #22).
+fn clauses(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for (i, c) in chars.iter().enumerate() {
+        // A period ends a clause when a new sentence follows (space,
+        // then an uppercase letter or the end) — so "8 a.m. to 4 p.m."
+        // stays one clause but "4:30 p.m. Closed Saturday" splits.
+        let sentence_end = *c == '.' && {
+            let rest: String = chars[i + 1..].iter().collect();
+            let trimmed = rest.trim_start();
+            rest.starts_with(char::is_whitespace)
+                && (trimmed.is_empty() || trimmed.starts_with(char::is_uppercase))
+        };
+        if *c == '\n' || *c == ';' || sentence_end {
+            if !cur.trim().is_empty() {
+                out.push(cur.trim().to_lowercase());
+            }
+            cur.clear();
+        } else {
+            cur.push(*c);
+        }
+    }
+    if !cur.trim().is_empty() {
+        out.push(cur.trim().to_lowercase());
+    }
+    out
 }
 
 /// `HH:MM` 24 h → minutes.
@@ -120,13 +153,28 @@ fn time_forms(t: &str) -> Vec<String> {
 
 /// True when `t` is written in `text` with a consistent am/pm marker
 /// (an afternoon close written as `4:30` must not sit next to `a.m.`).
-fn time_written(t: &str, text: &str) -> bool {
+pub(crate) fn time_written(t: &str, text: &str) -> bool {
     let lower = text.to_lowercase();
     let Some(total) = minutes(t) else {
         return false;
     };
     time_forms(t).iter().any(|form| {
         lower.match_indices(form.as_str()).any(|(i, _)| {
+            // Token boundaries: not the 8:00 in 18:00, not the noon in
+            // afternoon (review #21).
+            let before = lower[..i].chars().next_back();
+            if before.is_some_and(|c| c.is_ascii_digit() || c == ':' || c.is_alphabetic()) {
+                return false;
+            }
+            let next = lower[i + form.len()..].chars().next();
+            if form.ends_with(char::is_numeric)
+                && next.is_some_and(|c| c.is_ascii_digit() || c == ':')
+            {
+                return false;
+            }
+            if form == "noon" && next.is_some_and(char::is_alphabetic) {
+                return false;
+            }
             let after: String = lower[i + form.len()..].chars().take(6).collect();
             let after = after.trim_start().replace('.', "");
             let says_am = after.starts_with("am")
@@ -166,18 +214,54 @@ fn days_written(days: &[String], text: &str) -> bool {
     })
 }
 
+/// One hours range written together in a single clause of `text`:
+/// every day (by name or weekday range) and both times, in a clause
+/// that does not say closed (review #22).
+fn range_written(days: &[String], open: &str, close: &str, text: &str) -> bool {
+    clauses(text).iter().any(|c| {
+        let negated = c.contains("closed") || c.contains("not open") || c.contains("no service");
+        !negated && days_written(days, c) && time_written(open, c) && time_written(close, c)
+    })
+}
+
 /// `PO Box N` written in `text`, normalized.
 fn po_box_in(text: &str) -> Option<String> {
     // ASCII lowercase: the index slices `text` below.
     let lower = text.to_ascii_lowercase();
-    let i = lower.find("po box").or_else(|| lower.find("p.o. box"))?;
-    let rest = &text[i..];
+    let (i, marker) = lower
+        .find("po box")
+        .map(|i| (i, 6))
+        .or_else(|| lower.find("p.o. box").map(|i| (i, 8)))?;
+    // Digits must follow the marker directly (spaces, '#' or 'no.'
+    // only): never the next number further on (review #18).
+    let rest = text[i + marker..].trim_start();
+    let rest = rest
+        .strip_prefix('#')
+        .or_else(|| rest.strip_prefix("No."))
+        .or_else(|| rest.strip_prefix("no."))
+        .unwrap_or(rest)
+        .trim_start();
     let digits: String = rest
         .chars()
-        .skip_while(|c| !c.is_ascii_digit())
         .take_while(|c| c.is_ascii_digit() || *c == '-')
         .collect();
-    (!digits.is_empty()).then(|| format!("PO Box {digits}"))
+    let digits = digits.trim_end_matches('-');
+    (!digits.is_empty() && digits.starts_with(|c: char| c.is_ascii_digit()))
+        .then(|| format!("PO Box {digits}"))
+}
+
+/// Country for an address: the model's value only when written in the
+/// fact; `US` only for a two-letter state plus a US ZIP.
+fn country_of(model: &str, region: &str, zip: &str, text: &str) -> String {
+    if !model.is_empty() && written_in(model, text) {
+        return model.to_string();
+    }
+    let us_zip = zip.len() >= 5 && zip.bytes().take(5).all(|b| b.is_ascii_digit());
+    if region.len() == 2 && region.bytes().all(|b| b.is_ascii_uppercase()) && us_zip {
+        "US".to_string()
+    } else {
+        String::new()
+    }
 }
 
 fn directions(line1: &str, city: &str, region: &str) -> String {
@@ -213,11 +297,15 @@ pub fn guard_office(raw: &Value, facts: &[Grounding]) -> (Option<Value>, Vec<Che
     let a = &raw["address"];
     let address = fits(a["fact_id"].as_i64().unwrap_or(0)).and_then(|f| {
         let (line1, city, zip) = (s(a, "line1"), s(a, "city"), s(a, "postal_code"));
-        let ok = written_in(&line1, &f.text) && written_in(&city, &f.text) && (zip.is_empty() || written_in(&zip, &f.text));
+        let region = s(a, "region");
+        let ok = written_in(&line1, &f.text)
+            && written_in(&city, &f.text)
+            && (zip.is_empty() || written_in(&zip, &f.text))
+            && (region.is_empty() || written_in(&region, &f.text));
         ok.then(|| {
             used.push(f.id);
-            json!({"line1": line1, "line2": Value::Null, "city": city, "region": s(a, "region"),
-                   "postal_code": zip, "country": if s(a, "country").is_empty() { "US".to_string() } else { s(a, "country") },
+            json!({"line1": line1, "line2": Value::Null, "city": city, "region": region,
+                   "postal_code": zip, "country": country_of(&s(a, "country"), &region, &zip, &f.text),
                    "fact_id": f.id})
         })
     });
@@ -234,16 +322,26 @@ pub fn guard_office(raw: &Value, facts: &[Grounding]) -> (Option<Value>, Vec<Che
     // Mailing address; a PO box only from cited text.
     let m = &raw["mail"];
     let mail = fits(m["fact_id"].as_i64().unwrap_or(0)).and_then(|f| {
-        let (line1, city, zip) = (s(m, "line1"), s(m, "city"), s(m, "postal_code"));
-        let po_box = po_box_in(&f.text);
-        let line_ok = written_in(&line1, &f.text) || po_box.as_deref().is_some_and(|p| written_in(p, &line1));
-        let ok = line_ok && written_in(&city, &f.text) && (zip.is_empty() || written_in(&zip, &f.text));
+        let (line1, city, zip, region) = (
+            s(m, "line1"),
+            s(m, "city"),
+            s(m, "postal_code"),
+            s(m, "region"),
+        );
+        // The model's line must be written in the fact; it is a PO box
+        // only when it names one whose digits the fact carries (#18).
+        let fact_box = po_box_in(&f.text);
+        let line_box = po_box_in(&line1).filter(|b| fact_box.as_deref() == Some(b.as_str()));
+        let ok = written_in(&line1, &f.text)
+            && written_in(&city, &f.text)
+            && (zip.is_empty() || written_in(&zip, &f.text))
+            && (region.is_empty() || written_in(&region, &f.text));
         ok.then(|| {
             used.push(f.id);
-            json!({"po_box": po_box, "line1": po_box.clone().unwrap_or(line1), "city": city,
-                   "region": s(m, "region"), "postal_code": zip,
-                   "country": if s(m, "country").is_empty() { "US".to_string() } else { s(m, "country") },
-                   "usps_only": po_box.is_some(), "fact_id": f.id})
+            json!({"po_box": line_box, "line1": line_box.clone().unwrap_or(line1), "city": city,
+                   "region": region, "postal_code": zip,
+                   "country": country_of(&s(m, "country"), &region, &zip, &f.text),
+                   "usps_only": line_box.is_some(), "fact_id": f.id})
         })
     });
     checks.push(Check {
@@ -279,9 +377,7 @@ pub fn guard_office(raw: &Value, facts: &[Grounding]) -> (Option<Value>, Vec<Che
                 && minutes(&open)
                     .zip(minutes(&close))
                     .is_some_and(|(o, c)| o < c)
-                && time_written(&open, &f.text)
-                && time_written(&close, &f.text)
-                && days_written(&days, &f.text)
+                && range_written(&days, &open, &close, &f.text)
         });
         if let (true, Some(f)) = (ok, fact) {
             used.push(f.id);
@@ -308,9 +404,22 @@ pub fn guard_office(raw: &Value, facts: &[Grounding]) -> (Option<Value>, Vec<Che
         .find(|(zone, _)| *zone == tz)
         .zip(tz_fact)
         .is_some_and(|((_, words), f)| {
-            let lower = format!(" {}", f.text.to_lowercase());
-            words.iter().any(|w| lower.contains(w))
+            // Whole-word cues only (review #52): never the "pt" in "except".
+            let toks: Vec<String> = f
+                .text
+                .to_lowercase()
+                .split(|c: char| !c.is_alphanumeric() && c != '+')
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .collect();
+            let joined = format!(" {} ", toks.join(" "));
+            words
+                .iter()
+                .any(|w| joined.contains(&format!(" {} ", w.trim())))
         });
+    if tz_ok && let Some(f) = tz_fact {
+        used.push(f.id);
+    }
     checks.push(Check {
         id: "timezone".into(),
         ok: tz_ok,
@@ -329,22 +438,31 @@ pub fn guard_office(raw: &Value, facts: &[Grounding]) -> (Option<Value>, Vec<Che
         .filter_map(Value::as_i64)
         .filter(|id| fits(*id).is_some())
         .collect();
+    // A visit kind needs a cited fact of its own topic (review #23).
+    let has_topic = |topic: &str| {
+        visit_facts
+            .iter()
+            .filter_map(|id| by_id.get(id))
+            .any(|f| f.topic == topic)
+    };
     let kind = match s(&raw["visit"], "kind").as_str() {
-        k @ ("walk_in" | "appointment" | "mail_only") if !visit_facts.is_empty() => k.to_string(),
+        "walk_in" if has_topic("walkin") => "walk_in".to_string(),
+        "appointment" if has_topic("appointment") => "appointment".to_string(),
         _ if address.is_none() => "mail_only".to_string(),
-        _ => "walk_in".to_string(),
+        _ => "unknown".to_string(),
     };
     let notes = s(&raw["visit"], "notes");
     let notes_ok = notes.is_empty()
-        || crate::translate::guard_ok(
-            &notes,
-            &visit_facts
-                .iter()
-                .filter_map(|id| by_id.get(id))
-                .map(|f| f.text.as_str())
-                .collect::<Vec<_>>()
-                .join("\n"),
-        );
+        || !visit_facts.is_empty()
+            && crate::translate::guard_ok(
+                &notes,
+                &visit_facts
+                    .iter()
+                    .filter_map(|id| by_id.get(id))
+                    .map(|f| f.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
     used.extend(&visit_facts);
     if address.is_none() && mail.is_none() && hours.is_empty() {
         return (None, checks);
@@ -959,6 +1077,44 @@ mod tests {
             po_box_in("İİ Mail to PO Box 40228"),
             Some("PO Box 40228".into())
         );
+    }
+
+    #[test]
+    fn guards_hold_word_and_clause_boundaries() {
+        assert!(
+            !time_written("08:00", "open until 18:00"),
+            "8:00 inside 18:00"
+        );
+        assert!(
+            !time_written("12:00", "open in the afternoon"),
+            "noon inside afternoon"
+        );
+        assert!(time_written("12:00", "closes at noon."));
+        let days = vec!["sat".to_string(), "sun".to_string()];
+        assert!(!range_written(
+            &days,
+            "08:00",
+            "16:30",
+            "Open Monday to Friday 8:00 a.m. to 4:30 p.m. Closed Saturday and Sunday."
+        ));
+        assert!(range_written(
+            &["mon".into()],
+            "08:00",
+            "16:30",
+            "Open Monday to Friday 8:00 a.m. to 4:30 p.m. Closed Saturday and Sunday."
+        ));
+        assert_eq!(
+            po_box_in("PO Box drop-off at 801 Capitol Way"),
+            None,
+            "no box number, no box"
+        );
+        assert_eq!(
+            po_box_in("PO Box #40228, Olympia"),
+            Some("PO Box 40228".into())
+        );
+        assert!(!written_in("100", "Suite 1000, Olympia"));
+        assert_eq!(country_of("", "WA", "98501", "x"), "US");
+        assert_eq!(country_of("", "", "100000", "Hà Nội"), "");
     }
 
     #[test]
