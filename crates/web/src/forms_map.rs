@@ -668,15 +668,15 @@ async fn fill(
         )
             .into_response();
     }
-    let row: Option<(i64, String)> = conn
+    let row: Option<(i64, String, String)> = conn
         .query_row(
-            "SELECT capture_id, fields_json FROM form_map WHERE id = ?1 AND status = 'accepted'",
+            "SELECT capture_id, fields_json, authority_slug FROM form_map WHERE id = ?1 AND status = 'accepted'",
             [form_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()
         .unwrap_or(None);
-    let Some((capture_id, fields)) = row else {
+    let Some((capture_id, fields, slug)) = row else {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "unknown form"})),
@@ -715,9 +715,12 @@ async fn fill(
             .into_response();
     }
     // Date boxes printed shorter than an ISO date take the form's compact
-    // US order: MaxLen 8 → MMDDYYYY, 6 → MMDDYY (the date picker always
-    // posts YYYY-MM-DD; re-review of P349 #2).
-    for f in &mapped {
+    // US order on US forms: MaxLen 8 → MMDDYYYY, 6 → MMDDYY (the date
+    // picker always posts YYYY-MM-DD; re-review of P349 #2). Elsewhere
+    // the order is unknown, so the MaxLen refusal stands rather than
+    // printing a wrong date (re-review of P351 #2).
+    let us_form = slug.starts_with("usa-") || slug.starts_with("usdos");
+    for f in mapped.iter().filter(|_| us_form) {
         let (Some(name), Some(max)) = (f["name"].as_str(), f["max_len"].as_u64()) else {
             continue;
         };
@@ -737,8 +740,7 @@ async fn fill(
             }
         }
     }
-    // Only the validated, normalised values are stored.
-    let stored = serde_json::to_string(&values).unwrap_or_default();
+
     let Ok((_, bytes)) = capture_pdf(&store, &conn, capture_id) else {
         return store_unavailable();
     };
@@ -750,15 +752,18 @@ async fn fill(
         if let Ok(acro) = forms::acro::fields(&bytes) {
             values.retain(|k, _| !acro.iter().any(|f| f.read_only && &f.name == k));
         }
-        forms::acro::fill_flatten(&bytes, &values)
+        // Only the validated, normalised values that were printed are
+        // stored (re-review of P351 #3).
+        let stored = serde_json::to_string(&values).unwrap_or_default();
+        forms::acro::fill_flatten(&bytes, &values).map(|pdf| (pdf, stored))
     })
     .await
     {
         Ok(r) => r,
         Err(_) => return store_unavailable(),
     };
-    let pdf = match pdf {
-        Ok(pdf) => pdf,
+    let (pdf, stored) = match pdf {
+        Ok(done) => done,
         Err(e) => {
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,

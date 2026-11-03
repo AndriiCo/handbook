@@ -153,9 +153,38 @@ pub struct ProtectedSpan {
     pub kind: ProtectedKind,
     pub text: String,
     pub digits: String,
-    /// Canonical clock times (`H:MM`) when this number span is a time
-    /// or an hour range; empty otherwise.
-    pub clock: Vec<String>,
+    /// The clock times this number span writes when it is a time or an
+    /// hour range; empty otherwise.
+    pub clock: Vec<Clock>,
+}
+
+/// One written clock time. `marked` times (am/pm) hold a 24-hour `h`;
+/// unmarked ones hold the hour as written, so `4:30` may be either half
+/// of the day but `4:30 PM` is only 16:30.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Clock {
+    pub h: u32,
+    pub m: u32,
+    pub marked: bool,
+}
+
+impl Clock {
+    /// Same time of day: equal when both or neither carry am/pm; an
+    /// unmarked hour under 12 also matches its afternoon (`4:30` ~
+    /// `4:30 PM`), never the reverse half (`8 PM` ≁ `8:00 AM`).
+    fn same(self, other: Clock) -> bool {
+        if self.m != other.m {
+            return false;
+        }
+        let loose = |marked: Clock, bare: Clock| {
+            bare.h == marked.h || (bare.h < 12 && bare.h + 12 == marked.h)
+        };
+        match (self.marked, other.marked) {
+            (true, false) => loose(self, other),
+            (false, true) => loose(other, self),
+            _ => self.h == other.h,
+        }
+    }
 }
 
 /// Street suffixes that close an address span (case-insensitive,
@@ -448,8 +477,8 @@ fn is_dash(c: char) -> bool {
     matches!(c, '-' | '\u{2013}' | '\u{2014}')
 }
 
-/// `H` or `H:MM` (hour ≤ 24, minutes < 60) as a canonical `H:MM`.
-fn clock(raw: &str) -> Option<String> {
+/// `H` or `H:MM` (hour ≤ 24, minutes < 60) as `(h, m)`.
+fn clock(raw: &str) -> Option<(u32, u32)> {
     let raw = raw.trim();
     let (h, m) = raw.split_once(':').unwrap_or((raw, "00"));
     let digits = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
@@ -457,11 +486,12 @@ fn clock(raw: &str) -> Option<String> {
         return None;
     }
     let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
-    (h <= 24 && m < 60).then(|| format!("{h}:{m:02}"))
+    (h <= 24 && m < 60).then_some((h, m))
 }
 
-/// An am/pm marker right after byte `pos`: `8 AM`, `8 a.m.`, `8pm`.
-fn meridiem_after(text: &str, pos: usize) -> bool {
+/// The am/pm marker right after byte `pos`: `Some(true)` for pm,
+/// `Some(false)` for am (`8 AM`, `8 a.m.`, `8pm`).
+fn meridiem_after(text: &str, pos: usize) -> Option<bool> {
     let rest = text
         .get(pos..)
         .unwrap_or("")
@@ -472,34 +502,79 @@ fn meridiem_after(text: &str, pos: usize) -> bool {
         .map(|b| b.to_ascii_lowercase())
         .collect();
     let word_end = |i: usize| b.get(i).is_none_or(|c| !c.is_ascii_alphabetic());
-    ((b.starts_with(b"am") || b.starts_with(b"pm")) && word_end(2))
-        || b.starts_with(b"a.m")
-        || b.starts_with(b"p.m")
-}
-
-/// The clock times one number token writes, canonical `H:MM`: an
-/// `H:MM` token, a bare hour followed by am/pm, or both ends of an hour
-/// range (`9-5`, `8:00-4:30`). Empty for anything else — counts, dates
-/// (`7/1/2024`), phone numbers, ZIPs (re-review of P349 #0/#1).
-fn token_clocks(text: &str, s: usize, e: usize) -> Vec<String> {
-    let raw = &text[s..e];
-    let sides: Vec<&str> = raw.split(is_dash).collect();
-    let Some(clocks) = sides
-        .iter()
-        .map(|p| clock(p))
-        .collect::<Option<Vec<String>>>()
-    else {
-        return Vec::new();
-    };
-    match clocks.len() {
-        2 => clocks,
-        1 if raw.contains(':') || meridiem_after(text, e) => clocks,
-        _ => Vec::new(),
+    let marker =
+        |c: u8| (b.starts_with(&[c, b'm']) && word_end(2)) || b.starts_with(&[c, b'.', b'm']);
+    if marker(b'p') {
+        Some(true)
+    } else if marker(b'a') {
+        Some(false)
+    } else {
+        None
     }
 }
 
+/// A word starts right after byte `pos` (`3-5 business days`,
+/// `6-8+ weeks`): what follows a count range, never an hour range.
+fn word_after(text: &str, pos: usize) -> bool {
+    text.get(pos..)
+        .unwrap_or("")
+        .trim_start_matches([' ', '\t', '\u{A0}', '\u{202F}', '+'])
+        .chars()
+        .next()
+        .is_some_and(char::is_alphabetic)
+}
+
+/// The clock times one number token writes: an `H:MM` token, a bare
+/// hour followed by am/pm, or both ends of an hour range (`9-5`,
+/// `8:00-4:30`, `9-5 pm`) — never a count range followed by its unit
+/// (`3-5 business days`), a date (`7/1/2024`), a phone number or a ZIP
+/// (re-review of P349 #0/#1, of P351 #0/#1).
+fn token_clocks(text: &str, s: usize, e: usize) -> Vec<Clock> {
+    let raw = &text[s..e];
+    let sides: Vec<&str> = raw.split(is_dash).collect();
+    let Some(parsed) = sides
+        .iter()
+        .map(|p| clock(p))
+        .collect::<Option<Vec<(u32, u32)>>>()
+    else {
+        return Vec::new();
+    };
+    let pm = meridiem_after(text, e);
+    let timed = match parsed.len() {
+        2 => raw.contains(':') || pm.is_some() || !word_after(text, e),
+        1 => raw.contains(':') || pm.is_some(),
+        _ => false,
+    };
+    if !timed {
+        return Vec::new();
+    }
+    let last = parsed.len() - 1;
+    parsed
+        .into_iter()
+        .enumerate()
+        .map(|(i, (h, m))| match pm.filter(|_| i == last) {
+            Some(true) if h < 12 => Clock {
+                h: h + 12,
+                m,
+                marked: true,
+            },
+            Some(false) if h == 12 => Clock {
+                h: 0,
+                m,
+                marked: true,
+            },
+            Some(_) => Clock { h, m, marked: true },
+            None => Clock {
+                h,
+                m,
+                marked: false,
+            },
+        })
+        .collect()
+}
+
 /// Every clock time `text` writes.
-fn clock_times(text: &str) -> Vec<String> {
+fn clock_times(text: &str) -> Vec<Clock> {
     number_tokens(text)
         .into_iter()
         .flat_map(|(s, e, _)| token_clocks(text, s, e))
@@ -547,7 +622,7 @@ fn number_grounded(hay: &str, span: &ProtectedSpan) -> bool {
         return false;
     }
     let times = clock_times(hay);
-    span.clock.iter().all(|c| times.contains(c))
+    span.clock.iter().all(|c| times.iter().any(|t| t.same(*c)))
 }
 
 /// True when `hay` holds `digits` as a whole token next to `sym`
@@ -1428,6 +1503,39 @@ mod tests {
             "Processing takes 3 business days.",
             "Processing takes 3-5 business days."
         ));
+        // Re-review of P351 #0: a count range followed by its unit is no
+        // hour range.
+        assert!(!guard_ok(
+            "Walk in until 5 PM.",
+            "Processing takes 3-5 business days."
+        ));
+        assert!(!guard_ok(
+            "Allow 3-5 business days. Walk-ins until 3 PM.",
+            "Prevea 3-5 días hábiles. Sin cita hasta las 5 PM."
+        ));
+        assert!(!guard_ok(
+            "Closes at 12:00 on Fridays.",
+            "Allow 10-12 business days."
+        ));
+        assert!(!guard_ok("Open until 6 PM.", "Allow 6-8+ weeks."));
+        assert!(!guard_ok(
+            "Processing takes 3-5 business days.",
+            "Abierto de 3 a.m. a 5 p.m."
+        ));
+        // #1: am/pm is kept: the other half of the day never grounds.
+        assert!(!guard_ok(
+            "Open until 8 PM",
+            "Open Monday to Friday, 8:00 AM to 4:30 PM."
+        ));
+        assert!(!guard_ok(
+            "Walk-ins close at 3:00 PM.",
+            "Las visitas cierran a las 3 a.m."
+        ));
+        assert!(guard_ok(
+            "Walk-ins close at 4:30 PM.",
+            "Cierran a las 16:30."
+        ));
+        assert!(guard_ok("Open 9-5 pm", "Open 9 AM to 5 PM"));
         // A faithful translation of a time still passes.
         assert!(guard_ok(
             "Allow 3 business days. Open 8:00 a.m. to 3:00 p.m.",

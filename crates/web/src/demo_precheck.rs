@@ -73,10 +73,11 @@ pub async fn run(
             .into_response();
     }
     // A model-free read: its own map (a flood never fills the
-    // demo-login map), keyed per IPv4 / IPv6 /64, admitting newcomers
-    // when full (re-review of P349 #5).
+    // demo-login map), keyed per IPv4 / IPv6 /64 with a budget a whole
+    // venue LAN can share, admitting newcomers when full (re-review of
+    // P349 #5, P351 #4).
     let ip = crate::admin_ip::rate_key(Some(addr.ip()));
-    if !PRECHECK_LIMITS.check_read(&format!("dp:{ip}"), unix_now(), 10, 60) {
+    if !PRECHECK_LIMITS.check_read(&format!("dp:{ip}"), unix_now(), 60, 60) {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(json!({"error": "too many precheck runs — wait a minute"})),

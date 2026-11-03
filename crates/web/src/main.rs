@@ -2182,8 +2182,8 @@ mod tests {
             serde_json::json!(["sam-3.1", "muse-spark-1.3"])
         );
         assert_eq!(body["boxes"].as_array().unwrap().len(), 1);
-        // 10 runs/min per IP: nine more pass, the eleventh is limited.
-        for _ in 0..9 {
+        // 60 runs/min per network: 59 more pass, the 61st is limited.
+        for _ in 0..59 {
             let res = app
                 .clone()
                 .oneshot(demo_run_request_from("syn-doc-clean", own()))
