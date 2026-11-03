@@ -6,7 +6,7 @@
 // Writes web/shots/*.png + web/shots/index.html.
 //
 // Usage: npm run shots -- [route ...]   (default: / /authority/vietnam /login)
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
@@ -32,6 +32,45 @@ const ROUTES = {
 	'/notify/confirm': { name: 'notify-confirm', ready: 'invalid or expired' },
 	'/notify/unsubscribe': { name: 'notify-unsubscribe', ready: 'Unsubscribe from updates' }
 };
+// MISSION WIN lane registries (B0): each lane owns
+// `e2e/fixtures/lanes/<lane>.json` = { routes: { "/x": { name, ready,
+// build?: "admin" } }, api: [ { method?, path: "<regex on pathname>",
+// fixture: "<file in e2e/fixtures>" | json: {...}, status? } ],
+// ws: [ { topic: "<regex>", fixture?: "<file>", events?: [...] } ] }.
+// Lane routes merge into ROUTES; their api entries answer before the
+// built-ins below; `build: "admin"` routes run against build-admin.
+const LANES = (() => {
+	const dir = join(root, 'e2e/fixtures/lanes');
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir)
+		.filter((f) => f.endsWith('.json'))
+		.sort()
+		.map((f) => ({ file: f, ...JSON.parse(readFileSync(join(dir, f), 'utf8')) }));
+})();
+const LANE_ROUTES = new Set();
+for (const lane of LANES) {
+	for (const [route, spec] of Object.entries(lane.routes ?? {})) {
+		if (ROUTES[route]) throw new Error(`shots: ${lane.file} redefines route ${route}`);
+		ROUTES[route] = spec;
+		LANE_ROUTES.add(route);
+	}
+}
+const LANE_API = LANES.flatMap((lane) =>
+	(lane.api ?? []).map((a) => ({
+		method: a.method ?? 'GET',
+		re: new RegExp(a.path),
+		status: a.status ?? 200,
+		body: a.json ?? JSON.parse(readFileSync(join(root, 'e2e/fixtures', a.fixture), 'utf8'))
+	}))
+);
+const LANE_WS = LANES.flatMap((lane) =>
+	(lane.ws ?? []).map((w) => ({
+		re: new RegExp(w.topic),
+		events:
+			w.events ??
+			(w.fixture ? JSON.parse(readFileSync(join(root, 'e2e/fixtures', w.fixture), 'utf8')) : [])
+	}))
+);
 const SIZES = [
 	{ w: 390, h: 844 },
 	{ w: 1440, h: 900 }
@@ -77,6 +116,10 @@ const failures = [];
 const shots = [];
 
 const { url, close } = await serveDir(join(root, 'build'), { base: BASE });
+// Admin build (lane routes with `build: "admin"`), served at its root
+// like the admin listener; API paths stay under /apostille/api/v1.
+const wantsAdmin = routes.some((r) => ROUTES[r].build === 'admin');
+const admin = wantsAdmin ? await serveDir(join(root, 'build-admin')) : null;
 const browser = await chromium.launch();
 try {
 	for (const route of routes) {
@@ -102,8 +145,25 @@ try {
 						localStorage.setItem('theme', t);
 					} catch {}
 				}, theme);
+				if (LANE_ROUTES.has(route)) {
+					// Lane screens: sockets open and deliver the lane's
+					// recorded events (ids only), never a real server.
+					await page.routeWebSocket('**/ws/bus*', (ws) => {
+						const topic = new URL(ws.url()).searchParams.get('topic') ?? '';
+						for (const w of LANE_WS) {
+							if (!w.re.test(topic)) continue;
+							for (const ev of w.events) ws.send(JSON.stringify(ev));
+						}
+					});
+				}
 				await page.route('**/api/v1/**', async (r) => {
 					const path = new URL(r.request().url()).pathname;
+					const method = r.request().method();
+					for (const a of LANE_API) {
+						if (a.method === method && a.re.test(path)) {
+							return r.fulfill({ status: a.status, json: a.body });
+						}
+					}
 					if (path.endsWith('/api/v1/authorities')) {
 						return r.fulfill({ json: authorities });
 					}
@@ -161,7 +221,9 @@ try {
 						json: { error: 'mock' }
 					});
 				});
-				await page.goto(`${url}${BASE}${route}`, { waitUntil: 'networkidle' });
+				const target =
+					ROUTES[route].build === 'admin' ? `${admin.url}${route}` : `${url}${BASE}${route}`;
+				await page.goto(target, { waitUntil: 'networkidle' });
 				try {
 					await page.getByText(ready, { exact: false }).first().waitFor({ timeout: 8000 });
 				} catch {
@@ -264,6 +326,7 @@ try {
 } finally {
 	await browser.close();
 	await close();
+	if (admin) await admin.close();
 }
 
 const cards = shots

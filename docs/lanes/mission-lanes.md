@@ -32,7 +32,12 @@ session in the main checkout; it merges every `ready:` step at once.
   <crate> --all-targets -- -D warnings`, `cargo fmt -p <crate>`). Never
   `cargo clean`, never `cargo xtask ci` locally (plant runs it on every
   merge), no `--release` builds except SA-29.
-- Web lanes: `npm --prefix web ci` once in your worktree.
+- Web lanes: `npm --prefix web ci` once in your worktree. Register your
+  screens for the visual gate in `web/e2e/fixtures/lanes/sa-<NN>.json`
+  (you own it; format at the top of `web/scripts/shots.mjs`: routes with
+  `name`, `ready` text and `build: "admin"` for admin screens, API
+  fixtures by pathname regex, recorded WS events by topic regex). Every
+  screen needs exactly one `h1` built with the heading component.
 - Live Meta calls run on plant only (`ssh plant`), from your own scratch
   directory `~/lanes/sa-<NN>/` with your own store (`xtask init --store
   ~/lanes/sa-<NN>/store`), with the staging key sourced in the remote
