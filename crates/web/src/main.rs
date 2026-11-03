@@ -475,8 +475,32 @@ fn mission_p2_routes() -> Router<AppState> {
     orders::p2_routes().merge(forms_map::p2_routes())
 }
 
-/// Lane-owned staff routers (ADMIN listener only).
+/// Lane-owned staff routers (ADMIN listener only). The admin guard
+/// stack (host guard, IP allowlist, CSRF double-submit, request log)
+/// wraps every lane router here, exactly as `admin_workers::router`
+/// layers itself, so no lane route can ship without it; handlers still
+/// take `AdminAuth` (session + staff role).
 fn mission_admin_routers(state: &AppState) -> Router {
+    mission_admin_routes(state)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            admin::csrf_guard,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            admin::require_admin_ip,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            admin::admin_host_guard,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            "admin",
+            request_id_and_log,
+        ))
+}
+
+fn mission_admin_routes(state: &AppState) -> Router {
     telemetry::admin_router(state.clone())
         .merge(admin_stats::admin_router(state.clone()))
         .merge(plan::admin_router(state.clone()))
@@ -2507,6 +2531,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn lane_admin_routes_sit_behind_the_admin_guard_stack() {
+        // B3 stats + M1 model-calls: staff on the admin host read them;
+        // a wrong Host is refused by the guard layer, no session is
+        // refused by AdminAuth, and the public router never serves them.
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        for uri in [
+            "/apostille/api/v1/admin/stats",
+            "/apostille/api/v1/admin/model-calls",
+        ] {
+            let get = |host: &'static str, session: Option<&'static str>| {
+                admin_request("GET", uri, Some(host), session, None, None, None)
+            };
+            let full = || admin::router(fx.state.clone()).merge(mission_admin_routers(&fx.state));
+            let res = full()
+                .oneshot(get("admin.andrii.ai", Some("staff-1")))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "{uri}");
+            let res = full()
+                .oneshot(get("evil.test", Some("staff-1")))
+                .await
+                .unwrap();
+            assert!(res.status().is_client_error(), "{uri}: wrong host refused");
+            let res = full().oneshot(get("admin.andrii.ai", None)).await.unwrap();
+            assert!(
+                matches!(
+                    res.status(),
+                    StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+                ),
+                "{uri}: no session refused"
+            );
+            let res = public_router_for(&fx.state)
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::NOT_FOUND, "{uri}: never public");
+        }
+    }
+
+    #[tokio::test]
     async fn publish_rejects_oversized_body() {
         // M1: arbitrary-JSON fan-out is capped; normal events flow.
         let fx = fixture();
@@ -3123,7 +3188,14 @@ mod tests {
         db::migrate(&conn).unwrap();
         auth::migrate_auth_tables(&conn).unwrap();
         config::migrate_config_tables(&conn).unwrap();
+        // Lane DDL runs at boot; the fixture mirrors it so lane routes
+        // test against the same tables production has.
+        migrate_mission_tables(&conn).unwrap();
         drop(conn);
+        if let Ok(p2) = db::open_p2(&store) {
+            let _ = db::migrate_p2(&p2);
+            migrate_mission_p2(&p2).unwrap();
+        }
         let state = AppState {
             spa_index: PathBuf::from("test-spa/index.html"),
             static_dir: PathBuf::from("static"),

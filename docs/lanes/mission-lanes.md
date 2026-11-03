@@ -80,7 +80,10 @@ the prod and test routers alike:
   stripe. `p2_routes()` (merged into the `/api/v1/p2` nest, relative
   paths): orders, forms_map. `admin_router(state)` (admin listener, paths
   `/apostille/api/v1/…`): telemetry, plan, compile, factcheck, offices,
-  forms_map, fulfilment, admin_orders. `spawn(&state)`: reconcile,
+  forms_map, fulfilment, admin_orders. The builder wraps all of them in the admin
+  guard stack (host guard, IP allowlist, CSRF double-submit, request log),
+  so a lane admin router adds no layers of its own; handlers still take
+  `AdminAuth`. The test `fixture()` runs every lane DDL hook. `spawn(&state)`: reconcile,
   tracking.
 - Seams: `offices::accepted_for_slug`, `forms_map::accepted_for_slug`,
   `factcheck::checks_for_slug` (read by `plan.rs`),
