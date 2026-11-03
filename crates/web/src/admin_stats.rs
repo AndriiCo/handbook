@@ -210,10 +210,8 @@ mod tests {
         let p2 = db::open_p2(&store).unwrap();
         db::migrate_p2(&p2).unwrap();
         let v = stats(&conn, Some(&p2), store.root(), 1_793_750_400);
-        let seed: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../docs/contracts/admin-stats.json"
-        ))
-        .unwrap();
+        let seed: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/contracts/admin-stats.json")).unwrap();
         for key in seed["kpis"].as_object().unwrap().keys() {
             assert!(v["kpis"].get(key).is_some(), "kpi {key}");
         }

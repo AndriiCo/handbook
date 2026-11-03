@@ -2242,10 +2242,9 @@ mod tests {
 
     #[test]
     fn contract_seeds_match_the_served_shapes() {
-        let seed: Value = serde_json::from_str(include_str!(
-            "../../../docs/contracts/order-options.json"
-        ))
-        .unwrap();
+        let seed: Value =
+            serde_json::from_str(include_str!("../../../docs/contracts/order-options.json"))
+                .unwrap();
         let d =
             destination(&[f(203, "po_box", "Send to PO Box 4000, Olympia, WA 98504.")]).unwrap();
         let v = options("usa-wa-sos", Some(&d), &Switches::default());
