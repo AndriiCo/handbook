@@ -1,0 +1,42 @@
+{
+  "rules": [
+    {
+      "id": 4,
+      "authority_id": 2,
+      "authority_slug": "vietnam",
+      "topic": "fees",
+      "statement": "SYNTHETIC: fees are listed on the counter notice board.",
+      "reason": "Not a fee value; boilerplate.",
+      "created_by": "staff:demo",
+      "created_at": 1793660000,
+      "revoked_at": null
+    }
+  ],
+  "suppressions": [
+    {
+      "id": 51,
+      "capture_id": 3,
+      "authority_slug": "vietnam",
+      "topic": "fees",
+      "statement": "SYNTHETIC: fees are listed on the counter notice board.",
+      "path": "B",
+      "rule_id": 4,
+      "created_at": 1793749800
+    }
+  ],
+  "rejections": [
+    {
+      "id": 301,
+      "at": 1793749800,
+      "authority_slug": "vietnam",
+      "attempt": 1,
+      "kind": "value_not_in_quote",
+      "topic": "fees",
+      "field": "statement",
+      "value": "350,000 VND",
+      "span_start": 120,
+      "span_end": 220
+    }
+  ],
+  "count": 1
+}

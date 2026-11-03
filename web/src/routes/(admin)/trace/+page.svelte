@@ -4,14 +4,62 @@
 	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
 	import { csrfHeaders } from '../../../lib/admin/config-client.js';
 	import { subscribe, type BusMessage } from '../../../lib/live.svelte.js';
+	import Heading from '#lib/components/brand/Heading.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { fetchModelCalls, PIPELINES, type CallSummary, type ModelCall } from '#lib/admin/model-calls.js';
+	import { errorText } from '#lib/admin/admin-api.js';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import { clock, dateTime, fmtCompact, fmtInt, fmtMs, modelName } from '#lib/admin/format.js';
 
-	// Trace console: every watched page's capture sha256 + short text,
-	// newest first. Batches of 25 through before_id paging — never one
-	// giant article. Admin listener only (same /apostille root).
+	// Trace console: Meta model calls with latency and time to first
+	// token per attempt, then every watched page's capture sha256 +
+	// short text, newest first. Batches of 25 through before_id paging
+	// — never one giant article. Admin listener only (same /apostille
+	// root).
 	const api = (path: string) => `/apostille/api/v1${path}`;
 	const PAGE = 25;
-	const BTN =
-		'min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-55';
+
+	let calls = $state<ModelCall[]>([]);
+	let summary = $state<CallSummary | null>(null);
+	let callsState = $state<'loading' | 'ready' | 'failed'>('loading');
+	let callsError = $state<string | null>(null);
+	let pipeline = $state<string | null>(null);
+
+	async function loadCalls(quiet = false) {
+		if (!quiet) callsState = 'loading';
+		try {
+			const out = await fetchModelCalls(pipeline);
+			calls = out.calls;
+			summary = out.summary;
+			callsState = 'ready';
+		} catch (e) {
+			callsError = errorText(e, 'Model calls failed to load.');
+			if (!quiet) callsState = 'failed';
+		}
+	}
+
+	function pick(next: string | null) {
+		pipeline = next;
+		void loadCalls();
+	}
+
+	const maxLatency = $derived(Math.max(1, ...calls.map((c) => c.latency_ms ?? 0)));
+	const OUTCOME: Record<string, string> = {
+		ok: 'ok',
+		refusal: 'refused',
+		length: 'length cap',
+		http_4xx: 'HTTP 4xx',
+		http_5xx: 'HTTP 5xx',
+		timeout: 'timed out',
+		parse_error: 'parse error'
+	};
+
+	function runCalls(runId: number): ModelCall[] {
+		return calls.filter((c) => c.run_id === runId);
+	}
 
 	interface Trace {
 		id: number;
@@ -135,6 +183,8 @@
 			attempts: attemptList(src)
 		};
 		clearRunWatch(captureId);
+		// The run's per-attempt latency rows land with it: re-read them.
+		void loadCalls(true);
 	}
 
 	// Reconcile against the server's run registry: a `run_finished`
@@ -334,6 +384,7 @@
 
 	onMount(() => {
 		reload();
+		void loadCalls();
 		return () => {
 			for (const captureId of [...runSubs.keys()]) clearRunWatch(captureId);
 		};
@@ -344,90 +395,217 @@
 	<title>Trace console — Admin — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Trace console</h1>
-<p class="text-ink-muted">
-	Every watched page, newest first: capture sha256 with the text it carried. Batches of {PAGE}.
-</p>
-
-<form
-	onsubmit={(e) => {
-		e.preventDefault();
-		reload();
-	}}
-	class="mb-4 flex max-w-[28rem] flex-col gap-2"
->
-	<label class="font-bold" for="trace-authority">Authority slug (optional)</label>
-	<input
-		id="trace-authority"
-		class="min-h-11 rounded-xs border border-line bg-bg px-3 text-ink"
-		type="text"
-		bind:value={authority}
-		placeholder="vietnam"
-		autocomplete="off"
-	/>
-	<p class="m-0"><button class={BTN} type="submit">Filter</button></p>
-</form>
-
-{#if loadState === 'loading'}
-	<ul class="m-0 list-none p-0" aria-label="Captures">
-		{#each [0, 1, 2, 3] as i (i)}
-			<li class="border-b border-line py-3" aria-hidden="true">
-				<Skeleton class="mb-2 h-4 w-2/3" />
-				<Skeleton class="h-4 w-full" />
-			</li>
-		{/each}
-	</ul>
-{:else if loadState === 'failed'}
-	<Notice variant="error" heading="Trace failed to load.">
-		<p>{loadError}</p>
-		<p><button class={BTN} type="button" onclick={reload}>Retry</button></p>
-	</Notice>
-{:else if traces.length === 0}
-	<Notice variant="info" heading="No captures yet.">
-		<p>Run a fetch sweep first — captures appear here newest-first.</p>
-	</Notice>
-{:else}
-	<ul class="m-0 list-none p-0">
-		{#each traces as t (t.id)}
-			{@const chain =
-				drafts[t.id] && drafts[t.id].status === 'finished'
-					? attemptLine(drafts[t.id] as DraftRun)
-					: null}
-			<li class="border-b border-line py-3">
-				<p class="m-0 mb-1 font-bold">
-					#{t.id} · {t.authority_slug} · {day(t.captured_at)}
-					<span class="font-mono font-normal text-ink-muted">· {t.kind} · {t.bytes_raw} B</span>
-				</p>
-				<p class="m-0 mb-1 font-mono text-sm break-all" title={t.sha256}>
-					sha256:{t.sha256.slice(0, 16)}…
-				</p>
-				<p class="m-0 text-sm text-ink-muted">{t.excerpt || '— no text extracted —'}</p>
-				<p class="m-0 mt-2">
-					<button
-						class={BTN}
-						type="button"
-						onclick={() => draftCapture(t.id)}
-						disabled={!!drafts[t.id] && drafts[t.id].status !== 'failed'}
-					>
-						{draftLabel(t.id)}
-					</button>
-				</p>
-				{#if chain}
-					<p class="m-0 mt-1 font-mono text-sm text-ink-muted">{chain}</p>
-				{/if}
-			</li>
-		{/each}
-	</ul>
-	{#if loadError}
-		<Notice variant="warning" heading="Older captures failed to load.">
-			<p>{loadError}</p>
-		</Notice>
-	{/if}
-	{#if !exhausted}
-		<p>
-			<button class={BTN} type="button" onclick={more} disabled={loadingMore}>
-				{loadingMore ? 'Working…' : 'Load older captures'}
-			</button>
+<div class="mt-6 flex flex-col gap-8 pb-12">
+	<header class="flex flex-col gap-1">
+		<Heading level={1} eyebrow="System">Trace console</Heading>
+		<p class="m-0 max-w-prose text-sm text-ink-muted">
+			Every Meta model attempt with its latency and time to first token, then every watched page:
+			capture sha256 with the text it carried. Draft from any capture and watch the run land live.
 		</p>
-	{/if}
-{/if}
+	</header>
+
+	<section aria-labelledby="calls" class="flex flex-col gap-3">
+		<div class="flex flex-wrap items-baseline justify-between gap-2">
+			<h2 id="calls" class="m-0 text-h3 font-semibold">Model calls</h2>
+			{#if summary && summary.since}
+				<p class="m-0 text-xs text-ink-muted">Since {dateTime(summary.since)} · one row per HTTP attempt</p>
+			{/if}
+		</div>
+		{#if summary}
+			<dl class="m-0 grid grid-cols-2 gap-3 sm:grid-cols-4">
+				<div class="rounded-md border border-line bg-card px-4 py-3 shadow-sm">
+					<dt class="text-xs text-ink-muted">Calls</dt>
+					<dd class="m-0 text-h3 font-semibold tabular-nums">{fmtInt(summary.calls)}</dd>
+				</div>
+				<div class="rounded-md border border-line bg-card px-4 py-3 shadow-sm">
+					<dt class="text-xs text-ink-muted">Latency p50 / p95</dt>
+					<dd class="m-0 text-h3 font-semibold tabular-nums">{fmtMs(summary.p50_ms)} / {fmtMs(summary.p95_ms)}</dd>
+				</div>
+				<div class="rounded-md border border-line bg-card px-4 py-3 shadow-sm">
+					<dt class="text-xs text-ink-muted">Input · cached</dt>
+					<dd class="m-0 text-h3 font-semibold tabular-nums">
+						{fmtCompact(summary.input_tokens)} · {fmtCompact(summary.cached_tokens)}
+					</dd>
+				</div>
+				<div class="rounded-md border border-line bg-card px-4 py-3 shadow-sm">
+					<dt class="text-xs text-ink-muted">Output · reasoning</dt>
+					<dd class="m-0 text-h3 font-semibold tabular-nums">
+						{fmtCompact(summary.output_tokens)} · {fmtCompact(summary.reasoning_tokens)}
+					</dd>
+				</div>
+			</dl>
+		{/if}
+		<div class="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+			<div class="flex w-max gap-1" role="group" aria-label="Filter by pipeline">
+				<Button size="sm" variant={pipeline === null ? 'default' : 'outline'} aria-pressed={pipeline === null} onclick={() => pick(null)}>
+					All
+				</Button>
+				{#each PIPELINES as p (p)}
+					<Button size="sm" variant={pipeline === p ? 'default' : 'outline'} aria-pressed={pipeline === p} onclick={() => pick(p)}>
+						{p}
+					</Button>
+				{/each}
+			</div>
+		</div>
+		{#if callsState === 'loading'}
+			<div class="flex flex-col gap-2" role="status" aria-label="Loading model calls">
+				{#each [0, 1, 2] as i (i)}
+					<Skeleton class="h-12 rounded-sm" />
+				{/each}
+			</div>
+		{:else if callsState === 'failed'}
+			<p class="m-0 text-sm text-ink-muted" role="status">{callsError}</p>
+			<div><Button variant="outline" size="sm" onclick={() => loadCalls()}>Try again</Button></div>
+		{:else if calls.length === 0}
+			<p class="m-0 text-sm text-ink-muted">No calls{pipeline ? ` for ${pipeline}` : ''} yet. Draft from a capture below to start one.</p>
+		{:else}
+			<div class="overflow-hidden rounded-md border border-line">
+				<table class="block w-full border-collapse text-sm md:table">
+					<caption class="sr-only">Model calls, newest first</caption>
+					<thead class="sr-only bg-surface md:not-sr-only">
+						<tr class="text-left text-xs text-ink-muted">
+							<th scope="col" class="px-3 py-2 font-medium">Call</th>
+							<th scope="col" class="px-3 py-2 font-medium">Latency</th>
+							<th scope="col" class="px-3 py-2 text-right font-medium">TTFT</th>
+							<th scope="col" class="px-3 py-2 text-right font-medium">Tokens in / cached / out / reasoning</th>
+							<th scope="col" class="px-3 py-2 text-right font-medium">Outcome</th>
+						</tr>
+					</thead>
+					<tbody class="block md:table-row-group">
+						{#each calls as c (c.id)}
+							<tr class="flex flex-col gap-1 border-t border-line px-3 py-2 md:table-row md:px-0 md:py-0">
+								<td class="md:px-3 md:py-2">
+									<span class="font-semibold">{modelName(c.model)}</span>
+									<span class="text-ink-muted"> · {c.pipeline}</span>
+									<span class="block font-mono text-xs text-ink-muted">
+										{clock(c.at)}{c.run_id ? ` · run ${c.run_id}` : ''} · attempt {c.attempt}
+									</span>
+								</td>
+								<td class="md:w-48 md:px-3 md:py-2">
+									<span class="flex items-center gap-2">
+										<span class="h-2 flex-1" aria-hidden="true">
+											<span
+												class={`block h-full rounded-r-xs ${c.outcome === 'ok' ? 'bg-accent-strong' : 'bg-changed'}`}
+												style={`width:${Math.max(2, ((c.latency_ms ?? 0) / maxLatency) * 100)}%`}
+											></span>
+										</span>
+										<span class="w-14 text-right font-mono text-xs tabular-nums">{fmtMs(c.latency_ms)}</span>
+									</span>
+								</td>
+								<td class="font-mono text-xs tabular-nums md:px-3 md:py-2 md:text-right">
+									<span class="text-ink-muted md:sr-only">TTFT </span>{fmtMs(c.ttft_ms)}
+								</td>
+								<td class="font-mono text-xs tabular-nums md:px-3 md:py-2 md:text-right">
+									{fmtCompact(c.input_tokens)} / {fmtCompact(c.cached_tokens)} / {fmtCompact(c.output_tokens)} / {fmtCompact(c.reasoning_tokens)}
+								</td>
+								<td class="md:px-3 md:py-2 md:text-right">
+									<Badge variant="outline" class={c.outcome === 'ok' ? 'border-verified text-verified' : 'border-changed text-changed'}>
+										{OUTCOME[c.outcome] ?? c.outcome}
+									</Badge>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
+
+	<section aria-labelledby="captures" class="flex flex-col gap-3">
+		<h2 id="captures" class="m-0 text-h3 font-semibold">Captures</h2>
+		<form
+			onsubmit={(e) => {
+				e.preventDefault();
+				reload();
+			}}
+			class="flex max-w-md flex-wrap items-end gap-2"
+		>
+			<label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-ink-muted" for="trace-authority">
+				Authority slug (optional)
+				<Input id="trace-authority" class="h-9" bind:value={authority} autocomplete="off" />
+			</label>
+			<Button type="submit" variant="outline" size="lg">Filter</Button>
+		</form>
+
+		{#if loadState === 'loading'}
+			<ul class="m-0 flex list-none flex-col gap-2 p-0" aria-label="Captures">
+				{#each [0, 1, 2, 3] as i (i)}
+					<li aria-hidden="true">
+						<Skeleton class="h-24 rounded-md" />
+					</li>
+				{/each}
+			</ul>
+		{:else if loadState === 'failed'}
+			<Notice variant="error" heading="Trace failed to load.">
+				<p class="m-0">{loadError}</p>
+				<p class="mt-3 mb-0"><Button variant="outline" onclick={reload}>Try again</Button></p>
+			</Notice>
+		{:else if traces.length === 0}
+			<Notice variant="info" heading="No captures yet.">
+				<p class="m-0">Run a fetch sweep first — captures appear here newest-first.</p>
+			</Notice>
+		{:else}
+			<ul class="m-0 flex list-none flex-col gap-2 p-0">
+				{#each traces as t (t.id)}
+					{@const d = drafts[t.id]}
+					{@const chain = d && d.status === 'finished' ? attemptLine(d as DraftRun) : null}
+					{@const runRows = d && d.status === 'finished' ? runCalls((d as DraftRun).id) : []}
+					<li>
+						<Card.Root class="gap-2 py-3 shadow-sm">
+							<Card.Content class="flex flex-col gap-2">
+								<p class="m-0 flex flex-wrap items-baseline gap-x-2 text-sm">
+									<span class="font-semibold">#{t.id} · {t.authority_slug}</span>
+									<span class="font-mono text-xs text-ink-muted">{day(t.captured_at)} · {t.kind} · {t.bytes_raw} B · {t.trust}</span>
+								</p>
+								<p class="m-0 font-mono text-xs break-all text-ink-muted" title={t.sha256}>
+									sha256:{t.sha256.slice(0, 16)}…
+								</p>
+								<p class="m-0 text-sm">{t.excerpt || '— no text extracted —'}</p>
+								<div class="flex flex-wrap items-center gap-2">
+									{#if d && d.status === 'finished'}
+										<p class="m-0 inline-flex items-center gap-2 rounded-sm bg-verified-bg px-3 py-2 text-sm font-semibold text-verified" role="status">
+											<CheckIcon class="size-4 flex-none" aria-hidden="true" />{draftLabel(t.id)}
+										</p>
+									{:else}
+										<Button
+											class="h-auto min-h-9 text-left whitespace-normal"
+											size="lg"
+											onclick={() => draftCapture(t.id)}
+											disabled={!!d && d.status !== 'failed'}
+										>
+											{draftLabel(t.id)}
+										</Button>
+									{/if}
+								</div>
+								{#if chain}
+									<p class="m-0 font-mono text-xs text-ink-muted">{chain}</p>
+								{/if}
+								{#if runRows.length > 0}
+									<ul class="m-0 flex list-none flex-col gap-1 p-0" aria-label={`Model calls for run ${(d as DraftRun).id}`}>
+										{#each runRows as c (c.id)}
+											<li class="font-mono text-xs text-ink-muted">
+												{modelName(c.model)} attempt {c.attempt}: {fmtMs(c.latency_ms)} total, first token {fmtMs(c.ttft_ms)}
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</Card.Content>
+						</Card.Root>
+					</li>
+				{/each}
+			</ul>
+			{#if loadError}
+				<Notice variant="warning" heading="Older captures failed to load.">
+					<p class="m-0">{loadError}</p>
+				</Notice>
+			{/if}
+			{#if !exhausted}
+				<div>
+					<Button variant="outline" onclick={more} disabled={loadingMore}>
+						{loadingMore ? 'Working…' : 'Load older captures'}
+					</Button>
+				</div>
+			{/if}
+		{/if}
+	</section>
+</div>
