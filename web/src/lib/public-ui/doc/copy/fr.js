@@ -399,10 +399,11 @@ export default {
 	},
 
 	made: {
-		eyebrow: 'Rédigé par un modèle, approuvé par une personne',
+		eyebrow: 'Rédigé par un modèle ou cité par l’équipe, approuvé par une personne',
 		heading: 'Comment cette page a été faite',
 		summary: (n, models, pages) =>
 			`${counted(n, 'enregistrement', 'enregistrements')}${models.length > 0 ? `, rédigés par ${models.join(' et ')}` : ''}${pages ? ` à partir de ${pages}` : ''}, chacun approuvé par un relecteur de notre équipe avant de figurer sur cette page.`,
+		staff: 'l’équipe',
 		records: (n) => `Les enregistrements derrière cette page (${n})`,
 		whatChanged: (day) => `Ce qui a changé le ${day}`,
 		since: (day) => `· depuis le ${day}`
@@ -413,7 +414,7 @@ export default {
 		captured: (day) => `Capturées le ${day}`,
 		capturedAuthority: 'Capturées auprès de l’autorité',
 		roles: {
-			extract: 'A extrait chaque information des pages officielles',
+			extract: 'A extrait des informations des pages officielles',
 			cross_check: 'A recoupé chaque information avec sa citation',
 			compose: 'A composé ce plan à partir d’informations acceptées'
 		},

@@ -322,7 +322,7 @@ pub struct DecisionBody {
 /// when the key matches the guide's field-key grammar
 /// (`[a-z][a-z0-9_]*`, colon, whitespace). Anything else is an
 /// unkeyed statement, which the value-in-quote gate checks whole.
-fn edited_value(statement: &str) -> Option<&str> {
+pub(crate) fn edited_value(statement: &str) -> Option<&str> {
     let (key, rest) = statement.split_once(':')?;
     if !key.chars().next().is_some_and(|c| c.is_ascii_lowercase())
         || !key

@@ -68,6 +68,9 @@ double-submit pair except the Stripe webhook.
 | POST `/apostille/api/v1/admin/evidence` `{authority_slug, kind, fact_id?, preferred_fact_id?, slot?, stance, occurred_at, channel, summary, capture_id?, supports?}` | admin | staff | yes | — | R1 evidence (§5.4) | the note, staff view (201); `evidence_updated` |
 | POST `/apostille/api/v1/admin/evidence/{id}/withdraw` `{reason}` | admin | staff | yes | — | R1 evidence | the note, staff view; `evidence_updated` |
 | GET `/apostille/api/v1/admin/evidence?slug=&status=published\|withdrawn\|all` | admin | staff | n/a | — | R1 evidence | `{notes: [staff view], count}`, newest first |
+| GET `/apostille/api/v1/admin/authorities/{slug}/captures?limit=` (1-200, default 50) | admin | staff | n/a | — | staff quotes | `{slug, captures: [{id, source_id, uri, kind, trust, captured_at, bytes}]}`, newest first; never rejected or text-less captures; 404 unknown authority |
+| GET `/apostille/api/v1/admin/captures/{id}/text` | admin | staff | n/a | — | staff quotes | `{id, slug, uri, kind, trust, captured_at, text}`; 404 unknown, rejected or text-less, 413 over 4 MiB |
+| POST `/apostille/api/v1/admin/captures/{id}/quote` `{quote, start?, end?, topic, statement}` (UTF-8 byte offsets, both or neither) | admin | staff | yes | — | staff quotes | `{fact_id, status: "proposed", capture_id, start, end, quote, topic, statement, slug}` (201, `created_by: "staff"`); `proposal.created`; 409 stale selection, ambiguous quote (`count`) or statement already on file from this capture (`fact_id`, `status`); 422 includes a span that cuts a word or number |
 
 Every admin route gets an `admin-denial` case (no session → 401/403 on
 the admin host, and the public host never serves it).

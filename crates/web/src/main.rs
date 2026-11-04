@@ -56,6 +56,7 @@ mod passkey;
 mod plan;
 mod queue;
 mod quic;
+mod quote_capture;
 mod readyz;
 mod reconcile;
 mod reports;
@@ -572,6 +573,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(worker::admin_router(state.clone()))
         .merge(source_history::admin_router(state.clone()))
         .merge(evidence::admin_router(state.clone()))
+        .merge(quote_capture::admin_router(state.clone()))
         .merge(fake::admin_router(state.clone()))
 }
 

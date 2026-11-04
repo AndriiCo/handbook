@@ -25,6 +25,8 @@
 		planAuthority
 	} from '../../../../lib/public-ui/doc/load.js';
 	import { modelLabel, parsePlan, type Office } from '../../../../lib/public-ui/plan.js';
+	import { draftedBy } from '../../../../lib/public-ui/guide.js';
+	import { guideCopy } from '../../../../lib/public-ui/doc/copy/index.js';
 	import type { Page as GuidePage } from '../../../../lib/public-ui/doc/contract.js';
 	import { subscribe } from '../../../../lib/live.svelte.js';
 	import { listAuthorities, publicError, readDossier } from '../../../../lib/public-ui/handbook.js';
@@ -320,14 +322,16 @@
 	const forms = $derived(formRows(planBody));
 	const evidence = $derived(evidenceRows(planBody));
 	const planView = $derived(planBody ? parsePlan(planBody) : null);
-	const models = $derived([
-		...new Set(
-			(facts ?? [])
-				.map((f) => String(f?.drafted_by ?? f?.created_by ?? '').split(' ')[0])
-				.filter((m) => m && m !== 'unknown')
-				.map(modelLabel)
-		)
-	]);
+	// Facts staff quoted from a page (`staff`, `staff:<user>`) read as the
+	// guide's word for staff, once, after the models.
+	const models = $derived.by(() => {
+		const staff = guideCopy(site.locale).made.staff;
+		const names = (facts ?? [])
+			.map((f) => draftedBy(f))
+			.filter((m) => m && m !== 'unknown')
+			.map((m) => (m === 'staff' ? staff : modelLabel(m)));
+		return [...new Set(names)].sort((a, b) => Number(a === staff) - Number(b === staff));
+	});
 
 	// The guide: every value from the accepted facts (present.js), its own
 	// words in the site language (re-presented in place on a switch).

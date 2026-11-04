@@ -1,6 +1,6 @@
 <script lang="ts">
 	import CitationMark from '../CitationMark.svelte';
-	import { parseStatement } from '../guide.js';
+	import { draftedBy, parseStatement } from '../guide.js';
 	import { topicName, type PlanFact } from '../plan.js';
 
 	// One evidence chip per cited, accepted fact (deduplicated, plan
@@ -23,7 +23,7 @@
 					label={topicName(String(fact.topic ?? ''))}
 					citation={fact.citations?.[0] ?? null}
 					value={parseStatement(String(fact.statement ?? '')).value}
-					draftedBy={String(fact.drafted_by ?? fact.created_by ?? 'unknown').split(' ')[0]}
+					draftedBy={draftedBy(fact)}
 				/>
 			</li>
 		{/each}
