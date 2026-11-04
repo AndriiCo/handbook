@@ -42,8 +42,9 @@ Rebuild from scratch has `cargo xtask setup`). No deploy freeze on
    then shows as the dossier banner and goes out in the follower
    digest.
 5. **S1 (submission, before 11-04 18:00 PT):**
-   - Swap in the ready licence. If it is not MIT or Apache-2.0, change
-     the licence check in `xtask/ops/scoreboard.mjs` `s1()`.
+   - Licence: done. `LICENSE.md` (PolyForm Noncommercial 1.0.0 plus an
+     evaluation permission) and `LICENSE-CONTENT.md`; the S1 check no
+     longer asks for MIT or Apache-2.0.
    - Put the video URL on README line 6.
    - Run a full-history `gitleaks` scan, then
      `gh repo edit AndriiCo/handbook --visibility public`. All history

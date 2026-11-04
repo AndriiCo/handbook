@@ -224,7 +224,7 @@ crates/web/              API + WS bus + admin branch (IP-allowlisted)
 web/                     public + admin SPAs (SvelteKit, adapter-static)
 xtask/                   task runner (`cargo xtask ci` = fmt check, clippy, tests)
 docs/ops/deploy.md       build, stage, ship, roll back, watch
-LICENSE                  PolyForm Noncommercial 1.0.0 (source code)
+LICENSE.md               PolyForm Noncommercial 1.0.0 (source code)
 LICENSE-CONTENT.md       handbook content, all rights reserved
 ```
 
@@ -277,17 +277,20 @@ security baseline live in [docs/specs/](docs/specs/),
 ## License
 
 The source code is source-available under the
-[PolyForm Noncommercial License 1.0.0](LICENSE): free for
+[PolyForm Noncommercial License 1.0.0](LICENSE.md): free for
 noncommercial use (personal, research, education, nonprofit and
-government); commercial use needs a separate license. The licensing
-notes at the top of [LICENSE](LICENSE) explain that terms for new
-licensees may change, that other agreements (click-wrap or otherwise)
-may alter your rights, and how to get a mutual or timestamped
-acceptance: email license@andrii.ai with the full license text and your
-or your company's details.
+government); commercial use needs a separate license. Anyone, including
+a company, may clone, build, run and test it to evaluate it (hackathon
+judging included). The licensing notes at the top of
+[LICENSE.md](LICENSE.md) state that permission and explain that terms
+for new licensees may change, that other agreements (click-wrap or
+otherwise) may alter your rights, and how to get a mutual or
+timestamped acceptance: email license@andrii.ai with the full license
+text and your or your company's details.
 
 The Apostille Handbook content (handbook text, data, facts, forms,
-images and documentation) stays all rights reserved; see
+images and documentation) stays all rights reserved, except that you
+may clone, build and run it with the code to evaluate it; see
 [LICENSE-CONTENT.md](LICENSE-CONTENT.md).
 
 Copyright (c) 2026 Andrii Co.
