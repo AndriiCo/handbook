@@ -1,0 +1,21 @@
+# Judge path in Docker (docs/judges.md): `docker compose up --build`,
+# then open http://localhost:18318/apostille. The setup key is in
+# `docker compose logs judge`. No volume: every start is a fresh store.
+name: apostille
+services:
+  judge:
+    build:
+      context: .
+      dockerfile: ops/judge/Dockerfile
+      args:
+        BUILD_SHA: ${BUILD_SHA:-unknown}
+    image: apostille-judge
+    init: true
+    environment:
+      # Optional, passed through only when set: `--live` drafts with it.
+      - META_API_KEY
+    ports:
+      # Host loopback only. Browse localhost (WebAuthn's origin is
+      # http://localhost:18319), not 127.0.0.1 or a VM address.
+      - "127.0.0.1:18318:28318"
+      - "127.0.0.1:18319:28319"

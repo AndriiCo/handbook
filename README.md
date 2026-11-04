@@ -238,33 +238,46 @@ cargo xtask ci
 
 ## Run it yourself
 
-Judges: `cargo xtask judge` on a fresh clone (macOS or Linux, Rust +
-Node 24, no keys). It checks your prerequisites and prints one exact fix
-per problem, boots everything below with recorded Meta responses, and
-prints a five-minute tour. `cargo xtask judge --doctor` runs only the
-checks. Details: [docs/judges.md](docs/judges.md).
+Judges: `ops/judge/preflight.sh && cargo xtask judge` on a fresh clone
+(macOS or Linux, a C toolchain, Rust via rustup, Node 24, no keys). The
+preflight checks what cargo needs before it compiles anything; the
+doctor then checks the rest, each with one exact fix per problem. It
+boots everything below with recorded Meta responses and prints a
+five-minute tour. Without Rust or Node, `docker compose up --build`
+serves the same boot at http://localhost:18318/apostille. Details:
+[docs/judges.md](docs/judges.md).
 
 One command boots the whole handbook on loopback with synthetic data —
 pinned toolchains (`rust-toolchain.toml`, `.nvmrc`), both web builds, the
 release binaries, a fresh `.local/` store with a file KEK, loopback
 config (public `18318`, admin `18319`), every pack, captures from the
-eval gold plus one stub-fixture capture per authority with drafted
-proposals, recorded precheck verdicts, an eval grade, and a minted
-setup key:
+eval gold with drafted proposals (replayed from the recorded Muse Spark
+responses; only the offline stub, without that corpus, adds one
+stub-fixture capture per authority), recorded precheck verdicts, an eval
+grade, a minted setup key, and a local `xtask worker` connected to the
+server with a fresh token in `.local/worker.env` (0600):
 
 ```sh
-cargo xtask up --check   # boot, probe /healthz + authorities + setup status, exit
-cargo xtask up           # same setup, then serve in the foreground
+cargo xtask up --check   # boot, probe /healthz + authorities + setup status, run one worker job to done, exit
+cargo xtask up           # same setup, then serve in the foreground (server and worker)
 cargo xtask up --check --from-archive <url|dir> [--country ISO2]  # import a crawl package first
 ```
 
-`up` prints the public/admin URLs, the one-time setup key (paste it at
-`/config` to enrol staff), the loopback-only staff link for `/review`,
-and try-this steps. Flags: `--fresh` wipes `.local/` first; `--live`
-fetches real watch URLs and drafts/grades through the Meta Model API
-with `META_API_KEY` instead of the stub. Reruns are idempotent
-(lockfile-hash `npm ci` skip, capture dedup, kept KEK) except
-`setup-key-mint`, which re-mints every run.
+`up` prints the public URL, the one-time setup key with "open `/config`
+first" (paste it there to enrol staff), the review queue URL (a plain
+link: it signs nobody in), and try-this steps. Flags: `--fresh` wipes
+`.local/` first; `--live` fetches real watch URLs and drafts/grades
+through the Meta Model API with `META_API_KEY` instead of the replay,
+and refuses to start without the key; `--prebuilt` skips the toolchain
+checks and builds and runs the binaries beside `xtask` (the Docker
+image). Reruns are idempotent (lockfile-hash `npm ci` skip, capture
+dedup, kept KEK) except two one-time values: the worker token is
+re-minted every run, and so is the setup key until someone enrols (the
+last key printed is the one that works). Once a passkey is enrolled, a
+rerun mints no setup key: it says "staff already enrolled" and points
+to `/staff-login`.
+`cargo xtask setup --target local` runs the same boot with a setup
+file's values on that target's `ports`.
 
 ## Design
 

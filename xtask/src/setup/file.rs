@@ -116,6 +116,19 @@ pub struct Ports {
     pub admin: u16,
 }
 
+/// Plain-HTTP ports when a local or plant target names none.
+pub const DEFAULT_PORTS: Ports = Ports {
+    public: 18318,
+    admin: 18319,
+};
+
+impl Target {
+    /// This target's `ports`, or [`DEFAULT_PORTS`].
+    pub fn ports_or_default(&self) -> Ports {
+        self.ports.unwrap_or(DEFAULT_PORTS)
+    }
+}
+
 /// Host ports a rehearsal container publishes (8443/8080 by default:
 /// 443 and 80 on a developer machine are often taken).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -361,10 +374,7 @@ pub fn derived(target: &Target) -> BTreeMap<String, Value> {
     let s = |v: &str| Value::String(v.to_string());
     match target.kind {
         TargetKind::Local | TargetKind::Plant => {
-            let ports = target.ports.unwrap_or(Ports {
-                public: 18318,
-                admin: 18319,
-            });
+            let ports = target.ports_or_default();
             out.insert("net.bind".into(), s("127.0.0.1"));
             out.insert("net.port".into(), s(&ports.public.to_string()));
             out.insert("net.admin_port".into(), s(&ports.admin.to_string()));

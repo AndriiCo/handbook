@@ -56,6 +56,10 @@ run_build() { # $1=run $2=srcdir
   fi
   stage "$run" deps bash -c "cd '$src' && cargo fetch --locked && npm ci --prefix web" || return 1
   stage "$run" gate bash -c "cd '$src' && cargo xtask ci" || return 1
+  # The judge path end to end: preflight, doctor, fresh boot, probes and
+  # one scrape.urls job through the real worker. Ports 38318/38319, as
+  # staging holds 18318/18319 on plant.
+  stage "$run" judge bash -c "cd '$src' && ops/judge/preflight.sh --port-base 38318 && cargo xtask judge --check --port-base 38318" || return 1
   stage "$run" package bash -c "
     set -euo pipefail
     cd '$src'

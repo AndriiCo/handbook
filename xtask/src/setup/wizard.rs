@@ -56,6 +56,8 @@ struct App {
     host: String,
     csrf: String,
     events: broadcast::Sender<String>,
+    /// The local target's boot, serving in the background (one at a time).
+    local: Arc<Mutex<Option<std::process::Child>>>,
 }
 
 fn random_hex() -> String {
@@ -444,14 +446,25 @@ async fn api_run(State(app): State<App>, headers: HeaderMap, Json(req): Json<Run
         if let Err(problems) = inner.file.validate() {
             return deny(StatusCode::BAD_REQUEST, &problems.join("; "));
         }
-        if inner.file.targets.get(&req.target).map(|t| t.kind) == Some(TargetKind::Local) {
+        let local = inner.file.targets.get(&req.target).map(|t| t.kind) == Some(TargetKind::Local);
+        if local && app.local.lock().unwrap().is_some() {
             return deny(
-                StatusCode::BAD_REQUEST,
-                "the local target serves in the foreground: run `cargo xtask setup --target local` in a terminal",
+                StatusCode::CONFLICT,
+                "the local target is already serving; stop the wizard (Ctrl-C) to stop it",
             );
         }
         inner.running = true;
         inner.history.clear();
+        if local {
+            drop(inner);
+            return match start_local(&app, &req.target) {
+                Ok(()) => (StatusCode::ACCEPTED, Json(json!({ "started": true }))).into_response(),
+                Err(e) => {
+                    app.inner.lock().unwrap().running = false;
+                    deny(StatusCode::INTERNAL_SERVER_ERROR, &e)
+                }
+            };
+        }
         inner.file.clone()
     };
     let from = match req.from.as_deref().filter(|s| !s.is_empty()) {
@@ -479,6 +492,146 @@ async fn api_run(State(app): State<App>, headers: HeaderMap, Json(req): Json<Run
         worker.inner.lock().unwrap().running = false;
     });
     (StatusCode::ACCEPTED, Json(json!({ "started": true }))).into_response()
+}
+
+/// Record and broadcast one run event (what the SSE stream replays).
+fn emit_event(app: &App, event: &Event) {
+    let line = serde_json::to_string(event).unwrap_or_default();
+    app.inner.lock().unwrap().history.push(line.clone());
+    let _ = app.events.send(line);
+}
+
+/// The local target serves in the foreground, so the wizard runs it as
+/// a child (`xtask setup --target <name> --file <path>`, the same boot
+/// as in a terminal) and streams its output into the run log. The run
+/// counts as finished once `up`'s banner (setup key included) has
+/// printed; the child keeps serving, its later output goes to this
+/// terminal, and Ctrl-C on the wizard stops it with its server and
+/// worker (one process group). One local boot at a time: killing just
+/// the child would orphan its server on the ports.
+fn start_local(app: &App, name: &str) -> Result<(), String> {
+    use std::io::BufRead as _;
+    use std::process::{Command, Stdio};
+    let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+    let mut child = Command::new(exe)
+        .args(["setup", "--target", name, "--file"])
+        .arg(&app.path)
+        .current_dir(&app.repo)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("start the local boot: {e}"))?;
+    let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
+    *app.local.lock().unwrap() = Some(child);
+    emit_event(
+        app,
+        &Event::Plan {
+            target: name.to_string(),
+            version: "this checkout".to_string(),
+            steps: vec![[
+                Phase::Boot.as_str().to_string(),
+                "cargo xtask setup --target local (keeps serving in the background)".to_string(),
+            ]],
+        },
+    );
+    emit_event(
+        app,
+        &Event::Start {
+            index: 0,
+            phase: Phase::Boot.as_str().to_string(),
+            title: "boot the handbook on loopback with this file's values".to_string(),
+        },
+    );
+    // Set once the banner has printed: later lines are server logs.
+    let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let target = name.to_string();
+    let pump = |pipe: Box<dyn std::io::Read + Send>, watch_banner: bool| {
+        let (app, finished, target) = (app.clone(), finished.clone(), target.clone());
+        std::thread::spawn(move || {
+            let mut in_banner = false;
+            for line in std::io::BufReader::new(pipe).lines().map_while(Result::ok) {
+                if finished.load(std::sync::atomic::Ordering::SeqCst) {
+                    println!("[{target}] {line}");
+                    continue;
+                }
+                in_banner |= watch_banner && line.starts_with("handbook is up");
+                let banner_done = in_banner && line.trim().is_empty();
+                emit_event(
+                    &app,
+                    &Event::Line {
+                        index: 0,
+                        text: line,
+                    },
+                );
+                if banner_done && !finished.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    emit_event(
+                        &app,
+                        &Event::Done {
+                            index: 0,
+                            ok: true,
+                            detail: String::new(),
+                        },
+                    );
+                    emit_event(
+                        &app,
+                        &Event::Finished {
+                            target: target.clone(),
+                            ok: true,
+                            detail: format!(
+                                "{target} is up; its log continues in the wizard's terminal (Ctrl-C there stops it)"
+                            ),
+                        },
+                    );
+                    app.inner.lock().unwrap().running = false;
+                }
+            }
+        });
+    };
+    if let Some(out) = stdout {
+        pump(Box::new(out), true);
+    }
+    if let Some(err) = stderr {
+        pump(Box::new(err), false);
+    }
+    // Reap the child; report it if it stops before the banner.
+    let (app, target) = (app.clone(), name.to_string());
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let mut slot = app.local.lock().unwrap();
+            let Some(child) = slot.as_mut() else { return };
+            let Ok(Some(status)) = child.try_wait() else {
+                continue;
+            };
+            slot.take();
+            drop(slot);
+            if !finished.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                let detail = format!("the local boot exited ({status})");
+                emit_event(
+                    &app,
+                    &Event::Done {
+                        index: 0,
+                        ok: false,
+                        detail: detail.clone(),
+                    },
+                );
+                emit_event(
+                    &app,
+                    &Event::Finished {
+                        target,
+                        ok: false,
+                        detail,
+                    },
+                );
+                app.inner.lock().unwrap().running = false;
+            } else {
+                println!("[{target}] exited ({status})");
+            }
+            return;
+        }
+    });
+    Ok(())
 }
 
 async fn api_events(State(app): State<App>, headers: HeaderMap) -> Response {
@@ -633,6 +786,7 @@ pub fn run(args: &[String], path: &Path) {
             host: format!("127.0.0.1:{port}"),
             csrf: random_hex(),
             events,
+            local: Arc::new(Mutex::new(None)),
         };
         let url = format!("http://127.0.0.1:{port}/?t={token}");
         println!("setup wizard: {url}\n  (one-time link; Ctrl-C stops the wizard; the file is saved on every change)");
@@ -671,6 +825,7 @@ mod tests {
             host: "127.0.0.1:4000".into(),
             csrf: "csrf".into(),
             events,
+            local: Arc::new(Mutex::new(None)),
         }
     }
 
