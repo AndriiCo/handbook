@@ -795,10 +795,10 @@ mod tests {
         assert_eq!(name, "chandra@plant");
         let creds = credentials(&conn, false).unwrap();
         assert_eq!(creds[0].created_by, "staff-1");
-        assert_eq!(
-            authenticate(&conn, &format!("{}0", &token[..token.len() - 1])).unwrap(),
-            Authn::Unknown
-        );
+        // One hex digit changed (never to itself) no longer matches.
+        let last = if token.ends_with('0') { '1' } else { '0' };
+        let tampered = format!("{}{last}", &token[..token.len() - 1]);
+        assert_eq!(authenticate(&conn, &tampered).unwrap(), Authn::Unknown);
         assert!(is_active(&conn, &public_id).unwrap());
         assert_eq!(
             revoke(&conn, &public_id, "staff-1", 1005).unwrap(),
