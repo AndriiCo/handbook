@@ -199,7 +199,9 @@ report, and every value in it still needs staff review.
    and State of Palestine, joined by ISO code with the HCCH 1961 status
    table, fetched live (`recorded: true` reads the recorded copy). The
    EIF column makes each party a `party` (in force today) or a
-   `future_party` (joined; legalization applies until the date).
+   `future_party` (joined; legalization applies until the date). The
+   Type column's `A**` marker sets `objection: true` with the party's
+   `notifications_url` (the HCCH page naming the objecting states).
    Status-table names this build cannot map to an ISO code are listed
    as `unmapped_parties`, never dropped. Fewer than 100 parsed parties
    fails the job (the page changed shape).
@@ -219,7 +221,8 @@ report, and every value in it still needs staff review.
    retries.
 
 Result: `{"format": "discovery.v1", "today", "hcch": {url, recorded,
-sha256}, "countries": [{iso2, name, status, entry_into_force}],
+sha256}, "countries": [{iso2, name, status, entry_into_force,
+objection, notifications_url}],
 "future_parties", "unmapped_parties", "crosscheck", "authorities":
 [{authority, unknown, urls: [{kept, candidate, evidence |
 reason, official_hint}]}], "names_skipped", "summary"}`. Offline run:

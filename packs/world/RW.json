@@ -44,7 +44,7 @@
     {
       "authority": "rw-ca-1",
       "topic": "jurisdiction",
-      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Rwanda is a listed Contracting Party; entry into force for Rwanda: 2024-06-05.",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Rwanda is a listed Contracting Party; entry into force for Rwanda: 2024-06-05; type A** (objection; notifications: https://www.hcch.net/en/instruments/conventions/status-table/notifications/?csid=1517&disp=type).",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
       "status": "needs_review",
       "validation": "W-7"

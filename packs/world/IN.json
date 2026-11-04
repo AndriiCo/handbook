@@ -64,7 +64,7 @@
     {
       "authority": "in-ca-1",
       "topic": "jurisdiction",
-      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): India is a listed Contracting Party; entry into force for India: 2005-07-14.",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): India is a listed Contracting Party; entry into force for India: 2005-07-14; type A** (objection; notifications: https://www.hcch.net/en/instruments/conventions/status-table/notifications/?csid=929&disp=type).",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
       "status": "needs_review",
       "validation": "W-7"

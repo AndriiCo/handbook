@@ -10,8 +10,10 @@
 //!    by default, the recorded copy with `"recorded": true`). The EIF
 //!    column splits parties: `party` (in force today), `future_party`
 //!    (joined, entry into force still ahead: legalization applies until
-//!    then) and `nonparty`. A status-table name this build cannot map to
-//!    an ISO code is reported, never dropped: it is usually a new party.
+//!    then) and `nonparty`. The Type column's `A**` marks a party some
+//!    states objected to (`objection`, with its `notifications_url`). A
+//!    status-table name this build cannot map to an ISO code is reported,
+//!    never dropped: it is usually a new party.
 //! 2. **Cross-check (`hague-crosscheck`).** Muse Spark lists the parties
 //!    and their EIF dates from memory; the answer is diffed against the
 //!    table (missing, extra, date mismatches, status-table URL). The
@@ -146,6 +148,11 @@ pub(crate) struct CountryRow {
     pub status: &'static str,
     /// Entry into force (`YYYY-MM-DD`) for parties.
     pub eif: Option<String>,
+    /// The status table marks objections to the accession (`A**`): the
+    /// convention does not run between this party and the objecting
+    /// states, which its notifications page names.
+    pub objection: bool,
+    pub notifications_url: Option<String>,
 }
 
 /// UN members + observers joined with the status table, by ISO code.
@@ -169,7 +176,14 @@ pub(crate) fn countries(
     }
     let mut rows = Vec::new();
     let mut party_codes = HashSet::new();
-    for crate::world::PartyRow { name, eif, .. } in parties {
+    for party in parties {
+        let crate::world::PartyRow {
+            name,
+            eif,
+            objection,
+            notifications_url,
+            ..
+        } = party;
         let iso2 = crate::world::party_iso2(&name).map(str::to_string);
         if let Some(code) = &iso2 {
             party_codes.insert(code.clone());
@@ -183,6 +197,8 @@ pub(crate) fn countries(
             name,
             status,
             eif,
+            objection,
+            notifications_url,
         });
     }
     let others = members
@@ -196,6 +212,8 @@ pub(crate) fn countries(
                 name: name.to_string(),
                 status: "nonparty",
                 eif: None,
+                objection: false,
+                notifications_url: None,
             });
         }
     }
@@ -203,7 +221,8 @@ pub(crate) fn countries(
 }
 
 fn country_json(row: &CountryRow) -> Value {
-    json!({"iso2": row.iso2, "name": row.name, "status": row.status, "entry_into_force": row.eif})
+    json!({"iso2": row.iso2, "name": row.name, "status": row.status, "entry_into_force": row.eif,
+           "objection": row.objection, "notifications_url": row.notifications_url})
 }
 
 // ---------------------------------------------------------------------------
@@ -785,6 +804,7 @@ pub(crate) fn bootstrap<P: ModelPort, F: Fetch>(
     let summary = json!({
         "countries": rows.len(), "parties": count("party"),
         "future_parties": count("future_party"), "nonparties": count("nonparty"),
+        "objection_parties": rows.iter().filter(|r| r.objection).count(),
         "unmapped_parties": unmapped.len(),
         "crosscheck_missing": count_of("missing_in_model"),
         "crosscheck_extra": count_of("extra_in_model"),
@@ -859,6 +879,23 @@ mod tests {
         assert_eq!(status("XK").status, "party");
         assert_eq!(status("EG").status, "nonparty");
         assert_eq!(status("VA").status, "nonparty");
+        // D-2: the A** objection marker and its notifications page.
+        let vn = status("VN");
+        assert!(vn.objection);
+        assert_eq!(
+            vn.notifications_url.as_deref(),
+            Some(
+                "https://www.hcch.net/en/instruments/conventions/status-table/notifications/\
+                 ?csid=1557&disp=type"
+            )
+        );
+        assert!(status("XK").objection);
+        assert!(!th.objection && th.notifications_url.is_none());
+        assert_eq!(rows.iter().filter(|r| r.objection).count(), 21);
+        assert!(
+            rows.iter()
+                .all(|r| r.objection == r.notifications_url.is_some())
+        );
         // 130 table rows (127 UN members + Cook Islands, Niue, Kosovo),
         // 66 UN members outside the table, two observers.
         assert_eq!(rows.iter().filter(|r| r.status != "nonparty").count(), 130);
@@ -1044,6 +1081,7 @@ mod tests {
         .unwrap();
         let s = &out.summary;
         assert_eq!(s["future_parties"], 1, "{s}");
+        assert_eq!(s["objection_parties"], 21);
         assert_eq!(s["parties"], 129);
         assert_eq!(s["crosscheck_missing"], 129, "the stub knew only the US");
         // 16 Marshall Islands rows: 7 fragments, 9 names in two batches.

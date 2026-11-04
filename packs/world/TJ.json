@@ -98,7 +98,7 @@
     {
       "authority": "tj-ca-2",
       "topic": "jurisdiction",
-      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Tajikistan is a listed Contracting Party; entry into force for Tajikistan: 2015-10-31.",
+      "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Tajikistan is a listed Contracting Party; entry into force for Tajikistan: 2015-10-31; type A** (objection; notifications: https://www.hcch.net/en/instruments/conventions/status-table/notifications/?csid=1285&disp=type).",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
       "status": "needs_review",
       "validation": "W-7"
