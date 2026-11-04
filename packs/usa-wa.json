@@ -20,11 +20,11 @@
         },
         {
             "authority": "usa-wa-sos",
-            "detail": "Request wording and authentication product name unverified; mail-to address unresolved (two-PO-Box conflict); see observations.",
+            "detail": "One office issues both certificates; which one depends on the destination country. Mail-to address unresolved: the office's own pages list different PO boxes (see observations).",
             "id": "wa-sos-auth",
             "order": 1,
             "status": "needs_review",
-            "title": "WA Secretary of State: Certificate of Authentication (NOT apostille)",
+            "title": "WA Secretary of State: apostille (Hague countries) or authentication (other countries)",
             "validation": "V-5"
         }
     ],
@@ -32,7 +32,7 @@
         {
             "authority": "usa-wa-sos",
             "name": "www.sos.wa.gov",
-            "notes": "Official-claimed but bot-blocked (403/404 to fetcher 2026-10-26); staff capture pending.",
+            "notes": "Official. Bot-blocked 2026-10-26 (403/404 to fetcher); fetcher 200 since 2026-10-31.",
             "status": "unverified"
         }
     ],
@@ -93,13 +93,6 @@
             "authority": "usa-wa-sos",
             "cadence": "weekly",
             "kind": "website_official",
-            "notes": "Superseded Dec-2024 form; now 404 \u2014 regression seed for the superseded-form hazard.",
-            "uri": "https://www.sos.wa.gov/sites/default/files/2025-01/Apostilles.Request.Form_.12.2024.pdf"
-        },
-        {
-            "authority": "usa-wa-sos",
-            "cadence": "weekly",
-            "kind": "website_official",
             "notes": "Apostille FAQ (fees, processing, document rules); fetcher 200 2026-10-31.",
             "uri": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
         },
@@ -116,6 +109,41 @@
             "kind": "website_official",
             "notes": "SOS home page: site-wide service-notice banners (11/02 apostille services unavailable). Daily; only added lines are drafted, as service_notice.",
             "uri": "https://www.sos.wa.gov/"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Corporations & Charities division contact page: counter hours, same-day cut-off, courier (overnight) delivery rule, holiday closures. Added 2026-11-03.",
+            "uri": "https://www.sos.wa.gov/corporations-charities/contact-us"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "daily",
+            "kind": "website_official",
+            "notes": "Division public-notice log: the 11/02/2026 apostille-services outage and its 11/03 restored line. Added 2026-11-03.",
+            "uri": "https://www.sos.wa.gov/corporations-charities/public-notices/online-filing-system-outage"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Fee schedule and priority services: per-document fee, expedite and same-day tiers, refunds, counter payment. Added 2026-11-03.",
+            "uri": "https://www.sos.wa.gov/corporations-charities/frequently-asked-questions-faqs/fee-schedules-priority-services"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "Authenticity search for issued apostilles and certificates (date printed, document number). Added 2026-11-03.",
+            "uri": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-and-certificate-authenticity-search"
+        },
+        {
+            "authority": "usa-wa-sos",
+            "cadence": "weekly",
+            "kind": "website_official",
+            "notes": "June 2025 apostille/authentication request form (fillable PDF, replaces the Dec-2024 form). Change detection; facts and the form map come from a staff upload with a text layer. Added 2026-11-03.",
+            "uri": "https://www.sos.wa.gov/sites/default/files/2025-06/6.2025%20-%20Apostilles%20request%20form.pdf"
         }
     ]
 }
