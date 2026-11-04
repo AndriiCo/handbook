@@ -5,7 +5,9 @@
 //   node xtask/ops/scoreboard.mjs --base http://localhost:5173/apostille
 //   node xtask/ops/scoreboard.mjs --only GP3,A1
 //
-// Exit 0 only when every selected row passes. Results go to --out, or by
+// Exit 0 only when every selected row passes (with --report, exit 0 once the
+// report is written: setup's production baselines, where the operator-owned
+// S1 row may be red and the two reports are compared). Results go to --out, or by
 // default web/shots/scoreboard.json for a full run and
 // web/shots/scoreboard-partial.json for an --only run, so a one-row check
 // never stands in for the real score. Production runs use --out
@@ -88,7 +90,7 @@ for (const r of results) {
   if (r.detail) console.log(`        ${r.detail}`);
 }
 console.log(`${passing}/${results.length} passing.${firstRed ? ` Next row: ${firstRed.id}.` : ' All green.'}  (${OUT})`);
-process.exit(passing === results.length ? 0 : 1);
+process.exit(args.report || passing === results.length ? 0 : 1);
 
 // ---------------------------------------------------------------- checks
 

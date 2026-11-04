@@ -7,7 +7,7 @@
  4. [gate] root-process probe (no operator script may be running)
       ssh andrii.ai -- out=$( (pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN); pgrep -af '[a]postille/scripts/'); [ -z "$out" ] || { echo "$out"; exit 1; }
  5. [gate] scoreboard before the deploy
-      $ node xtask/ops/scoreboard.mjs --out web/shots/prod-before.json
+      $ node xtask/ops/scoreboard.mjs --report --out web/shots/prod-before.json
  6. [dns] every certificate name resolves to this server
       builtin DnsCheck { names: ["andrii.ai", "admin.andrii.ai", "www.andrii.ai"], bind: None, bind6: None }
  7. [build] build 0123456 for x86_64-unknown-linux-gnu
@@ -36,4 +36,4 @@
 17. [staff] mint the first-boot setup key (prints once; refused once staff exist)
       ssh andrii.ai -- sudo -n -u andrii-ai /usr/local/sbin/apostille-setup-key || echo 'setup key not minted (staff exist)'
 18. [verify] production scoreboard
-      $ node xtask/ops/scoreboard.mjs --out web/shots/prod-after.json
+      $ node xtask/ops/scoreboard.mjs --report --out web/shots/prod-after.json
