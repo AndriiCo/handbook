@@ -283,9 +283,10 @@ pub struct DialOutcome {
     pub call_session_id: String,
 }
 
-/// Telnyx client failure. Messages carry status codes and short
-/// server phrases only — never the API key, and never request
-/// bodies (they hold phone numbers).
+/// Telnyx client failure. Messages carry status codes and Telnyx's
+/// own error entries (code, title, detail, field) — never the API
+/// key, and phone-number-shaped digits are masked (error details
+/// can echo the request, which holds the callee number).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoiceError {
     /// Key, connection, or from-number missing: fail closed.
@@ -298,16 +299,97 @@ pub enum VoiceError {
     Parse(String),
 }
 
+/// Backstop cap on an API error message, in chars.
+const MAX_ERROR_CHARS: usize = 1000;
+
 impl VoiceError {
+    /// Every Telnyx `errors[]` entry on one line, so a journal grep
+    /// shows the whole reason; a non-JSON body is kept with its
+    /// whitespace collapsed. Phone numbers are masked either way.
     fn api(status: u16, body: &[u8]) -> Self {
-        // Short server phrase only; bodies can echo request data.
         let text = String::from_utf8_lossy(body);
-        let trimmed: String = text.chars().take(120).collect();
+        let summary = telnyx_errors(&text)
+            .unwrap_or_else(|| text.split_whitespace().collect::<Vec<_>>().join(" "));
+        let summary: String = mask_numbers(&summary)
+            .chars()
+            .take(MAX_ERROR_CHARS)
+            .collect();
         VoiceError::Api {
             status,
-            message: format!("telnyx status {status}: {}", trimmed.trim()),
+            message: format!("telnyx status {status}: {summary}"),
         }
     }
+}
+
+/// `code title: detail (at /pointer)` per entry, joined by `; `.
+/// `None` when the body is not a Telnyx error envelope.
+fn telnyx_errors(text: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let errors = value["errors"].as_array().filter(|e| !e.is_empty())?;
+    let field = |v: &serde_json::Value| match v {
+        serde_json::Value::String(s) => s.split_whitespace().collect::<Vec<_>>().join(" "),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    };
+    let entries: Vec<String> = errors
+        .iter()
+        .map(|e| {
+            let code = field(&e["code"]);
+            let title = field(&e["title"]);
+            let detail = field(&e["detail"]);
+            let mut out = [code.as_str(), title.as_str()]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if !detail.is_empty() && detail != title {
+                if !out.is_empty() {
+                    out.push_str(": ");
+                }
+                out.push_str(&detail);
+            }
+            let at = field(&e["source"]["pointer"]);
+            let at = if at.is_empty() {
+                field(&e["source"]["parameter"])
+            } else {
+                at
+            };
+            if !at.is_empty() {
+                out.push_str(&format!(" (at {at})"));
+            }
+            out
+        })
+        .collect();
+    Some(entries.join("; "))
+}
+
+/// Mask phone-number-shaped digit runs: any `+` followed by digits,
+/// or a bare run of 10–15 digits (E.164 without the plus). Longer
+/// runs, such as 19-digit Telnyx app ids, stay readable.
+fn mask_numbers(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let plus = chars[i] == '+' && chars.get(i + 1).is_some_and(char::is_ascii_digit);
+        if plus || chars[i].is_ascii_digit() {
+            let start = i;
+            i += usize::from(plus);
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                i += 1;
+            }
+            let digits = i - start - usize::from(plus);
+            if plus || (10..=15).contains(&digits) {
+                out.push_str("[number]");
+            } else {
+                out.extend(&chars[start..i]);
+            }
+        } else {
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 impl fmt::Display for VoiceError {
@@ -456,14 +538,62 @@ mod tests {
     }
 
     #[test]
-    fn api_errors_carry_status_not_bodies() {
-        let (base, _seen, handle) =
-            stub(|_, _| (422, r#"{"errors":[{"detail":"bad number"}]}"#.to_string()));
+    fn api_errors_carry_status_not_numbers() {
+        let (base, _seen, handle) = stub(|_, _| {
+            (
+                422,
+                r#"{"errors":[{"detail":"bad number +13605550100 (13605550100)"}]}"#.to_string(),
+            )
+        });
         let err = client(&base).dial("+13605550100", "cmd-1").unwrap_err();
         assert!(matches!(err, VoiceError::Api { status: 422, .. }), "{err}");
         // The callee number must not leak into the error text.
         assert!(!err.to_string().contains("3605550100"), "{err}");
+        assert!(
+            err.to_string().ends_with("bad number [number] ([number])"),
+            "{err}"
+        );
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn api_errors_keep_every_telnyx_entry_on_one_line() {
+        let body = r#"{
+  "errors": [
+    {
+      "code": "10015",
+      "title": "Invalid value for connection_id (Call Control App ID)",
+      "detail": "The connection_id 3034092385005995241 is not a Call Control App on this account.",
+      "source": {"pointer": "/connection_id"}
+    },
+    {"code": 10016, "title": "Bad from", "detail": "Bad from", "source": {"parameter": "from"}}
+  ]
+}"#;
+        let err = VoiceError::api(422, body.as_bytes());
+        assert_eq!(
+            err.to_string(),
+            "voice api: telnyx status 422: 10015 Invalid value for connection_id \
+             (Call Control App ID): The connection_id 3034092385005995241 is not a \
+             Call Control App on this account. (at /connection_id); \
+             10016 Bad from (at from)"
+        );
+    }
+
+    #[test]
+    fn non_json_api_errors_are_kept_whole_on_one_line() {
+        let err = VoiceError::api(502, b"<html>\n  <body>Bad   gateway</body>\n</html>");
+        assert_eq!(
+            err.to_string(),
+            "voice api: telnyx status 502: <html> <body>Bad gateway</body> </html>"
+        );
+        let long = "x".repeat(MAX_ERROR_CHARS * 2);
+        let VoiceError::Api { message, .. } = VoiceError::api(500, long.as_bytes()) else {
+            panic!("api() must build VoiceError::Api");
+        };
+        assert_eq!(
+            message.chars().count(),
+            "telnyx status 500: ".len() + MAX_ERROR_CHARS
+        );
     }
 
     #[test]
