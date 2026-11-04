@@ -3,9 +3,11 @@
         {
             "country": "USA",
             "kind": "state",
+            "level": "state",
             "name": "California Secretary of State \u2014 Notary & Authentications",
             "region": "California",
-            "slug": "usa-ca-sos"
+            "slug": "usa-ca-sos",
+            "subdivision": "US-CA"
         }
     ],
     "chain_steps": [
@@ -36,6 +38,7 @@
             "status": "unverified"
         }
     ],
+    "iso2": "US",
     "observations": [],
     "pack": "usa-ca",
     "title": "USA California \u2014 volume state (unverified)",

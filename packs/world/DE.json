@@ -1,6 +1,7 @@
 {
   "pack": "DE",
   "version": 1,
+  "iso2": "DE",
   "title": "Germany — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,134 +9,159 @@
       "country": "Germany",
       "region": "",
       "name": "Land",
-      "slug": "de-ca-1"
+      "slug": "de-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Germany",
       "region": "",
       "name": "Oberlandesgericht",
-      "slug": "de-ca-2"
+      "slug": "de-ca-2",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Germany",
       "region": "",
       "name": "Landesgericht",
-      "slug": "de-ca-3"
+      "slug": "de-ca-3",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Germany",
       "region": "",
       "name": "Urkunden aller Verwaltungsbehörden",
-      "slug": "de-ca-4"
+      "slug": "de-ca-4",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Germany",
       "region": "",
       "name": "für Urkunden aller Verwaltungsbehörden (ausser Justizverwaltungsbehörden)",
-      "slug": "de-ca-5"
+      "slug": "de-ca-5",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Germany",
       "region": "",
       "name": "Declaration of 2 August 2004:",
-      "slug": "de-ca-6"
+      "slug": "de-ca-6",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Germany",
-      "region": "",
-      "name": "the district council of Tübingen for public documents issued by the ministries, except for those issued by the Ministry of Justice",
-      "slug": "de-ca-7"
+      "region": "Baden-Württemberg",
+      "name": "The district council of Tübingen",
+      "slug": "de-ca-7",
+      "subdivision": "DE-BW",
+      "level": "regional",
+      "aliases": [
+        "Regierungspräsidium Tübingen"
+      ],
+      "source_name": "the district council of Tübingen for public documents issued by the ministries, except for those issued by the Ministry of Justice"
     },
     {
       "kind": "country",
       "country": "Germany",
       "region": "",
       "name": "the district councils for the public documents issued in their districts by all other administrative bodies and by courts of all branches of the judicial system except for the normal courts.",
-      "slug": "de-ca-8"
+      "slug": "de-ca-8",
+      "hidden": true
+    },
+    {
+      "kind": "country",
+      "country": "Germany",
+      "region": "",
+      "name": "Germany — Competent Authority (Art. 6)",
+      "slug": "de-ca",
+      "level": "federal",
+      "aliases": [
+        "Deutschland",
+        "Bundesrepublik Deutschland"
+      ]
     }
   ],
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "de-ca-1",
+      "authority": "de-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Germany (staff capture pending)."
     },
     {
       "name": "bfaa.diplo.de",
-      "authority": "de-ca-1",
+      "authority": "de-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Germany (staff capture pending)."
     },
     {
       "name": "www.dpma.de",
-      "authority": "de-ca-2",
+      "authority": "de-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Germany (staff capture pending)."
     },
     {
       "name": "www.auswaertiges-amt.de",
-      "authority": "de-ca-3",
+      "authority": "de-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Germany (staff capture pending)."
     },
     {
       "name": "www2.justizadressen.nrw.de",
-      "authority": "de-ca-4",
+      "authority": "de-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Germany (staff capture pending)."
     },
     {
       "name": "www.konsularinfo.diplo.de",
-      "authority": "de-ca-5",
+      "authority": "de-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Germany (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "de-ca-1",
+      "authority": "de-ca",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=41&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Germany (citation page; staff capture pending)."
     },
     {
-      "authority": "de-ca-1",
+      "authority": "de-ca",
       "kind": "website_official",
       "uri": "https://bfaa.diplo.de/bfaa-de/service/ApostillenundBeglaubigungen",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=322 (needs staff capture; W-7)."
     },
     {
-      "authority": "de-ca-2",
+      "authority": "de-ca",
       "kind": "website_official",
       "uri": "http://www.dpma.de/index.htm",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=322 (needs staff capture; W-7)."
     },
     {
-      "authority": "de-ca-3",
+      "authority": "de-ca",
       "kind": "website_official",
       "uri": "http://www.auswaertiges-amt.de/diplo/de/Infoservice/FAQ/BeglaubigungLegalisation/Uebersicht.html",
       "cadence": "weekly",
       "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=322 (needs staff capture; W-7)."
     },
     {
-      "authority": "de-ca-4",
+      "authority": "de-ca",
       "kind": "website_official",
       "uri": "http://www2.justizadressen.nrw.de/og.php?MD=nrw",
       "cadence": "weekly",
       "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=322 (needs staff capture; W-7)."
     },
     {
-      "authority": "de-ca-5",
+      "authority": "de-ca",
       "kind": "website_official",
       "uri": "http://www.konsularinfo.diplo.de",
       "cadence": "weekly",
@@ -145,7 +171,7 @@
   "chain_steps": [
     {
       "id": "de-index",
-      "authority": "de-ca-1",
+      "authority": "de-ca",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Germany against a staff capture of the cited HCCH pages (deterministic).",
@@ -155,7 +181,7 @@
   ],
   "observations": [
     {
-      "authority": "de-ca-1",
+      "authority": "de-ca",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Germany is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
@@ -163,71 +189,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "de-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Land.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "de-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Oberlandesgericht.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "de-ca-3",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Landesgericht.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "de-ca-4",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Urkunden aller Verwaltungsbehörden.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "de-ca-5",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: für Urkunden aller Verwaltungsbehörden (ausser Justizverwaltungsbehörden).",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "de-ca-6",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Declaration of 2 August 2004:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "de-ca-7",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the district council of Tübingen for public documents issued by the ministries, except for those issued by the Ministry of Justice.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "de-ca-8",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the district councils for the public documents issued in their districts by all other administrative bodies and by courts of all branches of the judicial system except for the normal courts..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "de-ca-1",
+      "authority": "de-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://bfaa.diplo.de/bfaa-de/service/ApostillenundBeglaubigungen as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
@@ -235,7 +197,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "de-ca-2",
+      "authority": "de-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.dpma.de/index.htm as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
@@ -243,7 +205,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "de-ca-3",
+      "authority": "de-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.auswaertiges-amt.de/diplo/de/Infoservice/FAQ/BeglaubigungLegalisation/Uebersicht.html as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
@@ -251,7 +213,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "de-ca-4",
+      "authority": "de-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www2.justizadressen.nrw.de/og.php?MD=nrw as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",
@@ -259,7 +221,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "de-ca-5",
+      "authority": "de-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.konsularinfo.diplo.de as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=322",

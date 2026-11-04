@@ -26,8 +26,10 @@ export async function readDossier(slug, io) {
 }
 
 /**
- * Case-insensitive substring filter over the live index
- * (name/slug/country). Empty query returns the full list.
+ * Case-insensitive substring filter over the live index: name, its
+ * English name and other names ("Bayern"), slug, country, region
+ * ("Washington", "Jalisco") and readable path; an exact path alias
+ * (`us/wa`) too. Empty query returns the full list.
  * @param {any[]} authorities
  * @param {string} query
  */
@@ -37,8 +39,12 @@ export function filterAuthorities(authorities, query) {
 	return authorities.filter(
 		(a) =>
 			(a.name ?? '').toLowerCase().includes(q) ||
+			(a.name_en ?? '').toLowerCase().includes(q) ||
+			(Array.isArray(a.alt_names) &&
+				a.alt_names.some((/** @type {unknown} */ n) => String(n).toLowerCase().includes(q))) ||
 			(a.slug ?? '').toLowerCase().includes(q) ||
 			(a.country ?? '').toLowerCase().includes(q) ||
+			(a.region ?? '').toLowerCase().includes(q) ||
 			(a.path ?? '').toLowerCase().includes(q) ||
 			(Array.isArray(a.aliases) &&
 				a.aliases.some((/** @type {unknown} */ alias) => String(alias).toLowerCase() === q))
@@ -82,9 +88,10 @@ const COUNTRY_ALIASES = new Map([['usa', 'United States of America']]);
  * Group the index by `authority.country` for the world-scale home
  * index: countries A→Z (rows with no country last, as
  * `International`), authorities with the most accepted facts first,
- * then by name. Counts are the group's, never a guess.
+ * then by name. Counts are the group's, never a guess; `iso2` is the
+ * first one a row carries (for the flag).
  * @param {any[]} authorities
- * @returns {{ country: string, rows: any[], facts: number }[]}
+ * @returns {{ country: string, iso2: string, rows: any[], facts: number }[]}
  */
 export function groupByCountry(authorities) {
 	const byCountry = new Map();
@@ -93,13 +100,14 @@ export function groupByCountry(authorities) {
 		const country = COUNTRY_ALIASES.get(raw.toLowerCase()) ?? raw;
 		let g = byCountry.get(country);
 		if (!g) {
-			g = { country, rows: [], facts: 0 };
+			g = { country, iso2: '', rows: [], facts: 0 };
 			byCountry.set(country, g);
 		}
+		if (!g.iso2 && typeof a?.iso2 === 'string') g.iso2 = a.iso2;
 		g.rows.push(a);
 		g.facts += Number(a?.fact_count) || 0;
 	}
-	/** @type {{ country: string, rows: any[], facts: number }[]} */
+	/** @type {{ country: string, iso2: string, rows: any[], facts: number }[]} */
 	const groups = [...byCountry.values()];
 	for (const g of groups) {
 		g.rows.sort(

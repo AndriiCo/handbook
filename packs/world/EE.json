@@ -1,14 +1,16 @@
 {
   "pack": "EE",
   "version": 1,
+  "iso2": "EE",
   "title": "Estonia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "Estonia",
       "region": "",
-      "name": "Since 1st of January 2010 Notaries, under the supervision of Ministry of Justice will be the designated competent authority described in the Article 6 of the Convention Abolishing the Requirement of Legalisation for Foreign Public Documents. Contact details of all 100 Notaries will be forwarded by the Ministry of Justice. Although the Ministry of Justice shall exercise supervision over the Notaries, the Ministry itself nor any other Ministry shall no longer issue apostilles. The register described in the Article 7 of the Convention shall be kept by the Chamber of Notaries in accordance with the decree provided by the Minister of Justice.",
-      "slug": "ee-ca-1"
+      "name": "Notaries, under the supervision of Ministry of Justice",
+      "slug": "ee-ca-1",
+      "source_name": "Since 1st of January 2010 Notaries, under the supervision of Ministry of Justice will be the designated competent authority described in the Article 6 of the Convention Abolishing the Requirement of Legalisation for Foreign Public Documents. Contact details of all 100 Notaries will be forwarded by the Ministry of Justice. Although the Ministry of Justice shall exercise supervision over the Notaries, the Ministry itself nor any other Ministry shall no longer issue apostilles. The register described in the Article 7 of the Convention shall be kept by the Chamber of Notaries in accordance with the decree provided by the Minister of Justice."
     }
   ],
   "domains": [

@@ -1,6 +1,7 @@
 {
   "pack": "KR",
   "version": 1,
+  "iso2": "KR",
   "title": "Republic of Korea — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -47,13 +48,13 @@
     },
     {
       "name": "www.oka.go.kr",
-      "authority": "kr-ca-2",
+      "authority": "kr-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Republic of Korea (staff capture pending)."
     },
     {
       "name": "www.apostille.go.kr",
-      "authority": "kr-ca-3",
+      "authority": "kr-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Republic of Korea (staff capture pending)."
     }
@@ -74,14 +75,14 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=706 (needs staff capture; W-7)."
     },
     {
-      "authority": "kr-ca-2",
+      "authority": "kr-ca-1",
       "kind": "website_official",
       "uri": "http://www.oka.go.kr",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=706 (needs staff capture; W-7)."
     },
     {
-      "authority": "kr-ca-3",
+      "authority": "kr-ca-1",
       "kind": "website_official",
       "uri": "http://www.apostille.go.kr",
       "cadence": "weekly",
@@ -149,7 +150,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "kr-ca-2",
+      "authority": "kr-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.oka.go.kr as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=706",
@@ -157,7 +158,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "kr-ca-3",
+      "authority": "kr-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.apostille.go.kr as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=706",

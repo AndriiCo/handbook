@@ -3,9 +3,11 @@
         {
             "country": "USA",
             "kind": "state",
+            "level": "state",
             "name": "Florida Department of State \u2014 Apostille & Authentication",
             "region": "Florida",
-            "slug": "usa-fl-dos"
+            "slug": "usa-fl-dos",
+            "subdivision": "US-FL"
         }
     ],
     "chain_steps": [
@@ -36,6 +38,7 @@
             "status": "unverified"
         }
     ],
+    "iso2": "US",
     "observations": [],
     "pack": "usa-fl",
     "title": "USA Florida \u2014 volume state (unverified)",

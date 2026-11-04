@@ -8,6 +8,11 @@
 //! store. One run at a time; every run is audited with before/after
 //! authority counts. Mounted with the other mission admin routers, so
 //! the admin IP + host + session + CSRF guards apply.
+//!
+//! Packs a research job staged ("Stage as packs" on the Work page,
+//! `<store>/packs-inbox/<id>/`) are listed and loaded the same way,
+//! validated together with the release tree so a staged slug can
+//! never take over a release pack's row.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -69,6 +74,31 @@ fn release_paths() -> Option<(PathBuf, PathBuf)> {
     cwd.is_dir().then_some((cwd, xtask))
 }
 
+/// Staged research packs: `(work item id, pack files)` per
+/// `<store>/packs-inbox/<id>/` holding at least one `*.json`, newest
+/// (highest id) first.
+fn staged(store_root: &Path) -> Vec<(i64, Vec<String>)> {
+    let Ok(entries) = std::fs::read_dir(store_root.join(crate::worker::PACKS_INBOX)) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(i64, Vec<String>)> = entries
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let id: i64 = e.file_name().to_str()?.parse().ok()?;
+            let mut files: Vec<String> = std::fs::read_dir(e.path())
+                .ok()?
+                .filter_map(Result::ok)
+                .filter(|f| f.path().extension().is_some_and(|ext| ext == "json"))
+                .filter_map(|f| f.file_name().into_string().ok())
+                .collect();
+            files.sort();
+            (!files.is_empty()).then_some((id, files))
+        })
+        .collect();
+    out.sort_by_key(|a| std::cmp::Reverse(a.0));
+    out
+}
+
 fn set_dir(packs: &Path, sub: &str) -> PathBuf {
     if sub.is_empty() {
         packs.to_path_buf()
@@ -112,16 +142,26 @@ async fn list_sets(State(state): State<AppState>, _auth: AdminAuth) -> impl Into
             serde_json::json!({ "set": name, "packs": packs })
         })
         .collect();
+    let staged: Vec<_> = staged(&state.store_root)
+        .into_iter()
+        .map(|(id, files)| serde_json::json!({ "id": id, "packs": files.len(), "files": files }))
+        .collect();
     Json(serde_json::json!({
         "sets": sets,
+        "staged": staged,
         "authorities": authority_count(&state),
         "running": RUNNING.load(Ordering::SeqCst),
     }))
 }
 
+/// `{"set": "curated" | "world" | "world-nonparty"}` for a release
+/// set, or `{"staged": <work item id>}` for a staged research result.
 #[derive(Debug, Deserialize)]
 struct LoadBody {
+    #[serde(default)]
     set: String,
+    #[serde(default)]
+    staged: Option<i64>,
 }
 
 /// Clears [`RUNNING`] however the handler exits.
@@ -138,19 +178,39 @@ async fn load_set(
     auth: AdminAuth,
     Json(body): Json<LoadBody>,
 ) -> impl IntoResponse {
-    let Some((name, sub)) = SETS.iter().find(|(name, _)| *name == body.set.trim()) else {
-        return err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "set must be curated | world | world-nonparty",
-        );
-    };
     let Some((packs, xtask)) = release_paths() else {
         return err(
             StatusCode::SERVICE_UNAVAILABLE,
             "release packs directory unknown",
         );
     };
-    let dir = set_dir(&packs, sub);
+    let (name, dir, against) = match body.staged {
+        Some(id) => {
+            if !staged(&state.store_root)
+                .iter()
+                .any(|(staged, _)| *staged == id)
+            {
+                return err(
+                    StatusCode::NOT_FOUND,
+                    format!("nothing staged for item {id}"),
+                );
+            }
+            let dir = state
+                .store_root
+                .join(crate::worker::PACKS_INBOX)
+                .join(id.to_string());
+            (format!("staged:{id}"), dir, Some(packs.clone()))
+        }
+        None => {
+            let Some((name, sub)) = SETS.iter().find(|(name, _)| *name == body.set.trim()) else {
+                return err(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "set must be curated | world | world-nonparty, or staged: <item id>",
+                );
+            };
+            ((*name).to_string(), set_dir(&packs, sub), None)
+        }
+    };
     if pack_files(&dir) == 0 || !xtask.is_file() {
         return err(
             StatusCode::NOT_FOUND,
@@ -166,15 +226,18 @@ async fn load_set(
     let store_root = state.store_root.clone();
     let run_actor = actor.clone();
     let output = tokio::task::spawn_blocking(move || {
-        Command::new(&xtask)
-            .arg("packs-load")
+        let mut cmd = Command::new(&xtask);
+        cmd.arg("packs-load")
             .arg("--packs")
             .arg(&dir)
             .arg("--store")
             .arg(&store_root)
             .arg("--actor")
-            .arg(&run_actor)
-            .output()
+            .arg(&run_actor);
+        if let Some(root) = &against {
+            cmd.arg("--against").arg(root);
+        }
+        cmd.output()
     })
     .await;
     drop(guard);
@@ -239,6 +302,29 @@ mod tests {
         assert_eq!(
             set_dir(packs, "world"),
             Path::new("/srv/apostille/releases/abc/packs/world")
+        );
+    }
+
+    #[test]
+    fn staged_lists_numbered_inbox_dirs_with_packs_newest_first() {
+        let store = tempfile::tempdir().unwrap();
+        assert!(staged(store.path()).is_empty());
+        let inbox = store.path().join(crate::worker::PACKS_INBOX);
+        for (dir, file) in [
+            ("7", "MM.json"),
+            ("12", "AF.json"),
+            ("x", "a.json"),
+            ("9", "notes.txt"),
+        ] {
+            std::fs::create_dir_all(inbox.join(dir)).unwrap();
+            std::fs::write(inbox.join(dir).join(file), "{}").unwrap();
+        }
+        assert_eq!(
+            staged(store.path()),
+            [
+                (12, vec!["AF.json".to_string()]),
+                (7, vec!["MM.json".to_string()])
+            ]
         );
     }
 

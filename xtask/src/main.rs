@@ -961,21 +961,17 @@ fn run_model_gate() {
     eprintln!("model-gate: clean ({scanned} file(s))");
 }
 
-/// Validate every `*.json` pack in `--packs <dir>` (default: `packs`).
+/// Validate the pack tree at `--packs <dir>` (default: `packs`): the
+/// curated packs plus `world/` and `world-nonparty/` when present,
+/// with the name lint and one owner per slug across all of them.
 /// Exit 1 lists every violation; exit 0 prints the clean count.
 fn run_packs_validate(args: &[String]) {
     let dir = flag(args, "packs").unwrap_or_else(|| "packs".to_string());
-    let errors = packs::validate_dir(std::path::Path::new(&dir));
+    let root = std::path::Path::new(&dir);
+    let errors = packs::validate_tree(root);
     if errors.is_empty() {
-        let count = std::fs::read_dir(&dir)
-            .map(|entries| {
-                entries
-                    .filter_map(|entry| entry.ok().map(|e| e.path()))
-                    .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-                    .count()
-            })
-            .unwrap_or(0);
-        println!("packs-validate: clean ({count} pack(s) in {dir})");
+        let count = packs::tree_pack_count(root);
+        println!("packs-validate: clean ({count} pack(s) under {dir})");
     } else {
         for error in &errors {
             println!("{error}");
@@ -987,9 +983,16 @@ fn run_packs_validate(args: &[String]) {
 
 /// Load every validated pack into `--store <path>`. Refuses to load
 /// when validation fails. Never writes `fact` or `capture` rows.
+/// `--against <root>` validates `--packs` together with the pack tree
+/// at `<root>` (a staged research set must not claim a release slug).
 fn run_packs_load(args: &[String]) {
     let dir = flag(args, "packs").unwrap_or_else(|| "packs".to_string());
-    let errors = packs::validate_dir(std::path::Path::new(&dir));
+    let errors = match flag(args, "against") {
+        Some(root) => {
+            packs::validate_against(std::path::Path::new(&dir), std::path::Path::new(&root))
+        }
+        None => packs::validate_dir(std::path::Path::new(&dir)),
+    };
     if !errors.is_empty() {
         for error in &errors {
             println!("{error}");
@@ -1026,15 +1029,25 @@ fn run_packs_load(args: &[String]) {
         });
         // Validation above already parsed this file; a second parse
         // failure means the file changed mid-run — abort loudly.
-        let pack: packs::Pack = serde_json::from_slice(&bytes).unwrap_or_else(|e| {
+        let file = packs::PackFile::parse(&bytes).unwrap_or_else(|e| {
             eprintln!("packs-load: re-parse {}: {e}", path.display());
             std::process::exit(1);
         });
-        match packs::load_pack(&conn, &pack, &actor, now) {
+        match packs::load_pack(&conn, &file, &actor, now) {
             Ok(report) => {
                 println!(
-                    "{}: +{} authorities +{} domains +{} sources +{} tasks",
-                    pack.pack, report.authorities, report.domains, report.sources, report.tasks
+                    "{}: +{} authorities ~{} updated -{} hidden +{} domains +{} sources \
+                     +{} tasks -{} stale tasks +{} paths ~{} routes",
+                    file.pack.pack,
+                    report.authorities,
+                    report.updated,
+                    report.hidden,
+                    report.domains,
+                    report.sources,
+                    report.tasks,
+                    report.closed,
+                    report.paths,
+                    report.routes
                 );
                 packs += 1;
             }

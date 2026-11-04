@@ -67,7 +67,8 @@ pub fn load_dossier(
     use rusqlite::OptionalExtension as _;
     let row: Option<(i64, String, String, String)> = conn
         .query_row(
-            "SELECT id, name, country, region FROM authority WHERE slug = ?1",
+            "SELECT id, name, country, region FROM authority
+             WHERE slug = ?1 AND hidden_at IS NULL",
             [slug],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
@@ -119,9 +120,7 @@ pub fn load_dossier(
         }
         facts.push(MetaFact { topic, statement });
     }
-    let path = crate::authority_path::all_paths(conn)
-        .remove(slug)
-        .map_or_else(|| slug.to_string(), |p| p.primary);
+    let path = crate::authority_path::index(conn).primary(slug);
     Ok(Some(DossierMeta {
         path,
         name,
@@ -237,7 +236,7 @@ fn json_ld(meta: &DossierMeta, page_url: &str) -> String {
 
 /// Shell anchors from `web/src/app.html` (kept in sync by the
 /// unknown-shell test below failing closed on drift).
-const GEN_DESCRIPTION: &str = "<meta name=\"description\" content=\"Apostille Handbook — verified apostille guidance, quote by quote.\" />";
+pub(crate) const GEN_DESCRIPTION: &str = "<meta name=\"description\" content=\"Apostille Handbook — verified apostille guidance, quote by quote.\" />";
 const GEN_OG_TITLE: &str = "<meta property=\"og:title\" content=\"Apostille Handbook\" />";
 const GEN_OG_DESCRIPTION: &str = "<meta\n\t\t\tproperty=\"og:description\"\n\t\t\tcontent=\"Verified apostille guidance, quote by quote.\"\n\t\t/>";
 
@@ -333,8 +332,24 @@ pub async fn dossier(State(state): State<AppState>, Path(trail): Path<String>) -
     let Some(conn) = passkey::open_conn(&state) else {
         return store_unavailable();
     };
-    let slug = crate::authority_path::resolve(&conn, &trail)
-        .map_or_else(|| trail.trim().to_string(), |found| found.slug);
+    let found = crate::authority_path::resolve(&conn, &trail);
+    // A place (`usa`, P2-5) answers with its own head; the client
+    // shows the place page.
+    if found.is_none()
+        && let Some(loc) = crate::locations::locate(&conn, &trail)
+    {
+        let count: usize = crate::locations::offices(&conn, &loc)
+            .iter()
+            .map(|g| g.offices.len())
+            .sum();
+        return (
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            crate::locations::render_location(&shell, &loc, count, &state.notify_base),
+        )
+            .into_response()
+            .with_cache();
+    }
+    let slug = found.map_or_else(|| trail.trim().to_string(), |found| found.slug);
     let meta = load_dossier(&conn, &state.store_root, &slug).unwrap_or(None);
     match meta {
         Some(meta) => (
@@ -422,7 +437,7 @@ pub async fn sitemap(State(state): State<AppState>) -> Response {
         "SELECT a.slug, MAX(c.captured_at) FROM authority a
          LEFT JOIN fact f ON f.authority_id = a.id AND f.status = 'accepted'
          LEFT JOIN capture c ON c.id = f.capture_id
-         WHERE a.id != 0 AND a.slug NOT LIKE 'sentinel-%'
+         WHERE a.id != 0 AND a.slug NOT LIKE 'sentinel-%' AND a.hidden_at IS NULL
          GROUP BY a.id ORDER BY a.slug",
     ) {
         Ok(stmt) => stmt,
@@ -433,13 +448,10 @@ pub async fn sitemap(State(state): State<AppState>) -> Response {
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();
     // One canonical address per authority (its readable path).
-    let paths = crate::authority_path::all_paths(&conn);
+    let paths = crate::authority_path::index(&conn);
     let rows: Vec<(String, Option<i64>)> = rows
         .into_iter()
-        .map(|(slug, day)| {
-            let path = paths.get(&slug).map_or(slug, |p| p.primary.clone());
-            (path, day)
-        })
+        .map(|(slug, day)| (paths.primary(&slug), day))
         .collect();
     let home_day = rows.iter().filter_map(|(_, day)| *day).max();
     (

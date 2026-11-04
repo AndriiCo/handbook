@@ -1,6 +1,7 @@
 {
   "pack": "SI",
   "version": 1,
+  "iso2": "SI",
   "title": "Slovenia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -33,7 +34,7 @@
     },
     {
       "name": "www.arhiv.mp.gov.si",
-      "authority": "si-ca-2",
+      "authority": "si-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Slovenia (staff capture pending)."
     }
@@ -54,7 +55,7 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=344 (needs staff capture; W-7)."
     },
     {
-      "authority": "si-ca-2",
+      "authority": "si-ca-1",
       "kind": "website_official",
       "uri": "http://www.arhiv.mp.gov.si/si/delovna_podrocja/mednarodno_sodelovanje_in_mednarodna_pravna_pomoc/mednarodna_pravna_pomoc/",
       "cadence": "weekly",
@@ -65,7 +66,7 @@
       "kind": "website_official",
       "uri": "https://www.gov.si/zbirke/storitve/overitve-javnih-listin-za-uporabo-v-tujini/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=67&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=344 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -113,7 +114,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "si-ca-2",
+      "authority": "si-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.arhiv.mp.gov.si/si/delovna_podrocja/mednarodno_sodelovanje_in_mednarodna_pravna_pomoc/mednarodna_pravna_pomoc/ as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=344",
@@ -124,7 +125,7 @@
       "authority": "si-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.si/zbirke/storitve/overitve-javnih-listin-za-uporabo-v-tujini/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=67&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=344",
       "status": "needs_review",
       "validation": "W-7"
     }

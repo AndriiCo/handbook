@@ -1,6 +1,7 @@
 {
   "pack": "NZ",
   "version": 1,
+  "iso2": "NZ",
   "title": "New Zealand — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -45,14 +46,14 @@
       "kind": "website_official",
       "uri": "https://www.govt.nz/browse/passports-citizenship-and-identity/proving-and-protecting-your-identity/use-your-nz-documents-overseas/authentication-unit-document-requirements/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=57&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=336 (needs staff capture; W-7)."
     },
     {
       "authority": "nz-ca-1",
       "kind": "website_official",
       "uri": "https://www.govt.nz/browse/passports-citizenship-and-identity/proving-and-protecting-your-identity/translating-official-documents/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=57&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=336 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -95,7 +96,7 @@
       "authority": "nz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.govt.nz/browse/passports-citizenship-and-identity/proving-and-protecting-your-identity/use-your-nz-documents-overseas/authentication-unit-document-requirements/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=57&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=336",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -103,7 +104,7 @@
       "authority": "nz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.govt.nz/browse/passports-citizenship-and-identity/proving-and-protecting-your-identity/translating-official-documents/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=57&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=336",
       "status": "needs_review",
       "validation": "W-7"
     }

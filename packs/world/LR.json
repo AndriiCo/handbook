@@ -1,42 +1,48 @@
 {
   "pack": "LR",
   "version": 1,
+  "iso2": "LR",
   "title": "Liberia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "Liberia",
       "region": "",
-      "name": "the Minister of Foreign Affairs, Deputies and Assistant Ministers",
-      "slug": "lr-ca-1"
+      "name": "The Minister of Foreign Affairs, Deputies and Assistant Ministers",
+      "slug": "lr-ca-1",
+      "source_name": "the Minister of Foreign Affairs, Deputies and Assistant Ministers"
     },
     {
       "kind": "country",
       "country": "Liberia",
       "region": "",
-      "name": "the Minister of Justice, the Deputies and Assistant Ministers",
-      "slug": "lr-ca-2"
+      "name": "The Minister of Justice, the Deputies and Assistant Ministers",
+      "slug": "lr-ca-2",
+      "source_name": "the Minister of Justice, the Deputies and Assistant Ministers"
     },
     {
       "kind": "country",
       "country": "Liberia",
       "region": "",
-      "name": "the Clerk and Deputy Clerk(s) of the Supreme and Circuit Court(s)",
-      "slug": "lr-ca-3"
+      "name": "The Clerk and Deputy Clerk(s) of the Supreme and Circuit Court(s)",
+      "slug": "lr-ca-3",
+      "source_name": "the Clerk and Deputy Clerk(s) of the Supreme and Circuit Court(s)"
     },
     {
       "kind": "country",
       "country": "Liberia",
       "region": "",
-      "name": "the Registrars and Deputy Registrars of Corporations",
-      "slug": "lr-ca-4"
+      "name": "The Registrars and Deputy Registrars of Corporations",
+      "slug": "lr-ca-4",
+      "source_name": "the Registrars and Deputy Registrars of Corporations"
     },
     {
       "kind": "country",
       "country": "Liberia",
       "region": "",
-      "name": "the Commissioner and Deputy Commissioners of Maritime Affairs or Special Agents thereof.",
-      "slug": "lr-ca-5"
+      "name": "The Commissioner and Deputy Commissioners of Maritime Affairs or Special Agents thereof",
+      "slug": "lr-ca-5",
+      "source_name": "the Commissioner and Deputy Commissioners of Maritime Affairs or Special Agents thereof."
     }
   ],
   "domains": [

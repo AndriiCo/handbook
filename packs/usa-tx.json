@@ -3,9 +3,11 @@
         {
             "country": "USA",
             "kind": "state",
+            "level": "state",
             "name": "Texas Secretary of State \u2014 Authentications",
             "region": "Texas",
-            "slug": "usa-tx-sos"
+            "slug": "usa-tx-sos",
+            "subdivision": "US-TX"
         }
     ],
     "chain_steps": [
@@ -36,6 +38,7 @@
             "status": "unverified"
         }
     ],
+    "iso2": "US",
     "observations": [],
     "pack": "usa-tx",
     "title": "USA Texas \u2014 volume state (unverified)",

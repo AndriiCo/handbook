@@ -13,6 +13,7 @@
 		flagFor,
 		kindLabel,
 		laneOf,
+		LANES,
 		LANE_LABEL,
 		latestCapture,
 		silhouetteFor,
@@ -29,6 +30,7 @@
 		publicError,
 		relativeDay
 	} from '../../lib/public-ui/handbook.js';
+	import { placePath } from '../../lib/public-ui/location.js';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -70,7 +72,7 @@
 				name: row?.name || slug,
 				label: row?.region || row?.country || row?.name || slug,
 				country: row?.country ?? '',
-				flag: flagFor(row?.country),
+				flag: flagFor(row?.country, row?.iso2),
 				sil: silhouetteFor(row),
 				fact_count: row?.fact_count ?? 0
 			};
@@ -147,7 +149,7 @@
 	const FILTERS = $derived.by(() => {
 		const lanes = new Set(others.map((a) => laneOf(a)));
 		const out: { v: Filter; label: string }[] = [{ v: 'all', label: 'All' }];
-		for (const lane of ['hague', 'legalization', 'states', 'other'] as Lane[]) {
+		for (const lane of LANES) {
 			if (lanes.has(lane)) out.push({ v: lane, label: LANE_LABEL[lane] });
 		}
 		return out.length > 2 ? out : out.slice(0, 1);
@@ -469,7 +471,7 @@
 		</p>
 		<ul class="m-0 list-none p-0" aria-label="Authorities by country">
 			{#each groups as group (group.country)}
-				{@const flag = flagFor(group.country)}
+				{@const flag = flagFor(group.country, group.iso2)}
 				<li class="m-0 border-b border-line p-0">
 					<details
 						class="group"
@@ -497,6 +499,15 @@
 							</span>
 						</summary>
 						{#if opened[group.country]}
+							{@const place = placePath(group.iso2, group.country)}
+							{#if place}
+								<a
+									class="ml-2 inline-flex min-h-11 items-center text-sm sm:ml-8"
+									href={resolve('/(public)/in/[...path]', { path: place })}
+								>
+									Which office handles my document? All offices in {group.country}
+								</a>
+							{/if}
 							<ul class="m-0 mb-3 list-none p-0 pl-2 sm:pl-8">
 								{#each group.rows as authority (authority.slug)}
 									<li class="m-0 p-0">

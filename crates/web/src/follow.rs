@@ -104,7 +104,7 @@ pub async fn subscribe(
     let slug = body.authority.trim().to_lowercase();
     let row: Option<(i64, String)> = match conn
         .query_row(
-            "SELECT id, name FROM authority WHERE slug = ?1",
+            "SELECT id, name FROM authority WHERE slug = ?1 AND hidden_at IS NULL",
             [&slug],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -628,6 +628,75 @@ mod tests {
         let (status, text) = status_and_text(h.app.clone().oneshot(get).await.unwrap()).await;
         assert_eq!(status, StatusCode::GONE);
         assert!(text.contains("invalid or expired"), "clear page message");
+    }
+
+    /// P2-2: a hidden row is gone from every public surface — index,
+    /// dossier (404), facts, sitemap, resolver, place page, follows —
+    /// while staff keep the row.
+    #[tokio::test]
+    async fn a_hidden_authority_is_absent_from_every_public_read() {
+        let h = harness(None);
+        let get = |uri: &str| {
+            Request::builder()
+                .uri(uri)
+                .extension(test_addr())
+                .body(Body::empty())
+                .unwrap()
+        };
+        let reads = [
+            "/apostille/api/v1/authorities",
+            "/apostille/sitemap.xml",
+            "/apostille/authority/vietnam",
+            "/apostille/api/v1/authorities/vietnam/facts",
+            "/apostille/api/v1/authorities/resolve?path=usa/washington",
+            "/apostille/api/v1/locations/usa",
+        ];
+        let mut before = Vec::new();
+        for uri in reads {
+            before.push(status_and_text(h.app.clone().oneshot(get(uri)).await.unwrap()).await);
+        }
+        assert!(
+            before.iter().all(|(s, _)| *s == StatusCode::OK),
+            "{before:?}"
+        );
+        assert!(before[0].1.contains("\"vietnam\""));
+        assert!(before[1].1.contains("/authority/usa/washington"));
+
+        let conn = open_store(&h.store_root);
+        let id: i64 = conn
+            .query_row("SELECT id FROM authority WHERE slug = 'vietnam'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        handbook_store::db::set_authority_hidden(&conn, id, true, "test", 1, "fragment").unwrap();
+        drop(conn);
+
+        let mut after = Vec::new();
+        for uri in reads {
+            after.push(status_and_text(h.app.clone().oneshot(get(uri)).await.unwrap()).await);
+        }
+        assert_eq!(after[0].0, StatusCode::OK);
+        assert!(!after[0].1.contains("vietnam"), "index: {}", after[0].1);
+        assert!(
+            !after[1].1.contains("/authority/"),
+            "sitemap: {}",
+            after[1].1
+        );
+        for (i, (status, _)) in after.iter().enumerate().skip(2) {
+            assert_eq!(*status, StatusCode::NOT_FOUND, "{}", reads[i]);
+        }
+        let (status, _) = status_and_text(
+            h.app
+                .clone()
+                .oneshot(post_json(
+                    "/apostille/api/v1/notify/subscribe",
+                    r#"{"authority":"vietnam","email":"reader@example.com"}"#,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "no follows of a hidden row");
     }
 
     #[tokio::test]

@@ -1092,10 +1092,13 @@ pub fn accepted_fact_views(
     store_root: &std::path::Path,
     slug: &str,
 ) -> Option<Vec<FactView>> {
+    // A hidden row (page fragment, internal catch-all) reads as unknown.
     let authority_id: i64 = conn
-        .query_row("SELECT id FROM authority WHERE slug = ?1", [slug], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT id FROM authority WHERE slug = ?1 AND hidden_at IS NULL",
+            [slug],
+            |row| row.get(0),
+        )
         .optional()
         .unwrap_or(None)?;
     let rows: Vec<StoredFact> = conn
@@ -1132,17 +1135,12 @@ pub fn accepted_fact_views(
     )
 }
 
-/// Public authority index. Anonymous callers reach this; rows are
-/// real authorities only (`id != 0` — the id-0 sentinel backs
-/// unattributed facts and is never listed) with their accepted-fact
-/// counts, ordered by slug.
-///
-/// v1 has no pagination: the authority table holds dozens of rows,
-/// so one unbounded query stays cheap.
-pub async fn public_authorities(State(state): State<AppState>) -> impl IntoResponse {
-    let Some(conn) = open(&state) else {
-        return store_unavailable();
-    };
+/// Index rows: every public authority, or the one `slug`, each with
+/// its accepted-fact count and readable addresses. Anonymous callers
+/// reach this; rows are real, public authorities only (`id != 0` — the
+/// id-0 sentinel backs unattributed facts and is never listed;
+/// `hidden_at` rows are page fragments or internal), ordered by slug.
+fn index_rows(conn: &Connection, slug: Option<&str>) -> Vec<serde_json::Value> {
     let rows: Vec<serde_json::Value> = conn
         .prepare(
             // `kind` (country/state/province/office) drives the home
@@ -1152,17 +1150,17 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
             "SELECT a.slug, a.name, a.country, a.region,
                     COUNT(CASE WHEN f.status = 'accepted' THEN 1 END),
                     a.kind,
-                    va.v
+                    va.v, a.iso2, a.level, a.name_en, a.aliases
              FROM authority a LEFT JOIN fact f ON f.authority_id = a.id
              LEFT JOIN (SELECT f2.authority_id AS aid, MAX(au.at) AS v
                         FROM audit au JOIN fact f2 ON f2.id = au.entity_id
                         WHERE au.entity = 'fact' AND au.action = 'fact_accept'
                         GROUP BY f2.authority_id) va ON va.aid = a.id
-             WHERE a.id != 0
+             WHERE a.id != 0 AND a.hidden_at IS NULL AND (?1 IS NULL OR a.slug = ?1)
              GROUP BY a.id ORDER BY a.slug",
         )
         .and_then(|mut stmt| {
-            stmt.query_map([], |row| {
+            stmt.query_map([slug], |row| {
                 Ok(json!({
                     "slug": row.get::<_, String>(0)?,
                     "name": row.get::<_, String>(1)?,
@@ -1171,6 +1169,13 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
                     "fact_count": row.get::<_, i64>(4)?,
                     "kind": row.get::<_, String>(5)?,
                     "verified_at": row.get::<_, Option<i64>>(6)?,
+                    "iso2": row.get::<_, String>(7)?,
+                    "level": row.get::<_, String>(8)?,
+                    "name_en": row.get::<_, String>(9)?,
+                    "alt_names": row.get::<_, String>(10)?
+                        .lines()
+                        .filter(|alias| !alias.trim().is_empty())
+                        .collect::<Vec<_>>(),
                 }))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()
@@ -1178,18 +1183,62 @@ pub async fn public_authorities(State(state): State<AppState>) -> impl IntoRespo
         .unwrap_or_default();
     // Readable addresses ride along in a separate fail-soft read, so a
     // path problem can never empty the index GP1/GP2 read.
-    let paths = crate::authority_path::all_paths(&conn);
-    let rows: Vec<serde_json::Value> = rows
-        .into_iter()
+    let paths = crate::authority_path::index(conn);
+    rows.into_iter()
         .map(|mut row| {
-            if let Some(p) = row["slug"].as_str().and_then(|slug| paths.get(slug)) {
+            if let Some(p) = row["slug"]
+                .as_str()
+                .and_then(|slug| paths.by_slug.get(slug))
+            {
                 row["path"] = json!(p.primary);
                 row["aliases"] = json!(p.aliases);
             }
             row
         })
-        .collect();
+        .collect()
+}
+
+/// Public authority index (`GET /api/v1/authorities`).
+///
+/// v1 has no pagination: the authority table holds hundreds of rows,
+/// so one unbounded query stays cheap.
+pub async fn public_authorities(State(state): State<AppState>) -> impl IntoResponse {
+    let Some(conn) = open(&state) else {
+        return store_unavailable();
+    };
+    let rows = index_rows(&conn, None);
     (StatusCode::OK, Json(json!({"authorities": rows}))).into_response()
+}
+
+/// One dossier's header (`GET /api/v1/authorities/{slug}`, P2-6): its
+/// index row plus breadcrumbs and its country's place page, so a
+/// dossier never downloads the whole index to learn its own name.
+/// 404 for an unknown or hidden slug.
+pub async fn public_authority(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> impl IntoResponse {
+    let Some(conn) = open(&state) else {
+        return store_unavailable();
+    };
+    let Some(mut row) = index_rows(&conn, Some(slug.trim())).into_iter().next() else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "unknown authority"})),
+        )
+            .into_response();
+    };
+    let canonical = row["path"].as_str().unwrap_or(slug.trim()).to_string();
+    let mut crumbs = crate::authority_path::crumbs(&conn, &canonical);
+    crumbs.pop();
+    row["crumbs"] = json!(crumbs);
+    let place = crate::locations::country_place(
+        &conn,
+        row["iso2"].as_str().unwrap_or_default(),
+        row["country"].as_str().unwrap_or_default(),
+    );
+    row["place"] = json!(place.map(|p| json!({"path": p.path, "label": p.label})));
+    (StatusCode::OK, Json(row)).into_response()
 }
 
 #[cfg(test)]

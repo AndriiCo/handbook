@@ -1,6 +1,7 @@
 {
   "pack": "IN",
   "version": 1,
+  "iso2": "IN",
   "title": "India — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -45,7 +46,7 @@
       "kind": "website_official",
       "uri": "http://www.mea.gov.in/legalization-of-documents.htm",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=101&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=643 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -88,7 +89,7 @@
       "authority": "in-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mea.gov.in/legalization-of-documents.htm as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=101&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=643",
       "status": "needs_review",
       "validation": "W-7"
     }

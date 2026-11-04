@@ -1,161 +1,184 @@
 {
   "pack": "AT",
   "version": 1,
+  "iso2": "AT",
   "title": "Austria — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
-      "name": "The Federal Ministry for Europe, Integration and Foreign Affairs with regard to all documents issued by:",
-      "slug": "at-ca-1"
+      "name": "The Federal Ministry for Europe, Integration and Foreign Affairs",
+      "slug": "at-ca-1",
+      "source_name": "The Federal Ministry for Europe, Integration and Foreign Affairs with regard to all documents issued by:"
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "the Federal President or the Office of the Federal President,",
-      "slug": "at-ca-2"
+      "slug": "at-ca-2",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "the President of the National Council, the President of the Federal Council or the Parliamentary Administrative Office,",
-      "slug": "at-ca-3"
+      "slug": "at-ca-3",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "the federal government,",
-      "slug": "at-ca-4"
+      "slug": "at-ca-4",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "a federal ministry,",
-      "slug": "at-ca-5"
+      "slug": "at-ca-5",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "the Constitutional Court or the Administrative Court,",
-      "slug": "at-ca-6"
+      "slug": "at-ca-6",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "the Supreme Court, the Supreme Cartel Court at the Supreme Court, the Supreme Restoration Commission at the Supreme Court, the Supreme Restitution Commission at the Supreme Court or",
-      "slug": "at-ca-7"
+      "slug": "at-ca-7",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "the Court of Audit.",
-      "slug": "at-ca-8"
+      "slug": "at-ca-8",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
-      "name": "The following documents can be issued by Austrian Embassies and Consulates (except for Honorary-General-Consulates) and provided with an Apostille:",
-      "slug": "at-ca-9"
+      "name": "Austrian Embassies and Consulates (except for Honorary-General-Consulates)",
+      "slug": "at-ca-9",
+      "source_name": "The following documents can be issued by Austrian Embassies and Consulates (except for Honorary-General-Consulates) and provided with an Apostille:"
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "Civil status documents and register extracts",
-      "slug": "at-ca-10"
+      "slug": "at-ca-10",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "Certificates of no impediment",
-      "slug": "at-ca-11"
+      "slug": "at-ca-11",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "Certificates of the ability to establish a registered partnership",
-      "slug": "at-ca-12"
+      "slug": "at-ca-12",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "Proof of citizenship",
-      "slug": "at-ca-13"
+      "slug": "at-ca-13",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "Certificates of exit from the State",
-      "slug": "at-ca-14"
+      "slug": "at-ca-14",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "Criminal records",
-      "slug": "at-ca-15"
+      "slug": "at-ca-15",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
-      "name": "The presidents of civil courts of first instance, or their designated representatives for the issue of certificates (apostilles), with the exception of the Commercial Court in Vienna and the Juvenile Court in Vienna, with regard to all documents issued in the region served by the court in question by:",
-      "slug": "at-ca-16"
+      "name": "The presidents of civil courts of first instance",
+      "slug": "at-ca-16",
+      "source_name": "The presidents of civil courts of first instance, or their designated representatives for the issue of certificates (apostilles), with the exception of the Commercial Court in Vienna and the Juvenile Court in Vienna, with regard to all documents issued in the region served by the court in question by:"
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "a court other than those referred to in point 1 (e) and (f),",
-      "slug": "at-ca-17"
+      "slug": "at-ca-17",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "a public prosecutor's office,",
-      "slug": "at-ca-18"
+      "slug": "at-ca-18",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "a notary,",
-      "slug": "at-ca-19"
+      "slug": "at-ca-19",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "a chamber of notaries or a bar association, in so far as the chamber or association in question did so in the execution of official federal duties.",
-      "slug": "at-ca-20"
+      "slug": "at-ca-20",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
       "name": "With regard to all other documents,",
-      "slug": "at-ca-21"
+      "slug": "at-ca-21",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Austria",
       "region": "",
-      "name": "provincial governments, for documents issued in their province in the execution of official federal duties.",
-      "slug": "at-ca-22"
+      "name": "Provincial governments",
+      "slug": "at-ca-22",
+      "source_name": "provincial governments, for documents issued in their province in the execution of official federal duties."
     }
   ],
   "domains": [
@@ -173,7 +196,7 @@
     },
     {
       "name": "fabsits.heimat.eu",
-      "authority": "at-ca-3",
+      "authority": "at-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Austria (staff capture pending)."
     }
@@ -194,14 +217,14 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=308 (needs staff capture; W-7)."
     },
     {
-      "authority": "at-ca-2",
+      "authority": "at-ca-1",
       "kind": "website_official",
       "uri": "https://www.bmeia.gv.at/reise-aufenthalt/urkunden-und-beglaubigung-apostille/beglaubigung-apostille/",
       "cadence": "weekly",
       "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=308 (needs staff capture; W-7)."
     },
     {
-      "authority": "at-ca-3",
+      "authority": "at-ca-1",
       "kind": "website_official",
       "uri": "http://fabsits.heimat.eu/",
       "cadence": "weekly",
@@ -237,62 +260,6 @@
       "validation": "W-7"
     },
     {
-      "authority": "at-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Federal President or the Office of the Federal President,.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-3",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the President of the National Council, the President of the Federal Council or the Parliamentary Administrative Office,.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-4",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the federal government,.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-5",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: a federal ministry,.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-6",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Constitutional Court or the Administrative Court,.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-7",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Supreme Court, the Supreme Cartel Court at the Supreme Court, the Supreme Restoration Commission at the Supreme Court, the Supreme Restitution Commission at the Supreme Court or.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-8",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: the Court of Audit..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
       "authority": "at-ca-9",
       "topic": "contacts",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The following documents can be issued by Austrian Embassies and Consulates (except for Honorary-General-Consulates) and provided with an Apostille:.",
@@ -301,97 +268,9 @@
       "validation": "W-7"
     },
     {
-      "authority": "at-ca-10",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Civil status documents and register extracts.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-11",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Certificates of no impediment.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-12",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Certificates of the ability to establish a registered partnership.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-13",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Proof of citizenship.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-14",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Certificates of exit from the State.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-15",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Criminal records.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
       "authority": "at-ca-16",
       "topic": "contacts",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The presidents of civil courts of first instance, or their designated representatives for the issue of certificates (apostilles), with the exception of the Commercial Court in Vienna and the Juvenile Court in Vienna, with regard to all documents issued in the region served by the court in question by:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-17",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: a court other than those referred to in point 1 (e) and (f),.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-18",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: a public prosecutor's office,.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-19",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: a notary,.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-20",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: a chamber of notaries or a bar association, in so far as the chamber or association in question did so in the execution of official federal duties..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "at-ca-21",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: With regard to all other documents,.",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
       "status": "needs_review",
       "validation": "W-7"
@@ -413,7 +292,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "at-ca-2",
+      "authority": "at-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.bmeia.gv.at/reise-aufenthalt/urkunden-und-beglaubigung-apostille/beglaubigung-apostille/ as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",
@@ -421,7 +300,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "at-ca-3",
+      "authority": "at-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://fabsits.heimat.eu/ as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=308",

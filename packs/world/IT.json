@@ -1,6 +1,7 @@
 {
   "pack": "IT",
   "version": 1,
+  "iso2": "IT",
   "title": "Italy — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,34 +9,44 @@
       "country": "Italy",
       "region": "",
       "name": "Notification of 8 August 2011:",
-      "slug": "it-ca-1"
+      "slug": "it-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Italy",
       "region": "",
       "name": "In the case of judicial documents, civil status documents and notarial acts:",
-      "slug": "it-ca-2"
+      "slug": "it-ca-2",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Italy",
       "region": "",
       "name": "in the case of all other administrative documents provided for in the Convention:",
-      "slug": "it-ca-3"
+      "slug": "it-ca-3",
+      "hidden": true
+    },
+    {
+      "kind": "country",
+      "country": "Italy",
+      "region": "",
+      "name": "Italy — Competent Authority (Art. 6)",
+      "slug": "it-ca"
     }
   ],
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "it-ca-1",
+      "authority": "it-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Italy (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "it-ca-1",
+      "authority": "it-ca",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=46&cid=41",
       "cadence": "weekly",
@@ -45,7 +56,7 @@
   "chain_steps": [
     {
       "id": "it-index",
-      "authority": "it-ca-1",
+      "authority": "it-ca",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Italy against a staff capture of the cited HCCH pages (deterministic).",
@@ -55,34 +66,10 @@
   ],
   "observations": [
     {
-      "authority": "it-ca-1",
+      "authority": "it-ca",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Italy is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "it-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Notification of 8 August 2011:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=327",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "it-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: In the case of judicial documents, civil status documents and notarial acts:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=327",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "it-ca-3",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: in the case of all other administrative documents provided for in the Convention:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=327",
       "status": "needs_review",
       "validation": "W-7"
     }

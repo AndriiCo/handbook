@@ -1,42 +1,48 @@
 {
   "pack": "MH",
   "version": 1,
+  "iso2": "MH",
   "title": "Marshall Islands — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
-      "name": "Minister of Foreign Affairs of the Marshall Islands,",
-      "slug": "mh-ca-1"
+      "name": "Minister of Foreign Affairs of the Marshall Islands",
+      "slug": "mh-ca-1",
+      "source_name": "Minister of Foreign Affairs of the Marshall Islands,"
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
-      "name": "Attorney General and Acting Attorney General,",
-      "slug": "mh-ca-2"
+      "name": "Attorney General and Acting Attorney General",
+      "slug": "mh-ca-2",
+      "source_name": "Attorney General and Acting Attorney General,"
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
-      "name": "Clerk and Deputy Clerk of the High Court,",
-      "slug": "mh-ca-3"
+      "name": "Clerk and Deputy Clerk of the High Court",
+      "slug": "mh-ca-3",
+      "source_name": "Clerk and Deputy Clerk of the High Court,"
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
-      "name": "Registrars and Deputy Registrars of Corporations,",
-      "slug": "mh-ca-4"
+      "name": "Registrars and Deputy Registrars of Corporations",
+      "slug": "mh-ca-4",
+      "source_name": "Registrars and Deputy Registrars of Corporations,"
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
-      "name": "Maritime Administrator and Special Agents thereof, and",
-      "slug": "mh-ca-5"
+      "name": "Maritime Administrator and Special Agents thereof",
+      "slug": "mh-ca-5",
+      "source_name": "Maritime Administrator and Special Agents thereof, and"
     },
     {
       "kind": "country",
@@ -50,14 +56,16 @@
       "country": "Marshall Islands",
       "region": "",
       "name": "Additional information (5 October 2007):",
-      "slug": "mh-ca-7"
+      "slug": "mh-ca-7",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
       "name": "Authority in accordance with Article 6 of the Convention:",
-      "slug": "mh-ca-8"
+      "slug": "mh-ca-8",
+      "hidden": true
     },
     {
       "kind": "country",
@@ -71,49 +79,56 @@
       "country": "Marshall Islands",
       "region": "",
       "name": "Office of the Deputy Registrar",
-      "slug": "mh-ca-10"
+      "slug": "mh-ca-10",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
       "name": "Limmatquai 50",
-      "slug": "mh-ca-11"
+      "slug": "mh-ca-11",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
       "name": "CH-8001 Zurich",
-      "slug": "mh-ca-12"
+      "slug": "mh-ca-12",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
       "name": "Switzerland",
-      "slug": "mh-ca-13"
+      "slug": "mh-ca-13",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
       "name": "[email protected]",
-      "slug": "mh-ca-14"
+      "slug": "mh-ca-14",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
       "name": "Telephone: +41-44-268-2211",
-      "slug": "mh-ca-15"
+      "slug": "mh-ca-15",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Marshall Islands",
       "region": "",
       "name": "Fax: +41-44-268-2212",
-      "slug": "mh-ca-16"
+      "slug": "mh-ca-16",
+      "hidden": true
     }
   ],
   "domains": [
@@ -202,81 +217,9 @@
       "validation": "W-7"
     },
     {
-      "authority": "mh-ca-7",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Additional information (5 October 2007):.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mh-ca-8",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Authority in accordance with Article 6 of the Convention:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
       "authority": "mh-ca-9",
       "topic": "contacts",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: IRI Corporate and Maritime Services (Switzerland) A.G..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mh-ca-10",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Office of the Deputy Registrar.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mh-ca-11",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Limmatquai 50.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mh-ca-12",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: CH-8001 Zurich.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mh-ca-13",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Switzerland.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mh-ca-14",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: [email protected].",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mh-ca-15",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Telephone: +41-44-268-2211.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "mh-ca-16",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Fax: +41-44-268-2212.",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=373",
       "status": "needs_review",
       "validation": "W-7"

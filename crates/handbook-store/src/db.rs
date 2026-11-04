@@ -4,7 +4,8 @@
 //! snapshot (= v11; the 001–011 incrementals were squashed away in
 //! prompt 055 after prod reached v11 — see git history). Later
 //! migrations add `N+1` files and extend [`migrate`]: `012` widens
-//! the `fact.topic` CHECK for `service_notice`. The P2
+//! the `fact.topic` CHECK for `service_notice`; `013` adds authority
+//! visibility (`hidden_at`) and location columns. The P2
 //! customer-PII database (`p2.sqlite`) has its own baseline
 //! (`migrations/p2_schema_baseline.sql`, = P2 v2) and its own
 //! [`migrate_p2`].
@@ -16,7 +17,7 @@ use contracts::{HandbookError, Result};
 use crate::store::Store;
 
 /// Current schema version (`pragma user_version`).
-pub const SCHEMA_VERSION: i32 = 12;
+pub const SCHEMA_VERSION: i32 = 13;
 
 /// Version the squashed `schema_baseline.sql` stamps; every later
 /// version is one `0NN_*.sql` step on top of it.
@@ -105,6 +106,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         if version < 12 {
             conn.execute_batch(include_str!("../migrations/012_service_notice.sql"))?;
             conn.pragma_update(None, "user_version", 12)?;
+        }
+        if version < 13 {
+            conn.execute_batch(include_str!("../migrations/013_authority_hidden.sql"))?;
+            conn.pragma_update(None, "user_version", 13)?;
         }
         Ok(())
     })?;
@@ -212,6 +217,173 @@ pub fn add_authority(conn: &Connection, a: &NewAuthority<'_>) -> Result<i64> {
         )?;
         Ok(id)
     })
+}
+
+/// Why an authority's display name reads as a fragment of a page
+/// rather than the name of an office (P2-1: "Land", "Fax: …", "the
+/// federal government,"), or `None` for a plausible name: 6 characters
+/// or fewer, a lowercase start, a trailing `:`/`,`/`;`, an e-mail
+/// address, a phone or fax number, a postcode or a street line. Pack
+/// validation and the staff authorities screen both apply it.
+#[must_use]
+pub fn authority_name_lint(name: &str) -> Option<&'static str> {
+    let name = name.trim();
+    if name.chars().count() <= 6 {
+        return Some("6 characters or fewer");
+    }
+    if name.chars().next().is_some_and(char::is_lowercase) {
+        return Some("starts lowercase (a sentence fragment)");
+    }
+    if name.ends_with([':', ',', ';']) {
+        return Some("ends with ':', ',' or ';' (a list lead-in)");
+    }
+    let lower = name.to_lowercase();
+    if lower.contains('@') || lower.contains("[email") {
+        return Some("contains an email address");
+    }
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_alphanumeric() && c != '+')
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words
+        .iter()
+        .any(|w| matches!(*w, "fax" | "tel" | "telephone" | "phone"))
+        || words
+            .iter()
+            .any(|w| w.starts_with('+') && w[1..].starts_with(|c: char| c.is_ascii_digit()))
+    {
+        return Some("contains a phone or fax number");
+    }
+    let postcode = name.split_whitespace().any(|token| {
+        let (prefix, digits) = token.split_once('-').unwrap_or(("", ""));
+        (1..=3).contains(&prefix.len())
+            && prefix.bytes().all(|b| b.is_ascii_uppercase())
+            && (4..=6).contains(&digits.len())
+            && digits.bytes().all(|b| b.is_ascii_digit())
+    });
+    let tokens: Vec<&str> = name.split_whitespace().collect();
+    let street = tokens.len() <= 3
+        && tokens
+            .last()
+            .is_some_and(|t| t.bytes().all(|b| b.is_ascii_digit()));
+    if postcode || street {
+        return Some("contains a postcode or street address");
+    }
+    None
+}
+
+/// Authority columns [`edit_authority`] may change. Never `slug`: it is
+/// the join key of every table, API route and WS topic.
+pub const AUTHORITY_EDITABLE: [&str; 9] = [
+    "kind",
+    "country",
+    "region",
+    "name",
+    "iso2",
+    "subdivision",
+    "level",
+    "name_en",
+    "aliases",
+];
+
+/// Set `fields` (`(column, value)`, columns from [`AUTHORITY_EDITABLE`])
+/// on authority `id` where they differ, with one `authority_update`
+/// audit row whose `before_ref`/`after_ref` carry the changed columns
+/// (`name=Land` → `name=…`). Opens no transaction: callers already hold
+/// one (a pack load) or wrap it with [`in_transaction`]. Returns the
+/// changed column names (empty: nothing to do, no audit row).
+pub fn edit_authority(
+    conn: &Connection,
+    id: i64,
+    fields: &[(&str, &str)],
+    actor: &str,
+    at: i64,
+) -> Result<Vec<String>> {
+    let mut changed = Vec::new();
+    let mut before = Vec::new();
+    let mut after = Vec::new();
+    for (column, value) in fields {
+        if !AUTHORITY_EDITABLE.contains(column) {
+            return Err(HandbookError::Db(rusqlite::Error::InvalidColumnName(
+                (*column).to_string(),
+            )));
+        }
+        let current: String = conn.query_row(
+            &format!("SELECT {column} FROM authority WHERE id = ?1"),
+            [id],
+            |row| row.get(0),
+        )?;
+        if current == *value {
+            continue;
+        }
+        conn.execute(
+            &format!("UPDATE authority SET {column} = ?1 WHERE id = ?2"),
+            rusqlite::params![value, id],
+        )?;
+        before.push(format!("{column}={current}"));
+        after.push(format!("{column}={value}"));
+        changed.push((*column).to_string());
+    }
+    if !changed.is_empty() {
+        insert_audit(
+            conn,
+            at,
+            actor,
+            "authority_update",
+            "authority",
+            id,
+            &before.join("\n"),
+            &after.join("\n"),
+            &changed.join(","),
+        )?;
+    }
+    Ok(changed)
+}
+
+/// Hide (`hidden_at = at`) or unhide authority `id`, with one
+/// `authority_hide` / `authority_unhide` audit row naming `reason`.
+/// Hiding also closes the row's open and batched pack tasks (`pack:*`
+/// dedup keys: checks of names and links nobody will publish) as
+/// `rejected`; in-progress work is left to its owner. No transaction of
+/// its own. Returns false when the row was already in that state.
+pub fn set_authority_hidden(
+    conn: &Connection,
+    id: i64,
+    hidden: bool,
+    actor: &str,
+    at: i64,
+    reason: &str,
+) -> Result<bool> {
+    let was_hidden: bool = conn.query_row(
+        "SELECT hidden_at IS NOT NULL FROM authority WHERE id = ?1",
+        [id],
+        |row| row.get(0),
+    )?;
+    if was_hidden == hidden {
+        return Ok(false);
+    }
+    if hidden {
+        conn.execute(
+            "UPDATE authority SET hidden_at = ?1 WHERE id = ?2",
+            [at, id],
+        )?;
+        conn.execute(
+            "UPDATE task SET status = 'rejected', resolved_at = ?1,
+                    resolution = 'authority hidden'
+             WHERE authority_id = ?2 AND status IN ('open', 'batched')
+               AND dedup_key LIKE 'pack:%'",
+            [at, id],
+        )?;
+    } else {
+        conn.execute("UPDATE authority SET hidden_at = NULL WHERE id = ?1", [id])?;
+    }
+    let action = if hidden {
+        "authority_hide"
+    } else {
+        "authority_unhide"
+    };
+    insert_audit(conn, at, actor, action, "authority", id, "", "", reason)?;
+    Ok(true)
 }
 
 /// Delete voice-audio captures older than `VOICE_RETENTION_DAYS`.
@@ -2006,7 +2178,7 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 12);
+        assert_eq!(version, SCHEMA_VERSION);
         assert_eq!(fact_rows(&conn), facts_before);
         assert_eq!(fk_list(&conn, "fact"), fact_fks_before);
         assert_eq!(fk_list(&conn, "authority"), authority_fks_before);
@@ -2592,5 +2764,210 @@ mod tests {
         assert_eq!(got.option_a_format, "a4");
         assert_eq!(got.updated_at, 200);
         assert!(get_label_defaults(&conn, "cust-2").unwrap().is_none());
+    }
+
+    /// A v12 store exactly as prod holds it before 013: baseline + 012.
+    fn v12_database() -> (tempfile::TempDir, Store, Connection) {
+        let (dir, store, conn) = v11_database();
+        conn.execute_batch(include_str!("../migrations/012_service_notice.sql"))
+            .unwrap();
+        conn.pragma_update(None, "user_version", 12).unwrap();
+        (dir, store, conn)
+    }
+
+    fn hidden_at(conn: &Connection, slug: &str) -> Option<i64> {
+        conn.query_row(
+            "SELECT hidden_at FROM authority WHERE slug = ?1",
+            [slug],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn migrate_v12_to_v13_hides_the_mail_inbox_and_keeps_rows() {
+        let (_dir, _store, conn) = v12_database();
+        for (slug, name) in [("usa-wa-sos", "WA SoS"), ("mail-inbox", "Mail inbox")] {
+            add_authority(
+                &conn,
+                &NewAuthority {
+                    kind: "office",
+                    country: "",
+                    region: "",
+                    name,
+                    slug,
+                    actor: "test",
+                    at: 1,
+                },
+            )
+            .unwrap();
+        }
+        let ids_before: Vec<(i64, String)> = conn
+            .prepare("SELECT id, slug FROM authority ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+
+        migrate(&conn).unwrap();
+
+        let version: i32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 13);
+        let ids_after: Vec<(i64, String)> = conn
+            .prepare("SELECT id, slug FROM authority ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(ids_after, ids_before);
+        assert!(hidden_at(&conn, "mail-inbox").is_some());
+        assert_eq!(hidden_at(&conn, "usa-wa-sos"), None);
+        let hides: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'authority_hide'
+                 AND actor = 'migration-013'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(hides, 1);
+        // `level` is a closed list; the path table exists for pack loads.
+        conn.execute(
+            "UPDATE authority SET level = 'federal' WHERE slug = 'usa-wa-sos'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE authority SET level = 'galactic' WHERE slug = 'usa-wa-sos'",
+            [],
+        )
+        .expect_err("unknown level");
+        conn.execute(
+            "INSERT INTO authority_path(path, authority_slug, is_primary)
+             VALUES ('usa/washington', 'usa-wa-sos', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO authority_scope(authority_id, doc_class, issued_in, source_uri)
+             SELECT id, 'vital_record', 'US-WA', 'https://example.gov/' FROM authority
+             WHERE slug = 'usa-wa-sos'",
+            [],
+        )
+        .unwrap();
+        // Re-running is a no-op (no second audit row).
+        migrate(&conn).unwrap();
+        let hides_again: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'authority_hide'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(hides_again, 1);
+    }
+
+    #[test]
+    fn edit_and_hide_write_one_audit_row_each_and_close_pack_tasks() {
+        let (_dir, _store, conn) = migrated();
+        let id = add_authority(
+            &conn,
+            &NewAuthority {
+                kind: "country",
+                country: "Germany",
+                region: "",
+                name: "Land",
+                slug: "de-ca-1",
+                actor: "test",
+                at: 1,
+            },
+        )
+        .unwrap();
+        for (key, status) in [
+            ("pack:DE:obs:1", "open"),
+            ("pack:DE:step:x", "in_progress"),
+            ("call:de", "open"),
+        ] {
+            conn.execute(
+                "INSERT INTO task(authority_id, kind, title, status, dedup_key, created_at)
+                 VALUES (?1, 'validate_fact', 't', ?2, ?3, 1)",
+                rusqlite::params![id, status, key],
+            )
+            .unwrap();
+        }
+        let changed = edit_authority(
+            &conn,
+            id,
+            &[
+                ("name", "Germany — Competent Authority (Art. 6)"),
+                ("kind", "country"),
+            ],
+            "pack:DE",
+            2,
+        )
+        .unwrap();
+        assert_eq!(changed, vec!["name".to_string()]);
+        assert!(
+            edit_authority(
+                &conn,
+                id,
+                &[("name", "Germany — Competent Authority (Art. 6)")],
+                "x",
+                3
+            )
+            .unwrap()
+            .is_empty()
+        );
+        edit_authority(&conn, id, &[("slug", "x")], "x", 3).expect_err("slug is not editable");
+        let (before, after): (String, String) = conn
+            .query_row(
+                "SELECT before_ref, after_ref FROM audit WHERE action = 'authority_update'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(before, "name=Land");
+        assert_eq!(after, "name=Germany — Competent Authority (Art. 6)");
+
+        assert!(set_authority_hidden(&conn, id, true, "pack:DE", 4, "fragment").unwrap());
+        assert!(!set_authority_hidden(&conn, id, true, "pack:DE", 5, "again").unwrap());
+        assert_eq!(hidden_at(&conn, "de-ca-1"), Some(4));
+        let statuses: Vec<(String, String)> = conn
+            .prepare("SELECT dedup_key, status FROM task ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            statuses,
+            [
+                ("pack:DE:obs:1".to_string(), "rejected".to_string()),
+                ("pack:DE:step:x".to_string(), "in_progress".to_string()),
+                ("call:de".to_string(), "open".to_string()),
+            ]
+        );
+        assert!(set_authority_hidden(&conn, id, false, "staff:1", 6, "real office").unwrap());
+        assert_eq!(hidden_at(&conn, "de-ca-1"), None);
+        let actions: Vec<String> = conn
+            .prepare("SELECT action FROM audit WHERE entity_id = ?1 ORDER BY id")
+            .unwrap()
+            .query_map([id], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            actions,
+            [
+                "authority_add",
+                "authority_update",
+                "authority_hide",
+                "authority_unhide"
+            ]
+        );
     }
 }

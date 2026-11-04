@@ -1,6 +1,7 @@
 {
   "pack": "MD",
   "version": 1,
+  "iso2": "MD",
   "title": "Republic of Moldova — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,82 +9,90 @@
       "country": "Republic of Moldova",
       "region": "",
       "name": "For administrative documents:",
-      "slug": "md-ca-1"
+      "slug": "md-ca-1",
+      "hidden": true
+    },
+    {
+      "kind": "country",
+      "country": "Republic of Moldova",
+      "region": "",
+      "name": "Republic of Moldova — Competent Authority (Art. 6)",
+      "slug": "md-ca"
     }
   ],
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Republic of Moldova (staff capture pending)."
     },
     {
       "name": "www.evisa.gov.md",
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Republic of Moldova (staff capture pending)."
     },
     {
       "name": "www.justice.gov.md",
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Republic of Moldova (staff capture pending)."
     },
     {
       "name": "apostila.gov.md",
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Republic of Moldova (staff capture pending)."
     },
     {
       "name": "www.apostila.gov.md",
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Republic of Moldova (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=112&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Republic of Moldova (citation page; staff capture pending)."
     },
     {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "kind": "website_official",
       "uri": "http://www.evisa.gov.md",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=697 (needs staff capture; W-7)."
     },
     {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "kind": "website_official",
       "uri": "http://www.justice.gov.md/",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=112&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=697 (needs staff capture; W-7)."
     },
     {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "kind": "website_official",
       "uri": "https://apostila.gov.md",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=112&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=697 (needs staff capture; W-7)."
     },
     {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "kind": "website_official",
       "uri": "http://www.apostila.gov.md/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=112&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=697 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
     {
       "id": "md-index",
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Republic of Moldova against a staff capture of the cited HCCH pages (deterministic).",
@@ -93,7 +102,7 @@
   ],
   "observations": [
     {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Republic of Moldova is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
@@ -101,15 +110,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "md-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: For administrative documents:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=697",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.evisa.gov.md as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=697",
@@ -117,26 +118,26 @@
       "validation": "W-7"
     },
     {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.justice.gov.md/ as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=112&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=697",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://apostila.gov.md as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=112&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=697",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "md-ca-1",
+      "authority": "md-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.apostila.gov.md/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=112&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=697",
       "status": "needs_review",
       "validation": "W-7"
     }

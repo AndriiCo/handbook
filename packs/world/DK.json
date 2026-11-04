@@ -1,6 +1,7 @@
 {
   "pack": "DK",
   "version": 1,
+  "iso2": "DK",
   "title": "Denmark — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -45,7 +46,7 @@
       "kind": "website_official",
       "uri": "https://um.dk/en/travel-and-residence/legalisation-frontpage/legalisation%20danish/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=25&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=708 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -88,7 +89,7 @@
       "authority": "dk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://um.dk/en/travel-and-residence/legalisation-frontpage/legalisation%20danish/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=25&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=708",
       "status": "needs_review",
       "validation": "W-7"
     }

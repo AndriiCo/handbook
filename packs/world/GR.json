@@ -1,6 +1,7 @@
 {
   "pack": "GR",
   "version": 1,
+  "iso2": "GR",
   "title": "Greece — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -14,43 +15,49 @@
       "kind": "country",
       "country": "Greece",
       "region": "",
-      "name": "The Decentralized Administrations, for all documents issued by:",
-      "slug": "gr-ca-2"
+      "name": "The Decentralized Administrations",
+      "slug": "gr-ca-2",
+      "source_name": "The Decentralized Administrations, for all documents issued by:"
     },
     {
       "kind": "country",
       "country": "Greece",
       "region": "",
       "name": "The public civil services of the Regions that do not fall under the competence of the Regional Self Governement",
-      "slug": "gr-ca-3"
+      "slug": "gr-ca-3",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Greece",
       "region": "",
       "name": "Legal Entities of Public Law",
-      "slug": "gr-ca-4"
+      "slug": "gr-ca-4",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Greece",
       "region": "",
       "name": "First degree Local Governement Organizations",
-      "slug": "gr-ca-5"
+      "slug": "gr-ca-5",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Greece",
       "region": "",
       "name": "The Registry Offices.",
-      "slug": "gr-ca-6"
+      "slug": "gr-ca-6",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Greece",
       "region": "",
-      "name": "For judicial documents, the First Instance Court of the region where the issuing authority is seated.",
-      "slug": "gr-ca-7"
+      "name": "The First Instance Court of the region where the issuing authority is seated",
+      "slug": "gr-ca-7",
+      "source_name": "For judicial documents, the First Instance Court of the region where the issuing authority is seated."
     }
   ],
   "domains": [
@@ -115,38 +122,6 @@
       "authority": "gr-ca-2",
       "topic": "contacts",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Decentralized Administrations, for all documents issued by:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "gr-ca-3",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The public civil services of the Regions that do not fall under the competence of the Regional Self Governement.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "gr-ca-4",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Legal Entities of Public Law.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "gr-ca-5",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: First degree Local Governement Organizations.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "gr-ca-6",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Registry Offices..",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=323",
       "status": "needs_review",
       "validation": "W-7"

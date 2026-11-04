@@ -1,14 +1,16 @@
 {
   "pack": "VN",
   "version": 1,
+  "iso2": "VN",
   "title": "Viet Nam — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "Viet Nam",
       "region": "",
-      "name": "The Ministry of Foreign Affairs of the Socialist Republic of Viet Nam:",
-      "slug": "vn-ca-1"
+      "name": "The Ministry of Foreign Affairs of the Socialist Republic of Viet Nam",
+      "slug": "vn-ca-1",
+      "source_name": "The Ministry of Foreign Affairs of the Socialist Republic of Viet Nam:"
     },
     {
       "kind": "country",
@@ -40,7 +42,7 @@
     },
     {
       "name": "www.mofahcm.gov.vn",
-      "authority": "vn-ca-2",
+      "authority": "vn-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Viet Nam (staff capture pending)."
     }
@@ -61,7 +63,7 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1240 (needs staff capture; W-7)."
     },
     {
-      "authority": "vn-ca-2",
+      "authority": "vn-ca-1",
       "kind": "website_official",
       "uri": "http://www.mofahcm.gov.vn",
       "cadence": "weekly",
@@ -121,7 +123,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "vn-ca-2",
+      "authority": "vn-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mofahcm.gov.vn as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1240",

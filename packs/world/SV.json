@@ -1,6 +1,7 @@
 {
   "pack": "SV",
   "version": 1,
+  "iso2": "SV",
   "title": "El Salvador — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -51,7 +52,7 @@
       "kind": "website_official",
       "uri": "https://rree.gob.sv/autenticas-y-apostillas/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=93&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=365 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -94,7 +95,7 @@
       "authority": "sv-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://rree.gob.sv/autenticas-y-apostillas/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=93&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=365",
       "status": "needs_review",
       "validation": "W-7"
     }

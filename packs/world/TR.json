@@ -1,6 +1,7 @@
 {
   "pack": "TR",
   "version": 1,
+  "iso2": "TR",
   "title": "Türkiye — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,54 +9,58 @@
       "country": "Türkiye",
       "region": "",
       "name": "Administrative documents:",
-      "slug": "tr-ca-1"
+      "slug": "tr-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Türkiye",
       "region": "",
       "name": "Judicial documents:",
-      "slug": "tr-ca-2"
+      "slug": "tr-ca-2",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Türkiye",
       "region": "",
-      "name": "in provinces: Governor, Head Official of the District, Chief Secretary",
-      "slug": "tr-ca-3"
+      "name": "Governor, Head Official of the District, Chief Secretary",
+      "slug": "tr-ca-3",
+      "source_name": "in provinces: Governor, Head Official of the District, Chief Secretary"
     },
     {
       "kind": "country",
       "country": "Türkiye",
       "region": "",
-      "name": "in towns: Head Official of the District",
-      "slug": "tr-ca-4"
+      "name": "Head Official of the District",
+      "slug": "tr-ca-4",
+      "source_name": "in towns: Head Official of the District"
     }
   ],
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "tr-ca-1",
+      "authority": "tr-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Türkiye (staff capture pending)."
     },
     {
       "name": "www.adalet.gov.tr",
-      "authority": "tr-ca-1",
+      "authority": "tr-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Türkiye (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "tr-ca-1",
+      "authority": "tr-ca-3",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=74&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Türkiye (citation page; staff capture pending)."
     },
     {
-      "authority": "tr-ca-1",
+      "authority": "tr-ca-3",
       "kind": "website_official",
       "uri": "http://www.adalet.gov.tr/",
       "cadence": "weekly",
@@ -65,7 +70,7 @@
   "chain_steps": [
     {
       "id": "tr-index",
-      "authority": "tr-ca-1",
+      "authority": "tr-ca-3",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Türkiye against a staff capture of the cited HCCH pages (deterministic).",
@@ -75,26 +80,10 @@
   ],
   "observations": [
     {
-      "authority": "tr-ca-1",
+      "authority": "tr-ca-3",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Türkiye is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "tr-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Administrative documents:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=350",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "tr-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Judicial documents:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=350",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -115,7 +104,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "tr-ca-1",
+      "authority": "tr-ca-3",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.adalet.gov.tr/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=350",

@@ -1,21 +1,24 @@
 {
   "pack": "CN",
   "version": 1,
+  "iso2": "CN",
   "title": "China (the People's Republic of) — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "China (the People's Republic of)",
       "region": "",
-      "name": "the Secretary for Administration and Justice",
-      "slug": "cn-ca-1"
+      "name": "The Secretary for Administration and Justice",
+      "slug": "cn-ca-1",
+      "source_name": "the Secretary for Administration and Justice"
     },
     {
       "kind": "country",
       "country": "China (the People's Republic of)",
       "region": "",
-      "name": "the Director and the Deputy Directors of Justice Affairs Department",
-      "slug": "cn-ca-2"
+      "name": "The Director and the Deputy Directors of Justice Affairs Department",
+      "slug": "cn-ca-2",
+      "source_name": "the Director and the Deputy Directors of Justice Affairs Department"
     }
   ],
   "domains": [
@@ -54,7 +57,7 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=634 (needs staff capture; W-7)."
     },
     {
-      "authority": "cn-ca-2",
+      "authority": "cn-ca-1",
       "kind": "website_official",
       "uri": "http://www.dsaj.gov.mo/ContentFrame_pt.aspx?ModuleName=Content/pt/dj/dj01_pt.ascx",
       "cadence": "weekly",
@@ -65,14 +68,14 @@
       "kind": "website_official",
       "uri": "https://www.judiciary.hk",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=30&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=634 (needs staff capture; W-7)."
     },
     {
       "authority": "cn-ca-1",
       "kind": "website_official",
       "uri": "https://www.judiciary.hk/en/court_services_facilities/apostille.html",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=30&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=634 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -120,7 +123,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "cn-ca-2",
+      "authority": "cn-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.dsaj.gov.mo/ContentFrame_pt.aspx?ModuleName=Content/pt/dj/dj01_pt.ascx as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=634",
@@ -131,7 +134,7 @@
       "authority": "cn-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.judiciary.hk as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=30&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=634",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -139,7 +142,7 @@
       "authority": "cn-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.judiciary.hk/en/court_services_facilities/apostille.html as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=30&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=634",
       "status": "needs_review",
       "validation": "W-7"
     }

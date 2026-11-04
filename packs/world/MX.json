@@ -1,6 +1,7 @@
 {
   "pack": "MX",
   "version": 1,
+  "iso2": "MX",
   "title": "Mexico — apostille issuing offices, one per jurisdiction (SA-17 North-America slice, needs review)",
   "authorities": [
     {
@@ -8,231 +9,300 @@
       "country": "Mexico",
       "region": "",
       "name": "Secretaría de Gobernación — Dirección de Coordinación Política con los Poderes de la Unión",
-      "slug": "mx-segob-fed"
+      "slug": "mx-segob-fed",
+      "level": "federal",
+      "aliases": [
+        "México",
+        "Estados Unidos Mexicanos"
+      ]
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Aguascalientes",
       "name": "Gobierno del Estado de Aguascalientes — apostille issuing office",
-      "slug": "mx-aguascalientes-sg"
+      "slug": "mx-aguascalientes-sg",
+      "subdivision": "MX-AGU",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Baja California",
       "name": "Gobierno del Estado de Baja California — apostille issuing office",
-      "slug": "mx-bajacalifornia-sg"
+      "slug": "mx-bajacalifornia-sg",
+      "subdivision": "MX-BCN",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Baja California Sur",
       "name": "Gobierno del Estado de Baja California Sur — apostille issuing office",
-      "slug": "mx-bajacaliforniasur-sg"
+      "slug": "mx-bajacaliforniasur-sg",
+      "subdivision": "MX-BCS",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Campeche",
       "name": "Gobierno del Estado de Campeche — apostille issuing office",
-      "slug": "mx-campeche-sg"
+      "slug": "mx-campeche-sg",
+      "subdivision": "MX-CAM",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Chiapas",
       "name": "Gobierno del Estado de Chiapas — apostille issuing office",
-      "slug": "mx-chiapas-sg"
+      "slug": "mx-chiapas-sg",
+      "subdivision": "MX-CHP",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Chihuahua",
       "name": "Gobierno del Estado de Chihuahua — apostille issuing office",
-      "slug": "mx-chihuahua-sg"
+      "slug": "mx-chihuahua-sg",
+      "subdivision": "MX-CHH",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Coahuila",
       "name": "Gobierno del Estado de Coahuila — apostille issuing office",
-      "slug": "mx-coahuila-sg"
+      "slug": "mx-coahuila-sg",
+      "subdivision": "MX-COA",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Colima",
       "name": "Gobierno del Estado de Colima — apostille issuing office",
-      "slug": "mx-colima-sg"
+      "slug": "mx-colima-sg",
+      "subdivision": "MX-COL",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Durango",
       "name": "Gobierno del Estado de Durango — apostille issuing office",
-      "slug": "mx-durango-sg"
+      "slug": "mx-durango-sg",
+      "subdivision": "MX-DUR",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Guanajuato",
       "name": "Gobierno del Estado de Guanajuato — apostille issuing office",
-      "slug": "mx-guanajuato-sg"
+      "slug": "mx-guanajuato-sg",
+      "subdivision": "MX-GUA",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Guerrero",
       "name": "Gobierno del Estado de Guerrero — apostille issuing office",
-      "slug": "mx-guerrero-sg"
+      "slug": "mx-guerrero-sg",
+      "subdivision": "MX-GRO",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Hidalgo",
       "name": "Gobierno del Estado de Hidalgo — apostille issuing office",
-      "slug": "mx-hidalgo-sg"
+      "slug": "mx-hidalgo-sg",
+      "subdivision": "MX-HID",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Jalisco",
       "name": "Gobierno del Estado de Jalisco — apostille issuing office",
-      "slug": "mx-jalisco-sg"
+      "slug": "mx-jalisco-sg",
+      "subdivision": "MX-JAL",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "México",
       "name": "Gobierno del Estado de México — apostille issuing office",
-      "slug": "mx-mexico-sg"
+      "slug": "mx-mexico-sg",
+      "subdivision": "MX-MEX",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Michoacán",
       "name": "Gobierno del Estado de Michoacán — apostille issuing office",
-      "slug": "mx-michoacan-sg"
+      "slug": "mx-michoacan-sg",
+      "subdivision": "MX-MIC",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Morelos",
       "name": "Gobierno del Estado de Morelos — apostille issuing office",
-      "slug": "mx-morelos-sg"
+      "slug": "mx-morelos-sg",
+      "subdivision": "MX-MOR",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Nayarit",
       "name": "Gobierno del Estado de Nayarit — apostille issuing office",
-      "slug": "mx-nayarit-sg"
+      "slug": "mx-nayarit-sg",
+      "subdivision": "MX-NAY",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Nuevo León",
       "name": "Gobierno del Estado de Nuevo León — apostille issuing office",
-      "slug": "mx-nuevoleon-sg"
+      "slug": "mx-nuevoleon-sg",
+      "subdivision": "MX-NLE",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Oaxaca",
       "name": "Gobierno del Estado de Oaxaca — apostille issuing office",
-      "slug": "mx-oaxaca-sg"
+      "slug": "mx-oaxaca-sg",
+      "subdivision": "MX-OAX",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Puebla",
       "name": "Gobierno del Estado de Puebla — apostille issuing office",
-      "slug": "mx-puebla-sg"
+      "slug": "mx-puebla-sg",
+      "subdivision": "MX-PUE",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Querétaro",
       "name": "Gobierno del Estado de Querétaro — apostille issuing office",
-      "slug": "mx-queretaro-sg"
+      "slug": "mx-queretaro-sg",
+      "subdivision": "MX-QUE",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Quintana Roo",
       "name": "Gobierno del Estado de Quintana Roo — apostille issuing office",
-      "slug": "mx-quintanaroo-sg"
+      "slug": "mx-quintanaroo-sg",
+      "subdivision": "MX-ROO",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "San Luis Potosí",
       "name": "Gobierno del Estado de San Luis Potosí — apostille issuing office",
-      "slug": "mx-sanluispotosi-sg"
+      "slug": "mx-sanluispotosi-sg",
+      "subdivision": "MX-SLP",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Sinaloa",
       "name": "Gobierno del Estado de Sinaloa — apostille issuing office",
-      "slug": "mx-sinaloa-sg"
+      "slug": "mx-sinaloa-sg",
+      "subdivision": "MX-SIN",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Sonora",
       "name": "Gobierno del Estado de Sonora — apostille issuing office",
-      "slug": "mx-sonora-sg"
+      "slug": "mx-sonora-sg",
+      "subdivision": "MX-SON",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Tabasco",
       "name": "Gobierno del Estado de Tabasco — apostille issuing office",
-      "slug": "mx-tabasco-sg"
+      "slug": "mx-tabasco-sg",
+      "subdivision": "MX-TAB",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Tamaulipas",
       "name": "Gobierno del Estado de Tamaulipas — apostille issuing office",
-      "slug": "mx-tamaulipas-sg"
+      "slug": "mx-tamaulipas-sg",
+      "subdivision": "MX-TAM",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Tlaxcala",
       "name": "Gobierno del Estado de Tlaxcala — apostille issuing office",
-      "slug": "mx-tlaxcala-sg"
+      "slug": "mx-tlaxcala-sg",
+      "subdivision": "MX-TLA",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Veracruz",
       "name": "Gobierno del Estado de Veracruz — apostille issuing office",
-      "slug": "mx-veracruz-sg"
+      "slug": "mx-veracruz-sg",
+      "subdivision": "MX-VER",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Yucatán",
       "name": "Gobierno del Estado de Yucatán — apostille issuing office",
-      "slug": "mx-yucatan-sg"
+      "slug": "mx-yucatan-sg",
+      "subdivision": "MX-YUC",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Zacatecas",
       "name": "Gobierno del Estado de Zacatecas — apostille issuing office",
-      "slug": "mx-zacatecas-sg"
+      "slug": "mx-zacatecas-sg",
+      "subdivision": "MX-ZAC",
+      "level": "state"
     },
     {
       "kind": "state",
       "country": "Mexico",
       "region": "Ciudad de México",
       "name": "Gobierno de la Ciudad de México — apostille issuing office",
-      "slug": "mx-ciudaddemexico-sg"
+      "slug": "mx-ciudaddemexico-sg",
+      "subdivision": "MX-CMX",
+      "level": "state"
     }
   ],
   "domains": [

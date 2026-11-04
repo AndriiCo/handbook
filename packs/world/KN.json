@@ -1,6 +1,7 @@
 {
   "pack": "KN",
   "version": 1,
+  "iso2": "KN",
   "title": "Saint Kitts and Nevis — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,14 +9,16 @@
       "country": "Saint Kitts and Nevis",
       "region": "",
       "name": "For Saint Kitts and Nevis or the Island of St Kitts:",
-      "slug": "kn-ca-1"
+      "slug": "kn-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Saint Kitts and Nevis",
       "region": "",
       "name": "For the Island of Nevis:",
-      "slug": "kn-ca-2"
+      "slug": "kn-ca-2",
+      "hidden": true
     },
     {
       "kind": "country",
@@ -35,19 +38,19 @@
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "kn-ca-1",
+      "authority": "kn-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Saint Kitts and Nevis (staff capture pending)."
     },
     {
       "name": "www.foreign.gov.kn",
-      "authority": "kn-ca-1",
+      "authority": "kn-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Saint Kitts and Nevis (staff capture pending)."
     },
     {
       "name": "www.nia.gov.kn",
-      "authority": "kn-ca-2",
+      "authority": "kn-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Saint Kitts and Nevis (staff capture pending)."
     },
@@ -60,21 +63,21 @@
   ],
   "watch": [
     {
-      "authority": "kn-ca-1",
+      "authority": "kn-ca-3",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=122&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Saint Kitts and Nevis (citation page; staff capture pending)."
     },
     {
-      "authority": "kn-ca-1",
+      "authority": "kn-ca-3",
       "kind": "website_official",
       "uri": "http://www.foreign.gov.kn",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=377 (needs staff capture; W-7)."
     },
     {
-      "authority": "kn-ca-2",
+      "authority": "kn-ca-3",
       "kind": "website_official",
       "uri": "http://www.nia.gov.kn",
       "cadence": "weekly",
@@ -91,7 +94,7 @@
   "chain_steps": [
     {
       "id": "kn-index",
-      "authority": "kn-ca-1",
+      "authority": "kn-ca-3",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Saint Kitts and Nevis against a staff capture of the cited HCCH pages (deterministic).",
@@ -101,26 +104,10 @@
   ],
   "observations": [
     {
-      "authority": "kn-ca-1",
+      "authority": "kn-ca-3",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Saint Kitts and Nevis is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "kn-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: For Saint Kitts and Nevis or the Island of St Kitts:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=377",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "kn-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: For the Island of Nevis:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=377",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -141,7 +128,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "kn-ca-1",
+      "authority": "kn-ca-3",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.foreign.gov.kn as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=377",
@@ -149,7 +136,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "kn-ca-2",
+      "authority": "kn-ca-3",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.nia.gov.kn as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=377",

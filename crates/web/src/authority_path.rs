@@ -18,6 +18,7 @@
 //! multi-segment route, and a browser-cached 301 would strand users.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{Query, State},
@@ -36,7 +37,7 @@ const MAX_SEGMENT_LEN: usize = 48;
 
 /// US states, DC and the territories with their own apostille
 /// authority: (name as `authority.region` spells it, postal code).
-const US_STATES: &[(&str, &str)] = &[
+pub(crate) const US_STATES: &[(&str, &str)] = &[
     ("Alabama", "al"),
     ("Alaska", "ak"),
     ("Arizona", "az"),
@@ -164,8 +165,10 @@ struct Row {
 }
 
 fn rows(conn: &Connection) -> rusqlite::Result<Vec<Row>> {
-    let mut stmt = conn
-        .prepare("SELECT slug, kind, country, region FROM authority WHERE id != 0 ORDER BY id")?;
+    let mut stmt = conn.prepare(
+        "SELECT slug, kind, country, region FROM authority
+             WHERE id != 0 AND hidden_at IS NULL ORDER BY id",
+    )?;
     stmt.query_map([], |r| {
         Ok(Row {
             slug: r.get(0)?,
@@ -270,6 +273,81 @@ pub fn all_paths(conn: &Connection) -> HashMap<String, Paths> {
     out
 }
 
+/// Every address, both ways: slug → [`Paths`], and address → slug.
+#[derive(Debug, Default)]
+pub struct PathIndex {
+    pub by_slug: HashMap<String, Paths>,
+    pub by_path: HashMap<String, String>,
+}
+
+impl PathIndex {
+    fn build(conn: &Connection) -> Self {
+        let by_slug = all_paths(conn);
+        let mut by_path = HashMap::new();
+        for (slug, p) in &by_slug {
+            by_path.insert(p.primary.clone(), slug.clone());
+            for alias in &p.aliases {
+                by_path.entry(alias.clone()).or_insert_with(|| slug.clone());
+            }
+        }
+        Self { by_slug, by_path }
+    }
+
+    /// The canonical address of `slug` (the slug when it has none).
+    #[must_use]
+    pub fn primary(&self, slug: &str) -> String {
+        self.by_slug
+            .get(slug)
+            .map_or_else(|| slug.to_string(), |p| p.primary.clone())
+    }
+}
+
+/// What changes an address: row count and ids, hidden rows, the
+/// newest authority audit row (every add, edit and hide writes one),
+/// and the explicit path rows. One indexed read per request.
+type Stamp = (i64, i64, i64, i64, String);
+
+fn stamp(conn: &Connection) -> Option<Stamp> {
+    conn.query_row(
+        "SELECT (SELECT COUNT(*) FROM authority),
+                (SELECT COALESCE(MAX(id), 0) FROM authority),
+                (SELECT COUNT(*) FROM authority WHERE hidden_at IS NOT NULL),
+                (SELECT COALESCE(MAX(id), 0) FROM audit WHERE entity = 'authority'),
+                (SELECT COUNT(*) || '/' || COALESCE(MAX(rowid), 0) FROM authority_path)",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+    )
+    .ok()
+}
+
+/// Indexes per store file (tests open many stores in one process).
+static CACHE: Mutex<Vec<(String, Stamp, Arc<PathIndex>)>> = Mutex::new(Vec::new());
+const CACHE_STORES: usize = 8;
+
+/// Every address of every public authority, rebuilt only when
+/// [`stamp`] moves (P2-6: a dossier read no longer recomputes every
+/// path). Fail-soft like [`all_paths`].
+pub fn index(conn: &Connection) -> Arc<PathIndex> {
+    let key = conn.path().unwrap_or_default().to_string();
+    let Some(now) = stamp(conn).filter(|_| !key.is_empty()) else {
+        return Arc::new(PathIndex::build(conn));
+    };
+    if let Ok(cache) = CACHE.lock()
+        && let Some((_, _, hit)) = cache.iter().find(|(k, s, _)| *k == key && *s == now)
+    {
+        return hit.clone();
+    }
+    let built = Arc::new(PathIndex::build(conn));
+    if let Ok(mut cache) = CACHE.lock() {
+        cache.retain(|(k, _, _)| *k != key);
+        if cache.len() >= CACHE_STORES {
+            cache.remove(0);
+        }
+        cache.push((key, now, built.clone()));
+    }
+    built
+}
+
 /// What an address resolves to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Resolved {
@@ -282,12 +360,9 @@ pub struct Resolved {
 /// Resolve any address (path, alias or bare slug) to its authority.
 pub fn resolve(conn: &Connection, raw: &str) -> Option<Resolved> {
     let path = normalize(raw)?;
-    let paths = all_paths(conn);
-    let slug = paths
-        .iter()
-        .find(|(_, p)| p.primary == path || p.aliases.contains(&path))
-        .map(|(slug, _)| slug.clone())?;
-    let entry = paths.get(&slug)?;
+    let index = index(conn);
+    let slug = index.by_path.get(&path)?.clone();
+    let entry = index.by_slug.get(&slug)?;
     Some(Resolved {
         canonical: entry.primary.clone(),
         aliases: entry.aliases.clone(),
@@ -295,34 +370,52 @@ pub fn resolve(conn: &Connection, raw: &str) -> Option<Resolved> {
     })
 }
 
-/// Breadcrumbs for a canonical path: one per prefix, linked when some
-/// authority's canonical address is that prefix.
+/// Breadcrumbs for a canonical path: one per prefix, linked to the
+/// dossier when some authority's canonical address is that prefix,
+/// else to the place page (`/in/usa`) when the prefix is a place.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Crumb {
     pub path: String,
     pub label: String,
     pub slug: Option<String>,
+    /// Place page address (`usa`) when no dossier owns the prefix.
+    pub location: Option<String>,
 }
 
 pub fn crumbs(conn: &Connection, canonical: &str) -> Vec<Crumb> {
-    let paths = all_paths(conn);
-    let names: HashMap<String, String> = conn
-        .prepare("SELECT slug, name FROM authority")
-        .and_then(|mut stmt| {
-            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect::<rusqlite::Result<HashMap<_, _>>>()
-        })
-        .unwrap_or_default();
+    let index = index(conn);
+    let name_of = |slug: &str| -> Option<String> {
+        conn.query_row(
+            "SELECT name FROM authority WHERE slug = ?1 AND hidden_at IS NULL",
+            [slug],
+            |r| r.get(0),
+        )
+        .ok()
+    };
     let segments: Vec<&str> = canonical.split('/').collect();
     let mut out = Vec::new();
     for depth in 1..=segments.len() {
         let prefix = segments[..depth].join("/");
-        let owner = paths
-            .iter()
-            .find(|(_, p)| p.primary == prefix)
-            .map(|(slug, _)| slug.clone());
+        let owner = index
+            .by_path
+            .get(&prefix)
+            .filter(|slug| {
+                index
+                    .by_slug
+                    .get(*slug)
+                    .is_some_and(|p| p.primary == prefix)
+            })
+            .cloned();
+        let location = owner
+            .is_none()
+            .then(|| crate::locations::locate(conn, &prefix))
+            .flatten();
         let label = match (&owner, depth) {
-            (Some(slug), _) => names.get(slug).cloned().unwrap_or_else(|| slug.clone()),
+            (Some(slug), _) => name_of(slug).unwrap_or_else(|| slug.clone()),
+            (None, _) if location.is_some() => location
+                .as_ref()
+                .map(|l| l.label.clone())
+                .unwrap_or_default(),
             (None, 1) if prefix == "usa" || prefix == "us" => "United States".to_string(),
             (None, 2) if segments[0] == "usa" || segments[0] == "us" => US_STATES
                 .iter()
@@ -337,6 +430,7 @@ pub fn crumbs(conn: &Connection, canonical: &str) -> Vec<Crumb> {
             path: prefix,
             label,
             slug: owner,
+            location: location.map(|l| l.path),
         });
     }
     out
@@ -348,8 +442,9 @@ pub struct ResolveQuery {
 }
 
 /// `GET /apostille/api/v1/authorities/resolve?path=us/wa` (public,
-/// model-free, one indexed read): `{slug, canonical, aliases, crumbs}`
-/// or 404 for an address nothing answers to.
+/// model-free, one indexed read): `{slug, canonical, aliases, crumbs}`;
+/// a place with no dossier of its own (`usa`) answers `{location}`;
+/// 404 for an address nothing answers to.
 pub async fn resolve_route(
     State(state): State<AppState>,
     Query(q): Query<ResolveQuery>,
@@ -368,11 +463,14 @@ pub async fn resolve_route(
             }))
             .into_response()
         }
-        None => (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "no authority at this address"})),
-        )
-            .into_response(),
+        None => match crate::locations::locate(&conn, &q.path) {
+            Some(location) => Json(json!({"location": location})).into_response(),
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "no authority at this address"})),
+            )
+                .into_response(),
+        },
     }
 }
 
@@ -496,7 +594,23 @@ mod tests {
             ]
         );
         assert_eq!(crumbs[0].slug, None);
+        // "United States" is a place page (P2-5), not dead text.
+        assert_eq!(crumbs[0].location.as_deref(), Some("usa"));
         assert_eq!(crumbs[1].slug.as_deref(), Some("usa-ny-dos"));
+    }
+
+    #[test]
+    fn hidden_rows_have_no_address() {
+        let (_dir, conn) = store();
+        conn.execute(
+            "UPDATE authority SET hidden_at = 1 WHERE slug = 'usa-ny-chemung-clerk'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(resolve(&conn, "usa/new_york/chemung"), None);
+        assert_eq!(resolve(&conn, "usa-ny-chemung-clerk"), None);
+        assert!(!all_paths(&conn).contains_key("usa-ny-chemung-clerk"));
+        assert!(resolve(&conn, "us/ny").is_some());
     }
 
     #[test]

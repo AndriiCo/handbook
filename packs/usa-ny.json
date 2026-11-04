@@ -3,9 +3,11 @@
         {
             "country": "USA",
             "kind": "state",
+            "level": "state",
             "name": "New York Department of State \u2014 Apostille & Authentication",
             "region": "New York",
-            "slug": "usa-ny-dos"
+            "slug": "usa-ny-dos",
+            "subdivision": "US-NY"
         }
     ],
     "chain_steps": [
@@ -42,6 +44,7 @@
             "status": "unverified"
         }
     ],
+    "iso2": "US",
     "observations": [
         {
             "authority": "usa-ny-dos",

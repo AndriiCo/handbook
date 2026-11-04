@@ -1,6 +1,7 @@
 {
   "pack": "NO",
   "version": 1,
+  "iso2": "NO",
   "title": "Norway — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -33,7 +34,7 @@
     },
     {
       "name": "www.regjeringen.no",
-      "authority": "no-ca-2",
+      "authority": "no-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Norway (staff capture pending)."
     }
@@ -54,7 +55,7 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=337 (needs staff capture; W-7)."
     },
     {
-      "authority": "no-ca-2",
+      "authority": "no-ca-1",
       "kind": "website_official",
       "uri": "https://www.regjeringen.no/en/dep/ud/id833/",
       "cadence": "weekly",
@@ -65,7 +66,7 @@
       "kind": "website_official",
       "uri": "https://www.regjeringen.no/en/dokumenter/legalisation-mfa/id752911/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=58&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=337 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -113,7 +114,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "no-ca-2",
+      "authority": "no-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.regjeringen.no/en/dep/ud/id833/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=337",
@@ -124,7 +125,7 @@
       "authority": "no-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.regjeringen.no/en/dokumenter/legalisation-mfa/id752911/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=58&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=337",
       "status": "needs_review",
       "validation": "W-7"
     }

@@ -1,6 +1,7 @@
 {
   "pack": "AD",
   "version": 1,
+  "iso2": "AD",
   "title": "Andorra — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -61,13 +62,13 @@
     },
     {
       "name": "www.amb-andorre.ad",
-      "authority": "ad-ca-2",
+      "authority": "ad-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Andorra (staff capture pending)."
     },
     {
       "name": "www.tramits.ad",
-      "authority": "ad-ca-3",
+      "authority": "ad-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Andorra (staff capture pending)."
     }
@@ -88,14 +89,14 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=355 (needs staff capture; W-7)."
     },
     {
-      "authority": "ad-ca-2",
+      "authority": "ad-ca-1",
       "kind": "website_official",
       "uri": "http://www.amb-andorre.ad/legalitzaciosig.pdf",
       "cadence": "weekly",
       "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=355 (needs staff capture; W-7)."
     },
     {
-      "authority": "ad-ca-3",
+      "authority": "ad-ca-1",
       "kind": "website_official",
       "uri": "http://www.tramits.ad/",
       "cadence": "weekly",
@@ -179,7 +180,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "ad-ca-2",
+      "authority": "ad-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.amb-andorre.ad/legalitzaciosig.pdf as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",
@@ -187,7 +188,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "ad-ca-3",
+      "authority": "ad-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.tramits.ad/ as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=355",

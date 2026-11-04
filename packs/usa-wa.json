@@ -3,9 +3,11 @@
         {
             "country": "USA",
             "kind": "state",
+            "level": "state",
             "name": "Washington Secretary of State \u2014 Apostilles & Authentications",
             "region": "Washington",
-            "slug": "usa-wa-sos"
+            "slug": "usa-wa-sos",
+            "subdivision": "US-WA"
         }
     ],
     "chain_steps": [
@@ -36,6 +38,7 @@
             "status": "unverified"
         }
     ],
+    "iso2": "US",
     "observations": [
         {
             "authority": "usa-wa-sos",

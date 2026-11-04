@@ -53,6 +53,43 @@ add a pack here, run `cargo xtask packs-validate`, then
 }
 ```
 
+## Schema additions (v2, all optional; still `"version": 1`)
+
+Pack level: `"iso2": "DE"` (ISO 3166-1) applies to every authority.
+Per authority, beside `kind/country/region/name/slug`:
+
+```jsonc
+{
+  "hidden": true,                 // hide from every public read; false unhides; absent leaves it
+  "merges_into": "usa-wa-sos",    // this entry IS another pack's office: no row of its own,
+                                  // its links/tasks/routes attach there (replaces slug sharing)
+  "iso2": "US", "subdivision": "US-WA",   // ISO 3166-1 / 3166-2
+  "level": "state",               // federal | state | regional | local | consular
+  "name_en": "…", "aliases": ["Bayern"],  // searched beside `name`
+  "paths": ["usa/new_york/chemung"],      // readable addresses, primary first
+  "scope": [                      // document routes → authority_scope rows + one review task
+    {"doc_class": "vital_record", "issued_in": "US-WA", "prereq": "…",
+     "source_uri": "https://…"}   // doc_class: vital_record | state_court | federal_court |
+  ],                              // notarized_private | company | state_agency |
+                                  // federal_agency | education | fbi_check
+  "source_name": "Land"           // the extracted text a curated `name` replaced
+}
+```
+
+A load brings an existing slug in line with its pack (name, kind,
+place, v2 fields) with one audited `authority_update` row, so a
+corrected pack fixes production. A route stays unverified on the
+place pages (`/in/usa/washington`) until staff accept a `jurisdiction`
+fact `doc_rule: <doc_class> …` for that office; packs never write facts.
+
+`packs-validate` walks the whole tree (`packs/`, `packs/world/`,
+`packs/world-nonparty/`): a slug has one owning pack, every
+`merges_into` target exists, and every public name passes the name
+lint (no lowercase start, no trailing `:`/`,`, no phone, fax, e-mail,
+postcode or street line, more than 6 characters). A fragment that
+names no office is kept with `"hidden": true` so the load hides the
+row it once created.
+
 Vocabularies: `kind` per migration 005 (`authority.kind`,
 `source.kind`); `topic` must be one of the 25 `contracts::Topic`
 strings; `cadence` is `hourly|daily|weekly`; every `uri`/`source_uri`
@@ -93,5 +130,5 @@ federal entities + SEGOB/DICOPPU federal; Canada 13
 provinces/territories + Global Affairs Canada federal. Every
 authority cites its official site in `watch[]` + `observations[]`;
 every `chain_steps[]`/`observations[]` entry is `needs_review`
-(staff capture pending). Validate with
-`cargo xtask packs-validate --packs packs/world`.
+(staff capture pending). Validate with `cargo xtask packs-validate` (the whole tree). These
+three are hand-built: `world-index --live` never rewrites them.

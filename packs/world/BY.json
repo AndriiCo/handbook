@@ -1,6 +1,7 @@
 {
   "pack": "BY",
   "version": 1,
+  "iso2": "BY",
   "title": "Belarus — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -54,19 +55,19 @@
     },
     {
       "name": "www.minedu.unibel.by",
-      "authority": "by-ca-2",
+      "authority": "by-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Belarus (staff capture pending)."
     },
     {
       "name": "archives.gov.by",
-      "authority": "by-ca-3",
+      "authority": "by-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Belarus (staff capture pending)."
     },
     {
       "name": "www.mfa.gov.by",
-      "authority": "by-ca-4",
+      "authority": "by-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Belarus (staff capture pending)."
     }
@@ -87,21 +88,21 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=309 (needs staff capture; W-7)."
     },
     {
-      "authority": "by-ca-2",
+      "authority": "by-ca-1",
       "kind": "website_official",
       "uri": "http://www.minedu.unibel.by/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=309 (needs staff capture; W-7)."
     },
     {
-      "authority": "by-ca-3",
+      "authority": "by-ca-1",
       "kind": "website_official",
       "uri": "http://archives.gov.by/eindex.htm",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=309 (needs staff capture; W-7)."
     },
     {
-      "authority": "by-ca-4",
+      "authority": "by-ca-1",
       "kind": "website_official",
       "uri": "http://www.mfa.gov.by/",
       "cadence": "weekly",
@@ -177,7 +178,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "by-ca-2",
+      "authority": "by-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minedu.unibel.by/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
@@ -185,7 +186,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "by-ca-3",
+      "authority": "by-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://archives.gov.by/eindex.htm as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",
@@ -193,7 +194,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "by-ca-4",
+      "authority": "by-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mfa.gov.by/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=309",

@@ -1,6 +1,7 @@
 {
   "pack": "ES",
   "version": 1,
+  "iso2": "ES",
   "title": "Spain — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,14 +9,16 @@
       "country": "Spain",
       "region": "",
       "name": "\"[...] the competent officers and authorities designated for the purposes of the Apostille include:",
-      "slug": "es-ca-1"
+      "slug": "es-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
       "name": "For the Apostille of administrative documents, the following are designated:",
-      "slug": "es-ca-2"
+      "slug": "es-ca-2",
+      "hidden": true
     },
     {
       "kind": "country",
@@ -50,109 +53,119 @@
       "country": "Spain",
       "region": "",
       "name": "The authorities and offices mentioned in this Section may carry out, without distinction, the single legislation or Apostille of the documents mentioned in Article 1.2 of the [...] Royal Decree [1497/2011, dated 24 October, designating the competent officers and authorities to carry out the single legislation or Apostille (Official State Gazette No. 276, dated 16 November 2011)], regardless of where in Spain such documents were issued.",
-      "slug": "es-ca-7"
+      "slug": "es-ca-7",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
       "name": "Apostille of judicial documents: The power to carry out the single legislation or Apostille on judicial documents, regardless of the place of issuance in Spain of such documents, is vested in the following authorities (except as provided in Paragraph 4 hereof):",
-      "slug": "es-ca-8"
+      "slug": "es-ca-8",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
       "name": "Governance Secretaries of the High Courts of Justice (Secretarios de Gobierno de los Tribunales Superiores de Justicia) and of the Cities of Ceuta and Melilla, or their legal deputies, as well as the officers in whom the latter may delegate, within the respective Governance Secretariat",
-      "slug": "es-ca-9"
+      "slug": "es-ca-9",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
       "name": "The Head of the Unit of the Ministry of Justice in whom, at any particular time, the powers in the field of informing and assisting citizens have been vested or whoever may substitute him legally, as well as those persons in whom the former may delegate.",
-      "slug": "es-ca-10"
+      "slug": "es-ca-10",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
       "name": "The Territorial Managers of the Territorial Management Bureaux (Gerencias Territoriales) that the Ministry of Justice has throughout Spain or their legal deputies, or those persons in whom the former may delegate, within the aforesaid Bureaux.",
-      "slug": "es-ca-11"
+      "slug": "es-ca-11",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
       "name": "Apostille of notarial documents: The power is vested in the Deans of the Notarial Colleges or those acting in lieu thereof, pursuant to the regulations, or in those Public Notaries in whom the former may delegate, regardless of where in Spain such documents were issued.",
-      "slug": "es-ca-12"
+      "slug": "es-ca-12",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
-      "name": "Apostille of documents issued by judicial authorities or officers of the Supreme Court and the National High Court: Only the Governance Secretary (Secretario de Gobierno) of the relevant Court for documents issued by the Court in question or their legal deputies as well as the officers in whom the latter may delegate are competent.",
-      "slug": "es-ca-13"
+      "name": "Governance Secretary (Secretario de Gobierno) of the relevant Court",
+      "slug": "es-ca-13",
+      "source_name": "Apostille of documents issued by judicial authorities or officers of the Supreme Court and the National High Court: Only the Governance Secretary (Secretario de Gobierno) of the relevant Court for documents issued by the Court in question or their legal deputies as well as the officers in whom the latter may delegate are competent."
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
       "name": "Apostille of other public documents: the remaining public documents may be the object of the single legalisation or Apostille, at the citizen's choice and both on paper or electronically, by any of the authorities mentioned in Section 1 above.",
-      "slug": "es-ca-14"
+      "slug": "es-ca-14",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
       "name": "Likewise, the aforesaid Royal Decree establishes and regulates in Chapter II, the form and register of the Apostille, whether on paper or in electronic format.",
-      "slug": "es-ca-15"
+      "slug": "es-ca-15",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Spain",
       "region": "",
       "name": "The Sole Transitional Provision of the aforesaid Royal Decree establishes that the Apostille of the documents issued by the Civil Register shall be regulated pursuant to the provisions contained in Article 2 thereof (Apostille of Judicial Documents) until the entry unto force of Act 20/2011, dated 21 July, on the Civil register, and shall be regulated thereafter by Article 1 of the Royal Decree (Apostille of Administrative Documents).\"",
-      "slug": "es-ca-16"
+      "slug": "es-ca-16",
+      "hidden": true
     }
   ],
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "es-ca-1",
+      "authority": "es-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Spain (staff capture pending)."
     },
     {
       "name": "www.mjusticia.es",
-      "authority": "es-ca-1",
+      "authority": "es-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Spain (staff capture pending)."
     },
     {
       "name": "www.mjusticia.gob.es",
-      "authority": "es-ca-2",
+      "authority": "es-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Spain (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "es-ca-1",
+      "authority": "es-ca-3",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=69&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Spain (citation page; staff capture pending)."
     },
     {
-      "authority": "es-ca-1",
+      "authority": "es-ca-3",
       "kind": "website_official",
       "uri": "http://www.mjusticia.es",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=346 (needs staff capture; W-7)."
     },
     {
-      "authority": "es-ca-2",
+      "authority": "es-ca-3",
       "kind": "website_official",
       "uri": "http://www.mjusticia.gob.es/cs/Satellite/es/1200666550200/Tramite_C/1215326297910/Detalle.html",
       "cadence": "weekly",
@@ -162,7 +175,7 @@
   "chain_steps": [
     {
       "id": "es-index",
-      "authority": "es-ca-1",
+      "authority": "es-ca-3",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Spain against a staff capture of the cited HCCH pages (deterministic).",
@@ -172,26 +185,10 @@
   ],
   "observations": [
     {
-      "authority": "es-ca-1",
+      "authority": "es-ca-3",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Spain is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: \"[...] the competent officers and authorities designated for the purposes of the Apostille include:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: For the Apostille of administrative documents, the following are designated:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -228,54 +225,6 @@
       "validation": "W-7"
     },
     {
-      "authority": "es-ca-7",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The authorities and offices mentioned in this Section may carry out, without distinction, the single legislation or Apostille of the documents mentioned in Article 1.2 of the [...] Royal Decree [1497/2011, dated 24 October, designating the competent officers and authorities to carry out the single legislation or Apostille (Official State Gazette No. 276, dated 16 November 2011)], regardless of where in Spain such documents were issued..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-8",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Apostille of judicial documents: The power to carry out the single legislation or Apostille on judicial documents, regardless of the place of issuance in Spain of such documents, is vested in the following authorities (except as provided in Paragraph 4 hereof):.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-9",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Governance Secretaries of the High Courts of Justice (Secretarios de Gobierno de los Tribunales Superiores de Justicia) and of the Cities of Ceuta and Melilla, or their legal deputies, as well as the officers in whom the latter may delegate, within the respective Governance Secretariat.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-10",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Head of the Unit of the Ministry of Justice in whom, at any particular time, the powers in the field of informing and assisting citizens have been vested or whoever may substitute him legally, as well as those persons in whom the former may delegate..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-11",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Territorial Managers of the Territorial Management Bureaux (Gerencias Territoriales) that the Ministry of Justice has throughout Spain or their legal deputies, or those persons in whom the former may delegate, within the aforesaid Bureaux..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-12",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Apostille of notarial documents: The power is vested in the Deans of the Notarial Colleges or those acting in lieu thereof, pursuant to the regulations, or in those Public Notaries in whom the former may delegate, regardless of where in Spain such documents were issued..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
       "authority": "es-ca-13",
       "topic": "contacts",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Apostille of documents issued by judicial authorities or officers of the Supreme Court and the National High Court: Only the Governance Secretary (Secretario de Gobierno) of the relevant Court for documents issued by the Court in question or their legal deputies as well as the officers in whom the latter may delegate are competent..",
@@ -284,31 +233,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "es-ca-14",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Apostille of other public documents: the remaining public documents may be the object of the single legalisation or Apostille, at the citizen's choice and both on paper or electronically, by any of the authorities mentioned in Section 1 above..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-15",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Likewise, the aforesaid Royal Decree establishes and regulates in Chapter II, the form and register of the Apostille, whether on paper or in electronic format..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-16",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Sole Transitional Provision of the aforesaid Royal Decree establishes that the Apostille of the documents issued by the Civil Register shall be regulated pursuant to the provisions contained in Article 2 thereof (Apostille of Judicial Documents) until the entry unto force of Act 20/2011, dated 21 July, on the Civil register, and shall be regulated thereafter by Article 1 of the Royal Decree (Apostille of Administrative Documents).\".",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "es-ca-1",
+      "authority": "es-ca-3",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mjusticia.es as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",
@@ -316,7 +241,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "es-ca-2",
+      "authority": "es-ca-3",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mjusticia.gob.es/cs/Satellite/es/1200666550200/Tramite_C/1215326297910/Detalle.html as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=346",

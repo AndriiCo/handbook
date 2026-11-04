@@ -1,14 +1,16 @@
 {
   "pack": "WS",
   "version": 1,
+  "iso2": "WS",
   "title": "Samoa — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "Samoa",
       "region": "",
-      "name": "The Chief Executive Officer, Ministry of Foreign Affairs and Trade*)",
-      "slug": "ws-ca-1"
+      "name": "The Chief Executive Officer, Ministry of Foreign Affairs and Trade",
+      "slug": "ws-ca-1",
+      "source_name": "The Chief Executive Officer, Ministry of Foreign Affairs and Trade*)"
     }
   ],
   "domains": [

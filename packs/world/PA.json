@@ -1,6 +1,7 @@
 {
   "pack": "PA",
   "version": 1,
+  "iso2": "PA",
   "title": "Panama — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,115 +9,123 @@
       "country": "Panama",
       "region": "",
       "name": "Respecto de los documentos autorizados por las autoridades o funcionarios judiciales competentes, el Secretario de la Corte Suprema de justicia o quienes lo sustituyan legalmente.",
-      "slug": "pa-ca-1"
+      "slug": "pa-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Panama",
       "region": "",
       "name": "Respecto de los documentos autorizados notarialmente y los documentos privados, cuyas firmas hayan sido autenticadas por Notario, los funcionarios de la Dirección de Servicios Administrativos del Ministerio de Gobierno y Justicia.",
-      "slug": "pa-ca-2"
+      "slug": "pa-ca-2",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Panama",
       "region": "",
       "name": "Respecto de los demás documentos emanados de cualquiera institución del Gobierno Central, instituciones autónomas o semiautónomas, municipales, policiales o del Ministerio Público, los funcionarios del Departamento Consular y Legalizaciones del Ministerio de Relaciones Exteriores.",
-      "slug": "pa-ca-3"
+      "slug": "pa-ca-3",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Panama",
       "region": "",
       "name": "Respecto de los demás documentos públicos se podrá utilizar indistintamente cualquiera de los tres procedimientos anteriores.",
-      "slug": "pa-ca-4"
+      "slug": "pa-ca-4",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Panama",
       "region": "",
-      "name": "Concerning the documents authorized by competent court authorities or officials, the Secretary of the Supreme Court or his legal substitutes.",
-      "slug": "pa-ca-5"
+      "name": "The Secretary of the Supreme Court",
+      "slug": "pa-ca-5",
+      "source_name": "Concerning the documents authorized by competent court authorities or officials, the Secretary of the Supreme Court or his legal substitutes."
     },
     {
       "kind": "country",
       "country": "Panama",
       "region": "",
-      "name": "Concerning deeds drawn up by a notary or private documents authenticated by a notary, the officials of the department of administrative service of the Ministry of Justice.",
-      "slug": "pa-ca-6"
+      "name": "The officials of the department of administrative service of the Ministry of Justice",
+      "slug": "pa-ca-6",
+      "source_name": "Concerning deeds drawn up by a notary or private documents authenticated by a notary, the officials of the department of administrative service of the Ministry of Justice."
     },
     {
       "kind": "country",
       "country": "Panama",
       "region": "",
-      "name": "Regarding other documents issued by any central government bodies, any autonomous or semi-autonomous bodies, municipal or police authorities or a Public Ministry, the officials of the consular and legalisation department of the Ministry of Foreign Affairs.",
-      "slug": "pa-ca-7"
+      "name": "The officials of the consular and legalisation department of the Ministry of Foreign Affairs",
+      "slug": "pa-ca-7",
+      "source_name": "Regarding other documents issued by any central government bodies, any autonomous or semi-autonomous bodies, municipal or police authorities or a Public Ministry, the officials of the consular and legalisation department of the Ministry of Foreign Affairs."
     },
     {
       "kind": "country",
       "country": "Panama",
       "region": "",
       "name": "Regarding all other public documents, any of the three preceding procedures are allowed.",
-      "slug": "pa-ca-8"
+      "slug": "pa-ca-8",
+      "hidden": true
     }
   ],
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "pa-ca-1",
+      "authority": "pa-ca-5",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Panama (staff capture pending)."
     },
     {
       "name": "www.organojudicial.gob.pa",
-      "authority": "pa-ca-1",
+      "authority": "pa-ca-5",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Panama (staff capture pending)."
     },
     {
       "name": "www.gobiernoyjusticia.gob.pa",
-      "authority": "pa-ca-2",
+      "authority": "pa-ca-5",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Panama (staff capture pending)."
     },
     {
       "name": "www.mire.gob.pa",
-      "authority": "pa-ca-3",
+      "authority": "pa-ca-5",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Panama (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "pa-ca-1",
+      "authority": "pa-ca-5",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=59&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Panama (citation page; staff capture pending)."
     },
     {
-      "authority": "pa-ca-1",
+      "authority": "pa-ca-5",
       "kind": "website_official",
       "uri": "http://www.organojudicial.gob.pa/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=338 (needs staff capture; W-7)."
     },
     {
-      "authority": "pa-ca-2",
+      "authority": "pa-ca-5",
       "kind": "website_official",
       "uri": "http://www.gobiernoyjusticia.gob.pa/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=338 (needs staff capture; W-7)."
     },
     {
-      "authority": "pa-ca-3",
+      "authority": "pa-ca-5",
       "kind": "website_official",
       "uri": "http://www.mire.gob.pa/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=338 (needs staff capture; W-7)."
     },
     {
-      "authority": "pa-ca-4",
+      "authority": "pa-ca-5",
       "kind": "website_official",
       "uri": "http://www.mire.gob.pa/servicios/direccion-general-de-autenticaciones-y-legalizaciones/autenticacion-y-legalizacion-de-docu",
       "cadence": "weekly",
@@ -126,7 +135,7 @@
   "chain_steps": [
     {
       "id": "pa-index",
-      "authority": "pa-ca-1",
+      "authority": "pa-ca-5",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Panama against a staff capture of the cited HCCH pages (deterministic).",
@@ -136,42 +145,10 @@
   ],
   "observations": [
     {
-      "authority": "pa-ca-1",
+      "authority": "pa-ca-5",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Panama is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "pa-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Respecto de los documentos autorizados por las autoridades o funcionarios judiciales competentes, el Secretario de la Corte Suprema de justicia o quienes lo sustituyan legalmente..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=338",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "pa-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Respecto de los documentos autorizados notarialmente y los documentos privados, cuyas firmas hayan sido autenticadas por Notario, los funcionarios de la Dirección de Servicios Administrativos del Ministerio de Gobierno y Justicia..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=338",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "pa-ca-3",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Respecto de los demás documentos emanados de cualquiera institución del Gobierno Central, instituciones autónomas o semiautónomas, municipales, policiales o del Ministerio Público, los funcionarios del Departamento Consular y Legalizaciones del Ministerio de Relaciones Exteriores..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=338",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "pa-ca-4",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Respecto de los demás documentos públicos se podrá utilizar indistintamente cualquiera de los tres procedimientos anteriores..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=338",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -200,15 +177,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "pa-ca-8",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Regarding all other public documents, any of the three preceding procedures are allowed..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=338",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "pa-ca-1",
+      "authority": "pa-ca-5",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.organojudicial.gob.pa/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=338",
@@ -216,7 +185,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "pa-ca-2",
+      "authority": "pa-ca-5",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.gobiernoyjusticia.gob.pa/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=338",
@@ -224,7 +193,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "pa-ca-3",
+      "authority": "pa-ca-5",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mire.gob.pa/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=338",
@@ -232,7 +201,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "pa-ca-4",
+      "authority": "pa-ca-5",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mire.gob.pa/servicios/direccion-general-de-autenticaciones-y-legalizaciones/autenticacion-y-legalizacion-de-docu as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=338",

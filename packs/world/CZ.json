@@ -1,6 +1,7 @@
 {
   "pack": "CZ",
   "version": 1,
+  "iso2": "CZ",
   "title": "Czechia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -40,13 +41,13 @@
     },
     {
       "name": "www.mzv.cz",
-      "authority": "cz-ca-2",
+      "authority": "cz-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Czechia (staff capture pending)."
     },
     {
       "name": "www.nkcr.cz",
-      "authority": "cz-ca-3",
+      "authority": "cz-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Czechia (staff capture pending)."
     },
@@ -73,14 +74,14 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=317 (needs staff capture; W-7)."
     },
     {
-      "authority": "cz-ca-2",
+      "authority": "cz-ca-1",
       "kind": "website_official",
       "uri": "http://www.mzv.cz/jnp/cz/cestujeme/overovani_listin/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=317 (needs staff capture; W-7)."
     },
     {
-      "authority": "cz-ca-3",
+      "authority": "cz-ca-1",
       "kind": "website_official",
       "uri": "http://www.nkcr.cz/",
       "cadence": "weekly",
@@ -91,14 +92,14 @@
       "kind": "website_official",
       "uri": "https://www.justice.cz/web/msp/overovani-listin-do-ciziny1",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=32&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=317 (needs staff capture; W-7)."
     },
     {
       "authority": "cz-ca-1",
       "kind": "website_official",
       "uri": "https://www.nkcr.cz/apostila",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=32&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=317 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -154,7 +155,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "cz-ca-2",
+      "authority": "cz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mzv.cz/jnp/cz/cestujeme/overovani_listin/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=317",
@@ -162,7 +163,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "cz-ca-3",
+      "authority": "cz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.nkcr.cz/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=317",
@@ -173,7 +174,7 @@
       "authority": "cz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.justice.cz/web/msp/overovani-listin-do-ciziny1 as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=32&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=317",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -181,7 +182,7 @@
       "authority": "cz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.nkcr.cz/apostila as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=32&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=317",
       "status": "needs_review",
       "validation": "W-7"
     }

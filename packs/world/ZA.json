@@ -1,6 +1,7 @@
 {
   "pack": "ZA",
   "version": 1,
+  "iso2": "ZA",
   "title": "South Africa — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -47,7 +48,7 @@
     },
     {
       "name": "www.dirco.gov.za",
-      "authority": "za-ca-2",
+      "authority": "za-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for South Africa (staff capture pending)."
     }
@@ -68,14 +69,14 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=345 (needs staff capture; W-7)."
     },
     {
-      "authority": "za-ca-2",
+      "authority": "za-ca-1",
       "kind": "website_official",
       "uri": "http://www.dirco.gov.za",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=345 (needs staff capture; W-7)."
     },
     {
-      "authority": "za-ca-3",
+      "authority": "za-ca-1",
       "kind": "website_official",
       "uri": "http://www.dirco.gov.za/legalisation-services/",
       "cadence": "weekly",
@@ -143,7 +144,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "za-ca-2",
+      "authority": "za-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.dirco.gov.za as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=345",
@@ -151,7 +152,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "za-ca-3",
+      "authority": "za-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.dirco.gov.za/legalisation-services/ as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=345",

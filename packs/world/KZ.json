@@ -1,6 +1,7 @@
 {
   "pack": "KZ",
   "version": 1,
+  "iso2": "KZ",
   "title": "Kazakhstan — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -71,14 +72,16 @@
       "country": "Kazakhstan",
       "region": "",
       "name": "These bodies have the right to delegate the authority to affix an apostille to their territorial bodies.”",
-      "slug": "kz-ca-10"
+      "slug": "kz-ca-10",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Kazakhstan",
       "region": "",
       "name": "Attachment: The Hague Convention of 05.10.1961 abolishing the legalisation for foreign public documents stipulates the apostille of 9 x 9 cm in size.It is expedient to have a stamp of the apostille, which size is 13 x 13 cm. A script of the text can be enlarged for the comfort of its representation and reading. It is not allowed to change (translate) a language document, text and its order of placing on the stamp.The stamp can be fulfilled in the language of the Republic of Kazakhstan only.",
-      "slug": "kz-ca-11"
+      "slug": "kz-ca-11",
+      "hidden": true
     }
   ],
   "domains": [
@@ -96,31 +99,31 @@
     },
     {
       "name": "mvd.gov.kz",
-      "authority": "kz-ca-2",
+      "authority": "kz-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
     },
     {
       "name": "mks.gov.kz",
-      "authority": "kz-ca-3",
+      "authority": "kz-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
     },
     {
       "name": "www.minfin.gov.kz",
-      "authority": "kz-ca-4",
+      "authority": "kz-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
     },
     {
       "name": "www.prokuror.gov.kz",
-      "authority": "kz-ca-5",
+      "authority": "kz-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
     },
     {
       "name": "www.mod.gov.kz",
-      "authority": "kz-ca-6",
+      "authority": "kz-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Kazakhstan (staff capture pending)."
     }
@@ -141,35 +144,35 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
     },
     {
-      "authority": "kz-ca-2",
+      "authority": "kz-ca-1",
       "kind": "website_official",
       "uri": "http://mvd.gov.kz/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
     },
     {
-      "authority": "kz-ca-3",
+      "authority": "kz-ca-1",
       "kind": "website_official",
       "uri": "http://mks.gov.kz",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
     },
     {
-      "authority": "kz-ca-4",
+      "authority": "kz-ca-1",
       "kind": "website_official",
       "uri": "http://www.minfin.gov.kz",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
     },
     {
-      "authority": "kz-ca-5",
+      "authority": "kz-ca-1",
       "kind": "website_official",
       "uri": "http://www.prokuror.gov.kz",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=368 (needs staff capture; W-7)."
     },
     {
-      "authority": "kz-ca-6",
+      "authority": "kz-ca-1",
       "kind": "website_official",
       "uri": "https://www.mod.gov.kz",
       "cadence": "weekly",
@@ -269,22 +272,6 @@
       "validation": "W-7"
     },
     {
-      "authority": "kz-ca-10",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: These bodies have the right to delegate the authority to affix an apostille to their territorial bodies.”.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "kz-ca-11",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Attachment: The Hague Convention of 05.10.1961 abolishing the legalisation for foreign public documents stipulates the apostille of 9 x 9 cm in size.It is expedient to have a stamp of the apostille, which size is 13 x 13 cm. A script of the text can be enlarged for the comfort of its representation and reading. It is not allowed to change (translate) a language document, text and its order of placing on the stamp.The stamp can be fulfilled in the language of the Republic of Kazakhstan only..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
       "authority": "kz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.adilet.gov.kz as an official website link (under General website).",
@@ -293,7 +280,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "kz-ca-2",
+      "authority": "kz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://mvd.gov.kz/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
@@ -301,7 +288,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "kz-ca-3",
+      "authority": "kz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://mks.gov.kz as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
@@ -309,7 +296,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "kz-ca-4",
+      "authority": "kz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minfin.gov.kz as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
@@ -317,7 +304,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "kz-ca-5",
+      "authority": "kz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.prokuror.gov.kz as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",
@@ -325,7 +312,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "kz-ca-6",
+      "authority": "kz-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.mod.gov.kz as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=368",

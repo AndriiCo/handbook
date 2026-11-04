@@ -76,12 +76,18 @@ struct DetailsLink {
     url: String,
 }
 
-/// One extracted URL plus where on the page it was listed.
+/// One extracted URL plus where it was listed: the `details3` page
+/// (`page`) and, when the source names it (Spark output pairs URLs with
+/// a candidate), the authority it belongs to. Never its position in a
+/// list: positional pairing gave "Oberlandesgericht" the patent
+/// office's site (P2-1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UrlHit {
     url: String,
     useful_link: bool,
     quote_ok: bool,
+    page: String,
+    name: Option<String>,
 }
 
 /// One extracted authority name plus its citation page.
@@ -173,6 +179,7 @@ pub fn run(args: &[String]) {
 
     let mut indexed = Vec::new();
     let mut skipped_no_fixture = 0usize;
+    let mut kept_hand_built = 0usize;
     for party in &parties {
         let authority_url = format!(
             "{HCCH_ORIGIN}/en/instruments/conventions/status-table/authority/?sid={}&cid=41",
@@ -237,7 +244,9 @@ pub fn run(args: &[String]) {
             }
         }
         let pack_path = out_dir.join(format!("{}.json", index.iso2));
-        write_pack(&pack_path, &index);
+        if !write_pack(&pack_path, &index) {
+            kept_hand_built += 1;
+        }
         indexed.push(index);
     }
 
@@ -251,7 +260,7 @@ pub fn run(args: &[String]) {
     println!(
         "world-index: parties={parsed_total} processed={} skipped_no_fixture={skipped_no_fixture} \
          authorities={authorities} urls={urls} zero_url_parties={zero_url} spark_filled={spark_n} \
-         out={} archive={}",
+         kept_hand_built={kept_hand_built} out={} archive={}",
         indexed.len(),
         out_dir.display(),
         archive_dir.display()
@@ -297,6 +306,8 @@ impl PartyIndex {
                 url: hit.url,
                 useful_link: hit.useful_link,
                 quote_ok,
+                page: page_url.to_string(),
+                name: None,
             });
         }
     }
@@ -799,6 +810,8 @@ fn page_urls(html: &str) -> Vec<UrlHit> {
                     url: href,
                     useful_link: useful,
                     quote_ok: false,
+                    page: String::new(),
+                    name: None,
                 });
             }
         }
@@ -1187,43 +1200,154 @@ fn slug_base(iso2: &str) -> String {
     iso2.to_lowercase()
 }
 
-/// Build the pack value for one party, reusing the pack schema so
-/// the output stays loadable. Quote-failed values never reach here:
-/// only `quote_ok` hits are passed in.
-fn build_pack(index: &PartyIndex, names: &[NameHit], urls: &[UrlHit]) -> crate::packs::Pack {
-    use crate::packs::{Pack, PackAuthority, PackDomain, PackObservation, PackStep, PackWatch};
-    let base = slug_base(&index.iso2);
-    let slugs: Vec<String> = if names.is_empty() {
-        vec![format!("{base}-ca")]
-    } else {
-        (1..=names.len())
-            .map(|i| format!("{base}-ca-{i}"))
-            .collect()
+/// Matching key for an extracted name against a committed row:
+/// whitespace collapsed, lowercased, list punctuation trimmed (so the
+/// curated "Hungarian Ministry …" still matches "… Law,").
+fn name_key(name: &str) -> String {
+    collapse_ws(name)
+        .to_lowercase()
+        .trim_end_matches([':', ',', ';', '.', ' '])
+        .to_string()
+}
+
+/// True when `file` is this command's own output: its title carries
+/// the world-index mark and every row is `kind = country`. Anything
+/// else (the hand-built US, MX and CA packs with their states,
+/// provinces and federal offices) is never overwritten (P3-9).
+fn is_world_index_output(file: &crate::packs::PackFile) -> bool {
+    file.pack.title.contains("(world index")
+        && file.pack.authorities.iter().all(|a| a.kind == "country")
+}
+
+/// Build the pack for one party, reusing the pack schema so the
+/// output stays loadable. Quote-failed values never reach here: only
+/// `quote_ok` hits are passed in.
+///
+/// `existing` is the committed pack for this party, if any: its rows
+/// keep their slugs, curated names, `hidden` flags and order (a slug
+/// is a production row; renumbering would orphan it). An extracted
+/// name matches a row by its name or its `source_name`; a new name
+/// gets the next free `{iso}-ca-{n}` and is emitted hidden when it
+/// fails the name lint, so a re-run never publishes a page fragment.
+/// URLs belong to the authority their source names, else the first
+/// visible authority named on the same page, else the party's lead.
+fn build_pack(
+    index: &PartyIndex,
+    names: &[NameHit],
+    urls: &[UrlHit],
+    existing: Option<&crate::packs::PackFile>,
+) -> crate::packs::PackFile {
+    use crate::packs::{
+        AuthorityExt, Pack, PackAuthority, PackDomain, PackExt, PackFile, PackObservation,
+        PackStep, PackWatch, name_lint,
     };
-    let mut authorities = Vec::new();
-    if names.is_empty() {
+    let base = slug_base(&index.iso2);
+    let fallback_slug = format!("{base}-ca");
+    let mut authorities: Vec<PackAuthority> = Vec::new();
+    let mut exts: Vec<AuthorityExt> = Vec::new();
+    if let Some(file) = existing {
+        for (i, authority) in file.pack.authorities.iter().enumerate() {
+            authorities.push(authority.clone());
+            exts.push(AuthorityExt {
+                slug: authority.slug.clone(),
+                ..file.ext_of(i)
+            });
+        }
+    }
+    let mut next = authorities
+        .iter()
+        .filter_map(|a| {
+            a.slug
+                .strip_prefix(&format!("{base}-ca-"))?
+                .parse::<usize>()
+                .ok()
+        })
+        .max()
+        .unwrap_or(0)
+        + 1;
+    // The slug each extracted name lands on, in `names` order.
+    let mut name_slugs: Vec<String> = Vec::new();
+    for hit in names {
+        let key = name_key(&hit.name);
+        let found = authorities.iter().zip(&exts).find(|(a, x)| {
+            name_key(&a.name) == key
+                || (!x.source_name.is_empty() && name_key(&x.source_name) == key)
+        });
+        let slug = match found {
+            Some((a, _)) => a.slug.clone(),
+            None => {
+                let slug = format!("{base}-ca-{next}");
+                next += 1;
+                authorities.push(PackAuthority {
+                    kind: "country".to_string(),
+                    country: index.party.clone(),
+                    region: String::new(),
+                    name: hit.name.clone(),
+                    slug: slug.clone(),
+                });
+                exts.push(AuthorityExt {
+                    slug: slug.clone(),
+                    hidden: name_lint(&hit.name).map(|_| true),
+                    ..AuthorityExt::default()
+                });
+                slug
+            }
+        };
+        name_slugs.push(slug);
+    }
+    let visible = |exts: &[AuthorityExt], slug: &str| {
+        exts.iter()
+            .find(|x| x.slug == slug)
+            .is_some_and(|x| x.hidden != Some(true))
+    };
+    // A real name supersedes the "no names yet" placeholder row.
+    if name_slugs
+        .iter()
+        .any(|s| *s != fallback_slug && visible(&exts, s))
+        && let Some(x) = exts.iter_mut().find(|x| x.slug == fallback_slug)
+        && x.hidden.is_none()
+    {
+        x.hidden = Some(true);
+    }
+    if authorities.is_empty() {
         authorities.push(PackAuthority {
             kind: "country".to_string(),
             country: index.party.clone(),
             region: String::new(),
             name: format!("{} — Competent Authority (Art. 6)", index.party),
-            slug: slugs[0].clone(),
+            slug: fallback_slug.clone(),
         });
-    } else {
-        for (hit, slug) in names.iter().zip(slugs.iter()) {
-            authorities.push(PackAuthority {
-                kind: "country".to_string(),
-                country: index.party.clone(),
-                region: String::new(),
-                name: hit.name.clone(),
-                slug: slug.clone(),
-            });
-        }
+        exts.push(AuthorityExt {
+            slug: fallback_slug,
+            ..AuthorityExt::default()
+        });
     }
+    let lead = authorities
+        .iter()
+        .map(|a| a.slug.clone())
+        .find(|slug| visible(&exts, slug))
+        .unwrap_or_else(|| authorities[0].slug.clone());
+    let owner_of = |hit: &UrlHit| -> String {
+        let named = hit.name.as_deref().and_then(|want| {
+            names
+                .iter()
+                .zip(&name_slugs)
+                .find(|(n, s)| n.name == want && visible(&exts, s))
+        });
+        let on_page = || {
+            names
+                .iter()
+                .zip(&name_slugs)
+                .find(|(n, s)| n.source_url == hit.page && visible(&exts, s))
+        };
+        named
+            .or_else(on_page)
+            .map_or_else(|| lead.clone(), |(_, slug)| slug.clone())
+    };
     // Watch seeds: the HCCH citation page plus every listed URL.
     // Every watch host gets a domain verdict row in this pack.
     let mut watch = vec![PackWatch {
-        authority: slugs[0].clone(),
+        authority: lead.clone(),
         kind: "website_official".to_string(),
         uri: index.authority_url.clone(),
         cadence: "weekly".to_string(),
@@ -1232,23 +1356,28 @@ fn build_pack(index: &PartyIndex, names: &[NameHit], urls: &[UrlHit]) -> crate::
             index.party
         ),
     }];
-    for (i, hit) in urls.iter().enumerate() {
-        let owner = slugs.get(i).unwrap_or(&slugs[0]).clone();
+    let page_of = |hit: &UrlHit| {
+        if hit.page.is_empty() {
+            index.authority_url.clone()
+        } else {
+            hit.page.clone()
+        }
+    };
+    for hit in urls {
         let via = if hit.useful_link {
             "Useful Links"
         } else {
             "General website"
         };
-        let source = names
-            .get(i)
-            .map(|n| n.source_url.clone())
-            .unwrap_or_else(|| index.authority_url.clone());
         watch.push(PackWatch {
-            authority: owner,
+            authority: owner_of(hit),
             kind: "website_official".to_string(),
             uri: hit.url.clone(),
             cadence: "weekly".to_string(),
-            notes: format!("Listed under {via} on {source} (needs staff capture; {WORLD_REF})."),
+            notes: format!(
+                "Listed under {via} on {} (needs staff capture; {WORLD_REF}).",
+                page_of(hit)
+            ),
         });
     }
     let mut hosts: Vec<(String, String)> = Vec::new();
@@ -1272,7 +1401,7 @@ fn build_pack(index: &PartyIndex, names: &[NameHit], urls: &[UrlHit]) -> crate::
         })
         .collect();
     let mut observations = vec![PackObservation {
-        authority: slugs[0].clone(),
+        authority: lead.clone(),
         topic: "jurisdiction".to_string(),
         statement: format!(
             "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): {} is a listed Contracting Party.",
@@ -1282,7 +1411,10 @@ fn build_pack(index: &PartyIndex, names: &[NameHit], urls: &[UrlHit]) -> crate::
         status: "needs_review".to_string(),
         validation: WORLD_REF.to_string(),
     }];
-    for (hit, slug) in names.iter().zip(slugs.iter()) {
+    for (hit, slug) in names.iter().zip(&name_slugs) {
+        if !visible(&exts, slug) {
+            continue;
+        }
         observations.push(PackObservation {
             authority: slug.clone(),
             topic: "contacts".to_string(),
@@ -1295,32 +1427,27 @@ fn build_pack(index: &PartyIndex, names: &[NameHit], urls: &[UrlHit]) -> crate::
             validation: WORLD_REF.to_string(),
         });
     }
-    for (i, hit) in urls.iter().enumerate() {
-        let owner = slugs.get(i).unwrap_or(&slugs[0]).clone();
+    for hit in urls {
         let via = if hit.useful_link {
             "Useful Links"
         } else {
             "General website"
         };
-        let source = names
-            .get(i)
-            .map(|n| n.source_url.clone())
-            .unwrap_or_else(|| index.authority_url.clone());
         observations.push(PackObservation {
-            authority: owner,
+            authority: owner_of(hit),
             topic: "website".to_string(),
             statement: format!(
                 "OBSERVED (HCCH competent-authority page; staff capture pending): page lists {} as an official website link (under {via}).",
                 hit.url
             ),
-            source_uri: source,
+            source_uri: page_of(hit),
             status: "needs_review".to_string(),
             validation: WORLD_REF.to_string(),
         });
     }
     let chain_steps = vec![PackStep {
         id: format!("{base}-index"),
-        authority: slugs[0].clone(),
+        authority: lead,
         order: 0,
         title: "Verify HCCH competent-authority index".to_string(),
         detail: format!(
@@ -1330,40 +1457,60 @@ fn build_pack(index: &PartyIndex, names: &[NameHit], urls: &[UrlHit]) -> crate::
         status: "needs_review".to_string(),
         validation: WORLD_REF.to_string(),
     }];
-    Pack {
-        pack: index.iso2.clone(),
-        version: 1,
-        title: format!(
-            "{} — HCCH 1961 competent authorities (world index, needs review)",
-            index.party
-        ),
-        authorities,
-        domains,
-        watch,
-        chain_steps,
-        observations,
+    PackFile {
+        pack: Pack {
+            pack: index.iso2.clone(),
+            version: 1,
+            title: format!(
+                "{} — HCCH 1961 competent authorities (world index, needs review)",
+                index.party
+            ),
+            authorities,
+            domains,
+            watch,
+            chain_steps,
+            observations,
+        },
+        ext: PackExt {
+            iso2: if index.iso2 == "ZZ" {
+                String::new()
+            } else {
+                index.iso2.clone()
+            },
+            authorities: exts,
+        },
     }
 }
 
-fn write_pack(path: &Path, index: &PartyIndex) {
+/// Write one party's pack, merged with the committed one at `path`.
+/// Returns false (and writes nothing) for a hand-built pack.
+fn write_pack(path: &Path, index: &PartyIndex) -> bool {
+    let existing = std::fs::read(path)
+        .ok()
+        .and_then(|bytes| crate::packs::PackFile::parse(&bytes).ok());
+    if let Some(file) = &existing
+        && !is_world_index_output(file)
+    {
+        println!(
+            "world-index: {}: kept as is (hand-built pack, not world-index output)",
+            path.display()
+        );
+        return false;
+    }
     let names: Vec<NameHit> = index.names.iter().filter(|h| h.quote_ok).cloned().collect();
     let urls: Vec<UrlHit> = index.urls.iter().filter(|h| h.quote_ok).cloned().collect();
-    let pack = build_pack(index, &names, &urls);
-    let mut text = serde_json::to_string_pretty(&pack).unwrap_or_else(|e| {
-        eprintln!("world-index: serialize {}: {e}", index.iso2);
-        std::process::exit(1);
-    });
-    text.push('\n');
+    let file = build_pack(index, &names, &urls, existing.as_ref());
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).unwrap_or_else(|e| {
             eprintln!("world-index: create {}: {e}", parent.display());
             std::process::exit(1);
         });
     }
-    std::fs::write(path, text).unwrap_or_else(|e| {
+    std::fs::write(path, file.render()).unwrap_or_else(|e| {
         eprintln!("world-index: write {}: {e}", path.display());
         std::process::exit(1);
     });
+    true
 }
 
 /// `authorities.csv`: one row per emitted authority name plus one row
@@ -1383,11 +1530,14 @@ fn write_csv(path: &Path, indexed: &[PartyIndex]) {
                 index.origin,
             ]));
         }
-        for (pos, name) in index.names.iter().enumerate() {
+        for name in &index.names {
+            // The URL its source pairs with this name, else the first
+            // one listed on the same page (never the same list index).
             let url = index
                 .urls
-                .get(pos)
-                .or_else(|| index.urls.first())
+                .iter()
+                .find(|hit| hit.name.as_deref() == Some(name.name.as_str()))
+                .or_else(|| index.urls.iter().find(|hit| hit.page == name.source_url))
                 .map(|hit| hit.url.as_str())
                 .unwrap_or("");
             out.push_str(&csv_row(&[
@@ -1498,6 +1648,8 @@ fn spark_fill(
                     url: url.clone(),
                     useful_link: false,
                     quote_ok: true,
+                    page: source_url.clone(),
+                    name: Some(candidate.name.clone()),
                 });
             }
         }
@@ -2185,15 +2337,193 @@ mod tests {
         assert!(index.names.iter().all(|h| h.quote_ok));
         let names: Vec<NameHit> = index.names.clone();
         let urls: Vec<UrlHit> = index.urls.clone();
-        let pack = build_pack(&index, &names, &urls);
+        let file = build_pack(&index, &names, &urls, None);
+        let pack = &file.pack;
         assert_eq!(pack.pack, "BY");
+        assert_eq!(file.ext.iso2, "BY");
         assert!(pack.authorities.len() == 5);
         assert!(pack.watch.len() == 1 + 4);
         assert!(pack.observations.iter().all(|o| o.status == "needs_review"));
+        // One details page: every listed URL belongs to its first
+        // named authority, not to the name at the same list index.
+        assert!(
+            pack.watch.iter().all(|w| w.authority == "by-ca-1"),
+            "{:?}",
+            pack.watch
+        );
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("BY.json");
-        std::fs::write(&path, serde_json::to_string_pretty(&pack).unwrap()).unwrap();
+        std::fs::write(&path, file.render()).unwrap();
         assert!(crate::packs::validate_dir(dir.path()).is_empty());
+    }
+
+    fn hit(name: &str, page: &str) -> NameHit {
+        NameHit {
+            name: name.to_string(),
+            source_url: page.to_string(),
+            quote_ok: true,
+        }
+    }
+
+    fn url(url: &str, page: &str, name: Option<&str>) -> UrlHit {
+        UrlHit {
+            url: url.to_string(),
+            useful_link: false,
+            quote_ok: true,
+            page: page.to_string(),
+            name: name.map(str::to_string),
+        }
+    }
+
+    /// P2-1: fragments are emitted hidden; URLs go to a visible
+    /// authority on their own page (or the one their source names).
+    #[test]
+    fn fragments_hide_and_urls_follow_their_page() {
+        let party = PartyRow {
+            name: "Germany".to_string(),
+            sid: "1".to_string(),
+        };
+        let index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
+        let (a, b) = ("https://www.hcch.net/a", "https://www.hcch.net/b");
+        let names = [
+            hit("Land", a),
+            hit("Oberlandesgericht", a),
+            hit("Federal Office of Justice", a),
+            hit("Federal Foreign Office", b),
+        ];
+        let urls = [
+            url("https://bfaa.diplo.de/x", a, None),
+            url("https://www.dpma.de/", a, None),
+            url("https://www.auswaertiges-amt.de/", b, None),
+            url(
+                "https://www.bundesjustizamt.de/",
+                b,
+                Some("Federal Office of Justice"),
+            ),
+        ];
+        let file = build_pack(&index, &names, &urls, None);
+        let hidden: Vec<bool> = (0..4)
+            .map(|i| file.ext_of(i).hidden == Some(true))
+            .collect();
+        // "Land" is 4 characters; "Oberlandesgericht" passes the lint
+        // (curation hides it: a court type, not one office).
+        assert_eq!(hidden, [true, false, false, false]);
+        let owners: Vec<(&str, &str)> = file
+            .pack
+            .watch
+            .iter()
+            .map(|w| (w.uri.as_str(), w.authority.as_str()))
+            .collect();
+        assert_eq!(
+            owners,
+            [
+                ("https://www.hcch.net/en/x", "de-ca-2"),
+                ("https://bfaa.diplo.de/x", "de-ca-2"),
+                ("https://www.dpma.de/", "de-ca-2"),
+                ("https://www.auswaertiges-amt.de/", "de-ca-4"),
+                ("https://www.bundesjustizamt.de/", "de-ca-3"),
+            ]
+        );
+        // No "designated authority" task for a hidden fragment.
+        assert!(
+            !file
+                .pack
+                .observations
+                .iter()
+                .any(|o| o.statement.contains("designated authority: Land."))
+        );
+    }
+
+    /// A re-run keeps committed slugs, curated names and hidden flags,
+    /// and numbers a new name after the highest slug.
+    #[test]
+    fn rerun_keeps_slugs_curation_and_hidden_rows() {
+        let party = PartyRow {
+            name: "Marshall Islands".to_string(),
+            sid: "2".to_string(),
+        };
+        let index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
+        let page = "https://www.hcch.net/p";
+        let first = build_pack(
+            &index,
+            &[
+                hit("Minister of Foreign Affairs,", page),
+                hit("Limmatquai 50", page),
+            ],
+            &[],
+            None,
+        );
+        assert_eq!(
+            (0..2).map(|i| first.ext_of(i).hidden).collect::<Vec<_>>(),
+            [Some(true), Some(true)]
+        );
+        // Curate: fix the first name from the page, keep the second hidden.
+        let mut curated = first.clone();
+        curated.pack.authorities[0].name = "Minister of Foreign Affairs".to_string();
+        curated.ext.authorities[0].hidden = None;
+        curated.ext.authorities[0].source_name = "Minister of Foreign Affairs,".to_string();
+        let curated = crate::packs::PackFile::parse(curated.render().as_bytes()).unwrap();
+        let again = build_pack(
+            &index,
+            &[
+                hit("Limmatquai 50", page),
+                hit(
+                    "IRI Corporate and Maritime Services (Switzerland) A.G.",
+                    page,
+                ),
+                hit("Minister of Foreign Affairs,", page),
+            ],
+            &[url("https://www.register-iri.com/", page, None)],
+            Some(&curated),
+        );
+        let rows: Vec<(&str, &str, Option<bool>)> = again
+            .pack
+            .authorities
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.slug.as_str(), a.name.as_str(), again.ext_of(i).hidden))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("mh-ca-1", "Minister of Foreign Affairs", None),
+                ("mh-ca-2", "Limmatquai 50", Some(true)),
+                (
+                    "mh-ca-3",
+                    "IRI Corporate and Maritime Services (Switzerland) A.G.",
+                    None
+                ),
+            ]
+        );
+        assert_eq!(
+            again.pack.watch[1].authority, "mh-ca-3",
+            "first visible on the page"
+        );
+    }
+
+    /// P3-9: a live run never rewrites the hand-built US, MX or CA packs.
+    #[test]
+    fn hand_built_packs_are_never_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        for iso in ["US", "MX", "CA"] {
+            let committed = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../packs/world")
+                .join(format!("{iso}.json"));
+            let bytes = std::fs::read(&committed).unwrap();
+            let path = dir.path().join(format!("{iso}.json"));
+            std::fs::write(&path, &bytes).unwrap();
+            let party = PartyRow {
+                name: "Somewhere".to_string(),
+                sid: "3".to_string(),
+            };
+            let mut index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
+            index.iso2 = iso.to_string();
+            index
+                .names
+                .push(hit("Ministry of Foreign Affairs", "https://www.hcch.net/p"));
+            assert!(!write_pack(&path, &index), "{iso}");
+            assert_eq!(std::fs::read(&path).unwrap(), bytes, "{iso}");
+        }
     }
 
     #[test]
@@ -2314,6 +2644,8 @@ mod tests {
             url: "https://example.invalid/".to_string(),
             useful_link: false,
             quote_ok: true,
+            page: "https://www.hcch.net/en/x".to_string(),
+            name: None,
         });
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("authorities.csv");

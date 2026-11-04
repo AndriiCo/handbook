@@ -421,7 +421,7 @@ fn inbox_authority(conn: &Connection, opts: &PollOpts) -> Result<i64, MailError>
     {
         return Ok(id);
     }
-    Ok(add_authority(
+    let id = add_authority(
         conn,
         &NewAuthority {
             kind: "office",
@@ -432,7 +432,18 @@ fn inbox_authority(conn: &Connection, opts: &PollOpts) -> Result<i64, MailError>
             actor: &opts.actor,
             at: opts.now,
         },
-    )?)
+    )?;
+    // Internal catch-all: never a public dossier, index row or follow
+    // target (E-2; migration 013 hides one created before this).
+    handbook_store::db::set_authority_hidden(
+        conn,
+        id,
+        true,
+        &opts.actor,
+        opts.now,
+        "mail-inbox: internal catch-all for unmatched mail",
+    )?;
+    Ok(id)
 }
 
 fn find_or_create_source(
