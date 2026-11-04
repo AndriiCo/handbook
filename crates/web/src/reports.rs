@@ -945,10 +945,18 @@ mod tests {
             Err("photo type not allowed")
         );
         let id = stage_upload(&conn, "u1", "a.png", &png, 100).expect("stage");
-        assert!(staged_photos(&conn, "u2", &[id.clone()], 100).is_err());
-        let got = staged_photos(&conn, "u1", &[id.clone()], 100).expect("own upload");
+        assert!(staged_photos(&conn, "u2", std::slice::from_ref(&id), 100).is_err());
+        let got = staged_photos(&conn, "u1", std::slice::from_ref(&id), 100).expect("own upload");
         assert_eq!(got[0].filename, "a.png");
-        assert!(staged_photos(&conn, "u1", &[id.clone()], 100 + UPLOAD_TTL_SECS + 1).is_err());
+        assert!(
+            staged_photos(
+                &conn,
+                "u1",
+                std::slice::from_ref(&id),
+                100 + UPLOAD_TTL_SECS + 1
+            )
+            .is_err()
+        );
         assert!(!drop_upload(&conn, "u2", &id));
         assert!(drop_upload(&conn, "u1", &id));
         for _ in 0..MAX_STAGED_PER_ACCOUNT {

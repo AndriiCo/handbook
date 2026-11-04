@@ -12,7 +12,7 @@ const ADMIN = join(ROOT, 'build-admin');
 // Strings that exist ONLY in (admin) route code.
 const ADMIN_ONLY = ['/(admin)/config', 'Staff only'];
 // Strings that exist in shared/public route code (both builds).
-const SHARED = ['Start with your destination'];
+const SHARED = ['New destinations appear here as staff verify them.'];
 // Route ids registered in the client manifest (entry chunk).
 const PUBLIC_ROUTES = [
 	'/(public)',

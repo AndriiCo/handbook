@@ -640,8 +640,9 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         // Photos upload the moment they are picked, ahead of submit.
         .route(
             "/api/v1/reports/uploads",
-            post(reports::upload_photo)
-                .layer(axum::extract::DefaultBodyLimit::max(reports::UPLOAD_BODY_BYTES)),
+            post(reports::upload_photo).layer(axum::extract::DefaultBodyLimit::max(
+                reports::UPLOAD_BODY_BYTES,
+            )),
         )
         .route(
             "/api/v1/reports/uploads/{id}",
