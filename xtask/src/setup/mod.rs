@@ -25,13 +25,14 @@
 //! [`file`] reads and writes the sops file, [`build`] builds hardened
 //! binaries for each target's CPU, [`plan`] turns a target into steps,
 //! [`run`] executes them, [`checks`] probes every provider key,
-//! [`probe`] reads what an SSH box is, and [`wizard`] serves the
-//! browser UI.
+//! [`probe`] reads what an SSH box is, [`map`] lays out the system map,
+//! and [`wizard`] serves the browser UI.
 
 pub mod brand;
 pub mod build;
 pub mod checks;
 pub mod file;
+pub mod map;
 pub mod plan;
 pub mod probe;
 pub mod rehearsal;

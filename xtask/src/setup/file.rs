@@ -46,6 +46,33 @@ pub struct SetupFile {
     pub acme: Acme,
     #[serde(default)]
     pub brand: Brand,
+    /// The wizard's system map: which target each node runs on.
+    #[serde(default, skip_serializing_if = "SystemMap::is_empty")]
+    pub map: SystemMap,
+}
+
+/// Where the front end, the workers and staging run, as target names
+/// (unset: derived, see `map::resolve`), plus the weights the workers
+/// serve. Only the wizard's map reads it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SystemMap {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub front_end: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workers: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub staging: Option<String>,
+    /// Hugging Face repo the workers download into
+    /// `/srv/scratch/apostille/models` (`GLIMMER_REPO` in `worker.env`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weights_repo: Option<String>,
+}
+
+impl SystemMap {
+    pub fn is_empty(&self) -> bool {
+        *self == SystemMap::default()
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -70,10 +97,31 @@ pub enum TargetKind {
     Server,
 }
 
+/// How a local target runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Runtime {
+    /// `xtask up` on this machine.
+    #[default]
+    Native,
+    /// The judge image (`compose.yaml`, `ops/judge/`): a fresh store on
+    /// every start, published on 127.0.0.1:18318 and :18319.
+    Docker,
+}
+
+impl Runtime {
+    pub fn is_native(&self) -> bool {
+        *self == Runtime::Native
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Target {
     pub kind: TargetKind,
+    /// Local: natively (default) or in Docker.
+    #[serde(default, skip_serializing_if = "Runtime::is_native")]
+    pub runtime: Runtime,
     /// SSH alias for unprivileged work (deploys as `hal` on servers).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh: Option<String>,
@@ -357,6 +405,22 @@ impl SetupFile {
                 problems.push(format!(
                     "targets.{name}.public_host {host:?} is not a host name"
                 ));
+            }
+            if target.runtime == Runtime::Docker && target.kind != TargetKind::Local {
+                problems.push(format!(
+                    "targets.{name}.runtime: only a local target runs in Docker this way"
+                ));
+            }
+        }
+        for (node, name) in [
+            ("front_end", &self.map.front_end),
+            ("workers", &self.map.workers),
+            ("staging", &self.map.staging),
+        ] {
+            if let Some(name) = name
+                && !self.targets.contains_key(name)
+            {
+                problems.push(format!("map.{node} names {name:?}, which is not a target"));
             }
         }
         // Secrets are per target, so a production key can never serve a

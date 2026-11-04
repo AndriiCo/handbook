@@ -34,7 +34,8 @@ use tokio::sync::broadcast;
 
 use super::brand;
 use super::checks;
-use super::file::{self, SetupFile, TargetKind};
+use super::file::{self, Runtime, SetupFile, TargetKind};
+use super::map;
 use super::plan::{self, Phase};
 use super::run::Event;
 
@@ -198,7 +199,7 @@ fn state_json(app: &App, inner: &Inner) -> Value {
             (
                 name,
                 json!({
-                    "kind": t.kind,
+                    "kind": t.kind, "runtime": t.runtime,
                     "ssh": t.ssh, "ssh_admin": t.ssh_admin, "public_host": t.public_host,
                     "bind": t.bind, "bind6": t.bind6, "dns": t.dns, "timers": t.timers,
                     "platform": t.platform, "deploy_keys": t.deploy_keys,
@@ -249,6 +250,7 @@ fn state_json(app: &App, inner: &Inner) -> Value {
         "brand_dir": dir.display().to_string(),
         "problems": f.validate().err().unwrap_or_default(),
         "running": inner.running,
+        "map": map::state(f),
     })
 }
 
@@ -476,6 +478,66 @@ async fn api_probe(
 }
 
 #[derive(Deserialize)]
+struct MapReq {
+    /// `front_end`, `workers` or `staging`, with `place`.
+    #[serde(default)]
+    node: Option<String>,
+    /// `native`, `docker` or `server`.
+    #[serde(default)]
+    place: Option<String>,
+    /// The Hugging Face repo the workers serve (`""` clears it).
+    #[serde(default)]
+    weights_repo: Option<String>,
+}
+
+/// The map's choices: where a node runs, and the weights repo.
+async fn api_map(State(app): State<App>, headers: HeaderMap, Json(req): Json<MapReq>) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    let mut inner = app.inner.lock().unwrap();
+    if let (Some(node), Some(place)) = (&req.node, &req.place)
+        && let Err(e) = map::choose(&mut inner.file, node, place)
+    {
+        return deny(StatusCode::BAD_REQUEST, &e);
+    }
+    if let Some(repo) = req.weights_repo.as_deref().map(str::trim) {
+        if !repo.is_empty() && !map::valid_repo(repo) {
+            return deny(
+                StatusCode::BAD_REQUEST,
+                "a Hugging Face repo is org/name (letters, digits and ._-)",
+            );
+        }
+        inner.file.map.weights_repo = (!repo.is_empty()).then(|| repo.to_string());
+    }
+    match app.save(&inner) {
+        Ok(()) => Json(
+            json!({ "saved": true, "problems": inner.file.validate().err().unwrap_or_default() }),
+        )
+        .into_response(),
+        Err(r) => r,
+    }
+}
+
+/// The map's Test button: `GET /v1/models` with the target's Meta key,
+/// called from here so the key never reaches the page.
+async fn api_meta(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Json(req): Json<CheckReq>,
+) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    let f = app.inner.lock().unwrap().file.clone();
+    match tokio::task::spawn_blocking(move || checks::meta_models(&f, &req.target)).await {
+        Ok(Ok(models)) => Json(json!({ "models": models })).into_response(),
+        Ok(Err(e)) => deny(StatusCode::BAD_GATEWAY, &e),
+        Err(_) => deny(StatusCode::INTERNAL_SERVER_ERROR, "the test failed to run"),
+    }
+}
+
+#[derive(Deserialize)]
 struct RunReq {
     target: String,
     #[serde(default)]
@@ -498,7 +560,13 @@ async fn api_run(State(app): State<App>, headers: HeaderMap, Json(req): Json<Run
         if let Err(problems) = inner.file.validate() {
             return deny(StatusCode::BAD_REQUEST, &problems.join("; "));
         }
-        let local = inner.file.targets.get(&req.target).map(|t| t.kind) == Some(TargetKind::Local);
+        // A native local boot serves in the foreground (a child below);
+        // in Docker it is a plain run that starts the judge image.
+        let local = inner
+            .file
+            .targets
+            .get(&req.target)
+            .is_some_and(|t| t.kind == TargetKind::Local && t.runtime == Runtime::Native);
         if local && app.local.lock().unwrap().is_some() {
             return deny(
                 StatusCode::CONFLICT,
@@ -796,6 +864,8 @@ fn router(app: App) -> Router {
         .route("/api/operator", post(api_operator))
         .route("/api/check", post(api_check))
         .route("/api/probe", post(api_probe))
+        .route("/api/map", post(api_map))
+        .route("/api/meta", post(api_meta))
         .route("/api/run", post(api_run))
         .route("/api/events", get(api_events))
         .route("/api/licence", post(api_licence))
@@ -1012,5 +1082,31 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_map_refuses_unknown_places_and_repos_and_tests_meta_without_leaking() {
+        let app = app();
+        for body in [
+            r#"{"node":"front_end","place":"cloud"}"#,
+            r#"{"node":"cellar","place":"server"}"#,
+            r#"{"weights_repo":"../etc"}"#,
+        ] {
+            let (status, text) = send(&app, post("/api/map", body)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}: {text}");
+        }
+        let (status, text) = send(&app, post("/api/meta", r#"{"target":"staging"}"#)).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(text.contains("meta.api_key is not set"), "{text}");
+        let (_, state) = send(
+            &app,
+            req("GET", "/api/state", "127.0.0.1:4000", true, false),
+        )
+        .await;
+        assert!(state.contains(r#""front_end""#), "{state}");
+        assert!(
+            !state.contains("LLM_1_synthetic"),
+            "a secret reached the map"
+        );
     }
 }

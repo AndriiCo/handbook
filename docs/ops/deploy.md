@@ -153,7 +153,7 @@ Targets (the template has all four):
 
 | Target | Kind | What a run does |
 |---|---|---|
-| `local` | this machine | `xtask up` on loopback with the file's values imported |
+| `local` | this machine | `xtask up` on loopback with the file's values imported; with `runtime: docker`, the judge image instead (`docker compose up --build --detach`, a fresh store, 127.0.0.1:18318/18319) |
 | `docker` | rehearsal | `ubuntu:26.04` + systemd in Docker, playing a blank server |
 | `staging` | `plant` | push the SHA, build, harden-check, seal, restart by PID |
 | `production` | server | stamp, probe, DNS, build, provision, seal, deploy, ACME, staff, scoreboard |
@@ -165,7 +165,25 @@ production plan is pinned by a golden test
 with `--operator-order "<who, when, what>"`, recorded in
 `private/setup-log.jsonl`.
 
-**Box probe.** A plant or server target's tab has **Probe over SSH**:
+**System map.** The wizard opens on a UML deployment diagram of the
+whole system: the front end (public and admin sites), the workers and
+staging, each **Local** (the `local` target, **Docker** or **Native**:
+its `runtime`) or **Server** (the `server` target for the front end, the
+`plant` target for workers and staging). The choice is kept in the
+file's `map` section; unset, the front end is the server target (else
+local), staging the plant target, and workers run on plant beside a
+server or with a local front end. Nodes show the HTTPS server name and
+links to the public site, the admin console and its Work queue, the
+staging URL (through `ssh -L`), and the box probe. The Meta Model API is
+a `«use»` dependency labelled with the model ids, with a **Test** button
+(`GET /v1/models` from the wizard; the key never reaches the page);
+Hugging Face weights are a `«deploy»` onto the workers
+(`map.weights_repo` → `<worker>:/srv/scratch/apostille/models`); Gmail,
+Telnyx, FedEx, USPS and Stripe show their console and, when the file
+sets it, their mode (Stripe from the key's prefix, FedEx from
+`labels.live`, USPS from `usps.live`).
+
+**Box probe.** A plant or server target's tab (and its map node) has **Probe over SSH**:
 it logs in with your keys only (`BatchMode=yes`,
 `StrictHostKeyChecking=yes`, 10 s to connect) and reads the host
 name, user, OS, kernel and CPU (`uname -srm`), CPU count, memory, free

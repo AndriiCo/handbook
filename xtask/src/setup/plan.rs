@@ -9,7 +9,7 @@
 use std::fmt::Write as _;
 
 use super::build::Arch;
-use super::file::{SetupFile, Target, TargetKind};
+use super::file::{Runtime, SetupFile, Target, TargetKind};
 
 /// Where the rehearsal keeps its SSH key, known hosts and TLS CA
 /// (inside the git-ignored `private/`).
@@ -259,6 +259,39 @@ pub fn plan(file: &SetupFile, name: &str, facts: &Facts) -> Result<Vec<Step>, St
         .get(name)
         .ok_or_else(|| format!("no target {name:?} in the setup file"))?;
     Ok(match target.kind {
+        // The judge path (P1-13): compose.yaml builds ops/judge/ and
+        // publishes 127.0.0.1:18318/18319; every start is a fresh store.
+        TargetKind::Local if target.runtime == Runtime::Docker => vec![
+            step(
+                Phase::Doctor,
+                "docker and curl",
+                Action::Builtin(Builtin::Doctor {
+                    tools: vec!["docker", "curl"],
+                }),
+            ),
+            step(
+                Phase::Deploy,
+                "build and start the judge image (compose.yaml); its setup key: `docker compose logs judge`",
+                Action::Local {
+                    argv: ["docker", "compose", "up", "--build", "--detach"]
+                        .map(String::from)
+                        .to_vec(),
+                },
+            ),
+            step(
+                Phase::Verify,
+                "healthz on http://localhost:18318/apostille (admin http://localhost:18319)",
+                Action::Local {
+                    argv: [
+                        "sh",
+                        "-c",
+                        "for i in $(seq 1 300); do curl -fsS --max-time 2 http://localhost:18318/apostille/healthz && exit 0; sleep 1; done; exit 1",
+                    ]
+                    .map(String::from)
+                    .to_vec(),
+                },
+            ),
+        ],
         TargetKind::Local => vec![
             step(
                 Phase::Doctor,
@@ -736,5 +769,16 @@ mod tests {
             "auto platform follows the CPU"
         );
         assert!(docker.contains("127.0.0.1:2222"));
+        // A local target in Docker runs the judge image instead of `up`.
+        file.targets.get_mut("local").unwrap().runtime = Runtime::Docker;
+        let steps = plan(&file, "local", &facts()).unwrap();
+        let local = render(&steps);
+        assert!(
+            local.contains("docker compose up --build --detach"),
+            "{local}"
+        );
+        assert!(!local.contains("LLM_1_synthetic"));
+        let phases: Vec<Phase> = steps.iter().map(|s| s.phase).collect();
+        assert_eq!(phases, [Phase::Doctor, Phase::Deploy, Phase::Verify]);
     }
 }

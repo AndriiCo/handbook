@@ -52,6 +52,24 @@ ol.phases li { padding: 3px 0; display: flex; gap: 8px; }
 @media (prefers-reduced-motion: reduce) { .dot.run { animation: none; } }
 .saved { font-size: 11px; color: var(--ok); }
 .hidden { display: none; }
+.seg { display: inline-flex; border: 1px solid var(--brand); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: none; padding: 5px 12px; font: inherit; color: var(--brand); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--brand); color: var(--panel); font-weight: 600; }
+.map-box { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.map-box svg { display: block; width: 1000px; max-width: none; height: auto; }
+.map-box text { fill: var(--ink); font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.map-box text.title { font-weight: 600; font-size: 13px; }
+.map-box text.st, .map-box text.muted { fill: var(--muted); font-size: 11px; }
+.map-box text.mono { font-family: var(--mono); font-size: 11px; }
+.map-box a text { fill: var(--brand); text-decoration: underline; }
+.map-box a:focus-visible text { outline: 2px solid var(--brand); }
+.map-box .box, .map-box .ext { fill: var(--panel); stroke: var(--ink); stroke-width: 1.2; }
+.map-box .ext { stroke: var(--muted); }
+.map-box .face { fill: var(--brand-soft); stroke: var(--ink); stroke-width: 1.2; }
+.map-box .edge { stroke: var(--ink); stroke-width: 1.4; }
+.map-box .dep { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 6 4; }
+.map-box .arrow { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+.map-box text.lbl { font-size: 11px; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
 </style>
 </head>
 <body>
@@ -73,7 +91,7 @@ ol.phases li { padding: 3px 0; display: flex; gap: 8px; }
 <script>
 const CSRF = "__CSRF__";
 let S = null;          // last /api/state
-let tab = "staging";
+let tab = "map";
 let runState = { steps: [], status: {}, log: [], finished: null };
 
 const el = (tag, attrs = {}, ...kids) => {
@@ -123,17 +141,17 @@ document.getElementById("operator").addEventListener("change", saveOperator);
 document.getElementById("defaults").addEventListener("change", saveOperator);
 
 function renderTabs() {
-  const names = [...Object.keys(S.targets), "shared", "brand", "run"];
-  // A plain local-only file has no staging target: open the first one.
-  if (!names.includes(tab)) tab = Object.keys(S.targets)[0] || "shared";
-  const label = n => ({ shared: "Shared config", brand: "Brand & licences", run: "Run" }[n] || n);
+  const names = ["map", ...Object.keys(S.targets), "shared", "brand", "run"];
+  if (!names.includes(tab)) tab = "map";
+  const label = n => ({ map: "System map", shared: "Shared config", brand: "Brand & licences", run: "Run" }[n] || n);
   document.getElementById("tabs").replaceChildren(...names.map(n =>
     el("button", { role: "tab", "aria-selected": String(n === tab), onclick: () => { tab = n; renderTabs(); render(); } }, label(n))));
 }
 
 function render() {
   const v = document.getElementById("view");
-  if (tab === "shared") v.replaceChildren(configPanel("shared"));
+  if (tab === "map") v.replaceChildren(mapPanel());
+  else if (tab === "shared") v.replaceChildren(configPanel("shared"));
   else if (tab === "brand") v.replaceChildren(brandPanel());
   else if (tab === "run") v.replaceChildren(runPanel());
   else v.replaceChildren(targetPanel(tab));
@@ -169,7 +187,7 @@ function targetPanel(name) {
     checkBtn.disabled = false;
   } }, "Check keys and access");
   return el("div", {},
-    el("div", { class: "panel" }, el("h2", {}, `${name} `, el("span", { class: "badge" }, t.kind)), fields,
+    el("div", { class: "panel" }, el("h2", {}, `${name} `, el("span", { class: "badge" }, t.runtime === "docker" ? `${t.kind} · docker` : t.kind)), fields,
       el("h3", {}, "Deploy keys for hal (one OpenSSH public key per line; empty: the keys in ssh-agent)"), keys,
       el("h3", {}, "Derived (from the target's shape; not typed)"), derived),
     t.kind === "plant" || t.kind === "server" ? probePanel(name) : null,
@@ -190,9 +208,12 @@ function probeFacts(p) {
   ].filter(([, v]) => v !== undefined && v !== null && v !== "");
 }
 
-function probePanel(name) {
+// Host field, Probe button and the cached facts for one target (`where`
+// keeps ids unique when the map shows the same target twice).
+function probeForm(name, where) {
   const t = S.targets[name];
-  const host = el("input", { type: "text", id: `probe-${name}`, value: (t.probe && t.probe.via) || t.ssh || "", placeholder: "host name or ssh alias", autocomplete: "off" });
+  const id = `probe-${where}-${name}`;
+  const host = el("input", { type: "text", id, value: (t.probe && t.probe.via) || t.ssh || "", placeholder: "host name or ssh alias", autocomplete: "off" });
   const out = el("div", {}, t.probe ? [
     el("table", {}, probeFacts(t.probe).map(([k, v]) => el("tr", {}, el("th", {}, k), el("td", { class: "mono" }, String(v))))),
     el("p", { class: "muted" }, `Probed ${t.probe.via} at ${t.probe.at}`)] : null);
@@ -202,9 +223,13 @@ function probePanel(name) {
     try { await api("/api/probe", { target: name, host: host.value.trim() }); await refresh(); }
     catch (e) { out.replaceChildren(el("pre", { class: "log fail" }, e.message)); btn.disabled = false; }
   } }, "Probe over SSH");
+  return [el("label", { for: id }, "SSH host or alias"), el("div", { class: "row" }, el("div", { style: "flex: 1 1 200px" }, host), btn), out];
+}
+
+function probePanel(name) {
   return el("div", { class: "panel" }, el("h2", {}, "Box"),
     el("p", { class: "muted" }, "Logs in with your SSH keys only (no password prompt, no new host keys) and reads the OS, CPUs, memory, free disk, GPU and Docker. Cached in the setup file."),
-    el("label", { for: `probe-${name}` }, "SSH host or alias"), el("div", { class: "row" }, el("div", { style: "flex: 1 1 200px" }, host), btn), out);
+    probeForm(name, "tab"));
 }
 
 function checkTable(results) {
@@ -223,7 +248,8 @@ function runControls(name) {
       await api("/api/run", { target: name, from: from.value, sha: sha.value || null, order: order.value || null });
       tab = "run"; renderTabs(); render();
     } catch (e) { alert(e.message); }
-  } }, t.kind === "local" ? `Boot ${name} (keeps serving in the background)` : `Rebuild ${name}`);
+  } }, t.kind !== "local" ? `Rebuild ${name}` : t.runtime === "docker"
+    ? `Start ${name} in Docker (the judge image, compose.yaml)` : `Boot ${name} (keeps serving in the background)`);
   if (S.running) go.disabled = true;
   return el("div", { class: "panel" }, el("h2", {}, "Run"),
     el("div", { class: "grid" },
@@ -276,6 +302,157 @@ function keyRow(scope, k, value, derived) {
     input = el("input", { type: "text", value: value ?? "", onchange: e => save(e.target.value || null) });
   }
   return el("tr", {}, el("td", { class: "mono" }, k.key, mark), el("td", { class: "muted" }, k.type), el("td", {}, input));
+}
+
+// ---------------------------------------------------------- system map
+// A UML deployment diagram drawn from S.map: nodes are 3-D boxes,
+// solid lines are network paths, dashed open arrows are «use» and
+// «deploy» dependencies. Fixed 1000 px wide; narrow screens scroll the
+// box, never the page.
+const NODE_NAMES = { front_end: "Front end", workers: "Workers", staging: "Staging" };
+const PLACE = { native: "Local · Native", docker: "Local · Docker", server: "Server" };
+
+const sv = (tag, attrs = {}, ...kids) => {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) if (v !== undefined && v !== null) n.setAttribute(k, v);
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined) n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return n;
+};
+// Clip to a box width: rough glyph widths per text class.
+const fit = (text, px, cls = "") => {
+  const s = String(text), n = Math.floor(px / ({ mono: 6.8, title: 7.6 }[cls] || 6));
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+};
+
+// A box with a title, text lines [class, text] and links; `depth` > 0
+// draws the UML node's 3-D faces, 0 an outside system.
+function box(id, x, y, w, h, title, lines, links = [], depth = 8) {
+  const d = depth;
+  const g = sv("g", { id: `map-${id}` },
+    d ? sv("path", { class: "face", d: `M${x},${y} L${x + d},${y - d} H${x + w + d} V${y + h - d} L${x + w},${y + h} V${y} Z M${x + w},${y} L${x + w + d},${y - d}` }) : null,
+    sv("rect", { class: d ? "box" : "ext", x, y, width: w, height: h }),
+    sv("text", { class: "title", x: x + 10, y: y + 18 }, fit(title, w - 20, "title")));
+  let ty = y + 35;
+  for (const [cls, text] of lines.filter(l => l && l[1])) { g.append(sv("text", { class: cls, x: x + 10, y: ty }, fit(text, w - 20, cls))); ty += 15; }
+  for (const l of links) {
+    g.append(sv("a", { href: l.href, target: "_blank", rel: "noopener noreferrer" }, sv("text", { x: x + 10, y: ty }, fit(`${l.label} ↗`, w - 20))));
+    ty += 15;
+  }
+  return g;
+}
+
+// A path: solid with a label, or (`dep`) dashed with an open arrowhead.
+function edge(x1, y1, x2, y2, label, o = {}) {
+  const lines = [label].flat().filter(Boolean);
+  return sv("g", { class: o.cls || null },
+    sv("line", { class: o.dep ? "dep" : "edge", x1, y1, x2, y2, "marker-end": o.dep ? "url(#open)" : null }),
+    lines.map((t, i) => sv("text", { class: "lbl", x: o.lx ?? (x1 + x2) / 2 + 6, y: (o.ly ?? (y1 + y2) / 2) + i * 14 }, t)));
+}
+
+function probeLines(p) {
+  if (!p) return [];
+  const sizes = [p.arch, p.cpus ? `${p.cpus} CPUs` : null, p.ram_mb ? `${gb(p.ram_mb)} RAM` : null].filter(Boolean).join(" · ");
+  return [["mono", `${p.user}@${p.hostname}`], ["mono", p.os], ["mono", sizes], ["mono", (p.gpus || [])[0]]];
+}
+
+function nodeBox(key, x, y, w, h) {
+  const n = S.map.nodes[key];
+  if (!n.target) return box(key, x, y, w, h, NODE_NAMES[key], [["st", "«node»"], ["muted", "not set up (see below)"]]);
+  return box(key, x, y, w, h, NODE_NAMES[key], [
+    ["st", `«node» ${PLACE[n.place]}`],
+    ["mono", n.host && n.host !== n.target ? `${n.target} · ${n.host}` : n.target],
+    ...probeLines(n.probe),
+    ["mono", n.note],
+    ["st", `«artifact» ${n.artifacts}`],
+  ], n.links);
+}
+
+function mapSvg() {
+  const M = S.map, N = M.nodes;
+  const fe = N.front_end, server = k => N[k].target && N[k].place === "server";
+  const https = fe.links && fe.links[0] && fe.links[0].href.startsWith("https:");
+  const cut = M.weights.dest.indexOf(":/") + 1; // worker host, then the models dir
+  const meta = (() => { try { return new URL(M.meta.base_url).host; } catch { return M.meta.base_url; } })();
+  const svg = sv("svg", { viewBox: "0 0 1000 660", width: 1000, height: 660, role: "group", "aria-label": "System map" },
+    sv("defs", {}, sv("marker", { id: "open", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, orient: "auto-start-reverse" },
+      sv("path", { class: "arrow", d: "M0,0 L10,5 L0,10" }))),
+    // Paths first, so boxes sit on top of their ends.
+    server("staging") ? edge(150, 80, 150, 142, "SSH deploy", { cls: "path-ssh" }) : null,
+    server("front_end") ? edge(280, 70, 360, 165, "SSH deploy", { cls: "path-ssh", lx: 286, ly: 136 }) : null,
+    edge(490, 80, 490, 142, https ? "HTTPS" : "HTTP · loopback", { cls: "path-https" }),
+    edge(490, 442, 490, 360, server("front_end") ? "WSS work queue" : "WS work queue · loopback", { cls: "path-wss" }),
+    edge(620, 200, 800, 298, ["«use»", ...M.models.front_end], { dep: true, cls: "use-meta", lx: 700, ly: 172 }),
+    N.workers.target ? edge(620, 480, 800, 402, ["«use»", ...M.models.workers], { dep: true, cls: "use-meta", lx: 815, ly: 428 }) : null,
+    N.workers.target ? edge(720, 575, 630, 575, "«deploy»", { dep: true, cls: "deploy-weights", lx: 642, ly: 566 }) : null,
+    M.services.map((s, i) => edge(360, 345, 282, 412 + i * 54, i === 0 ? "«use»" : null, { dep: true, lx: 304, ly: 366 })),
+    box("machine", 20, 30, 260, 50, "This machine", [["st", "«device» setup wizard"]]),
+    box("browser", 360, 30, 260, 50, "Browser", [["st", "«device» visitors and staff"]]),
+    nodeBox("staging", 20, 150, 260, 200),
+    nodeBox("front_end", 360, 150, 260, 210),
+    nodeBox("workers", 360, 450, 260, 190),
+    box("meta", 720, 300, 260, 100, "Meta Model API", [["st", "«external service»"], ["mono", meta],
+      ["mono", M.meta.key ? `key set (target ${M.meta.target})` : "no meta.api_key set"]], [], 0),
+    box("weights", 720, 520, 260, 110, "Hugging Face", [["st", "«artifact» model weights"],
+      ["mono", M.weights.repo || "repo not set (below)"], ["mono", `→ ${M.weights.dest.slice(0, cut)}`],
+      ["mono", `  ${M.weights.dest.slice(cut)}`]],
+      M.weights.repo ? [{ label: `huggingface.co/${M.weights.repo}`, href: `https://huggingface.co/${M.weights.repo}` }] : [], 0),
+    M.services.map((s, i) => box(`svc-${s.id}`, 20, 390 + i * 54, 260, 44,
+      `${s.name}${s.mode ? ` · ${s.mode}` : s.configured ? "" : " · not set"}`, [], [{ label: "console", href: s.console }], 0)));
+  return svg;
+}
+
+function placeCard(key) {
+  const n = S.map.nodes[key];
+  const go = place => api("/api/map", { node: key, place }).then(refresh).catch(e => alert(e.message));
+  const local = n.place === "native" || n.place === "docker";
+  const lt = Object.values(S.targets).find(t => t.kind === "local");
+  const seg = (label, opts) => el("div", { class: "seg", role: "group", "aria-label": `${NODE_NAMES[key]}: ${label}` },
+    opts.map(([place, text, pressed, ok, why]) => el("button", { "aria-pressed": String(pressed), disabled: !ok, title: why, onclick: () => go(place) }, text)));
+  return el("div", { class: "panel" },
+    el("h2", {}, NODE_NAMES[key]),
+    el("div", { class: "row" },
+      seg("Local or Server", [
+        [lt && lt.runtime === "docker" ? "docker" : "native", "Local", !!n.target && local, n.can.native, null],
+        ["server", "Server", n.place === "server", n.can.server, n.server_hint]]),
+      local ? seg("Docker or Native", [["docker", "Docker", n.place === "docker", n.can.docker, null], ["native", "Native", n.place === "native", n.can.native, null]]) : null),
+    n.target ? el("p", { class: "row" }, el("span", { class: "muted" }, "Runs on target"), el("span", { class: "mono" }, n.target),
+      el("button", { class: "secondary", onclick: () => { tab = n.target; renderTabs(); render(); } }, "Open its tab")) : el("p", { class: "muted" }, "Not set up."),
+    !n.can.server && n.server_hint ? el("p", { class: "muted" }, "Server: ", n.server_hint) : null,
+    n.place === "docker" && n.kind === "local" ? el("p", { class: "muted" }, "Docker runs the judge image (compose.yaml): a fresh store on every start, on localhost:18318 and :18319; the setup key is in `docker compose logs judge`.") : null,
+    n.place === "server" ? probeForm(n.target, key) : null);
+}
+
+function metaCard() {
+  const M = S.map.meta;
+  const out = el("div", {});
+  const btn = el("button", { class: "secondary", disabled: !M.target || !M.key, onclick: async () => {
+    btn.disabled = true; out.replaceChildren(el("p", { class: "muted" }, "GET /v1/models…"));
+    try {
+      const r = await api("/api/meta", { target: M.target });
+      out.replaceChildren(el("p", { class: "ok" }, `The key works: ${r.models.length} models.`), el("p", { class: "mono" }, r.models.join(", ")));
+    } catch (e) { out.replaceChildren(el("pre", { class: "log fail" }, e.message)); }
+    btn.disabled = false;
+  } }, "Test");
+  return el("div", { class: "panel" }, el("h2", {}, "Meta Model API"),
+    el("p", { class: "muted" }, M.key ? `Calls GET /v1/models with ${M.target}'s meta.api_key, from the wizard: the key never reaches this page.` : `Set meta.api_key on ${M.target || "the front end's target"} to test it.`),
+    btn, out);
+}
+
+function weightsCard() {
+  const W = S.map.weights;
+  const repo = el("input", { type: "text", id: "weights-repo", value: W.repo || "", placeholder: "org/name", autocomplete: "off" });
+  repo.addEventListener("change", () => api("/api/map", { weights_repo: repo.value }).then(refresh).catch(e => alert(e.message)));
+  return el("div", { class: "panel" }, el("h2", {}, "Hugging Face weights"),
+    el("label", { for: "weights-repo" }, "Repo the workers serve (GLIMMER_REPO in worker.env)"), repo,
+    el("p", { class: "muted" }, `Downloaded into ${W.dest} by ops/open-weights/glimmer-serve.sh.`));
+}
+
+function mapPanel() {
+  return el("div", {},
+    el("div", { class: "panel" }, el("h2", {}, "System map"),
+      el("p", { class: "muted" }, "Where each part runs and what it talks to. Solid lines are network paths; dashed arrows are «use» and «deploy» dependencies. Links open in a new tab."),
+      el("div", { class: "map-box" }, mapSvg())),
+    el("div", { class: "grid" }, ["front_end", "workers", "staging"].map(placeCard), metaCard(), weightsCard()));
 }
 
 // ---------------------------------------------------------- brand

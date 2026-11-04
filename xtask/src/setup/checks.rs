@@ -273,6 +273,26 @@ fn check_meta(v: &Values) -> CheckResult {
     }
 }
 
+/// The model ids a target's Meta key sees (`GET /v1/models`), for the
+/// map's Test button. The key stays here; errors are masked like checks.
+pub fn meta_models(file: &SetupFile, name: &str) -> Result<Vec<String>, String> {
+    let values = Values(file.target_config(name)?);
+    let key = values
+        .get("meta.api_key")
+        .ok_or(format!("meta.api_key is not set for {name}"))?;
+    let base = values
+        .get("meta.base_url")
+        .unwrap_or_else(|| handbook_agent::model::META_BASE_URL.to_string());
+    handbook_agent::model::MetaRestClient::new(base, key)
+        .check()
+        .map_err(|e| {
+            values
+                .secrets()
+                .iter()
+                .fold(e.to_string(), |d, s| d.replace(s.as_str(), "[secret]"))
+        })
+}
+
 fn check_mail(v: &Values) -> CheckResult {
     let Some([id, secret, refresh]) = v
         .all(&["mail.client_id", "mail.client_secret", "mail.refresh_token"])
