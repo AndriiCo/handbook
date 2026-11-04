@@ -35,15 +35,33 @@ Rebuild from scratch has `cargo xtask setup`). No deploy freeze on
    vision projector files) and put an HF token on plant. Then run
    `ops/open-weights/glimmer-serve.sh download` and `serve`, and set
    `GLIMMER_MODEL` in `worker.env`.
-4. **Washington SOS notice:** the apostille hub now carries "Now open in
-   Eastern Washington… Cheney… same-day… $150 same-day service fee".
-   Once the daily sweep captures the change, the change drafter
-   proposes it, and you approve the `service_notice` in `/review`. It
-   then shows as the dossier banner. It reaches followers by email only
-   after the digest is switched on (`notify.enabled`, SMTP and the
-   postal address in `/config`); production answers
-   `notify/status` `{"enabled":false}` today.
-5. **S1 (submission, before 11-04 18:00 PT):**
+4. **Washington SOS notices (pairs only):** outages come from the
+   division's public-notice log
+   (`/corporations-charities/public-notices/online-filing-system-outage`,
+   which P450 adds to the daily watches). In `/review`, accept a
+   `service_notice` only as a pair, keyed with accept-with-edit: the
+   outage line as `notice__<id>` and the office's restored line as
+   `restored__<id>`, with the same `<id>` (the outage date, e.g.
+   `notice__2026_11_02` and `restored__2026_11_02`). Accept pairs only
+   after the new guide page is live: the old page shows every accepted
+   notice as an active banner. An outage that is still active may be
+   accepted on its own at any time, because a banner is then correct.
+   Accepted notices go out in the follower digest only after the
+   digest is switched on (`notify.enabled`, SMTP and the postal address
+   in `/config`); production answers `notify/status`
+   `{"enabled":false}` today. The hub's "Now open
+   in Eastern Washington… Cheney… $150" alert is a standing
+   announcement, not a notice: its values are `walkin` and `fees`
+   facts.
+5. **Washington payee (with the R2 deploy):** production's payee fact
+   (`#13`) is the whole sentence "Make check or money order payable in
+   U.S. dollars (USD) to: Secretary of State", so the guide's "Payable
+   to" row and its Copy button carry the sentence (D2 wants the payee
+   alone). The guide shows values verbatim, so this is a data fix: in
+   `/review`, accept-with-edit `#13` as `payee: Secretary of State`
+   (the value stays inside the quote), before or together with the R2
+   deploy.
+6. **S1 (submission, before 11-04 18:00 PT):**
    - Licence: done. `LICENSE.md` (PolyForm Noncommercial 1.0.0 plus an
      evaluation permission) and `LICENSE-CONTENT.md`; the S1 check no
      longer asks for MIT or Apache-2.0.
@@ -51,7 +69,7 @@ Rebuild from scratch has `cargo xtask setup`). No deploy freeze on
    - Run a full-history `gitleaks` scan, then
      `gh repo edit AndriiCo/handbook --visibility public`. All history
      becomes public.
-6. **Brand logos (GP3):** use the setup wizard's brand step (`cargo xtask
+7. **Brand logos (GP3):** use the setup wizard's brand step (`cargo xtask
    setup wizard`). Only accepted, hash-matched files from
    `private/brand/` ship.
 

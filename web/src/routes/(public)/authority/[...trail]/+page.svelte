@@ -1,58 +1,34 @@
+<script module lang="ts">
+	// The guide's code (the presenter and every guide component) is a chunk
+	// of its own, requested as this route's module loads: it downloads
+	// alongside the first API reads rather than ahead of them. It loads
+	// on every visit, so it counts toward the page budget
+	// (doc/guide-code.js; web/README.md, JS budgets).
+	const guideCode = import('../../../../lib/public-ui/doc/guide-code.js');
+	guideCode.catch(() => {});
+</script>
+
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { flip } from 'svelte/animate';
+	import { tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
-	import VerifiedChip from '../../../../lib/public-ui/VerifiedChip.svelte';
-	import TranslationChip from '../../../../lib/public-ui/TranslationChip.svelte';
-	import GuideStep from '../../../../lib/public-ui/GuideStep.svelte';
-	import GuideEmpty from '../../../../lib/public-ui/GuideEmpty.svelte';
-	import FollowCard from '../../../../lib/public-ui/FollowCard.svelte';
 	import { Skeleton } from '../../../../lib/components/ui/skeleton/index.js';
-	import * as Popover from '../../../../lib/components/ui/popover/index.js';
-	import Heading from '../../../../lib/components/brand/Heading.svelte';
-	import Guilloche from '../../../../lib/components/brand/Guilloche.svelte';
-	import Flag from '../../../../lib/components/brand/Flag.svelte';
-	import ChainView from '../../../../lib/public-ui/ChainView.svelte';
-	import PlanView from '../../../../lib/public-ui/plan/PlanView.svelte';
-	import ProvenancePanel from '../../../../lib/public-ui/plan/ProvenancePanel.svelte';
 	import {
-		parsePlan,
-		selectedPath,
-		type PlanForm,
-		type PlanView as PlanViewData
-	} from '../../../../lib/public-ui/plan.js';
-	import {
-		flagFor,
-		latestCapture,
-		silhouetteFor,
-		verifiedAtOf
-	} from '../../../../lib/public-ui/authority-meta.js';
+		evidenceRows,
+		factRows,
+		formRows,
+		hasSendSlot,
+		indexRow,
+		officeRecords,
+		planAuthority
+	} from '../../../../lib/public-ui/doc/load.js';
+	import { modelLabel, parsePlan, type Office } from '../../../../lib/public-ui/plan.js';
+	import type { Page as GuidePage } from '../../../../lib/public-ui/doc/contract.js';
 	import { subscribe } from '../../../../lib/live.svelte.js';
-	import {
-		factCount,
-		groupFactsByTopic,
-		publicError,
-		readDossier,
-		seedLedgerEvents,
-		topicLabel
-	} from '../../../../lib/public-ui/handbook.js';
-	import {
-		buildGuide,
-		changePanels,
-		domain,
-		markQuote,
-		serviceNotices,
-		sourceUrl
-	} from '../../../../lib/public-ui/guide.js';
-	import {
-		CHROME,
-		indexTranslations,
-		parseLangParam,
-		translateHref
-	} from '../../../../lib/public-ui/translate.js';
+	import { listAuthorities, publicError, readDossier } from '../../../../lib/public-ui/handbook.js';
+	import { indexTranslations, parseLangParam } from '../../../../lib/public-ui/translate.js';
 
 	// The address is a readable path (`usa/washington`, `us/wa`, a county
 	// `usa/new_york/chemung`) or the internal slug. A one-segment address
@@ -62,9 +38,10 @@
 	let resolvedSlugs = $state<Record<string, string>>({});
 	let unknownPath = $state(false);
 	const slug = $derived(trail.includes('/') ? (resolvedSlugs[trail] ?? '') : trail);
-	// Canonical address and breadcrumbs, from the resolver or the index
-	// row, each tagged with the slug it belongs to (a client-side jump to
-	// another dossier must never reuse the previous one's).
+	// Canonical address and breadcrumbs, from the resolver or the
+	// authority row, each tagged with the slug it belongs to (a
+	// client-side jump to another office must never reuse the previous
+	// one's).
 	let canonical = $state<{ slug: string; path: string } | null>(null);
 	type Crumb = { path: string; label: string; slug: string | null; location?: string | null };
 	let crumbsOf = $state<{ slug: string; list: Crumb[] } | null>(null);
@@ -73,6 +50,14 @@
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
 
+	// The guide draws once its code and its reads are both in.
+	let code = $state.raw<Awaited<typeof guideCode> | null>(null);
+	let codeFailed = $state(false);
+	guideCode.then(
+		(m) => (code = m),
+		() => (codeFailed = true)
+	);
+
 	async function get(path: string) {
 		const res = await fetch(api(path), { credentials: 'same-origin' });
 		const body = await res.json().catch(() => ({}));
@@ -80,126 +65,79 @@
 	}
 
 	let facts = $state<any[] | null>(null);
-	// SA-14: per-source "What changed" (added/removed lines, both
-	// capture dates). A failed read just hides the panel.
-	let changes = $state<ReturnType<typeof changePanels>>([]);
 	let loadError = $state<string | null>(null);
 	let notFound = $state(false);
-	// Machine-translation view (SA-20): `?lang=es|fr` swaps accepted
-	// fact statements for stored guard-passing rows; anything missing
-	// stays in English. Never a model call from this page.
+	// Machine-translation view (SA-20): `?lang=es|fr` shows stored
+	// guard-passing rows next to the records; anything missing stays in
+	// English. Never a model call from this page.
 	const lang = $derived(parseLangParam(page.url.search));
 	const target = $derived(lang === 'es' || lang === 'fr' ? lang : null);
-	const LANG_CODES = ['es', 'fr'] as const;
 	let translatedById = $state<Record<number, { statement: string; model: string }>>({});
-	let authorityName = $state<string | null>(null);
-	let authorityCountry = $state<string | null>(null);
-	let authorityRegion = $state<string | null>(null);
-	let authorityIso2 = $state<string | null>(null);
-	let authorityVerifiedAt = $state('');
-	let activeTopic = $state('');
 
-	type LedgerEvent = {
-		id: string;
-		kind: 'verified' | 'changed';
-		text: string;
-		at: string;
-		fresh: boolean;
+	// `GET /authorities/{slug}/plan` always answers 200: the authority
+	// row (R1), accepted office records, forms, published staff notes
+	// and the accepted plan's provenance. The page waits for it, and for
+	// the index fallback when it names no authority, before it draws, so
+	// the header never flashes the slug.
+	type AuthorityRow = {
+		slug: string;
+		name: string;
+		region: string;
+		country: string;
+		kind: string;
+		path: string;
+		official_url: string | null;
+		iso2?: string;
 	};
-	let ledger = $state<LedgerEvent[]>([]);
-
-	// Accepted render plan (W2a): `GET /authorities/{slug}/plan` always
-	// answers 200; `plan: null` (or any unreadable body) falls back to
-	// the fact guide below. The page waits for both reads before it
-	// draws, so the guide never flashes ahead of a plan.
-	let planView = $state<PlanViewData | null>(null);
+	let planBody = $state<any>(null);
 	let planSettled = $state(false);
-	let planFlash = $state(false);
-	let planFlashTimer: ReturnType<typeof setTimeout> | null = null;
+	let authority = $state<AuthorityRow | null>(null);
+	// `/p2/orders/options` (always 200): read after first paint, only
+	// when the page has an address to send to; failures are ignored.
+	let options = $state<any>(null);
+	let optionsFor = '';
+	let nowTick = $state(Date.now());
+	let flash = $state<string[]>([]);
+	let announce = $state('');
 
-	async function loadPlan(current: string, flash = false) {
+	async function loadPlan(current: string) {
+		let body: any = null;
 		try {
 			const res = await get(`/authorities/${encodeURIComponent(current)}/plan`);
 			if (current !== slug) return;
-			planView = res.ok ? parsePlan(res.body) : null;
+			body = res.ok ? res.body : null;
 		} catch {
 			if (current !== slug) return;
-			planView = null;
-		} finally {
-			if (current === slug) planSettled = true;
 		}
-		if (flash && planView) {
-			if (planFlashTimer) clearTimeout(planFlashTimer);
-			planFlash = true;
-			planFlashTimer = setTimeout(() => {
-				planFlash = false;
-				planFlashTimer = null;
-			}, 1500);
+		let row: AuthorityRow | null = planAuthority(body);
+		if (!row) {
+			// The 118 KB index only when /plan names no authority (J1
+			// fixtures, a store before R1).
+			try {
+				const res = await listAuthorities({ get });
+				if (current !== slug) return;
+				row = res.ok ? indexRow(res.body, current) : null;
+			} catch {
+				row = null;
+			}
 		}
+		if (current !== slug) return;
+		planBody = body;
+		if (row) authority = row;
+		if (row?.path && !(canonical && canonical.slug === current)) {
+			canonical = { slug: current, path: row.path };
+		}
+		planSettled = true;
 	}
 
-	const path = $derived(
-		planView ? selectedPath(planView.plan, page.url.searchParams.get('path')) : null
-	);
-	function pathHref(id: string | null): string {
-		const q = new URLSearchParams(page.url.search);
-		if (id) q.set('path', id);
-		else q.delete('path');
-		const qs = q.toString();
-		return `${page.url.pathname}${qs ? `?${qs}` : ''}`;
-	}
-	function orderHref(kind?: string): string {
-		const q = new URLSearchParams({ destination: slug });
-		if (path) q.set('path', path);
-		if (kind) q.set('kind', kind);
-		return `${resolve('/(customer)/order')}?${q}`;
-	}
-	function fillHref(form: PlanForm): string {
-		const q = new URLSearchParams({ authority: slug, form: String(form.id) });
-		return `${resolve('/(customer)/forms')}?${q}`;
-	}
-
-	const groups = $derived(groupFactsByTopic(facts ?? []));
-	const topicId = (topic: string) =>
-		`topic-${topic.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-
-	function firstCapture(fact: any): any | null {
-		const cites = Array.isArray(fact?.citations) ? fact.citations : [];
-		return cites.length > 0 ? cites[0] : null;
-	}
-
-	function shortDate(iso: string): string {
-		return String(iso ?? '').split('T')[0];
-	}
-
-	function modelName(fact: any): string {
-		const raw = String(fact?.drafted_by ?? fact?.created_by ?? 'unknown');
-		return raw.split(' ')[0];
-	}
-
-	function seedLedger(list: any[]) {
-		ledger = seedLedgerEvents(list) as LedgerEvent[];
-	}
-
-	function pushLiveEvent(text = 'New fact approved by staff') {
-		const id = `live-${Date.now()}-${ledger.length}`;
-		ledger = [
-			{ id, kind: 'verified', text, at: '', fresh: true },
-			...ledger
-		];
-		setTimeout(() => {
-			ledger = ledger.map((e) => (e.id === id ? { ...e, fresh: false } : e));
-		}, 600);
-	}
-
-	// A place (`/authority/usa`) is not a dossier: show its place page.
+	// A place (`/authority/usa`) is not an office: show its place page.
 	async function placeOr404(address: string) {
 		try {
 			const res = await get(`/authorities/resolve?path=${encodeURIComponent(address)}`);
 			const place = res.ok ? res.body?.location?.path : null;
 			if (typeof place === 'string' && place) {
 				// A full load: the place page is another route with its
-				// own crawler head, and this dossier never finished loading.
+				// own crawler head, and this page never finished loading.
 				const href = resolve('/(public)/in/[...path]', { path: place });
 				window.location.replace(`${href}${page.url.search}`);
 				return;
@@ -218,87 +156,11 @@
 			else loadError = publicError(res.status, 'dossier');
 			return;
 		}
-		const rows = res.body?.facts;
-		// Defense in depth: the API excludes phone_script, and the
-		// page drops it too, so Evidence never renders it.
-		const list = (Array.isArray(rows) ? rows : []).filter(
-			(f) => f?.topic !== 'phone_script'
-		);
-		facts = list;
-		activeTopic = groupFactsByTopic(list)[0]?.topic ?? activeTopic;
-		seedLedger(list);
-		armFlash(list);
-	}
-
-	async function loadChanges(current: string) {
-		try {
-			const res = await get(`/authorities/${encodeURIComponent(current)}/changes`);
-			if (current !== slug) return;
-			changes = res.ok ? changePanels(res.body) : [];
-		} catch {
-			if (current === slug) changes = [];
-		}
+		facts = factRows(res.body);
 	}
 
 	const isCrumb = (c: any): c is Crumb =>
 		typeof c?.path === 'string' && typeof c?.label === 'string' && c.label !== '';
-
-	// One row read (P2-6): name, place, addresses and breadcrumbs of
-	// this dossier only — never the whole index.
-	async function resolveName(current: string) {
-		try {
-			const res = await get(`/authorities/${encodeURIComponent(current)}`);
-			if (current !== slug || !res.ok) return;
-			const found = res.body ?? {};
-			if (typeof found.path === 'string' && found.path) {
-				canonical = { slug: current, path: found.path };
-			}
-			if (crumbsOf?.slug !== current) {
-				const list: Crumb[] = (Array.isArray(found.crumbs) ? found.crumbs : []).filter(isCrumb);
-				const place = found.place;
-				if (list.length === 0 && isCrumb(place)) {
-					list.push({ path: place.path, label: place.label, slug: null, location: place.path });
-				}
-				crumbsOf = { slug: current, list };
-			}
-			if (typeof found.name === 'string' && found.name) authorityName = found.name;
-			if (typeof found.country === 'string' && found.country) authorityCountry = found.country;
-			if (typeof found.region === 'string' && found.region) authorityRegion = found.region;
-			if (typeof found.iso2 === 'string' && found.iso2) authorityIso2 = found.iso2;
-			authorityVerifiedAt = verifiedAtOf(found);
-		} catch {
-			// The slug stays the heading; the header row is a nicety, not a gate.
-		}
-	}
-
-	let sectionsRoot = $state<HTMLElement | null>(null);
-	let spy: IntersectionObserver | null = null;
-
-	function observeSections() {
-		spy?.disconnect();
-		if (!sectionsRoot || typeof IntersectionObserver === 'undefined') return;
-		spy = new IntersectionObserver(
-			(entries) => {
-				for (const e of entries) {
-					if (e.isIntersecting && e.target instanceof HTMLElement && e.target.dataset.topic) {
-						activeTopic = e.target.dataset.topic;
-					}
-				}
-			},
-			{ rootMargin: '-30% 0px -60% 0px' }
-		);
-		for (const el of sectionsRoot.querySelectorAll('[data-topic]')) spy.observe(el);
-	}
-
-	onMount(() => {
-		observeSections();
-		return () => spy?.disconnect();
-	});
-
-	$effect(() => {
-		// Re-observe after each load renders new sections.
-		if (facts && sectionsRoot) observeSections();
-	});
 
 	// A readable path resolves to its slug once (public, model-free read).
 	$effect(() => {
@@ -323,9 +185,7 @@
 				if (Array.isArray(res.body.crumbs)) {
 					crumbsOf = {
 						slug: res.body.slug,
-						list: res.body.crumbs
-							.slice(0, -1)
-							.filter((c: any) => typeof c?.path === 'string' && typeof c?.label === 'string')
+						list: res.body.crumbs.slice(0, -1).filter(isCrumb)
 					};
 				}
 				resolvedSlugs = { ...resolvedSlugs, [t]: res.body.slug };
@@ -333,6 +193,24 @@
 			.catch(() => {
 				if (!cancelled && t === trail) unknownPath = true;
 			});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	// A slug address learns its breadcrumbs from its canonical path's
+	// resolve, once (a one-segment path has none).
+	$effect(() => {
+		const current = slug;
+		const canon = canonical && canonical.slug === current ? canonical.path : null;
+		if (!current || !canon || !canon.includes('/') || crumbsOf?.slug === current) return;
+		let cancelled = false;
+		get(`/authorities/resolve?path=${encodeURIComponent(canon)}`)
+			.then((res) => {
+				if (cancelled || current !== slug || !res.ok || !Array.isArray(res.body?.crumbs)) return;
+				crumbsOf = { slug: current, list: res.body.crumbs.slice(0, -1).filter(isCrumb) };
+			})
+			.catch(() => {});
 		return () => {
 			cancelled = true;
 		};
@@ -350,51 +228,56 @@
 		void goto(`${href}${page.url.search}${page.url.hash}`, { shallow: true, replace: true });
 	});
 
+	// Live updates over WS `authority:{slug}` (ids only): re-read, re-present,
+	// light the changed rows and say what changed. No polling.
+	const LIVE_KINDS = new Set(['fact_accepted', 'plan_accepted', 'offices_accepted', 'fact_retired', 'evidence_updated']);
+
+	async function refresh(current: string) {
+		const before = view;
+		await Promise.all([reload(current).catch(() => {}), loadPlan(current)]);
+		if (current !== slug) return;
+		nowTick = Date.now();
+		const after = view;
+		if (!after || !code) return;
+		const changed = code.changedItems(before, after);
+		flash = changed.ids;
+		announce = '';
+		if (changed.labels.length > 0) {
+			await tick();
+			announce = `Updated: ${changed.labels.join(', ')}`;
+		}
+	}
+
 	$effect(() => {
 		const current = slug;
 		facts = null;
-		changes = [];
 		loadError = null;
 		notFound = false;
-		activeTopic = '';
-		authorityName = null;
-		authorityCountry = null;
-		authorityRegion = null;
-		authorityIso2 = null;
-		authorityVerifiedAt = '';
-		ledger = [];
-		planView = null;
+		authority = null;
+		planBody = null;
 		planSettled = false;
+		options = null;
+		optionsFor = '';
+		flash = [];
+		announce = '';
 		if (!current) return;
 		reload(current).catch(() => {
 			if (current !== slug) return;
 			loadError = publicError(500, 'dossier');
 		});
 		void loadPlan(current);
-		void loadChanges(current);
-		void resolveName(current);
-		// Live ledger: an approval in /review re-renders this dossier
-		// over WS `authority:{slug}` — ids only, so the page re-reads
-		// the API; no polling.
 		return subscribe(`authority:${current}`, (msg) => {
-			if (current !== slug) return;
-			if (msg?.type === 'fact_accepted') {
-				// A bulk approval is one event carrying every id.
-				const n = Array.isArray(msg?.fact_ids) ? msg.fact_ids.length : 1;
-				pushLiveEvent(n > 1 ? `${n} new facts approved by staff` : undefined);
-				if (typeof msg?.fact_id === 'number') pendingFlashFactId = msg.fact_id;
-				void reload(current).catch(() => {});
-				void loadPlan(current, true);
-				void loadChanges(current);
-			} else if (msg?.type === 'plan_accepted') {
-				const v = typeof msg?.version === 'number' ? ` v${msg.version}` : '';
-				pushLiveEvent(`Plan${v} approved by staff`);
-				void loadPlan(current, true);
-			} else if (msg?.type === 'offices_accepted') {
-				pushLiveEvent('Office details approved by staff');
-				void loadPlan(current, true);
-			}
+			if (current !== slug || !LIVE_KINDS.has(String(msg?.type ?? ''))) return;
+			void refresh(current);
 		});
+	});
+
+	// Office status and closures move with the clock.
+	$effect(() => {
+		const timer = setInterval(() => {
+			nowTick = Date.now();
+		}, 60_000);
+		return () => clearInterval(timer);
 	});
 
 	// Machine translations follow the same reload cycle: refetch
@@ -421,53 +304,64 @@
 		};
 	});
 
-	const guideSteps = $derived(buildGuide(facts ?? [], Date.now()));
-	// Accepted service notices (closures, outages): the banner at the
-	// top, newest first — never a guide step.
-	const notices = $derived(serviceNotices(facts ?? []));
-
-	// WS flash: the last accepted fact's step lights up after reload.
-	let flashStepId = $state<string | null>(null);
-	let pendingFlashFactId = $state<number | null>(null);
-	let flashTimer: ReturnType<typeof setTimeout> | null = null;
-
-	function armFlash(list: any[]) {
-		if (pendingFlashFactId === null) return;
-		const found = list.find((f) => f?.id === pendingFlashFactId);
-		pendingFlashFactId = null;
-		if (!found) return;
-		const step = guideSteps.find((s) => s.items.some((i) => i.factIds.includes(found.id)));
-		if (!step) return;
-		if (flashTimer) clearTimeout(flashTimer);
-		flashStepId = step.id;
-		flashTimer = setTimeout(() => {
-			flashStepId = null;
-			flashTimer = null;
-		}, 1500);
-	}
-
-	const websiteUrl = $derived(
-		(() => {
-			for (const f of facts ?? []) {
-				if (f?.topic !== 'website' || f?.status !== 'accepted') continue;
-				const cites = Array.isArray(f.citations) ? f.citations : [];
-				const url = cites[0]?.source_url;
-				if (typeof url === 'string' && url.startsWith('https://')) return url;
-			}
-			return null;
-		})()
+	const crumbLinks = $derived(
+		crumbs.map((c) => ({
+			label: c.label,
+			href: c.slug
+				? resolve('/(public)/authority/[...trail]', { trail: c.path })
+				: c.location
+					? resolve('/(public)/in/[...path]', { path: c.location })
+					: null
+		}))
 	);
+	const officeSet = $derived(officeRecords(planBody) as Office[]);
+	const forms = $derived(formRows(planBody));
+	const evidence = $derived(evidenceRows(planBody));
+	const planView = $derived(planBody ? parsePlan(planBody) : null);
+	const models = $derived([
+		...new Set(
+			(facts ?? [])
+				.map((f) => String(f?.drafted_by ?? f?.created_by ?? '').split(' ')[0])
+				.filter((m) => m && m !== 'unknown')
+				.map(modelLabel)
+		)
+	]);
 
-	// Every header value is runtime data: the index row (name, country,
-	// region, verified_at) and the accepted facts. Flag and outline are
-	// looked up from the row's country/region, never from the slug.
-	const displayName = $derived(authorityName ?? slug);
-	const flag = $derived(flagFor(authorityCountry, authorityIso2));
-	const sil = $derived(silhouetteFor({ region: authorityRegion, country: authorityCountry }));
-	const lastVerified = $derived(authorityVerifiedAt || (facts ? latestCapture(facts) : ''));
-	const hasChain = $derived(
-		(facts ?? []).some((f) => f?.status === 'accepted' && f?.topic === 'legalization_chain')
-	);
+	// The guide: every value from the accepted facts (present.js).
+	const view = $derived.by((): GuidePage | null => {
+		if (facts === null || !planSettled || !code) return null;
+		return code.present({
+			authority: { ...(authority ?? { slug }), crumbs: crumbLinks },
+			facts,
+			plan: planBody?.plan ?? null,
+			offices: officeSet,
+			forms,
+			evidence,
+			now: nowTick
+		});
+	});
+	const nowDate = $derived(new Date(nowTick));
+
+	$effect(() => {
+		const current = slug;
+		const v = view;
+		if (!v || !current || optionsFor === current || !hasSendSlot(v)) return;
+		optionsFor = current;
+		// After first paint: the offers never hold up the page.
+		requestAnimationFrame(() => {
+			setTimeout(() => {
+				get(`/p2/orders/options?slug=${encodeURIComponent(current)}`)
+					.then((res) => {
+						if (current === slug && res.ok && Array.isArray(res.body?.options)) options = res.body;
+					})
+					.catch(() => {});
+			}, 0);
+		});
+	});
+
+	// Every header value is runtime data: the authority row and the
+	// accepted facts; the slug only until the row arrives.
+	const displayName = $derived(authority?.name || slug);
 </script>
 
 <svelte:head>
@@ -481,422 +375,38 @@
 			<a href={resolve('/(public)')}>Back to the authority index</a>.
 		</p>
 	</Notice>
-{:else if loadError}
-	<Notice variant="error" heading="This dossier is unavailable."><p>{loadError}</p></Notice>
-{:else if facts === null || !planSettled}
-	<div role="status" aria-label="Loading dossier" class="flex flex-col gap-2 pt-6">
-		<span class="sr-only">Loading dossier</span>
+{:else if loadError || codeFailed}
+	<Notice variant="error" heading="This guide is unavailable.">
+		<p>{loadError ?? 'Could not load this guide — reload the page to try again.'}</p>
+	</Notice>
+{:else if !view || !code}
+	<div role="status" aria-label="Loading the guide" class="flex flex-col gap-2 pt-6">
+		<span class="sr-only">Loading the guide</span>
 		<Skeleton class="h-9 w-2/3" />
 		<Skeleton class="h-4 w-1/3" />
 		<Skeleton class="h-24 w-full" />
 	</div>
 {:else}
-	{#if notices.length > 0}
-		<section aria-label="Service notices" class="flex flex-col gap-2 pt-6">
-			{#each notices as n (n.id)}
-				{@const src = sourceUrl(n.sourceUrl, n.quote)}
-				<Notice variant="warning" heading={`Service notice · ${shortDate(n.capturedAt)}`}>
-					{#if n.text !== n.quote}
-						<p class="m-0 break-words">{n.text}</p>
-					{/if}
-					<blockquote class="font-quote m-0 mt-2 border-l-2 border-verified pl-3 break-words italic">
-						{n.quote}
-					</blockquote>
-					<p class="mt-2 mb-0 text-xs text-ink-muted">
-						{#if src}
-							<a href={src} target="_blank" rel="noopener noreferrer">{domain(n.sourceUrl)}</a>
-						{:else}
-							<span>{domain(n.sourceUrl)}</span>
-						{/if}
-						· captured {shortDate(n.capturedAt)} · approved by staff
-					</p>
-				</Notice>
-			{/each}
-		</section>
-	{/if}
-	<header class="relative overflow-clip py-10 xl:py-16" aria-labelledby="dossier-title">
-		{#if sil}
-			<svg
-				viewBox={`0 0 ${sil.width} ${sil.height}`}
-				class="pointer-events-none absolute top-1/2 -right-10 hidden w-[420px] -translate-y-1/2 opacity-[0.07] [mask-image:radial-gradient(circle,black,transparent_72%)] sm:block"
-				aria-hidden="true"
-				data-graphic="silhouette"
-			>
-				<path d={sil.d} style="fill: var(--color-ink);" />
-			</svg>
-			<Guilloche
-				seed={slug}
-				class="pointer-events-none absolute top-1/2 -right-24 hidden size-96 -translate-y-1/2 text-brand-300 opacity-60 [mask-image:radial-gradient(circle,black,transparent_70%)] sm:block dark:text-brand-700"
-			/>
-		{/if}
-		<nav aria-label="Breadcrumb">
-			<ol class="m-0 flex list-none flex-wrap gap-1 p-0 text-sm text-ink-muted">
-				<li class="m-0 p-0">
-					<a class="text-ink-muted no-underline hover:text-ink hover:underline" href={resolve('/(public)')}>
-						Home
-					</a>
-				</li>
-				<li class="m-0 p-0" aria-hidden="true">/</li>
-				{#each crumbs as crumb (crumb.path)}
-					<li class="m-0 p-0">
-						{#if crumb.slug}
-							<a
-								class="text-ink-muted no-underline hover:text-ink hover:underline"
-								href={resolve('/(public)/authority/[...trail]', { trail: crumb.path })}
-							>
-								{crumb.label}
-							</a>
-						{:else if crumb.location}
-							<a
-								class="text-ink-muted no-underline hover:text-ink hover:underline"
-								href={resolve('/(public)/in/[...path]', { path: crumb.location })}
-							>
-								{crumb.label}
-							</a>
-						{:else}
-							{crumb.label}
-						{/if}
-					</li>
-					<li class="m-0 p-0" aria-hidden="true">/</li>
-				{/each}
-				<li class="m-0 p-0" aria-current="page">{displayName}</li>
-			</ol>
-		</nav>
-		<p class="text-eyebrow mt-6 font-semibold tracking-[0.06em] text-ink-muted uppercase">
-			Authority dossier
-		</p>
-		<div class="mt-2 flex items-center gap-3">
-			{#if flag}
-				<Flag code={flag} label={`${authorityCountry ?? displayName} flag`} class="size-8 vt-flag" />
-			{/if}
-			<Heading level={1}>
-				<span class="vt-title">{displayName}</span>
-			</Heading>
-		</div>
-		{#if facts.length > 0}
-			<p class="mt-3 mb-0 font-mono text-xs text-ink-muted">
-				<span>last verified {shortDate(lastVerified) || '—'}</span>
-				· <span>{factCount(facts.length)}</span>
-			</p>
-		{/if}
-		<div class="mt-6 flex flex-wrap gap-2">
-			<a
-				href={`${resolve('/(customer)/order')}?destination=${encodeURIComponent(slug)}`}
-				class="inline-flex min-h-11 items-center rounded-sm bg-accent-fill px-5 font-medium text-accent-ink no-underline transition-colors hover:bg-accent-hover"
-			>
-				Start an order for {authorityRegion ?? authorityCountry ?? displayName}
-			</a>
-			<a
-				href={resolve('/(customer)/report')}
-				class="inline-flex min-h-11 items-center rounded-sm border border-line bg-bg px-5 font-medium text-ink no-underline transition-colors hover:border-focus"
-			>
-				Report a change
-			</a>
-		</div>
-		<nav aria-label="Dossier language" class="mt-6 flex flex-wrap items-center gap-2 text-sm">
-			<span class="text-ink-muted">{CHROME[lang ?? 'en']?.readIn ?? 'Read in'}:</span>
-			<a
-				href={translateHref(page.url.pathname, null)}
-				aria-current={!lang ? 'true' : undefined}
-				class={`inline-flex min-h-11 items-center rounded-full px-3 no-underline transition-colors ${
-					!lang
-						? 'bg-accent-fill font-medium text-accent-ink'
-						: 'text-ink-muted hover:bg-surface hover:text-ink'
-				}`}
-			>
-				English
-			</a>
-			{#each LANG_CODES as code (code)}
-				<a
-					href={translateHref(page.url.pathname, code)}
-					aria-current={lang === code ? 'true' : undefined}
-					class={`inline-flex min-h-11 items-center rounded-full px-3 no-underline transition-colors ${
-						lang === code
-							? 'bg-accent-fill font-medium text-accent-ink'
-							: 'text-ink-muted hover:bg-surface hover:text-ink'
-					}`}
-				>
-					{CHROME[code]?.langName ?? code}
-				</a>
-			{/each}
-		</nav>
-	</header>
-
-	{#if planView}
-		<section
-			aria-labelledby="plan"
-			class={`plan-section border-y border-line bg-surface py-10 xl:py-16 ${planFlash ? 'plan-flash' : ''}`}
-			data-plan-version={planView.plan.version}
-		>
-			<div class="mx-auto w-full max-w-5xl px-4 sm:px-6">
-				<p class="text-eyebrow m-0 font-semibold tracking-wide text-ink-muted uppercase">
-					Staff-approved · plan v{planView.plan.version}
-				</p>
-				<h2 id="plan" class="text-h2 mt-2 mb-0 font-semibold">
-					Your apostille plan<span class="sr-only"> for {displayName}</span>
-				</h2>
-				<PlanView view={planView} {path} hrefFor={pathHref} {orderHref} {fillHref} />
-				<p class="mt-8 mb-0 max-w-prose text-sm text-ink-muted">
-					Every step above rests on staff-accepted facts, each with its source one tap
-					away. General information, not legal advice.
-				</p>
-			</div>
-		</section>
-		{#if planView.provenance}
-			<section aria-labelledby="made-title" id="made" class="mx-auto w-full max-w-5xl scroll-mt-20 px-4 py-10 sm:px-6 xl:py-16">
-				<p class="text-eyebrow m-0 font-semibold tracking-wide text-ink-muted uppercase">
-					Built by Meta models, approved by a person
-				</p>
-				<h2 id="made-title" class="text-h2 mt-2 mb-0 font-semibold">How this page was made</h2>
-				<p class="mt-2 mb-6 max-w-prose text-sm text-ink-muted">
-					Each stage below is recorded with the plan. Nothing reaches this page until the
-					validator passes and a staff reviewer accepts it.
-				</p>
-				<ProvenancePanel
-					provenance={planView.provenance}
-					version={planView.plan.version}
-					acceptedAt={planView.plan.accepted_at}
-				/>
-			</section>
-		{/if}
-	{:else}
-		<section aria-labelledby="howto" class="border-y border-line bg-surface py-10 xl:py-16">
-			<div class="mx-auto w-full max-w-5xl px-4 sm:px-6">
-				<h2 id="howto" class="text-h2 mt-0 mb-0 font-semibold">
-					How to get your apostille<span class="sr-only"> for {displayName}</span>
-				</h2>
-				{#if guideSteps.length === 0}
-					<div class="mt-8">
-						<GuideEmpty websiteUrl={websiteUrl} slug={slug} />
-					</div>
-				{:else}
-					<ol class="m-0 mt-8 list-none p-0">
-						{#each guideSteps as step, i (step.id)}
-							<GuideStep step={step} index={i} flash={flashStepId === step.id} />
-						{/each}
-					</ol>
-					<p class="mt-8 mb-0 max-w-prose text-sm text-ink-muted">
-						Every value above is staff-accepted, with its source one tap
-						away. General information, not legal advice.
-					</p>
-				{/if}
-			</div>
-		</section>
-	{/if}
-	{#if hasChain}
-		<section aria-labelledby="chain" class="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 xl:py-16">
-			<h2 id="chain" class="text-h2 mt-0 mb-0 font-semibold">Legalization chain</h2>
-			<p class="mt-2 mb-6 max-w-prose text-sm text-ink-muted">
-				Each hop below is a staff-approved fact, in order, with its source one tap away.
-			</p>
-			<ChainView facts={facts} />
-		</section>
-	{/if}
-	<section aria-label="Follow this office" class="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 xl:py-16">
-		<FollowCard slug={slug} name={displayName} apiBase={apiRoot} />
-	</section>
-	{#if facts.length > 0}
-		<section aria-label="Evidence" class="grid gap-8 pt-10 pb-16 lg:grid-cols-12 xl:pt-16">
-			<div class="min-w-0 lg:col-span-8" bind:this={sectionsRoot}>
-				<nav
-					class="sticky top-14 z-20 -mx-1 border-b border-line bg-bg/90 px-1 py-1 backdrop-blur"
-					aria-label="Dossier sections"
-				>
-					<ul class="m-0 flex list-none flex-wrap gap-1 p-0">
-						{#each groups as g (g.topic)}
-							<li class="m-0 p-0">
-								<a
-									href={`#${topicId(g.topic)}`}
-									aria-current={activeTopic === g.topic ? 'true' : undefined}
-									class={`inline-flex min-h-11 items-center rounded-full px-3 text-sm no-underline transition-colors ${
-										activeTopic === g.topic
-											? 'bg-accent-fill font-medium text-accent-ink'
-											: 'text-ink-muted hover:bg-surface hover:text-ink'
-									}`}
-								>
-									{topicLabel(g.topic)}
-								</a>
-							</li>
-						{/each}
-					</ul>
-				</nav>
-				{#each groups as g (g.topic)}
-					<section id={topicId(g.topic)} data-topic={g.topic} aria-label={topicLabel(g.topic)} class="scroll-mt-32 py-10 xl:py-16">
-						<div class="flex flex-col gap-4">
-							{#each g.facts as fact (fact.id ?? fact.statement)}
-								{@const cite = firstCapture(fact)}
-								{@const view =
-									target && typeof fact?.id === 'number' && translatedById[fact.id]
-										? { lang: target, ...translatedById[fact.id] }
-										: null}
-								<article class="rounded-xl border border-line bg-bg p-5">
-									{#if view}
-										<TranslationChip
-											lang={view.lang}
-											translated={view.statement}
-											original={fact.statement}
-											model={view.model}
-										/>
-									{:else}
-										<p class="text-body-lg m-0 break-words text-ink">{fact.statement}</p>
-									{/if}
-									<div class="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-										{#if cite}
-											<VerifiedChip tier="Staff approved" verified={shortDate(cite.captured_at)} />
-										{/if}
-										{#if cite && typeof cite.source_url === 'string'}
-											<span class="font-mono text-xs text-ink-muted">{domain(cite.source_url)}</span>
-										{/if}
-										{#if cite?.captured_at}
-											<span class="font-mono text-xs text-ink-muted">
-												retrieved {shortDate(cite.captured_at)}
-											</span>
-										{/if}
-										<span class="text-xs text-ink-muted">approved by staff · {modelName(fact)}</span>
-										{#if cite?.quote}
-											<Popover.Root>
-												<Popover.Trigger
-													class="inline-flex min-h-11 cursor-pointer items-center font-medium text-accent-strong underline decoration-dotted underline-offset-4"
-												>
-													View quote
-												</Popover.Trigger>
-												<Popover.Content class="max-w-80" align="start">
-													<blockquote class="font-quote m-0 border-l-2 border-verified pl-3 italic">
-														{@html markQuote(cite.quote, fact.statement)}
-													</blockquote>
-													{@const src = sourceUrl(cite.source_url, cite.quote)}
-													<p class="mt-2 mb-0 text-xs text-ink-muted">
-														{#if src}
-															<a
-																href={src}
-																target="_blank"
-																rel="noopener noreferrer">Source</a
-															>
-														{:else}
-															<span>Source unavailable</span>
-														{/if}
-														· retrieved {shortDate(cite.captured_at)}
-													</p>
-												</Popover.Content>
-											</Popover.Root>
-										{/if}
-									</div>
-									{#if fact.conflict}
-										<div class="mt-4 rounded-lg border-l-4 border-changed bg-changed-bg p-4">
-											<p class="m-0 text-sm font-medium text-ink">
-												Conflicting reports for this item.
-											</p>
-											<div class="mt-2 grid gap-2 sm:grid-cols-2">
-												<div class="rounded-md border border-line bg-bg p-3">
-													<p class="m-0 text-xs font-medium text-ink-muted">Accepted</p>
-													<p class="m-0 mt-1 break-words text-sm text-ink">{fact.statement}</p>
-												</div>
-												{#each fact.conflicts ?? [] as sib (sib.id ?? sib.statement)}
-													<div class="rounded-md border border-line bg-bg p-3">
-														<p class="m-0 text-xs font-medium text-ink-muted">
-															<span
-																class="inline-block rounded-full border border-changed bg-changed-bg px-2 py-0.5 text-xs font-semibold text-changed"
-															>
-																{sib.status === 'accepted' ? 'Accepted' : 'Proposed'}
-															</span>
-														</p>
-														<p class="m-0 mt-1 break-words text-sm text-ink">{sib.statement}</p>
-													</div>
-												{/each}
-											</div>
-										</div>
-									{/if}
-								</article>
-							{/each}
-						</div>
-					</section>
-				{/each}
-			</div>
-
-			<aside class="min-w-0 lg:col-span-4" aria-label="Evidence ledger">
-				<div class="flex flex-col gap-4 lg:sticky lg:top-20">
-					<section class="rounded-xl border border-line bg-bg p-5" aria-labelledby="ledger">
-						<h2 id="ledger" class="text-h3 m-0 font-semibold">Evidence ledger</h2>
-						{#if ledger.length === 0}
-							<p class="mt-2 mb-0 text-sm text-ink-muted">No ledger events yet.</p>
-						{:else}
-							<ol class="m-0 mt-4 list-none p-0">
-								{#each ledger as event (event.id)}
-									<li
-										animate:flip={{ duration: 200 }}
-										class={`relative m-0 border-l-2 py-2 pr-2 pl-4 transition-colors duration-300 ${
-											event.kind === 'verified' ? 'border-verified' : 'border-changed'
-										} ${event.fresh ? 'bg-verified-bg' : ''}`}
-									>
-										<p class="m-0 text-sm font-medium text-ink">{event.text}</p>
-										{#if event.at}
-											<p class="m-0 mt-0.5 font-mono text-xs text-ink-muted">
-												{shortDate(event.at)}
-											</p>
-										{/if}
-									</li>
-								{/each}
-							</ol>
-						{/if}
-					</section>
-					{#each changes as change (change.sourceUrl)}
-						<section
-							class="rounded-xl border border-line bg-bg p-5"
-							aria-label={`What changed on ${change.date} at ${domain(change.sourceUrl)}`}
-						>
-							<h2 class="text-h3 m-0 font-semibold">What changed on {change.date}</h2>
-							<p class="m-0 mt-1 font-mono text-xs text-ink-muted">
-								{domain(change.sourceUrl)}{#if change.since}&nbsp;· since {change.since}{/if}
-							</p>
-							<ul class="m-0 mt-4 list-none p-0">
-								{#each change.added as line, i (`added-${i}`)}
-									<li class="m-0 border-l-2 border-verified py-1 pl-3 text-sm break-words text-ink">
-										<span class="sr-only">Added: </span><span aria-hidden="true" class="font-mono">+ </span
-										>{line}
-									</li>
-								{/each}
-								{#each change.removed as line, i (`removed-${i}`)}
-									<li
-										class="m-0 border-l-2 border-changed py-1 pl-3 text-sm break-words text-ink-muted line-through"
-									>
-										<span class="sr-only">Removed: </span><span aria-hidden="true" class="font-mono">− </span
-										>{line}
-									</li>
-								{/each}
-							</ul>
-							{#if change.more > 0}
-								<p class="mt-2 mb-0 text-xs text-ink-muted">
-									{change.more} more changed line{change.more === 1 ? '' : 's'} on the source page.
-								</p>
-							{/if}
-						</section>
-					{/each}
-					<section class="rounded-xl border border-line bg-surface p-5" aria-labelledby="about">
-						<h2 id="about" class="text-h3 m-0 font-semibold">About this dossier</h2>
-						<p class="mt-2 mb-0 text-sm text-ink-muted">
-							{factCount(facts.length)} across {groups.length} topic{groups.length === 1
-								? ''
-								: 's'}. General information, not legal advice.
-						</p>
-					</section>
-				</div>
-			</aside>
-		</section>
-	{/if}
+	<code.DossierGuide
+		page={view}
+		name={displayName}
+		{slug}
+		apiBase={apiRoot}
+		region={authority?.region || null}
+		country={authority?.country || null}
+		{officeSet}
+		{options}
+		{evidence}
+		{forms}
+		provenance={planView?.provenance ?? null}
+		planVersion={planView?.plan.version ?? 0}
+		planAcceptedAt={planView?.plan.accepted_at ?? null}
+		{models}
+		lang={target}
+		translations={translatedById}
+		pathname={page.url.pathname}
+		now={nowDate}
+		{flash}
+		{announce}
+	/>
 {/if}
-
-<style>
-	.plan-section {
-		transition:
-			box-shadow 300ms ease-out,
-			background-color 300ms ease-out;
-	}
-	.plan-flash {
-		box-shadow: inset 0 0 0 2px var(--color-verified);
-	}
-	@media (prefers-reduced-motion: reduce) {
-		.plan-section {
-			transition: none;
-		}
-	}
-</style>

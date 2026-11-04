@@ -171,8 +171,9 @@ test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
 		await scene('dossier', `${base}/apostille/authority/${HERO}`);
 		await caption(page, 'Muse Spark drafts every fact from official pages');
 		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
-		// Evidence popover beat (script scene 3): tap the first guide
-		// citation; guarded so a facts-empty host still passes.
+		// Citations beat (script scene 3): the first "Citation" button is
+		// the guide's Citations toggle, and the first blockquote is its
+		// first endnote; guarded so a facts-empty host still passes.
 		if ((await page.getByRole('button', { name: 'Citation' }).count()) > 0) {
 			await page.getByRole('button', { name: 'Citation' }).first().click();
 			await expect(page.locator('blockquote').first()).toBeVisible({ timeout: 15_000 });
@@ -407,7 +408,7 @@ test('demo mobile pass records home and dossier', async () => {
 		await checkClean(page, problems, 'mobile home');
 
 		await page.goto(`${base}/apostille/authority/${HERO}`);
-		await caption(page, 'Verified facts, one tap away');
+		await caption(page, 'Every value sourced, citations on request');
 		await page.screenshot({ path: join(SHOTS, 'mobile-dossier.png') });
 		await checkClean(page, problems, 'mobile dossier');
 

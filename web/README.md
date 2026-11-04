@@ -76,6 +76,22 @@ tree and reject `/(admin)/…` route ids.
   45 KB; anonymous home ≈ entry 1.3 KB + runtime chunks ≈ 28 KB +
   route nodes ≈ 2 KB ≈ **33 KB** — inside entry/page budgets. Formal
   per-navigation gate stays Week 3+.
+- Per-route report (advisory, after `npm run build`): `node
+  scripts/route-budget.mjs [route id] [--max <KB>]` prints Brotli sizes
+  of the entry + root layout, the route's own closure, each lazy chunk
+  it requests, and the per-navigation total (the route plus the chunks
+  the route requests itself), which is what the 30 KB page budget
+  counts. The authority guide is **over budget**: its route node is
+  about 8 KB, but it requests the guide's code
+  (`lib/public-ui/doc/guide-code.js`, about 56 KB) as its module loads,
+  on every visit, so a navigation costs about 64 KB Brotli (measured
+  2026-11-04 on the R2 train; production's page was 34 KB). Moving the
+  code into a chunk let it download alongside the API reads; it did not
+  shrink the page. Citations mode's card and endnotes load only once
+  citations turn on (`doc/cite-code.js`), and the accepted-office card
+  only when a record exists. Bringing the guide under 30 KB means
+  loading the below-fold blocks on demand, or a new budget: an operator
+  decision.
 
 ## Notes
 

@@ -251,7 +251,10 @@ pub fn print_tour(public_port: u16, admin_port: u16, setup_open: bool, prebuilt:
         "  3. Review: each Muse Spark draft shows its quote; accept a few with the dossier open in"
     );
     println!("     another tab — it updates live over WebSocket, no reload");
-    println!("  4. the dossier: every accepted fact shows its quote, source and date one tap away");
+    println!(
+        "  4. the guide: citations are off by default; press Citations or Alt+C (⌥C on a Mac);"
+    );
+    println!("     hover, focus or tap a marker for its quote, source and capture date");
     println!(
         "  5. Trace: \"Draft from this capture\" streams a model run (recorded unless --live)"
     );

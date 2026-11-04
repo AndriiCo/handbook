@@ -429,16 +429,151 @@
 	}
 }
 
-/* Print: hide the interactive chrome, keep the wordmark as letterhead;
-   force light ink-on-paper. `!important` beats the layout's scoped
-   display rules — print is the one place it is. */
+/* Print: hide the interactive chrome; force light ink-on-paper (the
+   light tokens are restated, so a dark theme never reaches paper).
+   `!important` beats the layout's scoped display rules — print is the
+   one place it is. Other pages keep the wordmark as letterhead; a page
+   that carries doc/PrintHeader (`[data-print-header]`, the customer
+   guide) prints its own header and drops the masthead, nav, buttons,
+   #made and decoration.
+   Paper follows the citations toggle: off prints clean (markers and
+   endnotes are not in the DOM); on prints both in ink.
+   Hooks for page components:
+   - [data-print-hide]: screen only (hints, label cards, offers);
+   - [data-paid]: a paid offer, never on paper;
+   - [data-print-keep]: keep the block on one page (fee table, conflict
+     box, addresses, cards);
+   - [data-print-calc] with a direct child [data-print-line]: the
+     calculator prints as its one-line estimate;
+   - a[data-print-url]: print the link's address after its text. */
+@page {
+	size: letter;
+	margin: 16mm;
+}
+
 @media print {
+	:root,
+	:root[data-theme] {
+		color-scheme: light;
+		--bg: #ffffff;
+		--surface: #eff3f6;
+		--surface-2: #e2eaf0;
+		--border: #d5dde4;
+		--text: #0f1f2b;
+		--text-muted: #334e63;
+		--accent: #0b4a75;
+		--accent-fill: #0b4a75;
+		--accent-ink: #ffffff;
+		--accent-hover: #083a5c;
+		--success: #176b3a;
+		--success-bg: #e3f2e8;
+		--warning: #8a4b00;
+		--warning-bg: #fdf0d7;
+		--error: #a6192e;
+		--error-bg: #fbe7ea;
+		--focus: #0b4a75;
+		--verified: #176b3a;
+		--verified-bg: #e3f2e8;
+		--changed: #8a4b00;
+		--changed-bg: #fdf0d7;
+		--primary-foreground: #ffffff;
+		--destructive-foreground: #ffffff;
+	}
+
 	.masthead .menus,
-	footer {
+	footer,
+	[data-print-hide],
+	[data-paid],
+	[data-cite-card],
+	[data-bits-floating-content-wrapper],
+	[data-sonner-toaster] {
 		display: none !important;
 	}
+
 	body {
 		background: #fff;
 		color: #000;
+	}
+
+	html:has([data-print-header]) .masthead,
+	html:has([data-print-header]) nav,
+	html:has([data-print-header]) main button,
+	html:has([data-print-header]) #made,
+	html:has([data-print-header]) [data-graphic='silhouette'],
+	html:has([data-print-header]) svg[role='presentation'],
+	html[data-cite='off'] [data-cite-gutter] {
+		display: none !important;
+	}
+
+	html:has([data-print-header]) main {
+		max-width: none !important;
+		padding: 0 !important;
+	}
+
+	html:has([data-print-header]) main > section,
+	html:has([data-print-header]) main > header {
+		padding-block: 8pt !important;
+	}
+
+	table,
+	address,
+	blockquote,
+	figure,
+	dl > div,
+	[data-slot='card'],
+	[data-print-keep],
+	#sources li {
+		break-inside: avoid;
+	}
+
+	h1,
+	h2,
+	h3,
+	h4 {
+		break-after: avoid;
+		break-inside: avoid;
+	}
+
+	p,
+	li {
+		orphans: 3;
+		widows: 3;
+	}
+
+	[data-print-calc] > :not([data-print-line]) {
+		display: none !important;
+	}
+
+	[data-print-calc] > [data-print-line] {
+		position: static !important;
+		display: block !important;
+		width: auto !important;
+		height: auto !important;
+		margin: 0 !important;
+		overflow: visible !important;
+		clip: auto !important;
+		clip-path: none !important;
+		white-space: normal !important;
+	}
+
+	/* The link text keeps its line, and the address prints on its own
+	   line under it (as the form's PDF address does): an inline-flex
+	   link would squeeze its words into a column beside the URL. */
+	a[data-print-url] {
+		display: block !important;
+		min-height: 0 !important;
+	}
+
+	a[data-print-url] svg {
+		display: none;
+	}
+
+	a[data-print-url]::after {
+		content: attr(href);
+		display: block;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 0.85em;
+		overflow-wrap: anywhere;
+		text-decoration: none;
 	}
 }

@@ -84,7 +84,7 @@ export function changePanels(body) {
 	const lines = (v) => (Array.isArray(v) ? v.filter((l) => typeof l === 'string' && l) : []);
 	/** @param {unknown} v @returns {number} */
 	const count = (v) => (typeof v === 'number' && v > 0 ? v : 0);
-	/** @type {{ sourceUrl: string, date: string, since: string, added: string[], removed: string[], more: number }[]} */
+	/** @type {{ sourceUrl: string, date: string, capturedAt: string, since: string, added: string[], removed: string[], more: number }[]} */
 	const panels = [];
 	for (const c of rows) {
 		if (typeof c?.source_url !== 'string' || !c.source_url.startsWith('https://')) continue;
@@ -92,6 +92,7 @@ export function changePanels(body) {
 		const panel = {
 			sourceUrl: c.source_url,
 			date: c.captured_at.split('T')[0],
+			capturedAt: c.captured_at,
 			since: typeof c.previous_captured_at === 'string' ? c.previous_captured_at.split('T')[0] : '',
 			added: lines(c.added),
 			removed: lines(c.removed),

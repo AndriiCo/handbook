@@ -1,0 +1,22 @@
+{
+ "about": "J1 (web/e2e/cuj-lookup.spec.mjs): the lookup fixture, verbatim. No ids, statuses or citations; /plan is unmocked.",
+ "slug": "example-a",
+ "authority": {
+  "slug": "example-a",
+  "name": "Example Authority",
+  "country": "Exampleland",
+  "fact_count": 2
+ },
+ "facts": {
+  "facts": [
+   {
+    "topic": "fees",
+    "statement": "Eight dollars per document."
+   },
+   {
+    "topic": "hours",
+    "statement": "Walk-ins nine to five."
+   }
+  ]
+ }
+}

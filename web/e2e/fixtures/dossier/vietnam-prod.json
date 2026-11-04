@@ -1,0 +1,691 @@
+{
+ "about": "Production reads of vietnam, verbatim and read-only: GET https://andrii.ai/apostille/api/v1/authorities/vietnam/facts, its /plan and /authorities/vietnam (2026-11-04 00:50 PST, release 56f0fbb, before R1). The conflict flags are the pre-R1 topic-level ones; present.test recomputes them with the R1 field rule (compare.js factsDisagree) to model the page after R1.",
+ "slug": "vietnam",
+ "facts": {
+  "authority": "vietnam",
+  "facts": [
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 21,
+      "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+      "status": "accepted"
+     },
+     {
+      "id": 22,
+      "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+      "status": "accepted"
+     },
+     {
+      "id": 24,
+      "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 26,
+      "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 20,
+    "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "An e-Apostille is an official Apostille issued in digital form.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 20,
+      "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 22,
+      "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+      "status": "accepted"
+     },
+     {
+      "id": 24,
+      "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 26,
+      "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 21,
+    "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "It is created and signed electronically and linked to a secure digital certificate.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 20,
+      "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 21,
+      "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+      "status": "accepted"
+     },
+     {
+      "id": 24,
+      "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 26,
+      "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 22,
+    "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "An e-Apostille cannot be refused simply because it is issued in electronic form.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 23,
+    "statement": "acceptance_rule: An e-Apostille cannot be refused simply because it is issued in electronic form.",
+    "status": "accepted",
+    "topic": "rejections"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 20,
+      "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 21,
+      "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+      "status": "accepted"
+     },
+     {
+      "id": 22,
+      "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+      "status": "accepted"
+     },
+     {
+      "id": 26,
+      "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 24,
+    "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 20,
+      "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 21,
+      "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+      "status": "accepted"
+     },
+     {
+      "id": 22,
+      "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+      "status": "accepted"
+     },
+     {
+      "id": 24,
+      "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 26,
+    "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Trang chủ - Cổng thông tin Bộ Ngoại Giao",
+      "source_url": "https://mofa.gov.vn/"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 29,
+      "statement": "homepage_label: Trang chủ",
+      "status": "accepted"
+     },
+     {
+      "id": 30,
+      "statement": "portal_label: Cổng thông tin",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793721829,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 27,
+    "statement": "site_title: Trang chủ - Cổng thông tin Bộ Ngoại Giao",
+    "status": "accepted",
+    "topic": "website"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Bộ Ngoại Giao",
+      "source_url": "https://mofa.gov.vn/"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793721829,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 28,
+    "statement": "authority_name: Bộ Ngoại Giao",
+    "status": "accepted",
+    "topic": "jurisdiction"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Trang chủ",
+      "source_url": "https://mofa.gov.vn/"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 27,
+      "statement": "site_title: Trang chủ - Cổng thông tin Bộ Ngoại Giao",
+      "status": "accepted"
+     },
+     {
+      "id": 30,
+      "statement": "portal_label: Cổng thông tin",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793721829,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 29,
+    "statement": "homepage_label: Trang chủ",
+    "status": "accepted",
+    "topic": "website"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Cổng thông tin",
+      "source_url": "https://mofa.gov.vn/"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 27,
+      "statement": "site_title: Trang chủ - Cổng thông tin Bộ Ngoại Giao",
+      "status": "accepted"
+     },
+     {
+      "id": 29,
+      "statement": "homepage_label: Trang chủ",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793721829,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 30,
+    "statement": "portal_label: Cổng thông tin",
+    "status": "accepted",
+    "topic": "website"
+   }
+  ]
+ },
+ "plan": {
+  "facts": [
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 21,
+      "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+      "status": "accepted"
+     },
+     {
+      "id": 22,
+      "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+      "status": "accepted"
+     },
+     {
+      "id": 24,
+      "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 26,
+      "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 20,
+    "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "An e-Apostille is an official Apostille issued in digital form.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 20,
+      "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 22,
+      "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+      "status": "accepted"
+     },
+     {
+      "id": 24,
+      "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 26,
+      "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 21,
+    "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "It is created and signed electronically and linked to a secure digital certificate.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 20,
+      "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 21,
+      "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+      "status": "accepted"
+     },
+     {
+      "id": 24,
+      "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 26,
+      "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 22,
+    "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "An e-Apostille cannot be refused simply because it is issued in electronic form.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 23,
+    "statement": "acceptance_rule: An e-Apostille cannot be refused simply because it is issued in electronic form.",
+    "status": "accepted",
+    "topic": "rejections"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 20,
+      "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 21,
+      "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+      "status": "accepted"
+     },
+     {
+      "id": 22,
+      "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+      "status": "accepted"
+     },
+     {
+      "id": 26,
+      "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 24,
+    "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+      "source_url": "https://www.hcch.net/en/instruments/conventions/specialised-sections/apostille"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 20,
+      "statement": "authorized_issuer: Apostille Certificates can only be issued and verified by designated Competent Authorities of Contracting Parties to the 1961 Apostille Convention.",
+      "status": "accepted"
+     },
+     {
+      "id": 21,
+      "statement": "e_apostille_definition: An e-Apostille is an official Apostille issued in digital form.",
+      "status": "accepted"
+     },
+     {
+      "id": 22,
+      "statement": "e_apostille_creation: It is created and signed electronically and linked to a secure digital certificate.",
+      "status": "accepted"
+     },
+     {
+      "id": 24,
+      "statement": "validity: As a result, an e-Apostille is just as valid as a paper Apostille and must be accepted by all Contracting Parties to the Apostille Convention.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793571692,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 26,
+    "statement": "e_app_program: The electronic Apostille Programme (e-APP) was launched in 2006 to support the electronic issuance and verification of Apostilles around the world.&nbsp;",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Trang chủ - Cổng thông tin Bộ Ngoại Giao",
+      "source_url": "https://mofa.gov.vn/"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 29,
+      "statement": "homepage_label: Trang chủ",
+      "status": "accepted"
+     },
+     {
+      "id": 30,
+      "statement": "portal_label: Cổng thông tin",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793721829,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 27,
+    "statement": "site_title: Trang chủ - Cổng thông tin Bộ Ngoại Giao",
+    "status": "accepted",
+    "topic": "website"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Bộ Ngoại Giao",
+      "source_url": "https://mofa.gov.vn/"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793721829,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 28,
+    "statement": "authority_name: Bộ Ngoại Giao",
+    "status": "accepted",
+    "topic": "jurisdiction"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Trang chủ",
+      "source_url": "https://mofa.gov.vn/"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 27,
+      "statement": "site_title: Trang chủ - Cổng thông tin Bộ Ngoại Giao",
+      "status": "accepted"
+     },
+     {
+      "id": 30,
+      "statement": "portal_label: Cổng thông tin",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793721829,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 29,
+    "statement": "homepage_label: Trang chủ",
+    "status": "accepted",
+    "topic": "website"
+   },
+   {
+    "authority_slug": "vietnam",
+    "citations": [
+     {
+      "captured_at": "2026-11-01T22:19:31Z",
+      "quote": "Cổng thông tin",
+      "source_url": "https://mofa.gov.vn/"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 27,
+      "statement": "site_title: Trang chủ - Cổng thông tin Bộ Ngoại Giao",
+      "status": "accepted"
+     },
+     {
+      "id": 29,
+      "statement": "homepage_label: Trang chủ",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793721829,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 30,
+    "statement": "portal_label: Cổng thông tin",
+    "status": "accepted",
+    "topic": "website"
+   }
+  ],
+  "forms": [],
+  "offices": [],
+  "plan": null,
+  "provenance": null,
+  "slug": "vietnam"
+ },
+ "row": {
+  "aliases": [],
+  "alt_names": [],
+  "country": "Viet Nam",
+  "crumbs": [],
+  "fact_count": 10,
+  "iso2": "",
+  "kind": "country",
+  "level": "",
+  "name": "Viet Nam — receiving authorities",
+  "name_en": "",
+  "path": "vietnam",
+  "place": null,
+  "region": "",
+  "slug": "vietnam",
+  "verified_at": 1793748530
+ }
+}

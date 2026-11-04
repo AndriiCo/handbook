@@ -1,10 +1,12 @@
-// Import-separation gate (spa-separation.md §1.2): (public) routes must
-// never import customer/admin libs. Usage: npm run check:imports.
+// Import-separation gate (spa-separation.md §1.2): (public) routes, and
+// the public UI library they are built from (lib/public-ui: the guide's
+// presenter and doc/ components, plan §7), must never import
+// customer/admin libs. Usage: npm run check:imports.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const PUBLIC = join(ROOT, 'src/routes/(public)');
+const PUBLIC = [join(ROOT, 'src/routes/(public)'), join(ROOT, 'src/lib/public-ui')];
 const ROUTES_PUBLIC = join(ROOT, 'src/routes-public');
 
 // Static + dynamic imports of customer/admin-only modules.
@@ -26,7 +28,9 @@ function* walk(dir) {
 }
 
 let failures = 0;
-for (const file of walk(PUBLIC)) {
+let files = 0;
+for (const file of PUBLIC.flatMap((dir) => [...walk(dir)])) {
+	files += 1;
 	const text = readFileSync(file, 'utf8');
 	for (const pattern of BANNED) {
 		if (pattern.test(text)) {
@@ -48,4 +52,4 @@ if (failures > 0) {
 	console.error(`check:imports FAILED (${failures})`);
 	process.exit(1);
 }
-console.log('check:imports OK: no customer/admin imports from (public).');
+console.log(`check:imports OK: no customer/admin imports from (public) or lib/public-ui (${files} files).`);

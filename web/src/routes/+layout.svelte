@@ -167,6 +167,9 @@
 	}
 
 	onNavigate((nav) => {
+		// A shallow navigation (the citations toggle, the canonical-path
+		// swap) changes only the address: no page transition.
+		if (nav.shallow) return;
 		if (typeof document === 'undefined' || !document.startViewTransition) return;
 		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 		return new Promise<void>((resolveNav) => {

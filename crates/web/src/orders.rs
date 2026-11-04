@@ -367,8 +367,9 @@ fn same_box(a: &(String, String), b: &(String, String)) -> bool {
 
 /// A `mailing` or `po_box` fact that names a PO box: its topic is
 /// `po_box`, the shared rule reads a `box:` token in its text
-/// ([`db::value_tokens`]), or its address is a box.
-fn names_po_box(f: &FactText) -> bool {
+/// ([`db::value_tokens`]), or its address is a box. The dossier head's
+/// JSON-LD postal check reads the same set (`unfurl::usps_postal`).
+pub(crate) fn names_po_box(f: &FactText) -> bool {
     db::USPS_TOPICS.contains(&f.topic.as_str())
         && (f.topic == "po_box"
             || db::value_tokens(&f.text)

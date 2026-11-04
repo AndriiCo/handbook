@@ -2,7 +2,7 @@
 	"routes": {
 		"/authority/usa-wa-sos?path=diploma": {
 			"name": "gp2-plan-wa-diploma",
-			"ready": "Your apostille plan"
+			"ready": "At a glance"
 		}
 	},
 	"api": [

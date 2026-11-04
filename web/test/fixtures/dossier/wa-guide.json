@@ -1,0 +1,1265 @@
+{
+ "about": "SYNTHETIC FIXTURE, Washington-shaped (plan sections 3 and 9): about forty accepted facts across every slot of the us_state profile, citing sos.wa.gov pages, with the three USPS variants built from the canonical fixture boxes 40220/40234 under one key (R1 field-level conflict flags), a courier street, two offices by instance, six closures, a paired outage notice, and two staff notes (a call and a decision). Not production data. Read with now = 2026-11-04T18:00:00Z (Wednesday 10:00 PT).",
+ "now": "2026-11-04T18:00:00Z",
+ "slug": "usa-wa-sos",
+ "authority": {
+  "slug": "usa-wa-sos",
+  "name": "Washington Secretary of State — Apostilles & Authentications",
+  "region": "Washington",
+  "country": "USA",
+  "kind": "state",
+  "path": "usa/washington",
+  "official_url": "https://www.sos.wa.gov/"
+ },
+ "facts": {
+  "authority": "usa-wa-sos",
+  "facts": [
+   {
+    "id": 201,
+    "authority_slug": "usa-wa-sos",
+    "topic": "jurisdiction",
+    "status": "accepted",
+    "statement": "scope: Documents issued in Washington State or notarized by a Washington notary public",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "We issue apostilles for documents issued in Washington State or notarized by a Washington notary public.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 202,
+    "authority_slug": "usa-wa-sos",
+    "topic": "jurisdiction",
+    "status": "accepted",
+    "statement": "federal_route: Federal documents go to the U.S. Department of State",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Federal documents go to the U.S. Department of State, not to our office.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 203,
+    "authority_slug": "usa-wa-sos",
+    "topic": "authentication",
+    "status": "accepted",
+    "statement": "product: An apostille for Hague Convention countries; a certificate of authentication for all others",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "We issue an apostille for Hague Convention countries; a certificate of authentication for all others.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 204,
+    "authority_slug": "usa-wa-sos",
+    "topic": "authentication",
+    "status": "accepted",
+    "statement": "domestic_validity: Certificates are not valid for use anywhere within the United States of America, its territories or possessions.",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 502,
+      "captured_at": "2026-11-02T18:05:00Z",
+      "kind": "web",
+      "quote": "Certificates are not valid for use anywhere within the United States of America, its territories or possessions.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+     }
+    ]
+   },
+   {
+    "id": 205,
+    "authority_slug": "usa-wa-sos",
+    "topic": "notarization",
+    "status": "accepted",
+    "statement": "wa_notary: Personal documents must be notarized by a Washington notary public with a complete notarial certificate",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Personal documents must be notarized by a Washington notary public with a complete notarial certificate.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 206,
+    "authority_slug": "usa-wa-sos",
+    "topic": "copies",
+    "status": "accepted",
+    "statement": "vital_records: Birth, death and marriage certificates must be certified copies issued in Washington State",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Birth, death and marriage certificates must be certified copies issued in Washington State.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 207,
+    "authority_slug": "usa-wa-sos",
+    "topic": "forms",
+    "status": "accepted",
+    "statement": "form: Apostille Authentication Request Form",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 507,
+      "captured_at": "2026-11-04T16:30:00Z",
+      "kind": "upload",
+      "quote": "Apostille Authentication Request Form",
+      "source_url": "https://www.sos.wa.gov/sites/default/files/2025-06/6.2025%20-%20Apostilles%20request%20form.pdf"
+     }
+    ]
+   },
+   {
+    "id": 208,
+    "authority_slug": "usa-wa-sos",
+    "topic": "forms",
+    "status": "accepted",
+    "statement": "revision: June 2025 revision",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 507,
+      "captured_at": "2026-11-04T16:30:00Z",
+      "kind": "upload",
+      "quote": "Apostille Authentication Request Form, June 2025 revision",
+      "source_url": "https://www.sos.wa.gov/sites/default/files/2025-06/6.2025%20-%20Apostilles%20request%20form.pdf"
+     }
+    ]
+   },
+   {
+    "id": 209,
+    "authority_slug": "usa-wa-sos",
+    "topic": "mailing",
+    "status": "accepted",
+    "statement": "enclose: Send all documents with the request form and payment",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 502,
+      "captured_at": "2026-11-02T18:05:00Z",
+      "kind": "web",
+      "quote": "Send all documents with the request form and payment.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+     }
+    ]
+   },
+   {
+    "id": 210,
+    "authority_slug": "usa-wa-sos",
+    "topic": "fees",
+    "status": "accepted",
+    "statement": "per_document: $15.00 per document",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Standard processing: Fee is $15.00 per document.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 211,
+    "authority_slug": "usa-wa-sos",
+    "topic": "fees",
+    "status": "accepted",
+    "statement": "expedite: an additional $100 expedite fee per 10 documents",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Expedited service: Fee is $15.00 per document and an additional $100 expedite fee per 10 documents (1-10 documents = $100.00, 11-20 documents = $200.00, etc.)",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 212,
+    "authority_slug": "usa-wa-sos",
+    "topic": "fees",
+    "status": "accepted",
+    "statement": "same_day: an additional $150 same day fee for the first 10 documents",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Same day service: Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents. If there are more than 10 documents an additional $100 expedite fee will apply (1-10 documents = $150.00, 11-20 documents = $250.00, etc.)",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 213,
+    "authority_slug": "usa-wa-sos",
+    "topic": "fees",
+    "status": "accepted",
+    "statement": "refund: All fees are non-refundable",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 506,
+      "captured_at": "2026-11-02T18:10:00Z",
+      "kind": "web",
+      "quote": "All fees are non-refundable.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/frequently-asked-questions-faqs/fee-schedules-priority-services"
+     }
+    ]
+   },
+   {
+    "id": 214,
+    "authority_slug": "usa-wa-sos",
+    "topic": "payment",
+    "status": "accepted",
+    "statement": "payee: Secretary of State",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Make check or money order payable in U.S. dollars (USD) to: Secretary of State",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 215,
+    "authority_slug": "usa-wa-sos",
+    "topic": "payment",
+    "status": "accepted",
+    "statement": "methods_counter: Check, money order, or credit or debit card at the counter",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 506,
+      "captured_at": "2026-11-02T18:10:00Z",
+      "kind": "web",
+      "quote": "At the counter we accept check, money order, or credit or debit card at the counter.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/frequently-asked-questions-faqs/fee-schedules-priority-services"
+     }
+    ]
+   },
+   {
+    "id": 216,
+    "authority_slug": "usa-wa-sos",
+    "topic": "mailing",
+    "status": "accepted",
+    "statement": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 217,
+      "topic": "mailing",
+      "statement": "apostille_mailing_address: PO Box 40234, Olympia, WA 98504-0234",
+      "status": "accepted"
+     },
+     {
+      "id": 218,
+      "topic": "mailing",
+      "statement": "apostille_mailing_address: PO Box 40220, Olympia, WA 98504-0234",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 503,
+      "captured_at": "2026-10-31T17:10:02Z",
+      "kind": "web",
+      "quote": "Mail apostille requests to: PO BOX 40220 Olympia, WA 98504-0220",
+      "source_url": "https://www.sos.wa.gov/about-office/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 217,
+    "authority_slug": "usa-wa-sos",
+    "topic": "mailing",
+    "status": "accepted",
+    "statement": "apostille_mailing_address: PO Box 40234, Olympia, WA 98504-0234",
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 216,
+      "topic": "mailing",
+      "statement": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+      "status": "accepted"
+     },
+     {
+      "id": 218,
+      "topic": "mailing",
+      "statement": "apostille_mailing_address: PO Box 40220, Olympia, WA 98504-0234",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Mail apostille requests to: PO Box 40234, Olympia, WA 98504-0234",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 218,
+    "authority_slug": "usa-wa-sos",
+    "topic": "mailing",
+    "status": "accepted",
+    "statement": "apostille_mailing_address: PO Box 40220, Olympia, WA 98504-0234",
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 216,
+      "topic": "mailing",
+      "statement": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+      "status": "accepted"
+     },
+     {
+      "id": 217,
+      "topic": "mailing",
+      "statement": "apostille_mailing_address: PO Box 40234, Olympia, WA 98504-0234",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 507,
+      "captured_at": "2026-11-04T16:30:00Z",
+      "kind": "upload",
+      "quote": "Mail apostille requests to: PO Box 40220, Olympia, WA 98504-0234",
+      "source_url": "https://www.sos.wa.gov/sites/default/files/2025-06/6.2025%20-%20Apostilles%20request%20form.pdf"
+     }
+    ]
+   },
+   {
+    "id": 219,
+    "authority_slug": "usa-wa-sos",
+    "topic": "mailing",
+    "status": "accepted",
+    "statement": "courier: Town Center 3, 243 Israel Rd SE, Tumwater, WA 98501",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Overnight deliveries: Town Center 3, 243 Israel Rd SE, Tumwater, WA 98501",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 220,
+    "authority_slug": "usa-wa-sos",
+    "topic": "mailing",
+    "status": "accepted",
+    "statement": "courier_rule: Overnight deliveries by commercial carrier such as FedEx or UPS only; this address does not receive regular mail",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Overnight deliveries by commercial carrier such as FedEx or UPS only; this address does not receive regular mail.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 221,
+    "authority_slug": "usa-wa-sos",
+    "topic": "mailing",
+    "status": "accepted",
+    "statement": "traceable: Send your original documents with tracking, both ways",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 502,
+      "captured_at": "2026-11-02T18:05:00Z",
+      "kind": "web",
+      "quote": "Send your original documents with tracking, both ways.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+     }
+    ]
+   },
+   {
+    "id": 222,
+    "authority_slug": "usa-wa-sos",
+    "topic": "address",
+    "status": "accepted",
+    "statement": "office__tumwater: Town Center 3, 243 Israel Rd SE, Tumwater, WA 98501",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Tumwater office: Town Center 3, 243 Israel Rd SE, Tumwater, WA 98501",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 223,
+    "authority_slug": "usa-wa-sos",
+    "topic": "address",
+    "status": "accepted",
+    "statement": "office__cheney: 960 Washington St, Cheney, WA 99004",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Eastern Washington office: 960 Washington St, Cheney, WA 99004",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 224,
+    "authority_slug": "usa-wa-sos",
+    "topic": "hours",
+    "status": "accepted",
+    "statement": "weekday__tumwater: Monday through Friday, 8:00 a.m. to 4:00 p.m.",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Tumwater counter: Monday through Friday, 8:00 a.m. to 4:00 p.m.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 225,
+    "authority_slug": "usa-wa-sos",
+    "topic": "hours",
+    "status": "accepted",
+    "statement": "weekday__cheney: Monday, Tuesday, Wednesday and Friday, 8:00 a.m. to 4:00 p.m.",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Cheney counter: Monday, Tuesday, Wednesday and Friday, 8:00 a.m. to 4:00 p.m.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 226,
+    "authority_slug": "usa-wa-sos",
+    "topic": "walkin",
+    "status": "accepted",
+    "statement": "cutoff: Bring documents at least 30 minutes before closing for same-day service",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Bring documents at least 30 minutes before closing for same-day service.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 227,
+    "authority_slug": "usa-wa-sos",
+    "topic": "walkin",
+    "status": "accepted",
+    "statement": "same_day_only__cheney: The Cheney office offers same-day service only, with the same-day fee",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "The Cheney office offers same-day service only, with the same-day fee.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 228,
+    "authority_slug": "usa-wa-sos",
+    "topic": "walkin",
+    "status": "accepted",
+    "statement": "no_mail__cheney: The Cheney office cannot receive mail",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "The Cheney office cannot receive mail.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 229,
+    "authority_slug": "usa-wa-sos",
+    "topic": "walkin",
+    "status": "accepted",
+    "statement": "public_record__cheney: Visits to the Cheney office are a matter of public record",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Visits to the Cheney office are a matter of public record.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 230,
+    "authority_slug": "usa-wa-sos",
+    "topic": "holiday_hours",
+    "status": "accepted",
+    "statement": "closure__2026_11_11: Closed Wednesday, November 11, 2026 for Veterans Day",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Phone, chat and both counters: Closed Wednesday, November 11, 2026 for Veterans Day.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 231,
+    "authority_slug": "usa-wa-sos",
+    "topic": "holiday_hours",
+    "status": "accepted",
+    "statement": "closure__2026_11_13: Closing early at 2:00 p.m. on Friday, November 13, 2026",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Phone, chat and both counters: Closing early at 2:00 p.m. on Friday, November 13, 2026.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 232,
+    "authority_slug": "usa-wa-sos",
+    "topic": "holiday_hours",
+    "status": "accepted",
+    "statement": "closure__2026_11_26: Closed Thursday, November 26, 2026 for Thanksgiving Day",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Phone, chat and both counters: Closed Thursday, November 26, 2026 for Thanksgiving Day.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 233,
+    "authority_slug": "usa-wa-sos",
+    "topic": "holiday_hours",
+    "status": "accepted",
+    "statement": "closure__2026_11_27: Closed Friday, November 27, 2026 for Native American Heritage Day",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Phone, chat and both counters: Closed Friday, November 27, 2026 for Native American Heritage Day.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 234,
+    "authority_slug": "usa-wa-sos",
+    "topic": "holiday_hours",
+    "status": "accepted",
+    "statement": "closure__2026_12_11: Closing early at 1:00 p.m. on Friday, December 11, 2026",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Phone, chat and both counters: Closing early at 1:00 p.m. on Friday, December 11, 2026.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 235,
+    "authority_slug": "usa-wa-sos",
+    "topic": "holiday_hours",
+    "status": "accepted",
+    "statement": "closure__2026_12_25: Closed Friday, December 25, 2026 for Christmas Day",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Phone, chat and both counters: Closed Friday, December 25, 2026 for Christmas Day.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 236,
+    "authority_slug": "usa-wa-sos",
+    "topic": "processing_time",
+    "status": "accepted",
+    "statement": "standard: Typically processed 7 to 10 business days of receiving your order",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Typically processed 7 to 10 business days of receiving your order",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 237,
+    "authority_slug": "usa-wa-sos",
+    "topic": "processing_time",
+    "status": "accepted",
+    "statement": "expedited: Typically processed within 2 business days of receiving your order",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Expedited: Typically processed within 2 business days of receiving your order",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 238,
+    "authority_slug": "usa-wa-sos",
+    "topic": "processing_time",
+    "status": "accepted",
+    "statement": "same_day: While you wait, the same business day",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Same day service in person: While you wait, the same business day.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 239,
+    "authority_slug": "usa-wa-sos",
+    "topic": "mailing",
+    "status": "accepted",
+    "statement": "return: Documents come back by first-class mail unless you include a prepaid, traceable return envelope or label",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 501,
+      "captured_at": "2026-11-02T18:00:00Z",
+      "kind": "web",
+      "quote": "Documents come back by first-class mail unless you include a prepaid, traceable return envelope or label.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ]
+   },
+   {
+    "id": 240,
+    "authority_slug": "usa-wa-sos",
+    "topic": "website",
+    "status": "accepted",
+    "statement": "verify: Search by the date printed on the apostille and its document number",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 508,
+      "captured_at": "2026-11-02T18:15:00Z",
+      "kind": "web",
+      "quote": "Search by the date printed on the apostille and its document number.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-and-certificate-authenticity-search"
+     }
+    ]
+   },
+   {
+    "id": 241,
+    "authority_slug": "usa-wa-sos",
+    "topic": "contacts",
+    "status": "accepted",
+    "statement": "phone: 360-725-0377",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Call 360-725-0377",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 242,
+    "authority_slug": "usa-wa-sos",
+    "topic": "contacts",
+    "status": "accepted",
+    "statement": "phone_option: option 3",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Call 360-725-0377, option 3 for apostilles.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 243,
+    "authority_slug": "usa-wa-sos",
+    "topic": "contacts",
+    "status": "accepted",
+    "statement": "phone_hours: Monday through Friday, 8:00 a.m. to 5:00 p.m.",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Phone hours: Monday through Friday, 8:00 a.m. to 5:00 p.m.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 244,
+    "authority_slug": "usa-wa-sos",
+    "topic": "contacts",
+    "status": "accepted",
+    "statement": "email: apostilles@sos.wa.gov",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Email apostilles@sos.wa.gov",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 245,
+    "authority_slug": "usa-wa-sos",
+    "topic": "contacts",
+    "status": "accepted",
+    "statement": "chat: Live chat on the division contact page, weekdays",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Live chat on the division contact page, weekdays.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 246,
+    "authority_slug": "usa-wa-sos",
+    "topic": "contacts",
+    "status": "accepted",
+    "statement": "tty: 711 (Washington Relay)",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "TTY: 711 (Washington Relay)",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 247,
+    "authority_slug": "usa-wa-sos",
+    "topic": "contacts",
+    "status": "accepted",
+    "statement": "no_texts: The Corporations and Charities Division does not send text messages",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "The Corporations and Charities Division does not send text messages.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 248,
+    "authority_slug": "usa-wa-sos",
+    "topic": "service_notice",
+    "status": "accepted",
+    "statement": "notice__2026_11_02: The online filing system is unavailable due to an outage. Apostille requests by mail and in person are not affected.",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 509,
+      "captured_at": "2026-11-02T19:00:00Z",
+      "kind": "web",
+      "quote": "The online filing system is unavailable due to an outage. Apostille requests by mail and in person are not affected.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/public-notices/online-filing-system-outage"
+     }
+    ]
+   },
+   {
+    "id": 249,
+    "authority_slug": "usa-wa-sos",
+    "topic": "service_notice",
+    "status": "accepted",
+    "statement": "restored__2026_11_02: The online filing system was restored on November 3, 2026 at 12:01 p.m.",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 505,
+      "captured_at": "2026-11-03T20:30:00Z",
+      "kind": "web",
+      "quote": "Update: The online filing system was restored on November 3, 2026 at 12:01 p.m.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/public-notices/online-filing-system-outage"
+     }
+    ]
+   },
+   {
+    "id": 250,
+    "authority_slug": "usa-wa-sos",
+    "topic": "phone_script",
+    "status": "accepted",
+    "statement": "opening: Hello, I am calling about an apostille request.",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": 1793750400,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 504,
+      "captured_at": "2026-11-04T16:00:00Z",
+      "kind": "web",
+      "quote": "Call 360-725-0377",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/contact-us"
+     }
+    ]
+   },
+   {
+    "id": 251,
+    "authority_slug": "usa-wa-sos",
+    "topic": "fees",
+    "status": "proposed",
+    "statement": "per_document: $20.00 per document",
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793746800,
+    "accepted_at": null,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
+    "citations": [
+     {
+      "capture_id": 506,
+      "captured_at": "2026-11-02T18:10:00Z",
+      "kind": "web",
+      "quote": "Fee is $20.00 per document.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/frequently-asked-questions-faqs/fee-schedules-priority-services"
+     }
+    ]
+   }
+  ]
+ },
+ "plan": {
+  "slug": "usa-wa-sos",
+  "authority": {
+   "slug": "usa-wa-sos",
+   "name": "Washington Secretary of State — Apostilles & Authentications",
+   "region": "Washington",
+   "country": "USA",
+   "kind": "state",
+   "path": "usa/washington",
+   "official_url": "https://www.sos.wa.gov/"
+  },
+  "plan": null,
+  "facts": [],
+  "offices": [],
+  "forms": [],
+  "provenance": null,
+  "evidence": [
+   {
+    "id": 7,
+    "kind": "call",
+    "stance": "confirms",
+    "fact_id": 217,
+    "preferred_fact_id": null,
+    "slot": "mailing.usps",
+    "date": "2026-11-04",
+    "channel": "Apostille desk, the phone line on the office's contact page",
+    "summary": "The desk said mailed requests go to PO Box 40234, ZIP 98504-0234.",
+    "recorded": false,
+    "supports": [],
+    "by": "Staff reviewer"
+   },
+   {
+    "id": 8,
+    "kind": "decision",
+    "stance": "context",
+    "fact_id": null,
+    "preferred_fact_id": 217,
+    "slot": "mailing.usps",
+    "date": "2026-11-04",
+    "channel": "",
+    "summary": "Staff recommend PO Box 40234 with ZIP 98504-0234, as the Apostille desk confirmed by phone.",
+    "recorded": false,
+    "supports": [
+     7
+    ],
+    "by": "Staff reviewer"
+   }
+  ]
+ },
+ "options": {
+  "slug": "usa-wa-sos",
+  "mode": "test",
+  "paid_enabled": true,
+  "currency": "usd",
+  "fedex_destination": {
+   "city": "Tumwater",
+   "fact_id": 219
+  },
+  "options": [
+   {
+    "kind": "label_fedex",
+    "enabled": true,
+    "title": "FedEx labels, print at home",
+    "reason": null,
+    "fact_id": 219,
+    "from_cents": 2400
+   },
+   {
+    "kind": "label_usps",
+    "enabled": false,
+    "title": "USPS labels with postage, print at home",
+    "reason": "The office's pages list different PO boxes. Labels are paused for this office until it confirms which one is current.",
+    "fact_id": 216,
+    "from_cents": null
+   },
+   {
+    "kind": "address_label",
+    "enabled": false,
+    "title": "Free address label, no postage",
+    "reason": "The office's pages list different PO boxes. Labels are paused for this office until it confirms which one is current.",
+    "fact_id": 216,
+    "from_cents": 0
+   }
+  ]
+ }
+}

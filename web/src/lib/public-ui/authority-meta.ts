@@ -39,6 +39,12 @@ export {
 	type Lane
 } from './lanes.js';
 
+/** A country as people read it: the packs' "USA" alias is the United States. */
+export function countryName(country: string | null | undefined): string {
+	const raw = String(country ?? '').trim();
+	return /^(?:usa?|u\.s\.a?\.?|united states of america)$/i.test(raw) ? 'United States' : raw;
+}
+
 /** The address to link a dossier by: its readable path, else its slug. */
 export function addressOf(row: { slug: string; path?: string | null }): string {
 	return typeof row.path === 'string' && row.path ? row.path : row.slug;

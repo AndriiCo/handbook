@@ -207,8 +207,8 @@
 			<em class="font-brand">quoted</em> from the source.
 		</Heading>
 		<p class="text-body-lg mt-4 text-ink-muted">
-			Every requirement shows the official page it came from — quote, source and date, one
-			tap away.
+			Every requirement comes from the office's own pages. On each guide, citations are off by
+			default: turn them on with Alt+C or the Citations button to see the quote, source and date.
 		</p>
 		<div class="relative mt-6">
 			<div

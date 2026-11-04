@@ -30,6 +30,17 @@ export function cuj(page) {
 			counts.actions++;
 			await locator.selectOption(value);
 		},
+		// A pointer resting on something to read it (a citation card).
+		async hover(locator) {
+			counts.actions++;
+			await locator.hover();
+		},
+		// One key press on a locator, or on the page (`page.keyboard`),
+		// e.g. a shortcut such as Alt+C.
+		async press(target, key) {
+			counts.actions++;
+			await target.press(key);
+		},
 		async fill(locator, value) {
 			counts.inputs++;
 			await locator.fill(value);

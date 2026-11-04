@@ -20,13 +20,13 @@ mkdirSync(shotsDir, { recursive: true });
 const BASE = '/apostille';
 const ROUTES = {
 	'/': { name: 'gp1-home', ready: 'Apostille rules' },
-	'/authority/vietnam': { name: 'gp2-dossier', ready: 'Authority dossier' },
-	'/authority/vietnam?lang=es': { name: 'gp2-dossier-es', ready: 'Authority dossier' },
-	'/authority/vietnam?lang=fr': { name: 'gp2-dossier-fr', ready: 'Authority dossier' },
-	'/authority/usa-wa-sos': { name: 'gp2-dossier-wa', ready: 'Authority dossier' },
-	'/authority/hcch': { name: 'gp2-dossier-hcch', ready: 'Authority dossier' },
-	'/authority/usa/washington': { name: 'gp2-dossier-wa-path', ready: 'Authority dossier' },
-	'/authority/us/wa': { name: 'gp2-dossier-wa-alias', ready: 'Authority dossier' },
+	'/authority/vietnam': { name: 'gp2-dossier', ready: 'Apostille guide' },
+	'/authority/vietnam?lang=es': { name: 'gp2-dossier-es', ready: 'Apostille guide' },
+	'/authority/vietnam?lang=fr': { name: 'gp2-dossier-fr', ready: 'Apostille guide' },
+	'/authority/usa-wa-sos': { name: 'gp2-dossier-wa', ready: 'Apostille guide' },
+	'/authority/hcch': { name: 'gp2-dossier-hcch', ready: 'Apostille guide' },
+	'/authority/usa/washington': { name: 'gp2-dossier-wa-path', ready: 'Apostille guide' },
+	'/authority/us/wa': { name: 'gp2-dossier-wa-alias', ready: 'Apostille guide' },
 	'/login': { name: 'gp3-login', ready: 'Log in' },
 	'/order': { name: 'gp4-order', ready: 'Destination' },
 	'/orders': { name: 'gp4-orders', ready: 'newest first' },
@@ -113,6 +113,34 @@ const p2Submissions = JSON.parse(
 const p2Forms = JSON.parse(
 	readFileSync(join(root, 'e2e/fixtures/p2-forms.json'), 'utf8')
 );
+const ordersOptions = JSON.parse(
+	readFileSync(join(root, 'e2e/fixtures/orders-options.json'), 'utf8')
+);
+// The guide's reads answer 200 in production (/plan always does): the
+// authority row from the fixture index, no accepted plan, no notes.
+const planFor = (slug) => {
+	const row = (authorities.authorities ?? []).find((a) => a.slug === slug);
+	return {
+		slug,
+		authority: row
+			? {
+					slug,
+					name: row.name ?? slug,
+					region: row.region ?? '',
+					country: row.country ?? '',
+					kind: row.kind ?? '',
+					path: row.path ?? slug,
+					official_url: null
+				}
+			: null,
+		plan: null,
+		facts: [],
+		offices: [],
+		forms: [],
+		provenance: null,
+		evidence: []
+	};
+};
 
 const failures = [];
 const shots = [];
@@ -194,6 +222,13 @@ try {
 						return r.fulfill({
 							json: { slug: row.slug, canonical, aliases: row.aliases ?? [], crumbs }
 						});
+					}
+					const plan = path.match(/\/api\/v1\/authorities\/([^/]+)\/plan$/);
+					if (plan) return r.fulfill({ json: planFor(plan[1]) });
+					const changes = path.match(/\/api\/v1\/authorities\/([^/]+)\/changes$/);
+					if (changes) return r.fulfill({ json: { authority: changes[1], changes: [] } });
+					if (path.endsWith('/api/v1/p2/orders/options')) {
+						return r.fulfill({ json: ordersOptions });
 					}
 					const m = path.match(/\/api\/v1\/authorities\/([^/]+)\/facts$/);
 					if (m) {

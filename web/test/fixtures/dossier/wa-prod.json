@@ -1,0 +1,782 @@
+{
+ "about": "Production reads of usa-wa-sos, verbatim and read-only: GET https://andrii.ai/apostille/api/v1/authorities/usa-wa-sos/facts, its /plan and /authorities/usa-wa-sos (2026-11-04 00:50 PST, release 56f0fbb, before R1). The conflict flags are the pre-R1 topic-level ones; present.test recomputes them with the R1 field rule (compare.js factsDisagree) to model the page after R1.",
+ "slug": "usa-wa-sos",
+ "facts": {
+  "authority": "usa-wa-sos",
+  "facts": [
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Town Center 3 243 Israel Rd SE Tumwater, WA 98501",
+      "source_url": "https://www.sos.wa.gov/about-office/contact-us"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 6,
+      "statement": "apostille_eastern_branch_street: 960 Washington St Cheney, WA 99004",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467199,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 1,
+    "statement": "apostille_main_branch_street: Town Center 3 243 Israel Rd SE Tumwater, WA 98501",
+    "status": "accepted",
+    "topic": "address"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "PO BOX 40228 Olympia, WA 98504-0228",
+      "source_url": "https://www.sos.wa.gov/about-office/contact-us"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 8,
+      "statement": "submission_requirement: Send all documents with Request form and payment:",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467199,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 2,
+    "statement": "apostille_mailing_address: PO BOX 40228 Olympia, WA 98504-0228",
+    "status": "accepted",
+    "topic": "mailing"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "360-725-0377",
+      "source_url": "https://www.sos.wa.gov/about-office/contact-us"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793467199,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 3,
+    "statement": "apostille_phone: 360-725-0377",
+    "status": "accepted",
+    "topic": "contacts"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "960 Washington St Cheney, WA 99004",
+      "source_url": "https://www.sos.wa.gov/about-office/contact-us"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 1,
+      "statement": "apostille_main_branch_street: Town Center 3 243 Israel Rd SE Tumwater, WA 98501",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467199,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 6,
+    "statement": "apostille_eastern_branch_street: 960 Washington St Cheney, WA 99004",
+    "status": "accepted",
+    "topic": "address"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Certificates are not valid for use anywhere within the United States of America, its territories or possessions.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793467236,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 7,
+    "statement": "domestic_validity: Certificates are not valid for use anywhere within the United States of America, its territories or possessions.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Send all documents with Request form and payment:",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 2,
+      "statement": "apostille_mailing_address: PO BOX 40228 Olympia, WA 98504-0228",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467236,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 8,
+    "statement": "submission_requirement: Send all documents with Request form and payment:",
+    "status": "accepted",
+    "topic": "mailing"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Apostille Authentication Request Form (PDF Fillable Form)",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 12,
+      "statement": "request_form: Apostille Authentication Request (Fillable Form)",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467236,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 9,
+    "statement": "request_form_name: Apostille Authentication Request Form (PDF Fillable Form)",
+    "status": "accepted",
+    "topic": "forms"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "We charge a $150 same-day service fee",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 14,
+      "statement": "standard_fee: Standard processing: Fee is $15.00 per document.",
+      "status": "accepted"
+     },
+     {
+      "id": 16,
+      "statement": "expedited_fee: Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+      "status": "accepted"
+     },
+     {
+      "id": 17,
+      "statement": "same_day_inperson_fee: Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 11,
+    "statement": "same_day_fee: We charge a $150 same-day service fee",
+    "status": "accepted",
+    "topic": "fees"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Apostille Authentication Request (Fillable Form)",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 9,
+      "statement": "request_form_name: Apostille Authentication Request Form (PDF Fillable Form)",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 12,
+    "statement": "request_form: Apostille Authentication Request (Fillable Form)",
+    "status": "accepted",
+    "topic": "forms"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Make check or money order payable in U.S. dollars (USD) to: Secretary of State",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 13,
+    "statement": "payee: Make check or money order payable in U.S. dollars (USD) to: Secretary of State",
+    "status": "accepted",
+    "topic": "payment"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Standard processing: Fee is $15.00 per document.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 11,
+      "statement": "same_day_fee: We charge a $150 same-day service fee",
+      "status": "accepted"
+     },
+     {
+      "id": 16,
+      "statement": "expedited_fee: Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+      "status": "accepted"
+     },
+     {
+      "id": 17,
+      "statement": "same_day_inperson_fee: Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 14,
+    "statement": "standard_fee: Standard processing: Fee is $15.00 per document.",
+    "status": "accepted",
+    "topic": "fees"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Typically processed 7 to 10 business days of receiving your order",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 15,
+    "statement": "standard_time: Typically processed 7 to 10 business days of receiving your order",
+    "status": "accepted",
+    "topic": "processing_time"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 11,
+      "statement": "same_day_fee: We charge a $150 same-day service fee",
+      "status": "accepted"
+     },
+     {
+      "id": 14,
+      "statement": "standard_fee: Standard processing: Fee is $15.00 per document.",
+      "status": "accepted"
+     },
+     {
+      "id": 17,
+      "statement": "same_day_inperson_fee: Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 16,
+    "statement": "expedited_fee: Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+    "status": "accepted",
+    "topic": "fees"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 11,
+      "statement": "same_day_fee: We charge a $150 same-day service fee",
+      "status": "accepted"
+     },
+     {
+      "id": 14,
+      "statement": "standard_fee: Standard processing: Fee is $15.00 per document.",
+      "status": "accepted"
+     },
+     {
+      "id": 16,
+      "statement": "expedited_fee: Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 17,
+    "statement": "same_day_inperson_fee: Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+    "status": "accepted",
+    "topic": "fees"
+   }
+  ]
+ },
+ "plan": {
+  "facts": [
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Town Center 3 243 Israel Rd SE Tumwater, WA 98501",
+      "source_url": "https://www.sos.wa.gov/about-office/contact-us"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 6,
+      "statement": "apostille_eastern_branch_street: 960 Washington St Cheney, WA 99004",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467199,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 1,
+    "statement": "apostille_main_branch_street: Town Center 3 243 Israel Rd SE Tumwater, WA 98501",
+    "status": "accepted",
+    "topic": "address"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "PO BOX 40228 Olympia, WA 98504-0228",
+      "source_url": "https://www.sos.wa.gov/about-office/contact-us"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 8,
+      "statement": "submission_requirement: Send all documents with Request form and payment:",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467199,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 2,
+    "statement": "apostille_mailing_address: PO BOX 40228 Olympia, WA 98504-0228",
+    "status": "accepted",
+    "topic": "mailing"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "360-725-0377",
+      "source_url": "https://www.sos.wa.gov/about-office/contact-us"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793467199,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 3,
+    "statement": "apostille_phone: 360-725-0377",
+    "status": "accepted",
+    "topic": "contacts"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "960 Washington St Cheney, WA 99004",
+      "source_url": "https://www.sos.wa.gov/about-office/contact-us"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 1,
+      "statement": "apostille_main_branch_street: Town Center 3 243 Israel Rd SE Tumwater, WA 98501",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467199,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 6,
+    "statement": "apostille_eastern_branch_street: 960 Washington St Cheney, WA 99004",
+    "status": "accepted",
+    "topic": "address"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Certificates are not valid for use anywhere within the United States of America, its territories or possessions.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793467236,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 7,
+    "statement": "domestic_validity: Certificates are not valid for use anywhere within the United States of America, its territories or possessions.",
+    "status": "accepted",
+    "topic": "authentication"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Send all documents with Request form and payment:",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 2,
+      "statement": "apostille_mailing_address: PO BOX 40228 Olympia, WA 98504-0228",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467236,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 8,
+    "statement": "submission_requirement: Send all documents with Request form and payment:",
+    "status": "accepted",
+    "topic": "mailing"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Apostille Authentication Request Form (PDF Fillable Form)",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-program/apostille-frequently-asked-questions"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 12,
+      "statement": "request_form: Apostille Authentication Request (Fillable Form)",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467236,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 9,
+    "statement": "request_form_name: Apostille Authentication Request Form (PDF Fillable Form)",
+    "status": "accepted",
+    "topic": "forms"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "We charge a $150 same-day service fee",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 14,
+      "statement": "standard_fee: Standard processing: Fee is $15.00 per document.",
+      "status": "accepted"
+     },
+     {
+      "id": 16,
+      "statement": "expedited_fee: Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+      "status": "accepted"
+     },
+     {
+      "id": 17,
+      "statement": "same_day_inperson_fee: Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 11,
+    "statement": "same_day_fee: We charge a $150 same-day service fee",
+    "status": "accepted",
+    "topic": "fees"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Apostille Authentication Request (Fillable Form)",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 9,
+      "statement": "request_form_name: Apostille Authentication Request Form (PDF Fillable Form)",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 12,
+    "statement": "request_form: Apostille Authentication Request (Fillable Form)",
+    "status": "accepted",
+    "topic": "forms"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Make check or money order payable in U.S. dollars (USD) to: Secretary of State",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 13,
+    "statement": "payee: Make check or money order payable in U.S. dollars (USD) to: Secretary of State",
+    "status": "accepted",
+    "topic": "payment"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Standard processing: Fee is $15.00 per document.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 11,
+      "statement": "same_day_fee: We charge a $150 same-day service fee",
+      "status": "accepted"
+     },
+     {
+      "id": 16,
+      "statement": "expedited_fee: Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+      "status": "accepted"
+     },
+     {
+      "id": 17,
+      "statement": "same_day_inperson_fee: Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 14,
+    "statement": "standard_fee: Standard processing: Fee is $15.00 per document.",
+    "status": "accepted",
+    "topic": "fees"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Typically processed 7 to 10 business days of receiving your order",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": false,
+    "conflicts": [],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 15,
+    "statement": "standard_time: Typically processed 7 to 10 business days of receiving your order",
+    "status": "accepted",
+    "topic": "processing_time"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 11,
+      "statement": "same_day_fee: We charge a $150 same-day service fee",
+      "status": "accepted"
+     },
+     {
+      "id": 14,
+      "statement": "standard_fee: Standard processing: Fee is $15.00 per document.",
+      "status": "accepted"
+     },
+     {
+      "id": 17,
+      "statement": "same_day_inperson_fee: Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 16,
+    "statement": "expedited_fee: Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+    "status": "accepted",
+    "topic": "fees"
+   },
+   {
+    "authority_slug": "usa-wa-sos",
+    "citations": [
+     {
+      "captured_at": "2026-10-31T17:10:02Z",
+      "quote": "Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+      "source_url": "https://www.sos.wa.gov/corporations-charities/apostilles-services-information-resource-page"
+     }
+    ],
+    "conflict": true,
+    "conflicts": [
+     {
+      "id": 11,
+      "statement": "same_day_fee: We charge a $150 same-day service fee",
+      "status": "accepted"
+     },
+     {
+      "id": 14,
+      "statement": "standard_fee: Standard processing: Fee is $15.00 per document.",
+      "status": "accepted"
+     },
+     {
+      "id": 16,
+      "statement": "expedited_fee: Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.",
+      "status": "accepted"
+     }
+    ],
+    "created_at": 1793467267,
+    "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v1",
+    "id": 17,
+    "statement": "same_day_inperson_fee: Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.",
+    "status": "accepted",
+    "topic": "fees"
+   }
+  ],
+  "forms": [],
+  "offices": [],
+  "plan": null,
+  "provenance": null,
+  "slug": "usa-wa-sos"
+ },
+ "row": {
+  "aliases": [
+   "us/wa",
+   "usa/wa",
+   "us/washington",
+   "usa-wa-sos"
+  ],
+  "alt_names": [],
+  "country": "USA",
+  "crumbs": [
+   {
+    "label": "United States",
+    "location": "usa",
+    "path": "usa",
+    "slug": null
+   }
+  ],
+  "fact_count": 14,
+  "iso2": "",
+  "kind": "state",
+  "level": "",
+  "name": "Washington Secretary of State — Apostilles & Authentications",
+  "name_en": "",
+  "path": "usa/washington",
+  "place": {
+   "label": "United States",
+   "path": "usa"
+  },
+  "region": "Washington",
+  "slug": "usa-wa-sos",
+  "verified_at": 1793722049
+ }
+}

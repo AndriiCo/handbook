@@ -1,7 +1,7 @@
 # Apostille Handbook
 
-Every apostille fact shows its quote, source and date — drafted by Meta AI,
-approved by a human. Live at <https://andrii.ai/apostille>.
+Every apostille fact carries its quote, source and date — drafted by Meta AI, approved by a human.
+Citations are off by default; turn them on with Alt+C (⌥C on a Mac) or the Citations button. Live at <https://andrii.ai/apostille>.
 
 > Demo video: _no video yet — operator replaces this line with the video URL on 2026-11-03._
 

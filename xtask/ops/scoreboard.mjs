@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { gp2PageProblems, probeValueNodes } from './gp2-page.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = parseArgs(process.argv.slice(2));
@@ -45,7 +46,7 @@ const CHECKS = [
   ['GP2-data', `vietnam and usa-wa-sos each have >= ${MIN_FACTS} accepted facts`, gp2Data],
   ['A1', 'Every public fact has a verified quote, source and date; Spark drafted them', a1],
   ['GP1', 'Home: real typeface, search, >= 3 authorities, clean at 390 px', gp1],
-  ['GP2-page', 'Dossier: named h1, facts on the page, live WS subscription', gp2Page],
+  ['GP2-page', `Guide: named h1, >= ${MIN_FACTS} facts on visible traced values, no raw keys, live WS`, gp2Page],
   ['GP3', 'Sign-in: passkey autofill + branded buttons for configured providers', gp3],
   ['GP4', 'Order: stepper, clean at 390 px', gp4],
   ['A2', 'Photo precheck: SAM 3.1 + Muse Spark on a public sample, live', a2],
@@ -150,26 +151,35 @@ async function gp1() {
   return { problems, note: `font ${family}` };
 }
 
+// v2 (operator-approved 2026-11-03): facts are traceable to visible
+// values, not raw statements; the predicate lives in gp2-page.mjs.
 async function gp2Page() {
   const problems = [];
+  const add = (list) => { for (const p of list) if (!problems.includes(p)) problems.push(p); };
   const r = await getJson('/api/v1/authorities/vietnam/facts');
   const facts = r.body?.facts ?? [];
-  const wide = await visit('/authority/vietnam', 1440, 900);
-  problems.push(...clean(wide, '1440'));
-  const h1 = (await wide.page.locator('h1').first().innerText().catch(() => '')).trim();
-  if (h1.length < 4 || h1.toLowerCase() === 'vietnam') problems.push(`h1 is "${h1}" (want the authority's name)`);
-  const text = squash(wide.text);
-  const shown = facts.filter((f) => text.includes(squash(f.statement ?? '').slice(0, 40))).length;
-  const want = Math.min(MIN_FACTS, facts.length);
-  if (!facts.length) problems.push('no accepted facts to show');
-  else if (shown < want) problems.push(`${shown}/${want} fact statements visible`);
-  const live = wide.sockets.some((u) => /\/ws\/bus/.test(u) && /authority(%3A|:)vietnam/i.test(u));
-  if (!live) problems.push('no WebSocket to /ws/bus?topic=authority:vietnam');
-  await wide.ctx.close();
-  const narrow = await visit('/authority/vietnam', 390, 844);
-  problems.push(...clean(narrow, '390'));
-  await narrow.ctx.close();
-  return { problems, note: `${shown} facts visible, live WS` };
+  const seen = [];
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    const label = String(width);
+    const v = await visit('/authority/vietnam', width, height);
+    add(clean(v, label));
+    if (width === 1440) {
+      const h1 = (await v.page.locator('h1').first().innerText().catch(() => '')).trim();
+      if (h1.length < 4 || h1.toLowerCase() === 'vietnam') add([`h1 is "${h1}" (want the authority's name)`]);
+    }
+    // The probe renders content-visibility:auto subtrees first, so its
+    // text (not the visit's) is what the raw-key rule reads.
+    const probe = await v.page.evaluate(probeValueNodes);
+    const out = gp2PageProblems({ label, probe, text: probe.text, facts, min: MIN_FACTS });
+    add(out.problems);
+    seen.push(`${out.shown}/${out.total} at ${label}`);
+    if (width === 1440) {
+      const live = v.sockets.some((u) => /\/ws\/bus/.test(u) && /authority(%3A|:)vietnam/i.test(u));
+      if (!live) add(['no WebSocket to /ws/bus?topic=authority:vietnam']);
+    }
+    await v.ctx.close();
+  }
+  return { problems, note: `facts on visible values ${seen.join(', ')}, live WS` };
 }
 
 async function gp3() {
@@ -310,10 +320,6 @@ async function request(path, init) {
   let body = null;
   try { body = await r.json(); } catch { /* not JSON */ }
   return { status: r.status, body };
-}
-
-function squash(s) {
-  return String(s).replace(/\s+/g, ' ').trim();
 }
 
 function withTimeout(promise, ms, message) {

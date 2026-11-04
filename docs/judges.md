@@ -86,8 +86,9 @@ gate runs it after `cargo xtask ci` on every build
    the Washington dossier open in another tab and accept a few: the
    dossier updates live over the `authority:{slug}` WebSocket, with no
    reload. Nothing is public until a person accepts it.
-4. The dossier: every accepted fact shows its quote, source and capture
-   date one tap away.
+4. The guide: citations are off by default. Press the Citations button
+   or Alt+C (⌥C on a Mac) to number every value's source; hover, focus
+   or tap a marker for its quote, source and capture date.
 5. Trace: "Draft from this capture" streams a model run with its tokens
    and latency.
 

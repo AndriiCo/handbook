@@ -7,16 +7,30 @@
 #   xtask/ops/staging-accept.sh --sha <full-sha> [--base <url>]
 #
 # Verdict rule (docs/ops/deploy.md step 5): staging-green iff the full
-# scoreboard is 9/10 with ONLY operator-owned S1 red AND the live
-# demo take is 3/3. Anything else ABORTs with the red rows named.
+# scoreboard is 9/10 with ONLY operator-owned S1 red, or 10/10 once S1
+# goes green at submission, AND the live demo take is 3/3. Anything
+# else (an unreadable report included) ABORTs with the red rows named.
 # Never edits the tree to make a row pass; never starts the tunnel
 # itself (macOS has no setsid — the tunnel lives in a managed
 # session). A dead tunnel ABORTs with the exact ssh command.
 #
+# The verdict reads only this run's report: the old report is removed
+# before the scoreboard runs, and the report must name this --base and
+# carry an `at` from after the run started (a scoreboard that crashed
+# before writing one, or a stale all-green file, ABORTs). Both pipelines
+# keep their own exit status (pipefail): a demo that fails ABORTs; the
+# scoreboard's own non-zero exit is a red row, which the verdict reads.
+#
 # Dry run (no tunnel, no browser; verdict logic runs for real):
 #   DRY_RUN=1 xtask/ops/staging-accept.sh --sha <40hex>
 #   DRY_RUN_ABORT=verdict => fixture with GP1 red, verdict ABORTs.
+#   DRY_RUN_GREEN=all     => fixture 10/10 (S1 green), verdict passes.
+#   DRY_RUN_DEMO=fail     => the demo take fails, ABORT.
+#   DRY_RUN_REPORT=missing => no report written (a crashed scoreboard), ABORT.
+#   DRY_RUN_REPORT=stale  => an all-green report from an earlier run, ABORT.
+#   DRY_RUN_REPORT=other-base => a report for another --base, ABORT.
 set -u
+set -o pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -53,37 +67,81 @@ fi
 
 echo "== 2. full scoreboard --out $OUT"
 mkdir -p "$(dirname "$OUT")"
+# Only this run's report counts: remove the last one, note the start.
+rm -f "$OUT"
+START="$(node -e 'console.log(new Date(Date.now() - 1000).toISOString())')"
 if [ -n "${DRY_RUN:-}" ]; then
-    if [ "${DRY_RUN_ABORT:-}" = "verdict" ]; then
-        printf '{"base":"%s","passing":8,"total":10,"next":"GP1","checks":[{"id":"P0","pass":true},{"id":"GP1","pass":false},{"id":"S1","pass":false}]}\n' "$BASE" > "$OUT"
+    AT="$(node -e 'console.log(new Date().toISOString())')"
+    REPORT_BASE="$BASE"
+    [ "${DRY_RUN_REPORT:-}" = "stale" ] && AT="2026-01-01T00:00:00.000Z"
+    [ "${DRY_RUN_REPORT:-}" = "other-base" ] && REPORT_BASE="https://andrii.ai/apostille"
+    if [ "${DRY_RUN_REPORT:-}" = "missing" ]; then
+        echo "DRY-RUN: the scoreboard crashed before writing its report (fixture)"
+    elif [ "${DRY_RUN_GREEN:-}" = "all" ] || [ -n "${DRY_RUN_REPORT:-}" ]; then
+        printf '{"base":"%s","at":"%s","passing":10,"total":10,"next":null,"checks":[{"id":"P0","pass":true},{"id":"GP2-data","pass":true},{"id":"A1","pass":true},{"id":"GP1","pass":true},{"id":"GP2-page","pass":true},{"id":"GP3","pass":true},{"id":"GP4","pass":true},{"id":"A2","pass":true},{"id":"A5","pass":true},{"id":"S1","pass":true}]}\n' "$REPORT_BASE" "$AT" > "$OUT"
+        echo "DRY-RUN: fixture scoreboard 10/10 (S1 green)"
+    elif [ "${DRY_RUN_ABORT:-}" = "verdict" ]; then
+        printf '{"base":"%s","at":"%s","passing":8,"total":10,"next":"GP1","checks":[{"id":"P0","pass":true},{"id":"GP1","pass":false},{"id":"S1","pass":false}]}\n' "$REPORT_BASE" "$AT" > "$OUT"
         echo "DRY-RUN: fixture scoreboard 8/10 (GP1 + S1 red)"
     else
-        printf '{"base":"%s","passing":9,"total":10,"next":"S1","checks":[{"id":"P0","pass":true},{"id":"GP2-data","pass":true},{"id":"A1","pass":true},{"id":"GP1","pass":true},{"id":"GP2-page","pass":true},{"id":"GP3","pass":true},{"id":"GP4","pass":true},{"id":"A2","pass":true},{"id":"A5","pass":true},{"id":"S1","pass":false}]}\n' "$BASE" > "$OUT"
+        printf '{"base":"%s","at":"%s","passing":9,"total":10,"next":"S1","checks":[{"id":"P0","pass":true},{"id":"GP2-data","pass":true},{"id":"A1","pass":true},{"id":"GP1","pass":true},{"id":"GP2-page","pass":true},{"id":"GP3","pass":true},{"id":"GP4","pass":true},{"id":"A2","pass":true},{"id":"A5","pass":true},{"id":"S1","pass":false}]}\n' "$REPORT_BASE" "$AT" > "$OUT"
         echo "DRY-RUN: fixture scoreboard 9/10 (only S1 red)"
     fi
 else
-    node xtask/ops/scoreboard.mjs --base "$BASE" --out "$OUT" 2>&1 | tail -12 \
-        || { echo "ABORT: scoreboard run failed outright (see above)"; exit 1; }
+    # Exit 1 is a red row (the verdict reads which); anything else, or no
+    # fresh report below, is a scoreboard that did not finish.
+    node xtask/ops/scoreboard.mjs --base "$BASE" --out "$OUT" 2>&1 | tail -12
+    SCORE=$?
+    if [ "$SCORE" -ne 0 ] && [ "$SCORE" -ne 1 ]; then
+        echo "ABORT: scoreboard run failed outright (exit $SCORE, see above)"
+        exit 1
+    fi
 fi
 
 echo "== 3. live demo take (desktop GP1-GP4, admin review+trace, mobile)"
 if [ -n "${DRY_RUN:-}" ]; then
     echo "DRY-RUN: would run DEMO_BASE_URL=$BASE npm run demo --prefix web"
+    if [ "${DRY_RUN_DEMO:-}" = "fail" ]; then
+        echo "DRY-RUN: 1 failed, 2 passed (fixture)"
+        echo "ABORT: live demo take failed (want 3/3 on $VERSION)"
+        exit 1
+    fi
     echo "DRY-RUN: 3 passed (fixture)"
 else
-    DEMO_BASE_URL="$BASE" npm run demo --prefix web 2>&1 | tail -8 \
-        || { echo "ABORT: live demo take failed (want 3/3 on $VERSION)"; exit 1; }
+    DEMO_BASE_URL="$BASE" npm run demo --prefix web 2>&1 | tail -8
+    DEMO=$?
+    if [ "$DEMO" -ne 0 ]; then
+        echo "ABORT: live demo take failed (exit $DEMO; want 3/3 on $VERSION)"
+        exit 1
+    fi
 fi
 
 echo "== 4. verdict"
+# "none" when every row is green; nothing at all when the report is
+# missing, unreadable, from another base or older than this run (never
+# mistaken for green).
 REDS="$(node -e '
     const fs = require("fs");
-    const r = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-    console.log(r.checks.filter((c) => !c.pass).map((c) => c.id).join(","));
-' "$OUT")"
+    const [file, base, start] = process.argv.slice(1);
+    const r = JSON.parse(fs.readFileSync(file, "utf8"));
+    const bare = (u) => String(u ?? "").replace(/\/$/, "");
+    if (bare(r.base) !== bare(base)) process.exit(1);
+    if (!(Date.parse(r.at) >= Date.parse(start))) process.exit(1);
+    if (!Array.isArray(r.checks) || r.checks.length === 0) process.exit(1);
+    const reds = r.checks.filter((c) => !c.pass).map((c) => c.id);
+    console.log(reds.length ? reds.join(",") : "none");
+' "$OUT" "$BASE" "$START" 2>/dev/null)"
+if [ -z "$REDS" ]; then
+    echo "ABORT: no fresh scoreboard report for $BASE from this run ($OUT missing, unreadable, stale or for another base)"
+    exit 1
+fi
 if [ "$REDS" = "S1" ]; then
     echo "staging-green: 9/10 (only operator-owned S1 red) + demo 3/3 on $VERSION"
     exit 0
 fi
-echo "ABORT: not staging-green — red rows: ${REDS:-unreadable report} (rule: 9/10 with only S1 red + demo 3/3)"
+if [ "$REDS" = "none" ]; then
+    echo "staging-green: all rows green (S1 included) + demo 3/3 on $VERSION"
+    exit 0
+fi
+echo "ABORT: not staging-green — red rows: ${REDS:-unreadable report} (rule: 9/10 with only S1 red, or all green, + demo 3/3)"
 exit 1

@@ -4404,11 +4404,34 @@ mod tests {
         .unwrap();
     }
 
-    /// Two proposed facts, same authority + topic, different
-    /// statements (a conflict pair). Returns `(slug, fact_a, fact_b)`.
-    /// Unfurl dossier: accepted fact with a hostile statement, so
-    /// the crawler surface proves its escaping end to end.
-    fn seed_unfurl_dossier(store_root: &std::path::Path) {
+    /// One fact of the unfurl dossier citing `[0, end)` of `capture`'s
+    /// sidecar (`end` 0: uncited). Returns its id.
+    fn seed_unfurl_fact(
+        conn: &rusqlite::Connection,
+        (authority, capture): (i64, i64),
+        topic: &str,
+        statement: &str,
+        status: &str,
+        end: i64,
+    ) -> i64 {
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                               status, created_by, created_at,
+                               citation_start, citation_end)
+             VALUES (?1, ?2, ?3, ?4, ?5, 't', 1, 0, ?6)",
+            rusqlite::params![authority, capture, topic, statement, status, end],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    /// Unfurl dossier: accepted facts in the guide's `key: value`
+    /// grammar, one hostile (so the crawler surface proves its escaping
+    /// end to end) and one keyed USPS box quoted from its own page; a
+    /// staff-only `phone_script`; a retired (superseded) fact; staff
+    /// accepts on Nov 3 and Nov 4, plus the retired fact's on Nov 5,
+    /// which never counts. Returns `(authority, capture)`.
+    fn seed_unfurl_dossier(store_root: &std::path::Path) -> (i64, i64) {
         let store = Store::new(store_root);
         let conn = db::open(&store).unwrap();
         let authority = db::add_authority(
@@ -4430,37 +4453,85 @@ mod tests {
             [authority],
         )
         .unwrap();
-        conn.execute(
-            "INSERT INTO capture(authority_id, captured_at, kind, path,
-                                  bytes_raw, bytes_stored, sha256, trust)
-             VALUES (?1, 1761000000, 'file', 'p', 0, 0, 's', 'staff_verified')",
-            [authority],
-        )
-        .unwrap();
-        let cap = conn.last_insert_rowid();
         std::fs::create_dir_all(store_root.join("text")).unwrap();
-        std::fs::write(
-            store_root.join("text").join(format!("{cap}.txt")),
-            "open 9 to 5 weekdays",
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO fact(authority_id, capture_id, topic, statement,
-                               status, created_by, created_at,
-                               citation_start, citation_end)
-             VALUES (?1, ?2, 'hours', 'open 9 to 5 </script>', 'accepted', 't', 1, 0, 20)",
-            rusqlite::params![authority, cap],
-        )
-        .unwrap();
+        let capture = |text: &str| {
+            conn.execute(
+                "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                      bytes_raw, bytes_stored, sha256, trust)
+                 VALUES (?1, 1761000000, 'file', 'p', 0, 0, 's', 'staff_verified')",
+                [authority],
+            )
+            .unwrap();
+            let cap = conn.last_insert_rowid();
+            std::fs::write(store_root.join("text").join(format!("{cap}.txt")), text).unwrap();
+            cap
+        };
+        let cap = capture("open 9 to 5 weekdays");
+        let mail_page = capture("PO BOX 40228 Olympia, WA 98504-0228");
+        let hours = seed_unfurl_fact(
+            &conn,
+            (authority, cap),
+            "hours",
+            "weekday: open 9 to 5 </script>",
+            "accepted",
+            20,
+        );
         // Accepted but staff-only: must never surface publicly.
-        conn.execute(
-            "INSERT INTO fact(authority_id, capture_id, topic, statement,
-                               status, created_by, created_at,
-                               citation_start, citation_end)
-             VALUES (?1, ?2, 'phone_script', 'say hello, then ask', 'accepted', 't', 1, 0, 20)",
-            rusqlite::params![authority, cap],
-        )
-        .unwrap();
+        seed_unfurl_fact(
+            &conn,
+            (authority, cap),
+            "phone_script",
+            "say hello, then ask",
+            "accepted",
+            20,
+        );
+        let mailing = seed_unfurl_fact(
+            &conn,
+            (authority, mail_page),
+            "mailing",
+            "apostille_mailing_address: PO BOX 40228 Olympia, WA 98504-0228",
+            "accepted",
+            35,
+        );
+        seed_unfurl_fact(
+            &conn,
+            (authority, cap),
+            "fees",
+            "per_document: $15 per document",
+            "accepted",
+            0,
+        );
+        let retired = seed_unfurl_fact(
+            &conn,
+            (authority, cap),
+            "hours",
+            "weekday: open 8 to 4",
+            "superseded",
+            20,
+        );
+        for (fact, at) in [
+            (hours, 1_793_667_600),
+            (mailing, 1_793_790_000),
+            (retired, 1_793_900_000),
+        ] {
+            conn.execute(
+                "INSERT INTO audit(at, actor, action, entity, entity_id)
+                 VALUES (?1, 'staff-1', 'fact_accept', 'fact', ?2)",
+                rusqlite::params![at, fact],
+            )
+            .unwrap();
+        }
+        (authority, cap)
+    }
+
+    /// No statement key anywhere in the served head: none of `keys` as
+    /// `key: `, and no snake_case `key: ` at all (the e2e pattern).
+    fn assert_no_raw_keys(body: &str, keys: &[&str]) {
+        let raw = regex::Regex::new(r"\b[a-z][a-z0-9]*_[a-z0-9_]+:\s").unwrap();
+        assert_eq!(raw.find(body).map(|m| m.as_str()), None, "raw key");
+        for key in keys {
+            assert!(!body.contains(&format!("{key}: ")), "raw `{key}: `");
+        }
     }
 
     async fn body_text(res: axum::response::Response) -> String {
@@ -4531,13 +4602,106 @@ mod tests {
             !body.contains("say hello, then ask"),
             "phone_script stays staff-only"
         );
+        assert!(!body.contains("open 8 to 4"), "a retired fact is gone");
         assert!(body.contains("<noscript>"), "crawler summary present");
+        // Each listed fact reads `{topic label}: {value}`, its key stripped.
+        for item in [
+            "<li>Hours: open 9 to 5 &lt;/script&gt;</li>",
+            "<li>Mailing: PO BOX 40228 Olympia, WA 98504-0228</li>",
+            "<li>Fees: $15 per document</li>",
+        ] {
+            assert!(body.contains(item), "{item}");
+        }
         assert!(body.contains("/authority/unfurl-sos"), "canonical + links");
         assert!(body.contains("GovernmentService"), "json-ld present");
         assert!(
             body.contains("https://example.test/office"),
             "isBasedOn source"
         );
+        // The one undisputed USPS box is the postal address, key stripped,
+        // as orders parses it for USPS labels.
+        assert!(
+            body.contains("\"servicePostalAddress\":\"PO Box 40228, Olympia, WA 98504-0228\""),
+            "postal address without its key"
+        );
+        // JSON-LD names the description's day, never a capture day.
+        assert!(
+            body.contains("\"dateModified\":\"2026-11-04\""),
+            "dateModified is the newest accept"
+        );
+        assert!(!body.contains("2025-10-20"), "no capture day in the head");
+        // Three accepted facts; the newest accept of a listed fact (Nov 4),
+        // never the retired fact's (Nov 5) nor a capture day.
+        assert!(
+            body.contains(
+                "<meta name=\"description\" content=\"3 staff-approved apostille facts for \
+                 Test &quot;SOS&quot; &amp; Co (TS, USA), last updated 2026-11-04.\" />"
+            ),
+            "description: {body}"
+        );
+        assert!(
+            !body.contains("verified"),
+            "approved and updated, never verified"
+        );
+        assert_no_raw_keys(
+            &body,
+            &["weekday", "apostille_mailing_address", "per_document"],
+        );
+    }
+
+    #[tokio::test]
+    async fn unfurl_head_names_no_box_while_the_office_pages_disagree() {
+        // A second accepted USPS fact naming another box: the keyword box
+        // disagrees under the shared rule, as `/facts` banners it; a bare
+        // number or `Box N` under `po_box` is that box to the head, though
+        // the shared rule reads it as a ZIP or as text.
+        for (other, item) in [
+            (
+                "po_box: PO Box 40234 Olympia, WA 98504-0234",
+                "<li>PO Box: PO Box 40234 Olympia, WA 98504-0234</li>",
+            ),
+            ("po_box: 40234", "<li>PO Box: 40234</li>"),
+            ("po_box: Box 40234", "<li>PO Box: Box 40234</li>"),
+        ] {
+            let fx = fixture();
+            let seeded = seed_unfurl_dossier(&fx.state.store_root);
+            let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+            seed_unfurl_fact(&conn, seeded, "po_box", other, "accepted", 0);
+            drop(conn);
+            let res = public_router_for(&fx.state)
+                .oneshot(
+                    Request::builder()
+                        .uri("/apostille/authority/unfurl-sos")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+            let body = body_text(res).await;
+            assert!(body.contains("GovernmentService"), "json-ld present");
+            assert!(
+                !body.contains("servicePostalAddress"),
+                "no address while the boxes disagree ({other}): {body}"
+            );
+            // The crawler summary still lists both values, keys stripped.
+            for item in [
+                "<li>Mailing: PO BOX 40228 Olympia, WA 98504-0228</li>",
+                item,
+            ] {
+                assert!(body.contains(item), "{item}");
+            }
+            assert!(body.contains("4 staff-approved apostille facts"));
+            assert_no_raw_keys(
+                &body,
+                &[
+                    "weekday",
+                    "apostille_mailing_address",
+                    "per_document",
+                    "po_box",
+                ],
+            );
+        }
     }
 
     #[tokio::test]
@@ -4767,8 +4931,13 @@ mod tests {
         assert_eq!(res.status(), StatusCode::OK);
         let public = json_body(res).await;
         let facts = public["facts"].as_array().unwrap();
-        assert_eq!(facts.len(), 1, "only the hours fact is public");
-        assert!(facts.iter().all(|f| f["topic"] != "phone_script"));
+        let topics: Vec<&str> = facts.iter().map(|f| f["topic"].as_str().unwrap()).collect();
+        assert_eq!(
+            topics,
+            ["hours", "mailing", "fees"],
+            "accepted facts only: no phone_script, no retired fact"
+        );
+        assert!(facts.iter().all(|f| f["status"] == "accepted"));
     }
 
     #[tokio::test]
@@ -4806,6 +4975,8 @@ mod tests {
         assert!(body.ends_with("</urlset>\n"), "closed urlset");
     }
 
+    /// Two proposed facts, same authority + topic, different
+    /// statements (a conflict pair). Returns `(slug, fact_a, fact_b)`.
     fn seed_conflicting_facts(store_root: &std::path::Path) -> (String, i64, i64) {
         let store = Store::new(store_root);
         let conn = db::open(&store).unwrap();

@@ -1,0 +1,35 @@
+{
+ "about": "SYNTHETIC FIXTURE: an authority we have not checked (508 of 510 pages): /facts is empty; /plan carries the authority row with its listed official site.",
+ "slug": "usa-or-sos",
+ "authority": {
+  "slug": "usa-or-sos",
+  "name": "Oregon Secretary of State — Corporation Division",
+  "region": "Oregon",
+  "country": "USA",
+  "kind": "state",
+  "path": "usa/oregon",
+  "official_url": "https://sos.oregon.gov/"
+ },
+ "facts": {
+  "authority": "usa-or-sos",
+  "facts": []
+ },
+ "plan": {
+  "slug": "usa-or-sos",
+  "plan": null,
+  "facts": [],
+  "offices": [],
+  "forms": [],
+  "provenance": null,
+  "evidence": [],
+  "authority": {
+   "slug": "usa-or-sos",
+   "name": "Oregon Secretary of State — Corporation Division",
+   "region": "Oregon",
+   "country": "USA",
+   "kind": "state",
+   "path": "usa/oregon",
+   "official_url": "https://sos.oregon.gov/"
+  }
+ }
+}

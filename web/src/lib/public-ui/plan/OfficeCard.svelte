@@ -18,15 +18,33 @@
 	// "Open now" in the office's own grounded timezone, the hours table,
 	// the street address with an outbound directions link. Every value is
 	// a field of the accepted office row; its facts sit one tap away.
+	//
+	// The customer guide passes `heading` (its office cards are h4s under
+	// the "In person" h3) and `clocks="guide"` (times read "8:00 a.m.",
+	// as the rest of the guide prints them); the plan view keeps a
+	// paragraph title and "8:00 AM".
 	let {
 		office,
 		facts,
 		now,
-		factIds = []
-	}: { office: Office; facts: Map<number, PlanFact>; now: Date; factIds?: number[] } = $props();
+		factIds = [],
+		heading = 'p',
+		clocks = 'plan'
+	}: {
+		office: Office;
+		facts: Map<number, PlanFact>;
+		now: Date;
+		factIds?: number[];
+		heading?: 'p' | 'h3' | 'h4';
+		clocks?: 'plan' | 'guide';
+	} = $props();
+
+	/** "8:00 AM – 4:00 PM" → "8:00 a.m. – 4:00 p.m." in the guide. */
+	const clockText = (text: string) =>
+		clocks === 'guide' ? text.replace(/\s?\bAM\b/g, ' a.m.').replace(/\s?\bPM\b/g, ' p.m.') : text;
 
 	const status = $derived(openStatus(office, now));
-	const rowsOfHours = $derived(hoursRows(office));
+	const rowsOfHours = $derived(hoursRows(office).map((r) => ({ ...r, time: clockText(r.time) })));
 	const zone = $derived(hasGroundedZone(office) ? zoneName(office.timezone!, now) : '');
 	const visit = $derived(
 		office.visit?.appointment_required || office.visit?.kind === 'appointment'
@@ -93,7 +111,7 @@
 			</span>
 		{/if}
 	</div>
-	<p class="text-h3 mt-3 mb-0 font-semibold text-ink">{office.name}</p>
+	<svelte:element this={heading} class="text-h3 mt-3 mb-0 font-semibold text-ink">{office.name}</svelte:element>
 	{#if office.visit?.notes}
 		<p class="mt-1 mb-0 text-sm text-ink-muted">{office.visit.notes}</p>
 	{/if}
