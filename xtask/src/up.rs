@@ -1558,7 +1558,6 @@ fn spawn_worker(xtask: &Path) -> Child {
 /// The item goes straight into `work.sqlite` (staff enqueue through
 /// `/work`, which needs a passkey session this boot does not have).
 fn check_worker(xtask: &Path) -> Result<(), String> {
-    use std::time::{Duration, Instant};
     let page = format!("http://127.0.0.1:{}/apostille/", public_port());
     let store = handbook_store::store::Store::new(STORE_DIR);
     let conn = handbook_store::work::open(&store).map_err(|e| format!("open work db: {e}"))?;
@@ -1577,35 +1576,44 @@ fn check_worker(xtask: &Path) -> Result<(), String> {
     .map_err(|e| format!("enqueue: {e}"))?;
     println!("up: --check: enqueued scrape.urls job {id} for {page}");
     let mut worker = spawn_worker(xtask);
-    let deadline = Instant::now() + Duration::from_secs(WORKER_CHECK_SECS);
-    let outcome = loop {
-        let item = handbook_store::work::get(&conn, id)
-            .map_err(|e| format!("read job {id}: {e}"))?
-            .ok_or_else(|| format!("job {id} vanished"))?;
-        match item.status.as_str() {
-            "done" => break worker_job_ok(&item),
-            "failed" => {
-                break Err(format!(
-                    "job {id} failed: {}",
-                    item.error.unwrap_or_default()
-                ));
-            }
-            status if Instant::now() >= deadline => {
-                break Err(format!(
-                    "job {id} still {status} after {WORKER_CHECK_SECS} s (is the worker connected?)"
-                ));
-            }
-            _ if child_exited(&mut worker) => {
-                break Err(format!("the worker exited before job {id} finished"));
-            }
-            _ => std::thread::sleep(Duration::from_millis(500)),
-        }
-    };
+    // Every path below ends in `kill` (which reaps): no early return
+    // may leave the worker running.
+    let outcome = wait_for_job(&conn, id, &mut worker);
     kill(&mut worker);
     if outcome.is_ok() {
         println!("up: --check: worker job {id} -> done (scrape.urls fetched {page})");
     }
     outcome
+}
+
+/// Poll work item `id` until `done` (with its page), `failed`, the
+/// worker exits, or [`WORKER_CHECK_SECS`] pass.
+fn wait_for_job(conn: &rusqlite::Connection, id: i64, worker: &mut Child) -> Result<(), String> {
+    use std::time::{Duration, Instant};
+    let deadline = Instant::now() + Duration::from_secs(WORKER_CHECK_SECS);
+    loop {
+        let item = handbook_store::work::get(conn, id)
+            .map_err(|e| format!("read job {id}: {e}"))?
+            .ok_or_else(|| format!("job {id} vanished"))?;
+        match item.status.as_str() {
+            "done" => return worker_job_ok(&item),
+            "failed" => {
+                return Err(format!(
+                    "job {id} failed: {}",
+                    item.error.unwrap_or_default()
+                ));
+            }
+            status if Instant::now() >= deadline => {
+                return Err(format!(
+                    "job {id} still {status} after {WORKER_CHECK_SECS} s (is the worker connected?)"
+                ));
+            }
+            _ if child_exited(worker) => {
+                return Err(format!("the worker exited before job {id} finished"));
+            }
+            _ => std::thread::sleep(Duration::from_millis(500)),
+        }
+    }
 }
 
 /// A `done` scrape item fetched every page (its summary counts them).
