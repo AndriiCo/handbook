@@ -7,10 +7,12 @@
 //! bytes are always preserved, so a better parser can re-derive
 //! sidecars later); `report` reads bounces and complaints; `poll`
 //! orchestrates the watermark walk with at-least-once +
-//! idempotent-ingest semantics.
+//! idempotent-ingest semantics; `fake` is the W-3 fake inbox, mail
+//! composed in the staff console and captured by the poll's own step.
 
 pub mod auth_results;
 pub mod client;
+pub mod fake;
 pub mod mime;
 pub mod poll;
 pub mod report;

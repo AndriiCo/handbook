@@ -16,6 +16,13 @@ to the fetch except this README:
 - `details-aid<MMM>.html` — the `details3` pages those index pages
   link to (`/en/states/authorities/details3/?aid=<MMM>`), where the
   authority names and website URLs live.
+- `notifications-csid1557.html` — recorded 2026-11-04, same way: Viet
+  Nam's notifications page
+  (`/en/instruments/conventions/status-table/notifications/?csid=1557&disp=type`),
+  the link behind its `A**` (objection) Type cell. It names the states
+  that objected to the accession; `world-index` reads it into
+  `packs/world/VN.json` (D-2). The other 20 marked parties keep the flag
+  and the link until their page is recorded (or a `--live` run).
 
 ## Fixture parties (8)
 

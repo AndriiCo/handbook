@@ -34,6 +34,7 @@ mod demo_precheck;
 mod draft;
 mod evidence;
 mod factcheck;
+mod fake;
 mod fedex_live;
 mod first_source;
 mod follow;
@@ -340,6 +341,9 @@ struct AppState {
     /// Meta deletion-status base (origin-derived, never
     /// configured): `{auth.origin}/auth/meta/delete-status`.
     meta_delete_status_base: String,
+    /// W-3 integration modes (`<area>.mode` rows) and the boot's fake
+    /// guard: which outside services run their local fake.
+    fakes: config::Modes,
 }
 
 /// Full-request budget, routing to response head: slow clients
@@ -476,6 +480,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
         },
         static_dir,
         spa_dir,
@@ -498,6 +503,7 @@ fn migrate_mission_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     first_source::migrate_tables(conn)?;
     authority_path::migrate_tables(conn)?;
     evidence::migrate_tables(conn)?;
+    fake::migrate_tables(conn)?;
     forms_map::migrate_tables(conn)
 }
 
@@ -507,6 +513,7 @@ fn migrate_mission_p2(p2: &rusqlite::Connection) -> rusqlite::Result<()> {
     forms_map::migrate_p2_tables(p2)?;
     p2_labels::migrate_p2_tables(p2)?;
     customer_labels::migrate_p2_tables(p2)?;
+    stripe::migrate_p2_tables(p2)?;
     tracking::migrate_p2_tables(p2)
 }
 
@@ -565,6 +572,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(worker::admin_router(state.clone()))
         .merge(source_history::admin_router(state.clone()))
         .merge(evidence::admin_router(state.clone()))
+        .merge(fake::admin_router(state.clone()))
 }
 
 /// Public router with explicit state (admin routes are NEVER here —
@@ -1201,6 +1209,16 @@ async fn main() {
             "WARNING: admin.mtls_off — local-dev seams on (loopback admin hosts, test cert header; local dev only)"
         );
     }
+    // W-3: say loudly which outside services run their local fake
+    // (the loader already refused fakes on a public, non-staging host).
+    let fakes = cfg.modes.fakes();
+    if !fakes.is_empty() {
+        let names: Vec<&str> = fakes.iter().map(|i| i.label()).collect();
+        eprintln!(
+            "FAKE MODE — {}: demo stand-ins only; nothing is sent, shipped or charged",
+            names.join(", ")
+        );
+    }
     // Host routing, CSRF origins and the admin passkey origin follow
     // `net.public_host` (admin is `admin.<public_host>`), fixed once here.
     if !auth::init_hosts(&cfg.public_host) {
@@ -1317,6 +1335,7 @@ async fn main() {
         notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
         notify_base: format!("{pub_origin}/apostille"),
         meta_delete_status_base: format!("{pub_origin}/auth/meta/delete-status"),
+        fakes: cfg.modes,
     };
     // F2: the effective allowlist lands in the boot log at INFO, so
     // "which ranges are live" never needs a config dump to answer.
@@ -2621,6 +2640,7 @@ mod tests {
             "/apostille/api/v1/admin/fact-checks?slug=usa-wa-sos",
             "/apostille/api/v1/admin/authorities",
             "/apostille/api/v1/admin/first-source/emails",
+            "/apostille/api/v1/admin/fake/outbox",
             "/apostille/api/v1/admin/compile",
         ] {
             let get = |host: &'static str, session: Option<&'static str>| {
@@ -3078,6 +3098,234 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<Vec<_>>>()
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn fake_labels_buy_a_paid_test_order_with_demo_pdfs_and_never_for_live_money() {
+        // W-3 `labels.mode = fake`: no `labels.customer_live`, no FedEx
+        // credentials — the real buyer and ledger run against the demo
+        // carrier, and the customer's cabinet serves a stamped PDF.
+        let mut fx = fixture();
+        fx.state.fakes =
+            config::Modes::default().with(config::Integration::Labels, config::Mode::Fake);
+        let meta = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        assert!(customer_labels::ready(
+            &fx.state,
+            &meta,
+            "label_fedex",
+            false
+        ));
+        assert!(customer_labels::ready(
+            &fx.state,
+            &meta,
+            "label_usps",
+            false
+        ));
+        assert!(
+            !customer_labels::ready(&fx.state, &meta, "label_fedex", true),
+            "demo labels are never sold for live money"
+        );
+        drop(meta);
+        let id = paid_label_order(&fx);
+        let demo = |state: &AppState, meta: &rusqlite::Connection, kind: &str, live: bool| {
+            customer_labels::connect(state, meta, kind, live, 0)
+        };
+        assert_eq!(
+            customer_labels::buy_order(&fx.state, &id, &demo),
+            customer_labels::BuyEnd::Ready
+        );
+        assert_eq!(order_status(&fx, &id), "labels_ready");
+        let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+        let numbers: Vec<String> = p2
+            .prepare("SELECT tracking_number FROM order_shipment WHERE order_id = ?1")
+            .unwrap()
+            .query_map([&id], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        drop(p2);
+        assert_eq!(numbers.len(), 2);
+        assert!(
+            numbers.iter().all(|n| labels::demo::is_demo_tracking(n)),
+            "{numbers:?}"
+        );
+        make_session(&fx.state.store_root, "cust-1", auth::Role::Customer);
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/apostille/api/v1/p2/orders/{id}/labels/outbound"))
+                    .header("cookie", format!("{}=cust-1", auth::PUB_COOKIE))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let pdf = body_text(res).await;
+        assert!(pdf.starts_with("%PDF-"));
+        assert!(pdf.contains("(DEMO \\227 NOT POSTAGE)"), "stamped");
+        assert!(pdf.contains("98501"), "addressed to the office");
+        // A real-money order never reaches the demo carrier.
+        assert!(
+            customer_labels::connect(
+                &fx.state,
+                &db::open(&Store::new(&fx.state.store_root)).unwrap(),
+                "label_fedex",
+                true,
+                0
+            )
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn fake_stripe_checkout_pays_through_the_real_signed_webhook_with_a_demo_receipt() {
+        // W-3 `stripe.mode = fake`: no key, no network. The DEMO
+        // checkout's Pay button delivers a signed event to the real
+        // webhook handler, which verifies it and settles against the
+        // fake session; the receipt is marked DEMO.
+        let mut fx = fixture();
+        fx.state.fakes =
+            config::Modes::default().with(config::Integration::Stripe, config::Mode::Fake);
+        let id = paid_label_order(&fx);
+        let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+        p2.execute(
+            "UPDATE customer_order SET status = 'awaiting_payment' WHERE id = ?1",
+            [&id],
+        )
+        .unwrap();
+        let meta = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        let keys = stripe::keys(&fx.state, &meta).expect("fake keys need no sealed key");
+        assert!(!keys.live());
+        let (session, url) = stripe::create_checkout(
+            &keys,
+            &stripe::CheckoutRequest {
+                order_id: id.clone(),
+                expires_at: unix_now() + 1800,
+                bucket: 0,
+                currency: "usd".into(),
+                lines: vec![
+                    ("FedEx 2Day label to the office".into(), 1250),
+                    ("FedEx 2Day return label to you".into(), 1250),
+                ],
+                success_url: format!("https://andrii.ai/apostille/orders/{id}?checkout=success"),
+                cancel_url: format!("https://andrii.ai/apostille/order?order={id}"),
+            },
+        )
+        .unwrap();
+        assert!(session.starts_with(stripe::FAKE_SESSION_PREFIX));
+        assert_eq!(
+            url,
+            format!("/apostille/api/v1/stripe/fake/checkout/{session}")
+        );
+        p2.execute(
+            "INSERT INTO order_payment(order_id, session_id, checkout_url, amount_cents, currency, livemode, status, created_at)
+             VALUES (?1, ?2, ?3, 2500, 'usd', 0, 'open', 1)",
+            rusqlite::params![id, session, url],
+        )
+        .unwrap();
+        let get = |uri: String| Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let res = public_router_for(&fx.state)
+            .oneshot(get(url.clone()))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let page = body_text(res).await;
+        assert!(page.contains("DEMO — no card is charged"), "{page}");
+        assert!(page.contains("Pay 25.00 USD (demo)"), "{page}");
+        // A forged event (wrong secret) is refused by the real handler.
+        let forged = r#"{"id":"evt_x","type":"checkout.session.completed","data":{"object":{"id":"cs_fake_x"}}}"#;
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/apostille/api/v1/stripe/webhook")
+                    .header(
+                        "stripe-signature",
+                        format!("t={},v1={}", unix_now(), "00".repeat(32)),
+                    )
+                    .body(Body::from(forged))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        // Pay: a same-origin form post.
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("{url}/pay"))
+                    .header("origin", "https://andrii.ai")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            res.headers()[header::LOCATION],
+            format!("/apostille/orders/{id}?checkout=success").as_str()
+        );
+        let (pay_status, intent): (String, String) = p2
+            .query_row(
+                "SELECT status, payment_intent FROM order_payment WHERE order_id = ?1",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(pay_status, "paid");
+        assert!(intent.starts_with("pi_fake_"), "{intent}");
+        let event: String = p2
+            .query_row("SELECT type FROM stripe_event", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            event, "checkout.session.completed",
+            "the real webhook recorded it"
+        );
+        let paid_text: String = p2
+            .query_row(
+                "SELECT text FROM order_event WHERE order_id = ?1 AND kind = 'order.paid'",
+                [&id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(paid_text, "Paid $25.00 (DEMO, no card charged)");
+        drop(p2);
+        // The owner's order shows a DEMO receipt link; the page says DEMO.
+        make_session(&fx.state.store_root, "cust-1", auth::Role::Customer);
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/apostille/api/v1/p2/orders/{id}"))
+                    .header("cookie", format!("{}=cust-1", auth::PUB_COOKIE))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let order: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+        let receipt = &order["receipt"];
+        assert_eq!(receipt["demo"], true, "{order}");
+        let receipt_url = receipt["receipt_url"].as_str().unwrap().to_string();
+        let res = public_router_for(&fx.state)
+            .oneshot(get(receipt_url))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(body_text(res).await.contains("DEMO receipt"));
+        // Refunds move nothing either.
+        assert!(
+            stripe::refund(&keys, &id, &intent)
+                .unwrap()
+                .starts_with("re_fake_")
+        );
+        // Without the fake, the fake pages do not exist.
+        let res = public_router_for(&fixture().state)
+            .oneshot(get(url))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
@@ -4382,6 +4630,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
         };
         Fixture { _tmp: tmp, state }
     }
@@ -4841,6 +5090,202 @@ mod tests {
         )
         .await;
         assert_eq!(v["contacts"][0]["value"], "apostille@example.gov");
+    }
+
+    #[tokio::test]
+    async fn fake_mail_loop_outbox_then_composed_reply_threads_with_dmarc_trust() {
+        // W-3: with no Gmail and no SMTP, outreach lands in the fake
+        // outbox, and a reply composed in the console is captured by the
+        // poller's own step: DMARC decides the trust, In-Reply-To threads
+        // it to the outreach email, and the capture waits for the
+        // instruct worker like any polled mail.
+        if std::env::var("META_API_KEY").is_ok_and(|k| !k.is_empty()) {
+            eprintln!("skip: META_API_KEY is set; this test must not call the model");
+            return;
+        }
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        let authority = db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "New York",
+                name: "Synthetic NY DoS",
+                slug: "synthetic-ny-dos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO domain(name, authority_id, status) VALUES ('example.gov', ?1, 'official')",
+            [authority],
+        )
+        .unwrap();
+        drop(conn);
+        let mut state = fx.state.clone();
+        state.fakes = config::Modes::default()
+            .with(config::Integration::MailOut, config::Mode::Fake)
+            .with(config::Integration::MailIn, config::Mode::Fake);
+        let cfg = config::RuntimeConfig {
+            modes: state.fakes,
+            mailer_provider: "smtp".to_string(),
+            ..config::RuntimeConfig::default()
+        };
+        // `mailer.mode = fake` wins over the configured provider.
+        state.mailer = magic::mailer_from_config(&cfg, &state.store_root);
+        assert!(matches!(state.mailer, Some(magic::Mailer::Outbox(_))));
+        let call = |method: &str, uri: &str, body: Option<serde_json::Value>| {
+            admin_request(
+                method,
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("tok"),
+                Some("https://admin.andrii.ai"),
+                body,
+            )
+        };
+        let app =
+            |state: &AppState| admin::router(state.clone()).merge(mission_admin_routers(state));
+        let read = |res: axum::response::Response| async move {
+            let status = res.status();
+            let v: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+            (status, v)
+        };
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call(
+                    "POST",
+                    "/apostille/api/v1/admin/first-source/emails",
+                    Some(
+                        json!({"slug": "synthetic-ny-dos", "to": "apostille@example.gov",
+                                "questions": ["What is the fee per document?"]}),
+                    ),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{v}");
+        let id = v["email"]["id"].as_i64().unwrap();
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call(
+                    "POST",
+                    &format!("/apostille/api/v1/admin/first-source/emails/{id}/send"),
+                    None,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        assert_eq!(v["email"]["status"], "sent");
+        // The outbox holds it, with our Message-ID; nothing was dialled.
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call("GET", "/apostille/api/v1/admin/fake/outbox", None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        assert_eq!(
+            (v["outbox"].clone(), v["inbox"].clone()),
+            (json!(true), json!(true))
+        );
+        let kept = &v["messages"][0];
+        assert_eq!(kept["kind"], "outreach");
+        assert_eq!(kept["to"], "apostille@example.gov");
+        let message_id = kept["headers"]["Message-ID"].as_str().unwrap().to_string();
+        assert!(
+            message_id.starts_with(&format!("<outreach-{id}-")),
+            "{message_id}"
+        );
+        // The office answers (DMARC pass): official trust, its own
+        // authority, threaded to the outreach email.
+        let reply = |dmarc: &str, body: &str| {
+            json!({"from": "Apostille@Example.gov", "subject": "Re: your questions",
+                   "body": body, "in_reply_to": message_id, "dmarc": dmarc})
+        };
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call(
+                    "POST",
+                    "/apostille/api/v1/admin/fake/inbox",
+                    Some(reply("pass", "The fee is $15 per document.")),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{v}");
+        assert_eq!(v["trust"], "official");
+        assert_eq!(v["verified_by"], "dmarc");
+        assert_eq!(v["authority"], "synthetic-ny-dos");
+        assert_eq!(v["outreach_email"], id);
+        let capture_id = v["capture_id"].as_i64().unwrap();
+        let conn = db::open(&Store::new(&state.store_root)).unwrap();
+        let (status_now, linked): (String, i64) = conn
+            .query_row(
+                "SELECT status, reply_capture_id FROM outreach_email WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((status_now.as_str(), linked), ("replied", capture_id));
+        let (kind, authenticity): (String, String) = conn
+            .query_row(
+                "SELECT kind, authenticity FROM capture WHERE id = ?1",
+                [capture_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, "email");
+        assert!(
+            authenticity.contains("\"received_via\":\"fake-inbox\""),
+            "{authenticity}"
+        );
+        drop(conn);
+        // DMARC fail from the same domain: kept, capped at community.
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call(
+                    "POST",
+                    "/apostille/api/v1/admin/fake/inbox",
+                    Some(reply("fail", "Spoofed: the fee is $1.")),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{v}");
+        assert_eq!(
+            (v["trust"].clone(), v["verified_by"].clone()),
+            (json!("community"), json!("none"))
+        );
+        // Bad input refuses; a boot without the fake inbox has none.
+        let res = app(&state)
+            .oneshot(call(
+                "POST",
+                "/apostille/api/v1/admin/fake/inbox",
+                Some(reply("maybe", "x")),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let res = app(&fx.state)
+            .oneshot(call(
+                "POST",
+                "/apostille/api/v1/admin/fake/inbox",
+                Some(reply("pass", "x")),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
     }
 
     #[tokio::test]
@@ -6250,6 +6695,71 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn fake_modes_show_on_the_badge_and_never_save_on_a_closed_guard() {
+        // W-3: the version badge names every fake, and a host whose
+        // guard is closed (public bind, not staging) refuses to save a
+        // `fake` mode row; any other value saves as before.
+        let mut fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        config::record_kek(&conn, 1, "test-cred", 100).unwrap();
+        drop(conn);
+        fx.state.fakes = config::Modes::default()
+            .with(config::Integration::MailOut, config::Mode::Fake)
+            .with(config::Integration::Labels, config::Mode::Fake)
+            .with(config::Integration::Stripe, config::Mode::Sandbox);
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/version",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        let v = json_body(res).await;
+        assert_eq!(
+            v["fakes"],
+            serde_json::json!([
+                {"slug": "mail_out", "label": "Outgoing email"},
+                {"slug": "labels", "label": "FedEx/USPS labels"},
+            ])
+        );
+        let put = |state: &AppState, value: &str| {
+            admin_router_for(state).oneshot(admin_request(
+                "PUT",
+                "/apostille/api/v1/config/labels.mode",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                Some(serde_json::json!({"type": "text", "value": value})),
+            ))
+        };
+        assert!(!fx.state.fakes.fakes_allowed);
+        let res = put(&fx.state, "fake").await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            json_body(res).await["error"]
+                .as_str()
+                .unwrap()
+                .contains("loopback")
+        );
+        assert_eq!(
+            put(&fx.state, "sandbox").await.unwrap().status(),
+            StatusCode::OK
+        );
+        fx.state.fakes.fakes_allowed = true;
+        assert_eq!(
+            put(&fx.state, " fake").await.unwrap().status(),
+            StatusCode::OK
+        );
     }
 
     #[tokio::test]

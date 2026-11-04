@@ -33,7 +33,9 @@ mod pii_sweep;
 mod provision;
 mod release;
 mod secrets;
+mod segments;
 mod setup;
+mod triage;
 mod up;
 mod voice_replay;
 mod watch;
@@ -83,6 +85,8 @@ fn main() {
         Some("world-index") => world::run(&args[1..]),
         Some("worker") => worker::run(&args[1..]),
         Some("crawl") => crawl::run(&args[1..]),
+        Some("segments") => segments::run(&args[1..]),
+        Some("triage") => triage::run(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("up") => up::run(&args[1..]),
         Some("judge") => judge::run(&args[1..]),
@@ -113,7 +117,7 @@ Tasks:
   add-authority   add an office/jurisdiction (see flags below)
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
   analyze     draft proposed facts for an authority (stub default, --live for Meta API, --live --record <corpus>, --replay <corpus>)
-  eval        grade drafts on evals/authorities/*.json [--live [--record <corpus>]] [--replay <corpus>] [--store <path>] [--evals <dir>] (writes quality.json)
+  eval        grade drafts on evals/authorities/*.json [--live [--record <corpus>]] [--replay <corpus>] [--local (env LOCAL_MODEL_URL, LOCAL_MODEL, LOCAL_MODEL_KEY?)] [--store <path>] [--evals <dir>] (writes quality.json)
   gold-export real gold cases from a store's accepted facts on official captures [--store <path>] [--out evals/authorities-real] [--per-authority 10]
   fetch-url   fetch one URL into a warc capture (thin watch)
   fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
@@ -139,6 +143,8 @@ Tasks:
   admin-offboard  staff offboard: sessions, credentials, lock (§5.6)
   secrets-scan scan tracked files for secrets [--staged for the index]
   crawl   fetch packs/world seeds into WARC/1.1 drops [--packs --out]
+  segments  split HCCH authority pages into labelled, quoted segments with a Meta model (local endpoint, or --spark) [--pages <dir>] [--iso2 XX] [--out] (report only)
+  triage  sort saved pages with the local Meta model (env LOCAL_MODEL_URL, LOCAL_MODEL) --pages <dir> [--pack <world pack>] [--out] (report only)
   archive-package  bundle a crawl run into WACZ/CSVs/index [--run]
   ask     answer one question with cited authority facts [<question> --slug --base --replay]
   a2-record  record the photo-precheck demo verdicts --png-dir --out-dir [--sam-backend open-weights --mask]

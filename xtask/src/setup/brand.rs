@@ -3,15 +3,39 @@
 //! The operator reads each owner's terms, ticks acceptance in the
 //! wizard (recorded in the setup file with name, time, terms version
 //! and each file's sha256) and drops the files into `private/brand/`
-//! (git-ignored). Builds take only files whose hash matches a recorded
-//! acceptance; anything else is left out and the login page falls back
-//! to text buttons. The tool never accepts terms itself.
+//! (git-ignored), or, once acceptance is ticked, has the wizard
+//! **Fetch** them from their source ([`fetch_file`]; the hash goes into
+//! the acceptance). Builds take only files whose hash matches a
+//! recorded acceptance; anything else is left out and the login page
+//! falls back to text buttons. The tool never accepts terms itself.
 
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::LazyLock;
+use std::time::Duration;
 
+use regex::Regex;
 use sha2::{Digest as _, Sha256};
 
-use super::file::{BrandFile, Licence, SetupFile};
+use super::file::{BrandFile, BrandSource, Licence, SetupFile};
+
+/// A download the wizard reads at most (a zip of every variant).
+pub const MAX_DOWNLOAD: u64 = 20 * 1024 * 1024;
+/// A brand file the wizard writes at most (the upload cap too).
+pub const MAX_FILE: usize = 2 * 1024 * 1024;
+
+/// Sources checked by hand (2026-11-04); the setup file's
+/// `brand.sources` overrides them. Only Google publishes a direct
+/// download: Apple's logo is a .dmg (its button API serves PNG), the
+/// FIDO icon sits behind a request form, Meta's logo behind accepting
+/// its guidelines, and Vogun is a purchased licence. Those stay manual
+/// unless the operator pastes a URL. (file, url, zip entry)
+pub const DEFAULT_SOURCES: &[(&str, &str, &str)] = &[(
+    "google.svg",
+    "https://developers.google.com/static/identity/images/signin-assets.zip",
+    "Theme=Neutral, Show text=No, Shape=Square, Platform=Android+Web.svg",
+)];
 
 pub struct Asset {
     pub id: &'static str,
@@ -148,6 +172,214 @@ pub fn licensed_files(repo: &Path, file: &SetupFile) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Where Fetch downloads `name`: the file's own source, else the
+/// checked default, else none (manual).
+pub fn source(file: &SetupFile, name: &str) -> Option<BrandSource> {
+    file.brand
+        .sources
+        .get(name)
+        .cloned()
+        .or_else(|| default_source(name))
+}
+
+pub fn default_source(name: &str) -> Option<BrandSource> {
+    DEFAULT_SOURCES
+        .iter()
+        .find(|(f, _, _)| *f == name)
+        .map(|(_, url, pick)| BrandSource {
+            url: (*url).to_string(),
+            pick: Some((*pick).to_string()),
+        })
+}
+
+/// Why an SVG may not ship, if it may not: scripts, event handlers,
+/// `<foreignObject>` and anything fetched from elsewhere.
+pub fn svg_problem(svg: &str) -> Option<&'static str> {
+    static EVENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"[\s/"']on[a-z]+\s*="#).unwrap());
+    static LINK: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"href\s*=\s*["']?\s*(https?:|//|javascript:)|url\(\s*["']?\s*(https?:|//)"#)
+            .unwrap()
+    });
+    let lower = svg.to_ascii_lowercase();
+    if !lower.contains("<svg") {
+        Some("it is not an SVG")
+    } else if lower.contains("<script") {
+        Some("it carries a <script>")
+    } else if lower.contains("<foreignobject") {
+        Some("it carries a <foreignObject>")
+    } else if EVENT.is_match(&lower) {
+        Some("it carries an on… event attribute")
+    } else if LINK.is_match(&lower) {
+        Some("it links to an outside resource")
+    } else {
+        None
+    }
+}
+
+/// `bytes` must be what a brand file called `name` holds. Fetched and
+/// uploaded files meet the same bar.
+pub fn check_content(name: &str, bytes: &[u8]) -> Result<(), String> {
+    if bytes.is_empty() || bytes.len() > MAX_FILE {
+        return Err(format!("{name} must be 1 byte to 2 MB"));
+    }
+    if name.ends_with(".svg") {
+        let text = std::str::from_utf8(bytes).map_err(|_| format!("{name} is not UTF-8 text"))?;
+        if let Some(why) = svg_problem(text) {
+            return Err(format!("refused {name}: {why}"));
+        }
+        Ok(())
+    } else if bytes.starts_with(b"wOF2") {
+        Ok(())
+    } else {
+        Err(format!("{name} is not a WOFF2 font"))
+    }
+}
+
+/// The entry called `want` (its path, or a path ending in `/want`) from
+/// a zip, read with `unzip` (no zip crate: one tool every Mac and Linux
+/// box has), at most [`MAX_FILE`] bytes. Nothing is unpacked to disk.
+fn unzip_entry(zip: &[u8], want: &str) -> Result<Vec<u8>, String> {
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let path = dir.path().join("download.zip");
+    std::fs::write(&path, zip).map_err(|e| e.to_string())?;
+    let list = Command::new("unzip")
+        .arg("-Z1")
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("run unzip (is it installed?): {e}"))?;
+    if !list.status.success() {
+        return Err("the download is not a readable zip".into());
+    }
+    let names = String::from_utf8_lossy(&list.stdout);
+    let suffix = format!("/{want}");
+    let found: Vec<&str> = names
+        .lines()
+        .filter(|n| !n.ends_with('/') && (*n == want || n.ends_with(&suffix)))
+        .collect();
+    let entry = match found.as_slice() {
+        [one] => *one,
+        [] => return Err(format!("no {want:?} in the zip")),
+        _ => {
+            return Err(format!(
+                "{want:?} matches {} entries; name its path",
+                found.len()
+            ));
+        }
+    };
+    if entry.starts_with('-') {
+        return Err(format!("refused the zip entry {entry:?}"));
+    }
+    // unzip reads names as wildcards: escape them.
+    let mut pattern = String::new();
+    for c in entry.chars() {
+        if "*?[]\\".contains(c) {
+            pattern.push('\\');
+        }
+        pattern.push(c);
+    }
+    let mut child = Command::new("unzip")
+        .arg("-p")
+        .arg(&path)
+        .arg(pattern)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("run unzip: {e}"))?;
+    let mut out = Vec::new();
+    child
+        .stdout
+        .take()
+        .ok_or("unzip stdout")?
+        .take(MAX_FILE as u64 + 1)
+        .read_to_end(&mut out)
+        .map_err(|e| e.to_string())?;
+    let _ = child.kill();
+    let _ = child.wait();
+    Ok(out)
+}
+
+/// Download, pick and check one brand file and write it to the brand
+/// directory. Refused unless the operator has accepted its owner's
+/// terms. `get` downloads a URL (the network seam: [`download`]).
+/// Returns the file's sha256 for [`record`].
+pub fn fetch_file(
+    repo: &Path,
+    file: &SetupFile,
+    name: &str,
+    get: &dyn Fn(&str) -> Result<Vec<u8>, String>,
+) -> Result<String, String> {
+    let name = allowed_file(name).ok_or("not a brand file name this build uses")?;
+    let asset = ASSETS
+        .iter()
+        .find(|a| a.files.contains(&name))
+        .expect("allowed files belong to an asset");
+    if !file.brand.licences.iter().any(|l| l.asset == asset.id) {
+        return Err(format!(
+            "tick acceptance of {}'s terms first; this tool never accepts them for you",
+            asset.owner
+        ));
+    }
+    let src = source(file, name).ok_or("no source URL for this file: download it by hand")?;
+    if !src.url.starts_with("https://") {
+        return Err("the source must be an https:// URL".into());
+    }
+    let bytes = get(&src.url)?;
+    let bytes = if bytes.starts_with(b"PK\x03\x04") {
+        unzip_entry(&bytes, src.pick.as_deref().unwrap_or(name))?
+    } else {
+        bytes
+    };
+    check_content(name, &bytes)?;
+    let dir = dir(repo, file);
+    std::fs::create_dir_all(&dir)
+        .and_then(|()| std::fs::write(dir.join(name), &bytes))
+        .map_err(|e| e.to_string())?;
+    Ok(sha256_hex(&bytes))
+}
+
+/// Put a fetched file's hash into its asset's recorded acceptance.
+pub fn record(file: &mut SetupFile, name: &str, sha256: &str) -> Result<(), String> {
+    let asset = ASSETS
+        .iter()
+        .find(|a| a.files.contains(&name))
+        .ok_or("not a brand file name this build uses")?;
+    let licence = file
+        .brand
+        .licences
+        .iter_mut()
+        .find(|l| l.asset == asset.id)
+        .ok_or("the acceptance was withdrawn while fetching")?;
+    licence.files.retain(|f| f.name != name);
+    licence.files.push(BrandFile {
+        name: name.to_string(),
+        sha256: sha256.to_string(),
+    });
+    Ok(())
+}
+
+/// GET `url` over HTTPS only (redirects too), 30 s, [`MAX_DOWNLOAD`].
+pub fn download(url: &str) -> Result<Vec<u8>, String> {
+    let provider = rustls::crypto::aws_lc_rs::default_provider();
+    let _ = rustls::crypto::CryptoProvider::install_default(provider);
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .https_only(true)
+        .http_status_as_error(false)
+        .timeout_global(Some(Duration::from_secs(30)))
+        .build()
+        .into();
+    let mut response = agent.get(url).call().map_err(|e| format!("{url}: {e}"))?;
+    let status = response.status().as_u16();
+    if !(200..300).contains(&status) {
+        return Err(format!("{url}: HTTP {status}"));
+    }
+    response
+        .body_mut()
+        .with_config()
+        .limit(MAX_DOWNLOAD)
+        .read_to_vec()
+        .map_err(|e| format!("{url}: {e} (the cap is 20 MB)"))
+}
+
 /// RFC 3339 UTC for a unix time (no date crate: civil-from-days).
 pub fn rfc3339(unix: i64) -> String {
     let days = unix.div_euclid(86_400);
@@ -215,5 +447,174 @@ mod tests {
         assert!(allowed_file("../etc/passwd").is_none());
         assert_eq!(rfc3339(0), "1970-01-01T00:00:00Z");
         assert_eq!(rfc3339(1_793_664_000), "2026-11-03T00:00:00Z");
+    }
+
+    #[test]
+    fn svgs_with_scripts_handlers_foreign_objects_or_outside_links_are_refused() {
+        let ok = [
+            r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><path d="M0 0" fill="url(#g)"/><use xlink:href="#a"/></svg>"##,
+            r#"<svg><image href="data:image/png;base64,AAAA"/><g font-family="x" data-on="1"/></svg>"#,
+        ];
+        for svg in ok {
+            assert_eq!(svg_problem(svg), None, "{svg}");
+        }
+        let bad = [
+            ("<html></html>", "not an SVG"),
+            ("<svg><SCRIPT>alert(1)</SCRIPT></svg>", "<script>"),
+            (r#"<svg onload="alert(1)"></svg>"#, "event"),
+            ("<svg>\n<g\nONCLICK = 'x'/></svg>", "event"),
+            (
+                "<svg><foreignObject><div/></foreignObject></svg>",
+                "foreignObject",
+            ),
+            (
+                r#"<svg><a href="https://evil.example/">x</a></svg>"#,
+                "outside",
+            ),
+            (
+                r#"<svg><use xlink:href = 'http://evil.example/s.svg#a'/></svg>"#,
+                "outside",
+            ),
+            (
+                r#"<svg><image href="//evil.example/p.png"/></svg>"#,
+                "outside",
+            ),
+            (
+                r#"<svg><a href="javascript:alert(1)">x</a></svg>"#,
+                "outside",
+            ),
+            (
+                r#"<svg><rect style="fill:url( 'https://evil.example/#p')"/></svg>"#,
+                "outside",
+            ),
+        ];
+        for (svg, why) in bad {
+            let got = svg_problem(svg).unwrap_or_else(|| panic!("accepted {svg}"));
+            assert!(got.contains(why), "{svg}: {got}");
+        }
+    }
+
+    #[test]
+    fn fetch_needs_acceptance_then_picks_checks_writes_and_records() {
+        let repo = tempfile::tempdir().unwrap();
+        let mut file = SetupFile::template();
+        file.operator.name = "Synthetic Operator".into();
+        let plain = |_: &str| Ok(b"<svg>synthetic G</svg>".to_vec());
+        let err = fetch_file(repo.path(), &file, "google.svg", &plain).unwrap_err();
+        assert!(err.contains("tick acceptance"), "{err}");
+        accept(
+            repo.path(),
+            &mut file,
+            "google",
+            "2026-11",
+            "2026-11-04T00:00:00Z",
+        )
+        .unwrap();
+        // The default source is Google's bundle; a plain SVG answer is used as is.
+        assert!(
+            source(&file, "google.svg")
+                .unwrap()
+                .url
+                .ends_with("signin-assets.zip")
+        );
+        let sha = fetch_file(repo.path(), &file, "google.svg", &|url: &str| {
+            assert!(url.starts_with("https://developers.google.com/"), "{url}");
+            Ok(b"<svg>synthetic G</svg>".to_vec())
+        })
+        .unwrap();
+        assert_eq!(sha, sha256_hex(b"<svg>synthetic G</svg>"));
+        assert!(
+            licensed_files(repo.path(), &file).is_empty(),
+            "not recorded yet"
+        );
+        record(&mut file, "google.svg", &sha).unwrap();
+        assert_eq!(
+            licensed_files(repo.path(), &file),
+            vec![repo.path().join("private/brand/google.svg")]
+        );
+        // Failures say why and leave the file alone.
+        let refused = |_: &str| Ok(br#"<svg onload="x()"></svg>"#.to_vec());
+        let err = fetch_file(repo.path(), &file, "google.svg", &refused).unwrap_err();
+        assert!(err.contains("refused google.svg"), "{err}");
+        let down = |_: &str| Err("https://x: HTTP 404".to_string());
+        assert!(
+            fetch_file(repo.path(), &file, "google.svg", &down)
+                .unwrap_err()
+                .contains("404")
+        );
+        assert_eq!(licensed_files(repo.path(), &file).len(), 1);
+        file.brand.sources.insert(
+            "google.svg".into(),
+            BrandSource {
+                url: "http://example.test/g.svg".into(),
+                pick: None,
+            },
+        );
+        assert!(
+            fetch_file(repo.path(), &file, "google.svg", &plain)
+                .unwrap_err()
+                .contains("https://")
+        );
+        // No source and no default: manual.
+        accept(
+            repo.path(),
+            &mut file,
+            "apple",
+            "2026-11",
+            "2026-11-04T00:00:00Z",
+        )
+        .unwrap();
+        let err = fetch_file(repo.path(), &file, "apple.svg", &plain).unwrap_err();
+        assert!(err.contains("by hand"), "{err}");
+        assert!(fetch_file(repo.path(), &file, "../x.svg", &plain).is_err());
+    }
+
+    #[test]
+    fn zips_give_up_the_one_named_entry() {
+        if Command::new("unzip").arg("-v").output().is_err() {
+            return; // no unzip on this box
+        }
+        let zip = include_bytes!("testdata/brand-bundle.zip");
+        let repo = tempfile::tempdir().unwrap();
+        let mut file = SetupFile::template();
+        file.operator.name = "Synthetic Operator".into();
+        accept(
+            repo.path(),
+            &mut file,
+            "google",
+            "2026-11",
+            "2026-11-04T00:00:00Z",
+        )
+        .unwrap();
+        let get = |_: &str| Ok(zip.to_vec());
+        let fetch = |file: &mut SetupFile, pick: &str| {
+            file.brand.sources.insert(
+                "google.svg".into(),
+                BrandSource {
+                    url: "https://example.test/bundle.zip".into(),
+                    pick: Some(pick.into()),
+                },
+            );
+            fetch_file(repo.path(), file, "google.svg", &get)
+        };
+        fetch(&mut file, "Theme=Neutral, Show text=No, Shape=Square.svg").unwrap();
+        let got = std::fs::read_to_string(repo.path().join("private/brand/google.svg")).unwrap();
+        assert!(got.contains("#4285F4"), "{got}");
+        fetch(&mut file, "Bundle/a[1].svg").unwrap();
+        let got = std::fs::read_to_string(repo.path().join("private/brand/google.svg")).unwrap();
+        assert_eq!(
+            got.trim(),
+            "<svg>glob</svg>",
+            "wildcards in names are literal"
+        );
+        let err = fetch(&mut file, "scripted.svg").unwrap_err();
+        assert!(err.contains("<script>"), "{err}");
+        let err = fetch(&mut file, "missing.svg").unwrap_err();
+        assert!(err.contains("no \"missing.svg\" in the zip"), "{err}");
+        let err = fetch_file(repo.path(), &file, "google.svg", &|_: &str| {
+            Ok(b"PK\x03\x04 not really a zip".to_vec())
+        })
+        .unwrap_err();
+        assert!(err.contains("not a readable zip"), "{err}");
     }
 }

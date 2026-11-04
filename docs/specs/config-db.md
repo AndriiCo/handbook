@@ -287,3 +287,91 @@ socket peer is the caller. No peer address fails closed.
   too (the flag still gates the loopback-host and test-header dev
   seams). Enrolment ceremonies no longer require a presented
   cert; a presented live cert still binds when present.
+
+## 9. Fake mode (W-3)
+
+Every outside service has one `<area>.mode` row (text): `fake`,
+`sandbox` or `live`. A fake is a local stand-in: nothing is sent,
+shipped or charged, and its output is marked as fake.
+
+| Row | Integration | `fake` means |
+|---|---|---|
+| `mailer.mode` | outgoing email (magic links, digests, outreach) | kept in the store's fake outbox (admin **Outbox**), never sent |
+| `mail.mode` | incoming email (Gmail poll) | no poll; admin **Compose** injects mail through the poller's capture path |
+| `labels.mode` | FedEx and USPS labels | demo PDF stamped "DEMO — NOT POSTAGE", fake-range tracking number |
+| `stripe.mode` | Stripe checkout + webhooks | local checkout, DEMO receipt, webhook signed with a local secret |
+| `telnyx.mode` | Telnyx calls | a recorded WAV plays into the transcribe step |
+| `meta.mode` | Meta Model API | the call cache in `replay-only` mode over the recorded corpus |
+| `hf.mode` | Hugging Face weights | no download; Glimmer verdicts from recorded files |
+
+Rules (`config::Modes`, `config::fakes_allowed`):
+
+- Unset ≡ today's behaviour, exactly. `sandbox` and `live` never
+  override the switches that already choose between them
+  (`labels.live`, `labels.customer_live`, `usps.live`, the Stripe
+  key's `sk_test_`/`sk_live_` prefix, `mailer.provider`): the mode
+  row can add a fake, never raise anything to live. A value other
+  than the three warns and counts as unset.
+- **Guard.** Any `fake` row refuses the boot unless every bind IP is
+  loopback (the dev-seam rule, in every build profile) or the boot
+  is a staging target: `APOSTILLE_ENV_LABEL=staging` (set only by
+  the staging boot) with a `net.public_host` other than `andrii.ai`.
+  Production can never run a fake.
+- The admin config PUT and the setup-wizard PUT refuse to save a
+  `fake` row while this boot's guard is closed (422), so a
+  production console cannot save a row its next boot would refuse.
+- The boot prints `FAKE MODE — <integrations>`; `GET
+  /admin/version` lists them as `fakes`, and the console shows a
+  FAKE ribbon naming each one on every screen.
+
+Each fake in detail: email §9.1; labels `docs/specs/carrier-apis.md`
+§6; Stripe `docs/specs/payments-billing.md` §13; Telnyx
+`docs/specs/voice-telnyx.md` (Fake calls); Meta and Hugging Face §9.2.
+`cargo xtask up` and `cargo xtask judge` seal every row to `fake`
+while it is unset (and `orders.enabled` on), except `meta.mode` on a
+`--live` or `--record` boot, which calls the model.
+
+### 9.1 Fake email (W-3b)
+
+- **Outbox** (`mailer.mode = fake`): `magic::mailer_from_config`
+  returns `Mailer::Outbox` whatever `mailer.provider` says. Every
+  send — magic links, follower digests, first-source outreach —
+  becomes a `fake_outbox` row (`CREATE TABLE IF NOT EXISTS`, metadata
+  DB) with its closed header set (RFC 8058 pair, `Message-ID`,
+  `Reply-To`). Nothing is dialled, so no real address is reached and
+  the overall send budget is untouched. Staff read it at **Outbox**
+  (`GET /apostille/api/v1/admin/fake/outbox`, newest 200); the rows
+  hold live sign-in links, which is the point on a loopback or staging
+  boot with synthetic data.
+- **Inbox** (`mail.mode = fake`): `xtask mail-poll` exits without
+  calling Gmail. **Compose** (`POST /apostille/api/v1/admin/fake/inbox`,
+  409 unless the mode is fake) takes From, subject, body, an optional
+  `In-Reply-To`, `dmarc: pass|fail` and optional attachments, builds
+  the RFC 2822 bytes Gmail would hand the poll — including the
+  `Authentication-Results: mx.google.com; …` stamp with the chosen
+  DMARC/DKIM/SPF verdict — and runs them through
+  `mail::poll::capture_message`, the poll's own capture step. Trust is
+  therefore decided exactly as for polled mail (P435): `official` only
+  when the stamp authenticates an official From domain; a DMARC fail
+  caps at `community`; unknown domains land in `mail-inbox`. A reply
+  naming an outbox `Message-ID` links to its outreach email. The
+  capture is watermarked (`X-Handbook-Fake` header, `fake-inbox:<id>`
+  origin, `received_via: fake-inbox`, `fake: true`) and the next
+  `xtask instruct-sweep` drafts from it into `/review` unchanged.
+
+### 9.2 Fake Meta Model API and Hugging Face (W-3e)
+
+- `meta.mode = fake` **is** the existing call cache in `replay-only`
+  mode (`config::call_cache_rows` reports it whatever
+  `meta.cache_mode` says): answers come from the recorded corpus under
+  `paths.meta_cache_dir`, a request with no recorded answer is an
+  error, and no model is called. As for every sealed cache row,
+  `$META_CACHE_MODE` and `--cache-mode` still override it, and the
+  mode covers the URL fetch cache too (`docs/ops/call-cache.md`).
+- `hf.mode = fake`: no Glimmer weights are downloaded (nothing runs
+  `ops/open-weights/glimmer-serve.sh download`) and verdicts come from
+  the recorded files in `evals/captures/demo_precheck/`: the public
+  demo precheck serves them from the store (`up` installs them), and
+  the plant `precheck.glimmer` worker answers from them when its
+  `worker.env` carries `HF_MODE=fake` — the worker reads no server
+  config, so `up` writes that line while `hf.mode` is fake.

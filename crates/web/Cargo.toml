@@ -20,6 +20,8 @@ handbook-agent = { path = "../handbook-agent" }
 handbook-store = { path = "../handbook-store" }
 ingest = { path = "../ingest" }
 labels = { path = "../labels" }
+# W-3 fake inbox: composed mail goes through the Gmail poll's capture step.
+mail = { path = "../mail" }
 media = { path = "../media" }
 notify = { path = "../notify" }
 rand = "0.9"

@@ -19,7 +19,7 @@ import { credentialRequestArgs, serializeRegistration } from './staff-auth.js';
 
 /**
  * @typedef {{ id: string, label: string, created_at: number, last_used_at: number | null }} StaffPasskey
- * @typedef {{ user_id: string, role: 'staff' | 'admin', name: string, created_at: number, locked_at: number | null, passkeys: StaffPasskey[] }} StaffAccount
+ * @typedef {{ user_id: string, role: 'staff' | 'admin', name: string, email: string, created_at: number, locked_at: number | null, passkeys: StaffPasskey[] }} StaffAccount
  * @typedef {{ id: string, role: 'staff' | 'admin', cn: string, created_by: string, created_at: number, expires_at: number }} PendingInvite
  * @typedef {{ me: { user_id: string, role: string }, accounts: StaffAccount[], invites: PendingInvite[] }} StaffList
  */
@@ -75,6 +75,7 @@ export function normalizeStaffList(data) {
 				user_id: a.user_id,
 				role: role(a.role),
 				name: typeof a.name === 'string' ? a.name : '',
+				email: typeof a.email === 'string' ? a.email : '',
 				created_at: num(a.created_at) ?? 0,
 				locked_at: num(a.locked_at),
 				passkeys: (Array.isArray(a.passkeys) ? a.passkeys : [])

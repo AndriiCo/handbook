@@ -558,3 +558,17 @@ migration, no fixture edits:
 7. Rollback: blanking `telnyx.api_key` returns every
    endpoint to fail-closed (503/401) with stored calls,
    transcripts, and facts untouched.
+
+## Fake calls (W-3, `telnyx.mode = fake`)
+
+Loopback and staging boots only (`docs/specs/config-db.md` §9). A dial
+places no call: no Telnyx key or connection is needed and no phone
+rings. The call row is created as usual (consent, script pack and
+audit unchanged, `fake-…` control ids), a recorded WAV — two seconds
+of a synthetic 440 Hz tone, mono 16-bit PCM at 16 kHz, built in code
+so no audio file rides in the repo — becomes its recording, the call
+completes, and the same transcribe step a real hangup triggers runs
+on it (Meta transcription through the call cache). As for a real
+call, it stays untranscribed with no Meta key or recorded answer, or
+while `media.terms_read` is off. Hangup and record commands do not
+apply to a fake call (it is already over).

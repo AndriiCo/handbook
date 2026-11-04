@@ -8,7 +8,10 @@
 //! Hard rule: prepaid (Option B) buys run ONLY against the USPS test
 //! environment or a loopback stub backend. [`labels::SandboxGuard`]
 //! enforces it; a non-sandbox base URL fails closed with 403 plus an
-//! audit row. There is no live-buy path in this module.
+//! audit row. There is no live-buy path in this module. Under W-3
+//! `labels.mode = fake` the demo carrier (`labels::demo`) answers
+//! instead: a PDF stamped "DEMO — NOT POSTAGE", a `DEMO…` tracking
+//! number, no network; a demo label voids locally.
 //!
 //! Label bytes live in the store blob dir (content-addressed); the
 //! `shipping_label` row carries the sha. Status changes publish
@@ -866,8 +869,10 @@ async fn purchase_prepaid(
         )
             .into_response();
     }
+    // W-3: the demo carrier needs no sandbox, certification or tokens.
+    let demo = state.fakes.is_fake(config::Integration::Labels);
     // Hard rule: sandbox/TEM only, fail closed.
-    if SandboxGuard::check_usps_base_url(&state.label_cfg.usps_base_url).is_err() {
+    if !demo && SandboxGuard::check_usps_base_url(&state.label_cfg.usps_base_url).is_err() {
         if let Ok(main) = db::open(store) {
             audit(
                 &main,
@@ -888,7 +893,7 @@ async fn purchase_prepaid(
             .into_response();
     }
     let now = crate::unix_now();
-    if !state.label_cfg.usps_certified {
+    if !demo && !state.label_cfg.usps_certified {
         let (p2, main) = match (db::open_p2(store), db::open(store)) {
             (Ok(p2), Ok(main)) => (p2, main),
             _ => return crate::store_unavailable(),
@@ -915,6 +920,18 @@ async fn purchase_prepaid(
     let base_url = state.label_cfg.usps_base_url.clone();
     let token_state = state.clone();
     let bought = tokio::task::spawn_blocking(move || {
+        if demo {
+            let client =
+                UspsClient::new(labels::demo::DEMO_BASE, labels::demo::DemoTransport, true);
+            return client.buy(
+                "demo",
+                &BuyRequest {
+                    payload: &payload,
+                    direction,
+                    payment_ref: "DEMO",
+                },
+            );
+        }
         let (bearer, payment) = match crate::usps::test_tokens(&token_state) {
             Some(Ok(tokens)) => tokens,
             Some(Err(e)) => {
@@ -1403,7 +1420,9 @@ async fn void_label(
     // paste-backs carry no API session, so they void locally: only a
     // label bought through this module's certified path (prepaid +
     // tracking + stored PDF bought from the carrier) cancels.
-    let api_bought = row.purchase_option == "prepaid" && !row.tracking_no.trim().is_empty();
+    let api_bought = row.purchase_option == "prepaid"
+        && !row.tracking_no.trim().is_empty()
+        && !labels::demo::is_demo_tracking(&row.tracking_no);
     if api_bought && state.label_cfg.usps_certified && row.carrier == Carrier::Usps {
         if SandboxGuard::check_usps_base_url(&state.label_cfg.usps_base_url).is_err() {
             return (
@@ -1675,6 +1694,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
             fedex_live: crate::fedex_live::FedexLiveState::default(),
         };
         Fixture { _tmp: tmp, state }
@@ -2089,6 +2109,60 @@ mod tests {
             )
             .unwrap();
         assert_eq!(blocks, 1);
+    }
+
+    #[tokio::test]
+    async fn fake_prepaid_issues_a_demo_label_even_off_sandbox_and_voids_locally() {
+        // W-3 `labels.mode = fake`: the production base URL and an
+        // uncertified API do not matter — no carrier is called.
+        let mut fixture = fixture(LabelCfg {
+            usps_base_url: "https://apis.usps.com".to_string(),
+            usps_certified: false,
+        });
+        fixture.state.fakes =
+            config::Modes::default().with(config::Integration::Labels, config::Mode::Fake);
+        let id = create_shipment_id(&fixture, "tok-1").await;
+        let res = app(&fixture.state)
+            .oneshot(post(
+                &format!("/apostille/api/v1/p2/shipments/{id}/purchase"),
+                Some("tok-1"),
+                serde_json::json!({
+                    "direction": "outbound",
+                    "carrier": "usps",
+                    "option": {"kind": "prepaid", "paper": "four_by_six"},
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let v = body_json(res).await;
+        assert_eq!(v["queued"], false);
+        let tracking = v["label"]["summary"]["tracking_no"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(labels::demo::is_demo_tracking(tracking), "{v}");
+        let label_id = v["label"]["id"].as_i64().unwrap();
+        let res = app(&fixture.state)
+            .oneshot(get(
+                &format!("/apostille/api/v1/p2/shipments/{id}/labels/{label_id}/download"),
+                Some("tok-1"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let pdf = axum::body::to_bytes(res.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        assert!(String::from_utf8_lossy(&pdf).contains("(DEMO \\227 NOT POSTAGE)"));
+        let res = app(&fixture.state)
+            .oneshot(post(
+                &format!("/apostille/api/v1/p2/shipments/{id}/labels/{label_id}/void"),
+                Some("tok-1"),
+                serde_json::json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
     }
 
     #[tokio::test]

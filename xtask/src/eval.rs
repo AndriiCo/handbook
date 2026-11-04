@@ -15,7 +15,14 @@
 //! `misses` fields.
 //!
 //! Stub default (offline-safe); `--live` drafts via the Meta Model API
-//! with the sealed key (same path as `analyze --live`). The LLM-judge
+//! with the sealed key (same path as `analyze --live`). `--local` drafts
+//! via an OpenAI-compatible endpoint on our own hardware serving a Meta
+//! model (llama.cpp `llama-server` on plant): `LOCAL_MODEL_URL` (base,
+//! e.g. `http://127.0.0.1:8080/v1`), `LOCAL_MODEL` (the id it serves;
+//! from the environment, never the repo) and, if it wants one,
+//! `LOCAL_MODEL_KEY`. Rule (D-4): a local model drafts only after it
+//! matches Spark here on `quote_found_rate` and `value_in_quote_rate`
+//! (same gold set, same prompt); until then it grades only. The LLM-judge
 //! tier ("same meaning") stays future work until a judge agrees with
 //! hand labels; the gold statements/values are already recorded for it.
 
@@ -91,17 +98,79 @@ fn load_gold(dir: &std::path::Path) -> Vec<GoldCase> {
     cases
 }
 
+/// Environment of `--local` (D-4): base URL, model id, optional key.
+pub(crate) const LOCAL_ENV: [&str; 3] = ["LOCAL_MODEL_URL", "LOCAL_MODEL", "LOCAL_MODEL_KEY"];
+
+/// True for a model id of a Meta family (`muse-…`, Llama): the organizer
+/// rule holds for local endpoints too. A guard against pointing the eval
+/// at the wrong model, not proof of the weights the endpoint serves.
+pub(crate) fn is_meta_model(id: &str) -> bool {
+    let id = id.trim().to_ascii_lowercase();
+    // A hub path names its uploader first (`meta-llama/…`, a GGUF
+    // re-upload): judge the model name after the last `/`. The name must
+    // start with a Meta family, so look-alikes such as TinyLlama or
+    // OpenLLaMA (not Meta's weights) are refused.
+    let name = id.rsplit('/').next().unwrap_or_default();
+    ["muse-", "llama", "meta-llama", "codellama"]
+        .iter()
+        .any(|family| name.starts_with(family))
+}
+
+/// `(base_url, model, key)` for `--local` from `get` (the environment),
+/// or why not.
+pub(crate) fn local_endpoint(
+    get: impl Fn(&str) -> Option<String>,
+) -> Result<(String, String, String), String> {
+    let [url_var, model_var, key_var] = LOCAL_ENV;
+    let base = get(url_var).unwrap_or_default();
+    if !(base.starts_with("http://") || base.starts_with("https://")) {
+        return Err(format!("--local needs {url_var} (http(s) base URL)"));
+    }
+    let model = get(model_var).unwrap_or_default();
+    if !is_meta_model(&model) {
+        return Err(format!(
+            "--local needs {model_var} naming a Meta model (muse-… or Llama), not {model:?}"
+        ));
+    }
+    Ok((
+        base,
+        model.trim().to_string(),
+        get(key_var).unwrap_or_default(),
+    ))
+}
+
 /// CLI entry: grade, print the audit line, write `quality.json`.
 pub fn run(args: &[String]) {
     let store = open_store(args);
-    let client: Box<dyn ModelClient> = crate::draft_client(args, || {
-        let conn = crate::open_db(&store);
-        if let Err(e) = handbook_store::db::migrate(&conn) {
-            eprintln!("eval: migrate: {e}");
-            std::process::exit(1);
+    let client: Box<dyn ModelClient> = if args.iter().any(|a| a == "--local") {
+        if ["--live", "--record", "--replay"]
+            .iter()
+            .any(|f| args.iter().any(|a| a == f))
+        {
+            eprintln!("eval: --local drafts on its own endpoint; drop --live/--record/--replay");
+            std::process::exit(2);
         }
-        crate::live_client(&conn)
-    });
+        let (base, model, key) =
+            local_endpoint(|var| std::env::var(var).ok()).unwrap_or_else(|e| {
+                eprintln!("eval: {e}");
+                std::process::exit(2);
+            });
+        eprintln!("eval: local endpoint {base}, model {model}");
+        // One leak per process: `ModelClient::model_id` is `'static`.
+        let model: &'static str = Box::leak(model.into_boxed_str());
+        Box::new(handbook_agent::model::MetaRestClient::local(
+            base, key, model,
+        ))
+    } else {
+        crate::draft_client(args, || {
+            let conn = crate::open_db(&store);
+            if let Err(e) = handbook_store::db::migrate(&conn) {
+                eprintln!("eval: migrate: {e}");
+                std::process::exit(1);
+            }
+            crate::live_client(&conn)
+        })
+    };
     let model = client.model_id().to_string();
     // Gold lives at the workspace root; xtask's own manifest dir is one
     // level down, so prefer the caller's working directory.
@@ -853,6 +922,66 @@ mod tests {
             let (after, before) = score_plant(&plant, &allowed);
             assert!(after, "gate catches the short value");
             assert!(!before, "pre-gate validator misses it");
+        }
+    }
+
+    /// D-4: `--local` reads its endpoint from the environment and takes
+    /// Meta model ids only.
+    #[test]
+    fn local_endpoint_needs_a_url_and_a_meta_model() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |var: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == var)
+                    .map(|(_, v)| (*v).to_string())
+            }
+        };
+        let ok = local_endpoint(env(&[
+            ("LOCAL_MODEL_URL", "http://127.0.0.1:8080/v1"),
+            ("LOCAL_MODEL", " Llama-3.3-70B-Instruct "),
+        ]))
+        .unwrap();
+        assert_eq!(
+            ok,
+            (
+                "http://127.0.0.1:8080/v1".to_string(),
+                "Llama-3.3-70B-Instruct".to_string(),
+                String::new()
+            )
+        );
+        assert!(local_endpoint(env(&[("LOCAL_MODEL", "llama-3")])).is_err());
+        assert!(
+            local_endpoint(env(&[
+                ("LOCAL_MODEL_URL", "ftp://x"),
+                ("LOCAL_MODEL", "llama-3")
+            ]))
+            .is_err()
+        );
+        let wrong = local_endpoint(env(&[
+            ("LOCAL_MODEL_URL", "http://127.0.0.1:8080/v1"),
+            ("LOCAL_MODEL", "acme-7b-instruct"),
+        ]))
+        .unwrap_err();
+        assert!(wrong.contains("Meta model"), "{wrong}");
+        for meta in [
+            "muse-spark-1.3",
+            "Llama-3.2-3B-Instruct",
+            "llama3.1:8b",
+            "meta-llama/Llama-3.1-8B-Instruct",
+            "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+            "CodeLlama-7b",
+        ] {
+            assert!(is_meta_model(meta), "{meta}");
+        }
+        for other in [
+            "",
+            "acme-7b-instruct",
+            "TinyLlama-1.1B",
+            "openllama-7b",
+            "mistral-7b-instruct",
+        ] {
+            assert!(!is_meta_model(other), "{other}");
         }
     }
 }

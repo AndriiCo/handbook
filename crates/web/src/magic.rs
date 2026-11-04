@@ -205,24 +205,31 @@ impl SmtpMailer {
     ) -> Result<(), flow::MailError> {
         use lettre::Transport as _;
         let message = build_message(&self.from, to, subject, text_body, headers)?;
-        let kind = if headers
-            .iter()
-            .any(|(n, _)| n.eq_ignore_ascii_case("List-Unsubscribe"))
-        {
-            "digest"
-        } else if headers
-            .iter()
-            .any(|(n, _)| n.eq_ignore_ascii_case("Message-ID"))
-        {
-            "outreach"
-        } else {
-            "mail"
-        };
-        self.claim_send(kind)?;
+        self.claim_send(send_kind(headers))?;
         self.transport()?
             .send(&message)
             .map(|_| ())
             .map_err(map_smtp_error)
+    }
+}
+
+/// What a send is, from its closed header set: a follower `digest`
+/// (RFC 8058 pair), first-source `outreach` (our `Message-ID`), else
+/// `mail` (magic links). Names the send-budget row and the fake outbox's
+/// kind.
+pub(crate) fn send_kind(headers: &[(&str, &str)]) -> &'static str {
+    if headers
+        .iter()
+        .any(|(n, _)| n.eq_ignore_ascii_case("List-Unsubscribe"))
+    {
+        "digest"
+    } else if headers
+        .iter()
+        .any(|(n, _)| n.eq_ignore_ascii_case("Message-ID"))
+    {
+        "outreach"
+    } else {
+        "mail"
     }
 }
 
@@ -310,6 +317,8 @@ impl flow::Mailer for FileMailer {
 pub enum Mailer {
     Smtp(SmtpMailer),
     File(FileMailer),
+    /// W-3 fake outbox (`mailer.mode = fake`): kept, never sent.
+    Outbox(crate::fake::OutboxMailer),
 }
 
 impl Mailer {
@@ -324,6 +333,7 @@ impl Mailer {
         match self {
             Mailer::Smtp(inner) => inner.send_with_headers(to, subject, text_body, headers),
             Mailer::File(inner) => inner.send_with_headers(to, subject, text_body, headers),
+            Mailer::Outbox(inner) => inner.send_with_headers(to, subject, text_body, headers),
         }
     }
 }
@@ -333,6 +343,7 @@ impl flow::Mailer for Mailer {
         match self {
             Mailer::Smtp(inner) => inner.send(to, subject, text_body),
             Mailer::File(inner) => inner.send(to, subject, text_body),
+            Mailer::Outbox(inner) => inner.send(to, subject, text_body),
         }
     }
 }
@@ -340,10 +351,16 @@ impl flow::Mailer for Mailer {
 /// Build the boot mailer from sealed rows (`mailer.provider` is
 /// the discriminator; unknown/partial → warn + `None`, fail
 /// closed). The file dir is created at boot so dev "just works".
+/// `mailer.mode = fake` wins over every provider: the fake outbox.
 pub fn mailer_from_config(
     cfg: &config::RuntimeConfig,
     store_root: &std::path::Path,
 ) -> Option<Mailer> {
+    if cfg.modes.is_fake(config::Integration::MailOut) {
+        return Some(Mailer::Outbox(crate::fake::OutboxMailer {
+            store_root: store_root.to_path_buf(),
+        }));
+    }
     match cfg.mailer_provider.as_str() {
         "file" => {
             let dir = store_root.join(&cfg.mailer_dir);
@@ -693,6 +710,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
             fedex_live: crate::fedex_live::FedexLiveState::default(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);
@@ -741,6 +759,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
             fedex_live: crate::fedex_live::FedexLiveState::default(),
         };
         let app = crate::public_router(state, &dir, &dir, &dir);

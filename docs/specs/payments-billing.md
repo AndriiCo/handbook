@@ -289,3 +289,29 @@ absorbed/manual path.
    reissues needed at launch, or pay-per-invoice only?
 8. **OQ-P8 (refunds policy):** who approves refunds, full vs
    partial windows, who eats Stripe fees on refunded orders?
+
+## 13. Fake Stripe (W-3, `stripe.mode = fake`)
+
+Loopback and staging boots only (`docs/specs/config-db.md` §9);
+Stripe test keys stay the `sandbox` mode. Under `fake`,
+`stripe::keys` returns keys that carry the store instead of a secret
+(`Keys::live()` is always false, so every order is a test-mode order),
+and the three Stripe calls answer from the p2 `fake_stripe_session`
+table (`CREATE TABLE IF NOT EXISTS`) with no network:
+
+- `create_checkout` mints `cs_fake_…` and returns the local DEMO
+  checkout page (`/apostille/api/v1/stripe/fake/checkout/{id}`,
+  server-rendered, no JS, a red "DEMO — no card is charged" banner);
+- its **Pay (demo)** button (same-origin form post) records the
+  session paid, then delivers `checkout.session.completed` to the
+  real `/stripe/webhook` handler, signed with a per-process random
+  secret (never stored, so nobody else can sign one): signature
+  check, event dedupe and `orders::settle` run unchanged, and settle
+  re-reads the fake session in Stripe's Checkout Session shape
+  (`livemode: false`);
+- `refund` returns `re_fake_…` and moves nothing.
+
+The order's event reads "Paid $X (DEMO, no card charged)", its
+receipt carries `demo: true` and a `receipt_url` to the DEMO receipt
+page, and the customer's order page says "(DEMO — no card charged)".
+A forged webhook (wrong secret) is still refused with 400.

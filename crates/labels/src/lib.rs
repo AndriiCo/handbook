@@ -20,6 +20,7 @@
 
 pub mod carrier;
 pub mod client;
+pub mod demo;
 pub mod display;
 pub mod format;
 pub mod live;

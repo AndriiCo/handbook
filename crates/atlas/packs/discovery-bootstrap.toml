@@ -1,0 +1,106 @@
+# discovery.bootstrap: from-scratch discovery, first slice. Pack data
+# only: the worker (`xtask/src/worker/discovery_bootstrap.rs`) owns the
+# orchestration.
+#
+# 1. Country list without a model: UN member states (recorded page
+#    below) plus the two observer states, joined with the LIVE HCCH
+#    status table (or the recorded copy with `"recorded": true`). Each
+#    country is a party (in force today), a future party (joined, entry
+#    into force still ahead) or a non-party.
+# 2. `hague-crosscheck`: Spark answers from memory; the worker diffs the
+#    answer against the table. The answer is never used as data.
+# 3. `find-urls`: Spark proposes official URLs for a batch of
+#    authorities; every URL is fetched, and only pages that answer and
+#    name the authority or an apostille term are kept (all still need
+#    staff review).
+#
+# Queue a run from the admin Work queue page:
+#   {"kind": "discovery.bootstrap", "payload": {"countries": ["DE"]}}
+
+[run]
+out = "out/atlas-discovery"
+effort = "low"
+
+[[models]]
+name = "spark"
+id = "muse-spark-1.3"
+mode = "standard"
+context_window = 1048576
+# The cross-check lists ~130 parties in one answer.
+max_output_tokens = 8192
+rpm = 3000
+tpm = 4000000
+# Fill from https://dev.meta.ai/docs/pricing-rate-limits before costing runs.
+input_per_1m = 0.0
+output_per_1m = 0.0
+
+[[sources]]
+name = "un-members"
+url = "../../../evals/world-nonparty/un-member-states.html"
+kind = "html"
+refresh = "never"
+
+[[sources]]
+name = "hcch-status"
+url = "../../../evals/world/status-table-cid41.html"
+kind = "html"
+refresh = "never"
+
+[[tasks]]
+name = "hague-crosscheck"
+model = "spark"
+protocol = "fast"
+instructions = """Answer from your own knowledge only; you are given no documents.
+A handbook compares your answer with the official HCCH status table to
+measure how current a model's knowledge is. Your answer is never
+published.
+
+Return JSON matching the schema:
+- status_table_url: the web address of the official HCCH status table
+  for the Convention of 5 October 1961 Abolishing the Requirement of
+  Legalisation for Foreign Public Documents (the Apostille Convention),
+  or null.
+- knowledge_cutoff: the date your knowledge runs to (YYYY-MM or
+  YYYY-MM-DD), or null when you do not know.
+- parties: every State that is a Contracting Party to that Convention,
+  including any that have ratified or acceded but for which the
+  Convention has not yet entered into force. Each: iso2 (ISO 3166-1
+  alpha-2; XK for Kosovo), name (English short name), entry_into_force
+  (YYYY-MM-DD the Convention entered or enters into force for it, or
+  null when you are not sure).
+
+List each party once. Do not guess dates: null is better than a wrong
+date. Return JSON only."""
+schema = "schemas/discovery-crosscheck.json"
+verify = "none"
+allow_contributor = false
+inputs = []
+
+[[tasks]]
+name = "find-urls"
+model = "spark"
+protocol = "fast"
+instructions = """You help an apostille handbook find the official websites of the
+competent authorities that issue apostilles under the Hague Convention
+of 5 October 1961. The user message lists authorities, one per line:
+"<slug> | <authority name> | <country> (<ISO2>)". Names come from the
+HCCH competent-authority pages and may be in the local language.
+
+Return JSON matching the schema with exactly one item per listed slug,
+in the same order:
+- slug: copied exactly from the line.
+- urls: up to 3 official pages of THAT authority, best first. kind:
+  apostille_page (explains how to get an apostille), authority_home,
+  form, fees or other. language: the page's language code (en, de, es…).
+- unknown: true when you are not confident of any official URL (urls is
+  then empty).
+
+Only official government or court domains of that country; never
+apostille or courier services, translation agencies, law firms, forums
+or aggregators. Do not guess URLs: every URL is fetched and checked, and
+invented ones are discarded. Fewer, correct URLs are better than many.
+Return JSON only."""
+schema = "schemas/discovery-find-urls.json"
+verify = "none"
+allow_contributor = false
+inputs = []

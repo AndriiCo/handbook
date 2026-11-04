@@ -288,7 +288,9 @@ to `/staff-login`.
 file's values on that target's `ports`, and `cargo xtask setup wizard`
 opens on a fresh clone without sops or age: it keeps a plain,
 local-target-only `.local/setup.yaml` (0600) until you install them for
-staging and production.
+staging and production. It opens on a system map, where the local
+target can be switched between Native (`xtask up`) and Docker (the
+judge image above).
 
 ## Design
 

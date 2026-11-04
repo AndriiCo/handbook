@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DiscoveryCrosscheck",
+  "type": "object",
+  "required": ["status_table_url", "knowledge_cutoff", "parties"],
+  "properties": {
+    "status_table_url": {"type": ["string", "null"]},
+    "knowledge_cutoff": {"type": ["string", "null"]},
+    "parties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["iso2", "name", "entry_into_force"],
+        "properties": {
+          "iso2": {"type": "string"},
+          "name": {"type": "string"},
+          "entry_into_force": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

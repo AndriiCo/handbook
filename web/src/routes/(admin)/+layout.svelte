@@ -21,6 +21,8 @@
 	import PhoneIcon from '@lucide/svelte/icons/phone';
 	import MailIcon from '@lucide/svelte/icons/mail';
 	import InboxIcon from '@lucide/svelte/icons/inbox';
+	import SendIcon from '@lucide/svelte/icons/send';
+	import MailPlusIcon from '@lucide/svelte/icons/mail-plus';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
@@ -28,6 +30,7 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import { installSessionGuard, signInHref, SIGN_IN_PATHS } from '#lib/admin/http-errors.js';
 	import { cookieValue } from '#lib/admin/staff-auth.js';
+	import { fakeRibbon, fakeSlugs } from '#lib/admin/fake-client.js';
 	import type { Component } from 'svelte';
 	import type { LayoutProps } from './$types';
 
@@ -36,7 +39,8 @@
 	// group at all. The root layout skips the public chrome here.
 	let { children }: LayoutProps = $props();
 
-	type NavItem = { label: string; href: string; icon: Component; keywords: string };
+	// `fake`: shown only while that integration runs its W-3 fake.
+	type NavItem = { label: string; href: string; icon: Component; keywords: string; fake?: string };
 	type NavGroup = { label: string; items: NavItem[] };
 
 	// Groups per the console plan (Overview, Content, Commerce, First
@@ -74,7 +78,9 @@
 			label: 'First source',
 			items: [
 				{ label: 'Voice calls', href: resolve('/(admin)/calls'), icon: PhoneIcon, keywords: 'phone telnyx open questions' },
-				{ label: 'Email', href: resolve('/(admin)/email'), icon: MailIcon, keywords: 'email outreach office reply questions' }
+				{ label: 'Email', href: resolve('/(admin)/email'), icon: MailIcon, keywords: 'email outreach office reply questions' },
+				{ label: 'Outbox', href: resolve('/(admin)/outbox'), icon: SendIcon, keywords: 'fake outbox sent mail sign-in links digest', fake: 'mail_out' },
+				{ label: 'Compose', href: resolve('/(admin)/compose'), icon: MailPlusIcon, keywords: 'fake inbox compose reply notice dmarc', fake: 'mail_in' }
 			]
 		},
 		{
@@ -92,7 +98,13 @@
 	const bare = $derived(BARE.includes(page.url.pathname));
 	const current = $derived(ALL.find((i) => page.url.pathname.startsWith(i.href)) ?? null);
 
-	let env = $state<{ version: string; env: string } | null>(null);
+	let env = $state<{ version: string; env: string; fakes?: unknown } | null>(null);
+	// W-3: which outside services run their local fake (never on production).
+	const fakeText = $derived(fakeRibbon(env?.fakes));
+	const nav = $derived.by(() => {
+		const on = fakeSlugs(env?.fakes);
+		return NAV.map((g) => ({ ...g, items: g.items.filter((i) => !i.fake || on.includes(i.fake)) }));
+	});
 	let live = $state(false);
 	let paletteOpen = $state(false);
 	let signingOut = $state(false);
@@ -221,7 +233,7 @@
 				</div>
 			</Sidebar.Header>
 			<Sidebar.Content>
-				{#each NAV as group (group.label)}
+				{#each nav as group (group.label)}
 					<Sidebar.Group>
 						<Sidebar.GroupLabel>{group.label}</Sidebar.GroupLabel>
 						<Sidebar.GroupContent>
@@ -307,6 +319,15 @@
 					{/if}
 				</div>
 			</header>
+			{#if fakeText}
+				<p
+					class="m-0 border-b border-changed bg-changed-bg px-4 py-2 text-sm font-semibold text-changed"
+					role="status"
+					data-testid="fake-ribbon"
+				>
+					{fakeText}
+				</p>
+			{/if}
 			<div class="min-w-0 flex-1 p-4 md:p-8">
 				{@render children()}
 			</div>
@@ -317,7 +338,7 @@
 		<Command.Input placeholder="Go to…" />
 		<Command.List>
 			<Command.Empty>No screen matches.</Command.Empty>
-			{#each NAV as group (group.label)}
+			{#each nav as group (group.label)}
 				<Command.Group heading={group.label}>
 					{#each group.items as item (item.href)}
 						<Command.Item value={`${item.label} ${item.keywords}`} onSelect={() => go(item.href)}>

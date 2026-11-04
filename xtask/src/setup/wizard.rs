@@ -9,9 +9,9 @@
 //! through sops (or, for the plain local-only `.local/setup.yaml`, as
 //! 0600 YAML), so the file on disk is always the truth.
 //!
-//! The page edits targets and config values, runs the key checks, runs
-//! a target with its phases and log streaming live (SSE), and walks the
-//! brand-licence step.
+//! The page edits targets and config values, runs the key checks,
+//! probes a target's box over SSH, runs a target with its phases and
+//! log streaming live (SSE), and walks the brand-licence step.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -34,7 +34,8 @@ use tokio::sync::broadcast;
 
 use super::brand;
 use super::checks;
-use super::file::{self, SetupFile, TargetKind};
+use super::file::{self, Runtime, SetupFile, TargetKind};
+use super::map;
 use super::plan::{self, Phase};
 use super::run::Event;
 
@@ -198,10 +199,11 @@ fn state_json(app: &App, inner: &Inner) -> Value {
             (
                 name,
                 json!({
-                    "kind": t.kind,
+                    "kind": t.kind, "runtime": t.runtime,
                     "ssh": t.ssh, "ssh_admin": t.ssh_admin, "public_host": t.public_host,
                     "bind": t.bind, "bind6": t.bind6, "dns": t.dns, "timers": t.timers,
                     "platform": t.platform, "deploy_keys": t.deploy_keys,
+                    "probe": t.probe,
                     "config": own,
                     "derived": derived,
                 }),
@@ -225,7 +227,8 @@ fn state_json(app: &App, inner: &Inner) -> Value {
                     let bytes = std::fs::read(dir.join(name)).ok();
                     let sha = bytes.as_deref().map(brand::sha256_hex);
                     let accepted = licence.is_some_and(|l| l.files.iter().any(|x| Some(&x.sha256) == sha.as_ref() && x.name == *name));
-                    json!({ "name": name, "present": sha.is_some(), "licensed": accepted })
+                    json!({ "name": name, "present": sha.is_some(), "licensed": accepted,
+                            "source": brand::source(f, name) })
                 })
                 .collect();
             json!({
@@ -248,6 +251,7 @@ fn state_json(app: &App, inner: &Inner) -> Value {
         "brand_dir": dir.display().to_string(),
         "problems": f.validate().err().unwrap_or_default(),
         "running": inner.running,
+        "map": map::state(f),
     })
 }
 
@@ -425,6 +429,116 @@ async fn api_check(
 }
 
 #[derive(Deserialize)]
+struct ProbeReq {
+    target: String,
+    /// The ssh host or alias to probe (the page fills in the target's).
+    host: String,
+}
+
+/// Probe a box over SSH (keys only) and cache what it is on the target.
+async fn api_probe(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Json(req): Json<ProbeReq>,
+) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    if !app
+        .inner
+        .lock()
+        .unwrap()
+        .file
+        .targets
+        .contains_key(&req.target)
+    {
+        return deny(StatusCode::BAD_REQUEST, "no such target");
+    }
+    let host = req.host.trim().to_string();
+    if !super::probe::valid_host(&host) {
+        return deny(
+            StatusCode::BAD_REQUEST,
+            "not a host name or ssh alias (letters, digits and .-_@: only)",
+        );
+    }
+    let at = brand::rfc3339(crate::unix_now());
+    let probe = match tokio::task::spawn_blocking(move || super::probe::run(&host, &at)).await {
+        Ok(Ok(p)) => p,
+        Ok(Err(e)) => return deny(StatusCode::BAD_GATEWAY, &e),
+        Err(_) => return deny(StatusCode::INTERNAL_SERVER_ERROR, "the probe failed to run"),
+    };
+    let mut inner = app.inner.lock().unwrap();
+    let Some(t) = inner.file.targets.get_mut(&req.target) else {
+        return deny(StatusCode::BAD_REQUEST, "no such target");
+    };
+    t.probe = Some(probe.clone());
+    match app.save(&inner) {
+        Ok(()) => Json(json!({ "probe": probe })).into_response(),
+        Err(r) => r,
+    }
+}
+
+#[derive(Deserialize)]
+struct MapReq {
+    /// `front_end`, `workers` or `staging`, with `place`.
+    #[serde(default)]
+    node: Option<String>,
+    /// `native`, `docker` or `server`.
+    #[serde(default)]
+    place: Option<String>,
+    /// The Hugging Face repo the workers serve (`""` clears it).
+    #[serde(default)]
+    weights_repo: Option<String>,
+}
+
+/// The map's choices: where a node runs, and the weights repo.
+async fn api_map(State(app): State<App>, headers: HeaderMap, Json(req): Json<MapReq>) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    let mut inner = app.inner.lock().unwrap();
+    if let (Some(node), Some(place)) = (&req.node, &req.place)
+        && let Err(e) = map::choose(&mut inner.file, node, place)
+    {
+        return deny(StatusCode::BAD_REQUEST, &e);
+    }
+    if let Some(repo) = req.weights_repo.as_deref().map(str::trim) {
+        if !repo.is_empty() && !map::valid_repo(repo) {
+            return deny(
+                StatusCode::BAD_REQUEST,
+                "a Hugging Face repo is org/name (letters, digits and ._-)",
+            );
+        }
+        inner.file.map.weights_repo = (!repo.is_empty()).then(|| repo.to_string());
+    }
+    match app.save(&inner) {
+        Ok(()) => Json(
+            json!({ "saved": true, "problems": inner.file.validate().err().unwrap_or_default() }),
+        )
+        .into_response(),
+        Err(r) => r,
+    }
+}
+
+/// The map's Test button: `GET /v1/models` with the target's Meta key,
+/// called from here so the key never reaches the page.
+async fn api_meta(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Json(req): Json<CheckReq>,
+) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    let f = app.inner.lock().unwrap().file.clone();
+    match tokio::task::spawn_blocking(move || checks::meta_models(&f, &req.target)).await {
+        Ok(Ok(models)) => Json(json!({ "models": models })).into_response(),
+        Ok(Err(e)) => deny(StatusCode::BAD_GATEWAY, &e),
+        Err(_) => deny(StatusCode::INTERNAL_SERVER_ERROR, "the test failed to run"),
+    }
+}
+
+#[derive(Deserialize)]
 struct RunReq {
     target: String,
     #[serde(default)]
@@ -447,7 +561,13 @@ async fn api_run(State(app): State<App>, headers: HeaderMap, Json(req): Json<Run
         if let Err(problems) = inner.file.validate() {
             return deny(StatusCode::BAD_REQUEST, &problems.join("; "));
         }
-        let local = inner.file.targets.get(&req.target).map(|t| t.kind) == Some(TargetKind::Local);
+        // A native local boot serves in the foreground (a child below);
+        // in Docker it is a plain run that starts the judge image.
+        let local = inner
+            .file
+            .targets
+            .get(&req.target)
+            .is_some_and(|t| t.kind == TargetKind::Local && t.runtime == Runtime::Native);
         if local && app.local.lock().unwrap().is_some() {
             return deny(
                 StatusCode::CONFLICT,
@@ -710,19 +830,10 @@ async fn api_brand_file(
             "not a brand file name this build uses",
         );
     };
-    if body.is_empty() || body.len() > 2 * 1024 * 1024 {
-        return deny(StatusCode::BAD_REQUEST, "file must be 1 byte to 2 MB");
-    }
-    let looks_right = if name.ends_with(".svg") {
-        std::str::from_utf8(&body).is_ok_and(|s| s.contains("<svg"))
-    } else {
-        body.starts_with(b"wOF2")
-    };
-    if !looks_right {
-        return deny(
-            StatusCode::BAD_REQUEST,
-            "file content does not match its type",
-        );
+    // Same checks as a fetched file: size, type, and no SVG that runs
+    // or loads anything (a dropped file used to skip the SVG check).
+    if let Err(e) = brand::check_content(name, &body) {
+        return deny(StatusCode::BAD_REQUEST, &e);
     }
     let dir = {
         let inner = app.inner.lock().unwrap();
@@ -736,6 +847,81 @@ async fn api_brand_file(
     Json(json!({ "saved": name, "sha256": brand::sha256_hex(&body) })).into_response()
 }
 
+#[derive(Deserialize)]
+struct BrandFetch {
+    file: String,
+    /// The source as typed (kept in the setup file; empty: the default).
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    pick: Option<String>,
+}
+
+/// Fetch one brand file from its source, after the operator accepted
+/// its owner's terms, and record its hash in that acceptance.
+async fn api_brand_fetch(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Json(req): Json<BrandFetch>,
+) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    let Some(name) = brand::allowed_file(&req.file) else {
+        return deny(
+            StatusCode::BAD_REQUEST,
+            "not a brand file name this build uses",
+        );
+    };
+    let f = {
+        let mut inner = app.inner.lock().unwrap();
+        if let Some(url) = req.url.as_deref().map(str::trim) {
+            if !url.is_empty() && (!url.starts_with("https://") || url.len() > 2000) {
+                return deny(
+                    StatusCode::BAD_REQUEST,
+                    "the source must be an https:// URL",
+                );
+            }
+            let typed = file::BrandSource {
+                url: url.to_string(),
+                pick: req
+                    .pick
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                    .map(|p| p.chars().take(300).collect()),
+            };
+            let sources = &mut inner.file.brand.sources;
+            if url.is_empty() || brand::default_source(name).as_ref() == Some(&typed) {
+                sources.remove(name);
+            } else {
+                sources.insert(name.to_string(), typed);
+            }
+            if let Err(r) = app.save(&inner) {
+                return r;
+            }
+        }
+        inner.file.clone()
+    };
+    let repo = app.repo.clone();
+    let fetched =
+        tokio::task::spawn_blocking(move || brand::fetch_file(&repo, &f, name, &brand::download))
+            .await;
+    let sha = match fetched {
+        Ok(Ok(sha)) => sha,
+        Ok(Err(e)) => return deny(StatusCode::BAD_GATEWAY, &e),
+        Err(_) => return deny(StatusCode::INTERNAL_SERVER_ERROR, "the fetch failed to run"),
+    };
+    let mut inner = app.inner.lock().unwrap();
+    if let Err(e) = brand::record(&mut inner.file, name, &sha) {
+        return deny(StatusCode::CONFLICT, &e);
+    }
+    match app.save(&inner) {
+        Ok(()) => Json(json!({ "saved": name, "sha256": sha })).into_response(),
+        Err(r) => r,
+    }
+}
+
 fn router(app: App) -> Router {
     Router::new()
         .route("/", get(index))
@@ -744,10 +930,14 @@ fn router(app: App) -> Router {
         .route("/api/target", post(api_target))
         .route("/api/operator", post(api_operator))
         .route("/api/check", post(api_check))
+        .route("/api/probe", post(api_probe))
+        .route("/api/map", post(api_map))
+        .route("/api/meta", post(api_meta))
         .route("/api/run", post(api_run))
         .route("/api/events", get(api_events))
         .route("/api/licence", post(api_licence))
         .route("/api/brand/{name}", post(api_brand_file))
+        .route("/api/brand-fetch", post(api_brand_fetch))
         .layer(axum::extract::DefaultBodyLimit::max(3 * 1024 * 1024))
         .with_state(app)
 }
@@ -927,5 +1117,115 @@ mod tests {
         );
         let (status, _) = send(&app, req("GET", "/?t=tok", "127.0.0.1:4000", false, false)).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "second use refused");
+    }
+
+    fn post(uri: &str, body: &str) -> axum::http::Request<axum::body::Body> {
+        axum::http::Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("host", "127.0.0.1:4000")
+            .header("cookie", "hb_setup=sess")
+            .header("x-setup-csrf", "csrf")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_probe_refuses_option_shaped_hosts_and_unknown_targets() {
+        let app = app();
+        let (status, body) = send(
+            &app,
+            post(
+                "/api/probe",
+                r#"{"target":"staging","host":"-oProxyCommand=sh"}"#,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("not a host name"), "{body}");
+        let (status, _) = send(
+            &app,
+            post("/api/probe", r#"{"target":"nope","host":"plant"}"#),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_map_refuses_unknown_places_and_repos_and_tests_meta_without_leaking() {
+        let app = app();
+        for body in [
+            r#"{"node":"front_end","place":"cloud"}"#,
+            r#"{"node":"cellar","place":"server"}"#,
+            r#"{"weights_repo":"../etc"}"#,
+        ] {
+            let (status, text) = send(&app, post("/api/map", body)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}: {text}");
+        }
+        let (status, text) = send(&app, post("/api/meta", r#"{"target":"staging"}"#)).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(text.contains("meta.api_key is not set"), "{text}");
+        let (_, state) = send(
+            &app,
+            req("GET", "/api/state", "127.0.0.1:4000", true, false),
+        )
+        .await;
+        assert!(state.contains(r#""front_end""#), "{state}");
+        assert!(
+            !state.contains("LLM_1_synthetic"),
+            "a secret reached the map"
+        );
+    }
+
+    /// A dropped file meets the same bar as a fetched one: an SVG that
+    /// runs or loads anything never lands in the brand dir.
+    #[tokio::test]
+    async fn brand_uploads_meet_the_fetch_bar() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut app = app();
+        app.repo = tmp.path().to_path_buf();
+        let saved = {
+            let inner = app.inner.lock().unwrap();
+            brand::dir(&app.repo, &inner.file).join("google.svg")
+        };
+        for bad in [
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" onload="x()"></svg>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.test/a.png"/></svg>"#,
+            "not an svg at all",
+        ] {
+            let (status, text) = send(&app, post("/api/brand/google.svg", bad)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {text}");
+            assert!(!saved.exists(), "{bad} was written");
+        }
+        let clean = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1z" fill="#4285F4"/></svg>"##;
+        let (status, text) = send(&app, post("/api/brand/google.svg", clean)).await;
+        assert_eq!(status, StatusCode::OK, "{text}");
+        assert_eq!(std::fs::read_to_string(&saved).unwrap(), clean);
+    }
+
+    #[tokio::test]
+    async fn brand_fetch_waits_for_acceptance_and_takes_https_only() {
+        let app = app();
+        let (status, text) = send(&app, post("/api/brand-fetch", r#"{"file":"google.svg"}"#)).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(text.contains("tick acceptance of Google"), "{text}");
+        for body in [
+            r#"{"file":"../config.yaml"}"#,
+            r#"{"file":"google.svg","url":"http://example.test/g.svg"}"#,
+        ] {
+            let (status, text) = send(&app, post("/api/brand-fetch", body)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}: {text}");
+        }
+        let (_, state) = send(
+            &app,
+            req("GET", "/api/state", "127.0.0.1:4000", true, false),
+        )
+        .await;
+        assert!(
+            state.contains("signin-assets.zip"),
+            "the default source is offered"
+        );
     }
 }

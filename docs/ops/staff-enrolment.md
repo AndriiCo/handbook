@@ -55,7 +55,14 @@ Audit rows: `staff_invite_issue`, `staff_enrolled`,
 `https://admin.<host>/staff-login`, **Sign in with passkey**: no user
 ID. Staff passkeys are discoverable, so the browser offers the ones it
 holds for the console and the server finds the account from the
-passkey. A passkey enrolled before that (a security key that stored no
+passkey. Enrolment asks for an email, and the passkey is saved under it
+(its account name), so the browser lists it by email, and the sign-in
+page's Email field (`autocomplete="username webauthn"`) offers it in
+autofill. The typed email is never sent: the passkey picks the account,
+so the field is no way to probe which emails are staff. The Staff page
+shows each account's email (empty for accounts enrolled before emails
+were asked for; a passkey added later reuses the account's email). A
+passkey enrolled before discoverable keys (a security key that stored no
 discoverable credential) signs in under "Sign in with your user ID".
 (`/login` and the other customer pages answer 404 on the admin host.) A login refreshes the step-up window that destructive
 actions (config writes) require. `unknown account or no passkeys` (401)

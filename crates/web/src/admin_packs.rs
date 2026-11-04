@@ -55,7 +55,7 @@ pub fn admin_router(state: AppState) -> Router {
 /// root is `PACKS_DIR` when set, else `packs/` beside the binary
 /// (production), else `packs/` under the working directory (a staging
 /// checkout runs from its root).
-fn release_paths() -> Option<(PathBuf, PathBuf)> {
+pub(crate) fn release_paths() -> Option<(PathBuf, PathBuf)> {
     let exe_dir = std::env::current_exe()
         .ok()?
         .canonicalize()

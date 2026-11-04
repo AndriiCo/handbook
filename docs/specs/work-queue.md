@@ -123,7 +123,7 @@ lease). The server pings every 30 s.
 | `POST /apostille/api/v1/admin/work-items/{id}/retry` | failed → pending (attempts reset) |
 | `POST /apostille/api/v1/admin/workers/token` | `{name}` → `{name, token}`: a named worker token (fresh step-up, shown once) |
 | `POST /apostille/api/v1/admin/work-items/{id}/cancel` | pending or leased → failed ("cancelled by …"); the worker's next heartbeat gets `lease_lost`; 409 otherwise |
-| `POST /apostille/api/v1/admin/work-items/{id}/stage-packs` | write a done `research.nonparty` bundle's packs to `<store>/packs-inbox/<id>/` |
+| `POST /apostille/api/v1/admin/work-items/{id}/stage-packs` | write a done `research.nonparty` or `discovery.bootstrap` result's packs to `<store>/packs-inbox/<id>/` |
 
 Shapes: `docs/contracts/admin-work-items.json`. `lease_owner` is the
 worker name only; lease tokens never leave the server. Every item
@@ -131,13 +131,18 @@ carries `staged` (its inbox folder exists) and `retry_after` (unix
 seconds while a pending item backs off, else null); every kind carries
 `max_runtime_secs`.
 
-Stage as packs: only a `done` `research.nonparty` item with a result
-stages (else 409). The result must be a `packs.v1` bundle whose packs
-each have a unique file-safe `pack` id (`[A-Za-z0-9_-]{1,64}`, else
-422); each becomes `<store>/packs-inbox/<id>/<pack>.json`, written in a
-temp folder and renamed into place, so re-staging replaces the folder
-whole. Full pack rules run when the staff Packs page loads the folder
-(`xtask packs-load`), not here. Unknown kinds,
+Stage as packs: only a `done` `research.nonparty` or
+`discovery.bootstrap` item with a result stages (else 409). The result
+must be the kind's bundle (`packs.v1`, or a `discovery.v1` report with
+`packs`) holding at least one pack, each with a unique file-safe `pack`
+id (`[A-Za-z0-9_-]{1,64}`, else 422); each becomes
+`<store>/packs-inbox/<id>/<pack>.json`, written in a temp folder and
+renamed into place, so re-staging replaces the folder whole. Discovery
+packs are whole copies of release world packs: when the release packs
+directory is known, each copy's `pack_bases` sha256 must match the
+release's `packs/world/<pack>.json`, else 409 (re-run discovery on this
+release). Full pack rules run when the staff Packs page loads the
+folder (`xtask packs-load --against` the release tree), not here. Unknown kinds,
 non-object payloads → 422; payloads over 64 KiB → 413.
 
 ## 4. Job kinds (`xtask/src/worker/`)
@@ -150,9 +155,44 @@ worker GPU jobs never overlap.
 | Kind | Payload | Result |
 |---|---|---|
 | `research.nonparty` | `{countries?: [ISO2], limit?: n, refresh?: bool}` | `application/json` packs bundle (§5) |
+| `discovery.bootstrap` | `{recorded?: bool, crosscheck?: bool, countries?: [ISO2] \| "all", batch_size?: 5..25, max_batches?: n}` | `application/json` discovery report (§6) |
 | `scrape.urls` | `{urls: [https…], politeness_ms?: n}` | `application/json` `{pages: [{url, status, sha256, bytes, body_b64}]}` |
-| `eval.gold` | `{live?: bool, planted?: bool, prompt?: "v1"\|"v2", gold?: "<dir under evals/>"}` (default `authorities`; `authorities-real` from `xtask gold-export`) | `application/json` `quality.json` |
+| `eval.gold` | `{live?: bool, local?: bool, base_url?, model?, planted?: bool, prompt?: "v1"\|"v2", gold?: "<dir under evals/>"}` (default `authorities`; `authorities-real` from `xtask gold-export`; `local` grades an OpenAI-compatible endpoint serving a Meta model, from `LOCAL_MODEL_URL` / `LOCAL_MODEL` / optional `LOCAL_MODEL_KEY` in `worker.env`, payload `base_url` / `model` first; see §4.1) | `application/json` `quality.json` |
 | `precheck.glimmer` | `{sample, image_b64?}` | verdict JSON; announced in `hello` only when `GLIMMER_MODEL` is set in `worker.env` (or the environment), else jobs wait `pending` |
+
+### 4.1 Local Meta models (D-4)
+
+`xtask eval --local` (and `eval.gold` with `local: true`) drafts the
+gold set through an OpenAI-compatible endpoint on our own hardware,
+e.g. llama.cpp `llama-server` on plant serving a Llama model:
+`LOCAL_MODEL_URL` is its base (`http://127.0.0.1:8080/v1`), `LOCAL_MODEL`
+the id it serves, `LOCAL_MODEL_KEY` only if it wants one. The id comes
+from the environment, never the repo (`cargo xtask model-gate`), and
+must name a Meta family (`muse-…` or Llama) or the run is refused. The
+request is the drafting request with a `system` message and without
+the Model API's own fields; no call cache, no daily cap.
+
+Rule: a local model drafts only after it matches Spark on the gold set
+on `quote_found_rate` and `value_in_quote_rate` (same gold directory,
+same prompt version, compared from the two `quality.json` files).
+Until then it grades only; facts are still drafted by Spark with the
+quote check and approved in `/review`.
+
+`xtask triage --pages <dir> [--pack packs/world/<ISO2>.json] [--out
+<file>]` sorts saved pages (e.g. a discovery job's `pages/`) with the
+same endpoint: relevant or not, main language, which of the pack's
+visible authorities, which topics. Answers are checked against the
+closed lists (unknown slugs and topics dropped and listed); the result
+is a `triage.v1` report and nothing else.
+
+`xtask segments [--pages <dir>] [--iso2 XX] [--out <file>] [--spark]`
+(D-5) splits HCCH competent-authority pages (default: the recorded
+`evals/world/details-aid*.html`) into segments labelled authority,
+address, contact, scope or note, each with a verbatim quote; a segment
+whose quote is not on the page is dropped and listed. Scope segments
+naming a document class become pack v2 `scope` proposals (quote beside
+them) for staff to copy into a pack. `segments.v1` report only; the
+same local endpoint by default, Muse Spark with `--spark`.
 
 ## 5. `research.nonparty`
 
@@ -186,3 +226,58 @@ Result bundle: `{"format": "packs.v1", "run": …, "packs": [Pack…],
 "report": [{iso2, country, dos_url, mfa_urls, steps_kept,
 steps_dropped, dropped: […]}]}`. `cargo xtask worker --unpack
 <bundle> --into packs/world-nonparty` writes and validates the files.
+
+## 6. `discovery.bootstrap`
+
+First slice of from-scratch discovery. Atlas pack
+`crates/atlas/packs/discovery-bootstrap.toml` (two tasks with
+schemas). Writes nothing to the store or to packs: the result is a
+report plus stageable packs, and every value in it still needs staff
+review.
+
+1. Countries, no model: UN member states (recorded page) plus Holy See
+   and State of Palestine, joined by ISO code with the HCCH 1961 status
+   table, fetched live (`recorded: true` reads the recorded copy). The
+   EIF column makes each party a `party` (in force today) or a
+   `future_party` (joined; legalization applies until the date). The
+   Type column's `A**` marker sets `objection: true` with the party's
+   `notifications_url` (the HCCH page naming the objecting states).
+   Status-table names this build cannot map to an ISO code are listed
+   as `unmapped_parties`, never dropped. Fewer than 100 parsed parties
+   fails the job (the page changed shape).
+2. `hague-crosscheck` (Spark, from memory, unless `crosscheck: false`):
+   the party list with EIF dates and the status-table URL, diffed
+   against the table: `missing_in_model`, `extra_in_model`,
+   `eif_mismatch`, `eif_unsure`. Never used as data; a model error is
+   reported and does not fail the job.
+3. `find-urls` (Spark, only with `countries`): world-pack authorities,
+   `batch_size` per call, at most `max_batches` calls (default 15 and
+   10). Rows the world pack hides and fragment names (address, contact
+   and heading lines, lower-case descriptions) are skipped and listed. Each proposed URL is fetched;
+   it is kept only over https when its text names the authority (2+ of
+   its 5+-letter words) or an apostille term, with an `official_hint`
+   (`listed_by_hcch` or `government_domain`). Bad country codes fail
+   before any model call; if every batch fails at the model, the job
+   retries.
+4. Stageable packs (D-3), no model: per country with kept URLs the
+   pack does not already watch, a full copy of the committed
+   `packs/world/<ISO2>.json` (same pack id; every authority, `hidden`
+   flag, step and observation) plus one weekly `website_official` watch
+   seed per new URL (notes name the run, the URL kind and the evidence)
+   and an `unverified` domain row per new host, checked with
+   `packs::validate`. The copy is whole because a load brings an
+   existing pack id's rows in line with the file and closes that pack's
+   open tasks the file no longer has; this way the load adds sources
+   and domains only. "Stage as packs" (§3) puts them in the packs inbox
+   for the Packs page.
+
+Result: `{"format": "discovery.v1", "today", "hcch": {url, recorded,
+sha256}, "countries": [{iso2, name, status, entry_into_force,
+objection, notifications_url}],
+"future_parties", "unmapped_parties", "crosscheck", "authorities":
+[{authority, unknown, urls: [{kept, candidate, evidence |
+reason, official_hint}]}], "names_skipped", "packs": [Pack…],
+"pack_bases": {ISO2: sha256}, "urls_not_staged", "packs_rejected",
+"summary"}`. Offline run:
+`cargo xtask worker --run-local <job.json>` with `META_API_KEY` in the
+env file.

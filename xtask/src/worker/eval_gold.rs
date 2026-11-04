@@ -1,13 +1,19 @@
 //! `eval.gold`: the A5 gold-set grading (`xtask eval`) on plant.
 //!
-//! Payload `{"live": bool, "planted": bool, "prompt": "v1"|"v2",
-//! "gold": "<dir under evals/>"}` (`gold` defaults to `authorities`;
-//! `authorities-real` holds cases from `xtask gold-export`).
+//! Payload `{"live": bool, "local": bool, "base_url": "…", "model": "…",
+//! "planted": bool, "prompt": "v1"|"v2", "gold": "<dir under evals/>"}`
+//! (`gold` defaults to `authorities`; `authorities-real` holds cases
+//! from `xtask gold-export`).
 //! Runs this same binary as `xtask eval --store <job>/store --evals
-//! <repo>/evals/<gold> [--live] [--planted] [--prompt …]` in a
+//! <repo>/evals/<gold> [--live | --local] [--planted] [--prompt …]` in a
 //! child process (eval exits on its own errors, so a child keeps the
 //! worker alive), with `META_API_KEY` from `worker.env` for live
-//! drafts. The result is the `quality.json` it writes.
+//! drafts. `local` grades an OpenAI-compatible endpoint serving a Meta
+//! model (llama.cpp `llama-server` on plant): `LOCAL_MODEL_URL`,
+//! `LOCAL_MODEL` and optional `LOCAL_MODEL_KEY` from `worker.env`, with
+//! `base_url` / `model` in the payload taking precedence. The result is
+//! the `quality.json` it writes; compare its `quote_found_rate` and
+//! `value_in_quote_rate` with a Spark run before a local model drafts.
 
 use std::process::Command;
 
@@ -36,8 +42,16 @@ fn eval_args(ctx: &JobContext, payload: &Value) -> Result<Vec<String>, JobError>
         "--evals".to_string(),
         ctx.repo.join("evals").join(gold).display().to_string(),
     ];
-    if payload["live"].as_bool().unwrap_or(false) {
+    let live = payload["live"].as_bool().unwrap_or(false);
+    let local = payload["local"].as_bool().unwrap_or(false);
+    if live && local {
+        return Err(JobError::fatal("live and local are exclusive"));
+    }
+    if live {
         args.push("--live".to_string());
+    }
+    if local {
+        args.push("--local".to_string());
     }
     if payload["planted"].as_bool().unwrap_or(false) {
         args.push("--planted".to_string());
@@ -54,6 +68,38 @@ fn eval_args(ctx: &JobContext, payload: &Value) -> Result<Vec<String>, JobError>
     Ok(args)
 }
 
+/// The child's `LOCAL_MODEL_*` environment for a `local` run: payload
+/// `base_url` / `model` over `worker.env` (pure: unit-tested). The model
+/// must name a Meta family; the key comes from `worker.env` only.
+fn local_env(ctx: &JobContext, payload: &Value) -> Result<Vec<(&'static str, String)>, JobError> {
+    let [url_var, model_var, key_var] = crate::eval::LOCAL_ENV;
+    let pick = |field: &str, var: &str| {
+        payload[field]
+            .as_str()
+            .map(str::to_string)
+            .or_else(|| ctx.env.get(var))
+            .unwrap_or_default()
+    };
+    let base = pick("base_url", url_var);
+    if !(base.starts_with("http://") || base.starts_with("https://")) {
+        return Err(JobError::fatal(format!(
+            "local eval needs an http(s) base_url (payload) or {url_var} (worker.env)"
+        )));
+    }
+    let model = pick("model", model_var);
+    if !crate::eval::is_meta_model(&model) {
+        return Err(JobError::fatal(format!(
+            "local eval needs a Meta model (muse-… or Llama) in model or {model_var}, \
+             not {model:?}"
+        )));
+    }
+    let mut env = vec![(url_var, base), (model_var, model)];
+    if let Some(key) = ctx.env.get(key_var) {
+        env.push((key_var, key));
+    }
+    Ok(env)
+}
+
 impl JobHandler for EvalGold {
     fn kind(&self) -> &'static str {
         "eval.gold"
@@ -62,6 +108,11 @@ impl JobHandler for EvalGold {
     fn run(&self, ctx: &JobContext, payload: &Value) -> Result<JobOutput, JobError> {
         let args = eval_args(ctx, payload)?;
         let live = args.iter().any(|a| a == "--live");
+        let local = if args.iter().any(|a| a == "--local") {
+            local_env(ctx, payload)?
+        } else {
+            Vec::new()
+        };
         let exe =
             std::env::current_exe().map_err(|e| JobError::fatal(format!("current_exe: {e}")))?;
         let mut cmd = Command::new(exe);
@@ -74,6 +125,7 @@ impl JobHandler for EvalGold {
             };
             cmd.env("META_API_KEY", key);
         }
+        cmd.envs(local);
         let out = cmd
             .output()
             .map_err(|e| JobError::retry(format!("run xtask eval: {e}")))?;
@@ -94,6 +146,7 @@ impl JobHandler for EvalGold {
         let summary = json!({
             "gold_count": value["gold_count"],
             "quote_found_rate": value["quote_found_rate"],
+            "value_in_quote_rate": value["value_in_quote_rate"],
             "topic_accuracy": value["topic_accuracy"],
             "model": value["model"],
         });
@@ -138,6 +191,47 @@ mod tests {
         assert_eq!(real[4], "/repo/evals/authorities-real");
         for bad in ["../secrets", "", "Authorities", "a/b"] {
             assert!(eval_args(&ctx(), &json!({"gold": bad})).is_err(), "{bad:?}");
+        }
+    }
+
+    /// D-4: `local` adds `--local`; its endpoint comes from the payload
+    /// over `worker.env`, and only a Meta model id passes.
+    #[test]
+    fn local_eval_takes_its_endpoint_from_payload_or_env() {
+        let args = eval_args(&ctx(), &json!({"local": true})).unwrap();
+        assert_eq!(&args[5..], ["--local"]);
+        assert!(eval_args(&ctx(), &json!({"local": true, "live": true})).is_err());
+        let mut with_env = ctx();
+        with_env.env = super::super::WorkerEnv::parse(
+            "LOCAL_MODEL_URL=http://127.0.0.1:8080/v1\nLOCAL_MODEL=llama-local\nLOCAL_MODEL_KEY=k\n",
+        );
+        let env = local_env(&with_env, &json!({"local": true})).unwrap();
+        assert_eq!(
+            env,
+            [
+                ("LOCAL_MODEL_URL", "http://127.0.0.1:8080/v1".to_string()),
+                ("LOCAL_MODEL", "llama-local".to_string()),
+                ("LOCAL_MODEL_KEY", "k".to_string()),
+            ]
+        );
+        let over = local_env(
+            &with_env,
+            &json!({"local": true, "base_url": "http://plant:8081/v1", "model": "Llama-3.1-8B"}),
+        )
+        .unwrap();
+        assert_eq!(over[0].1, "http://plant:8081/v1");
+        assert_eq!(over[1].1, "Llama-3.1-8B");
+        for bad in [
+            json!({"model": "acme-7b"}),
+            json!({"base_url": "file:///x"}),
+        ] {
+            let err = local_env(&with_env, &bad).unwrap_err();
+            assert!(!err.retryable, "{bad}");
+        }
+        // No endpoint configured anywhere: refused before spawning.
+        if std::env::var("LOCAL_MODEL_URL").is_err() {
+            let err = EvalGold.run(&ctx(), &json!({"local": true})).unwrap_err();
+            assert!(err.message.contains("base_url"), "{}", err.message);
         }
     }
 

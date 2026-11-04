@@ -602,7 +602,8 @@ async fn root_to_dashboard() -> impl IntoResponse {
 /// Admin shell env badge: build version, environment label, process
 /// start and schema versions. The label is `production` when the public
 /// origin is andrii.ai, else `APOSTILLE_ENV_LABEL` (staging and judge
-/// boots set it), else `local`. Staff-only, no secrets.
+/// boots set it), else `local`; `fakes` names the integrations running
+/// their W-3 fake (the console's FAKE ribbon). Staff-only, no secrets.
 async fn admin_version(_auth: AdminAuth, State(state): State<AppState>) -> impl IntoResponse {
     let env = if state.notify_base.starts_with("https://andrii.ai/") {
         "production".to_string()
@@ -612,9 +613,18 @@ async fn admin_version(_auth: AdminAuth, State(state): State<AppState>) -> impl 
             .filter(|v| matches!(v.as_str(), "staging" | "local" | "judge"))
             .unwrap_or_else(|| "local".to_string())
     };
+    // W-3: the console's FAKE ribbon names every integration running
+    // its local fake.
+    let fakes: Vec<serde_json::Value> = state
+        .fakes
+        .fakes()
+        .into_iter()
+        .map(|i| json!({"slug": i.slug(), "label": i.label()}))
+        .collect();
     Json(json!({
         "version": crate::FULL_VERSION,
         "env": env,
+        "fakes": fakes,
         "started_at": crate::STARTED_AT.get().copied().unwrap_or(0),
         "schema": db::SCHEMA_VERSION,
         "p2_schema": db::P2_SCHEMA_VERSION,
@@ -711,6 +721,11 @@ async fn set_config(
             Json(json!({"error": "this setting was removed; nothing reads it"})),
         )
             .into_response();
+    }
+    // W-3: a host that may not run fakes may not save one either (the
+    // next boot would refuse to start).
+    if let Some(refused) = crate::fake::refuse_fake_row(&state.fakes, &key, &body.value) {
+        return refused;
     }
     let Some(key_type) = config::ConfigType::parse(&body.key_type) else {
         return (
@@ -1079,6 +1094,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
             fedex_live: crate::fedex_live::FedexLiveState::default(),
         }
     }

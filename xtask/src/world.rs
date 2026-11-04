@@ -13,6 +13,13 @@
 //! environment, never in the repo) a Meta Spark call extracts them,
 //! otherwise they stay empty.
 //!
+//! The status table also gives each party's entry into force and the
+//! Type column's `A**` objection marker; both ride on the pack's
+//! status-table line. A marked party's notifications page (offline: a
+//! recorded `notifications-csid<N>.html`) names the objecting states,
+//! read with fixed rules into one more observation; a page of any other
+//! shape leaves the flag and the link only.
+//!
 //! Quote rule (the `analyze.rs` / `runner.rs` pattern, adapted to raw
 //! HTML): every emitted name and URL must be contained in the cited
 //! page after entity-unescaping, lowercasing and whitespace collapse.
@@ -42,7 +49,7 @@ use callcache::{CacheMode, FetchCache, MetaCache};
 use crate::{flag, unix_now};
 
 /// The ONE status-table URI (the F2 feed).
-const STATUS_TABLE_URL: &str =
+pub(crate) const STATUS_TABLE_URL: &str =
     "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41";
 /// HCCH site root: authority/details hrefs are root-relative.
 const HCCH_ORIGIN: &str = "https://www.hcch.net";
@@ -61,11 +68,35 @@ const MAX_ATTEMPTS: u32 = 4;
 /// Validation backlog ref for world-index observations/steps.
 const WORLD_REF: &str = "W-7";
 
-/// One status-table row: canonical party name + authority-page sid.
+/// One status-table row: canonical party name, authority-page sid and
+/// entry into force.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct PartyRow {
+    pub(crate) name: String,
+    pub(crate) sid: String,
+    /// Entry into force (`YYYY-MM-DD`) off the EIF column (5th cell).
+    /// A date in the future marks a state that has joined but cannot
+    /// issue or receive apostilles yet. `None` when the cell is empty or
+    /// unreadable.
+    pub(crate) eif: Option<String>,
+    /// The Type cell carries the objection marker (`A**`, cell title
+    /// `Objection**`): some states objected to the accession, and the
+    /// convention does not run between them and this party.
+    pub(crate) objection: bool,
+    /// The marked cell's link: the party's HCCH notifications page,
+    /// which names the objecting states.
+    pub(crate) notifications_url: Option<String>,
+}
+
+/// One objection listed on a party's HCCH notifications page.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PartyRow {
-    name: String,
-    sid: String,
+struct Objection {
+    /// The objecting state, as the page names it.
+    state: String,
+    /// When it objected (`YYYY-MM-DD`), when the paragraph dates it.
+    date: Option<String>,
+    /// When the page records it withdrawn (`YYYY-MM-DD`).
+    withdrawn: Option<String>,
 }
 
 /// One `details3` link off an authority index page.
@@ -103,6 +134,14 @@ struct NameHit {
 struct PartyIndex {
     party: String,
     iso2: String,
+    /// Entry into force off the status table (`YYYY-MM-DD`).
+    eif: Option<String>,
+    /// Objection marker and notifications page off the status table.
+    objection: bool,
+    notifications_url: Option<String>,
+    /// Objections read off the notifications page (quote-checked), when
+    /// this run had the page and it parsed.
+    objections: Vec<Objection>,
     authority_url: String,
     names: Vec<NameHit>,
     urls: Vec<UrlHit>,
@@ -180,11 +219,19 @@ pub fn run(args: &[String]) {
     let mut indexed = Vec::new();
     let mut skipped_no_fixture = 0usize;
     let mut kept_hand_built = 0usize;
+    let mut status_refreshed = 0usize;
     for party in &parties {
         let authority_url = format!(
             "{HCCH_ORIGIN}/en/instruments/conventions/status-table/authority/?sid={}&cid=41",
             party.sid
         );
+        // No authority page this run: the status-table line of the
+        // committed pack still follows the (whole) table.
+        let mut refresh = |index: &PartyIndex| {
+            if refresh_status(&out_dir.join(format!("{}.json", index.iso2)), index) {
+                status_refreshed += 1;
+            }
+        };
         let authority_html = if live {
             match fetch_page(&fetch_cache, &authority_url) {
                 Ok(html) => Some(html),
@@ -199,12 +246,15 @@ pub fn run(args: &[String]) {
                 Ok(html) => Some(html),
                 Err(_) => {
                     skipped_no_fixture += 1;
+                    refresh(&PartyIndex::empty(party, &authority_url));
                     continue;
                 }
             }
         };
         let Some(authority_html) = authority_html else {
-            indexed.push(PartyIndex::empty(party, &authority_url));
+            let index = PartyIndex::empty(party, &authority_url);
+            refresh(&index);
+            indexed.push(index);
             continue;
         };
         let links = parse_authority_links(&authority_html);
@@ -243,6 +293,23 @@ pub fn run(args: &[String]) {
                 }
             }
         }
+        if let Some(url) = &party.notifications_url {
+            let html = if live {
+                fetch_page(&fetch_cache, url)
+                    .map_err(|reason| {
+                        eprintln!("world-index: {}: notifications: {reason}", party.name);
+                    })
+                    .ok()
+            } else {
+                csid_of(url).and_then(|csid| {
+                    let name = format!("notifications-csid{csid}.html");
+                    std::fs::read_to_string(Path::new(&fixtures).join(name)).ok()
+                })
+            };
+            if let Some(html) = html {
+                index.absorb_objections(&html);
+            }
+        }
         let pack_path = out_dir.join(format!("{}.json", index.iso2));
         if !write_pack(&pack_path, &index) {
             kept_hand_built += 1;
@@ -260,7 +327,7 @@ pub fn run(args: &[String]) {
     println!(
         "world-index: parties={parsed_total} processed={} skipped_no_fixture={skipped_no_fixture} \
          authorities={authorities} urls={urls} zero_url_parties={zero_url} spark_filled={spark_n} \
-         kept_hand_built={kept_hand_built} out={} archive={}",
+         kept_hand_built={kept_hand_built} status_refreshed={status_refreshed} out={} archive={}",
         indexed.len(),
         out_dir.display(),
         archive_dir.display()
@@ -275,6 +342,10 @@ impl PartyIndex {
         Self {
             party: party.name.clone(),
             iso2: party_iso2(&party.name).unwrap_or("ZZ").to_string(),
+            eif: party.eif.clone(),
+            objection: party.objection,
+            notifications_url: party.notifications_url.clone(),
+            objections: Vec::new(),
             authority_url: authority_url.to_string(),
             names: Vec::new(),
             urls: Vec::new(),
@@ -310,6 +381,19 @@ impl PartyIndex {
                 name: None,
             });
         }
+    }
+
+    /// Read the objecting states off the notifications page (fixed
+    /// rules, see [`parse_objections`]); a name the page does not
+    /// contain is dropped (quote rule). An irregular page leaves none:
+    /// the pack keeps the flag and the link.
+    fn absorb_objections(&mut self, html: &str) {
+        let probe = html_unescape(html);
+        self.objections = parse_objections(html)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|o| page_contains(&probe, &o.state))
+            .collect();
     }
 
     /// Authority rows this party emits (at least one: the fallback).
@@ -407,9 +491,11 @@ fn unix_now_nanos() -> u128 {
 
 /// Deterministic status-table parse: every `<tr>` with a first `<td>`
 /// is a party row (the header uses `<th>`); the authority sid comes
-/// from the row's `authority/?sid=` link. Rows without a sid keep an
-/// empty sid and are reported as zero-URL parties downstream.
-fn parse_status_table(html: &str) -> Vec<PartyRow> {
+/// from the row's `authority/?sid=` link and the entry into force from
+/// the EIF column. Rows without a sid keep an empty sid and are
+/// reported as zero-URL parties downstream. The `discovery.bootstrap`
+/// worker builds its country list from these rows.
+pub(crate) fn parse_status_table(html: &str) -> Vec<PartyRow> {
     let mut parties = Vec::new();
     for row in split_rows(html) {
         if row.contains("<th") {
@@ -423,9 +509,138 @@ fn parse_status_table(html: &str) -> Vec<PartyRow> {
             continue;
         }
         let sid = sid_in_row(row).unwrap_or_default();
-        parties.push(PartyRow { name, sid });
+        let cells = raw_cells(row);
+        let text = |i: usize| cells.get(i).map(|cell| cell_text(cell));
+        let eif = text(4).and_then(|c| hcch_date(&c));
+        let marked = cells.get(3).filter(|cell| is_objection_cell(cell));
+        let notifications_url = marked
+            .and_then(|cell| href_in(cell))
+            .filter(|href| href.contains("status-table/notifications/"))
+            .map(|href| abs_url(&href));
+        parties.push(PartyRow {
+            name,
+            sid,
+            eif,
+            objection: marked.is_some(),
+            notifications_url,
+        });
     }
     parties
+}
+
+/// The Type cell's objection marker: `title="Objection**"` on the cell,
+/// or the `A**` legend code in its text.
+fn is_objection_cell(cell: &str) -> bool {
+    let open = &cell[..cell.find('>').unwrap_or(cell.len())];
+    open.contains("title=\"Objection") || cell_text(cell).contains("**")
+}
+
+/// The `csid` of a notifications URL (`…/notifications/?csid=1557&…`).
+fn csid_of(url: &str) -> Option<String> {
+    let at = url.find("csid=")? + "csid=".len();
+    let digits: String = url[at..].chars().take_while(char::is_ascii_digit).collect();
+    (!digits.is_empty()).then_some(digits)
+}
+
+/// Objections on a notifications page (`…/notifications/?csid=…
+/// &disp=type`), read with fixed rules. After the `Type` heading, each
+/// paragraph that opens with a `<strong>` state name and speaks of an
+/// objection is one objection, dated by its first `dd-mm-yyyy`; a
+/// `<blockquote>` right after it that withdraws or revokes marks it
+/// withdrawn. Any other shape (a prose list of states, footnoted
+/// withdrawals: the Kosovo and India pages) makes the page irregular:
+/// `None`, and the pack keeps the flag and the link only. The page is
+/// never interpreted beyond what it lists (a late objection the page
+/// calls without legal consequence is still listed, for review).
+fn parse_objections(html: &str) -> Option<Vec<Objection>> {
+    let start = html.find("<h2>Type</h2>")? + "<h2>Type</h2>".len();
+    let region = &html[start..];
+    let region = &region[..region.find("<footer").unwrap_or(region.len())];
+    let mut out: Vec<Objection> = Vec::new();
+    for (quote, body) in type_blocks(region) {
+        let text = cell_text(body);
+        if quote {
+            let last = out.last_mut()?;
+            let lower = text.to_lowercase();
+            if last.withdrawn.is_some() || !(lower.contains("withdr") || lower.contains("revok")) {
+                return None;
+            }
+            last.withdrawn = Some(first_dmy(&text)?);
+            continue;
+        }
+        if text.is_empty() || text == "Objection**" {
+            continue;
+        }
+        let rest = body.trim_start().strip_prefix("<strong>")?;
+        let state = cell_text(&rest[..rest.find("</strong>")?]);
+        let state = state.trim_end_matches([':', ',']).trim().to_string();
+        let namey = (3..=60).contains(&state.chars().count())
+            && state.starts_with(char::is_uppercase)
+            && state.chars().any(char::is_lowercase)
+            && !state.chars().any(|c| c.is_ascii_digit());
+        if !namey || !text.to_lowercase().contains("object") {
+            return None;
+        }
+        out.push(Objection {
+            state,
+            date: first_dmy(&text),
+            withdrawn: None,
+        });
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// Paragraph and blockquote bodies of a page region, in order:
+/// `(is_blockquote, inner html)`. A paragraph ends at its `</p>`, the
+/// next `<p>` or the next blockquote (the pages nest `<p><p …>`).
+fn type_blocks(region: &str) -> Vec<(bool, &str)> {
+    let p_open = |s: &str| {
+        s.match_indices("<p")
+            .find(|(i, _)| matches!(s.as_bytes().get(i + 2), Some(b'>' | b' ' | b'\t' | b'\n')))
+            .map(|(i, _)| i)
+    };
+    let mut out = Vec::new();
+    let mut rest = region;
+    loop {
+        let (para, quote) = (p_open(rest), rest.find("<blockquote"));
+        let is_quote = match (para, quote) {
+            (Some(p), Some(q)) => q < p,
+            (None, Some(_)) => true,
+            (Some(_), None) => false,
+            (None, None) => break,
+        };
+        let at = if is_quote { quote } else { para }.unwrap_or_default();
+        let Some(gt) = rest[at..].find('>') else {
+            break;
+        };
+        let tail = &rest[at + gt + 1..];
+        let end = if is_quote {
+            tail.find("</blockquote>")
+        } else {
+            [tail.find("</p>"), p_open(tail), tail.find("<blockquote")]
+                .into_iter()
+                .flatten()
+                .min()
+        }
+        .unwrap_or(tail.len());
+        out.push((is_quote, &tail[..end]));
+        rest = &tail[end..];
+    }
+    out
+}
+
+/// The first `dd-mm-yyyy` date in `text`, as `YYYY-MM-DD`.
+fn first_dmy(text: &str) -> Option<String> {
+    text.split(|c: char| !(c.is_ascii_digit() || c == '-'))
+        .find_map(|token| {
+            let parts: Vec<&str> = token.split('-').collect();
+            let [d, m, y] = parts.as_slice() else {
+                return None;
+            };
+            let (d, m, y): (u32, u32, u32) = (d.parse().ok()?, m.parse().ok()?, y.parse().ok()?);
+            ((1..=31).contains(&d) && (1..=12).contains(&m) && (1961..=2999).contains(&y))
+                .then(|| format!("{y:04}-{m:02}-{d:02}"))
+        })
 }
 
 /// Canonical party names off the status table (same row rule); the
@@ -435,6 +650,51 @@ pub(crate) fn party_names(html: &str) -> Vec<String> {
         .into_iter()
         .map(|party| party.name)
         .collect()
+}
+
+/// Every `<td…>…</td>` in a row, open tag included, in order.
+fn raw_cells(row: &str) -> Vec<&str> {
+    let mut cells = Vec::new();
+    let mut rest = row;
+    while let Some(td) = rest.find("<td") {
+        let body = &rest[td..];
+        let Some(close) = body.find("</td>") else {
+            break;
+        };
+        cells.push(&body[..close]);
+        rest = &body[close..];
+    }
+    cells
+}
+
+/// Plain text of one raw cell.
+fn cell_text(cell: &str) -> String {
+    collapse_ws(&html_unescape(&strip_tags(cell)))
+}
+
+/// HCCH table date (`28-II-2027`: day, Roman month, year) as
+/// `2027-02-28`.
+fn hcch_date(text: &str) -> Option<String> {
+    let mut parts = text.trim().split('-');
+    let day: u32 = parts.next()?.parse().ok()?;
+    let month = match parts.next()? {
+        "I" => 1,
+        "II" => 2,
+        "III" => 3,
+        "IV" => 4,
+        "V" => 5,
+        "VI" => 6,
+        "VII" => 7,
+        "VIII" => 8,
+        "IX" => 9,
+        "X" => 10,
+        "XI" => 11,
+        "XII" => 12,
+        _ => return None,
+    };
+    let year: u32 = parts.next()?.parse().ok()?;
+    (parts.next().is_none() && (1..=31).contains(&day) && year >= 1961)
+        .then(|| format!("{year:04}-{month:02}-{day:02}"))
 }
 
 /// Best-effort party count for the summary line (same row rule).
@@ -1403,14 +1663,12 @@ fn build_pack(
     let mut observations = vec![PackObservation {
         authority: lead.clone(),
         topic: "jurisdiction".to_string(),
-        statement: format!(
-            "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): {} is a listed Contracting Party.",
-            index.party
-        ),
+        statement: status_statement(index),
         source_uri: STATUS_TABLE_URL.to_string(),
         status: "needs_review".to_string(),
         validation: WORLD_REF.to_string(),
     }];
+    observations.extend(objections_observation(index, &lead));
     for (hit, slug) in names.iter().zip(&name_slugs) {
         if !visible(&exts, slug) {
             continue;
@@ -1480,6 +1738,96 @@ fn build_pack(
             authorities: exts,
         },
     }
+}
+
+/// The pack's status-table line. Tense-free on purpose: "entry into
+/// force for X: <date>" reads true before and after the date, so a
+/// future party (Thailand, 2027-02-28) shows when the convention starts
+/// to apply without the pack going stale on that day.
+fn status_statement(index: &PartyIndex) -> String {
+    let mut statement = format!(
+        "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): {} is a listed Contracting Party",
+        index.party
+    );
+    if let Some(eif) = &index.eif {
+        statement.push_str(&format!("; entry into force for {}: {eif}", index.party));
+    }
+    if index.objection {
+        statement.push_str("; type A** (objection");
+        if let Some(url) = &index.notifications_url {
+            statement.push_str(&format!("; notifications: {url}"));
+        }
+        statement.push(')');
+    }
+    statement.push('.');
+    statement
+}
+
+/// The states the notifications page lists as objecting to the
+/// accession (D-2), cited to that page; `None` without a parsed page.
+fn objections_observation(index: &PartyIndex, lead: &str) -> Option<crate::packs::PackObservation> {
+    let url = index.notifications_url.as_ref()?;
+    if index.objections.is_empty() {
+        return None;
+    }
+    let listed: Vec<String> = index
+        .objections
+        .iter()
+        .map(|o| match (&o.date, &o.withdrawn) {
+            (Some(date), Some(gone)) => format!("{} ({date}, withdrawn {gone})", o.state),
+            (None, Some(gone)) => format!("{} (withdrawn {gone})", o.state),
+            (Some(date), None) => format!("{} ({date})", o.state),
+            (None, None) => o.state.clone(),
+        })
+        .collect();
+    Some(crate::packs::PackObservation {
+        authority: lead.to_string(),
+        topic: "jurisdiction".to_string(),
+        statement: format!(
+            "OBSERVED (HCCH status-table notifications page; staff capture pending): objections to the accession of {} listed by {}.",
+            index.party,
+            listed.join(", ")
+        ),
+        source_uri: url.clone(),
+        status: "needs_review".to_string(),
+        validation: WORLD_REF.to_string(),
+    })
+}
+
+/// Bring the status-table observation of the committed pack at `path`
+/// in line with the table, when this run has no authority page for the
+/// party (offline without a recorded fixture, or a failed live fetch).
+/// The table is recorded whole, so its lines can always be refreshed;
+/// everything else in the pack stays as committed, and hand-built packs
+/// are never touched. Returns true when the file changed.
+fn refresh_status(path: &Path, index: &PartyIndex) -> bool {
+    let Some(mut file) = std::fs::read(path)
+        .ok()
+        .and_then(|bytes| crate::packs::PackFile::parse(&bytes).ok())
+    else {
+        return false;
+    };
+    if !is_world_index_output(&file) {
+        return false;
+    }
+    let statement = status_statement(index);
+    let mut changed = false;
+    for observation in &mut file.pack.observations {
+        if observation.source_uri == STATUS_TABLE_URL
+            && observation.topic == "jurisdiction"
+            && observation.statement != statement
+        {
+            observation.statement.clone_from(&statement);
+            changed = true;
+        }
+    }
+    if changed {
+        std::fs::write(path, file.render()).unwrap_or_else(|e| {
+            eprintln!("world-index: write {}: {e}", path.display());
+            std::process::exit(1);
+        });
+    }
+    changed
 }
 
 /// Write one party's pack, merged with the committed one at `path`.
@@ -1957,6 +2305,30 @@ mod tests {
         page_urls(&html).into_iter().map(|hit| hit.url).collect()
     }
 
+    /// EIF column: every recorded party has a readable date, and the
+    /// newest accessions (Algeria, Viet Nam; Thailand still ahead on the
+    /// 2026-11-02 capture) carry their own dates.
+    #[test]
+    fn status_table_entry_into_force_dates() {
+        let rows = parse_status_table(&fixture("status-table-cid41.html"));
+        assert_eq!(rows.len(), 130);
+        assert!(rows.iter().all(|row| row.eif.is_some()), "{rows:?}");
+        let eif = |want: &str| {
+            rows.iter()
+                .find(|row| row.name == want)
+                .and_then(|row| row.eif.clone())
+                .unwrap_or_else(|| panic!("missing party {want}"))
+        };
+        assert_eq!(eif("Thailand"), "2027-02-28");
+        assert_eq!(eif("Viet Nam"), "2026-09-11");
+        assert_eq!(eif("Algeria"), "2026-07-09");
+        assert_eq!(eif("Kosovo"), "2016-07-14");
+        assert_eq!(hcch_date(" 5-X-1961 "), Some("1961-10-05".to_string()));
+        for bad in ["", "28-XIII-2027", "32-I-2020", "1-I-2020-1", "A**"] {
+            assert_eq!(hcch_date(bad), None, "{bad}");
+        }
+    }
+
     #[test]
     fn status_table_parses_130_parties() {
         let parties = parse_status_table(&fixture("status-table-cid41.html"));
@@ -2327,6 +2699,7 @@ mod tests {
         let party = PartyRow {
             name: "Belarus".to_string(),
             sid: "10".to_string(),
+            ..PartyRow::default()
         };
         let mut index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
         index.absorb_details(
@@ -2382,6 +2755,7 @@ mod tests {
         let party = PartyRow {
             name: "Germany".to_string(),
             sid: "1".to_string(),
+            ..PartyRow::default()
         };
         let index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
         let (a, b) = ("https://www.hcch.net/a", "https://www.hcch.net/b");
@@ -2441,6 +2815,7 @@ mod tests {
         let party = PartyRow {
             name: "Marshall Islands".to_string(),
             sid: "2".to_string(),
+            ..PartyRow::default()
         };
         let index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
         let page = "https://www.hcch.net/p";
@@ -2515,6 +2890,7 @@ mod tests {
             let party = PartyRow {
                 name: "Somewhere".to_string(),
                 sid: "3".to_string(),
+                ..PartyRow::default()
             };
             let mut index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
             index.iso2 = iso.to_string();
@@ -2524,6 +2900,197 @@ mod tests {
             assert!(!write_pack(&path, &index), "{iso}");
             assert_eq!(std::fs::read(&path).unwrap(), bytes, "{iso}");
         }
+    }
+
+    /// D-1: a party's entry into force rides on its status-table line,
+    /// tense-free, so a future party's dossier shows the date.
+    #[test]
+    fn status_line_carries_entry_into_force() {
+        let parties = parse_status_table(&fixture("status-table-cid41.html"));
+        let thailand = parties.iter().find(|p| p.name == "Thailand").unwrap();
+        let index = PartyIndex::empty(thailand, "https://www.hcch.net/en/x");
+        let file = build_pack(&index, &[], &[], None);
+        assert_eq!(
+            file.pack.observations[0].statement,
+            "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Thailand is a \
+             listed Contracting Party; entry into force for Thailand: 2027-02-28."
+        );
+        assert_eq!(file.pack.observations[0].source_uri, STATUS_TABLE_URL);
+        let undated = PartyRow {
+            name: "Noland".to_string(),
+            ..PartyRow::default()
+        };
+        assert!(
+            status_statement(&PartyIndex::empty(&undated, "https://www.hcch.net/en/x"))
+                .ends_with("Noland is a listed Contracting Party.")
+        );
+    }
+
+    /// D-1: without an authority page (offline, no fixture) only the
+    /// status-table line of the committed pack changes; curated rows,
+    /// hidden flags and every other line stay byte for byte, and the
+    /// hand-built packs are left alone.
+    #[test]
+    fn refresh_touches_only_the_status_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = Path::new(env!("CARGO_MANIFEST_DIR")).join("../packs/world");
+        let parties = parse_status_table(&fixture("status-table-cid41.html"));
+        for (iso, name) in [("TH", "Thailand"), ("MH", "Marshall Islands")] {
+            let committed = std::fs::read_to_string(world.join(format!("{iso}.json"))).unwrap();
+            let path = dir.path().join(format!("{iso}.json"));
+            std::fs::write(&path, &committed).unwrap();
+            let party = parties.iter().find(|p| p.name == name).unwrap();
+            let index = PartyIndex::empty(party, "https://www.hcch.net/en/x");
+            let want = status_statement(&index);
+            let changed = !committed.contains(&want);
+            assert_eq!(refresh_status(&path, &index), changed, "{iso}");
+            let after = std::fs::read_to_string(&path).unwrap();
+            assert!(after.contains(&want), "{iso}");
+            let differing: Vec<(&str, &str)> = committed
+                .lines()
+                .zip(after.lines())
+                .filter(|(a, b)| a != b)
+                .collect();
+            assert_eq!(committed.lines().count(), after.lines().count(), "{iso}");
+            assert!(differing.len() <= 1, "{iso}: {differing:?}");
+            assert!(
+                differing
+                    .iter()
+                    .all(|(_, b)| b.contains("entry into force")),
+                "{iso}"
+            );
+            // A second run is a no-op.
+            assert!(!refresh_status(&path, &index), "{iso}");
+        }
+        let committed = std::fs::read(world.join("US.json")).unwrap();
+        let path = dir.path().join("US.json");
+        std::fs::write(&path, &committed).unwrap();
+        let usa = parties
+            .iter()
+            .find(|p| p.name == "United States of America")
+            .unwrap();
+        assert!(!refresh_status(
+            &path,
+            &PartyIndex::empty(usa, "https://www.hcch.net/en/x")
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), committed);
+        assert!(!refresh_status(
+            &dir.path().join("ZZ.json"),
+            &PartyIndex::empty(usa, "https://www.hcch.net/en/x")
+        ));
+    }
+
+    /// D-2: the Type cell's `A**` marker (21 parties on the recorded
+    /// table) and its notifications link.
+    #[test]
+    fn status_table_reads_objection_markers() {
+        let parties = parse_status_table(&fixture("status-table-cid41.html"));
+        let marked: Vec<&PartyRow> = parties.iter().filter(|p| p.objection).collect();
+        assert_eq!(marked.len(), 21);
+        assert!(marked.iter().all(|p| {
+            p.notifications_url.as_deref().is_some_and(|u| {
+                u.starts_with(
+                    "https://www.hcch.net/en/instruments/conventions/status-table/notifications/?csid=",
+                ) && u.ends_with("&disp=type")
+            })
+        }));
+        let by_name = |want: &str| parties.iter().find(|p| p.name == want).unwrap();
+        let vn = by_name("Viet Nam");
+        assert_eq!(
+            vn.notifications_url.as_deref(),
+            Some(
+                "https://www.hcch.net/en/instruments/conventions/status-table/notifications/?csid=1557&disp=type"
+            )
+        );
+        assert_eq!(
+            csid_of(vn.notifications_url.as_deref().unwrap()),
+            Some("1557".to_string())
+        );
+        assert!(by_name("Kosovo").objection);
+        assert!(by_name("China (the People's Republic of)").objection);
+        let th = by_name("Thailand");
+        assert!(!th.objection && th.notifications_url.is_none());
+        // Status, objection marker and link reach the pack's status line.
+        let mut index = PartyIndex::empty(vn, "https://www.hcch.net/en/x");
+        assert!(status_statement(&index).ends_with(
+            "entry into force for Viet Nam: 2026-09-11; type A** (objection; notifications: \
+             https://www.hcch.net/en/instruments/conventions/status-table/notifications/?csid=1557&disp=type)."
+        ));
+        assert!(
+            objections_observation(&index, "vn-ca-1").is_none(),
+            "no page, no names"
+        );
+        index.absorb_objections(&fixture("notifications-csid1557.html"));
+        let file = build_pack(&index, &[], &[], None);
+        let named = &file.pack.observations[1];
+        assert_eq!(
+            named.statement,
+            "OBSERVED (HCCH status-table notifications page; staff capture pending): objections \
+             to the accession of Viet Nam listed by Czechia (2026-07-02), Austria (2026-06-19), \
+             Germany (2026-05-20)."
+        );
+        assert_eq!(named.source_uri, vn.notifications_url.clone().unwrap());
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("VN.json"), file.render()).unwrap();
+        assert!(crate::packs::validate_dir(dir.path()).is_empty());
+    }
+
+    /// D-2: the recorded Viet Nam page parses; other recorded shapes
+    /// (a prose list, footnoted withdrawals) are irregular, and a
+    /// withdrawal right after an objection is carried with it.
+    #[test]
+    fn notifications_pages_parse_or_stay_irregular() {
+        let vn = parse_objections(&fixture("notifications-csid1557.html")).unwrap();
+        let states: Vec<&str> = vn.iter().map(|o| o.state.as_str()).collect();
+        assert_eq!(states, ["Czechia", "Austria", "Germany"]);
+        assert_eq!(vn[0].date.as_deref(), Some("2026-07-02"));
+        assert!(vn.iter().all(|o| o.withdrawn.is_none()));
+        let page = |body: &str| format!("<h2>Type</h2><p>Objection**</p><p>{body}</p><footer>x");
+        let azerbaijan = page(
+            "<p align=\"justify\"><strong>Belgium</strong><br /><em>21-01-2005<br /></em>Belgium \
+             raises an objection to Azerbaijan's accession.</p>\
+             <p align=\"justify\"><strong>Hungary</strong><br /><em>31-12-2004<br /></em>... that \
+             Hungary raises objection to the accession.</p>\
+             <blockquote class=\"well\"><em>10-03-2005<br /></em>... revokes its objection.</blockquote>",
+        );
+        assert_eq!(
+            parse_objections(&azerbaijan).unwrap(),
+            [
+                Objection {
+                    state: "Belgium".into(),
+                    date: Some("2005-01-21".into()),
+                    withdrawn: None,
+                },
+                Objection {
+                    state: "Hungary".into(),
+                    date: Some("2004-12-31".into()),
+                    withdrawn: Some("2005-03-10".into()),
+                },
+            ]
+        );
+        for irregular in [
+            // Kosovo: the states as one prose list.
+            page(
+                "<p align=\"justify\">Pursuant to the objections listed below, the Convention will \
+                 not enter into force between Kosovo and: <br /> Argentina, Armenia.</p>",
+            ),
+            // India: names in plain text with footnote marks.
+            page("<p>\nBelgium *, Finland ** and Spain raised an objection.</p>"),
+            // A heading in capitals is not a state.
+            page("<p><strong>OBJECTIONS:</strong></p>"),
+            // A blockquote that withdraws nothing.
+            page(
+                "<p><strong>Germany</strong> raises an objection.</p><blockquote>A note.</blockquote>",
+            ),
+            String::from("<p>No Type heading</p>"),
+        ] {
+            assert_eq!(parse_objections(&irregular), None, "{irregular}");
+        }
+        assert_eq!(
+            first_dmy("on 2-7-2026, see Art. 12"),
+            Some("2026-07-02".into())
+        );
+        assert_eq!(first_dmy("2026-07-02 and 12-2"), None);
     }
 
     #[test]
@@ -2638,6 +3205,7 @@ mod tests {
         let party = PartyRow {
             name: "Noland".to_string(),
             sid: "9".to_string(),
+            ..PartyRow::default()
         };
         let mut index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
         index.urls.push(UrlHit {

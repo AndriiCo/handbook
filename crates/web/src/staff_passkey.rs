@@ -42,6 +42,10 @@ struct EnrolState {
     /// Staff page can tell accounts apart.
     #[serde(default)]
     display_name: String,
+    /// Sign-in email (lowercased; empty when none was given): the
+    /// passkey's account name, saved once the ceremony verifies.
+    #[serde(default)]
+    email: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -53,6 +57,10 @@ pub(crate) struct EnrolStartBody {
     setup_key: Option<String>,
     display_name: String,
     label: Option<String>,
+    /// Sign-in email: names the passkey in the browser's passkey list
+    /// and autofill instead of the 32-hex user id. Optional for older
+    /// clients; the console always sends it.
+    email: Option<String>,
 }
 
 /// `POST /auth/passkey/enrol/start` — validate invite +
@@ -181,24 +189,51 @@ pub async fn enrol_start(
         )
             .into_response();
     }
+    // Checked only after the invite or setup key passed: whether an
+    // email is taken is never answered to an anonymous caller.
+    let email = match body.email.as_deref() {
+        None => String::new(),
+        Some(raw) => match passkey::valid_email(raw) {
+            Some(email) => email,
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "email malformed"})),
+                )
+                    .into_response();
+            }
+        },
+    };
+    if !email.is_empty() && store::staff_email_taken(&conn, &email).unwrap_or(true) {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "email already used by another staff account"})),
+        )
+            .into_response();
+    }
     let user_id = store::mint_user_id();
     let uuid = match uuid::Uuid::parse_str(&user_id) {
         Ok(uuid) => uuid,
         Err(_) => return store_unavailable(),
     };
-    let (options, reg_state) =
-        match state
-            .webauthn
-            .start_passkey_registration(uuid, &user_id, &body.display_name, None)
-        {
-            Ok(pair) => pair,
-            Err(_) => return store_unavailable(),
-        };
+    // The passkey's account name is what the browser shows in its
+    // passkey list and autofill: the email, not the hex id.
+    let account_name = if email.is_empty() { &user_id } else { &email };
+    let (options, reg_state) = match state.webauthn.start_passkey_registration(
+        uuid,
+        account_name,
+        &body.display_name,
+        None,
+    ) {
+        Ok(pair) => pair,
+        Err(_) => return store_unavailable(),
+    };
     let enrol = EnrolState {
         reg: reg_state,
         invite_hash,
         setup: setup_mode,
         display_name: body.display_name.clone(),
+        email,
     };
     let Ok(state_json) = serde_json::to_string(&enrol) else {
         return store_unavailable();
@@ -453,6 +488,12 @@ pub async fn enrol_finish(
     }
     if store::ensure_staff_account(&conn, &user_id, &role, now).is_err() {
         return store_unavailable();
+    }
+    // Best effort: the invite or setup key is already spent, so a lost
+    // race for the same email must not fail the enrolment. The passkey
+    // still carries the email as its account name.
+    if !enrol.email.is_empty() {
+        let _ = store::set_staff_email(&conn, &user_id, &enrol.email, now);
     }
     let passkey_json = match serde_json::to_string(&result) {
         Ok(json) => json,
@@ -915,6 +956,7 @@ pub async fn staff_list(auth: AdminAuth, State(state): State<AppState>) -> Respo
             "user_id": account.user_id,
             "role": account.role,
             "name": account.name,
+            "email": account.email,
             "created_at": account.created_at,
             "locked_at": account.locked_at,
             "passkeys": keys.iter().map(|k| json!({
@@ -1240,9 +1282,15 @@ pub async fn add_start(
         }
     }
     let display = body.label.clone().unwrap_or_default();
+    // Same account name as the first passkey (the email when the
+    // account has one), so the browser lists both under one name.
+    let account_name = store::staff_email(&conn, &user_id)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| user_id.clone());
     let (options, reg_state) = match state.webauthn.start_passkey_registration(
         uuid,
-        &user_id,
+        &account_name,
         if display.is_empty() {
             &user_id
         } else {
@@ -1418,6 +1466,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
             fedex_live: crate::fedex_live::FedexLiveState::default(),
         }
     }
@@ -2496,6 +2545,126 @@ mod tests {
         assert_eq!(selection["residentKey"], "required", "{selection}");
         assert_eq!(selection["requireResidentKey"], true);
         assert_eq!(selection["userVerification"], "required");
+    }
+
+    /// W-1: the email names the passkey, so the browser lists and
+    /// autofills it instead of the hex id. Malformed or taken emails are
+    /// refused, but only once the invite passed (no anonymous oracle).
+    #[tokio::test]
+    async fn enrolment_names_the_passkey_by_email() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = test_state(&tmp);
+        let now = unix_now();
+        let conn = open(&state.store_root);
+        seed_invite(&conn, INVITE, "staff", "jdoe", now);
+        store::ensure_staff_account(&conn, "u-taken", "staff", now).unwrap();
+        store::set_staff_email(&conn, "u-taken", "taken@example.test", now).unwrap();
+        drop(conn);
+        let app = crate::admin::router(state.clone());
+        let start = |body: String| {
+            let app = app.clone();
+            async move {
+                json_of(
+                    app.oneshot(post("/apostille/api/v1/auth/passkey/enrol/start", &body))
+                        .await
+                        .unwrap(),
+                )
+                .await
+            }
+        };
+        let body = |invite: &str, email: &str| {
+            format!(r#"{{"invite":"{invite}","display_name":"Jordan","email":"{email}"}}"#)
+        };
+        // A taken email behind a bad invite answers like any bad invite.
+        let (status, json, _) = start(body(INVITE_B, "taken@example.test")).await;
+        assert_eq!(status, StatusCode::GONE, "{json}");
+        let (status, json, _) = start(body(INVITE, "not-an-email")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(json["error"], "email malformed");
+        let (status, json, _) = start(body(INVITE, "Taken@Example.test")).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(json["error"], "email already used by another staff account");
+        let (status, json, _) = start(body(INVITE, " Jordan@Example.TEST ")).await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        let user = &json["options"]["publicKey"]["user"];
+        assert_eq!(user["name"], "jordan@example.test", "{user}");
+        assert_eq!(user["displayName"], "Jordan");
+        // The email rides in the server-side ceremony state (saved at
+        // finish), never in a client echo.
+        let challenge = json["challenge_id"].as_str().unwrap();
+        let conn = open(&state.store_root);
+        let (_, state_json) =
+            store::take_challenge(&conn, challenge, store::KIND_STAFF_REGISTER, unix_now())
+                .unwrap()
+                .unwrap();
+        let enrol: EnrolState = serde_json::from_str(&state_json).unwrap();
+        assert_eq!(enrol.email, "jordan@example.test");
+        drop(conn);
+        // Older clients send no email: the hex id still names it.
+        let (status, json, _) = start(format!(
+            r#"{{"invite":"{INVITE}","display_name":"Jordan"}}"#
+        ))
+        .await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        let name = json["options"]["publicKey"]["user"]["name"]
+            .as_str()
+            .unwrap();
+        assert!(
+            name.len() == 32 && name.bytes().all(|b| b.is_ascii_hexdigit()),
+            "{name}"
+        );
+    }
+
+    /// A second passkey gets the account's email as its name too, and
+    /// the Staff page shows the email (empty for older accounts).
+    #[tokio::test]
+    async fn added_passkeys_and_the_staff_page_use_the_email() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = test_state(&tmp);
+        let conn = open(&state.store_root);
+        let jo = store::mint_user_id();
+        let old = store::mint_user_id();
+        seed_staffer(&conn, &jo, "admin", &[], 0);
+        seed_staffer(&conn, &old, "staff", &[], 0);
+        store::set_staff_email(&conn, &jo, "jo@example.test", unix_now()).unwrap();
+        drop(conn);
+        let app = crate::admin::router(state.clone());
+        let add = |user: &str| {
+            as_staff(
+                "POST",
+                "/apostille/api/v1/staff/passkeys/add/start",
+                user,
+                "{}",
+            )
+        };
+        let (status, json, _) = json_of(app.clone().oneshot(add(&jo)).await.unwrap()).await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(
+            json["options"]["publicKey"]["user"]["name"],
+            "jo@example.test"
+        );
+        let (status, json, _) = json_of(app.clone().oneshot(add(&old)).await.unwrap()).await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        assert_eq!(json["options"]["publicKey"]["user"]["name"], old.as_str());
+        let (status, json, _) = json_of(
+            app.clone()
+                .oneshot(as_staff("GET", "/apostille/api/v1/staff", &jo, ""))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{json}");
+        let email_of = |id: &str| {
+            json["accounts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["user_id"] == id)
+                .unwrap()["email"]
+                .clone()
+        };
+        assert_eq!(email_of(&jo), "jo@example.test");
+        assert_eq!(email_of(&old), "");
     }
 
     /// Seed a staff/admin account with live passkeys (labels only, no

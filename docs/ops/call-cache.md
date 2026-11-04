@@ -48,7 +48,10 @@ wrapper (`xtask/ops/ops-a2-record.sh`, run as `hal`) uses
 `--cache-mode` / `meta.cache_mode` sets both caches; `--fetch-cache-mode`
 overrides the fetch cache alone. Watch sweeps want the fetch cache in
 `refresh` (archive every fetch, still see changes); a rerun from cache is
-`replay-only`.
+`replay-only`. W-3 `meta.mode = fake` (the Meta "fake" mode of
+`cargo xtask up` and `judge` keyless boots) is `replay-only` over the
+sealed rows, whatever `meta.cache_mode` says; the environment and the
+flags still override it (`docs/specs/config-db.md` §9.2).
 
 ## Meta call cache
 

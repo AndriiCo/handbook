@@ -296,6 +296,16 @@ pub fn migrate_auth_tables(conn: &Connection) -> rusqlite::Result<()> {
            consumed_at INTEGER,
            consumed_by TEXT
          ) STRICT;
+         -- Staff sign-in email (W-1): names the account's passkeys in
+         -- the browser's passkey list and autofill, and the Staff
+         -- page. Staff-only on purpose: customer sign-in never reads
+         -- it, and staff sign-in never looks an email up (passkeys
+         -- are discoverable), so it is no enumeration oracle.
+         CREATE TABLE IF NOT EXISTS staff_email(
+           user_id TEXT PRIMARY KEY REFERENCES account(user_id),
+           email TEXT NOT NULL UNIQUE,
+           created_at INTEGER NOT NULL
+         ) STRICT;
          CREATE TABLE IF NOT EXISTS magic_token(
            token_hash TEXT PRIMARY KEY,
            email_hash TEXT NOT NULL,

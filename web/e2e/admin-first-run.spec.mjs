@@ -5,7 +5,10 @@
 // passkey). An expired session mid-use lands on /staff-login?next=…
 // and returns to the page after sign-in. API is
 // route-mocked with a tiny server state; navigator.credentials is a
-// stub (create/get resolve fake credentials).
+// stub (create/get resolve fake credentials). W-1: enrolment names the
+// passkey by email, and the sign-in email field offers it in autofill:
+// the stub keeps an autofill (conditional) request pending, like a
+// browser, until a test picks the passkey or the page aborts it.
 import { expect, test } from '@playwright/test';
 import { serveDir } from './helpers/serve.mjs';
 import { readFileSync } from 'node:fs';
@@ -26,6 +29,13 @@ const STEPS = {
 async function stubPasskeys(page) {
 	await page.addInitScript(() => {
 		const buf = (n) => new Uint8Array([n, n, n]).buffer;
+		if (window.PublicKeyCredential) {
+			Object.defineProperty(PublicKeyCredential, 'isConditionalMediationAvailable', {
+				value: async () => true,
+				configurable: true
+			});
+		}
+		window.__autofillRequests = 0;
 		Object.defineProperty(navigator, 'credentials', {
 			value: {
 				create: async () => ({
@@ -34,17 +44,31 @@ async function stubPasskeys(page) {
 					type: 'public-key',
 					response: { attestationObject: buf(2), clientDataJSON: buf(3) }
 				}),
-				get: async () => ({
-					id: 'cred',
-					rawId: buf(1),
-					type: 'public-key',
-					response: {
-						authenticatorData: buf(2),
-						clientDataJSON: buf(3),
-						signature: buf(4),
-						userHandle: null
+				get: async (args) => {
+					if (args?.mediation === 'conditional') {
+						window.__autofillRequests += 1;
+						await new Promise((resolve, reject) => {
+							window.__pickAutofill = resolve;
+							args.signal?.addEventListener('abort', () =>
+								reject(new DOMException('aborted', 'AbortError'))
+							);
+						});
+					} else if (window.__holdModal) {
+						// A passkey sheet the user has not answered yet.
+						await new Promise((resolve) => (window.__releaseModal = resolve));
 					}
-				})
+					return {
+						id: 'cred',
+						rawId: buf(1),
+						type: 'public-key',
+						response: {
+							authenticatorData: buf(2),
+							clientDataJSON: buf(3),
+							signature: buf(4),
+							userHandle: null
+						}
+					};
+				}
 			}
 		});
 	});
@@ -128,7 +152,10 @@ test('fresh boot: /review → /config, one paste enrols, sign out, sign back in 
 		await page.getByRole('button', { name: 'Start / resume setup' }).click();
 		await expect(page.getByRole('heading', { name: 'Enrol the first staff passkey' })).toBeVisible();
 		await page.locator('#enrol-display-name').fill('Judge');
-		await page.getByRole('button', { name: 'Enrol passkey and sign in' }).click();
+		const enrol = page.getByRole('button', { name: 'Enrol passkey and sign in' });
+		await expect(enrol).toBeDisabled(); // the email names the passkey: required
+		await page.locator('#enrol-email').fill('judge@example.test');
+		await enrol.click();
 
 		await expect(page.getByText('Enrolled and signed in.')).toBeVisible();
 		await expect(page.getByText(USER)).toHaveCount(0);
@@ -136,6 +163,7 @@ test('fresh boot: /review → /config, one paste enrols, sign out, sign back in 
 		const start = calls.find((c) => c.step === 'enrol/start');
 		const finish = calls.find((c) => c.step === 'enrol/finish');
 		expect(start.body.setup_key).toBe(KEY);
+		expect(start.body.email).toBe('judge@example.test');
 		expect(finish.body.setup_key).toBe(KEY);
 
 		await page.getByRole('button', { name: 'Sign out' }).click();
@@ -223,7 +251,58 @@ test('the user-ID fallback still signs in a passkey enrolled before discoverable
 		await page.locator('#staff-account').fill(USER);
 		await page.getByRole('button', { name: 'Sign in with user ID' }).click();
 		await expect(page).toHaveURL(/\/config$/);
-		expect(calls.find((c) => c.step === 'login/start').body).toEqual({ account: USER });
+		// The first start is the email field's autofill offer; the
+		// fallback's own start names the user ID.
+		const starts = calls.filter((c) => c.step === 'login/start');
+		expect(starts.at(-1).body).toEqual({ account: USER });
+	} finally {
+		await srv.close();
+	}
+});
+
+test('W-1: the email field offers the passkey in autofill, and a pick signs in', async ({ page }) => {
+	const srv = await serveDir(join(HERE, '..', 'build-admin'));
+	try {
+		await stubPasskeys(page);
+		const calls = await mockServer(page, { setupRequired: false, session: null });
+		await page.goto(`${srv.url}/staff-login?next=%2Freview`);
+		const field = page.getByLabel('Email');
+		await expect(field).toHaveAttribute('autocomplete', 'username webauthn');
+		await expect(field).toHaveAttribute('type', 'email');
+		// The autofill request is pending while the field is on the page.
+		await page.waitForFunction(() => window.__autofillRequests === 1);
+		expect(calls.filter((c) => c.step === 'login/finish')).toHaveLength(0);
+		await field.fill('judge@example.test');
+		await page.evaluate(() => window.__pickAutofill());
+		await expect(page).toHaveURL(/\/review$/);
+		const starts = calls.filter((c) => c.step === 'login/start');
+		// The typed email is never sent: the passkey picks the account.
+		expect(starts.map((c) => c.body)).toEqual([{ account: '' }]);
+		expect(calls.filter((c) => c.step === 'login/finish')).toHaveLength(1);
+	} finally {
+		await srv.close();
+	}
+});
+
+test('W-1: the button takes over from autofill and stays busy until the passkey answers', async ({ page }) => {
+	const srv = await serveDir(join(HERE, '..', 'build-admin'));
+	try {
+		await stubPasskeys(page);
+		await page.addInitScript(() => {
+			window.__holdModal = true;
+		});
+		await mockServer(page, { setupRequired: false, session: null });
+		await page.goto(`${srv.url}/staff-login?next=%2Freview`);
+		await page.waitForFunction(() => window.__autofillRequests === 1);
+		await page.getByRole('button', { name: 'Sign in with passkey' }).click();
+		const waiting = page.getByRole('button', { name: 'Waiting for your passkey…' });
+		await expect(waiting).toBeDisabled();
+		// The sheet is open and the cancelled autofill request has settled:
+		// the button must still say it is waiting.
+		await page.waitForFunction(() => typeof window.__releaseModal === 'function');
+		await expect(waiting).toBeDisabled();
+		await page.evaluate(() => window.__releaseModal());
+		await expect(page).toHaveURL(/\/review$/);
 	} finally {
 		await srv.close();
 	}

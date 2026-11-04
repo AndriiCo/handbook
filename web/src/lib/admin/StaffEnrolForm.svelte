@@ -9,7 +9,9 @@
 		isTransportFailure
 	} from './staff-auth.js';
 
-	// One staff passkey enrolment: display name + the UV ceremony.
+	// One staff passkey enrolment: display name, sign-in email + the UV
+	// ceremony. The email names the passkey in the browser's passkey list
+	// and autofill (W-1), so sign-in never shows the 32-hex user id.
 	// Used by /enrol (invite link or typed setup key) and by the /config
 	// wizard, which already holds the setup key, so the key is pasted
 	// once. The caller keeps its gate (key or invite) until `onenrolled`
@@ -36,6 +38,7 @@
 
 	const setupMode = $derived(invite === '');
 	let displayName = $state('');
+	let email = $state('');
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 
@@ -58,10 +61,9 @@
 		if (precheck && !precheck()) return;
 		busy = true;
 		try {
+			const person = { displayName: displayName.trim(), email: email.trim() };
 			const res = await enrolPasskey(
-				setupMode
-					? { setupKey: setupKey.trim(), displayName: displayName.trim() }
-					: { invite, displayName: displayName.trim() },
+				setupMode ? { setupKey: setupKey.trim(), ...person } : { invite, ...person },
 				{ post, credentials: navigator.credentials }
 			);
 			if (!res.ok) {
@@ -102,11 +104,28 @@
 		maxlength={128}
 		required
 	/>
+	<label class="font-bold" for="enrol-email">Email</label>
+	<Input
+		id="enrol-email"
+		class="h-11 text-base"
+		type="email"
+		bind:value={email}
+		autocomplete="username"
+		inputmode="email"
+		spellcheck={false}
+		placeholder="jordan@example.com"
+		maxlength={254}
+		aria-describedby="enrol-email-hint"
+		required
+	/>
+	<p id="enrol-email-hint" class="m-0 text-sm text-ink-muted">
+		Your passkey is saved under this email, and sign-in offers it there.
+	</p>
 	<Button
 		type="submit"
 		size="lg"
 		class="min-h-11 w-full px-4 text-base sm:w-auto sm:justify-self-start"
-		disabled={busy || displayName.trim() === ''}
+		disabled={busy || displayName.trim() === '' || email.trim() === ''}
 	>
 		{busy ? 'Waiting for your passkey…' : submitLabel}
 	</Button>

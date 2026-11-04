@@ -21,6 +21,12 @@
 //!
 //! Payload: `{"sample": "<id>", "image_b64": "<png base64>"}` or
 //! `{"sample": "<id>", "png": "<repo-relative path>"}`.
+//!
+//! W-3 fake (`HF_MODE=fake` in worker.env, the worker-side mirror of
+//! the server's `hf.mode` row; `cargo xtask up` writes it): no weights
+//! and no Glimmer server. The verdict is the recorded file
+//! `evals/captures/demo_precheck/<sample>.json`, returned with
+//! `judge_backend: "recorded"`; a sample without one fails the job.
 
 use std::time::Instant;
 
@@ -29,6 +35,31 @@ use serde_json::{Value, json};
 use super::{JobContext, JobError, JobHandler, JobOutput, WorkerEnv};
 
 const DEFAULT_URL: &str = "http://127.0.0.1:18480/v1";
+/// Recorded verdicts the fake answers from (repo-relative).
+const RECORDED_DIR: &str = "evals/captures/demo_precheck";
+
+fn fake(env: &WorkerEnv) -> bool {
+    env.get("HF_MODE").is_some_and(|m| m.trim() == "fake")
+}
+
+/// The recorded verdict for `sample` (W-3 fake): no weights, no server.
+fn recorded(ctx: &JobContext, sample: &str) -> Result<JobOutput, JobError> {
+    if sample.is_empty()
+        || !sample
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(JobError::fatal("sample must be letters, digits, - or _"));
+    }
+    let path = ctx.repo.join(RECORDED_DIR).join(format!("{sample}.json"));
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| JobError::fatal(format!("no recorded verdict for {sample}: {e}")))?;
+    let mut record: Value = serde_json::from_str(&text)
+        .map_err(|e| JobError::fatal(format!("recorded verdict is not JSON: {e}")))?;
+    record["judge_backend"] = json!("recorded");
+    let summary = json!({ "sample": sample, "verdict": record["verdict"] });
+    Ok(JobOutput::json(&record, summary))
+}
 
 pub struct PrecheckGlimmer;
 
@@ -42,11 +73,16 @@ impl JobHandler for PrecheckGlimmer {
     }
 
     fn available(&self, env: &WorkerEnv) -> bool {
-        env.get("GLIMMER_MODEL")
-            .is_some_and(|m| !m.trim().is_empty())
+        fake(env)
+            || env
+                .get("GLIMMER_MODEL")
+                .is_some_and(|m| !m.trim().is_empty())
     }
 
     fn run(&self, ctx: &JobContext, payload: &Value) -> Result<JobOutput, JobError> {
+        if fake(&ctx.env) {
+            return recorded(ctx, payload["sample"].as_str().unwrap_or(""));
+        }
         let Some(model) = ctx.env.get("GLIMMER_MODEL") else {
             return Err(JobError::fatal(
                 "precheck.glimmer needs GLIMMER_MODEL in worker.env",
@@ -245,8 +281,37 @@ mod tests {
     fn announced_when_worker_env_names_the_model() {
         let env = WorkerEnv::parse("GLIMMER_MODEL=glimmer-test\n");
         assert!(PrecheckGlimmer.available(&env));
-        if std::env::var_os("GLIMMER_MODEL").is_none() {
+        if std::env::var_os("GLIMMER_MODEL").is_none() && std::env::var_os("HF_MODE").is_none() {
             assert!(!PrecheckGlimmer.available(&WorkerEnv::default()));
+        }
+    }
+
+    #[test]
+    fn the_fake_answers_from_the_recorded_verdicts_without_a_server() {
+        let env = WorkerEnv::parse("HF_MODE=fake\n");
+        assert!(PrecheckGlimmer.available(&env), "no GLIMMER_MODEL needed");
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = JobContext {
+            id: 1,
+            dir: tmp.path().to_path_buf(),
+            repo: std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".."),
+            cache_dir: tmp.path().to_path_buf(),
+            env,
+        };
+        let out = PrecheckGlimmer
+            .run(
+                &ctx,
+                &json!({"sample": "syn-doc-clean", "png": "nowhere.png"}),
+            )
+            .unwrap();
+        let record: Value = serde_json::from_slice(&out.bytes).unwrap();
+        assert_eq!(record["verdict"], "pass");
+        assert_eq!(record["judge_backend"], "recorded");
+        for bad in ["../secrets", "no-such-sample", ""] {
+            assert!(
+                PrecheckGlimmer.run(&ctx, &json!({"sample": bad})).is_err(),
+                "{bad}"
+            );
         }
     }
 

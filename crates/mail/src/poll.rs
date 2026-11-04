@@ -327,6 +327,60 @@ fn fetch_one(
     let _ = std::fs::write(&marker, &raw.id);
     let parsed = crate::mime::parse_with(&raw.raw, !crashed_before);
     let _ = std::fs::remove_file(&marker);
+    let provenance = serde_json::json!({
+        "gmail_id": raw.id,
+        "thread_id": raw.thread_id,
+        "history_id": history_id,
+        "internal_date_ms": raw.internal_date_ms,
+        "gmail_labels": raw.labels,
+        "received_via": "gmail-api",
+    });
+    let origin = format!("gmail:{}", raw.id);
+    Ok(
+        match capture_message(conn, store, opts, &raw.raw, &parsed, &origin, provenance)? {
+            Captured::Created { .. } => FetchOutcome::Created,
+            Captured::Duplicate => FetchOutcome::Duplicate,
+            Captured::Report { suppressed } => FetchOutcome::Report { suppressed },
+        },
+    )
+}
+
+/// What [`capture_message`] did with one message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Captured {
+    /// A new `email` capture.
+    Created {
+        capture_id: i64,
+        /// `official`, `community` or `rejected`.
+        trust: &'static str,
+        /// `dmarc` / `dkim` when the stamp authenticates the From
+        /// domain, else `none`.
+        verified_by: &'static str,
+        /// The outreach email this message answers, when it threads.
+        outreach_email: Option<i64>,
+    },
+    /// Byte-identical re-delivery: nothing new.
+    Duplicate,
+    /// An authenticated bounce or complaint, handled without a capture.
+    Report { suppressed: usize },
+}
+
+/// Capture one parsed message: the steps every inbound path shares
+/// (the Gmail poll, and the W-3 fake inbox in [`crate::fake`]). The
+/// `Authentication-Results` stamp decides the trust ([`resolve_sender`]),
+/// an authenticated bounce or complaint suppresses its recipients, and a
+/// reply threads to the outreach email it answers. `provenance` (a JSON
+/// object: how the message arrived) is merged into the capture's
+/// authenticity record; `origin` names the capture's source.
+pub fn capture_message(
+    conn: &Connection,
+    store: &Store,
+    opts: &PollOpts,
+    raw: &[u8],
+    parsed: &crate::mime::ParsedMail,
+    origin: &str,
+    provenance: serde_json::Value,
+) -> Result<Captured, MailError> {
     // Authentication evidence first: it decides the trust below.
     let evidence = auth_results::parse(&parsed.auth_results);
     if let Some(report) = &parsed.report
@@ -334,10 +388,10 @@ fn fetch_one(
             .and_then(|domain| evidence.verified_for(&domain))
             .is_some()
     {
-        let suppressed = apply_report(conn, opts, &raw.id, report)?;
-        return Ok(FetchOutcome::Report { suppressed });
+        let suppressed = apply_report(conn, opts, origin, report)?;
+        return Ok(Captured::Report { suppressed });
     }
-    let mut sender = resolve_sender(conn, &parsed, &evidence, opts)?;
+    let mut sender = resolve_sender(conn, parsed, &evidence, opts)?;
     if parsed.report.is_some() {
         // Anyone can write a bounce-shaped message: unauthenticated,
         // it suppresses nobody and is kept as evidence only.
@@ -345,8 +399,7 @@ fn fetch_one(
     }
     let source_id =
         find_or_create_source(conn, sender.authority_id, sender.source_kind, &sender.addr)?;
-    let sidecar = email_sidecar(&parsed);
-    let origin = format!("gmail:{}", raw.id);
+    let sidecar = email_sidecar(parsed);
     let outcome = ingest_bytes(
         conn,
         store,
@@ -355,11 +408,11 @@ fn fetch_one(
             source_id: Some(source_id),
             kind: "email",
             trust: sender.trust,
-            bytes: &raw.raw,
+            bytes: raw,
             text: &sidecar,
             captured_at: opts.now,
             actor: &opts.actor,
-            origin: &origin,
+            origin,
         },
     )?;
     match outcome {
@@ -369,13 +422,7 @@ fn fetch_one(
                 .iter()
                 .map(|sig| serde_json::json!({"result": sig.result, "domain": sig.domain}))
                 .collect();
-            let authenticity = serde_json::json!({
-                "gmail_id": raw.id,
-                "thread_id": raw.thread_id,
-                "history_id": history_id,
-                "internal_date_ms": raw.internal_date_ms,
-                "gmail_labels": raw.labels,
-                "received_via": "gmail-api",
+            let mut authenticity = serde_json::json!({
                 "auth_results": {
                     "dkim": evidence.dkim,
                     "dkim_domain": evidence.dkim_domain,
@@ -398,14 +445,24 @@ fn fetch_one(
                     }))
                     .collect::<Vec<_>>(),
             });
+            if let (Some(record), serde_json::Value::Object(extra)) =
+                (authenticity.as_object_mut(), provenance)
+            {
+                record.extend(extra);
+            }
             conn.execute(
                 "UPDATE capture SET authenticity = ?1 WHERE id = ?2",
                 rusqlite::params![authenticity.to_string(), capture_id],
             )?;
-            link_outreach_reply(conn, capture_id, &parsed)?;
-            Ok(FetchOutcome::Created)
+            let outreach_email = link_outreach_reply(conn, capture_id, parsed)?;
+            Ok(Captured::Created {
+                capture_id,
+                trust: sender.trust,
+                verified_by: sender.verified_by,
+                outreach_email,
+            })
         }
-        IngestOutcome::Duplicate { .. } => Ok(FetchOutcome::Duplicate),
+        IngestOutcome::Duplicate { .. } => Ok(Captured::Duplicate),
     }
 }
 
@@ -432,7 +489,7 @@ pub fn email_sidecar(parsed: &crate::mime::ParsedMail) -> String {
 fn apply_report(
     conn: &Connection,
     opts: &PollOpts,
-    gmail_id: &str,
+    origin: &str,
     report: &crate::report::Report,
 ) -> Result<usize, MailError> {
     // Notify's tables are additive; the poll may run before the web
@@ -448,7 +505,7 @@ fn apply_report(
                     opts.now,
                     opts.actor,
                     row,
-                    format!("{} gmail:{gmail_id}", report.kind.as_str())
+                    format!("{} {origin}", report.kind.as_str())
                 ],
             )?;
             suppressed += 1;

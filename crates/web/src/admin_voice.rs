@@ -197,26 +197,38 @@ async fn dial(
             }
         }
     };
-    let client = match voice_client(&state) {
-        Some(client) => client,
-        None => return voice_unconfigured(),
-    };
-    let to = body.to.clone();
-    let command_id = format!("dial-{now}");
-    let outcome = tokio::task::spawn_blocking(move || client.dial(&to, &command_id)).await;
-    let outcome = match outcome {
-        Ok(Ok(outcome)) => outcome,
-        Ok(Err(e)) => {
-            tracing::warn!("voice dial failed: {e}");
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"error": "telnyx dial failed"})),
-            )
-                .into_response();
-        }
-        Err(_) => return store_unavailable(),
-    };
+    // W-3 `telnyx.mode = fake`: no call is placed (no key, no network,
+    // nobody's phone rings). The call runs its lifecycle here and a
+    // recorded WAV becomes its recording (below).
+    let fake = state.fakes.is_fake(config::Integration::Telnyx);
     let call_id = new_call_id();
+    let outcome = if fake {
+        voice::DialOutcome {
+            call_control_id: format!("fake-{call_id}"),
+            call_leg_id: format!("fake-leg-{call_id}"),
+            call_session_id: format!("fake-session-{call_id}"),
+        }
+    } else {
+        let client = match voice_client(&state) {
+            Some(client) => client,
+            None => return voice_unconfigured(),
+        };
+        let to = body.to.clone();
+        let command_id = format!("dial-{now}");
+        let outcome = tokio::task::spawn_blocking(move || client.dial(&to, &command_id)).await;
+        match outcome {
+            Ok(Ok(outcome)) => outcome,
+            Ok(Err(e)) => {
+                tracing::warn!("voice dial failed: {e}");
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({"error": "telnyx dial failed"})),
+                )
+                    .into_response();
+            }
+            Err(_) => return store_unavailable(),
+        }
+    };
     let questions: Vec<voice::store::Question> = resolved
         .iter()
         .map(|text| voice::store::Question {
@@ -248,9 +260,52 @@ async fn dial(
         &call_id,
         status_detail(&body.authority),
     );
+    if fake {
+        return fake_call(&state, &conn, &call_id, now);
+    }
     (
         StatusCode::OK,
         Json(json!({"call_id": call_id, "status": "queued"})),
+    )
+        .into_response()
+}
+
+/// W-3 fake call: the recorded WAV ([`crate::fake::recorded_call_wav`])
+/// is stored as the call's recording, the call completes, and the
+/// transcribe step runs on the recording exactly as after a real
+/// hangup (Meta transcription through the call cache; untranscribed
+/// without a key or with the media terms unread, as for a real call).
+fn fake_call(
+    state: &AppState,
+    conn: &rusqlite::Connection,
+    call_id: &str,
+    now: i64,
+) -> axum::response::Response {
+    let Ok(sha) = Store::new(&state.store_root).write_blob(&crate::fake::recorded_call_wav())
+    else {
+        return store_unavailable();
+    };
+    let stored = voice::store::set_recording(conn, call_id, Some(&sha), "ready", now).is_ok()
+        && voice::store::set_status(
+            conn,
+            call_id,
+            voice::CallStatus::Completed,
+            Some("fake call: recorded WAV played, no phone dialled"),
+            now,
+        )
+        .is_ok();
+    if !stored {
+        return store_unavailable();
+    }
+    publish_call(
+        state,
+        call_id,
+        json!({"type": "call.status", "status": "completed", "fake": true}),
+    );
+    spawn_transcribe_recording(state.clone(), call_id.to_string());
+    (
+        StatusCode::OK,
+        Json(json!({"call_id": call_id, "status": "completed", "fake": true})),
     )
         .into_response()
 }
@@ -1373,6 +1428,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
             fedex_live: crate::fedex_live::FedexLiveState::default(),
         };
         Fixture { _tmp: tmp, state }
@@ -1461,6 +1517,54 @@ mod tests {
             )
             .unwrap();
         assert_eq!(refused, 1);
+    }
+
+    #[tokio::test]
+    async fn fake_dial_places_no_call_and_hands_a_recorded_wav_to_transcription() {
+        // W-3 `telnyx.mode = fake`: no key, no connection, no network.
+        let mut fx = fixture(voice::VoiceConfig::default());
+        fx.state.fakes =
+            config::Modes::default().with(config::Integration::Telnyx, config::Mode::Fake);
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/calls/dial",
+                true,
+                true,
+                Some(dial_body(true)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let v = json_body(res).await;
+        assert_eq!(
+            (v["status"].clone(), v["fake"].clone()),
+            (json!("completed"), json!(true))
+        );
+        let id = v["call_id"].as_str().unwrap();
+        let store = Store::new(&fx.state.store_root);
+        let conn = db::open(&store).unwrap();
+        let call = voice::store::get_call(&conn, id).unwrap().unwrap();
+        assert_eq!(call.status, "completed");
+        assert_eq!(call.recording_status, "ready");
+        assert!(call.call_control_id.starts_with("fake-"));
+        let wav = store
+            .read_blob(call.recording_sha.as_deref().unwrap())
+            .unwrap();
+        assert_eq!(wav, crate::fake::recorded_call_wav());
+        // Without the fake (and without Telnyx config) the dial is 503.
+        fx.state.fakes = config::Modes::default();
+        let res = staff_router(fx.state.clone())
+            .oneshot(staff_request(
+                "POST",
+                "/apostille/api/v1/calls/dial",
+                true,
+                true,
+                Some(dial_body(true)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]

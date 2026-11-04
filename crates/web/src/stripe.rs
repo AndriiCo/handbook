@@ -5,14 +5,24 @@
 //! Card data never touches this server (PCI SAQ A: hosted Checkout).
 //! The webhook body is never trusted for money: a verified event only
 //! names the session, and `orders::settle` re-reads it from Stripe.
+//!
+//! W-3 `stripe.mode = fake` (loopback or staging boots only): [`Keys`]
+//! carries the store instead of a key, and the three Stripe calls answer
+//! from the `fake_stripe_session` table — no network, no card. Checkout
+//! is a local page marked DEMO; its Pay button records the session paid
+//! and delivers `checkout.session.completed` to the REAL [`webhook`]
+//! handler, signed with a per-process random secret, so signature
+//! checking, event dedupe and `orders::settle` (which re-reads the fake
+//! session) all run unchanged. The receipt page is marked DEMO. Stripe
+//! test keys stay the `sandbox` mode.
 
 use axum::{
     Router,
     body::Bytes,
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Json, Response},
-    routing::post,
+    extract::{Path, State},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
+    response::{Html, IntoResponse, Json, Redirect, Response},
+    routing::{get, post},
 };
 use handbook_store::{db, store::Store};
 use rusqlite::OptionalExtension;
@@ -31,6 +41,9 @@ pub const TOLERANCE_SECS: i64 = 300;
 pub struct Keys {
     pub secret: String,
     pub webhook: Option<String>,
+    /// W-3 fake Stripe: the store root its sessions live in (no key, no
+    /// network). `None` is the real Stripe.
+    pub fake: Option<std::path::PathBuf>,
 }
 
 impl std::fmt::Debug for Keys {
@@ -40,13 +53,23 @@ impl std::fmt::Debug for Keys {
 }
 
 impl Keys {
+    /// Live money. A fake Stripe never is, whatever key is sealed.
     pub fn live(&self) -> bool {
-        self.secret.starts_with("sk_live") || self.secret.starts_with("rk_live")
+        self.fake.is_none()
+            && (self.secret.starts_with("sk_live") || self.secret.starts_with("rk_live"))
     }
 }
 
-/// Stripe keys from sealed config, when the secret key is set.
+/// Stripe keys from sealed config, when the secret key is set (under
+/// `stripe.mode = fake`, the fake Stripe whatever is sealed).
 pub fn keys(state: &AppState, conn: &rusqlite::Connection) -> Option<Keys> {
+    if state.fakes.is_fake(config::Integration::Stripe) {
+        return Some(Keys {
+            secret: String::new(),
+            webhook: Some(fake_webhook_secret().to_string()),
+            fake: Some(state.store_root.clone()),
+        });
+    }
     let kek = state.kek.as_deref()?;
     let secret = config::get_secret_for_job(conn, kek, config::keys::STRIPE_SECRET_KEY)
         .ok()
@@ -57,7 +80,11 @@ pub fn keys(state: &AppState, conn: &rusqlite::Connection) -> Option<Keys> {
         .flatten()
         .and_then(|w| String::from_utf8(w).ok())
         .filter(|w| !w.is_empty());
-    Some(Keys { secret, webhook })
+    Some(Keys {
+        secret,
+        webhook,
+        fake: None,
+    })
 }
 
 fn agent() -> ureq::Agent {
@@ -140,6 +167,9 @@ pub fn checkout_form(req: &CheckoutRequest) -> Vec<(String, String)> {
 /// Create a hosted Checkout session → `(session_id, url)`. The
 /// Idempotency-Key ties retries of the same order + amount together.
 pub fn create_checkout(keys: &Keys, req: &CheckoutRequest) -> Result<(String, String), String> {
+    if let Some(root) = &keys.fake {
+        return fake_create(root, req);
+    }
     let total: i64 = req.lines.iter().map(|l| l.1).sum();
     let form = checkout_form(req);
     let body = read(
@@ -173,6 +203,9 @@ pub fn retrieve_session(keys: &Keys, session_id: &str) -> Result<Value, String> 
     {
         return Err("bad session id".to_string());
     }
+    if let Some(root) = &keys.fake {
+        return fake_retrieve(root, session_id);
+    }
     read(
         agent()
             .get(&format!("{API}/checkout/sessions/{session_id}"))
@@ -184,6 +217,13 @@ pub fn retrieve_session(keys: &Keys, session_id: &str) -> Result<Value, String> 
 
 /// Refund a paid order's PaymentIntent (idempotent per order).
 pub fn refund(keys: &Keys, order_id: &str, payment_intent: &str) -> Result<String, String> {
+    if keys.fake.is_some() {
+        // Nothing was charged, so nothing moves back.
+        return Ok(format!(
+            "re_fake_{}",
+            payment_intent.trim_start_matches("pi_fake_")
+        ));
+    }
     let body = read(
         agent()
             .post(&format!("{API}/refunds"))
@@ -343,9 +383,329 @@ async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
     Json(json!({"received": true})).into_response()
 }
 
-/// Public routes, merged into the `/apostille` API router.
+/// Public routes, merged into the `/apostille` API router. The fake
+/// checkout routes answer 404 unless `stripe.mode = fake`.
 pub fn public_routes() -> Router<AppState> {
-    Router::new().route("/api/v1/stripe/webhook", post(webhook))
+    Router::new()
+        .route("/api/v1/stripe/webhook", post(webhook))
+        .route("/api/v1/stripe/fake/checkout/{id}", get(fake_checkout_page))
+        .route("/api/v1/stripe/fake/checkout/{id}/pay", post(fake_pay))
+        .route("/api/v1/stripe/fake/receipt/{id}", get(fake_receipt_page))
+}
+
+// ------------------------------------------------------------ W-3 fake
+
+/// Session ids the fake Stripe mints (`cs_` keeps `retrieve_session`'s
+/// shape check).
+pub const FAKE_SESSION_PREFIX: &str = "cs_fake_";
+
+/// The fake webhook signing secret: random per process, never stored or
+/// logged, so only this process can sign an event its webhook accepts.
+fn fake_webhook_secret() -> &'static str {
+    static SECRET: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SECRET.get_or_init(|| {
+        use rand::RngCore as _;
+        let mut bytes = [0u8; 32];
+        rand::rng().fill_bytes(&mut bytes);
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    })
+}
+
+/// P2 DDL (`CREATE TABLE IF NOT EXISTS` only; no numbered migration).
+pub fn migrate_p2_tables(p2: &rusqlite::Connection) -> rusqlite::Result<()> {
+    p2.execute_batch(
+        "CREATE TABLE IF NOT EXISTS fake_stripe_session (
+            id TEXT PRIMARY KEY,
+            order_id TEXT NOT NULL,
+            amount_total INTEGER NOT NULL,
+            currency TEXT NOT NULL,
+            lines_json TEXT NOT NULL,
+            success_url TEXT NOT NULL,
+            cancel_url TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            payment_status TEXT NOT NULL DEFAULT 'unpaid',
+            paid_at INTEGER,
+            created_at INTEGER NOT NULL
+        );",
+    )
+}
+
+fn fake_p2(root: &std::path::Path) -> Result<rusqlite::Connection, String> {
+    let p2 = db::open_p2(&Store::new(root)).map_err(|e| format!("fake stripe: {e}"))?;
+    migrate_p2_tables(&p2).map_err(|e| format!("fake stripe: {e}"))?;
+    Ok(p2)
+}
+
+/// The path of an absolute URL (redirects stay on the host the browser
+/// is on: a local boot's public origin may not be reachable).
+fn local_path(url: &str) -> String {
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .map_or(url, |r| r.find('/').map_or("/", |i| &r[i..]));
+    if rest.starts_with('/') && !rest.starts_with("//") {
+        rest.to_string()
+    } else {
+        "/".to_string()
+    }
+}
+
+fn fake_create(root: &std::path::Path, req: &CheckoutRequest) -> Result<(String, String), String> {
+    let p2 = fake_p2(root)?;
+    let total: i64 = req.lines.iter().map(|l| l.1).sum();
+    let id = format!("{FAKE_SESSION_PREFIX}{}", uuid::Uuid::new_v4().simple());
+    p2.execute(
+        "INSERT INTO fake_stripe_session(id, order_id, amount_total, currency, lines_json,
+                                         success_url, cancel_url, expires_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+            id,
+            req.order_id,
+            total,
+            req.currency.to_lowercase(),
+            serde_json::to_string(&req.lines).unwrap_or_else(|_| "[]".to_string()),
+            local_path(&req.success_url),
+            local_path(&req.cancel_url),
+            req.expires_at,
+            unix_now()
+        ],
+    )
+    .map_err(|e| format!("fake stripe: {e}"))?;
+    Ok((
+        id.clone(),
+        format!("/apostille/api/v1/stripe/fake/checkout/{id}"),
+    ))
+}
+
+/// One fake session in Stripe's Checkout Session shape (the fields
+/// `orders::judge_session` reads). Never `livemode`.
+fn fake_retrieve(root: &std::path::Path, session_id: &str) -> Result<Value, String> {
+    let p2 = fake_p2(root)?;
+    let row: Option<(String, i64, String, i64, String)> = p2
+        .query_row(
+            "SELECT order_id, amount_total, currency, expires_at, payment_status
+             FROM fake_stripe_session WHERE id = ?1",
+            [session_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .optional()
+        .map_err(|e| format!("fake stripe: {e}"))?;
+    let (order_id, amount, currency, expires_at, payment_status) =
+        row.ok_or("stripe 404: no such checkout.session")?;
+    let paid = payment_status == "paid";
+    let status = if paid {
+        "complete"
+    } else if expires_at <= unix_now() {
+        "expired"
+    } else {
+        "open"
+    };
+    Ok(json!({
+        "id": session_id,
+        "object": "checkout.session",
+        "client_reference_id": order_id,
+        "metadata": {"order_id": order_id},
+        "amount_total": amount,
+        "currency": currency,
+        "livemode": false,
+        "status": status,
+        "payment_status": payment_status,
+        "payment_intent": paid.then(|| format!("pi_fake_{}", &session_id[FAKE_SESSION_PREFIX.len()..])),
+    }))
+}
+
+fn not_found() -> Response {
+    (StatusCode::NOT_FOUND, Json(json!({"error": "not found"}))).into_response()
+}
+
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// The fake session's display row: lines, total, currency, cancel path,
+/// payment status, paid_at.
+type FakeView = (Vec<(String, i64)>, i64, String, String, String, Option<i64>);
+
+fn fake_view(state: &AppState, id: &str) -> Option<FakeView> {
+    if !state.fakes.is_fake(config::Integration::Stripe) || !id.starts_with(FAKE_SESSION_PREFIX) {
+        return None;
+    }
+    let p2 = fake_p2(&state.store_root).ok()?;
+    p2.query_row(
+        "SELECT lines_json, amount_total, currency, cancel_url, payment_status, paid_at
+         FROM fake_stripe_session WHERE id = ?1",
+        [id],
+        |r| {
+            Ok((
+                serde_json::from_str(&r.get::<_, String>(0)?).unwrap_or_default(),
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+fn money(cents: i64, currency: &str) -> String {
+    format!(
+        "{}.{:02} {}",
+        cents / 100,
+        cents % 100,
+        currency.to_uppercase()
+    )
+}
+
+/// A small no-JS page with the DEMO banner on top.
+fn demo_page(title: &str, body: &str) -> Response {
+    let page = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+         <meta name=\"robots\" content=\"noindex\"><title>{title}</title>\
+         <style>body{{font-family:system-ui,sans-serif;max-width:32rem;margin:2rem auto;padding:0 1rem;color:#111;background:#fff}}\
+         .demo{{border:3px solid #b00;color:#b00;font-weight:700;padding:.75rem;text-align:center}}\
+         table{{width:100%;border-collapse:collapse}}td{{padding:.4rem 0;border-bottom:1px solid #ddd}}\
+         td:last-child{{text-align:right}}button{{font-size:1rem;padding:.75rem 1.25rem;min-height:44px}}</style>\
+         </head><body><p class=\"demo\">DEMO — no card is charged. This is the fake Stripe of a demo boot.</p>{body}</body></html>"
+    );
+    (
+        [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
+        Html(page),
+    )
+        .into_response()
+}
+
+fn lines_table(lines: &[(String, i64)], total: i64, currency: &str) -> String {
+    let mut rows: String = lines
+        .iter()
+        .map(|(label, cents)| {
+            format!(
+                "<tr><td>{}</td><td>{}</td></tr>",
+                html_escape(label),
+                money(*cents, currency)
+            )
+        })
+        .collect();
+    rows.push_str(&format!(
+        "<tr><td><strong>Total</strong></td><td><strong>{}</strong></td></tr>",
+        money(total, currency)
+    ));
+    format!("<table>{rows}</table>")
+}
+
+/// `GET /api/v1/stripe/fake/checkout/{id}`: the DEMO checkout page.
+async fn fake_checkout_page(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let Some((lines, total, currency, cancel, payment_status, _)) = fake_view(&state, &id) else {
+        return not_found();
+    };
+    let action = if payment_status == "paid" {
+        "<p>This checkout is already paid.</p>".to_string()
+    } else {
+        format!(
+            "<form method=\"post\" action=\"/apostille/api/v1/stripe/fake/checkout/{id}/pay\">\
+             <button type=\"submit\">Pay {} (demo)</button></form>\
+             <p><a href=\"{}\">Cancel and go back</a></p>",
+            money(total, &currency),
+            html_escape(&cancel)
+        )
+    };
+    demo_page(
+        "DEMO checkout",
+        &format!(
+            "<h1>DEMO checkout</h1>{}{action}",
+            lines_table(&lines, total, &currency)
+        ),
+    )
+}
+
+/// `POST /api/v1/stripe/fake/checkout/{id}/pay`: record the fake session
+/// paid, deliver a signed `checkout.session.completed` to the real
+/// webhook handler, then return to the order (303). Same-origin form
+/// posts only.
+async fn fake_pay(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if !crate::passkey::origin_ok(&headers, state.admin_mtls_off) {
+        return crate::passkey::csrf_fail();
+    }
+    if fake_view(&state, &id).is_none() {
+        return not_found();
+    }
+    let Ok(p2) = fake_p2(&state.store_root) else {
+        return store_unavailable();
+    };
+    let now = unix_now();
+    let success: String = match p2.query_row(
+        "UPDATE fake_stripe_session SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?1)
+         WHERE id = ?2 RETURNING success_url",
+        rusqlite::params![now, id],
+        |r| r.get(0),
+    ) {
+        Ok(url) => url,
+        Err(_) => return store_unavailable(),
+    };
+    drop(p2);
+    let event = json!({
+        "id": format!("evt_fake_{}", uuid::Uuid::new_v4().simple()),
+        "object": "event",
+        "type": "checkout.session.completed",
+        "livemode": false,
+        "created": now,
+        "data": {"object": {"id": id, "object": "checkout.session"}},
+    })
+    .to_string();
+    let mut signed = HeaderMap::new();
+    let Ok(signature) = HeaderValue::from_str(&sign(event.as_bytes(), fake_webhook_secret(), now))
+    else {
+        return store_unavailable();
+    };
+    signed.insert("stripe-signature", signature);
+    let delivered = webhook(State(state), signed, Bytes::from(event)).await;
+    if !delivered.status().is_success() {
+        tracing::warn!(session = %id, status = %delivered.status(), "fake stripe: webhook refused");
+    }
+    Redirect::to(&success).into_response()
+}
+
+/// `Stripe-Signature` header for `payload` (the fake Stripe's sender;
+/// [`verify_signature`] is the receiver).
+fn sign(payload: &[u8], secret: &str, t: i64) -> String {
+    use aws_lc_rs::hmac;
+    let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
+    let mut signed = t.to_string().into_bytes();
+    signed.push(b'.');
+    signed.extend_from_slice(payload);
+    let tag = hmac::sign(&key, &signed);
+    let hex: String = tag.as_ref().iter().map(|b| format!("{b:02x}")).collect();
+    format!("t={t},v1={hex}")
+}
+
+/// `GET /api/v1/stripe/fake/receipt/{id}`: the DEMO receipt.
+async fn fake_receipt_page(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    let Some((lines, total, currency, _, payment_status, paid_at)) = fake_view(&state, &id) else {
+        return not_found();
+    };
+    if payment_status != "paid" {
+        return not_found();
+    }
+    demo_page(
+        "DEMO receipt",
+        &format!(
+            "<h1>DEMO receipt</h1><p>Receipt {} · paid (demo) at unix time {} · no card was charged.</p>{}",
+            html_escape(&id),
+            paid_at.unwrap_or_default(),
+            lines_table(&lines, total, &currency)
+        ),
+    )
 }
 
 #[cfg(test)]
@@ -436,14 +796,16 @@ mod tests {
         assert!(
             Keys {
                 secret: "sk_live_x".into(),
-                webhook: None
+                webhook: None,
+                fake: None
             }
             .live()
         );
         assert!(
             !Keys {
                 secret: "sk_test_x".into(),
-                webhook: None
+                webhook: None,
+                fake: None
             }
             .live()
         );
@@ -452,7 +814,8 @@ mod tests {
                 "{:?}",
                 Keys {
                     secret: "sk_test_x".into(),
-                    webhook: None
+                    webhook: None,
+                    fake: None
                 }
             ),
             "stripe::Keys(<redacted>)"

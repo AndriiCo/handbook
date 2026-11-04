@@ -1,0 +1,279 @@
+{
+  "judge": {
+    "meta": {
+      "base_url": "https://api.meta.ai/v1",
+      "key": false,
+      "target": "local"
+    },
+    "models": {
+      "front_end": [
+        "muse-spark-1.3",
+        "muse-wonder-1.0",
+        "muse-voice-transcribe-1.0"
+      ],
+      "workers": [
+        "muse-spark-1.3"
+      ]
+    },
+    "nodes": {
+      "front_end": {
+        "artifacts": "web · public + admin sites",
+        "can": {
+          "docker": true,
+          "native": true,
+          "server": false
+        },
+        "host": "localhost",
+        "kind": "local",
+        "links": [
+          {
+            "href": "http://localhost:18318/apostille",
+            "label": "Open the public site"
+          },
+          {
+            "href": "http://localhost:18319",
+            "label": "Open the admin console"
+          }
+        ],
+        "note": null,
+        "place": "docker",
+        "probe": null,
+        "server_hint": "a server target needs the sops file private/config.yaml (install sops and age, then `cargo xtask setup new`)",
+        "ssh": null,
+        "target": "local"
+      },
+      "staging": {
+        "can": {
+          "docker": true,
+          "native": true,
+          "server": false
+        },
+        "server_hint": "a plant target needs the sops file private/config.yaml (install sops and age, then `cargo xtask setup new`)",
+        "target": null
+      },
+      "workers": {
+        "artifacts": "xtask worker · model weights",
+        "can": {
+          "docker": true,
+          "native": true,
+          "server": false
+        },
+        "host": "localhost",
+        "kind": "local",
+        "links": [
+          {
+            "href": "http://localhost:18319/work",
+            "label": "Work queue"
+          }
+        ],
+        "note": "the judge image runs one",
+        "place": "docker",
+        "probe": null,
+        "server_hint": "a plant target needs the sops file private/config.yaml (install sops and age, then `cargo xtask setup new`)",
+        "ssh": null,
+        "target": "local"
+      }
+    },
+    "services": [
+      {
+        "configured": false,
+        "console": "https://console.cloud.google.com/apis/credentials",
+        "id": "gmail",
+        "mode": null,
+        "name": "Gmail"
+      },
+      {
+        "configured": false,
+        "console": "https://portal.telnyx.com/",
+        "id": "telnyx",
+        "mode": null,
+        "name": "Telnyx"
+      },
+      {
+        "configured": false,
+        "console": "https://developer.fedex.com/",
+        "id": "fedex",
+        "mode": null,
+        "name": "FedEx"
+      },
+      {
+        "configured": false,
+        "console": "https://developers.usps.com/",
+        "id": "usps",
+        "mode": null,
+        "name": "USPS"
+      },
+      {
+        "configured": false,
+        "console": "https://dashboard.stripe.com/",
+        "id": "stripe",
+        "mode": null,
+        "name": "Stripe"
+      }
+    ],
+    "weights": {
+      "dest": "localhost:/srv/scratch/apostille/models",
+      "repo": null
+    }
+  },
+  "operator": {
+    "meta": {
+      "base_url": "https://api.meta.ai/v1",
+      "key": true,
+      "target": "production"
+    },
+    "models": {
+      "front_end": [
+        "muse-spark-1.3",
+        "muse-wonder-1.0",
+        "muse-voice-transcribe-1.0"
+      ],
+      "workers": [
+        "muse-spark-1.3"
+      ]
+    },
+    "nodes": {
+      "front_end": {
+        "artifacts": "web · public + admin sites",
+        "can": {
+          "docker": true,
+          "native": true,
+          "server": true
+        },
+        "host": "andrii.ai",
+        "kind": "server",
+        "links": [
+          {
+            "href": "https://andrii.ai/apostille",
+            "label": "Open the public site"
+          },
+          {
+            "href": "https://admin.andrii.ai",
+            "label": "Open the admin console"
+          }
+        ],
+        "note": null,
+        "place": "server",
+        "probe": null,
+        "server_hint": null,
+        "ssh": "andrii.ai",
+        "target": "production"
+      },
+      "staging": {
+        "artifacts": "web (staging build)",
+        "can": {
+          "docker": true,
+          "native": true,
+          "server": true
+        },
+        "host": "plant",
+        "kind": "plant",
+        "links": [
+          {
+            "href": "http://localhost:18318/apostille",
+            "label": "Staging"
+          }
+        ],
+        "note": "ssh -L 18318:127.0.0.1:18318 plant",
+        "place": "server",
+        "probe": {
+          "arch": "x86_64",
+          "at": "2026-11-04T09:00:00Z",
+          "cpus": 16,
+          "disk_free_mb": 890962,
+          "docker": "Docker version 27.3.1, build ce12230",
+          "gpus": [
+            "GPU 0: NVIDIA GeForce RTX 3060"
+          ],
+          "hostname": "plant",
+          "kernel": "Linux 6.8.0-45-generic x86_64",
+          "os": "Ubuntu 24.04.1 LTS",
+          "ram_mb": 64238,
+          "user": "andrii",
+          "via": "plant"
+        },
+        "server_hint": null,
+        "ssh": "plant",
+        "target": "staging"
+      },
+      "workers": {
+        "artifacts": "xtask worker · model weights",
+        "can": {
+          "docker": true,
+          "native": true,
+          "server": true
+        },
+        "host": "plant",
+        "kind": "plant",
+        "links": [
+          {
+            "href": "https://admin.andrii.ai/work",
+            "label": "Work queue"
+          }
+        ],
+        "note": "xtask worker on plant",
+        "place": "server",
+        "probe": {
+          "arch": "x86_64",
+          "at": "2026-11-04T09:00:00Z",
+          "cpus": 16,
+          "disk_free_mb": 890962,
+          "docker": "Docker version 27.3.1, build ce12230",
+          "gpus": [
+            "GPU 0: NVIDIA GeForce RTX 3060"
+          ],
+          "hostname": "plant",
+          "kernel": "Linux 6.8.0-45-generic x86_64",
+          "os": "Ubuntu 24.04.1 LTS",
+          "ram_mb": 64238,
+          "user": "andrii",
+          "via": "plant"
+        },
+        "server_hint": null,
+        "ssh": "plant",
+        "target": "staging"
+      }
+    },
+    "services": [
+      {
+        "configured": false,
+        "console": "https://console.cloud.google.com/apis/credentials",
+        "id": "gmail",
+        "mode": null,
+        "name": "Gmail"
+      },
+      {
+        "configured": false,
+        "console": "https://portal.telnyx.com/",
+        "id": "telnyx",
+        "mode": null,
+        "name": "Telnyx"
+      },
+      {
+        "configured": false,
+        "console": "https://developer.fedex.com/",
+        "id": "fedex",
+        "mode": null,
+        "name": "FedEx"
+      },
+      {
+        "configured": false,
+        "console": "https://developers.usps.com/",
+        "id": "usps",
+        "mode": "live",
+        "name": "USPS"
+      },
+      {
+        "configured": true,
+        "console": "https://dashboard.stripe.com/",
+        "id": "stripe",
+        "mode": "sandbox",
+        "name": "Stripe"
+      }
+    ],
+    "weights": {
+      "dest": "plant:/srv/scratch/apostille/models",
+      "repo": null
+    }
+  }
+}

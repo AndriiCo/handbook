@@ -481,6 +481,266 @@ To get one notice through end to end (fix P3-1 and P3-2 first):
 
 ---
 
+## Setup wizard (`cargo xtask setup wizard`): see and configure the whole system
+
+Requested 2026-11-04. What the wizard did then (W-2 to W-7 below
+changed the SSH, brand, sops and map points):
+
+- It is a localhost page (`xtask/src/setup/wizard.rs`, single-file
+  `wizard.html`, 308 lines).
+- It edits targets of four kinds: local, docker, plant, server
+  (`xtask/src/setup/file.rs:53-61`).
+- It sets shared and per-target values, runs the key checks, and
+  streams a target run live.
+- SSH targets need an existing `~/.ssh/config` alias. The machine's
+  architecture is only read at build time (`uname -m`,
+  `xtask/src/setup/build.rs:66`).
+- Brand assets need terms acceptance, then files dropped into
+  `private/brand/` by hand (`xtask/src/setup/brand.rs:1-8`).
+- It needs sops and age before it opens (P1-14).
+
+Ranked by how much each helps a judge or the operator get a working
+system:
+
+- [x] **W-1** Staff sign-in by email instead of the 32-hex user ID
+  (extends P1-4). **Done, commit 98afa44**:
+  - Enrolment (setup key and invite) asks for an email and saves the
+    passkey under it (its account name), so the browser lists and
+    autofills it by email. Stored in `staff_email`; a passkey added from
+    the Staff page reuses it; the Staff page shows it.
+  - `/staff-login` has an Email field
+    (`type="email" autocomplete="username webauthn"`) that offers the
+    passkeys through conditional mediation, plus the button. The typed
+    email is never sent, so it is no enumeration oracle.
+  - Discoverable credentials came with P431b; the user-ID fallback stays
+    for older keys. Lost-passkey recovery stays an invite.
+  - Open: accounts enrolled before W-1 have no email and no screen to
+    add one.
+- [x] **W-2** **Done, commit 1bfcbd8**: each brand file has a Source
+  URL (`brand.sources`, overridable; prefilled only where checked),
+  the zip entry to take, and Fetch, disabled until acceptance is
+  ticked. HTTPS only, 20 MB, 30 s; zips through `unzip`; the SVG
+  sanitizer refuses `<script`, `on…=`, `<foreignObject` and outside
+  links; the hash goes into the acceptance. Open: the only checked
+  direct download is Google's bundle
+  (`developers.google.com/static/identity/images/signin-assets.zip`),
+  and all its current SVGs carry a `<foreignObject>` (a Figma gradient
+  export), so Fetch refuses them; Apple's logo is a .dmg (the button
+  API serves PNG only). Every asset is therefore still manual in
+  practice, and uploads are not sanitized. Original item: One-click
+  brand assets: prefilled source URLs, and
+  **Fetch** downloads, unpacks and places each file. The tool still
+  never accepts terms itself (`brand.rs:5-8`): Fetch is enabled only
+  after the operator ticks acceptance. The wizard then:
+  - downloads the file or zip, picks the expected file by name, and
+    rejects SVGs that carry scripts or external references;
+  - records the sha256 in the acceptance and writes the file to
+    `private/brand/`.
+
+  If the fetch fails, the step shows where to download by hand and an
+  upload box. This also closes the red GP3 scoreboard row. Sources,
+  checked 2026-11-04:
+  - **Google:** the branding page offers pre-approved PNG and SVG
+    buttons
+    ([branding guidelines](https://developers.google.com/identity/branding-guidelines)).
+    The bundle link changes between versions, so keep its URL in the
+    setup file rather than in code.
+  - **Apple:** PNG download or button API at
+    [appleid.apple.com/signinwithapple/button](https://appleid.apple.com/signinwithapple/button);
+    logo SVG and PDF under
+    [Apple Design Resources](https://developer.apple.com/design/resources/).
+  - **FIDO passkey icon:** behind a request form
+    ([get the passkey icon](https://fidoalliance.org/get-the-passkey-icon/)),
+    so it can't be fetched automatically. Manual instructions plus
+    upload by default.
+  - **Meta logo:** the guidelines must be accepted on
+    [Meta brand resources](https://www.meta.com/brand/resources/)
+    first. Likely manual.
+  - **Vogun font:** a purchased licence with no public download. Keep
+    manual upload or `$BRAND_FONT_DIR`. The Source Serif 4 fallback is
+    OFL and already vendored (`web/static/fonts/fallback/`).
+
+  *code, M*
+- [x] **W-3** A **Fake** mode for every outside service. Each
+  integration gets one mode: `fake | sandbox | live`. **Done, commits
+  601c8ac (modes, guard, ribbon), c99955c (Outbox + Compose),
+  b60e15c (labels), e0ad757 (Stripe) and the W-3e commit (Telnyx,
+  Hugging Face, Meta, `up`/`judge` defaults)**; spec
+  `docs/specs/config-db.md` §9. Open:
+  - `sandbox` and `live` are recorded and shown but never override
+    the switches that already choose between them (`labels.live`, the
+    Stripe key prefix, `mailer.provider`); only `fake` changes
+    behaviour.
+  - A fake call's WAV is a synthetic tone and no recorded
+    transcription of it is committed: it is transcribed only with a
+    Meta key (or a call-cache answer recorded with one), and the
+    transcribe step still needs `media.terms_read`.
+  - The plant worker mirrors `hf.mode` through `HF_MODE=fake` in its
+    `worker.env` (workers read no server config); only `up` writes it.
+  - The staff `/labels` page shows the demo caps but no DEMO notice of
+    its own (the FAKE ribbon names labels).
+  - **Guard:** fake is refused unless every bind is loopback, or on a
+    staging target, mirroring the dev-key gate
+    (`crates/config/src/lib.rs:675`). Fake output is watermarked, and
+    the console shows a FAKE ribbon.
+  - **FedEx and USPS:** a demo label PDF stamped "DEMO — NOT POSTAGE",
+    with a tracking number from a reserved fake range. Today
+    `labels.live = false` means the carriers' sandbox
+    (`lib.rs:1017`), and a fake judge mode is deferred
+    (operator-today).
+  - **Stripe:** a fake checkout and a receipt marked DEMO. Webhooks are
+    signed with a local fake secret through the real webhook handler.
+    Stripe test keys stay the "sandbox" mode.
+  - **Outgoing email** (magic links, follower digest, outreach): a fake
+    outbox in the store plus an admin **Outbox** view. Today dev mode
+    writes to a folder (`crates/web/src/magic.rs:21`).
+  - **Incoming email:** a fake inbox with a **Compose** screen to
+    inject a reply or authority notice (From, subject, body,
+    attachments, DMARC pass or fail). It goes through the same poller
+    path (capture → instruct worker → `/review`), so the whole email
+    loop can be shown with no Gmail account. This depends on P3-1:
+    DMARC must decide trust before fakes can test it.
+  - **Telnyx:** a fake call that plays a recorded WAV into the
+    transcribe step.
+  - **Meta Model API:** "Fake (recorded)" means the existing call-cache
+    replay of the recorded corpus.
+  - **Hugging Face:** fake skips the download, and Glimmer verdicts
+    come from recorded files.
+
+  *code, L in total; S–M per integration*
+- [x] **W-4** **Done, commit 225bf6d**: the wizard opens on the map
+  (`xtask/src/setup/map.rs`, drawn in `wizard.html`). Local is the
+  `local` target (`runtime: native | docker`), Server the `server`
+  target (front end) or `plant` target (workers, staging); the choice
+  is `map.*` in the setup file, derived when unset. Server is disabled
+  with the reason when the file has no such target (no target is
+  created from the map). At 390 px the map box scrolls; dark mode
+  follows the page. Original item: A system map as a UML deployment
+  diagram, drawn as SVG from the wizard's state JSON, with no new
+  libraries:
+  - **Three nodes:** Front end (public + admin site), Workers and
+    Staging. Each toggles **Local | Server**, and Local offers
+    **Docker | Native**.
+  - **Links between nodes:** solid lines labelled with the protocol:
+    HTTPS, the WSS work queue, SSH deploy.
+  - Each node shows its artifacts: the web binary, the worker and
+    model weights.
+
+  *code, M*
+- [x] **W-5** **Done, commit 2a3308c**: `xtask/src/setup/probe.rs`,
+  on plant and server tabs and on the map's server nodes, cached in
+  `targets.<name>.probe`. `StrictHostKeyChecking=yes`: an unknown key
+  fails with ssh's own words plus "run `ssh <host>` once in a terminal
+  to accept its key"; the wizard shows no fingerprint and never writes
+  `known_hosts`. Original item: SSH box probe: enter a hostname or
+  alias, and the wizard connects with keys only (`BatchMode`;
+  first-use host-key fingerprint shown for confirmation). It shows on
+  the node:
+  - host name and user;
+  - OS name and version (`/etc/os-release` or `sw_vers`), kernel and
+    architecture (`uname -srm`);
+  - CPU count, RAM and free disk;
+  - GPU (`nvidia-smi -L`) and Docker version.
+
+  Results are cached in the setup file. *code, S–M*
+- [x] **W-6** **Done, commit 225bf6d**: links, staging URL (through
+  `ssh -L`), «use» Meta with model ids and a Test button
+  (`POST /api/meta`; the key stays in the wizard), «deploy» weights
+  from `map.weights_repo`, five service nodes with console links and a
+  mode where the file sets one (Stripe key prefix, `labels.live`,
+  `usps.live`; `map::mode` is where W-3's fake mode plugs in). Original
+  item: Endpoints and services appear on the map as values are filled
+  in:
+  - **Front end:** the HTTPS server name, with a link to open the
+    public site and the admin console.
+  - **Workers:** a link to the admin **Work queue** tab.
+  - **Staging:** its URL.
+  - **Meta Model API:** a `«use»` dependency (dashed line, open arrow)
+    from each consuming node, labelled with the model IDs it calls,
+    plus a **Test** button (`GET /v1/models`).
+  - **Hugging Face:** a `«deploy»` edge of the weights artifact onto
+    the worker node, showing repo → `<worker>:/srv/scratch/apostille/models`.
+  - **Gmail, Telnyx, FedEx, USPS, Stripe:** one node each, showing its
+    mode (fake, sandbox or live) and linking to its console.
+
+  *code, M*
+- [x] **W-7** **Done**: the Docker judge path and the sops-less wizard
+  landed in P432/P432b (merged in P441); commit 225bf6d makes the map's
+  Local | Docker choice run them: a local target with `runtime: docker`
+  plans `docker compose up --build --detach` and a healthz wait instead
+  of `xtask up`. Original item: The Docker and native local paths, and
+  the wizard without sops: see P1-13 and P1-14. W-4's Local | Docker
+  choice runs those paths.
+
+---
+
+## From-scratch discovery
+
+The first slice is on branch `claude/discovery-bootstrap`: the
+`discovery.bootstrap` work-queue kind (`docs/specs/work-queue.md` §6).
+It does three things:
+- builds the country list from the live HCCH table, including the
+  entry-into-force column;
+- asks Muse for the party list from memory and reports where it
+  disagrees with the table;
+- asks Muse for official URLs in batches and fetch-checks every one.
+
+It writes a report, and since D-3 stageable world packs. Status:
+
+- [ ] **D-1** `research.nonparty` skips future parties. Thailand is on
+  the status table, so it is subtracted, yet the convention only takes
+  effect for it on 2027-02-28; until then it needs legalization.
+  **Dates done, commit 6b74537**: every world pack's status line carries
+  the party's entry into force, tense-free ("…; entry into force for
+  Thailand: 2027-02-28."); a party with no recorded authority page still
+  gets its line refreshed offline. Open (owner's call): treating future
+  parties as non-parties until their EIF. The P436 test keeps the twelve
+  late parties, Thailand among them, out of the non-party list, so that
+  change needs the owner to relax it on purpose. *code, S*
+- [x] **D-2** Read the objection markers in the status table (`A**`,
+  e.g. Viet Nam and Kosovo). An objecting state does not accept
+  apostilles from the acceding state, which matters for routing.
+  **Done, commit 19d8b93**: flag and notifications link on the status
+  line of all 21 marked parties and in the discovery country list
+  (`objection`, `notifications_url`). The objecting states are named
+  (one observation cited to the notifications page) only where that
+  page is recorded and has the regular shape: Viet Nam today
+  (`evals/world/notifications-csid1557.html`: Czechia, Austria,
+  Germany). Open: record the other 20 pages, or run `world-index
+  --live`; the Kosovo and India pages are prose and stay flag + link.
+- [x] **D-3** Turn discovery output into pack updates (watch seeds,
+  `unverified` domains). **Done, commit 1f9b09a**: the result carries,
+  per country with new kept URLs, a full copy of its world pack plus
+  weekly watch seeds and unverified domains (validated); "Stage as
+  packs" takes a done `discovery.bootstrap` item into the packs inbox,
+  refusing a copy of a world pack the release has since changed. Open:
+  world-index rebuilds a pack's watch list from the HCCH pages, so
+  committing a staged pack into `packs/world` and re-running world-index
+  would drop the discovery seeds; load them from the inbox.
+- [x] **D-4** Crawl the kept URLs with link keywords in local languages,
+  then sort the pages with a local Meta model on plant. **Done**:
+  local-language depth-1 keywords on folded URLs (d2859fb); gold eval
+  against an OpenAI-compatible endpoint, `xtask eval --local` and
+  `eval.gold` `local: true`, model id from the environment (27b283d);
+  `xtask triage` sorts saved pages (relevant, language, authority,
+  topics), report only (353c14d). Rule (`docs/specs/work-queue.md`
+  §4.1): a local model drafts only after it matches Spark on
+  `quote_found_rate` and `value_in_quote_rate`. Open (operator): serve a
+  Llama model with `llama-server` on plant, set `LOCAL_MODEL_URL` and
+  `LOCAL_MODEL` in `worker.env`, run the gold eval and compare with
+  Spark's `quality.json`.
+- [x] **D-5** Have the local model split HCCH authority pages into
+  authority, address, contact, document scope and note, each quoted
+  from the page. **Done as a report**: `xtask segments` (local endpoint,
+  or `--spark`) labels every segment of the recorded (or given) HCCH
+  detail pages, drops any whose quote is not on the page, and turns
+  scope segments that name a document class into pack v2 `scope`
+  proposals with their quote. It does not feed `world-index` itself:
+  P434's curation already fixed the junk rows, and staff copy proposals
+  into a pack for review. Not yet run against a real model.
+
+---
+
 ## Suggested order for today
 
 1. P0-1 … P0-5: the submission and the README truth pass.

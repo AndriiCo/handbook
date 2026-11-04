@@ -64,6 +64,13 @@
 - **Muse Glimmer**: open-weight, Apache 2.0, **self-host only**
   (vLLM/llama.cpp) — not on Model API. Feeds F10 pre-check with no
   customer pixels leaving the server.
+- **Llama on plant** (D-4, optional): an OpenAI-compatible
+  `llama-server` endpoint serving a Meta Llama model, named by
+  `LOCAL_MODEL_URL` / `LOCAL_MODEL` in the environment (never in the
+  repo). Today it only grades on the gold set (`xtask eval --local`,
+  `eval.gold` with `local: true`). It drafts nothing until it matches
+  Spark there on `quote_found_rate` and `value_in_quote_rate`
+  ([specs/work-queue.md](specs/work-queue.md) §4.1).
 
 ## Explicitly NOT on Model API (per overview)
 

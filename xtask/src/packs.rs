@@ -890,7 +890,7 @@ fn is_http_url(uri: &str) -> bool {
 }
 
 /// Lowercased host of an absolute `http(s)` URL, if well-formed.
-fn uri_host(uri: &str) -> Option<String> {
+pub(crate) fn uri_host(uri: &str) -> Option<String> {
     let rest = uri
         .strip_prefix("http://")
         .or_else(|| uri.strip_prefix("https://"))?;
