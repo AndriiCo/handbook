@@ -1,5 +1,7 @@
 // Machine-translation chrome (SA-20): static es/fr catalogs for the
-// dossier `?lang` view and the TranslationChip. No model calls here —
+// dossier's translated records view and the TranslationChip. The view
+// follows the site language (masthead switcher, `?l=`); an older
+// `?lang=es|fr` link still opens it. No model calls here —
 // the page reads stored guard-passing rows from
 // GET /api/v1/authorities/{slug}/translations?lang=es|fr and falls back
 // to the English original whenever a row is missing. Pure: no
@@ -43,6 +45,61 @@ export const CHROME = {
 };
 
 /**
+ * The authority page's own words (states around the guide). The guide
+ * itself is English until its presenter copy is translated: es/fr say
+ * so up front (`pending`) rather than mix languages silently
+ * (docs/site-theme.md §6).
+ * @type {Record<'en' | 'es' | 'fr', {
+ *   unknownHeading: (address: string) => string,
+ *   unknownBody: string,
+ *   backToIndex: string,
+ *   unavailableHeading: string,
+ *   unavailableBody: string,
+ *   loading: string,
+ *   updated: string,
+ *   pending: { heading: string, body: string } | null
+ * }>}
+ */
+export const PAGE_COPY = {
+	en: {
+		unknownHeading: (address) => `Unknown authority “${address}”.`,
+		unknownBody: 'This address is not in the handbook index.',
+		backToIndex: 'Back to the authority index',
+		unavailableHeading: 'This guide is unavailable.',
+		unavailableBody: 'Could not load this guide — reload the page to try again.',
+		loading: 'Loading the guide',
+		updated: 'Updated',
+		pending: null
+	},
+	es: {
+		unknownHeading: (address) => `Autoridad desconocida «${address}».`,
+		unknownBody: 'Esta dirección no figura en el índice del manual.',
+		backToIndex: 'Volver al índice de autoridades',
+		unavailableHeading: 'Esta guía no está disponible.',
+		unavailableBody: 'No se pudo cargar esta guía: vuelva a cargar la página para intentarlo de nuevo.',
+		loading: 'Cargando la guía',
+		updated: 'Actualizado',
+		pending: {
+			heading: 'Traducción pendiente: se muestra el original en inglés.',
+			body: 'Las instrucciones de esta guía aún no están traducidas. Los registros que ya tienen traducción automática aparecen en español al final de la página.'
+		}
+	},
+	fr: {
+		unknownHeading: (address) => `Autorité inconnue « ${address} ».`,
+		unknownBody: 'Cette adresse ne figure pas dans l’index du manuel.',
+		backToIndex: 'Retour à l’index des autorités',
+		unavailableHeading: 'Ce guide n’est pas disponible.',
+		unavailableBody: 'Impossible de charger ce guide : rechargez la page pour réessayer.',
+		loading: 'Chargement du guide',
+		updated: 'Mis à jour',
+		pending: {
+			heading: 'Traduction en attente : l’original anglais est affiché.',
+			body: 'Les instructions de ce guide ne sont pas encore traduites. Les enregistrements déjà traduits automatiquement s’affichent en français en bas de la page.'
+		}
+	}
+};
+
+/**
  * `true` for the two served translation languages.
  * @param {unknown} value
  */
@@ -64,14 +121,27 @@ export function parseLangParam(search) {
 }
 
 /**
- * Dossier URL with the language chosen (`null` clears back to English).
- * Keeps the path; drops any other query (the dossier has none).
+ * Dossier URL with the site language chosen (`null` is English). It
+ * sets `?l=`, the masthead switcher's parameter, so picking a language
+ * here switches the whole site. Keeps the path; drops any other query.
  * @param {string} pathname
  * @param {string | null} lang
  */
 export function translateHref(pathname, lang) {
-	if (!isSupportedLang(lang)) return String(pathname ?? '');
-	return `${pathname}?lang=${lang}`;
+	return `${String(pathname ?? '')}?l=${isSupportedLang(lang) ? lang : 'en'}`;
+}
+
+/**
+ * The records view's language: the site language, unless the address
+ * carries only an older `?lang=es|fr` (no `?l=`), which still wins.
+ * @param {string} search `location.search` shape
+ * @param {string} siteLocale
+ * @returns {'es' | 'fr' | null}
+ */
+export function recordsLang(search, siteLocale) {
+	const legacy = parseLangParam(search);
+	if (legacy && !new URLSearchParams(String(search ?? '')).has('l')) return legacy;
+	return isSupportedLang(siteLocale) ? /** @type {'es' | 'fr'} */ (siteLocale) : null;
 }
 
 /**

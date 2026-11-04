@@ -95,13 +95,19 @@
 					fetched = [];
 				});
 		}
-		if (lang) {
-			import('../TranslationChip.svelte').then((m) => (Chip = m.default as Component<any>)).catch(() => {});
-		}
 		if (provenance) {
 			import('../plan/ProvenancePanel.svelte').then((m) => (Panel = m.default as Component<any>)).catch(() => {});
 		}
 	}
+
+	// The chip loads once the records are open in a translated language
+	// (the site language can switch while they are open).
+	let chipRequested = false;
+	$effect(() => {
+		if (!open || !lang || chipRequested) return;
+		chipRequested = true;
+		import('../TranslationChip.svelte').then((m) => (Chip = m.default as Component<any>)).catch(() => {});
+	});
 
 	const LANGS = ['es', 'fr'] as const;
 </script>

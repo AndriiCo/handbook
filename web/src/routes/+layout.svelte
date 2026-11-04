@@ -3,11 +3,12 @@
 	import '@fontsource-variable/jetbrains-mono';
 	import '@fontsource-variable/source-serif-4';
 	import '../app.css';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { STRINGS, resolveLocale, persistLocale, LOCALES, type Locale } from '#lib/i18n';
+	import { STRINGS, LOCALES } from '#lib/i18n';
+	import { isLocale, setLocale, site } from '#lib/locale.svelte.js';
 	import { listAuthorities } from '#lib/public-ui/handbook.js';
 	import * as Command from '#lib/components/ui/command/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -35,7 +36,6 @@
 	const THEME_KEY = 'theme';
 	const THEME_ORDER: Theme[] = ['auto', 'light', 'dark'];
 
-	let locale = $state<Locale>('en');
 	let theme = $state<Theme>('auto');
 	let cmdOpen = $state(false);
 	let authorities = $state<
@@ -70,15 +70,6 @@
 
 	function cycleTheme() {
 		applyTheme(THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length]);
-	}
-
-	function applyLocale(value: Locale) {
-		locale = value;
-		persistLocale(value);
-		document.documentElement.lang = value;
-		const url = new URL(location.href);
-		url.searchParams.set('l', value);
-		history.replaceState(null, '', url);
 	}
 
 	async function get(path: string) {
@@ -182,8 +173,7 @@
 
 	onMount(() => {
 		void loadBrandFace();
-		locale = resolveLocale();
-		document.documentElement.lang = locale;
+		document.documentElement.lang = site.locale;
 		try {
 			const stored = localStorage.getItem(THEME_KEY);
 			applyTheme(stored === 'light' || stored === 'dark' || stored === 'auto' ? stored : 'auto');
@@ -224,6 +214,17 @@
 	$effect(() => {
 		if (cmdOpen) void loadAuthorities();
 	});
+
+	// `?l=` on an in-app navigation (a link that carries it) switches too.
+	// Only a new address reruns this: the locale itself is read untracked.
+	$effect(() => {
+		const l = page.url.searchParams.get('l');
+		untrack(() => {
+			if (isLocale(l) && l !== site.locale) setLocale(l);
+		});
+	});
+
+	const locale = $derived(site.locale);
 
 	const t = $derived(STRINGS[locale]);
 	const localeName = $derived({ en: 'English', es: 'Español', fr: 'Français' } as const);
@@ -306,7 +307,7 @@
 						<DropdownMenu.Separator />
 						{#each LOCALES as code (code)}
 							<DropdownMenu.Item
-								onSelect={() => applyLocale(code)}
+								onSelect={() => setLocale(code)}
 								class="flex items-center justify-between"
 							>
 								{localeName[code]}

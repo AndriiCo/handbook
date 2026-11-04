@@ -19,14 +19,14 @@
 		safeHref,
 		type Order
 	} from '../../../lib/customer/orders';
-	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
+	import { STRINGS } from '../../../lib/i18n';
+	import { site } from '../../../lib/locale.svelte.js';
 	import ReceiptIcon from '@lucide/svelte/icons/receipt';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 
 	// W3b: real receipts, read from the caller's paid orders. Live on
 	// billing:{customer_ref} (order.paid / order.refunded re-read).
-	let locale = $state<Locale>(resolveLocale());
-	const t = $derived(STRINGS[locale]);
+	const t = $derived(STRINGS[site.locale]);
 
 	let receipts = $state<Order[] | null>(null);
 	let topic = $state<string | null>(null);
