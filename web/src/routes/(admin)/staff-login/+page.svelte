@@ -8,16 +8,20 @@
 		CANCELLED_COPY,
 		cookieValue,
 		isTransportFailure,
+		loginDiscoverable,
 		loginErrorCopy,
 		loginPasskey
 	} from '../../../lib/admin/staff-auth.js';
 	import { fetchSetupStatus } from '../../../lib/admin/setup-client.js';
 	import { safeNext } from '../../../lib/admin/http-errors.js';
 
-	// Staff sign-in (spec customer-auth.md §5.3): user_id + UV passkey
-	// ceremony. No client certificate: the admin host's IP allowlist
-	// gates the branch. `?next=` (set when a session expired mid-use)
-	// is honoured after sign-in, same-origin console paths only.
+	// Staff sign-in (spec customer-auth.md §5.3): one UV passkey
+	// ceremony, no user ID — staff passkeys are discoverable, so the
+	// browser offers the ones it holds and the server resolves the
+	// account. A user ID stays as a fallback for keys enrolled before
+	// that. No client certificate: the admin host's IP allowlist gates
+	// the branch. `?next=` (set when a session expired mid-use) is
+	// honoured after sign-in, same-origin console paths only.
 	const api = (path: string) => `/apostille/api/v1${path}`;
 
 	let account = $state('');
@@ -52,14 +56,12 @@
 		return { ok: res.ok, status: res.status, body: parsed };
 	}
 
-	async function login() {
+	async function login(withId: boolean) {
 		error = null;
 		busy = true;
 		try {
-			const res = await loginPasskey(account.trim(), {
-				post,
-				credentials: navigator.credentials
-			});
+			const io = { post, credentials: navigator.credentials };
+			const res = withId ? await loginPasskey(account.trim(), io) : await loginDiscoverable(io);
 			if (!res.ok) {
 				error = loginErrorCopy(res.status, res.body?.error ?? '');
 				return;
@@ -121,33 +123,47 @@
 		</Button>
 	</p>
 {:else}
-	<form
-		class="grid gap-3"
-		onsubmit={(e) => {
-			e.preventDefault();
-			login();
-		}}
+	<p class="mb-4">Use the passkey you enrolled on this console. No user ID needed.</p>
+	<Button
+		size="lg"
+		class="min-h-11 w-full px-4 text-base"
+		disabled={busy}
+		onclick={() => login(false)}
 	>
-		<label class="grid gap-1 font-bold" for="staff-account">Staff user ID</label>
-		<Input
-			id="staff-account"
-			class="h-11 font-mono text-base"
-			type="text"
-			bind:value={account}
-			autocomplete="username"
-			spellcheck={false}
-			placeholder="32-character ID from enrolment"
-			required
-		/>
-		<Button
-			type="submit"
-			size="lg"
-			class="min-h-11 w-full px-4 text-base"
-			disabled={busy || account.trim() === ''}
+		{busy ? 'Waiting for your passkey…' : 'Sign in with passkey'}
+	</Button>
+
+	<details class="mt-6 text-sm">
+		<summary class="cursor-pointer text-ink-muted">Passkey not offered? Sign in with your user ID</summary>
+		<form
+			class="mt-3 grid gap-3"
+			onsubmit={(e) => {
+				e.preventDefault();
+				login(true);
+			}}
 		>
-			{busy ? 'Waiting for your passkey…' : 'Sign in with passkey'}
-		</Button>
-	</form>
+			<label class="grid gap-1 font-bold" for="staff-account">Staff user ID</label>
+			<Input
+				id="staff-account"
+				class="h-11 font-mono text-base"
+				type="text"
+				bind:value={account}
+				autocomplete="username"
+				spellcheck={false}
+				placeholder="32-character ID from enrolment"
+				required
+			/>
+			<Button
+				type="submit"
+				variant="outline"
+				size="lg"
+				class="min-h-11 w-full px-4 text-base"
+				disabled={busy || account.trim() === ''}
+			>
+				Sign in with user ID
+			</Button>
+		</form>
+	</details>
 
 	<p class="mt-6 text-sm text-ink-muted">
 		New staff join with an invite link from an admin.

@@ -11,6 +11,7 @@
 		requestId = null,
 		stepUp = false,
 		busy = false,
+		confirmLabel = 'Confirm with passkey and save',
 		onConfirm
 	}: {
 		heading?: string;
@@ -18,6 +19,7 @@
 		requestId?: string | null;
 		stepUp?: boolean;
 		busy?: boolean;
+		confirmLabel?: string;
 		onConfirm?: () => void;
 	} = $props();
 
@@ -45,7 +47,7 @@
 				disabled={busy}
 				onclick={onConfirm}
 			>
-				{busy ? 'Waiting for your passkey…' : 'Confirm with passkey and save'}
+				{busy ? 'Waiting for your passkey…' : confirmLabel}
 			</button>
 		</p>
 	{/if}

@@ -1,8 +1,9 @@
-// A judge's first minutes in the staff console (P1-1…P1-6): a fresh
-// boot sends /review to the /config wizard, one setup-key paste opens
-// it and enrols the first passkey from there, Sign out ends the
-// session, and sign-in comes back. An expired session mid-use lands on
-// /staff-login?next=… and returns to the page after sign-in. API is
+// A judge's first minutes in the staff console (P1-1…P1-6, P1-4): a
+// fresh boot sends /review to the /config wizard, one setup-key paste
+// opens it and enrols the first passkey from there, Sign out ends the
+// session, and sign-in comes back with no user ID (discoverable
+// passkey). An expired session mid-use lands on /staff-login?next=…
+// and returns to the page after sign-in. API is
 // route-mocked with a tiny server state; navigator.credentials is a
 // stub (create/get resolve fake credentials).
 import { expect, test } from '@playwright/test';
@@ -111,7 +112,7 @@ async function mockServer(page, server) {
 	return calls;
 }
 
-test('fresh boot: /review → /config, one paste enrols, sign out, sign back in', async ({ page }) => {
+test('fresh boot: /review → /config, one paste enrols, sign out, sign back in with no user ID', async ({ page }) => {
 	const srv = await serveDir(join(HERE, '..', 'build-admin'));
 	try {
 		await stubPasskeys(page);
@@ -130,6 +131,7 @@ test('fresh boot: /review → /config, one paste enrols, sign out, sign back in'
 		await page.getByRole('button', { name: 'Enrol passkey and sign in' }).click();
 
 		await expect(page.getByText('Enrolled and signed in.')).toBeVisible();
+		await expect(page.getByText(USER)).toHaveCount(0);
 		await expect(page.getByRole('heading', { name: 'Configuration' })).toBeVisible();
 		const start = calls.find((c) => c.step === 'enrol/start');
 		const finish = calls.find((c) => c.step === 'enrol/finish');
@@ -141,10 +143,10 @@ test('fresh boot: /review → /config, one paste enrols, sign out, sign back in'
 		expect(calls.some((c) => c.step === 'logout')).toBe(true);
 		expect(server.session).toBeNull();
 
-		await page.locator('#staff-account').fill(USER);
+		// No user ID anywhere: the passkey names the account.
 		await page.getByRole('button', { name: 'Sign in with passkey' }).click();
 		await expect(page).toHaveURL(/\/dashboard$/);
-		expect(calls.find((c) => c.step === 'login/start').body).toEqual({ account: USER });
+		expect(calls.find((c) => c.step === 'login/start').body).toEqual({ account: '' });
 	} finally {
 		await srv.close();
 	}
@@ -166,7 +168,6 @@ test('an expired session mid-use signs in again and returns to the page', async 
 
 		await page.goto(`${srv.url}/review`);
 		await expect(page).toHaveURL(/\/staff-login\?next=%2Freview$/, { timeout: 15_000 });
-		await page.locator('#staff-account').fill(USER);
 		await page.getByRole('button', { name: 'Sign in with passkey' }).click();
 		await expect(page).toHaveURL(/\/review$/);
 	} finally {
@@ -207,6 +208,22 @@ test('setup still open: sign-in points to first-time setup', async ({ page }) =>
 		await page.getByRole('link', { name: 'First-time setup →' }).click();
 		await expect(page).toHaveURL(/\/config$/);
 		await expect(page.getByRole('heading', { name: 'First-time setup' })).toBeVisible();
+	} finally {
+		await srv.close();
+	}
+});
+
+test('the user-ID fallback still signs in a passkey enrolled before discoverable keys', async ({ page }) => {
+	const srv = await serveDir(join(HERE, '..', 'build-admin'));
+	try {
+		await stubPasskeys(page);
+		const calls = await mockServer(page, { setupRequired: false, session: null });
+		await page.goto(`${srv.url}/staff-login?next=%2Fconfig`);
+		await page.getByText('Passkey not offered? Sign in with your user ID').click();
+		await page.locator('#staff-account').fill(USER);
+		await page.getByRole('button', { name: 'Sign in with user ID' }).click();
+		await expect(page).toHaveURL(/\/config$/);
+		expect(calls.find((c) => c.step === 'login/start').body).toEqual({ account: USER });
 	} finally {
 		await srv.close();
 	}

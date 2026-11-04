@@ -7,10 +7,10 @@
 
 ## 0. Decisions embodied
 
-1. Library: `webauthn-rs` 0.5.5. Features: default (`attestation`) + `danger-allow-state-serialisation`. The `danger` feature is our documented safe case: ceremony state persists server-side in SQLite (single-use + 5-min expiry), never in cookies — exactly what the crate docs bless. (`conditional-ui` stays off: §2.5's build is deferred past Phase 4, OPEN-16.) No `ring` from this stack (verified: crypto backend is openssl; the only `ring` in the graph is the pre-existing `rcgen` test-cert path).
+1. Library: `webauthn-rs` 0.5.5. Features: default (`attestation`) + `danger-allow-state-serialisation` + `conditional-ui` (discoverable login, §2.5). The `danger` feature is our documented safe case: ceremony state persists server-side in SQLite (single-use + 5-min expiry), never in cookies — exactly what the crate docs bless. No `ring` from this stack (verified: crypto backend is openssl; the only `ring` in the graph is the pre-existing `rcgen` test-cert path).
 2. OpenSSL is vendored (`openssl-sys` `vendored` feature, unified from the web crate): hermetic local builds (Mac system OpenSSL is v4, which openssl-sys may reject) and working `cargo zigbuild` cross builds (no target system libs). Precedent: the workspace already builds C deps (rusqlite bundled, aws-lc-sys).
 3. RP ID `andrii.ai` serves **both** `https://andrii.ai` and `https://admin.andrii.ai`: `WebauthnBuilder::new(rp_id, rp_origin)` requires only that rp_id be an effective domain of rp_origin, and `.allow_subdomains(true)` accepts subdomain origins (verified in vendored builder docs + `allow_subdomains` semantics). Belt-and-braces: also `.append_allowed_origin(https://admin.andrii.ai)`. Browser-side RP-suffix rule still needs a live ceremony on each origin (OPEN-1).
-4. Passkey ceremonies live under `/apostille/api/v1/auth/…` on **both** branches (public router for customers now; admin router for staff enrolment/login in Phase 4). Sessions, cookies, roles, CSRF, and mTLS composition are **reused unchanged** from `crates/auth` (§5).
+4. Passkey ceremonies live under `/apostille/api/v1/auth/…` on **both** branches (public router for customers now; admin router for staff enrolment/login in Phase 4). Sessions, cookies, roles and CSRF are **reused unchanged** from `crates/auth`; the admin branch adds the IP allowlist (§5).
 5. Counters follow the crate, not a bespoke column: `AuthenticationResult` → `Passkey::update_credential` → re-persist `passkey_json` when `needs_update()`. No `counter`/`backup_*`/`uv_performed` columns (YAGNI — additive later if staff enrolment needs UV proof persisted).
 6. Rate limits are an in-memory mutex bucket (single server; no new table): login/register finish 10/min/account + 60/min/IP, start endpoints 30/min/IP, atomic check-and-decrement.
 
@@ -140,9 +140,13 @@ Server: consume challenge; `finish_passkey_authentication(&cred, &state)` → `A
 
 Other errors: `401` verification failed (generic); `403` account locked (`locked_at` set — manual recovery); `410` challenge bad; `429` + backoff.
 
-### 2.5 Discoverable login (conditional mediation / autofill) — Phase 4
+### 2.5 Discoverable login (conditional mediation / autofill)
 
-Deferred (build), corrected (rationale): the old claim — that `&[DiscoverableKey]` can only be built from attested resident-key types — is wrong against webauthn-rs 0.5.5: `From<Passkey>/From<&Passkey> for DiscoverableKey` exist behind the empty `conditional-ui` feature (verified in the vendored source; no new crates, no `ring` risk), with `start/identify/finish_discoverable_authentication` completing the flow. The build stays deferred past Phase 4 anyway: it is customer-login scope (separate UX + test matrix) and Phase 4 is already enrol+login+offboard+UI+guide (OPEN-16 schedules it). Until then login is identifier-first (§2.3: `user_id` hex or linked email; the SPA remembers the last `user_id` in `localStorage`). The `webauthn_challenge.kind='discoverable'` value stays reserved. Planned shape when built: `POST /auth/passkey/discover/start` (no auth, `start_discoverable_authentication()`) and `POST /auth/passkey/discover/finish` (`identify_discoverable_authentication` → user → `finish_discoverable_authentication` → same session/audit path as §2.4). Unknown user/cred → same `404 re-register` shape.
+Built (P431b) with webauthn-rs 0.5.5's `conditional-ui` feature (empty feature, no new crates): `From<Passkey>/From<&Passkey> for DiscoverableKey` plus `start/identify/finish_discoverable_authentication`. No new routes: §2.3/§2.4 serve both shapes.
+
+- Start: `login/start` with an empty `account` (`{"account": ""}`, the login page's autofill probe) returns `start_discoverable_authentication()` options (empty `allowCredentials`, `mediation: "conditional"`). State kind `'discoverable'`, `user_id` NULL.
+- Finish: `login/finish` takes the challenge as `'login'` or else `'discoverable'`. Discoverable: `identify_discoverable_authentication` yields the user handle and credential id; the credential's owner (live `webauthn_credential` row) must equal the user handle, else `401`; then `finish_discoverable_authentication` against that one passkey, and the §2.4 tail (counter, fallback clear, session, audit `passkey_login`). Unknown credential id → the same `404 re-register` shape.
+- Registration asks for a discoverable credential (`residentKey: "preferred"`, customers keep the email path for authenticators that cannot store one). Identifier-first login (§2.3) stays for older non-discoverable keys.
 
 ### 2.6 Profile: list / link / unlink
 
@@ -175,79 +179,63 @@ Deferred (build), corrected (rationale): the old claim — that `&[DiscoverableK
 - Origin: `csrf::origin_allowed` (exact origins, no ports; localhost only with the dev seam). Every mutation: Origin + double-submit.
 - WS unchanged (session cookie + Origin before subscribe; `ws::authorize`).
 
-## 5. Staff passkeys (Phase 4)
+## 5. Staff passkeys
 
-Staff method (decided 2026-10-28): **passkey (UV required) + mTLS client cert**. Both factors are mandatory on every admin request; neither alone grants anything (§5.4).
+Staff method: **passkey (UV required) from an address in `admin.allow_ips`**. The client certificate that first paired with the passkey (decided 2026-10-28) was replaced by the IP allowlist: there is no certificate to issue, present or revoke, and no `/admin/…` page path (the admin host is the console). Every admin request needs the admin host, a staff session and an allowed peer IP (§5.4).
 
-All staff ceremony routes live on the **admin router only**, behind the admin host guard + Origin/CSRF guards (same as §2). They reuse the customer ceremony machinery verbatim: `build_webauthn` (rp_id `andrii.ai` + `allow_subdomains(true)` + `append_allowed_origin(admin)` — one RP serves both origins, pending OPEN-1), `RateBuckets`, `webauthn_challenge` state, `store/take/sweep_challenge`, `create_session`, CSRF rotation on login. Deltas from customer flow: invite gating, UV-required, CN binding, `ADM_COOKIE`, role-aware account creation.
-
-**New DDL (lands with the code):** `staff_invite` per the §1.5 sketch, added to `auth::migrate_auth_tables` (single-writer rule — extend, do not fork). Note: `ensure_account` hardcodes `role='customer'`; enrolment needs a new `ensure_staff_account(conn, user_id, role, now)` helper (same `ON CONFLICT DO NOTHING` shape; the customer path stays untouched).
+All staff ceremony routes live on the **admin router only**, behind the admin host guard, the IP gate and Origin checks (the CSRF layer passes `/auth/*` through, so start handlers check Origin and finish handlers Origin + the CSRF echo). They reuse the customer machinery: `build_webauthn`, `RateBuckets`, `webauthn_challenge` state, `create_session`, CSRF rotation on login. Deltas from the customer flow: invite or setup-key gating, UV asserted at finish, `ADM_COOKIE`, role-aware accounts, separate challenge kinds (`staff_register`, `staff_login`, `staff_discoverable`, `staff_add`) so customer and staff states never cross.
 
 ### 5.1 Invitation lifecycle
 
-1. **Mint (offline, admin-only).** `xtask admin-invite --role <staff|admin> --cn <name> [--days 7] [--actor …] [--store …]` (flags, matching every other xtask task — supersedes the positional sketch). Prod invites are 24h (`--days 1`, decision 58); the code default stays 7d.
-   - `role` ∈ {`staff`, `admin`}; anything else → usage error. `cn` = the staff member's client-cert CN, which MUST already exist as a live `admin_cert` row (invite binds to an issued cert, never to a future one — mint order is `admin-cert-issue` first, then `admin-invite`). CN rule reused from `admin-cert-issue`.
-   - Token: 256-bit CSPRNG hex via `login::mint_magic_token` (64 hex chars). Store `token_hash = login::token_hash(token)` (SHA-256 hex) only — the DB never holds the bearer token. Row: `(token_hash, role, cn, created_by=actor, created_at, expires_at=created_at+days, consumed_at=NULL, consumed_by=NULL)`.
-   - Output: single-use URL `https://admin.andrii.ai/admin/enrol?invite=<token>` printed once to stdout (operator delivers out-of-band). Audit `staff_invite_issued` with actor + role + cn (cn is an internal identifier, not PII).
-2. **Present.** The invitee opens the URL in a browser holding their client cert. Enrol-start carries the raw token; the server hashes and looks up the row. Missing/consumed/expired all answer identically (`410`, no enumeration).
-3. **Consume (single-use, atomic).** At enrol-finish, in the same transaction as credential insert: `UPDATE staff_invite SET consumed_at=?, consumed_by=? WHERE token_hash=? AND consumed_at IS NULL` — zero rows touched → `410`. Enrol-start also stashes the invite hash in its challenge `state_json`; finish compares (binds the ceremony to the invite the flow started with).
-4. **CN binding.** Enrol-start AND enrol-finish require the presented client cert's CN to equal the invite's `cn`: resolve the fingerprint (strict: `VerifiedClientCert` extension; dev: `x-admin-cert-sha256` header only when `admin_mtls_off`) → `admin_cert` row must be live → row `cn == invite.cn`, else `403` + audit (fingerprint + invite-hash prefix only). The finish-time recheck is the TOCTOU guard: a cert revoked between start and finish fails the enrolment. This is what makes a stolen invite URL useless without the staff member's private key.
+1. **Mint.** From the console (**Staff → Invite**, admin role + fresh step-up, §5.5) or the CLI `xtask admin-invite --store <store> --role <staff|admin> --cn <name> [--days 7] [--actor …] [--origin <admin origin>]`. The CLI has no default store or origin: without `--origin` it prints the path (`/enrol?invite=…`) to open on the admin host. The production wrapper (`apostille-invite`) passes the store and the production origin. Prod invites are 24h (`--days 1`); the default is 7d.
+   - `role` ∈ {`staff`, `admin`}. `cn` names the person (ASCII word characters, dots, dashes, ≤ 64); it labels the invite and the account's audit rows.
+   - Token: 256-bit CSPRNG hex (`login::mint_magic_token`). The DB stores `token_hash` only. The console shows the URL once (built from the request's admin origin); the CLI prints it once. Audit `staff_invite_issue`.
+2. **Present.** The invitee opens `/enrol?invite=<token>`. Missing, consumed and expired invites answer identically (`410`). The token stays in the address bar until enrolment succeeds (a reload or a cancelled passkey prompt can retry) and is stripped then.
+3. **Consume (single-use, atomic).** Enrol-finish consumes with `consumed_at IS NULL` as the guard (zero rows → `410`) before persisting the credential. Enrol-start stashes the invite hash in its challenge state; finish compares.
+4. **Withdraw.** A pending invite can be withdrawn from the Staff page (admin + step-up): it expires at once.
+
+First staffer: no invite. The CLI-minted setup key (secure-config.md §9) replaces it while the setup window is open; `/config` holds the pasted key and runs the enrolment itself, and the first verified enrolment burns the key.
 
 ### 5.2 Enrolment endpoints
 
-`POST /apostille/api/v1/auth/passkey/enrol/start` — mirrors `register_start` mode (a), plus invite + cert.
+`POST /apostille/api/v1/auth/passkey/enrol/start` — request (`deny_unknown_fields`): `{"invite": "<64-hex>"}` or `{"setup_key": "setup_…"}` (exactly one), `"display_name"`, optional `"label"`. Server: validate the gate (`410` if invalid); `mint_user_id`; `start_passkey_registration` with `residentKey: "required"` (staff sign in without a user ID, §5.3); state kind `staff_register`. Success `200`: `{"challenge_id", "options", "role", "cn"}`. Errors: `400` shape; `403` Origin; `410` gate invalid; `429`; `503`.
 
-- Request (`deny_unknown_fields`): `{"invite": "<64-hex>", "display_name": "…", "label?": "…"}`. No session required (logged-out by construction). Guards: Origin + `hb_csrf` mint (no echo on start, same as §2.1).
-- Server: hash invite → live row? (`410` if missing/expired/consumed); presented cert live + CN matches? (`403`); `mint_user_id`; `start_passkey_registration` (the crate already requests UV for every ceremony — no option differs from customer; the staff delta is the finish-time assert below); persist state with `kind='staff_register'` (separate kinds make customer/admin states non-interchangeable — the branch confused-deputy boundary, cf. OAuth D2); `sweep_challenges` first.
-- Success `200`: `{"challenge_id": "…", "options": {…}, "role": "staff"|"admin", "cn": "…", "fp_suffix": "…"}` (echoes what the invite grants so the UI can show which device cert it binds; no token echo).
-- Errors: `400` bad display_name/label/invite shape; `403` CSRF/Origin/cert-mismatch/cert-missing; `410` invite invalid/consumed/expired; `429`; `500`/`503` store unavailable.
+`POST /apostille/api/v1/auth/passkey/enrol/finish` — request: `{"challenge_id", "credential", "invite" | "setup_key", "label?"}`. Server, in order: Origin + CSRF echo; `take_challenge(id, 'staff_register')`; gate re-check (invite hash matches the stashed one and is still live, or the setup key still verifies); invite consumed (`410` on race loss); `finish_passkey_registration` (`422` on failure); credential id globally new (`409`); the setup key burns on the first verified enrolment; `ensure_staff_account(user_id, role)` + `store_credential` (label = the given label, else the display name); `set_step_up`; session on `ADM_COOKIE`; CSRF rotated; audit `staff_enrolled`. Success `200`: `{"user_id", "role", "methods": ["passkey"]}`.
 
-`POST /apostille/api/v1/auth/passkey/enrol/finish` — mirrors `register_finish` mode (a).
-
-- Request: `{"challenge_id": "…", "credential": {…}, "invite": "…", "label?": "…"}` (invite echoed so finish re-validates + consumes).
-- Server, in order: Origin + CSRF echo; `take_challenge(id, 'staff_register')` → `410` on miss; invite hash matches the stashed one; re-validate invite still live + cert still live + CN still matches (`403`); consume invite (`consumed_by=user_id`, `410` on race-loss) BEFORE persisting — a burned invite on later failure fails closed (fresh invite is the recovery), while persisting first would orphan credentials; `finish_passkey_registration` (UV enforced inside — the crate requests UV Required at every start, so a non-UV ceremony fails closed as `422` like any verification failure, identically for customer and staff); assert credential ID globally unregistered (`409`); `ensure_staff_account(user_id, invite.role)` + `store_credential` (+ companion `identity_link` row — staff passkeys participate in rules 1/6/7 like any method); `set_step_up(user_id, now)` (enrolment UV doubles as the first step-up); mint session with `role=invite.role`, `customer_ref=None` (staff sessions carry no customer ref); rotate CSRF; audit `staff_enrolled` (reason = `role:cn:fingerprint` — ids/hashes only).
-- Success `200`: `{"user_id": "…", "role": "…", "methods": ["passkey"]}` + `Set-Cookie: ADM_COOKIE` (+ rotated `hb_csrf`). Enrolment logs the staffer in (mirrors customer register — invite + live cert + fresh UV ceremony is strong auth).
-- Error vocabulary (fixed strings, mirroring §2.2): `410` challenge/invite invalid; `403` cert mismatch / cert required; `409` credential already registered; `422` verification failed (covers UV-absent + crate failure, never leak variants); `429`; `500`.
+`POST /apostille/api/v1/staff/passkeys/add/start` and `…/add/finish` — a signed-in staffer adds another passkey (a second device): session + fresh step-up, the staffer's own passkeys excluded, state kind `staff_add` bound to the session's user, at most 5 live passkeys (`409` at the cap). Audit `staff_passkey_added`.
 
 ### 5.3 Staff/admin login endpoints
 
-`POST /apostille/api/v1/auth/passkey/login/start` — mirrors `login_start`, minus email resolution: request `{"account": "<user_id hex>"}` only (staff accounts have no email links; emails on the admin branch aid enumeration). Unknown/locked/cred-less accounts → identical `401 {"error": "unknown account or no passkeys"}` (no enumeration, no role oracle — the role gate lives at finish). Cert presence is NOT required at start (challenge issuance is harmless; enforcement is at finish + every subsequent request). State kind `'staff_login'`. Rate keys `sl:{ip}` 30/min.
+`POST /apostille/api/v1/auth/passkey/login/start` — `{"account": ""}` (or `{}`) starts a **discoverable** ceremony: the authenticator offers the staff passkeys it holds for this RP, no user ID typed (state kind `staff_discoverable`). `{"account": "<user_id hex>"}` keeps the identifier-first shape for keys enrolled before discoverable registration, and for the config step-up, which names the session's own user. Unknown/locked/credential-less accounts → `401 {"error": "unknown account or no passkeys"}`. Rate key `sl:{ip}` 30/min.
 
-`POST /apostille/api/v1/auth/passkey/login/finish` — mirrors `login_finish` with five deltas:
+`POST /apostille/api/v1/auth/passkey/login/finish` — `take_challenge` as `staff_login`, else `staff_discoverable`. Discoverable: the credential's owner must equal its user handle. Unknown credential id → `404 {"error": "credential unknown", "action": "re-register"}` (re-register = a fresh invite from an admin). Then: explicit `user_verified()` assert (`401` + audit); account unlocked with role `staff|admin`, else `403 {"error": "use the customer login"}`; counter flow; `set_step_up`; session on `ADM_COOKIE` (staff timeouts: idle 30m, absolute 8h); audit `staff_login`.
 
-1. `take_challenge(id, 'staff_login')`; unknown credential ID → `404 {"error": "credential unknown", "action": "re-register"}` (staff re-register = a fresh invite from an admin, never self-service — the admin SPA routes to an "ask your admin" page, never a dead end).
-2. Finish requires a presented LIVE cert (any CN — user binding awaits OPEN-15), else `403 {"error": "client cert required"}` + audit; the fingerprint is recorded in the `staff_login` audit. (A session minted without a cert would grant nothing anyway via `AdminAuth`; refusing at finish gives the clear error instead of a useless session.)
-3. Post-verify: explicit `user_verified()` assert → else `401` + audit (the crate also enforces UV Required at finish — belt-and-braces with a paper trail; the customer flow only records it). On success: `set_step_up` unconditionally (every staff login refreshes step-up — this is what makes the §5.5 destructive-action window work without a separate ceremony in the common case); counter flow verbatim.
-3. Role gate inverted from customer: `account.role` must be `staff|admin`, else `403 {"error": "use the customer login"}` (mirrors the customer handler's directed error).
-4. Session: `create_session` with the account's role, `customer_ref=None`, `ADM_COOKIE`; staff timeouts apply automatically (`Session::valid` is role-dependent: idle 30m + absolute 8h). Audit `staff_login` (actor + cred-ID hash). Session check reuses `admin_me` — no second source of truth.
+`POST /apostille/api/v1/auth/logout` (admin host) — Origin-checked, idempotent: deletes the session behind `ADM_COOKIE`, clears it and the CSRF cookie, audits `staff_logout`. The console's **Sign out** sits in the sidebar footer.
 
-### 5.4 Why login alone grants nothing (composition, not repetition)
+`__Host-` cookies always carry `Secure` (browsers drop them otherwise). Browsers accept `Secure` cookies from `http://localhost`, so the plain-HTTP loopback boot keeps its sessions.
 
-Every non-ceremony admin route extracts `AdminAuth`, which requires ALL of: live session on `ADM_COOKIE` + `role.meets(Staff)` + a live `admin_cert` fingerprint from the `VerifiedClientCert` extension (dev: `x-admin-cert-sha256` header honored ONLY when `admin_mtls_off` — strict mode ignores it; a forwardable header must never authenticate a cert). The staff passkey session satisfies only the first two conjuncts. A stolen session cookie without the client-cert private key fails at the cert check → `403` + audit. Conversely a stolen cert without a session fails at the cookie check → `401`. The enrol/login ceremony handlers themselves must NOT take `AdminAuth` (chicken-and-egg: enrolment precedes any session); they mount on a host-guard-only sub-router (the router `csrf_guard` layer would reject start POSTs that have no token to echo yet) and enforce Origin (start) / Origin+echo (finish) per-handler exactly like §2, plus their own cert checks per §§5.2–5.3.
+### 5.4 What admits a request
+
+Every non-ceremony admin route extracts `AdminAuth`: a live session on `ADM_COOKIE`, `role.meets(Staff)`, and a peer IP inside `admin.allow_ips` (no proxy headers trusted; unset means loopback only). A stolen cookie used from another network fails the IP check (`403` naming the detected IP); an allowed network without a session fails at the cookie (`401`, and the console sends the browser to `/staff-login?next=<page>`). Browser navigations from a refused address get a static 403 page that names the address but not the config key. The ceremony handlers do not take `AdminAuth` (enrolment precedes any session); they sit behind the same host and IP layers.
 
 ### 5.5 Step-up for destructive actions
 
-Destructive admin actions require `step_up_at` within 600s (`STEP_UP_WINDOW_SECS`) OR session minted within 600s (same freshness disjunct as customer mode-(b) link). Enforcement: a `require_step_up(conn, user)` helper on the `AdminAuth` path returning `403 {"error": "step-up required: log in again first"}` (same string as customer flow). Staff login always sets `step_up_at` (§5.3), so the common case needs no extra ceremony; expiry forces re-login. Phase 4 ships the helper + pilots it on `set_config` (closing its open step-up comment); the full destructive-action list is OPEN-17.
+Destructive admin actions (config writes, restarts, staff invites and revocations, adding a passkey) require `step_up_at` within 600s (`STEP_UP_WINDOW_SECS`) or a session minted within 600s, else `403 {"error": "step-up required: log in again first", "step_up": "required"}`. The console confirms in place: one passkey ceremony for the session's own user (identifier-first §5.3 shape), then the same request again.
 
-### 5.6 Offboarding (order matters)
+### 5.6 Staff management and offboarding
 
-Single xtask `admin-offboard --user <user_id> [--cn …] [--actor …]` (xtask-only in Phase 4 — destructive + rare + operator-driven, matching the `admin-cert-revoke` precedent; no HTTP endpoint). Order — cert first, so a login racing the offboard can never resurrect access (any new session still fails `AdminAuth`):
+The console's **Staff** page (`/staff`) lists every staff/admin account with its passkeys (label, added, last used) and the pending invites. Admins can invite, withdraw an invite, revoke one passkey of any account and revoke a whole account; any staffer can add a passkey to their own account and revoke one of their own passkeys. Guards: a staffer cannot revoke their own account or their last live passkey, and the last unlocked admin cannot be revoked (`409` each).
 
-1. `revoke_admin_cert` for every live `admin_cert` row of this staffer (CN→user mapping: OPEN-15; until resolved the command takes `--cn` and revokes by CN like `admin-cert-revoke`).
-2. `revoke_user_sessions` — kills all sessions.
-3. `revoke_credential` for each row from `credentials_for_user` (sets `revoked_at` + link `disabled_at`).
-4. `lock_account` (defence in depth; login rejects locked).
-
-Each step is idempotent (re-runnable after partial failure); one transaction per step, NOT across steps (a later failure must not roll back the cert/session kill). Audit one row per action plus a `staff_offboarded` summary (actor = operator).
+Revoking an account (`POST /apostille/api/v1/staff/{user_id}/revoke`) runs the offboarding order, each step idempotent: kill every session, revoke every passkey (`revoked_at` + link `disabled_at`), lock the account. Audit `staff_revoked`. The CLI `xtask admin-offboard --store <store> --user <id> --cn <name>` does the same from the server shell (it also revokes any legacy `admin_cert` rows for the name).
 
 ### 5.7 Rate limits + PII/audit rules (per §6)
 
-- Enrol start `30/min/IP` (`es:{ip}`); enrol finish `60/min/IP` (`ef:{ip}`) + `10/min/invite` (`ef:{token_hash-prefix-16}` — keyed by invite hash, not raw token, since no account exists yet); login start `30/min/IP` (`sl:{ip}`); login finish `60/min/IP` + `10/min/account` (`sf:…`). Same `RateBuckets` struct (all four prefixes are free).
-- Logs/audit: actor + action + credential-ID **hashes** + cert fingerprints + invite-hash prefixes only. Never: raw invite tokens, session IDs, challenges, cookies, key material, cert PEM/DER bytes. Reuse `audit_auth`; cert decisions reuse the `admin_cert` audit shape.
+- Enrol start `30/min/IP` (`es:{ip}`); enrol finish `60/min/IP` (`ef:{ip}`) + `10/min/invite` (`ef:{token_hash-prefix-16}`); login start `30/min/IP` (`sl:{ip}`); login finish `60/min/IP` + `10/min/account` (`sf:…`).
+- Logs/audit: actor + action + credential-ID **hashes** + invite-hash prefixes only. Never: raw invite tokens, setup keys, session IDs, challenges, cookies or key material.
 
-### 5.8 Staging acceptance (extends §7)
+### 5.8 Acceptance
 
-Issue cert → mint invite → enrol on `admin.andrii.ai` green (session on `ADM_COOKIE`, `admin_me` shows role + fingerprint); invite replay → `410`; wrong-CN cert → `403`; cert revoked between start and finish → `403`; non-UV ceremony → `422`; staff login green + step-up fresh; customer-cred on admin login → `403`; staff-cred on apex login → `403` directed error; session-without-cert → `403` on every admin route; cert-without-session → `401`; offboard → sessions dead + cert rejected + creds revoked + re-enrol needs a fresh invite; cross-origin ceremony check closes OPEN-1; `cargo xtask ci` green.
+Fresh boot: every console page lands on `/config`; one setup-key paste enrols the first passkey there; sign out; sign back in with no user ID. Invite → enrol green; invite replay → `410`; non-UV ceremony → `422`; customer credential on the admin login → `403`; staff credential on the apex login → `403`; refused IP → `403` page; expired session → `/staff-login?next=…` and back; revoke → sessions dead + passkeys revoked + account locked; `cargo xtask ci` green.
 
 ## 6. Rate limits, logging, PII
 
@@ -265,7 +253,7 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 | OPEN-1 | ~~Live-ceremony proof that RP ID `andrii.ai` + `allow_subdomains(true)` + `append_allowed_origin(admin)` serves both origins end-to-end~~ RESOLVED: live-proof sprint runs immediately after enrolment unblocks; both-origin ceremony green required before admin-login sign-off (author, 2026-10-29) | CODE (staging) | §5 admin login, Day-6 gate |
 | OPEN-2 | ~~Magic-link `fallback_until` window length + tighter idle value~~ RESOLVED by §12.6: 7d window + 1h idle (author-confirmed 2026-10-28) | Author | Phase 5 |
 | OPEN-3 | ~~Staff enrolment if passkey stalls: fallback scope~~ RESOLVED: staff recovery stays admin-assisted only (fresh invite, never self-service); TOTP/backup codes rejected; break-glass via the sealed envelope only (decision 59); customer magic-link fallback is permanent, apex-only per §12 (author, 2026-10-29) | Author | §5 enrolment |
-| OPEN-4 | Admin-branch Google OAuth: needed at all, or staff stays passkey+mTLS (§5)? Phase 2 ships apex-only either way | Author | admin login scope |
+| OPEN-4 | Admin-branch Google OAuth: needed at all, or staff stays passkey + IP allowlist (§5)? Phase 2 ships apex-only either way | Author | admin login scope |
 | OPEN-5 | tokeninfo→JWKS migration trigger (quota/latency at scale); ID-token local validation design | CODE | post-Phase-2 scale |
 | OPEN-6 | ~~Playbook §3 touch-up~~ RESOLVED: playbook §3 rewritten (server-side code flow + tokeninfo, per-env clients) | CODE | portal setup |
 | OPEN-7 | ~~Google RISC receiver phase + synthetic-SET fixtures (§3 table; `signal_action` rows already exist)~~ RESOLVED: built now — `POST /auth/google/risc` + `auth::risc` (§9.9), synthetic-RSA fixtures in-tree (author outcome keyed "OPEN-24", re-keyed 2026-10-29) | SEC | revocation handling |
@@ -276,8 +264,8 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 | OPEN-12 | ~~Meta Graph API version pin (v26.0)~~ RECORDED in §11.1 + code; sunset watch (~2yr terms) is standing ops hygiene, no further spec action | CODE | §11.1, ongoing |
 | OPEN-13 | Meta deauthorize + data-deletion phase; deletion-receipt `{url, confirmation_code}` tracker table design | SEC | §11.8 gap |
 | OPEN-14 | Profile display for `apple`/`meta` links (extends OPEN-8; raw email never stored) | Author | profile UI |
-| OPEN-15 | CN→user_id mapping for offboarding: `user_id` column on `admin_cert`, or CN convention + `--cn` flag? | Author | §5.6 automation |
-| OPEN-16 | Schedule conditional-ui build (claim corrected in §2.5, API verified; build deferred past Phase 4) | Author | autofill scope |
+| OPEN-15 | ~~CN→user_id mapping for offboarding~~ — obsolete: client certs were replaced by the IP allowlist; the Staff page revokes by `user_id` (§5.6) | Author | §5.6 automation |
+| OPEN-16 | ~~Schedule conditional-ui build~~ — built (P431b, §2.5) | Author | autofill scope |
 | OPEN-17 | Destructive-action list for §5.5 step-up (config writes? cert revoke? fact accept/reject?) | SEC | §5.5 enforcement |
 | OPEN-18 | ~~Playbook §1 + header touch-up~~ RESOLVED: header + §1 point at §5; live proof stays OPEN-1 | CODE | doc consistency |
 | OPEN-19 | ~~Prod CA custody: who holds `ca-key.pem`, where (HSM / offline backup)?~~ RESOLVED: offline encrypted copy held by the designated custodian (name TBD); live key stays root-only on the server; HSM deferred (author, 2026-10-29) | Author | prod enrolment |
@@ -285,7 +273,7 @@ Extends playbook §8: register → logout → autofill login on Safari/Chrome/iO
 | OPEN-21 | Server-side client-key copies: keep 0600 or delete-after-confirmed-delivery? | Author | runbook wording |
 | OPEN-22 | Who may mint invites (any admin via xtask, or narrower set)? | Author | invite authz |
 | OPEN-23 | ~~Admin-role enrolment quorum: single admin or two-person/break-glass?~~ PARTLY RESOLVED: break-glass is the sealed envelope + ordered Drill 4 (decision 59); quorum size for `--role admin` stays open (author outcome keyed "OPEN-22", re-keyed 2026-10-29) | Author | `--role admin` path |
-| OPEN-24 | CRL/OCSP needed, or registry-only revocation stands for Phase 4? | SEC | cert lifecycle |
+| OPEN-24 | ~~CRL/OCSP for staff client certs~~ — obsolete: no client certs (§5) | SEC | cert lifecycle |
 | OPEN-25 | ~~Mail provider choice~~ RESOLVED: Gmail SMTP for andrii.ai initially; host/port/creds/From stay configurable for a future own-sender swap (author, 2026-10-28, §12.8) | Author | Phase 5 send path |
 | OPEN-26 | Bounce/complaint handling phase + webhook receiver design (out of v1 scope per §12.8) | SEC | post-Phase-5 deliverability |
 | OPEN-27 | Link-prefetch confirmation step: build only if staging shows prefetcher burns (§12.4); design owned then | SEC | fallback UX, conditioned |
@@ -316,7 +304,7 @@ On `spawn_blocking` (ureq is blocking; precedent: voice/labels call sites), with
 
 `LoginMethod::Google` (`'google'`) + `identity_link(user_id, 'google', sub, email_hash, verified_email, 0, NULL)` — the table expresses this today (`method` is free text).
 
-- Known live `(google, sub)` → login: locked account → `account_locked`; non-customer role → `oauth_failed` + audit (staff log in with passkey+mTLS per §5, never Google); else `create_session` + rotate CSRF + `clear_fallback` + audit `oauth_login`; stamp the consumed state row's `user_id` (one `UPDATE`, so `proof_fresh` doubles as this login's unlink re-auth proof).
+- Known live `(google, sub)` → login: locked account → `account_locked`; non-customer role → `oauth_failed` + audit (staff log in with a passkey on the admin host per §5, never Google); else `create_session` + rotate CSRF + `clear_fallback` + audit `oauth_login`; stamp the consumed state row's `user_id` (one `UPDATE`, so `proof_fresh` doubles as this login's unlink re-auth proof).
 - Unknown sub + link mode (row `user_id` + matching valid customer session): sub owned by another account → `already_linked`, never a merge; sub already linked to this account → idempotent success; else insert link in-txn (`ensure_account` is idempotent), audit `method_linked` with `hash_str(sub)` (rule 7, hashes only), `302 /apostille/security`.
 - Unknown sub + logged-out → `decide_unknown_sub(usable_email_owner(email).is_some())`: match → `link_required` (rule 5, no auto-merge, no account disclosure in the URL); no match → `ensure_account` + link + session + audit `oauth_login` (reason `new_account`), `302 /apostille/login`.
 - Login by sub is allowed regardless of `email_verified`; unverified rows just never match (rules 2–3 fall out of the existing query).
@@ -560,7 +548,7 @@ Scope: customer login + implicit email verification on the **apex
 branch only**. Fallback of last resort per playbook §5: offered
 only when passkey/Apple/Google/Meta all fail. No link mode, no
 account creation, no admin-branch routes (staff stay
-passkey+mTLS per §5). Flow: `POST /auth/magic/start` (email in,
+passkey on the admin host per §5). Flow: `POST /auth/magic/start` (email in,
 always-200) → email with link → SPA reads the token from the
 URL **fragment** → `POST /auth/magic/consume` (JSON, 200 + session
 cookies). Reuses verbatim: `mint_magic_token`/`token_hash`/

@@ -22,6 +22,7 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
+	import UsersIcon from '@lucide/svelte/icons/users';
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import { installSessionGuard, signInHref, SIGN_IN_PATHS } from '#lib/admin/http-errors.js';
 	import { cookieValue } from '#lib/admin/staff-auth.js';
@@ -53,7 +54,8 @@
 				// first" or "By authority" (bulk). /triage stays as a page.
 				{ label: 'Review', href: resolve('/(admin)/review'), icon: ListChecksIcon, keywords: 'facts approve queue triage bulk by authority' },
 				{ label: 'Trace', href: resolve('/(admin)/trace'), icon: ActivityIcon, keywords: 'draft model tokens latency' },
-				{ label: 'Workers', href: resolve('/(admin)/workers'), icon: DatabaseIcon, keywords: 'fetch captures sweep' },
+				// URL download + analysis ingest; "Work queue" is the plant's jobs.
+				{ label: 'URL ingest', href: resolve('/(admin)/workers'), icon: DatabaseIcon, keywords: 'workers fetch captures sweep url' },
 				{ label: 'Packs', href: resolve('/(admin)/packs'), icon: GlobeIcon, keywords: 'authorities world load countries' },
 				{ label: 'Work queue', href: resolve('/(admin)/work'), icon: ServerCogIcon, keywords: 'jobs plant worker research queue' }
 			]
@@ -74,7 +76,10 @@
 		},
 		{
 			label: 'System',
-			items: [{ label: 'Config', href: resolve('/(admin)/config'), icon: SettingsIcon, keywords: 'keys settings' }]
+			items: [
+				{ label: 'Config', href: resolve('/(admin)/config'), icon: SettingsIcon, keywords: 'keys settings' },
+				{ label: 'Staff', href: resolve('/(admin)/staff'), icon: UsersIcon, keywords: 'staff passkeys invite revoke accounts sign-in' }
+			]
 		}
 	];
 	const ALL = NAV.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })));

@@ -1,9 +1,9 @@
 //! Public passkey ceremonies (spec `customer-auth.md` §2).
 //!
 //! Registration (first key mints the account; logged-in adds a
-//! key), username-either login (`user_id` hex or linked email),
-//! method list/unlink, logout, and `me`. Conditional mediation
-//! (autofill) is deferred past Phase 4 (see spec §2.5).
+//! key), login by `user_id` hex, linked email or no identifier at all
+//! (discoverable credentials: conditional mediation / autofill, spec
+//! §2.5), method list/unlink, logout, and `me`.
 
 use axum::{
     Json,
@@ -242,6 +242,84 @@ pub(crate) fn split_account(account: &str) -> Option<(Option<&str>, Option<Strin
     None
 }
 
+/// Registration options as JSON, asking the authenticator for a
+/// discoverable credential (a passkey that names its own user, so
+/// sign-in needs no identifier). `required` refuses authenticators
+/// that cannot store one; otherwise it is a preference. Finish never
+/// checks this flag (webauthn-rs 0.5.5), so only the options change.
+pub(crate) fn discoverable_options(
+    options: &CreationChallengeResponse,
+    required: bool,
+) -> serde_json::Value {
+    let mut value = serde_json::to_value(options).unwrap_or(serde_json::Value::Null);
+    if let Some(selection) = value
+        .pointer_mut("/publicKey/authenticatorSelection")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        selection.insert(
+            "residentKey".to_string(),
+            json!(if required { "required" } else { "preferred" }),
+        );
+        selection.insert("requireResidentKey".to_string(), json!(required));
+    }
+    value
+}
+
+/// Options + serialised state for a discoverable (usernameless)
+/// sign-in: no allow-list, UV required, conditional mediation.
+pub(crate) fn start_discoverable(
+    webauthn: &Webauthn,
+) -> Option<(RequestChallengeResponse, String)> {
+    let (options, state) = webauthn.start_discoverable_authentication().ok()?;
+    let state_json = serde_json::to_string(&state).ok()?;
+    Some((options, state_json))
+}
+
+/// Why a discoverable finish failed (callers keep their own strings).
+pub(crate) enum DiscoverFail {
+    /// The credential id is not on file (platform-side deletion):
+    /// the `404 re-register` answer, never a dead end.
+    Unknown,
+    /// Bad user handle, owner mismatch or failed verification.
+    Failed,
+    Store,
+}
+
+/// Finish a discoverable sign-in: the credential's user handle must
+/// name the account that owns the credential id, then the assertion
+/// verifies against that one passkey. Returns the owner's `user_id`.
+pub(crate) fn finish_discoverable(
+    webauthn: &Webauthn,
+    conn: &rusqlite::Connection,
+    credential: &PublicKeyCredential,
+    state_json: &str,
+) -> Result<(String, AuthenticationResult), DiscoverFail> {
+    use base64::Engine as _;
+    let Ok(state) = serde_json::from_str::<DiscoverableAuthentication>(state_json) else {
+        return Err(DiscoverFail::Store);
+    };
+    let (handle, cred_id) = webauthn
+        .identify_discoverable_authentication(credential)
+        .map_err(|_| DiscoverFail::Failed)?;
+    let presented = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(cred_id);
+    let (owner, blob) = match store::credential_owner(conn, &presented) {
+        Ok(Some(row)) => row,
+        Ok(None) => return Err(DiscoverFail::Unknown),
+        Err(_) => return Err(DiscoverFail::Store),
+    };
+    // User handles are the account's 16-byte id (see `mint_user_id`).
+    if handle.simple().to_string() != owner {
+        return Err(DiscoverFail::Failed);
+    }
+    let Ok(passkey) = serde_json::from_str::<Passkey>(&blob) else {
+        return Err(DiscoverFail::Store);
+    };
+    let result = webauthn
+        .finish_discoverable_authentication(credential, state, &[DiscoverableKey::from(&passkey)])
+        .map_err(|_| DiscoverFail::Failed)?;
+    Ok((owner, result))
+}
+
 pub(crate) fn open_conn(state: &AppState) -> Option<rusqlite::Connection> {
     let store = handbook_store::store::Store::new(&state.store_root);
     handbook_store::db::open(&store).ok()
@@ -426,7 +504,10 @@ pub async fn register_start(
     (
         StatusCode::OK,
         set_cookies(&[auth::csrf_cookie(&csrf, !state.admin_mtls_off)]),
-        Json(json!({"challenge_id": challenge_id, "options": options})),
+        Json(json!({
+            "challenge_id": challenge_id,
+            "options": discoverable_options(&options, false),
+        })),
     )
         .into_response()
 }
@@ -600,11 +681,13 @@ pub async fn register_finish(
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LoginStartBody {
+    #[serde(default)]
     account: String,
 }
 
 /// `POST /auth/passkey/login/start` — `account` is a `user_id` hex
-/// or a linked email. Unknown/empty/locked all answer the same
+/// or a linked email; empty (the autofill probe) starts a discoverable
+/// ceremony instead (spec §2.5). Unknown/locked all answer the same
 /// 401: no enumeration.
 pub async fn login_start(
     State(state): State<AppState>,
@@ -634,6 +717,38 @@ pub async fn login_start(
     let Some(conn) = open_conn(&state) else {
         return store_unavailable();
     };
+    if body.account.trim().is_empty() {
+        let Some((options, state_json)) = start_discoverable(&state.webauthn) else {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "ceremony unavailable"})),
+            )
+                .into_response();
+        };
+        let _ = store::sweep_challenges(&conn, now);
+        let challenge_id = store::mint_challenge_id();
+        if store::store_challenge(
+            &conn,
+            &challenge_id,
+            &store::NewChallenge {
+                kind: store::KIND_DISCOVERABLE,
+                user_id: None,
+                state_json: &state_json,
+                now,
+            },
+        )
+        .is_err()
+        {
+            return store_unavailable();
+        }
+        let csrf = auth::csrf::mint_token();
+        return (
+            StatusCode::OK,
+            set_cookies(&[auth::csrf_cookie(&csrf, !state.admin_mtls_off)]),
+            Json(json!({"challenge_id": challenge_id, "options": options})),
+        )
+            .into_response();
+    }
     let Some((by_id, by_email)) = split_account(&body.account) else {
         return unknown();
     };
@@ -733,45 +848,19 @@ pub async fn login_finish(
     let Some(conn) = open_conn(&state) else {
         return store_unavailable();
     };
-    let Some((owner, state_json)) =
-        store::take_challenge(&conn, &body.challenge_id, store::KIND_LOGIN, now).unwrap_or(None)
-    else {
-        return (
+    let gone = || {
+        (
             StatusCode::GONE,
             Json(json!({"error": "challenge invalid or expired"})),
         )
-            .into_response();
+            .into_response()
     };
-    let user_id = owner.unwrap_or_default();
-    if !state
-        .auth_limits
-        .check(&format!("lf:{user_id}"), now, 10, 60)
-    {
-        return (
+    let limited = || {
+        (
             StatusCode::TOO_MANY_REQUESTS,
             Json(json!({"error": "rate limited"})),
         )
-            .into_response();
-    }
-    // Platform-side credential deletion lands here (not a dead
-    // end): the id is well-formed but unknown to us.
-    let presented = {
-        use base64::Engine as _;
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(body.credential.get_credential_id())
-    };
-    if store::credential_owner(&conn, &presented)
-        .unwrap_or(None)
-        .is_none()
-    {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "credential unknown", "action": "re-register"})),
-        )
-            .into_response();
-    }
-    let auth_state: PasskeyAuthentication = match serde_json::from_str(&state_json) {
-        Ok(state) => state,
-        Err(_) => return store_unavailable(),
+            .into_response()
     };
     let failed = || {
         (
@@ -780,12 +869,67 @@ pub async fn login_finish(
         )
             .into_response()
     };
-    let result = match state
-        .webauthn
-        .finish_passkey_authentication(&body.credential, &auth_state)
+    let re_register = || {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "credential unknown", "action": "re-register"})),
+        )
+            .into_response()
+    };
+    let named =
+        store::take_challenge(&conn, &body.challenge_id, store::KIND_LOGIN, now).unwrap_or(None);
+    let (user_id, result) = if let Some((owner, state_json)) = named {
+        let user_id = owner.unwrap_or_default();
+        if !state
+            .auth_limits
+            .check(&format!("lf:{user_id}"), now, 10, 60)
+        {
+            return limited();
+        }
+        // Platform-side credential deletion lands here (not a dead
+        // end): the id is well-formed but unknown to us.
+        let presented = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(body.credential.get_credential_id())
+        };
+        if store::credential_owner(&conn, &presented)
+            .unwrap_or(None)
+            .is_none()
+        {
+            return re_register();
+        }
+        let auth_state: PasskeyAuthentication = match serde_json::from_str(&state_json) {
+            Ok(state) => state,
+            Err(_) => return store_unavailable(),
+        };
+        match state
+            .webauthn
+            .finish_passkey_authentication(&body.credential, &auth_state)
+        {
+            Ok(result) => (user_id, result),
+            Err(_) => return failed(),
+        }
+    } else if let Some((None, state_json)) =
+        store::take_challenge(&conn, &body.challenge_id, store::KIND_DISCOVERABLE, now)
+            .unwrap_or(None)
     {
-        Ok(result) => result,
-        Err(_) => return failed(),
+        match finish_discoverable(&state.webauthn, &conn, &body.credential, &state_json) {
+            Ok((user_id, result)) => {
+                if !state
+                    .auth_limits
+                    .check(&format!("lf:{user_id}"), now, 10, 60)
+                {
+                    return limited();
+                }
+                (user_id, result)
+            }
+            Err(DiscoverFail::Unknown) => return re_register(),
+            Err(DiscoverFail::Failed) => return failed(),
+            Err(DiscoverFail::Store) => return store_unavailable(),
+        }
+    } else {
+        return gone();
     };
     let authed_id = cred_id_string(result.cred_id());
     let Some((owner_id, blob)) = store::credential_owner(&conn, &authed_id).unwrap_or(None) else {
@@ -822,6 +966,7 @@ pub async fn login_finish(
             }
         }
     }
+    let _ = store::touch_credential(&conn, &authed_id, now);
     if result.user_verified() {
         let _ = store::set_step_up(&conn, &user_id, now);
     }
@@ -1338,6 +1483,81 @@ mod tests {
                 .unwrap();
             assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
         }
+    }
+
+    #[tokio::test]
+    async fn autofill_probe_starts_a_discoverable_login() {
+        let (tmp, app) = test_app();
+        // The login page's conditional-mediation probe sends "".
+        let res = app
+            .clone()
+            .oneshot(post_json(
+                "/apostille/api/v1/auth/passkey/login/start",
+                "",
+                r#"{"account":""}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let set_cookie = res
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .collect::<Vec<_>>()
+            .join("; ");
+        let body = axum::body::to_bytes(res.into_body(), 65536).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["options"]["mediation"], "conditional");
+        let challenge = value["challenge_id"].as_str().unwrap().to_string();
+        let conn =
+            handbook_store::db::open(&handbook_store::store::Store::new(tmp.path())).unwrap();
+        let (kind, user): (String, Option<String>) = conn
+            .query_row(
+                "SELECT kind, user_id FROM webauthn_challenge WHERE id = ?1",
+                [&challenge],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, store::KIND_DISCOVERABLE);
+        assert_eq!(user, None);
+        // A forged assertion fails closed, without a session.
+        let (cookie, token) = csrf_pair(&set_cookie);
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/apostille/api/v1/auth/passkey/login/finish")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::ORIGIN, "http://localhost")
+                    .header(header::COOKIE, &cookie)
+                    .header(auth::CSRF_HEADER, &token)
+                    .extension(addr())
+                    .body(Body::from(format!(
+                        r#"{{"challenge_id":"{challenge}","credential":{BOGUS_LOGIN}}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert!(
+            res.headers()
+                .get_all(header::SET_COOKIE)
+                .iter()
+                .all(|v| { !v.to_str().unwrap_or("").starts_with(auth::PUB_COOKIE) })
+        );
+    }
+
+    #[tokio::test]
+    async fn registration_prefers_a_discoverable_passkey() {
+        let (_tmp, app) = test_app();
+        let (status, body, _) = start_register(&app, "Andrii", "").await;
+        assert_eq!(status, StatusCode::OK);
+        let selection = &body["options"]["publicKey"]["authenticatorSelection"];
+        assert_eq!(selection["residentKey"], "preferred", "{selection}");
+        assert_eq!(selection["requireResidentKey"], false);
     }
 
     #[tokio::test]

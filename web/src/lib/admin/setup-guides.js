@@ -88,7 +88,7 @@ export const STEPS = [
 			{ key: 'auth.rp_id', type: 'text', label: 'RP ID', hint: 'Required. The effective domain of the admin host (no scheme, no port).', placeholder: 'admin.andrii.ai' },
 			{ key: 'auth.rp_name', type: 'text', label: 'RP name', hint: 'Required. Human name shown by authenticators during ceremonies.', placeholder: 'Apostille Handbook (staff)' },
 			{ key: 'auth.origin', type: 'text', label: 'Origin', hint: 'Required. Staff WebAuthn origin ONLY (exact admin origin over TLS) — public links use net.public_host.', placeholder: 'https://admin.andrii.ai' },
-			{ key: 'admin.mtls_off', type: 'bool', label: 'Disable staff mTLS', hint: 'Keep OFF on any public host. Break-glass for loopback dev only — it opens loopback admin hosts and a test header.', placeholder: '' }
+			{ key: 'admin.mtls_off', type: 'bool', label: 'Local-dev admin seam', hint: 'Keep OFF on any public host (a release build refuses it unless every bind is loopback). xtask up turns it on: the admin host then accepts localhost and http://localhost origins.', placeholder: '' }
 		],
 		guide: {
 			intro: 'Three strings, no console: they must describe the staff WebAuthn origin precisely (never the public host). The wizard cannot check them — a typo fails at enrolment. Staff access is also IP-gated: set admin.allow_ips (xtask config-set) to your address BEFORE opening /config from anywhere but loopback, then restart — a refused browser gets a 403 page naming its IP.',

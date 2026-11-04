@@ -462,6 +462,36 @@ pub fn router(state: AppState) -> Router {
             "/apostille/api/v1/auth/logout",
             post(crate::staff_passkey::logout),
         )
+        // Staff page (customer-auth.md §5.6): list, invite, revoke, add
+        // a passkey. AdminAuth + the CSRF layer; mutations need step-up.
+        .route(
+            "/apostille/api/v1/staff",
+            get(crate::staff_passkey::staff_list),
+        )
+        .route(
+            "/apostille/api/v1/staff/invites",
+            post(crate::staff_passkey::invite_create),
+        )
+        .route(
+            "/apostille/api/v1/staff/invites/{id}/withdraw",
+            post(crate::staff_passkey::invite_withdraw),
+        )
+        .route(
+            "/apostille/api/v1/staff/passkeys/revoke",
+            post(crate::staff_passkey::passkey_revoke),
+        )
+        .route(
+            "/apostille/api/v1/staff/passkeys/add/start",
+            post(crate::staff_passkey::add_start),
+        )
+        .route(
+            "/apostille/api/v1/staff/passkeys/add/finish",
+            post(crate::staff_passkey::add_finish),
+        )
+        .route(
+            "/apostille/api/v1/staff/{user_id}/revoke",
+            post(crate::staff_passkey::staff_revoke),
+        )
         .route("/apostille/api/v1/bus/publish", post(publish))
         // Staff topic subscriptions (`proposals`, `run:{id}`) live on
         // the admin host only (M-A): the public branch ignores the

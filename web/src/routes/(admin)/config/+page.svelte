@@ -943,8 +943,8 @@
 		{#if enrolled}
 			<Notice variant="success" heading="Enrolled and signed in.">
 				<p class="m-0">
-					You are the first {enrolled.role}; the setup key is burned. Keep this user ID, sign-in
-					asks for it: <code class="select-all break-all">{enrolled.userId}</code>
+					You are the first {enrolled.role}; the setup key is burned. Next time, sign in with this
+					passkey: no user ID needed. Invite more staff from the Staff page.
 				</p>
 				<p class="mt-3 mb-0">
 					<Button href={resolve('/(admin)/review')}>Continue to the review queue →</Button>

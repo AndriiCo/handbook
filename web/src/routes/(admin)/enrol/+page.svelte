@@ -72,8 +72,7 @@
 {:else if grant}
 	<Notice variant="success" heading="Enrolled.">
 		<p>
-			Signed in as {grant.role}. Keep this user ID: sign-in asks for it.
-			<code class="select-all break-all">{grant.userId}</code>
+			Signed in as {grant.role}. Next time, sign in with this passkey: no user ID needed.
 		</p>
 	</Notice>
 	<p class="mt-4">

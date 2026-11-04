@@ -1,13 +1,32 @@
 //! Staff lifecycle: enrolment invites + offboarding.
 //!
-//! Tasks: `admin-invite --role <staff|admin> --cn <name>` (mints a
-//! single-use enrolment URL, stores the token hash only) and
-//! `admin-offboard --user <id> --cn <name>` (per-step transactions,
-//! idempotent). Spec
-//! `customer-auth.md` §§5.1/5.6.
+//! Tasks: `admin-invite --store <path> --role <staff|admin> --cn
+//! <name>` (mints a single-use enrolment URL, stores the token hash
+//! only) and `admin-offboard --store <path> --user <id> --cn <name>`
+//! (per-step transactions, idempotent). Both name the store
+//! explicitly: a default would write to whatever `store/` the shell
+//! happens to sit next to. The console's Staff page does the same from
+//! a browser. Spec `customer-auth.md` §§5.1/5.6.
 
-/// Enrol-page origin default (staging passes `--origin`).
-const DEFAULT_ORIGIN: &str = "https://admin.andrii.ai";
+/// The store both tasks act on: `--store` is required.
+fn explicit_store(args: &[String]) -> handbook_store::store::Store {
+    if crate::flag(args, "store").is_none() {
+        fail("--store <path> is required (the server's store dir, e.g. /var/lib/apostille)");
+    }
+    crate::open_store(args)
+}
+
+/// The printed enrolment link: `<origin>/enrol?invite=…` with
+/// `--origin`, else the path alone (open it on your admin host). No
+/// production default: an invite minted against a local store must
+/// not point at the live console, nor the reverse.
+fn invite_link(origin: Option<&str>, token: &str) -> String {
+    let path = format!("/enrol?invite={token}");
+    match origin {
+        Some(origin) => format!("{}{path}", origin.trim_end_matches('/')),
+        None => path,
+    }
+}
 
 /// Staff names: ASCII word characters, dots and dashes, 1 to 64 bytes
 /// (`jdoe`, `ops.bot`, `admin-2`; not emails).
@@ -22,7 +41,7 @@ pub(crate) fn valid_cn(cn: &str) -> bool {
 /// `admin-invite --role <staff|admin> --cn <name> [--days <n>]
 /// [--actor <a>] [--store <path>] [--origin <url>]`.
 pub fn run_invite(args: &[String]) {
-    let store = crate::open_store(args);
+    let store = explicit_store(args);
     let conn = crate::open_db(&store);
     auth::migrate_auth_tables(&conn).unwrap_or_else(|e| fail(&e.to_string()));
     let role = crate::required(args, "role");
@@ -40,8 +59,11 @@ pub fn run_invite(args: &[String]) {
         fail("--days must be 1..30");
     }
     let actor = crate::flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
-    let origin = crate::flag(args, "origin").unwrap_or_else(|| DEFAULT_ORIGIN.to_string());
-    if !origin.starts_with("https://") && !origin.starts_with("http://localhost") {
+    let origin = crate::flag(args, "origin");
+    if let Some(origin) = origin.as_deref()
+        && !origin.starts_with("https://")
+        && !origin.starts_with("http://localhost")
+    {
         fail("--origin must be https:// (or http://localhost for dev)");
     }
     let token = auth::login::mint_magic_token();
@@ -67,9 +89,14 @@ pub fn run_invite(args: &[String]) {
         Ok(())
     })
     .unwrap_or_else(|e| fail(&e.to_string()));
+    let link = invite_link(origin.as_deref(), &token);
+    let hint = if origin.is_none() {
+        " (open it on the admin host; --origin prints the full URL)"
+    } else {
+        ""
+    };
     println!(
-        "invite for {cn} ({role})\n  url: {}/enrol?invite={token}\n  expires in {days}d; single-use; token is NOT stored",
-        origin.trim_end_matches('/')
+        "invite for {cn} ({role})\n  url: {link}{hint}\n  expires in {days}d; single-use; token is NOT stored"
     );
 }
 
@@ -78,7 +105,7 @@ pub fn run_invite(args: &[String]) {
 /// resurrect access), one transaction per step, every step
 /// idempotent — re-runnable after partial failure.
 pub fn run_offboard(args: &[String]) {
-    let store = crate::open_store(args);
+    let store = explicit_store(args);
     let conn = crate::open_db(&store);
     auth::migrate_auth_tables(&conn).unwrap_or_else(|e| fail(&e.to_string()));
     let user_id = crate::required(args, "user");
@@ -167,6 +194,20 @@ mod tests {
         handbook_store::db::migrate(&conn).unwrap();
         auth::migrate_auth_tables(&conn).unwrap();
         (dir, store, conn)
+    }
+
+    #[test]
+    fn invite_link_has_no_production_default() {
+        let token = "ab".repeat(32);
+        assert_eq!(
+            super::invite_link(None, &token),
+            format!("/enrol?invite={token}")
+        );
+        assert_eq!(
+            super::invite_link(Some("http://localhost:18319/"), &token),
+            format!("http://localhost:18319/enrol?invite={token}")
+        );
+        assert!(!super::invite_link(None, &token).contains("andrii.ai"));
     }
 
     #[test]
