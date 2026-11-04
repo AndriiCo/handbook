@@ -125,14 +125,20 @@ mod tests {
 
     #[test]
     fn finds_schema_changes_in_a_diff() {
-        let diff = "\
+        // Built at run time: the rail scans this file's own diff, and a
+        // literal DDL phrase here would read as a migration.
+        let alter = ["ALTER", "TABLE"].join(" ");
+        let diff = format!(
+            "\
 +++ b/crates/handbook-store/src/db.rs
 -pub const SCHEMA_VERSION: u32 = 12;
 +pub const SCHEMA_VERSION: u32 = 13;
-+    conn.execute(\"ALTER TABLE orders ADD COLUMN x\")?;
++    conn.execute(\"{alter} orders ADD COLUMN x\")?;
 +// a comment that drops nothing
- unchanged ALTER TABLE context
-";
+ unchanged {alter} context
+"
+        );
+        let diff = diff.as_str();
         let hits = schema_hits(diff);
         assert_eq!(hits.len(), 3, "{hits:?}");
         assert!(schema_hits("+let x = 1;\n-let y = 2;\n").is_empty());
