@@ -154,6 +154,14 @@ pub fn run_mail(args: &[String]) {
     for warning in &warnings {
         eprintln!("mail-poll: config warning: {warning}");
     }
+    // W-3: a fake inbox has no Gmail behind it; staff write its mail in
+    // the console's Compose screen instead.
+    if cfg.modes.is_fake(sealed_config::Integration::MailIn) {
+        println!(
+            "mail-poll: mail.mode is fake; Gmail is not polled (the console's Compose screen is the inbox)"
+        );
+        return;
+    }
     let (Some(client_id), Some(client_secret), Some(refresh_token)) = (
         cfg.mail_client_id,
         cfg.mail_client_secret,

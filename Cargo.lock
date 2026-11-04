@@ -4002,6 +4002,7 @@ dependencies = [
  "jsonwebtoken",
  "labels",
  "lettre",
+ "mail",
  "media",
  "notify",
  "openssl-sys",

@@ -323,3 +323,31 @@ Rules (`config::Modes`, `config::fakes_allowed`):
 - The boot prints `FAKE MODE — <integrations>`; `GET
   /admin/version` lists them as `fakes`, and the console shows a
   FAKE ribbon naming each one on every screen.
+
+### 9.1 Fake email (W-3b)
+
+- **Outbox** (`mailer.mode = fake`): `magic::mailer_from_config`
+  returns `Mailer::Outbox` whatever `mailer.provider` says. Every
+  send — magic links, follower digests, first-source outreach —
+  becomes a `fake_outbox` row (`CREATE TABLE IF NOT EXISTS`, metadata
+  DB) with its closed header set (RFC 8058 pair, `Message-ID`,
+  `Reply-To`). Nothing is dialled, so no real address is reached and
+  the overall send budget is untouched. Staff read it at **Outbox**
+  (`GET /apostille/api/v1/admin/fake/outbox`, newest 200); the rows
+  hold live sign-in links, which is the point on a loopback or staging
+  boot with synthetic data.
+- **Inbox** (`mail.mode = fake`): `xtask mail-poll` exits without
+  calling Gmail. **Compose** (`POST /apostille/api/v1/admin/fake/inbox`,
+  409 unless the mode is fake) takes From, subject, body, an optional
+  `In-Reply-To`, `dmarc: pass|fail` and optional attachments, builds
+  the RFC 2822 bytes Gmail would hand the poll — including the
+  `Authentication-Results: mx.google.com; …` stamp with the chosen
+  DMARC/DKIM/SPF verdict — and runs them through
+  `mail::poll::capture_message`, the poll's own capture step. Trust is
+  therefore decided exactly as for polled mail (P435): `official` only
+  when the stamp authenticates an official From domain; a DMARC fail
+  caps at `community`; unknown domains land in `mail-inbox`. A reply
+  naming an outbox `Message-ID` links to its outreach email. The
+  capture is watermarked (`X-Handbook-Fake` header, `fake-inbox:<id>`
+  origin, `received_via: fake-inbox`, `fake: true`) and the next
+  `xtask instruct-sweep` drafts from it into `/review` unchanged.

@@ -790,6 +790,10 @@ imposes the seam contract; the swap is config-only by construction.
   From on andrii.ai; this exact address gets relay-registered
   per §12.7), `mailer.dir` text (default `"mail"`, store-root
   relative). Missing/partial SMTP set → request `503`, boot clean.
+  W-3: `mailer.mode = fake` (loopback or staging boots only) wins
+  over the provider: every message is kept in the store's fake
+  outbox and shown on the admin **Outbox** screen, never sent
+  (`docs/specs/config-db.md` §9.1).
 - No link/token logging: neither the full URL, the token, nor
   the raw address appears in app logs, audit rows, or provider
   metadata beyond the required `To:` delivery. Audit uses

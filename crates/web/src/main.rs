@@ -498,6 +498,7 @@ fn migrate_mission_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     offices::migrate_tables(conn)?;
     first_source::migrate_tables(conn)?;
     authority_path::migrate_tables(conn)?;
+    fake::migrate_tables(conn)?;
     forms_map::migrate_tables(conn)
 }
 
@@ -564,6 +565,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(admin_authorities::admin_router(state.clone()))
         .merge(worker::admin_router(state.clone()))
         .merge(source_history::admin_router(state.clone()))
+        .merge(fake::admin_router(state.clone()))
 }
 
 /// Public router with explicit state (admin routes are NEVER here —
@@ -2616,6 +2618,7 @@ mod tests {
             "/apostille/api/v1/admin/fact-checks?slug=usa-wa-sos",
             "/apostille/api/v1/admin/authorities",
             "/apostille/api/v1/admin/first-source/emails",
+            "/apostille/api/v1/admin/fake/outbox",
             "/apostille/api/v1/admin/compile",
         ] {
             let get = |host: &'static str, session: Option<&'static str>| {
@@ -4344,6 +4347,202 @@ mod tests {
         )
         .await;
         assert_eq!(v["contacts"][0]["value"], "apostille@example.gov");
+    }
+
+    #[tokio::test]
+    async fn fake_mail_loop_outbox_then_composed_reply_threads_with_dmarc_trust() {
+        // W-3: with no Gmail and no SMTP, outreach lands in the fake
+        // outbox, and a reply composed in the console is captured by the
+        // poller's own step: DMARC decides the trust, In-Reply-To threads
+        // it to the outreach email, and the capture waits for the
+        // instruct worker like any polled mail.
+        if std::env::var("META_API_KEY").is_ok_and(|k| !k.is_empty()) {
+            eprintln!("skip: META_API_KEY is set; this test must not call the model");
+            return;
+        }
+        let fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        let authority = db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "New York",
+                name: "Synthetic NY DoS",
+                slug: "synthetic-ny-dos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO domain(name, authority_id, status) VALUES ('example.gov', ?1, 'official')",
+            [authority],
+        )
+        .unwrap();
+        drop(conn);
+        let mut state = fx.state.clone();
+        state.fakes = config::Modes::default()
+            .with(config::Integration::MailOut, config::Mode::Fake)
+            .with(config::Integration::MailIn, config::Mode::Fake);
+        let cfg = config::RuntimeConfig {
+            modes: state.fakes,
+            mailer_provider: "smtp".to_string(),
+            ..config::RuntimeConfig::default()
+        };
+        // `mailer.mode = fake` wins over the configured provider.
+        state.mailer = magic::mailer_from_config(&cfg, &state.store_root);
+        assert!(matches!(state.mailer, Some(magic::Mailer::Outbox(_))));
+        let call = |method: &str, uri: &str, body: Option<serde_json::Value>| {
+            admin_request(
+                method,
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("tok"),
+                Some("https://admin.andrii.ai"),
+                body,
+            )
+        };
+        let app =
+            |state: &AppState| admin::router(state.clone()).merge(mission_admin_routers(state));
+        let read = |res: axum::response::Response| async move {
+            let status = res.status();
+            let v: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+            (status, v)
+        };
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call(
+                    "POST",
+                    "/apostille/api/v1/admin/first-source/emails",
+                    Some(
+                        json!({"slug": "synthetic-ny-dos", "to": "apostille@example.gov",
+                                "questions": ["What is the fee per document?"]}),
+                    ),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{v}");
+        let id = v["email"]["id"].as_i64().unwrap();
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call(
+                    "POST",
+                    &format!("/apostille/api/v1/admin/first-source/emails/{id}/send"),
+                    None,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        assert_eq!(v["email"]["status"], "sent");
+        // The outbox holds it, with our Message-ID; nothing was dialled.
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call("GET", "/apostille/api/v1/admin/fake/outbox", None))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        assert_eq!(
+            (v["outbox"].clone(), v["inbox"].clone()),
+            (json!(true), json!(true))
+        );
+        let kept = &v["messages"][0];
+        assert_eq!(kept["kind"], "outreach");
+        assert_eq!(kept["to"], "apostille@example.gov");
+        let message_id = kept["headers"]["Message-ID"].as_str().unwrap().to_string();
+        assert!(
+            message_id.starts_with(&format!("<outreach-{id}-")),
+            "{message_id}"
+        );
+        // The office answers (DMARC pass): official trust, its own
+        // authority, threaded to the outreach email.
+        let reply = |dmarc: &str, body: &str| {
+            json!({"from": "Apostille@Example.gov", "subject": "Re: your questions",
+                   "body": body, "in_reply_to": message_id, "dmarc": dmarc})
+        };
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call(
+                    "POST",
+                    "/apostille/api/v1/admin/fake/inbox",
+                    Some(reply("pass", "The fee is $15 per document.")),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{v}");
+        assert_eq!(v["trust"], "official");
+        assert_eq!(v["verified_by"], "dmarc");
+        assert_eq!(v["authority"], "synthetic-ny-dos");
+        assert_eq!(v["outreach_email"], id);
+        let capture_id = v["capture_id"].as_i64().unwrap();
+        let conn = db::open(&Store::new(&state.store_root)).unwrap();
+        let (status_now, linked): (String, i64) = conn
+            .query_row(
+                "SELECT status, reply_capture_id FROM outreach_email WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((status_now.as_str(), linked), ("replied", capture_id));
+        let (kind, authenticity): (String, String) = conn
+            .query_row(
+                "SELECT kind, authenticity FROM capture WHERE id = ?1",
+                [capture_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, "email");
+        assert!(
+            authenticity.contains("\"received_via\":\"fake-inbox\""),
+            "{authenticity}"
+        );
+        drop(conn);
+        // DMARC fail from the same domain: kept, capped at community.
+        let (status, v) = read(
+            app(&state)
+                .oneshot(call(
+                    "POST",
+                    "/apostille/api/v1/admin/fake/inbox",
+                    Some(reply("fail", "Spoofed: the fee is $1.")),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{v}");
+        assert_eq!(
+            (v["trust"].clone(), v["verified_by"].clone()),
+            (json!("community"), json!("none"))
+        );
+        // Bad input refuses; a boot without the fake inbox has none.
+        let res = app(&state)
+            .oneshot(call(
+                "POST",
+                "/apostille/api/v1/admin/fake/inbox",
+                Some(reply("maybe", "x")),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let res = app(&fx.state)
+            .oneshot(call(
+                "POST",
+                "/apostille/api/v1/admin/fake/inbox",
+                Some(reply("pass", "x")),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
     }
 
     #[tokio::test]
