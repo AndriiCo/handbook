@@ -246,13 +246,19 @@ test('statusChanges announces only items that changed', () => {
 	assert.deepEqual(statusChanges(new Map(), items), []);
 });
 
-test('canStagePacks: finished research.nonparty with a result only', () => {
+test('canStagePacks: finished research.nonparty, or discovery with packs', () => {
 	const done = { kind: 'research.nonparty', status: 'done', result: { sha256: 'a', bytes: 1, content_type: 'application/json' } };
 	assert.equal(canStagePacks(done), true);
 	assert.equal(canStagePacks({ ...done, staged: true }), true); // re-staging is allowed
 	assert.equal(canStagePacks({ ...done, kind: 'scrape.urls' }), false);
 	assert.equal(canStagePacks({ ...done, status: 'leased' }), false);
 	assert.equal(canStagePacks({ ...done, result: null }), false);
+	// discovery.bootstrap stages when its summary counts world packs (D-3).
+	const discovery = { ...done, kind: 'discovery.bootstrap', summary: { packs: 2 } };
+	assert.equal(canStagePacks(discovery), true);
+	assert.equal(canStagePacks({ ...discovery, summary: { packs: 0 } }), false);
+	assert.equal(canStagePacks({ ...discovery, summary: null }), false);
+	assert.equal(canStagePacks({ ...discovery, status: 'failed' }), false);
 	// The seed's done item is scrape.urls, so it does not qualify.
 	for (const item of normalizeList(CONTRACT.list)?.items ?? []) assert.equal(canStagePacks(item), false);
 });

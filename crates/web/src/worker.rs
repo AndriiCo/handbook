@@ -92,7 +92,9 @@ pub(crate) const KINDS: &[KindInfo] = &[
         about: "From-scratch discovery report: countries from the live HCCH table \
                 (parties, future parties with entry-into-force dates, non-parties), \
                 a Muse cross-check of that list, and fetch-checked official URLs \
-                for the listed countries' authorities. Writes nothing.",
+                for the listed countries' authorities. Writes nothing; the kept URLs \
+                come back as world packs to stage and load (watch seeds, unverified \
+                domains).",
         example: r#"{"countries": ["DE"], "batch_size": 15}"#,
         // Default caps (10 batches of 15, each URL fetched politely)
         // finish well inside an hour; "all" with more batches needs more.
@@ -1103,13 +1105,24 @@ fn valid_pack_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-/// Pack files out of a `packs.v1` bundle: `(stem, pretty JSON)` each.
-/// Shape checks only (object, safe unique id); the Packs page runs the
-/// full pack rules (`xtask packs-load`) before anything loads.
-fn bundle_packs(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, &'static str> {
+/// The bundle format each stageable kind uploads: `research.nonparty`
+/// a `packs.v1` bundle, `discovery.bootstrap` a `discovery.v1` report
+/// whose `packs` are world packs with new watch seeds (D-3).
+fn stage_format(kind: &str) -> Option<&'static str> {
+    match kind {
+        "research.nonparty" => Some("packs.v1"),
+        "discovery.bootstrap" => Some("discovery.v1"),
+        _ => None,
+    }
+}
+
+/// Pack files out of a result bundle of `format`: `(stem, pretty JSON)`
+/// each. Shape checks only (object, safe unique id); the Packs page
+/// runs the full pack rules (`xtask packs-load`) before anything loads.
+fn bundle_packs(bytes: &[u8], format: &str) -> Result<Vec<(String, Vec<u8>)>, &'static str> {
     let bundle: Value = serde_json::from_slice(bytes).map_err(|_| "result is not JSON")?;
-    if bundle["format"] != "packs.v1" {
-        return Err("result is not a packs.v1 bundle");
+    if bundle["format"] != format {
+        return Err("result is not a bundle of this kind's format");
     }
     let packs = bundle["packs"]
         .as_array()
@@ -1150,9 +1163,28 @@ fn write_inbox(dir: &std::path::Path, files: &[(String, Vec<u8>)]) -> std::io::R
     std::fs::rename(&tmp, dir)
 }
 
-/// `POST …/work-items/{id}/stage-packs`: a done `research.nonparty`
-/// result's packs land in `<store>/packs-inbox/<id>/` for the Packs
-/// page to load. Re-staging replaces the folder. Audited `work_stage`.
+/// Staged discovery packs that copy a world pack this release no longer
+/// has byte for byte: the ids whose `pack_bases` sha256 (the committed
+/// file the worker copied) differs from `<world_dir>/<id>.json`. Loading
+/// such a copy would set rows back to the worker's names and close the
+/// tasks of lines the release changed, so it is refused.
+fn stale_world_copies(world_dir: &std::path::Path, bases: &Value, stems: &[&str]) -> Vec<String> {
+    stems
+        .iter()
+        .filter(|stem| {
+            let release = std::fs::read(world_dir.join(format!("{stem}.json")))
+                .map(|bytes| handbook_store::store::sha256_hex(&bytes))
+                .ok();
+            release.is_none() || bases[**stem].as_str() != release.as_deref()
+        })
+        .map(|stem| (*stem).to_string())
+        .collect()
+}
+
+/// `POST …/work-items/{id}/stage-packs`: a done `research.nonparty` or
+/// `discovery.bootstrap` result's packs land in
+/// `<store>/packs-inbox/<id>/` for the Packs page to load. Re-staging
+/// replaces the folder. Audited `work_stage`.
 async fn stage_packs(
     auth: AdminAuth,
     State(state): State<AppState>,
@@ -1166,22 +1198,46 @@ async fn stage_packs(
         Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such work item"),
         Err(_) => return store_unavailable(),
     };
-    let result = match (&item.result, item.kind.as_str(), item.status.as_str()) {
-        (Some(result), "research.nonparty", "done") => result,
+    let (result, format) = match (&item.result, stage_format(&item.kind), item.status.as_str()) {
+        (Some(result), Some(format), "done") => (result, format),
         _ => {
             return json_error(
                 StatusCode::CONFLICT,
-                "only a done research.nonparty item with a result stages as packs",
+                "only a done research.nonparty or discovery.bootstrap item with a result \
+                 stages as packs",
             );
         }
     };
     let Ok(bytes) = Store::new(&state.store_root).read_blob(&result.sha256) else {
         return store_unavailable();
     };
-    let files = match bundle_packs(&bytes) {
+    let files = match bundle_packs(&bytes, format) {
+        Ok(files) if files.is_empty() => {
+            return json_error(StatusCode::UNPROCESSABLE_ENTITY, "the result has no packs");
+        }
         Ok(files) => files,
         Err(why) => return json_error(StatusCode::UNPROCESSABLE_ENTITY, why),
     };
+    // Discovery packs are whole copies of release world packs (same
+    // ids): only a copy of the release's own file may stage.
+    if format == "discovery.v1"
+        && let Some((packs, _)) = crate::admin_packs::release_paths()
+    {
+        let bases = serde_json::from_slice::<Value>(&bytes)
+            .map(|bundle| bundle["pack_bases"].clone())
+            .unwrap_or_default();
+        let stems: Vec<&str> = files.iter().map(|(stem, _)| stem.as_str()).collect();
+        let stale = stale_world_copies(&packs.join("world"), &bases, &stems);
+        if !stale.is_empty() {
+            return json_error(
+                StatusCode::CONFLICT,
+                &format!(
+                    "world packs {stale:?} differ from the ones this run copied; re-run \
+                     discovery on this release"
+                ),
+            );
+        }
+    }
     let dir = inbox_dir(&state, id);
     if let Err(e) = write_inbox(&dir, &files) {
         tracing::warn!("stage packs for work item {id}: {e}");
@@ -1965,10 +2021,83 @@ mod tests {
         }
         let dup = json!({"format": "packs.v1", "packs": [{"pack": "EG"}, {"pack": "EG"}]});
         assert_eq!(
-            bundle_packs(dup.to_string().as_bytes()).unwrap_err(),
+            bundle_packs(dup.to_string().as_bytes(), "packs.v1").unwrap_err(),
             "duplicate pack id in bundle"
         );
-        assert!(bundle_packs(b"not json").is_err());
+        assert!(bundle_packs(b"not json", "packs.v1").is_err());
+        // Each kind stages its own format only.
+        assert!(bundle_packs(dup.to_string().as_bytes(), "discovery.v1").is_err());
+        assert_eq!(stage_format("discovery.bootstrap"), Some("discovery.v1"));
+        assert_eq!(stage_format("scrape.urls"), None);
+    }
+
+    /// D-3: a discovery result stages whole world packs (v2 fields kept)
+    /// into the same inbox; empty or wrong-format results do not.
+    #[tokio::test]
+    async fn stage_packs_takes_discovery_world_packs() {
+        let fx = Fixture::new(Some(TOKEN));
+        let uri = |id: i64| format!("/apostille/api/v1/admin/work-items/{id}/stage-packs");
+        let pack = json!({"pack": "MH", "version": 1, "iso2": "MH",
+            "authorities": [
+                {"kind": "country", "country": "Marshall Islands", "name": "Minister of Foreign Affairs",
+                 "slug": "mh-ca-1"},
+                {"kind": "country", "country": "Marshall Islands", "name": "Limmatquai 50",
+                 "slug": "mh-ca-2", "hidden": true}],
+            "watch": [{"authority": "mh-ca-1", "kind": "website_official",
+                       "uri": "https://mfa.example/apostille", "cadence": "weekly"}]});
+        let bundle = json!({"format": "discovery.v1", "kind": "discovery.bootstrap",
+                            "packs": [pack], "pack_bases": {"MH": "ab"}, "summary": {}});
+        let id = finished(&fx, "discovery.bootstrap", bundle.to_string().as_bytes());
+        let (status, staged) = call_json(fx.admin(), staff("POST", &uri(id), None)).await;
+        assert_eq!(status, StatusCode::OK, "{staged}");
+        assert_eq!(staged["packs"], json!(["MH"]));
+        let file = fx
+            .state
+            .store_root
+            .join("packs-inbox")
+            .join(id.to_string())
+            .join("MH.json");
+        let written: Value = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+        assert_eq!(written["authorities"][1]["hidden"], true);
+        assert_eq!(written["watch"][0]["uri"], "https://mfa.example/apostille");
+
+        let empty = json!({"format": "discovery.v1", "packs": [], "summary": {}});
+        let empty = finished(&fx, "discovery.bootstrap", empty.to_string().as_bytes());
+        let wrong = json!({"format": "packs.v1", "packs": [{"pack": "MH"}]});
+        let wrong = finished(&fx, "discovery.bootstrap", wrong.to_string().as_bytes());
+        let swapped = finished(&fx, "research.nonparty", bundle.to_string().as_bytes());
+        for refused in [empty, wrong, swapped] {
+            let (status, body) = call_json(fx.admin(), staff("POST", &uri(refused), None)).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+            assert!(
+                !fx.state
+                    .store_root
+                    .join("packs-inbox")
+                    .join(refused.to_string())
+                    .exists()
+            );
+        }
+    }
+
+    /// D-3: a discovery copy stages only while the release still has
+    /// the world pack it copied, byte for byte.
+    #[test]
+    fn stale_world_copies_compare_the_release_file() {
+        let world = tempfile::tempdir().unwrap();
+        std::fs::write(world.path().join("MH.json"), b"{\"pack\": \"MH\"}\n").unwrap();
+        let sha = handbook_store::store::sha256_hex(b"{\"pack\": \"MH\"}\n");
+        let same = json!({"MH": sha, "VN": sha});
+        assert!(stale_world_copies(world.path(), &same, &["MH"]).is_empty());
+        assert_eq!(
+            stale_world_copies(world.path(), &json!({"MH": "0000"}), &["MH"]),
+            ["MH"]
+        );
+        // No base recorded, or no such pack in this release.
+        assert_eq!(
+            stale_world_copies(world.path(), &json!({}), &["MH"]),
+            ["MH"]
+        );
+        assert_eq!(stale_world_copies(world.path(), &same, &["VN"]), ["VN"]);
     }
 
     /// The admin contract seed matches what `item_json` emits.

@@ -3,7 +3,8 @@
 //! The atlas pack `crates/atlas/packs/discovery-bootstrap.toml` owns
 //! the model, prompts and schemas; this file owns the orchestration.
 //! Nothing here writes to the store or to packs: the result is a report
-//! for staff, and every value in it still needs review.
+//! (plus stageable packs) for staff, and every value in it still needs
+//! review.
 //!
 //! 1. **Countries, no model.** UN member states (recorded page) plus the
 //!    two observer states, joined with the HCCH 1961 status table (live
@@ -25,7 +26,13 @@
 //!    listed. Every proposed URL is fetched; it is kept only when it
 //!    answers over https and its text names the authority or an
 //!    apostille term. Kept URLs carry an `official_hint` (government-style
-//!    host, or a host the HCCH pages list for that authority).
+//!    host, or a host the HCCH pages list for that authority). Rows the
+//!    world pack hides are not asked about.
+//! 4. **Stageable packs (D-3), no model.** Per country with new kept URLs:
+//!    a full copy of its committed world pack plus weekly watch seeds and
+//!    `unverified` domain rows, validated with `packs::validate`. "Stage
+//!    as packs" on the Work page writes them to the packs inbox, where the
+//!    staff Packs page loads them like any staged set.
 //!
 //! Payload: `{recorded?: bool, crosscheck?: bool (default true),
 //! countries?: [ISO2] | "all", batch_size?: 5..25 (15),
@@ -47,7 +54,7 @@ use super::research_nonparty::{
     Fetch, LiveFetch, OBSERVERS, fold, host_of, model_json, page_text, un_iso2, un_members,
 };
 use super::{JobContext, JobError, JobHandler, JobOutput};
-use crate::packs::Pack;
+use crate::packs::{PackDomain, PackFile, PackWatch};
 
 /// The atlas pack (repo-relative).
 pub const PACK_PATH: &str = "crates/atlas/packs/discovery-bootstrap.toml";
@@ -382,7 +389,8 @@ pub(crate) fn not_a_name(name: &str) -> Option<&'static str> {
 }
 
 /// Read `packs/world/<ISO2>.json` for the requested countries. Returns
-/// the targets plus the skipped fragment names.
+/// the targets plus the skipped names: rows the pack hides (curation hid
+/// them as fragments or non-offices) and fragment names.
 fn targets(repo: &Path, scope: &[String]) -> Result<(Vec<Target>, Vec<Value>), JobError> {
     let dir = repo.join("packs/world");
     let mut codes: Vec<String> = if scope.iter().any(|c| c == "ALL") {
@@ -411,13 +419,22 @@ fn targets(repo: &Path, scope: &[String]) -> Result<(Vec<Target>, Vec<Value>), J
     let (mut out, mut skipped) = (Vec::new(), Vec::new());
     for code in codes {
         let path = dir.join(format!("{code}.json"));
-        let pack: Pack = std::fs::read(&path)
+        let file = std::fs::read(&path)
             .map_err(|e| e.to_string())
-            .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.to_string()))
+            .and_then(|b| PackFile::parse(&b).map_err(|e| e.to_string()))
             .map_err(|e| JobError::fatal(format!("{}: {e}", path.display())))?;
-        for authority in pack.authorities {
+        let hidden: Vec<bool> = (0..file.pack.authorities.len())
+            .map(|i| file.ext_of(i).hidden == Some(true))
+            .collect();
+        let pack = file.pack;
+        for (authority, hidden) in pack.authorities.into_iter().zip(hidden) {
             let name = clean_name(&authority.name);
-            if let Some(reason) = not_a_name(&name) {
+            let reason = if hidden {
+                Some("hidden in the world pack")
+            } else {
+                not_a_name(&name)
+            };
+            if let Some(reason) = reason {
                 skipped.push(
                     json!({"slug": authority.slug, "name": authority.name, "reason": reason}),
                 );
@@ -462,6 +479,128 @@ fn name_words(name: &str) -> Vec<String> {
         .filter(|w| w.chars().count() >= 5)
         .map(str::to_string)
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Stage 4: stageable packs (D-3)
+// ---------------------------------------------------------------------------
+
+/// What [`world_updates`] produces for the bundle.
+#[derive(Default)]
+struct WorldUpdates {
+    /// Full world packs with the new seeds, as rendered JSON.
+    packs: Vec<Value>,
+    /// ISO2 → sha256 of the committed file each pack copies.
+    bases: serde_json::Map<String, Value>,
+    /// Kept URLs that add nothing (already watched, unusable host).
+    not_staged: Vec<Value>,
+    /// Countries whose updated pack failed `packs::validate`.
+    rejected: Vec<Value>,
+}
+
+/// Kept URLs as world-pack updates, one pack per country with at least
+/// one new URL. Each is a full copy of the committed
+/// `packs/world/<ISO2>.json` (same pack id) plus one weekly
+/// `website_official` watch seed per new URL and an `unverified` domain
+/// row per new host. The full copy is the point: a load updates the
+/// rows of an existing pack id to what the file says and closes that
+/// pack's open tasks the file no longer has, so a partial pack would
+/// close every observation task of the country; the copy carries every
+/// authority, hidden flag, step and observation, so the load only adds
+/// sources and domains. `bases` lets the stage route refuse a copy of a
+/// file the release has since changed.
+fn world_updates(repo: &Path, authorities: &[Value], run_id: &str) -> WorldUpdates {
+    let mut kept: std::collections::BTreeMap<&str, Vec<(&str, &Value)>> = Default::default();
+    for entry in authorities {
+        let head = &entry["authority"];
+        let (Some(iso2), Some(slug)) = (head["iso2"].as_str(), head["slug"].as_str()) else {
+            continue;
+        };
+        for url in entry["urls"].as_array().into_iter().flatten() {
+            if url["kept"] == true {
+                kept.entry(iso2).or_default().push((slug, url));
+            }
+        }
+    }
+    let mut out = WorldUpdates::default();
+    for (iso2, urls) in kept {
+        let path = repo.join("packs/world").join(format!("{iso2}.json"));
+        let parsed = std::fs::read(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| Ok((PackFile::parse(&bytes).map_err(|e| e.to_string())?, bytes)));
+        let (mut file, base) = match parsed {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                out.rejected
+                    .push(json!({"iso2": iso2, "error": format!("{}: {e}", path.display())}));
+                continue;
+            }
+        };
+        let mut added = 0;
+        for (slug, url) in urls {
+            let uri = url["candidate"]["url"].as_str().unwrap_or_default();
+            let skip =
+                |reason: &str| json!({"iso2": iso2, "slug": slug, "url": uri, "reason": reason});
+            let Some(host) = crate::packs::uri_host(uri) else {
+                out.not_staged.push(skip("not a bare-host https URL"));
+                continue;
+            };
+            if file.pack.watch.iter().any(|w| w.uri == uri) {
+                out.not_staged.push(skip("already watched"));
+                continue;
+            }
+            let hint = url["official_hint"]
+                .as_str()
+                .map(|h| format!("; hint: {h}"))
+                .unwrap_or_default();
+            file.pack.watch.push(PackWatch {
+                authority: slug.to_string(),
+                kind: "website_official".to_string(),
+                uri: uri.to_string(),
+                cadence: "weekly".to_string(),
+                notes: format!(
+                    "Proposed by Muse Spark in {run_id} ({}); fetched over https, evidence: {}{hint}. \
+                     Not verified: needs staff capture (D-3).",
+                    url["candidate"]["kind"].as_str().unwrap_or("other"),
+                    url["evidence"].as_str().unwrap_or("?"),
+                ),
+            });
+            if !file
+                .pack
+                .domains
+                .iter()
+                .any(|d| d.name.eq_ignore_ascii_case(&host))
+            {
+                file.pack.domains.push(PackDomain {
+                    name: host,
+                    authority: slug.to_string(),
+                    status: "unverified".to_string(),
+                    notes: format!(
+                        "Host of a URL Muse Spark proposed in {run_id}; the page answered over \
+                         https. Staff capture pending."
+                    ),
+                });
+            }
+            added += 1;
+        }
+        if added == 0 {
+            continue;
+        }
+        let text = file.render();
+        let violations = crate::packs::validate(&file.pack, iso2, text.as_bytes());
+        if !violations.is_empty() {
+            out.rejected
+                .push(json!({"iso2": iso2, "error": violations.join("; ")}));
+            continue;
+        }
+        out.packs
+            .push(serde_json::from_str(&text).expect("a rendered pack is JSON"));
+        out.bases.insert(
+            iso2.to_string(),
+            json!(handbook_store::store::sha256_hex(&base)),
+        );
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -801,6 +940,8 @@ pub(crate) fn bootstrap<P: ModelPort, F: Fetch>(
         .filter(|u| u["kept"] == true && !u["official_hint"].is_null())
         .count();
     let count_of = |key: &str| crosscheck[key].as_array().map(Vec::len);
+    // Stage 4: the kept URLs as stageable world-pack updates.
+    let updates = world_updates(repo, &authorities, &run.run_id);
     let summary = json!({
         "countries": rows.len(), "parties": count("party"),
         "future_parties": count("future_party"), "nonparties": count("nonparty"),
@@ -812,6 +953,7 @@ pub(crate) fn bootstrap<P: ModelPort, F: Fetch>(
         "authorities_asked": authorities.len(), "authorities_not_asked": not_asked,
         "names_skipped": skipped.len(), "failed_batches": failed_batches,
         "urls_kept": kept, "urls_official_hint": hinted, "urls_dropped": urls.len() - kept,
+        "packs": updates.packs.len(), "packs_rejected": updates.rejected.len(),
     });
     let bundle = json!({
         "format": "discovery.v1", "kind": "discovery.bootstrap", "run": run.run_id,
@@ -824,6 +966,10 @@ pub(crate) fn bootstrap<P: ModelPort, F: Fetch>(
         "crosscheck": crosscheck,
         "authorities": authorities,
         "names_skipped": skipped,
+        "packs": updates.packs,
+        "pack_bases": updates.bases,
+        "urls_not_staged": updates.not_staged,
+        "packs_rejected": updates.rejected,
         "summary": summary,
     });
     Ok(JobOutput::json(&bundle, summary))
@@ -1040,7 +1186,7 @@ mod tests {
             ),
             (
                 REGISTRY.to_string(),
-                b"<p>Office of the Deputy Registrar of corporations</p>".to_vec(),
+                b"<p>IRI Corporate and Maritime Services, Zurich</p>".to_vec(),
             ),
             (OFFTOPIC.to_string(), b"<p>Weather today.</p>".to_vec()),
         ]));
@@ -1059,7 +1205,7 @@ mod tests {
             {"slug": "not-in-batch", "unknown": false, "urls": [{"url": OFFTOPIC, "kind": "other"}]}
         ]});
         let batch2 = json!({"items": [
-            {"slug": "mh-ca-10", "unknown": false, "urls": [
+            {"slug": "mh-ca-9", "unknown": false, "urls": [
                 {"url": REGISTRY, "kind": "authority_home"},
                 {"url": OFFTOPIC, "kind": "other"}
             ]}
@@ -1084,9 +1230,10 @@ mod tests {
         assert_eq!(s["objection_parties"], 21);
         assert_eq!(s["parties"], 129);
         assert_eq!(s["crosscheck_missing"], 129, "the stub knew only the US");
-        // 16 Marshall Islands rows: 7 fragments, 9 names in two batches.
-        assert_eq!(s["names_skipped"], 7);
-        assert_eq!(s["authorities_asked"], 9);
+        // 16 Marshall Islands rows: 9 hidden by curation, 7 names in two
+        // batches.
+        assert_eq!(s["names_skipped"], 9);
+        assert_eq!(s["authorities_asked"], 7);
         assert_eq!(s["failed_batches"], 0);
         assert_eq!(s["urls_kept"], 2);
         assert_eq!(s["urls_official_hint"], 1);
@@ -1113,7 +1260,7 @@ mod tests {
         assert_eq!(mfa["urls"][2]["reason"], "not an absolute https URL");
         assert_eq!(by_slug("mh-ca-2")["unknown"], true);
         assert_eq!(by_slug("mh-ca-3")["error"], "no answer for this slug");
-        let registry = by_slug("mh-ca-10");
+        let registry = by_slug("mh-ca-9");
         assert_eq!(registry["urls"][0]["evidence"], "names the authority");
         assert!(registry["urls"][0]["official_hint"].is_null());
         assert_eq!(
@@ -1124,6 +1271,131 @@ mod tests {
         assert!(dir.path().join("calls/all-hague-crosscheck.json").is_file());
         assert!(dir.path().join("calls/batch-001-find-urls.json").is_file());
         assert!(dir.path().join("ledger.jsonl").is_file());
+
+        // D-3: one stageable pack, the committed MH pack plus the two kept
+        // URLs as watch seeds with unverified domains.
+        assert_eq!(s["packs"], 1);
+        assert_eq!(s["packs_rejected"], 0);
+        let committed_path = super::super::repo_root().join("packs/world/MH.json");
+        let committed_bytes = std::fs::read(&committed_path).unwrap();
+        let committed = PackFile::parse(&committed_bytes).unwrap();
+        assert_eq!(
+            bundle["pack_bases"]["MH"],
+            handbook_store::store::sha256_hex(&committed_bytes)
+        );
+        let staged_bytes = serde_json::to_vec(&bundle["packs"][0]).unwrap();
+        let staged = PackFile::parse(&staged_bytes).unwrap();
+        assert_eq!(staged.pack.pack, "MH");
+        assert!(crate::packs::validate(&staged.pack, "MH", &staged_bytes).is_empty());
+        // The copy is whole: rows, v2 fields (hidden), steps, observations.
+        // The v1 structs carry no `PartialEq`: compare their JSON.
+        fn json<T: serde::Serialize>(value: &T) -> Value {
+            serde_json::to_value(value).unwrap()
+        }
+        assert_eq!(
+            json(&staged.pack.authorities),
+            json(&committed.pack.authorities)
+        );
+        assert_eq!(staged.ext, committed.ext);
+        assert_eq!(
+            json(&staged.pack.chain_steps),
+            json(&committed.pack.chain_steps)
+        );
+        assert_eq!(
+            json(&staged.pack.observations),
+            json(&committed.pack.observations)
+        );
+        let n = committed.pack.watch.len();
+        assert_eq!(
+            json(&staged.pack.watch[..n].to_vec()),
+            json(&committed.pack.watch)
+        );
+        let seeds: Vec<(&str, &str, &str, &str)> = staged.pack.watch[n..]
+            .iter()
+            .map(|w| {
+                (
+                    w.authority.as_str(),
+                    w.uri.as_str(),
+                    w.kind.as_str(),
+                    w.cadence.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            seeds,
+            [
+                ("mh-ca-1", MFA, "website_official", "weekly"),
+                ("mh-ca-9", REGISTRY, "website_official", "weekly"),
+            ]
+        );
+        assert!(staged.pack.watch[n].notes.contains("discovery-"));
+        assert!(staged.pack.watch[n].notes.contains("apostille term"));
+        let domains: Vec<(&str, &str, &str)> = staged.pack.domains[committed.pack.domains.len()..]
+            .iter()
+            .map(|d| (d.name.as_str(), d.authority.as_str(), d.status.as_str()))
+            .collect();
+        assert_eq!(
+            domains,
+            [
+                ("mfa.gov.mh.example", "mh-ca-1", "unverified"),
+                ("registry.example", "mh-ca-9", "unverified"),
+            ]
+        );
+
+        // Loading it over the loaded world pack adds the two sources and
+        // domains and nothing else: no row renamed, unhidden or added,
+        // no task opened or closed. Never a fact.
+        let store_dir = tempfile::tempdir().unwrap();
+        let store = handbook_store::store::Store::new(store_dir.path());
+        store.init().unwrap();
+        let conn = handbook_store::db::open(&store).unwrap();
+        handbook_store::db::migrate(&conn).unwrap();
+        crate::packs::load_pack(&conn, &committed, "test", NOW).unwrap();
+        let report = crate::packs::load_pack(&conn, &staged, "test", NOW).unwrap();
+        assert_eq!(
+            report,
+            crate::packs::LoadReport {
+                sources: 2,
+                domains: 2,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            crate::packs::load_pack(&conn, &staged, "test", NOW).unwrap(),
+            crate::packs::LoadReport::default()
+        );
+        let facts: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fact", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(facts, 0);
+    }
+
+    /// D-3: a URL the pack already watches, or one without a bare host,
+    /// adds nothing; a country with nothing new yields no pack.
+    #[test]
+    fn world_updates_skip_what_adds_nothing() {
+        let watched = "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=110&cid=41";
+        let committed =
+            std::fs::read_to_string(super::super::repo_root().join("packs/world/MH.json")).unwrap();
+        assert!(committed.contains(watched), "fixture drift: MH watch seed");
+        let entry = |url: &str| {
+            json!({"authority": {"slug": "mh-ca-1", "iso2": "MH"},
+                   "urls": [{"kept": true, "candidate": {"url": url, "kind": "other"},
+                             "evidence": "names the authority"},
+                            {"kept": false, "candidate": {"url": "https://dropped.example/"}}]})
+        };
+        let out = world_updates(
+            &super::super::repo_root(),
+            &[entry(watched), entry("https://mfa.example:8443/x")],
+            "discovery-1",
+        );
+        assert!(out.packs.is_empty() && out.bases.is_empty() && out.rejected.is_empty());
+        let reasons: Vec<&str> = out
+            .not_staged
+            .iter()
+            .map(|v| v["reason"].as_str().unwrap())
+            .collect();
+        assert_eq!(reasons, ["already watched", "not a bare-host https URL"]);
     }
 
     #[test]

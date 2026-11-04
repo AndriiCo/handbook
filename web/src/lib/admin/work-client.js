@@ -514,13 +514,17 @@ export function statusChanges(before, items) {
 
 /**
  * True when the server takes `stage-packs` for this item: a finished
- * `research.nonparty` job with a result (anything else answers 409).
- * Pure (tested).
- * @param {Pick<WorkItem, 'kind' | 'status' | 'result'>} item
+ * `research.nonparty` job with a result, or a finished
+ * `discovery.bootstrap` job whose summary counts world packs to stage
+ * (anything else answers 409 or 422). Pure (tested).
+ * @param {Pick<WorkItem, 'kind' | 'status' | 'result'> & { summary?: unknown }} item
  * @returns {boolean}
  */
 export function canStagePacks(item) {
-	return item.kind === 'research.nonparty' && item.status === 'done' && item.result !== null;
+	if (item.status !== 'done' || item.result === null) return false;
+	if (item.kind === 'research.nonparty') return true;
+	const summary = /** @type {{ packs?: unknown } | null | undefined} */ (item.summary);
+	return item.kind === 'discovery.bootstrap' && Number(summary?.packs) > 0;
 }
 
 /**
