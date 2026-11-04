@@ -501,20 +501,20 @@ Requested 2026-11-04. What the wizard does today:
 Ranked by how much each helps a judge or the operator get a working
 system:
 
-- [ ] **W-1** Staff sign-in by email instead of the 32-hex user ID
-  (extends P1-4):
-  - The identifier field becomes
-    `<input type="email" autocomplete="username webauthn">`.
-  - Conditional mediation offers the passkey in autofill, as the
-    customer login already does
-    (`(customer)/login/+page.svelte:177-199`).
-  - Credentials become discoverable, so a passkey works with nothing
-    typed. The hex ID stays internal.
-  - Enrolment (setup key and invite) asks for the email.
-  - Lost-passkey recovery stays an invite from another staffer or the
-    CLI, never an email link.
-
-  *code, M*
+- [x] **W-1** Staff sign-in by email instead of the 32-hex user ID
+  (extends P1-4). **Done, commit 98afa44**:
+  - Enrolment (setup key and invite) asks for an email and saves the
+    passkey under it (its account name), so the browser lists and
+    autofills it by email. Stored in `staff_email`; a passkey added from
+    the Staff page reuses it; the Staff page shows it.
+  - `/staff-login` has an Email field
+    (`type="email" autocomplete="username webauthn"`) that offers the
+    passkeys through conditional mediation, plus the button. The typed
+    email is never sent, so it is no enumeration oracle.
+  - Discoverable credentials came with P431b; the user-ID fallback stays
+    for older keys. Lost-passkey recovery stays an invite.
+  - Open: accounts enrolled before W-1 have no email and no screen to
+    add one.
 - [ ] **W-2** One-click brand assets: prefilled source URLs, and
   **Fetch** downloads, unpacks and places each file. The tool still
   never accepts terms itself (`brand.rs:5-8`): Fetch is enabled only
