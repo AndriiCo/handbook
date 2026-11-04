@@ -26,6 +26,7 @@ mod form_scaffold;
 mod gold_export;
 mod instruct;
 mod judge;
+mod licenses;
 mod mcp_serve;
 mod packs;
 mod pii_sweep;
@@ -93,6 +94,7 @@ fn main() {
         Some("harden-check") => setup::build::run_harden_check(&args[1..]),
         Some("rollback") => release::run_rollback(&args[1..]),
         Some("install-hooks") => run_install_hooks(),
+        Some("licenses") => licenses::run(&args[1..]),
         Some(unknown) => {
             eprintln!("unknown task: {unknown}\n");
             print_help();
@@ -147,6 +149,7 @@ Tasks:
   model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files
   voice-replay  replay webhook fixtures at the stub (see --corpus/--scenario)
   install-hooks point git at .githooks/ (pre-commit secret scan)
+  licenses    regenerate + commit crates/web/static/licenses.html when 7 days old or inputs changed [--force] [--check] [--no-commit] [--root <dir>]
   setup  rebuild targets from private/config.yaml (sops); no file: create it in the localhost wizard. Subcommands: wizard, check, print, new, wipe (setup --help)
   harden-check <elf>...  fail unless PIE, NX stack, no W+X segment, full RELRO, stack protector
   deploy      install a staged release on this host (see flags below; docs/ops/deploy.md)
@@ -306,6 +309,10 @@ fn run_ci() {
     // Fail-closed Tailwind audit (unknown utilities emit no CSS):
     // needs both builds fresh from this run.
     run_or_exit("npm", &["run", "check:tailwind", "--prefix", "web"]);
+    // The licences page (andrii.ai/licenses.html): regenerated and
+    // committed when 7 days old or when a lockfile moved; needs the
+    // node_modules the steps above installed.
+    licenses::run(&[]);
 }
 
 /// Run one CI step: missing binary is a loud fatal (never a silent

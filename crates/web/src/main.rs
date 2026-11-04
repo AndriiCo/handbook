@@ -680,6 +680,8 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
             .route("/apostille/", get(serve_spa_index))
             .route("/robots.txt", get(serve_robots))
             .route("/privacy", get(serve_privacy))
+            .route("/licenses", get(serve_licenses))
+            .route("/licenses.html", get(serve_licenses))
             .route("/auth/google/callback", get(oauth::callback))
             .route("/auth/google/risc", post(oauth::risc))
             .route("/auth/apple/callback", get(oauth_apple::callback))
@@ -741,6 +743,19 @@ async fn serve_robots(State(state): State<AppState>) -> impl IntoResponse {
 /// server-rendered static HTML so crawlers read it with no JS.
 async fn serve_privacy(State(state): State<AppState>) -> impl IntoResponse {
     match tokio::fs::read(state.static_dir.join("privacy.html")).await {
+        Ok(bytes) => (
+            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// Open-source licences and BOM (`cargo xtask licenses` writes it;
+/// static HTML, refreshed weekly and on every dependency change).
+async fn serve_licenses(State(state): State<AppState>) -> impl IntoResponse {
+    match tokio::fs::read(state.static_dir.join("licenses.html")).await {
         Ok(bytes) => (
             [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
             bytes,
@@ -3486,6 +3501,39 @@ mod tests {
         );
         let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
         assert_eq!(body.as_ref(), b"<h1>TEST-POLICY</h1>");
+    }
+
+    #[tokio::test]
+    async fn licenses_routes_serve_static_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_str().unwrap().to_string();
+        std::fs::write(tmp.path().join("licenses.html"), "<h1>TEST-BOM</h1>").unwrap();
+        for uri in ["/licenses", "/licenses.html"] {
+            let res = app(&dir, &dir, tmp.path().to_path_buf(), &dir)
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "{uri}");
+            assert_eq!(
+                res.headers().get(axum::http::header::CONTENT_TYPE).unwrap(),
+                "text/html; charset=utf-8"
+            );
+            let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+            assert_eq!(body.as_ref(), b"<h1>TEST-BOM</h1>");
+        }
+    }
+
+    #[test]
+    fn shipped_licenses_page_is_generated_and_complete() {
+        // `cargo xtask licenses` output: stamps in <head>, the table,
+        // and at least the licence texts every Rust build needs.
+        let page = include_str!("../static/licenses.html");
+        assert!(page.contains("<meta name=\"bom:generated\" content=\"20"));
+        assert!(page.contains("<meta name=\"bom:inputs\" content=\"sha256:"));
+        assert!(page.contains("<table>"));
+        for id in ["license-MIT", "license-Apache-2.0"] {
+            assert!(page.contains(&format!("id=\"{id}\"")), "{id}");
+        }
     }
 
     #[test]

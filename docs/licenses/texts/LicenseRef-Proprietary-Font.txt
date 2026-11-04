@@ -1,0 +1,10 @@
+Proprietary typeface
+
+This typeface is commercial software licensed to Andrii Co. by its
+foundry. It is not open source, it is not part of the Apostille Handbook
+repository, and it is not licensed to visitors or to anyone who builds
+the Handbook from source: production builds stage it from a private
+directory at build time, and public builds use the open-source fallback
+face listed in the table instead.
+
+Questions: license@andrii.ai

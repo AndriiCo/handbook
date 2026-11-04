@@ -1,0 +1,127 @@
+# Licence texts for licenses.html (`cargo xtask licenses`).
+#
+# One `<ID>.txt` per SPDX licence or exception id the BOM uses, plus
+# hand-kept `LicenseRef-*` texts. SPDX texts are fetched from
+# spdx/license-list-data at the tag in `xtask/src/licenses/texts.rs`
+# the first time an id appears, and this index gains their names; commit
+# both. LicenseRef-* entries are written by hand.
+
+["0BSD"]
+name = "BSD Zero Clause License"
+source = "spdx/license-list-data v3.29.0"
+
+["AFL-2.1"]
+name = "Academic Free License v2.1"
+source = "spdx/license-list-data v3.29.0"
+
+["Apache-2.0"]
+name = "Apache License 2.0"
+source = "spdx/license-list-data v3.29.0"
+
+["Artistic-2.0"]
+name = "Artistic License 2.0"
+source = "spdx/license-list-data v3.29.0"
+
+["BSD-2-Clause"]
+name = "BSD 2-Clause \"Simplified\" License"
+source = "spdx/license-list-data v3.29.0"
+
+["BSD-3-Clause"]
+name = "BSD 3-Clause \"New\" or \"Revised\" License"
+source = "spdx/license-list-data v3.29.0"
+
+["BSL-1.0"]
+name = "Boost Software License 1.0"
+source = "spdx/license-list-data v3.29.0"
+
+["CC0-1.0"]
+name = "Creative Commons Zero v1.0 Universal"
+source = "spdx/license-list-data v3.29.0"
+
+["CDLA-Permissive-2.0"]
+name = "Community Data License Agreement Permissive 2.0"
+source = "spdx/license-list-data v3.29.0"
+
+["GPL-2.0-only"]
+name = "GNU General Public License v2.0 only"
+source = "spdx/license-list-data v3.29.0"
+
+["GPL-2.0-or-later"]
+name = "GNU General Public License v2.0 or later"
+source = "spdx/license-list-data v3.29.0"
+
+["GPL-3.0-only"]
+name = "GNU General Public License v3.0 only"
+source = "spdx/license-list-data v3.29.0"
+
+["ISC"]
+name = "ISC License"
+source = "spdx/license-list-data v3.29.0"
+
+["LGPL-2.1-or-later"]
+name = "GNU Lesser General Public License v2.1 or later"
+source = "spdx/license-list-data v3.29.0"
+
+["LLVM-exception"]
+name = "LLVM Exception"
+source = "spdx/license-list-data v3.29.0"
+
+["LicenseRef-OS-Distribution"]
+name = "Operating-system distribution images"
+source = "Apostille Handbook (this repository)"
+
+["LicenseRef-Proprietary-Font"]
+name = "Proprietary typeface"
+source = "Apostille Handbook (this repository)"
+
+["LicenseRef-SAM"]
+name = "SAM License"
+source = "https://github.com/facebookresearch/sam3/blob/main/LICENSE"
+
+["MIT"]
+name = "MIT License"
+source = "spdx/license-list-data v3.29.0"
+
+["MIT-0"]
+name = "MIT No Attribution"
+source = "spdx/license-list-data v3.29.0"
+
+["MIT-CMU"]
+name = "CMU License"
+source = "spdx/license-list-data v3.29.0"
+
+["MPL-2.0"]
+name = "Mozilla Public License 2.0"
+source = "spdx/license-list-data v3.29.0"
+
+["OFL-1.1"]
+name = "SIL Open Font License 1.1"
+source = "spdx/license-list-data v3.29.0"
+
+["PSF-2.0"]
+name = "Python Software Foundation License 2.0"
+source = "spdx/license-list-data v3.29.0"
+
+["SSH-OpenSSH"]
+name = "SSH OpenSSH license"
+source = "spdx/license-list-data v3.29.0"
+
+["Unicode-3.0"]
+name = "Unicode License v3"
+source = "spdx/license-list-data v3.29.0"
+
+["Unlicense"]
+name = "The Unlicense"
+source = "spdx/license-list-data v3.29.0"
+
+["Zlib"]
+name = "zlib License"
+source = "spdx/license-list-data v3.29.0"
+
+["blessing"]
+name = "SQLite Blessing"
+source = "spdx/license-list-data v3.29.0"
+
+["curl"]
+name = "curl License"
+source = "spdx/license-list-data v3.29.0"

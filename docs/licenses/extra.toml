@@ -1,0 +1,349 @@
+# Hand-kept BOM entries for `cargo xtask licenses` (docs/licenses/README.md).
+#
+# Cargo.lock and web/package-lock.json are read automatically; this file
+# covers what no lockfile pins: toolchains, Docker base images, distro
+# packages, ship tooling and the plant worker stack. Bump a `version`
+# when the thing it names changes; the page regenerates on the next
+# `ci` because this file is part of its input hash.
+#
+# scope tags: app (production web server and SPA), worker (xtask:
+# plant worker, timers, ops), build (builds and ships a release),
+# test (CI and rehearsal only), image (the judge Docker image).
+#
+# license: an SPDX expression. Every id needs a text in texts/: SPDX ids
+# are fetched once from spdx/license-list-data; LicenseRef-* texts are
+# kept by hand in texts/ and named in texts/index.toml.
+
+# Which Dockerfiles to read `FROM` lines from, and their scope tag.
+[dockerfiles]
+"ops/judge/Dockerfile" = "image"
+"ops/rehearsal/Dockerfile" = "test"
+
+# Licence of each base image a `FROM` line names (matched on the image
+# name before the tag). An image with no entry here fails generation.
+[[image]]
+name = "node"
+url = "https://hub.docker.com/_/node"
+license = "MIT AND LicenseRef-OS-Distribution"
+copyright = "Copyright (c) the Node.js Docker Team"
+
+[[image]]
+name = "rust"
+url = "https://hub.docker.com/_/rust"
+license = "(MIT OR Apache-2.0) AND LicenseRef-OS-Distribution"
+copyright = "Copyright (c) The Rust Project Developers"
+
+[[image]]
+name = "debian"
+url = "https://hub.docker.com/_/debian"
+license = "LicenseRef-OS-Distribution"
+copyright = "Copyright (c) Software in the Public Interest, Inc. and the Debian contributors"
+
+[[image]]
+name = "ubuntu"
+url = "https://hub.docker.com/_/ubuntu"
+license = "LicenseRef-OS-Distribution"
+copyright = "Copyright (c) Canonical Ltd. and the Ubuntu contributors"
+
+# ---- toolchains ---------------------------------------------------------
+
+[[package]]
+name = "Rust toolchain (rustc, cargo, rustfmt, clippy)"
+ecosystem = "toolchain"
+version_from = "rust-toolchain.toml"
+url = "https://github.com/rust-lang/rust"
+license = "MIT OR Apache-2.0"
+copyright = "Copyright (c) The Rust Project Developers"
+scope = ["build", "test"]
+
+[[package]]
+name = "Node.js"
+ecosystem = "toolchain"
+version_from = ".nvmrc"
+url = "https://github.com/nodejs/node"
+license = "MIT"
+copyright = "Copyright Node.js contributors. All rights reserved."
+scope = ["build", "test"]
+note = "Major version pinned in .nvmrc; plant runs 24.21.0"
+
+[[package]]
+name = "npm"
+ecosystem = "toolchain"
+version = "11.19.0"
+url = "https://github.com/npm/cli"
+license = "Artistic-2.0"
+copyright = "Copyright (c) npm, Inc. and Contributors"
+scope = ["build", "test"]
+
+[[package]]
+name = "Zig"
+ecosystem = "toolchain"
+version = "0.17.0"
+url = "https://github.com/ziglang/zig"
+license = "MIT"
+copyright = "Copyright (c) Zig contributors"
+scope = ["build"]
+note = "Linker for the x86_64 Linux release build (xtask/ops/ship-release.sh)"
+
+[[package]]
+name = "cargo-zigbuild"
+ecosystem = "toolchain"
+version = "0.24.0"
+url = "https://github.com/rust-cross/cargo-zigbuild"
+license = "MIT"
+copyright = "Copyright (c) messense and cargo-zigbuild contributors"
+scope = ["build"]
+
+[[package]]
+name = "Git"
+ecosystem = "toolchain"
+version = "2.53.0"
+url = "https://git-scm.com/"
+license = "GPL-2.0-only"
+copyright = "Copyright (C) Linus Torvalds and the Git contributors"
+scope = ["build", "worker"]
+note = "Version on plant; xtask shells out to git for deploys and gates"
+
+[[package]]
+name = "Python"
+ecosystem = "toolchain"
+version = "3.14.4"
+url = "https://www.python.org/"
+license = "PSF-2.0"
+copyright = "Copyright (c) Python Software Foundation. All rights reserved."
+scope = ["worker", "test"]
+note = "Plant system interpreter: ops/open-weights tests and the SAM 3 venv"
+
+# ---- browsers used by the test suite -----------------------------------
+
+[[package]]
+name = "Chromium (Playwright build)"
+ecosystem = "binary"
+version = "156.0.8078.4"
+url = "https://www.chromium.org/"
+license = "BSD-3-Clause"
+copyright = "Copyright 2015 The Chromium Authors"
+scope = ["test"]
+note = "Downloaded by `npx playwright install chromium` for the e2e suite"
+
+# ---- distro packages (Dockerfiles and the production host) -------------
+
+[[package]]
+name = "socat"
+ecosystem = "apt"
+version = "Debian 12 (bookworm)"
+url = "http://www.dest-unreach.org/socat/"
+license = "GPL-2.0-only"
+copyright = "Copyright (C) Gerhard Rieger and socat contributors"
+scope = ["image"]
+
+[[package]]
+name = "ca-certificates"
+ecosystem = "apt"
+version = "Debian 12 (bookworm)"
+url = "https://salsa.debian.org/debian/ca-certificates"
+license = "GPL-2.0-or-later AND MPL-2.0"
+copyright = "Copyright (c) Debian ca-certificates maintainers; certificate data from Mozilla"
+scope = ["image", "test"]
+
+[[package]]
+name = "systemd"
+ecosystem = "apt"
+version = "Ubuntu 26.04"
+url = "https://github.com/systemd/systemd"
+license = "LGPL-2.1-or-later"
+copyright = "Copyright (c) systemd contributors"
+scope = ["app", "test"]
+note = "Runs the production service and timers; PID 1 in the rehearsal image"
+
+[[package]]
+name = "OpenSSH server"
+ecosystem = "apt"
+version = "Ubuntu 26.04"
+url = "https://www.openssh.com/"
+license = "SSH-OpenSSH"
+copyright = "Copyright (c) Tatu Ylonen and the OpenSSH contributors"
+scope = ["build", "test"]
+note = "Deploys and provisioning go over SSH"
+
+[[package]]
+name = "sudo"
+ecosystem = "apt"
+version = "Ubuntu 26.04"
+url = "https://www.sudo.ws/"
+license = "ISC"
+copyright = "Copyright (c) Todd C. Miller and sudo contributors"
+scope = ["app", "test"]
+note = "Operator wrappers (xtask/ops/wrappers/hal-apostille.sudoers)"
+
+[[package]]
+name = "curl"
+ecosystem = "apt"
+version = "Ubuntu 26.04"
+url = "https://curl.se/"
+license = "curl"
+copyright = "Copyright (c) Daniel Stenberg and many contributors"
+scope = ["test"]
+
+[[package]]
+name = "SQLite command-line shell (sqlite3)"
+ecosystem = "apt"
+version = "Ubuntu 26.04"
+url = "https://sqlite.org/"
+license = "blessing"
+scope = ["app", "test"]
+note = "Operator wrapper apostille-sqlite; SQLite itself is public domain"
+
+[[package]]
+name = "procps"
+ecosystem = "apt"
+version = "Ubuntu 26.04"
+url = "https://gitlab.com/procps-ng/procps"
+license = "GPL-2.0-or-later AND LGPL-2.1-or-later"
+copyright = "Copyright (c) procps-ng contributors"
+scope = ["test"]
+
+[[package]]
+name = "iproute2"
+ecosystem = "apt"
+version = "Ubuntu 26.04"
+url = "https://wiki.linuxfoundation.org/networking/iproute2"
+license = "GPL-2.0-or-later"
+copyright = "Copyright (c) Alexey Kuznetsov and iproute2 contributors"
+scope = ["test"]
+
+[[package]]
+name = "D-Bus"
+ecosystem = "apt"
+version = "Ubuntu 26.04"
+url = "https://www.freedesktop.org/wiki/Software/dbus/"
+license = "AFL-2.1 OR GPL-2.0-or-later"
+copyright = "Copyright (c) Red Hat, Inc. and D-Bus contributors"
+scope = ["test"]
+
+[[package]]
+name = "ufw"
+ecosystem = "apt"
+version = "Ubuntu 26.04"
+url = "https://launchpad.net/ufw"
+license = "GPL-3.0-only"
+copyright = "Copyright Canonical Ltd."
+scope = ["app"]
+note = "Production firewall (xtask provision)"
+
+# ---- SQLite as compiled into the binaries ------------------------------
+
+[[package]]
+name = "SQLite (bundled by libsqlite3-sys)"
+ecosystem = "binary"
+version = "bundled"
+url = "https://sqlite.org/"
+license = "blessing"
+scope = ["app", "worker"]
+note = "Compiled into web and xtask through rusqlite's `bundled` feature"
+
+# ---- plant open-weights worker stack (optional paths) ------------------
+
+[[package]]
+name = "llama.cpp (llama-server)"
+ecosystem = "binary"
+version = "unpinned CUDA build"
+url = "https://github.com/ggml-org/llama.cpp"
+license = "MIT"
+copyright = "Copyright (c) The ggml authors"
+scope = ["worker"]
+note = "ops/open-weights/glimmer-serve.sh; not installed on plant yet"
+
+[[package]]
+name = "PyTorch"
+ecosystem = "pip"
+version = "latest (pip install -U)"
+url = "https://github.com/pytorch/pytorch"
+license = "BSD-3-Clause"
+copyright = "Copyright (c) 2016- Facebook, Inc (Adam Paszke) and PyTorch contributors"
+scope = ["worker"]
+note = "SAM 3 venv for ops/open-weights/sam3_boxes.py; not installed on plant yet"
+
+[[package]]
+name = "transformers"
+ecosystem = "pip"
+version = "latest (pip install -U)"
+url = "https://github.com/huggingface/transformers"
+license = "Apache-2.0"
+copyright = "Copyright 2018- The Hugging Face team. All rights reserved."
+scope = ["worker"]
+note = "SAM 3 venv; not installed on plant yet"
+
+[[package]]
+name = "accelerate"
+ecosystem = "pip"
+version = "latest (pip install -U)"
+url = "https://github.com/huggingface/accelerate"
+license = "Apache-2.0"
+copyright = "Copyright The HuggingFace Team. All rights reserved."
+scope = ["worker"]
+note = "SAM 3 venv; not installed on plant yet"
+
+[[package]]
+name = "Pillow"
+ecosystem = "pip"
+version = "latest (pip install -U)"
+url = "https://github.com/python-pillow/Pillow"
+license = "MIT-CMU"
+copyright = "Copyright © 2010 by Jeffrey A. Clark and contributors; Copyright © 1997-2011 by Secret Labs AB; Copyright © 1995-2011 by Fredrik Lundh"
+scope = ["worker"]
+note = "SAM 3 venv; not installed on plant yet"
+
+[[package]]
+name = "huggingface_hub (hf CLI)"
+ecosystem = "pip"
+version = "latest (pip install -U)"
+url = "https://github.com/huggingface/huggingface_hub"
+license = "Apache-2.0"
+copyright = "Copyright The HuggingFace Team. All rights reserved."
+scope = ["worker"]
+note = "Downloads open weights into /srv/scratch/apostille/models"
+
+[[package]]
+name = "SAM 3 weights (facebook/sam3)"
+ecosystem = "model"
+version = "facebook/sam3"
+url = "https://huggingface.co/facebook/sam3"
+license = "LicenseRef-SAM"
+copyright = "Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved."
+scope = ["worker"]
+note = "Gated weights for `xtask a2-record --sam-backend open-weights`; not downloaded on plant yet"
+
+# ---- fonts outside npm ------------------------------------------------
+
+[[package]]
+name = "Source Serif 4 (vendored fallback face)"
+ecosystem = "font"
+version = "5.3.1 (Fontsource build)"
+url = "https://github.com/adobe-fonts/source-serif"
+license = "OFL-1.1"
+license_file = "web/static/fonts/fallback/OFL-LICENSE.txt"
+copyright = "Copyright Adobe, with Reserved Font Name 'Source'"
+scope = ["app"]
+note = "web/static/fonts/fallback/: heading face in public builds without the brand font"
+
+[[package]]
+name = "Vogun Medium (brand headings)"
+ecosystem = "font"
+version = "licensed copy"
+url = "https://github.com/AndriiCo/handbook#license"
+license = "LicenseRef-Proprietary-Font"
+copyright = "Copyright Yukita Creative"
+scope = ["app"]
+note = "Staged from $BRAND_FONT_DIR at build time; never in the repository"
+
+# Glimmer weights: add an entry once the operator names the Hugging Face
+# repo (docs/ops/operator-today.md item 3), e.g.
+#
+# [[package]]
+# name = "Glimmer weights (<org>/<repo>)"
+# ecosystem = "model"
+# version = "<revision>"
+# url = "https://huggingface.co/<org>/<repo>"
+# license = "<the repo's licence>"
+# scope = ["worker"]

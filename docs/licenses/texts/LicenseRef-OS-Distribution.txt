@@ -1,0 +1,18 @@
+Operating-system distribution images
+
+A container base image (Debian, Ubuntu, and the official images built on
+them) is a collection of separately licensed packages, not one work under
+one licence. The image's own build recipe carries the licence named in the
+table; every package inside the image keeps its own licence.
+
+Each package's copyright notices and licence texts ship inside the image
+itself, under /usr/share/doc/<package>/copyright, and in the distribution's
+source archive:
+
+  Debian: https://www.debian.org/legal/licenses/
+          https://sources.debian.org/
+  Ubuntu: https://ubuntu.com/legal/intellectual-property-policy
+          https://launchpad.net/ubuntu/+source/
+
+Packages the Apostille Handbook installs on top of a base image are listed
+in the table individually, with their own licences.

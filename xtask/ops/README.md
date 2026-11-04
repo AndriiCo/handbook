@@ -6,7 +6,7 @@ nothing is `cargo xtask setup` plus `cargo xtask provision`.
 
 | Script | Runs on | As | Purpose |
 |---|---|---|---|
-| `ship-release.sh <sha>` | Mac | you | Stamp and rails checks, prod-before scoreboard, cross-build in a throwaway worktree, stage to production. Never deploys |
+| `ship-release.sh <sha>` | Mac | you | Stamp and rails checks, prod-before scoreboard, cross-build in a throwaway worktree, refresh `licenses.html` there if stale (`xtask licenses --no-commit`), stage to production. Never deploys |
 | `ops-deploy.sh <stage-dir> --skip-accept` | production | hal | Install the unit, `xtask deploy` (swap, restart, smoke, auto-revert), prune |
 | `staging-accept.sh --sha <sha>` | Mac | you | Staging scoreboard plus a live demo take; prints the staging-green verdict |
 | `scoreboard.mjs` | Mac | you | Release checks against a base URL (`--base`, `--out`, `--only`) |

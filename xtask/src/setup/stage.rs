@@ -198,6 +198,17 @@ fn build_in(
             .env("BRAND_FONT_DIR", brand);
         sh(&mut cmd, &format!("npm run {script}"))?;
     }
+    // Licences page: regenerated here when 7 days old or its inputs
+    // moved, so the staged copy is never stale (the worktree is
+    // detached: `ci` commits it on the branch).
+    let licenses = crate::licenses::Options {
+        no_commit: true,
+        ..Default::default()
+    };
+    match crate::licenses::refresh(wt, licenses).map_err(|e| format!("licenses: {e}"))? {
+        crate::licenses::Outcome::Fresh { .. } => log("licenses.html fresh".into()),
+        _ => log("licenses.html regenerated".into()),
+    }
     if out.exists() {
         std::fs::remove_dir_all(out).map_err(|e| format!("clear {}: {e}", out.display()))?;
     }

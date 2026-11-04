@@ -136,6 +136,10 @@ file "$R/web" | grep -q "ELF 64-bit" || { echo "ABORT: staged web is not an ELF 
 grep -a -q "BUILD_SHA=$VERSION" "$R"/build/web-*/output || { echo "ABORT: BUILD_SHA does not name $VERSION"; exit 1; }
 (cd "$WT/web" && npm run build >/dev/null && npm run build:admin >/dev/null) || exit 1
 [ "$(git -C "$WT" status --porcelain)" = "" ] || { echo "ABORT: worktree dirty (node_modules link?)"; exit 1; }
+# Licences page (andrii.ai/licenses.html): regenerate in the worktree
+# when 7 days old or its inputs moved, so the staged copy is never
+# stale. After the dirty check on purpose; `ci` commits it on main.
+cargo xtask licenses --root "$WT" --no-commit || exit 1
 echo "build OK"
 
 echo "== 4. stage (worktree only)"
