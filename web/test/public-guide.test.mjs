@@ -9,6 +9,7 @@ import {
 	buildGuide,
 	changePanels,
 	domain,
+	draftedBy,
 	fieldLabel,
 	markQuote,
 	parseStatement,
@@ -237,6 +238,14 @@ test('items carry citations and the drafting model', () => {
 	const item = steps[0].items[0];
 	assert.equal(item.citations.length, 1);
 	assert.equal(item.draftedBy, 'muse-spark-1.3');
+});
+
+test('a fact staff quoted reads as drafted by staff, never by a user id', () => {
+	assert.equal(draftedBy(fact({ drafted_by: 'staff' })), 'staff');
+	assert.equal(draftedBy(fact({ drafted_by: undefined, created_by: 'staff:u-1' })), 'staff');
+	assert.equal(buildGuide([fact({ drafted_by: 'staff:u-1' })], NOW)[0].items[0].draftedBy, 'staff');
+	assert.equal(draftedBy(fact({ drafted_by: 'staffing-model-2' })), 'staffing-model-2');
+	assert.equal(draftedBy({}), 'unknown');
 });
 
 test('GUIDE_STEPS covers the frozen vocabulary except phone_script', () => {

@@ -168,6 +168,7 @@ export function fmtDay(value, locale = 'en') {
  *   factNo: (id: number) => string,
  *   captured: (day: string) => string,
  *   draftedBy: (model: string) => string,
+ *   draftedByStaff: string,
  *   source: string,
  *   factFallback: (id: number) => string,
  *   you: string,
@@ -330,6 +331,7 @@ export const ORDER_COPY = {
 		factNo: (id) => `Fact #${id}`,
 		captured: (day) => `captured ${day}`,
 		draftedBy: (model) => `drafted by ${model}, approved by staff`,
+		draftedByStaff: 'quoted and approved by staff',
 		source: 'Source',
 		factFallback: (id) => `Accepted fact #${id}. Its quote is on the authority's dossier.`,
 		you: 'You',
@@ -527,6 +529,7 @@ export const ORDER_COPY = {
 		factNo: (id) => `Hecho n.º ${id}`,
 		captured: (day) => `capturado el ${day}`,
 		draftedBy: (model) => `redactado por ${model}, aprobado por el personal`,
+		draftedByStaff: 'citado y aprobado por el personal',
 		source: 'Fuente',
 		factFallback: (id) =>
 			`Hecho aceptado n.º ${id}. Su cita figura en el expediente de la autoridad.`,
@@ -726,6 +729,7 @@ export const ORDER_COPY = {
 		factNo: (id) => `Fait n° ${id}`,
 		captured: (day) => `capturé le ${day}`,
 		draftedBy: (model) => `rédigé par ${model}, approuvé par le personnel`,
+		draftedByStaff: 'cité et approuvé par le personnel',
 		source: 'Source',
 		factFallback: (id) =>
 			`Fait accepté n° ${id}. Sa citation figure dans le dossier de l’autorité.`,

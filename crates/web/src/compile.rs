@@ -309,6 +309,22 @@ fn capped(state: &AppState) -> bool {
 }
 
 /// The run itself (blocking: network, model calls and sqlite).
+/// Never-drafted pages and files of the office, newest first. A staff
+/// quote does not count as drafted: the model has not read the page.
+fn undrafted_captures(conn: &Connection, authority_id: i64) -> rusqlite::Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.id FROM capture c
+         WHERE c.authority_id = ?1 AND c.kind IN ('warc', 'file')
+           AND c.trust != 'rejected'
+           AND NOT EXISTS (SELECT 1 FROM fact f
+                           WHERE f.capture_id = c.id AND f.created_by != 'staff')
+           AND NOT EXISTS (SELECT 1 FROM compile_drafted d WHERE d.capture_id = c.id)
+         ORDER BY c.id DESC",
+    )?;
+    let rows = stmt.query_map([authority_id], |row| row.get(0))?;
+    rows.collect()
+}
+
 fn run_blocking(
     state: &AppState,
     slug: &str,
@@ -378,20 +394,7 @@ fn run_blocking(
 
     // 2. Extract: the new captures, then never-drafted pages and files
     // (newest first).
-    let undrafted: Vec<i64> = conn
-        .prepare(
-            "SELECT c.id FROM capture c
-             WHERE c.authority_id = ?1 AND c.kind IN ('warc', 'file')
-               AND c.trust != 'rejected'
-               AND NOT EXISTS (SELECT 1 FROM fact f WHERE f.capture_id = c.id)
-               AND NOT EXISTS (SELECT 1 FROM compile_drafted d WHERE d.capture_id = c.id)
-             ORDER BY c.id DESC",
-        )
-        .and_then(|mut stmt| {
-            stmt.query_map([authority_id], |row| row.get(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()
-        })
-        .map_err(|e| format!("store: {e}"))?;
+    let undrafted = undrafted_captures(&conn, authority_id).map_err(|e| format!("store: {e}"))?;
     let mut queue = fresh.clone();
     for id in undrafted {
         if !queue.contains(&id) {
@@ -677,6 +680,26 @@ mod tests {
         let conn = Connection::open_in_memory().expect("memory db");
         migrate_tables(&conn).expect("ddl");
         conn
+    }
+
+    #[test]
+    fn a_staff_quote_leaves_a_page_in_the_extract_queue() {
+        let conn = memory();
+        conn.execute_batch(
+            "CREATE TABLE capture(id INTEGER PRIMARY KEY, authority_id INTEGER, kind TEXT, trust TEXT);
+             CREATE TABLE fact(id INTEGER PRIMARY KEY, capture_id INTEGER, created_by TEXT, status TEXT);
+             INSERT INTO capture VALUES (1, 7, 'warc', 'official'), (2, 7, 'warc', 'official'),
+                                        (3, 7, 'file', 'official'), (4, 7, 'warc', 'official'),
+                                        (5, 7, 'warc', 'rejected'), (6, 8, 'warc', 'official');
+             INSERT INTO fact VALUES (1, 1, 'staff', 'proposed'), (2, 2, 'staff', 'rejected'),
+                                     (3, 3, 'muse-spark-1.3 via analysis-agent', 'accepted'),
+                                     (4, 3, 'staff', 'accepted');
+             INSERT INTO compile_drafted(capture_id, run_id, at) VALUES (4, 1, 1);",
+        )
+        .expect("seed");
+        // 1 and 2 hold only staff quotes; 3 has a model draft; 4 was
+        // drafted empty; 5 is rejected; 6 is another office's.
+        assert_eq!(undrafted_captures(&conn, 7).expect("read"), vec![2, 1]);
     }
 
     #[test]

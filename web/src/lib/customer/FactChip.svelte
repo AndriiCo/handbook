@@ -15,6 +15,7 @@
 	const when = $derived(cite?.captured_at ? fmtDay(cite.captured_at, site.locale) : '');
 	const src = $derived(safeHref(cite?.source_url));
 	const model = $derived(fact?.drafted_by ?? fact?.created_by ?? null);
+	const byStaff = $derived(/^staff(:|$)/.test(String(model ?? '')));
 </script>
 
 <Popover.Root>
@@ -36,7 +37,7 @@
 			<p class="mt-3 mb-0 text-xs text-ink-muted">
 				{#if host}<span class="font-mono">{host}</span>{/if}
 				{#if when}<span> · {c.captured(when)}</span>{/if}
-				{#if model}<span> · {c.draftedBy(model)}</span>{/if}
+				{#if model}<span> · {byStaff ? c.draftedByStaff : c.draftedBy(model)}</span>{/if}
 				{#if src}
 					· <a class="underline underline-offset-4" href={src} target="_blank" rel="noopener noreferrer">{c.source}</a>
 				{/if}

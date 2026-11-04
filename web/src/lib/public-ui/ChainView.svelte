@@ -1,6 +1,6 @@
 <script lang="ts">
 	import CitationMark from './CitationMark.svelte';
-	import { parseStatement } from './guide.js';
+	import { draftedBy, parseStatement } from './guide.js';
 
 	// Read-only legalization chain: one hop per staff-accepted
 	// `legalization_chain` fact, in acceptance (id) order, each with its
@@ -13,10 +13,6 @@
 			.filter((f) => f?.status === 'accepted' && f?.topic === 'legalization_chain')
 			.sort((a, b) => (a?.id ?? 0) - (b?.id ?? 0))
 	);
-
-	function draftedBy(f: any): string {
-		return String(f?.drafted_by ?? f?.created_by ?? 'unknown').split(' ')[0];
-	}
 </script>
 
 {#if hops.length > 0}

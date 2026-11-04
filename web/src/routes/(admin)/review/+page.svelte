@@ -20,6 +20,7 @@
 	import AuthorityGroups from '#lib/admin/AuthorityGroups.svelte';
 	import Considerations from '#lib/admin/Considerations.svelte';
 	import PublishedFacts from '#lib/admin/PublishedFacts.svelte';
+	import QuoteCapture from '#lib/admin/QuoteCapture.svelte';
 	import RetireFact from '#lib/admin/RetireFact.svelte';
 	import {
 		acceptBody,
@@ -120,8 +121,8 @@
 	// decision is the server's: optimistic here, rolled back on error.
 	const api = () => `/apostille/api/v1`;
 
-	type Tab = 'facts' | 'published' | 'plans' | 'offices' | 'forms' | 'translations';
-	const TABS: Tab[] = ['facts', 'published', 'plans', 'offices', 'forms', 'translations'];
+	type Tab = 'facts' | 'published' | 'quote' | 'plans' | 'offices' | 'forms' | 'translations';
+	const TABS: Tab[] = ['facts', 'published', 'quote', 'plans', 'offices', 'forms', 'translations'];
 
 	// Compose deep links, read before the tabs mount: `compose=<slug>`
 	// preselects the authority (never starts a run); `run=<id>` reopens
@@ -135,6 +136,11 @@
 	// tab mounts on first visit only, so the queue view reads nothing more.
 	const publishedSlug = /^[a-z0-9-]{1,80}$/.test(boot.get('authority') ?? '') ? (boot.get('authority') ?? '') : '';
 	let publishedSeen = $state(false);
+	// Quote tab: `slug=<slug>&capture=<id>` opens that capture's text.
+	const quoteSlug = /^[a-z0-9-]{1,80}$/.test(boot.get('slug') ?? '') ? (boot.get('slug') ?? '') : '';
+	const bootCaptureRaw = Number(boot.get('capture'));
+	const bootCapture = Number.isInteger(bootCaptureRaw) && bootCaptureRaw > 0 ? bootCaptureRaw : null;
+	let quoteSeen = $state(false);
 	let tab = $state<Tab>('facts');
 	let counts = $state<Record<'plans' | 'offices' | 'forms', number | null>>({
 		plans: null,
@@ -539,6 +545,7 @@
 		tab = value as Tab;
 		syncUrl();
 		if (tab === 'published') publishedSeen = true;
+		if (tab === 'quote') quoteSeen = true;
 		if (tab === 'translations') {
 			if (acceptedState === 'idle') void loadAccepted();
 			void loadTranslations();
@@ -877,6 +884,7 @@
 			<Tabs.List aria-label="Review sections">
 				<Tabs.Trigger value="facts" class={TRIGGER}>Facts{loadState === 'ready' ? ` ${open.length}` : ''}</Tabs.Trigger>
 				<Tabs.Trigger value="published" class={TRIGGER}>Published</Tabs.Trigger>
+				<Tabs.Trigger value="quote" class={TRIGGER}>Quote a page</Tabs.Trigger>
 				<Tabs.Trigger value="plans" class={TRIGGER}>Page plans{tabLabel(counts.plans)}</Tabs.Trigger>
 				<Tabs.Trigger value="offices" class={TRIGGER}>Offices{tabLabel(counts.offices)}</Tabs.Trigger>
 				<Tabs.Trigger value="forms" class={TRIGGER}>Forms{tabLabel(counts.forms)}</Tabs.Trigger>
@@ -1427,6 +1435,12 @@
 		<Tabs.Content value="published">
 			{#if publishedSeen}
 				<PublishedFacts active={tab === 'published'} initialSlug={publishedSlug} />
+			{/if}
+		</Tabs.Content>
+
+		<Tabs.Content value="quote">
+			{#if quoteSeen}
+				<QuoteCapture initialSlug={quoteSlug} initialCapture={bootCapture} />
 			{/if}
 		</Tabs.Content>
 

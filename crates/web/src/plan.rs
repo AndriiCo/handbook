@@ -778,6 +778,16 @@ fn split_prompt(template: &'static str) -> (&'static str, &'static str) {
 }
 
 /// Per-run composer input: one line per accepted fact.
+/// The model that extracted the facts: the first drafter that is a
+/// model. Staff quotes (`staff`, voice `staff:<user>`) name none, so an
+/// office of only staff quotes credits no model with them.
+fn extract_model<'a>(drafters: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    drafters
+        .into_iter()
+        .map(|d| d.split(" via ").next().unwrap_or_default())
+        .find(|m| !m.is_empty() && *m != "staff" && !m.starts_with("staff:"))
+}
+
 pub fn plan_user(name: &str, slug: &str, facts: &[FactView]) -> String {
     let (_, per_run) = split_prompt(PLAN_PROMPT);
     let lines: Vec<String> = facts
@@ -1331,9 +1341,10 @@ pub(crate) fn compose_blocking(
         })
         .collect();
     let count = |v: &str| checks.iter().filter(|c| c["verdict"] == v).count();
-    let mut models = vec![
-        json!({"model": facts.first().map(|f| f.drafted_by.split(" via ").next().unwrap_or(PLAN_MODEL).to_string()).unwrap_or_else(|| PLAN_MODEL.to_string()), "role": "extract"}),
-    ];
+    let mut models = Vec::new();
+    if let Some(model) = extract_model(facts.iter().map(|f| f.drafted_by.as_str())) {
+        models.push(json!({"model": model, "role": "extract"}));
+    }
     if entail_ran || !checks.is_empty() {
         models.push(json!({"model": ENTAIL_MODEL, "role": "cross_check"}));
     }
@@ -1819,6 +1830,19 @@ mod live {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn extract_model_skips_staff_quotes() {
+        let spark = "muse-spark-1.3 via analysis-agent/aa-prompt-v2";
+        assert_eq!(extract_model([spark, "staff"]), Some("muse-spark-1.3"));
+        assert_eq!(extract_model(["staff", spark]), Some("muse-spark-1.3"));
+        assert_eq!(
+            extract_model(["staff:u-1", "", spark]),
+            Some("muse-spark-1.3")
+        );
+        assert_eq!(extract_model(["staff", "staff:u-1"]), None);
+        assert_eq!(extract_model([]), None);
+    }
+
     use super::*;
 
     fn g(id: i64, topic: &str, text: &str) -> Grounding {

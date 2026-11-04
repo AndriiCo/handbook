@@ -292,6 +292,18 @@ export function staleMark(fact, now) {
 }
 
 /**
+ * Who drafted a fact, for "Drafted by" lines: the model id (the first
+ * word of `drafted_by`), or `staff` for a fact staff quoted from a page
+ * (`staff`, or the voice lane's `staff:<user>`: no user id is shown).
+ * @param {any} fact
+ * @returns {string}
+ */
+export function draftedBy(fact) {
+	const by = String(fact?.drafted_by ?? fact?.created_by ?? 'unknown').split(' ')[0];
+	return /^staff(:|$)/.test(by) ? 'staff' : by;
+}
+
+/**
  * Build guide steps from accepted facts: per step, one item per
  * accepted fact in the step's topics (topic order, then id order).
  * Same topic + same field key with different values is a conflict:
@@ -334,7 +346,7 @@ export function buildGuide(facts, now) {
 				citations: Array.isArray(f.citations) ? f.citations : [],
 				conflict: fieldKey !== null && (seen.get(k)?.size ?? 0) > 1,
 				stale: staleMark(f, now),
-				draftedBy: String(f.drafted_by ?? f.created_by ?? 'unknown').split(' ')[0]
+				draftedBy: draftedBy(f)
 			};
 		});
 		steps.push({ id: step.id, title: step.title, items });

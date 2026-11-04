@@ -421,7 +421,7 @@ export default {
 	},
 
 	made: {
-		eyebrow: 'Drafted by a model, approved by a person',
+		eyebrow: 'Drafted by a model or quoted by staff, approved by a person',
 		heading: 'How this page was made',
 		/**
 		 * @param {number} n records
@@ -430,6 +430,8 @@ export default {
 		 */
 		summary: (n, models, pages) =>
 			`${counted(n, 'record', 'records')}${models.length > 0 ? `, drafted by ${models.join(' and ')}` : ''}${pages ? ` from ${pages}` : ''}, each approved by a staff reviewer before it reached this page.`,
+		/** In `summary`'s list, for records staff quoted from a page ("drafted by Muse Spark 1.3 and staff"). */
+		staff: 'staff',
 		/** @param {number} n */
 		records: (n) => `The records behind this page (${n})`,
 		/** @param {string} day */
@@ -446,7 +448,7 @@ export default {
 		captured: (day) => `Captured ${day}`,
 		capturedAuthority: 'Captured from the authority',
 		roles: {
-			extract: 'Extracted each fact from official pages',
+			extract: 'Extracted facts from official pages',
 			cross_check: 'Cross-checked each fact against its quote',
 			compose: 'Composed this plan from accepted facts'
 		},
