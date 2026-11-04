@@ -25,17 +25,37 @@ pub const MAX_DOWNLOAD: u64 = 20 * 1024 * 1024;
 /// A brand file the wizard writes at most (the upload cap too).
 pub const MAX_FILE: usize = 2 * 1024 * 1024;
 
-/// Sources checked by hand (2026-11-04); the setup file's
-/// `brand.sources` overrides them. Only Google publishes a direct
-/// download: Apple's logo is a .dmg (its button API serves PNG), the
-/// FIDO icon sits behind a request form, Meta's logo behind accepting
-/// its guidelines, and Vogun is a purchased licence. Those stay manual
-/// unless the operator pastes a URL. (file, url, zip entry)
-pub const DEFAULT_SOURCES: &[(&str, &str, &str)] = &[(
-    "google.svg",
-    "https://developers.google.com/static/identity/images/signin-assets.zip",
-    "Theme=Neutral, Show text=No, Shape=Square, Platform=Android+Web.svg",
-)];
+/// Sources downloaded and opened by hand on 2026-11-04; the setup
+/// file's `brand.sources` overrides them. (file, url, entry inside)
+/// - Google: the sign-in assets zip from its branding guidelines page;
+///   the neutral square "G" (a Figma export: its conic gradient is a
+///   paint-only `<foreignObject>`, see [`svg_problem`]).
+/// - Apple: the "Sign in with Apple Logo" disk image from Apple Design
+///   Resources, read by [`super::dmg`]; the left-aligned black logo at
+///   Medium, the size for 44-pt buttons with a title.
+/// - FIDO: the "FIDO Passkey mark A" pack linked from FIDO's passkey
+///   icon download page; the black mark. FIDO's agreement is formed by
+///   completing that page's form, so the acceptance names it.
+///
+/// Meta's logo sits behind accepting its guidelines on its site, and
+/// Vogun is a purchased licence: both stay manual.
+pub const DEFAULT_SOURCES: &[(&str, &str, &str)] = &[
+    (
+        "google.svg",
+        "https://developers.google.com/static/identity/images/signin-assets.zip",
+        "Theme=Neutral, Show text=No, Shape=Square, Platform=Android+Web.svg",
+    ),
+    (
+        "apple.svg",
+        "https://devimages-cdn.apple.com/design/resources/download/Logo-Sign-in-with-Apple.dmg",
+        "Logo - SIWA - Left-aligned - Black - Medium.svg",
+    ),
+    (
+        "passkey.svg",
+        "https://fidoalliance.org/wp-content/uploads/2024/01/FIDO_Passkey_mark_A.zip",
+        "FIDO_Passkey_mark_A_black.svg",
+    ),
+];
 
 pub struct Asset {
     pub id: &'static str,
@@ -56,7 +76,7 @@ pub const ASSETS: &[Asset] = &[
         terms: "Sign in with Apple: Human Interface Guidelines and the Apple Developer Program License Agreement",
         terms_url: "https://developer.apple.com/design/human-interface-guidelines/sign-in-with-apple",
         permits: "The Apple logo inside a Sign in with Apple button only, unmodified, at the sizes and colours the guidelines set.",
-        get: "https://developer.apple.com/design/resources/ (Sign in with Apple logo SVG)",
+        get: "https://developer.apple.com/design/resources/ (Sign in with Apple Logo, a .dmg the wizard opens)",
         files: &["apple.svg"],
     },
     Asset {
@@ -80,10 +100,10 @@ pub const ASSETS: &[Asset] = &[
     Asset {
         id: "fido",
         owner: "FIDO Alliance",
-        terms: "Passkey Icon Usage Guidelines and Passkey Icon Usage Agreement",
+        terms: "Passkey Icon Usage Guidelines and Passkey Icon Usage Agreement (formed by completing the form at https://fidoalliance.org/passkey-download/: do that first)",
         terms_url: "https://fidoalliance.org/get-the-passkey-icon/",
         permits: "The passkey icon next to passkey sign-in, unmodified; never as the product's own brand.",
-        get: "https://fidoalliance.org/get-the-passkey-icon/ (form, then the icon pack)",
+        get: "https://fidoalliance.org/passkey-download/ (complete the form, then the FIDO Passkey mark A pack)",
         files: &["passkey.svg"],
     },
     Asset {
@@ -193,7 +213,8 @@ pub fn default_source(name: &str) -> Option<BrandSource> {
 }
 
 /// Why an SVG may not ship, if it may not: scripts, event handlers,
-/// `<foreignObject>` and anything fetched from elsewhere.
+/// `<foreignObject>` (except paint-only ones, [`foreign_objects_are_paint`])
+/// and anything fetched from elsewhere.
 pub fn svg_problem(svg: &str) -> Option<&'static str> {
     static EVENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"[\s/"']on[a-z]+\s*="#).unwrap());
     static LINK: LazyLock<Regex> = LazyLock::new(|| {
@@ -205,7 +226,7 @@ pub fn svg_problem(svg: &str) -> Option<&'static str> {
         Some("it is not an SVG")
     } else if lower.contains("<script") {
         Some("it carries a <script>")
-    } else if lower.contains("<foreignobject") {
+    } else if lower.contains("<foreignobject") && !foreign_objects_are_paint(&lower) {
         Some("it carries a <foreignObject>")
     } else if EVENT.is_match(&lower) {
         Some("it carries an on… event attribute")
@@ -214,6 +235,42 @@ pub fn svg_problem(svg: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// True when every `<foreignObject>` holds only empty, inline-styled
+/// XHTML `<div>`s with no `url(`, `@import` or `expression`. That is
+/// how Figma exports paint SVG cannot draw (Google's 2025 "G" is a
+/// conic gradient): no text, script or link, and the logos render
+/// through `<img src>`, where nothing in an SVG runs or loads. Any other
+/// content inside a `<foreignObject>` keeps the SVG out. `lower` is the
+/// lowercased SVG.
+fn foreign_objects_are_paint(lower: &str) -> bool {
+    static PAINT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r#"^(\s*<div xmlns="http://www\.w3\.org/1999/xhtml" style="[^"<>]*"\s*>\s*</div>)+\s*$"#,
+        )
+        .unwrap()
+    });
+    let mut rest = lower;
+    while let Some(open) = rest.find("<foreignobject") {
+        let after = &rest[open..];
+        let (Some(tag_end), Some(close)) = (after.find('>'), after.find("</foreignobject>")) else {
+            return false;
+        };
+        if close < tag_end {
+            return false;
+        }
+        let inner = &after[tag_end + 1..close];
+        if !PAINT.is_match(inner)
+            || ["url(", "@import", "expression"]
+                .iter()
+                .any(|w| inner.contains(w))
+        {
+            return false;
+        }
+        rest = &after[close + "</foreignobject>".len()..];
+    }
+    true
 }
 
 /// `bytes` must be what a brand file called `name` holds. Fetched and
@@ -324,8 +381,11 @@ pub fn fetch_file(
         return Err("the source must be an https:// URL".into());
     }
     let bytes = get(&src.url)?;
+    let pick = src.pick.as_deref().unwrap_or(name);
     let bytes = if bytes.starts_with(b"PK\x03\x04") {
-        unzip_entry(&bytes, src.pick.as_deref().unwrap_or(name))?
+        unzip_entry(&bytes, pick)?
+    } else if super::dmg::is_dmg(&bytes) {
+        super::dmg::file(&bytes, pick, MAX_FILE)?
     } else {
         bytes
     };
@@ -555,7 +615,59 @@ mod tests {
                 .unwrap_err()
                 .contains("https://")
         );
-        // No source and no default: manual.
+        // No source and no default (Meta's logo): manual.
+        accept(
+            repo.path(),
+            &mut file,
+            "meta",
+            "2026-11",
+            "2026-11-04T00:00:00Z",
+        )
+        .unwrap();
+        let err = fetch_file(repo.path(), &file, "meta.svg", &plain).unwrap_err();
+        assert!(err.contains("by hand"), "{err}");
+        assert!(fetch_file(repo.path(), &file, "../x.svg", &plain).is_err());
+    }
+
+    /// Google's 2025 "G" is a Figma export: its conic gradient is a
+    /// `<foreignObject>` holding one empty styled XHTML div. That passes;
+    /// anything else inside a `<foreignObject>` does not.
+    #[test]
+    fn paint_only_foreign_objects_pass_and_nothing_else_inside_does() {
+        let paint = r#"<svg xmlns="http://www.w3.org/2000/svg"><g clip-path="url(#c)"><foreignObject x="-1" y="-1" width="2" height="2"><div xmlns="http://www.w3.org/1999/xhtml" style="background:conic-gradient(from 90deg,rgba(255, 70, 65, 1) 0deg,rgba(49, 134, 255, 1) 39deg);height:100%;width:100%;opacity:1"></div></foreignObject></g></svg>"#;
+        assert_eq!(svg_problem(paint), None);
+        let twice = paint.replace(
+            "</foreignObject>",
+            "</foreignObject><foreignObject><div xmlns=\"http://www.w3.org/1999/xhtml\" style=\"opacity:1\"></div></foreignObject>",
+        );
+        assert_eq!(svg_problem(&twice), None);
+        for bad in [
+            r#"<svg><foreignObject><div xmlns="http://www.w3.org/1999/xhtml" style="">hi</div></foreignObject></svg>"#,
+            r#"<svg><foreignObject><div xmlns="http://www.w3.org/1999/xhtml" style="background:url(data:image/png;base64,AA)"></div></foreignObject></svg>"#,
+            r#"<svg><foreignObject><div xmlns="http://www.w3.org/1999/xhtml" style=""></div><img src="x"/></foreignObject></svg>"#,
+            r#"<svg><foreignObject><div xmlns="http://www.w3.org/1999/xhtml" style="x"><div></div></div></foreignObject></svg>"#,
+            r#"<svg><foreignObject><div xmlns="http://www.w3.org/1999/xhtml" style="x"></div></svg>"#,
+            r#"<svg><foreignObject/></svg>"#,
+            r#"<svg><foreignObject><div style="x"></div></foreignObject></svg>"#,
+        ] {
+            let why = svg_problem(bad).unwrap_or_else(|| panic!("accepted {bad}"));
+            assert!(why.contains("foreignObject"), "{bad}: {why}");
+        }
+    }
+
+    /// Apple's logo comes as a disk image: Fetch opens it and keeps the
+    /// one named file.
+    #[test]
+    fn disk_images_give_up_the_one_named_file() {
+        use super::super::dmg::tests::{hfs, udif};
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>"#;
+        let dmg = udif(&hfs(&[
+            ("Logo - SIWA - Left-aligned - White - Medium.svg", b"<svg/>"),
+            ("Logo - SIWA - Left-aligned - Black - Medium.svg", svg),
+        ]));
+        let repo = tempfile::tempdir().unwrap();
+        let mut file = SetupFile::template();
+        file.operator.name = "Synthetic Operator".into();
         accept(
             repo.path(),
             &mut file,
@@ -564,9 +676,42 @@ mod tests {
             "2026-11-04T00:00:00Z",
         )
         .unwrap();
-        let err = fetch_file(repo.path(), &file, "apple.svg", &plain).unwrap_err();
-        assert!(err.contains("by hand"), "{err}");
-        assert!(fetch_file(repo.path(), &file, "../x.svg", &plain).is_err());
+        let sha = fetch_file(repo.path(), &file, "apple.svg", &|url: &str| {
+            assert!(url.ends_with("/Logo-Sign-in-with-Apple.dmg"), "{url}");
+            Ok(dmg.clone())
+        })
+        .unwrap();
+        assert_eq!(sha, sha256_hex(svg));
+        assert_eq!(
+            std::fs::read(repo.path().join("private/brand/apple.svg")).unwrap(),
+            svg
+        );
+    }
+
+    /// The three default sources, for real: each downloads, gives up its
+    /// named file and passes the checks. Network, so run by hand:
+    /// `cargo test -p xtask -- --ignored default_sources`. With
+    /// `BRAND_DL_DIR` set, each download is read from
+    /// `<dir>/<last URL segment>` instead (a proxy that re-signs TLS).
+    #[test]
+    #[ignore]
+    fn default_sources_download_pick_and_pass() {
+        let local = std::env::var("BRAND_DL_DIR").ok();
+        for (name, url, pick) in DEFAULT_SOURCES {
+            let bytes = match &local {
+                Some(dir) => std::fs::read(Path::new(dir).join(url.rsplit('/').next().unwrap()))
+                    .unwrap_or_else(|e| panic!("{name}: {e}")),
+                None => download(url).unwrap_or_else(|e| panic!("{name}: {e}")),
+            };
+            let got = if bytes.starts_with(b"PK\x03\x04") {
+                unzip_entry(&bytes, pick)
+            } else {
+                super::super::dmg::file(&bytes, pick, MAX_FILE)
+            }
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+            check_content(name, &got).unwrap_or_else(|e| panic!("{name}: {e}"));
+            eprintln!("{name}: {} bytes from {pick}", got.len());
+        }
     }
 
     #[test]

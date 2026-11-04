@@ -4336,6 +4336,7 @@ dependencies = [
  "config",
  "contracts",
  "ed25519-dalek",
+ "flate2",
  "forms",
  "futures-util",
  "handbook-agent",

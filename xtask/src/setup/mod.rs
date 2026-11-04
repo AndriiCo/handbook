@@ -31,6 +31,7 @@
 pub mod brand;
 pub mod build;
 pub mod checks;
+pub mod dmg;
 pub mod file;
 pub mod map;
 pub mod plan;

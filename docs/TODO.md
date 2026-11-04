@@ -521,13 +521,17 @@ system:
   the zip entry to take, and Fetch, disabled until acceptance is
   ticked. HTTPS only, 20 MB, 30 s; zips through `unzip`; the SVG
   sanitizer refuses `<script`, `on…=`, `<foreignObject` and outside
-  links; the hash goes into the acceptance. Open: the only checked
-  direct download is Google's bundle
-  (`developers.google.com/static/identity/images/signin-assets.zip`),
-  and all its current SVGs carry a `<foreignObject>` (a Figma gradient
-  export), so Fetch refuses them; Apple's logo is a .dmg (the button
-  API serves PNG only). Every asset is therefore still manual in
-  practice, and uploads are not sanitized. Original item: One-click
+  links; the hash goes into the acceptance. Uploads meet the same
+  check (509bde3). **Defaults, downloaded and opened 2026-11-04**:
+  Google `signin-assets.zip` (neutral square G; its conic gradient is a
+  paint-only `<foreignObject>`, now allowed: empty inline-styled XHTML
+  divs with no `url(`, rendered statically through `<img>`); Apple
+  `Logo-Sign-in-with-Apple.dmg` (left-aligned black logo, Medium), read
+  by `xtask/src/setup/dmg.rs` (UDIF zlib + HFS+, in memory, no mount,
+  works on Linux); FIDO `FIDO_Passkey_mark_A.zip` (black mark), whose
+  agreement is formed by FIDO's download form, so acceptance names it.
+  Meta and Vogun stay manual. Open: the black Apple and FIDO marks suit
+  light buttons only; a dark theme needs their white variants. Original item: One-click
   brand assets: prefilled source URLs, and
   **Fetch** downloads, unpacks and places each file. The tool still
   never accepts terms itself (`brand.rs:5-8`): Fetch is enabled only

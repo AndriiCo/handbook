@@ -26,6 +26,8 @@ publish = { path = "../crates/publish" }
 voice = { path = "../crates/voice" }
 ed25519-dalek = "2"
 base64 = "0.22"
+# W-2: Apple ships its logo as a zlib (UDZO) disk image; already in the tree via ingest.
+flate2 = "1.1.10"
 # Aliased: `mod config` in src/main.rs is the config-* CLI commands.
 sealed_config = { path = "../crates/config", package = "config" }
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
