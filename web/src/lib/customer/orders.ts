@@ -152,6 +152,8 @@ export type FormField = {
 	options: string[];
 	prefill_topic: string | null;
 	label_quote: string | null;
+	/** The PDF box's MaxLen, when it has one. */
+	max_len?: number | null;
 };
 
 export type FormTemplate = {
@@ -160,6 +162,8 @@ export type FormTemplate = {
 	official_url: string | null;
 	source_fact_id: number | null;
 	fillable: boolean;
+	/** `/plan`: the free fill (no order) can fill this form (R3). */
+	fill_supported?: boolean;
 	fields: FormField[];
 };
 
@@ -174,6 +178,18 @@ export type PlanBundle = {
 	} | null;
 	facts: Fact[];
 	forms: FormTemplate[];
+	/** `/plan` `authority.path`: the guide's readable address (`usa/washington`). */
+	guidePath?: string | null;
+};
+
+/** `POST /p2/forms/{id}/fill` (contracts `form-fill.json`). */
+export type FormFill = {
+	fill_id: string;
+	form_id: number;
+	status: string;
+	pdf_url: string;
+	flattened: boolean;
+	created_at: number;
 };
 
 export type ApiResult<T = any> = { ok: boolean; status: number; body: T };

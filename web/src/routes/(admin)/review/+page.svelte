@@ -18,6 +18,9 @@
 	import OfficeReview from '#lib/admin/OfficeReview.svelte';
 	import FormMapReview from '#lib/admin/FormMapReview.svelte';
 	import AuthorityGroups from '#lib/admin/AuthorityGroups.svelte';
+	import Considerations from '#lib/admin/Considerations.svelte';
+	import PublishedFacts from '#lib/admin/PublishedFacts.svelte';
+	import RetireFact from '#lib/admin/RetireFact.svelte';
 	import {
 		acceptBody,
 		acceptFact,
@@ -39,7 +42,7 @@
 	import { getJson, postJson, errorText } from '#lib/admin/admin-api.js';
 	import { fetchFactChecks, type FactCheck } from '#lib/admin/proposals.js';
 	import { ago, modelName } from '#lib/admin/format.js';
-	import { subscribe } from '#lib/live.svelte.js';
+	import { subscribe, type BusMessage } from '#lib/live.svelte.js';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import CheckCheckIcon from '@lucide/svelte/icons/check-check';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
@@ -117,8 +120,8 @@
 	// decision is the server's: optimistic here, rolled back on error.
 	const api = () => `/apostille/api/v1`;
 
-	type Tab = 'facts' | 'plans' | 'offices' | 'forms' | 'translations';
-	const TABS: Tab[] = ['facts', 'plans', 'offices', 'forms', 'translations'];
+	type Tab = 'facts' | 'published' | 'plans' | 'offices' | 'forms' | 'translations';
+	const TABS: Tab[] = ['facts', 'published', 'plans', 'offices', 'forms', 'translations'];
 
 	// Compose deep links, read before the tabs mount: `compose=<slug>`
 	// preselects the authority (never starts a run); `run=<id>` reopens
@@ -128,6 +131,10 @@
 	const composeSlug = /^[a-z0-9-]{1,80}$/.test(boot.get('compose') ?? '') ? (boot.get('compose') ?? '') : '';
 	const bootRunRaw = Number(boot.get('run'));
 	const bootRun = Number.isInteger(bootRunRaw) && bootRunRaw > 0 ? bootRunRaw : null;
+	// Published tab: `authority=<slug>` opens that office's facts. The
+	// tab mounts on first visit only, so the queue view reads nothing more.
+	const publishedSlug = /^[a-z0-9-]{1,80}$/.test(boot.get('authority') ?? '') ? (boot.get('authority') ?? '') : '';
+	let publishedSeen = $state(false);
 	let tab = $state<Tab>('facts');
 	let counts = $state<Record<'plans' | 'offices' | 'forms', number | null>>({
 		plans: null,
@@ -178,6 +185,7 @@
 	// failures back as `guard_ok = 0` — staff-visible, never public.
 	interface AcceptedFact {
 		id: number;
+		authority_slug?: string;
 		topic: string;
 		statement: string;
 		status: string;
@@ -198,6 +206,8 @@
 	let trError = $state<string | null>(null);
 	let trNote = $state<string | null>(null);
 	let trActing = $state<Record<string, boolean>>({});
+	// Facts retired from this list: the row reads Retired, with the reason.
+	let trRetired = $state<Record<number, string>>({});
 
 	function trKey(factId: number, lang: string): string {
 		return `${factId}:${lang}`;
@@ -514,10 +524,21 @@
 		}
 	}
 
+	// The drawer's open Considerations panel heard `fact_retired` on the
+	// selected proposal's office: a live fact it is compared with may be
+	// gone, so the queue re-reads its diffs and conflicts.
+	function onQueueLive(msg: BusMessage) {
+		if (msg.type !== 'fact_retired') return;
+		const id = typeof msg.fact_id === 'number' ? msg.fact_id : null;
+		refreshNote = id === null ? 'A published fact was retired — refreshing.' : `Fact #${id} was retired — refreshing.`;
+		void loadQueue(undefined, false, true);
+	}
+
 	function setTab(value: string) {
 		if (!TABS.includes(value as Tab)) return;
 		tab = value as Tab;
 		syncUrl();
+		if (tab === 'published') publishedSeen = true;
 		if (tab === 'translations') {
 			if (acceptedState === 'idle') void loadAccepted();
 			void loadTranslations();
@@ -855,6 +876,7 @@
 		<div class="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
 			<Tabs.List aria-label="Review sections">
 				<Tabs.Trigger value="facts" class={TRIGGER}>Facts{loadState === 'ready' ? ` ${open.length}` : ''}</Tabs.Trigger>
+				<Tabs.Trigger value="published" class={TRIGGER}>Published</Tabs.Trigger>
 				<Tabs.Trigger value="plans" class={TRIGGER}>Page plans{tabLabel(counts.plans)}</Tabs.Trigger>
 				<Tabs.Trigger value="offices" class={TRIGGER}>Offices{tabLabel(counts.offices)}</Tabs.Trigger>
 				<Tabs.Trigger value="forms" class={TRIGGER}>Forms{tabLabel(counts.forms)}</Tabs.Trigger>
@@ -1261,6 +1283,22 @@
 								{#if card.error}
 									<p class="m-0 text-sm font-semibold text-error" role="alert">{card.error}</p>
 								{/if}
+
+								<Considerations
+									subject={{
+										id: item.id,
+										authority_slug: item.authority_slug,
+										topic: item.topic,
+										statement: item.statement,
+										status: decided[item.id] ?? item.status,
+										related: [
+											...item.blast_radius.conflicts.map((c) => c.id),
+											...(item.diff ? [item.diff.base_fact_id] : [])
+										]
+									}}
+									collapsible
+									onLive={onQueueLive}
+								/>
 							</Card.Content>
 						</Card.Root>
 					{/if}
@@ -1386,6 +1424,12 @@
 			</section>
 		</Tabs.Content>
 
+		<Tabs.Content value="published">
+			{#if publishedSeen}
+				<PublishedFacts active={tab === 'published'} initialSlug={publishedSlug} />
+			{/if}
+		</Tabs.Content>
+
 		<Tabs.Content value="plans">
 			<PlanReview
 				onCount={(n) => (counts.plans = n)}
@@ -1440,12 +1484,29 @@
 				<p class="m-0 text-xs text-ink-muted">{acceptedFacts.length} accepted · {trRows.length} rows</p>
 				<ul class="m-0 flex list-none flex-col p-0">
 					{#each acceptedFacts as fact (fact.id)}
+						{@const retiredFor = trRetired[fact.id]}
 						<li class="flex flex-col gap-2 border-t border-line py-3">
 							<p class="m-0 flex flex-wrap items-center gap-2 text-sm">
 								<span class="font-mono text-xs text-ink-muted">Fact #{fact.id}</span>
 								<Badge variant="secondary">{fact.topic}</Badge>
-								<span class="font-semibold">{fact.statement}</span>
+								{#if retiredFor !== undefined}
+									<Badge variant="outline" class="border-error text-error">Retired</Badge>
+								{/if}
+								<span class={`font-semibold ${retiredFor !== undefined ? 'text-ink-muted line-through' : ''}`}>{fact.statement}</span>
 							</p>
+							{#if retiredFor !== undefined}
+								<p id={`tr-retired-${fact.id}`} tabindex="-1" class="m-0 text-xs break-words" role="status">
+									<span class="font-semibold text-error">Retired</span> · {retiredFor}
+								</p>
+							{:else}
+								<div>
+									<RetireFact
+										fact={{ id: fact.id, statement: fact.statement, authority_slug: fact.authority_slug ?? '' }}
+										onRetired={(reason) => (trRetired[fact.id] = reason)}
+										focusAfter={`tr-retired-${fact.id}`}
+									/>
+								</div>
+							{/if}
 							<ul class="m-0 flex list-none flex-col gap-1 p-0">
 								{#each ['es', 'fr'] as lang (lang)}
 									{@const row = trFor(fact.id, lang)}

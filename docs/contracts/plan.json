@@ -323,6 +323,7 @@
       "official_url": "https://example.test/apostille/request-form.pdf",
       "source_fact_id": 206,
       "fillable": true,
+      "fill_supported": true,
       "fields": [
         {
           "name": "RequesterName",

@@ -695,6 +695,37 @@ pub fn offices_for_read(
         .collect()
 }
 
+/// Whether `POST /p2/forms/{id}/fill` fills this `forms[]` row without
+/// an order: an accepted FormMapV1 (served as `status: "active"`),
+/// fillable, with at least one mapped field to fill.
+fn fill_supported(form: &serde_json::Value) -> bool {
+    form["id"].as_i64().is_some()
+        && form["status"] == "active"
+        && form["fillable"] == true
+        && form["fields"].as_array().is_some_and(|fields| {
+            fields
+                .iter()
+                .any(|f| f["name"].as_str().is_some_and(|n| !n.trim().is_empty()))
+        })
+}
+
+/// Read-time form flag: every `forms[]` row carries `fill_supported`
+/// ([`fill_supported`]; false for any other row). The guide offers the
+/// free online fill only on this flag, so a server without the
+/// fill-only action (no flag) never shows the offer.
+pub fn forms_for_read(forms: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    forms
+        .into_iter()
+        .map(|mut form| {
+            let ok = fill_supported(&form);
+            if let Some(row) = form.as_object_mut() {
+                row.insert("fill_supported".into(), serde_json::Value::Bool(ok));
+            }
+            form
+        })
+        .collect()
+}
+
 // --------------------------------------------------------------- models
 
 /// Strict json_schema for the composer: fact ids are an enum of the
@@ -1125,6 +1156,7 @@ pub fn read_body(
     // Offices first: office blocks list only the ones still served.
     let offices = offices_for_read(offices, &accepted);
     let office_ids: Vec<i64> = offices.iter().filter_map(|o| o["id"].as_i64()).collect();
+    let forms = forms_for_read(forms);
     let form_ids: Vec<i64> = forms.iter().filter_map(|f| f["id"].as_i64()).collect();
     let (plan, provenance) = match row {
         Some(row) => match filter_for_read(&row.plan, &accepted, &office_ids, &form_ids) {
@@ -2099,6 +2131,91 @@ mod tests {
         assert_eq!(body["offices"], json!([]));
         assert_eq!(body["plan"]["blocks"][0]["office_ids"], json!([]));
         assert!(!body.to_string().contains("100 Fixture Way"));
+    }
+
+    #[test]
+    fn plan_fill_supported_marks_only_accepted_fillable_form_maps() {
+        // R3 fill-only: the free online fill is offered on this flag, so
+        // only a map `POST /p2/forms/{id}/fill` can fill reads true.
+        let conn = Connection::open_in_memory().unwrap();
+        crate::forms_map::migrate_tables(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE capture(id INTEGER PRIMARY KEY, source_id INTEGER);
+             CREATE TABLE source(id INTEGER PRIMARY KEY, uri TEXT);",
+        )
+        .unwrap();
+        let mapped = r#"[{"name": "RequesterName", "label": "Your full name", "help": "",
+            "type": "text", "required": true, "options": [], "prefill_topic": null,
+            "label_quote": "Name of person requesting", "max_len": 60}]"#;
+        for (status, fields) in [
+            ("accepted", mapped),
+            ("accepted", "[]"),
+            ("proposed", mapped),
+            ("rejected", mapped),
+        ] {
+            conn.execute(
+                "INSERT INTO form_map(authority_slug, capture_id, status, title, fields_json,
+                     guards_json, acroform_fields, created_at, decided_at)
+                 VALUES ('usa-wa-sos', 1, ?1, 'SYNTHETIC form', ?2, '[]', 2, 1, 2)",
+                rusqlite::params![status, fields],
+            )
+            .unwrap();
+        }
+        let served = crate::forms_map::accepted_for_slug(&conn, "usa-wa-sos").unwrap();
+        let read = read_body("usa-wa-sos", None, None, vec![], vec![], served);
+        let flags: Vec<(i64, bool)> = read["forms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| (f["id"].as_i64().unwrap(), f["fill_supported"] == true))
+            .collect();
+        // Proposed and rejected maps are never served; the accepted map
+        // with nothing mapped is served, but there is nothing to fill.
+        assert_eq!(flags, vec![(1, true), (2, false)]);
+
+        // Any other row reads false, never a missing key.
+        let seed: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/contracts/plan.json")).unwrap();
+        let good = seed["forms"][0].clone();
+        assert_eq!(
+            good["fill_supported"], true,
+            "the contract seed shows the flag"
+        );
+        let with = |key: &str, value: serde_json::Value| {
+            let mut f = good.clone();
+            f[key] = value;
+            f
+        };
+        let rows = vec![
+            good.clone(),
+            with("status", json!("proposed")),
+            with("fillable", json!(false)),
+            with("fields", json!([])),
+            with("fields", json!([{"name": " "}])),
+            with("fields", serde_json::Value::Null),
+            with("id", serde_json::Value::Null),
+        ];
+        let body = read_body("usa-wa-sos", None, None, vec![], vec![], rows);
+        let flags: Vec<serde_json::Value> = body["forms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["fill_supported"].clone())
+            .collect();
+        assert_eq!(
+            flags,
+            [true, false, false, false, false, false, false].map(serde_json::Value::Bool)
+        );
+        // The contract seed (which the e2e fixtures copy) shows every
+        // key a served row carries, and no more.
+        let keys = |v: &serde_json::Value| -> BTreeSet<String> {
+            v.as_object().unwrap().keys().cloned().collect()
+        };
+        assert_eq!(
+            keys(&read["forms"][0]),
+            keys(&good),
+            "plan.json forms[] keys"
+        );
     }
 
     #[test]

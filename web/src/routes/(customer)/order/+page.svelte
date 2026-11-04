@@ -32,6 +32,7 @@
 		fmtTime,
 		type DeliveryOption,
 		type Fact,
+		type FormFill,
 		type FormTemplate,
 		type LegRole,
 		type Order,
@@ -41,6 +42,7 @@
 		type PlanPath,
 		type Quote
 	} from '../../../lib/customer/orders';
+	import { validateSubmission } from '../../../lib/customer/forms-validate.js';
 	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import LandmarkIcon from '@lucide/svelte/icons/landmark';
@@ -52,6 +54,8 @@
 	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import DownloadIcon from '@lucide/svelte/icons/download';
+	import FileDownIcon from '@lucide/svelte/icons/file-down';
 
 	// W3a: Destination → Document → Form → Delivery → Pay. Paths come
 	// from the accepted plan, the form fields from the accepted form
@@ -160,6 +164,68 @@
 	);
 	const filledCount = $derived(form ? form.fields.filter((f) => filled(values[f.name])).length : 0);
 
+	// Free fill (R3, plan §6): the office's own form with the visitor's
+	// answers, with no order and no payment. Offered only on the
+	// server's `fill_supported` flag; the PDF is served to its filler only.
+	let fillAgree = $state(false);
+	let fillTried = $state(false);
+	let filling = $state(false);
+	let fillError = $state<string | null>(null);
+	let fillDone = $state<{ key: string; pdf: string } | null>(null);
+	let fillLink = $state<HTMLElement | null>(null);
+	/** The server refuses longer values (forms_map.rs `MAX_FILL_VALUE`). */
+	const FILL_MAX = 200;
+	/** The server's cap: 30 fills per account in any 24 hours (forms_map.rs `fill`). */
+	const FILL_DAY_CAP = 30;
+	/** A box's limit: its own MaxLen (0 means none, as on the server), never above FILL_MAX. */
+	const fillMaxLen = (n: number | null | undefined) => Math.min(n && n > 0 ? n : FILL_MAX, FILL_MAX);
+	const fillOffered = $derived(form?.fill_supported === true);
+	/** What the fill posts: this form's own fields, tick boxes as true/false. */
+	const fillValues = $derived.by(() => {
+		const out: Record<string, string | boolean> = {};
+		for (const f of form?.fields ?? []) {
+			const v = values[f.name];
+			if (f.type === 'checkbox') out[f.name] = v === true;
+			else if (typeof v === 'string') out[f.name] = v;
+		}
+		return out;
+	});
+	const fillKey = $derived(form ? `${form.id}:${JSON.stringify(fillValues)}` : '');
+	/** The download is offered only while the answers match the filled PDF. */
+	const fillPdf = $derived(fillDone !== null && fillDone.key === fillKey ? fillDone.pdf : null);
+	/** A readable file name (the URL's own is the fill id). */
+	const fillFile = $derived(
+		`${
+			(form?.title ?? '')
+				.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim()
+				.slice(0, 80) || 'Official form'
+		} (filled).pdf`
+	);
+	const fillProblems = $derived.by((): string[] => {
+		if (!form || !fillTried) return [];
+		const defs = form.fields.map((f) => ({
+			key: f.name,
+			label: f.label,
+			type: f.type === 'select' && f.options.length === 0 ? 'text' : f.type,
+			required: f.required,
+			// A date box shorter than YYYY-MM-DD takes the server's compact
+			// US order, so dates carry no length limit here.
+			max_len: f.type === 'date' ? undefined : fillMaxLen(f.max_len),
+			options: f.options
+		}));
+		const out = validateSubmission(defs, fillValues).map((e) => e.message);
+		if (!fillAgree) out.push('Tick the box to confirm you understand what the free fill does.');
+		return out;
+	});
+	// The current address (shallow step moves update `page.shallow`).
+	const here = $derived(page.shallow?.url ?? page.url);
+	const fillSignIn = $derived(loginHref(`${here.pathname}${here.search}`));
+	const guideHref = $derived(
+		slug ? resolve('/(public)/authority/[...trail]', { trail: bundle?.guidePath || slug }) : null
+	);
+
 	const currency = $derived(quote?.currency ?? options?.currency ?? order?.amount?.currency ?? null);
 	const selected = $derived<DeliveryOption | null>(
 		options?.options.find((o) => o.kind === kind && o.enabled) ?? null
@@ -220,7 +286,9 @@
 					slug: s,
 					plan: body.plan && typeof body.plan === 'object' ? body.plan : null,
 					facts: Array.isArray(body.facts) ? body.facts : [],
-					forms: Array.isArray(body.forms) ? body.forms : []
+					forms: Array.isArray(body.forms) ? body.forms : [],
+					guidePath:
+						typeof body.authority?.path === 'string' && body.authority.path ? body.authority.path : null
 				}
 			: null;
 		facts = f.ok && Array.isArray(f.body?.facts) ? f.body.facts : [];
@@ -481,6 +549,43 @@
 	async function useFree() {
 		chooseKind('address_label');
 		await placeOrder('address_label');
+	}
+
+	/** The free fill: POST the answers, then offer the filled PDF. Never an order. */
+	async function fillFree() {
+		if (!form || filling) return;
+		fillTried = true;
+		fillError = null;
+		if (fillProblems.length > 0) return;
+		const key = fillKey;
+		filling = true;
+		const r = await postJson<FormFill>(`/p2/forms/${form.id}/fill`, { values: { ...fillValues } });
+		filling = false;
+		const pdf = r.ok ? safeHref(r.body?.pdf_url) : null;
+		if (pdf) {
+			fillDone = { key, pdf };
+			await tick();
+			fillLink?.focus();
+			return;
+		}
+		if (r.status === 401) {
+			signedIn = false;
+			return;
+		}
+		const why = (r.body as { error?: string } | null)?.error;
+		if (r.status === 429) {
+			// The server counts the last 24 hours, not a calendar day.
+			fillError =
+				why === 'too many filled forms today'
+					? `Your account has reached the limit of ${FILL_DAY_CAP} filled forms in 24 hours. Try again later.`
+					: 'Too many attempts — wait a minute and try again.';
+		} else if (r.status === 422 && why) {
+			fillError = `The official form could not be filled: ${why}`;
+		} else if (r.status === 404) {
+			fillError = 'This form is no longer on file. Reload the page to get the current one.';
+		} else {
+			fillError = 'The form could not be filled right now. Check your connection and try again.';
+		}
 	}
 
 	const freeOption = $derived(
@@ -805,6 +910,108 @@
 										{/if}
 									</div>
 								{/each}
+								{#if fillOffered}
+									<section
+										aria-labelledby="free-fill-heading"
+										class="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4"
+										data-free-fill
+									>
+										<h3 id="free-fill-heading" class="m-0 text-base font-semibold text-ink">
+											Fill it in online — free
+										</h3>
+										<p class="m-0 text-sm text-ink">
+											No order and no payment: we put your answers into {form.title}, the office's own
+											form. You print it, sign it and send it yourself.
+										</p>
+										{#if signedIn === false}
+											<p class="m-0 text-sm text-ink-muted">
+												The free fill needs a free account. Only your account can open the filled
+												PDF.
+											</p>
+											<Button
+												href={fillSignIn}
+												variant="outline"
+												class="h-auto min-h-11 self-start px-5 py-2 text-left whitespace-normal"
+											>
+												<LogInIcon aria-hidden="true" /> Sign in to fill it in
+											</Button>
+										{:else if signedIn}
+											<label class="flex cursor-pointer items-start gap-3 text-sm text-ink" for="fill-agree">
+												<input
+													id="fill-agree"
+													type="checkbox"
+													class="mt-0.5 size-5 flex-none accent-accent-fill"
+													bind:checked={fillAgree}
+												/>
+												<span>
+													I understand this fills the office's own form with my answers. It is general
+													information, not legal advice.
+												</span>
+											</label>
+											<Button
+												class="h-auto min-h-11 self-start px-5 py-2 text-left whitespace-normal"
+												disabled={filling}
+												onclick={fillFree}
+											>
+												{#if filling}
+													<LoaderIcon class="animate-spin" aria-hidden="true" />
+												{:else}
+													<DownloadIcon aria-hidden="true" />
+												{/if}
+												Download the filled form (free)
+											</Button>
+											<!-- Only what the server does (R3 review): forms_map.rs stores each
+											     fill with the account and serves its PDF to that account only;
+											     erase_customer_data deletes fills on request (/privacy §4, §6);
+											     no route lists past fills. -->
+											<p class="m-0 text-sm text-ink-muted">
+												We keep your answers and the filled PDF with your account until you ask us to
+												delete them. Only your account can open the download link. Your account does not
+												list past fills, so save the PDF to your device.
+											</p>
+											{#if fillProblems.length > 0}
+												<div class="rounded-md border border-line bg-error-bg px-4 py-3 text-sm text-ink" role="alert">
+													<p class="m-0 font-semibold">Check these first:</p>
+													<ul class="m-0 mt-1 list-disc pl-5">
+														{#each fillProblems as problem, i (i)}
+															<li>{problem}</li>
+														{/each}
+													</ul>
+												</div>
+											{:else if fillError}
+												<p class="m-0 text-sm text-error" role="alert">{fillError}</p>
+											{/if}
+											{#if fillPdf}
+												<div
+													class="flex flex-col gap-2 rounded-md border border-verified bg-verified-bg px-4 py-3 text-sm text-ink"
+													role="status"
+												>
+													<Button
+														bind:ref={fillLink}
+														href={fillPdf}
+														download={fillFile}
+														variant="outline"
+														class="h-auto min-h-11 self-start bg-bg px-5 py-2 text-left whitespace-normal"
+													>
+														<FileDownIcon aria-hidden="true" /> Download your filled form (PDF)
+													</Button>
+													<p class="m-0">
+														Print it, sign it, and send it with your documents and payment — the guide
+														lists the address and fee.
+													</p>
+													{#if guideHref}
+														<a
+															class="inline-flex min-h-11 items-center self-start font-semibold text-accent-strong underline underline-offset-4"
+															href={guideHref}
+														>
+															Open the guide for {authorityName}
+														</a>
+													{/if}
+												</div>
+											{/if}
+										{/if}
+									</section>
+								{/if}
 								<div class="flex flex-wrap items-center gap-3">
 									<Button variant="outline" class="h-11 px-5" onclick={() => go(1)}>
 										<ArrowLeftIcon aria-hidden="true" /> Back

@@ -3434,6 +3434,265 @@ mod tests {
         }
     }
 
+    /// A one-page AcroForm with one text field, `RequesterName`, written
+    /// out by hand with an exact xref (the web crate has no PDF writer).
+    fn synthetic_acroform_pdf() -> Vec<u8> {
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>",
+            "<< /FT /Tx /T (RequesterName) /Type /Annot /Subtype /Widget \
+             /Rect [72 700 400 720] /P 3 0 R /DA (/Helv 10 Tf 0 g) >>",
+        ];
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend(format!("{} 0 obj\n{body}\nendobj\n", i + 1).into_bytes());
+        }
+        let xref = pdf.len();
+        let size = objects.len() + 1;
+        pdf.extend(format!("xref\n0 {size}\n0000000000 65535 f \n").into_bytes());
+        for at in offsets {
+            pdf.extend(format!("{at:010} 00000 n \n").into_bytes());
+        }
+        pdf.extend(
+            format!("trailer\n<< /Size {size} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n")
+                .into_bytes(),
+        );
+        pdf
+    }
+
+    #[tokio::test]
+    async fn a_free_fill_pdf_opens_for_its_filler_only() {
+        // R3 review: the /order copy says the fill is kept until you ask
+        // us to delete it and only your account can open the PDF. The
+        // owner gets it (a private, no-store PDF with the form
+        // flattened); another customer gets the same 404 as an unknown
+        // fill; signed out, or a staff session with no customer ref, gets
+        // 401; a deletion request erases it. No route lists past fills.
+        let fx = fixture();
+        let root = fx.state.store_root.clone();
+        let conn = db::open(&Store::new(&root)).unwrap();
+        let authority = db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "Washington",
+                name: "Synthetic WA SoS",
+                slug: "usa-wa-sos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        std::fs::write(root.join("synthetic-form.pdf"), synthetic_acroform_pdf()).unwrap();
+        conn.execute(
+            "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                  bytes_raw, bytes_stored, sha256, trust)
+             VALUES (?1, 1, 'file', 'synthetic-form.pdf', 0, 0, 's', 'staff_verified')",
+            [authority],
+        )
+        .unwrap();
+        let capture = conn.last_insert_rowid();
+        let mapped = json!([{
+            "name": "RequesterName", "label": "Your full name", "help": "", "type": "text",
+            "required": true, "options": [], "prefill_topic": null, "label_quote": "Name",
+            "max_len": null,
+        }]);
+        conn.execute(
+            "INSERT INTO form_map(authority_slug, capture_id, status, title, fields_json,
+                                  guards_json, acroform_fields, created_at, decided_at)
+             VALUES ('usa-wa-sos', ?1, 'accepted', 'SYNTHETIC form', ?2, '[]', 1, 1, 2)",
+            rusqlite::params![capture, mapped.to_string()],
+        )
+        .unwrap();
+        let form_id = conn.last_insert_rowid();
+        for (id, role, customer_ref) in [
+            ("owner-sess", auth::Role::Customer, Some("cust-owner")),
+            ("other-sess", auth::Role::Customer, Some("cust-other")),
+            ("staff-sess", auth::Role::Staff, None),
+        ] {
+            auth::create_session(
+                &conn,
+                id,
+                &auth::NewSession {
+                    user_id: id,
+                    role,
+                    customer_ref,
+                    now: unix_now(),
+                    ip: "127.0.0.1",
+                    user_agent: "test",
+                },
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let public = |cookie: &str| format!("{}={cookie}", auth::PUB_COOKIE);
+        let fill = |cookie: Option<String>, values: serde_json::Value| {
+            let csrf = format!("{}=tok", auth::CSRF_COOKIE);
+            Request::builder()
+                .method("POST")
+                .uri(format!("/apostille/api/v1/p2/forms/{form_id}/fill"))
+                .header("origin", "https://andrii.ai")
+                .header("content-type", "application/json")
+                .header(auth::CSRF_HEADER, "tok")
+                .header(
+                    "cookie",
+                    cookie.map_or(csrf.clone(), |c| format!("{c}; {csrf}")),
+                )
+                .body(Body::from(json!({ "values": values }).to_string()))
+                .unwrap()
+        };
+        let get = |uri: &str, cookie: Option<String>| {
+            let mut req = Request::builder().uri(uri);
+            if let Some(c) = cookie {
+                req = req.header("cookie", c);
+            }
+            req.body(Body::empty()).unwrap()
+        };
+        let bytes = |res: axum::response::Response| async move {
+            axum::body::to_bytes(res.into_body(), 1 << 20)
+                .await
+                .unwrap()
+                .to_vec()
+        };
+        let fills_of = |customer: &str| -> i64 {
+            db::open_p2(&Store::new(&root))
+                .unwrap()
+                .query_row(
+                    "SELECT COUNT(*) FROM form_fill WHERE customer_ref = ?1",
+                    [customer],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+
+        // Signed out, the fill is refused and nothing is stored.
+        let res = public_router_for(&fx.state)
+            .oneshot(fill(None, json!({"RequesterName": "SYNTHETIC Customer"})))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        // The server's own cap, which /order mirrors (FILL_MAX = 200),
+        // whatever the PDF box's MaxLen.
+        let res = public_router_for(&fx.state)
+            .oneshot(fill(
+                Some(public("owner-sess")),
+                json!({"RequesterName": "x".repeat(201)}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(fills_of("cust-owner"), 0);
+
+        let res = public_router_for(&fx.state)
+            .oneshot(fill(
+                Some(public("owner-sess")),
+                json!({"RequesterName": "SYNTHETIC Customer"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CREATED);
+        let made: serde_json::Value = serde_json::from_slice(&bytes(res).await).unwrap();
+        let seed: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/contracts/form-fill.json")).unwrap();
+        for key in seed.as_object().unwrap().keys() {
+            assert!(made.get(key).is_some(), "form-fill.json key {key}");
+        }
+        let fill_id = made["fill_id"].as_str().unwrap().to_string();
+        let pdf_url = format!("/apostille/api/v1/p2/forms/fills/{fill_id}.pdf");
+        assert_eq!(made["pdf_url"], json!(pdf_url));
+        assert_eq!(
+            (&made["form_id"], &made["flattened"]),
+            (&json!(form_id), &json!(true))
+        );
+        assert_eq!(fills_of("cust-owner"), 1);
+
+        // The owner downloads the filled, flattened official PDF.
+        let res = public_router_for(&fx.state)
+            .oneshot(get(&pdf_url, Some(public("owner-sess"))))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let header = |res: &axum::response::Response, name: axum::http::HeaderName| {
+            res.headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string)
+        };
+        assert_eq!(
+            header(&res, axum::http::header::CONTENT_TYPE).as_deref(),
+            Some("application/pdf")
+        );
+        assert_eq!(
+            header(&res, axum::http::header::CACHE_CONTROL).as_deref(),
+            Some("private, no-store")
+        );
+        let pdf = bytes(res).await;
+        assert!(pdf.starts_with(b"%PDF-"));
+        assert!(
+            pdf.windows(20).any(|w| w == b"(SYNTHETIC Customer)"),
+            "the answer is drawn in"
+        );
+        assert!(
+            forms::acro::fields(&pdf).unwrap().is_empty(),
+            "the form is flattened"
+        );
+
+        // Nobody else does: another customer gets the unknown-fill 404,
+        // signed out and staff sessions (no customer ref) get 401.
+        let unknown = public_router_for(&fx.state)
+            .oneshot(get(
+                "/apostille/api/v1/p2/forms/fills/fil_zzzzzzzzzz.pdf",
+                Some(public("other-sess")),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+        let unknown = bytes(unknown).await;
+        let res = public_router_for(&fx.state)
+            .oneshot(get(&pdf_url, Some(public("other-sess"))))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        assert_eq!(bytes(res).await, unknown, "no hint that the fill exists");
+        for cookie in [
+            None,
+            Some(format!("{}=staff-sess", auth::ADM_COOKIE)),
+            Some(public("staff-sess")),
+        ] {
+            let res = public_router_for(&fx.state)
+                .oneshot(get(&pdf_url, cookie.clone()))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{cookie:?}");
+        }
+        assert_eq!(fills_of("cust-other"), 0);
+
+        // Kept "until you ask us to delete them": a deletion request
+        // erases the row and the PDF, and the owner's link goes dead.
+        let store = Store::new(&root);
+        let stored = root.join(format!("fills/{fill_id}.pdf"));
+        assert!(stored.exists());
+        db::erase_customer_data(
+            &db::open(&store).unwrap(),
+            &db::open_p2(&store).unwrap(),
+            &store,
+            "cust-owner",
+            unix_now(),
+        )
+        .unwrap();
+        assert_eq!(fills_of("cust-owner"), 0);
+        assert!(!stored.exists(), "the filled PDF is deleted");
+        let res = public_router_for(&fx.state)
+            .oneshot(get(&pdf_url, Some(public("owner-sess"))))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    }
+
     #[tokio::test]
     async fn publish_rejects_oversized_body() {
         // M1: arbitrary-JSON fan-out is capped; normal events flow.

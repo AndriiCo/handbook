@@ -1001,7 +1001,10 @@ mod tests {
             [],
         )
         .unwrap();
+        // As `/plan` serves it: `plan::read_body` adds `fill_supported`.
         let served = accepted_for_slug(&conn, "usa-wa-sos").unwrap();
+        let served = crate::plan::read_body("usa-wa-sos", None, None, vec![], vec![], served);
+        let served = &served["forms"];
         for key in seed["forms"][0].as_object().unwrap().keys() {
             assert!(served[0].get(key).is_some(), "form key {key}");
         }

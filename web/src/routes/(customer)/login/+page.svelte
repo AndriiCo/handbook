@@ -17,6 +17,7 @@
 		startOAuth
 	} from '../../../lib/customer/oauth.js';
 	import { consumeMagic, magicError, requestMagic } from '../../../lib/customer/magic.js';
+	import { rememberNext, safeNext, takeNext } from '../../../lib/customer/next.js';
 	import Heading from '../../../lib/components/brand/Heading.svelte';
 	import Guilloche from '../../../lib/components/brand/Guilloche.svelte';
 	import ApostilleCertificate from '../../../lib/components/brand/ApostilleCertificate.svelte';
@@ -41,6 +42,11 @@
 	let magicOpen = $state(false);
 	let tab = $state<'signin' | 'create'>('signin');
 	let conditionalStarted = false;
+	// Where to go once signed in: `?next=` (a same-origin /apostille/
+	// path, lib/customer/next.js), else one this tab remembered before an
+	// OAuth or email-link round trip. Null stays on this page.
+	let next: string | null = null;
+	let leaving = $state(false);
 
 	// Official provider artwork, dropped in by the operator
 	// (see lib/assets/brand/README.md). Missing file → text button.
@@ -83,9 +89,27 @@
 		return body.error ?? `Request failed (HTTP ${status}).`;
 	}
 
+	/** This tab's session storage, or null where storage is blocked. */
+	function tabStore(): Storage | null {
+		try {
+			return window.sessionStorage;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Back to the page that sent the visitor here; /login leaves history. */
+	function goNext() {
+		if (!next || leaving) return;
+		rememberNext(tabStore(), null);
+		leaving = true;
+		window.location.replace(next);
+	}
+
 	function signedInAs(userId: string) {
 		localStorage.setItem('hb_last_user', userId);
 		me = { user_id: userId };
+		goNext();
 	}
 
 	async function register(event: SubmitEvent) {
@@ -142,6 +166,9 @@
 	async function oauthLogin(provider: string) {
 		error = null;
 		busy = true;
+		// The provider returns to /login with no query: this tab keeps
+		// `next` for the landing (an unsafe or absent one clears it).
+		rememberNext(tabStore(), next);
 		const res = await startOAuth(
 			{ post, redirect: (u: string) => (window.location.href = u) },
 			provider,
@@ -150,7 +177,10 @@
 		// On ok the browser is navigating away; on failure the page
 		// stays and the buttons re-enable.
 		busy = false;
-		if (!res.ok) error = oauthStartError(res.status, OAUTH_LABELS[provider] ?? provider);
+		if (!res.ok) {
+			rememberNext(tabStore(), null);
+			error = oauthStartError(res.status, OAUTH_LABELS[provider] ?? provider);
+		}
 	}
 
 	async function magicRequest(event: SubmitEvent) {
@@ -166,6 +196,9 @@
 			// Identical for unknown addresses (anti-enumeration:
 			// the server answers 200 either way).
 			magicSent = true;
+			// The emailed link lands on /login without a query; opened in
+			// this tab, it returns to `next` (another tab or device cannot).
+			rememberNext(tabStore(), next);
 		} finally {
 			busy = false;
 		}
@@ -200,6 +233,10 @@
 	}
 
 	$effect(() => {
+		// Read before any sign-in below can finish. The remembered value
+		// is read once either way, so a stale one never lingers.
+		const remembered = takeNext(tabStore());
+		next = safeNext(new URLSearchParams(window.location.search).get('next')) ?? remembered;
 		// Magic-link consume (#t= fragment — never a query param, so
 		// the token stays out of server logs). Read once, strip
 		// immediately, consume exactly once (single-use token: a
@@ -227,7 +264,10 @@
 		fetch(api('/auth/me'), { credentials: 'same-origin' })
 			.then((res) => (res.ok ? res.json() : null))
 			.then((body) => {
-				if (body?.user_id) me = { user_id: body.user_id };
+				if (!body?.user_id) return;
+				me = { user_id: body.user_id };
+				// Already signed in, or back from an OAuth provider.
+				goNext();
 			})
 			.catch(() => {});
 		// OAuth buttons render only for providers this deployment
@@ -298,6 +338,9 @@
 				<p class="rounded-md border border-line bg-error-bg px-4 py-3" role="alert">
 					This browser cannot do passkeys. Use a current Safari, Chrome, Edge, or Firefox.
 				</p>
+			{:else if me && leaving}
+				<Heading level={1}>{t.loginLabel}</Heading>
+				<p class="rounded-md border border-line px-4 py-3" role="status">Signed in. Taking you back…</p>
 			{:else if me}
 				<Heading level={1}>{t.loginLabel}</Heading>
 				<p class="rounded-md border border-line px-4 py-3" role="status">

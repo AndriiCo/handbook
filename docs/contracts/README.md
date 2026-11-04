@@ -24,7 +24,7 @@ double-submit pair except the Stripe webhook.
 | GET `/apostille/api/v1/p2/orders/{id}/labels/{leg}` | public p2 | owner | n/a | `orders_read` | SA-24 (address label, HTML NOT POSTAGE) / SA-25 (carrier PDFs) | HTML or PDF |
 | POST `/apostille/api/v1/stripe/webhook` | public | Stripe (HMAC) | **exempt** | `stripe_webhook` 120/min | SA-24 | 200 `{}` |
 | POST `/apostille/api/v1/p2/forms/{form_id}/fill` | public p2 | customer | yes | `forms_fill` 10/min/customer | SA-23 | `form-fill.json` (201) |
-| GET `/apostille/api/v1/p2/forms/fills/{fill_id}.pdf` | public p2 | owner or staff | n/a | `orders_read` | SA-23 | PDF |
+| GET `/apostille/api/v1/p2/forms/fills/{fill_id}.pdf` | public p2 | owner | n/a | `orders_read` | SA-23 | PDF |
 | GET `/apostille/api/v1/admin/version` | admin | staff | n/a | — | builder | `admin-version.json` |
 | GET `/apostille/api/v1/admin/stats` | admin | staff | n/a | — | builder (B3) | `admin-stats.json` |
 | GET `/apostille/api/v1/admin/model-calls?pipeline=&since=` | admin | staff | n/a | — | SA-22 | `admin-model-calls.json` |
@@ -110,6 +110,21 @@ one of its numbers or emails public, is retired. Every guard refusal is a 422 `{
 "<plain reason>"}` (an unknown body field such as `call_id` is a 422
 parse error); withdraw answers 404/409 for a missing or already-withdrawn
 note, or one a published decision rests on.
+
+`GET /plan` `forms[]` rows also carry `fill_supported` (R3, §6): true
+only for an accepted (`status: "active"`), fillable form map with at
+least one mapped field, the forms `POST /p2/forms/{id}/fill` fills with
+no order; false on every other row. The guide offers the free online
+fill only on this flag; `/order`'s Form step then fills the form for a
+signed-in customer, and `/login` returns them there through `?next=`
+(a same-origin path under `/apostille/` only, `web/src/lib/customer/next.js`).
+The filled PDF opens for its filler only: `GET /p2/forms/fills/{fill_id}.pdf`
+answers 401 signed out or with no customer ref (a staff session too) and
+the same 404 as an unknown fill for any other customer. Every fill is kept
+with the account until a deletion request (`erase_customer_data` removes
+the rows and PDFs), but no route lists past fills, so the page says to save
+the PDF. With 30 fills in the last 24 hours (rolling, not a calendar day)
+the next one is a 429 `too many filled forms today`.
 
 ## WS events (ids only; the client re-reads the API)
 Seeds: `ws-events.json`.
