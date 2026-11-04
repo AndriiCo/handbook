@@ -37,6 +37,7 @@
 		loginErrorCopy
 	} from '../../../lib/admin/staff-auth.js';
 	import RequestErrorNotice from '../../../lib/admin/RequestErrorNotice.svelte';
+	import SecretInput from '../../../lib/admin/SecretInput.svelte';
 	import {
 		CONFIRM_WORD,
 		fetchStartedAt,
@@ -675,18 +676,16 @@
 				startSetup(e);
 			}}
 		>
-			<label class="flex min-h-11 flex-col gap-[0.35rem] font-bold" for="setup-key">
-				Setup key
-				<input
-					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-mono font-normal text-ink"
+			<div class="flex flex-col gap-[0.35rem]">
+				<label class="font-bold" for="setup-key">Setup key</label>
+				<SecretInput
 					id="setup-key"
-					type="password"
+					class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-mono font-normal text-ink"
 					bind:value={keyInput}
 					placeholder="setup_…"
-					autocomplete="off"
-					spellcheck={false}
+					hint="One-time key from the server console. Your browser will not offer to save it."
 				/>
-			</label>
+			</div>
 			{#if keyError}
 				<Notice variant="error" heading="Bad key."><p>{keyError}</p></Notice>
 			{/if}
@@ -793,21 +792,20 @@
 							<p class="mt-1 mb-2 font-bold" aria-live="polite">
 								{row.set ? 'Set (value hidden)' : 'Not set'}
 							</p>
-							<label class="flex min-h-11 flex-col gap-[0.35rem] font-bold" for={`setup-${field.key}`}>
-								New value (write-only — overwrites)
-								<input
-									class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink"
+							<div class="flex flex-col gap-[0.35rem]">
+								<label class="font-bold" for={`setup-${field.key}`}>
+									New value for {field.key} (write-only, overwrites)
+								</label>
+								<SecretInput
 									id={`setup-${field.key}`}
-									type="password"
-									autocomplete="new-password"
-									maxlength={8192}
-										value={row.draft ?? ''}
-										oninput={(e) => {
+									class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] font-normal text-ink"
+									value={row.draft ?? ''}
+									oninput={(e) => {
 										row.draft = e.currentTarget.value;
 										markDirty(row);
-										}}
+									}}
 								/>
-							</label>
+							</div>
 						{/if}
 						{#if row.error}
 							<RequestErrorNotice
@@ -1170,13 +1168,12 @@
 					</div>
 				{:else}
 					<div class="flex flex-col gap-1">
-						<label for={inputId} class="text-xs font-medium text-ink-muted">New value (write-only, overwrites)</label>
-						<Input
+						<label for={inputId} class="text-xs font-medium text-ink-muted">
+							New value for {entry.label} (write-only, overwrites)
+						</label>
+						<SecretInput
 							id={inputId}
-							type="password"
-							class="h-10 font-mono"
-							autocomplete="new-password"
-							maxlength={8192}
+							class="h-10 rounded-md border border-line bg-bg px-3 font-mono text-sm text-ink"
 							value={row.draft ?? ''}
 							oninput={(e) => {
 								row.draft = e.currentTarget.value;

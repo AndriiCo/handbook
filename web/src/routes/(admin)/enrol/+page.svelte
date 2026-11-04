@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import SecretInput from '../../../lib/admin/SecretInput.svelte';
 	import { resolve } from '$app/paths';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import {
@@ -154,18 +155,17 @@
 		}}
 	>
 		{#if setupMode}
-			<label class="grid gap-1 font-bold">
-				Setup key
-				<input
+			<div class="grid gap-1">
+				<label class="font-bold" for="enrol-setup-key">Setup key</label>
+				<SecretInput
+					id="enrol-setup-key"
 					class="rounded-[0.375rem] border border-line p-[0.6rem] font-mono text-base"
-					type="password"
 					bind:value={keyInput}
-					autocomplete="off"
-					spellcheck={false}
 					placeholder="setup_…"
 					required
+					hint="One-time key from the server console. Your browser will not offer to save it."
 				/>
-			</label>
+			</div>
 			{#if keyTouched && keyInput && !validSetupKeyShape(keyInput.trim())}
 				<p class="font-bold text-error" role="alert">
 					That key is malformed — `setup_` + 64 hex chars.

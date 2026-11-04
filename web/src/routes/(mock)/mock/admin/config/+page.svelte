@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Notice from '../../../../../lib/public-ui/Notice.svelte';
+	import SecretInput from '../../../../../lib/admin/SecretInput.svelte';
 	import { CONFIG } from '../../../../../lib/mock/fixtures';
 
 	// Mirrors the real config contract: bool/text rows edit in place,
@@ -72,16 +73,15 @@
 				</label>
 			{:else}
 				<p>Status: <strong>{row.set ? 'Set' : 'Unset'}</strong></p>
-				<label class="grid max-w-[28rem] gap-[0.3rem] text-sm">
-					New secret value (write-only)
-					<input
+				<div class="grid max-w-[28rem] gap-[0.3rem] text-sm">
+					<label for={`mock-${row.key}`}>New value for {row.key} (write-only)</label>
+					<SecretInput
+						id={`mock-${row.key}`}
 						class="min-h-11 rounded-sm border border-line bg-surface px-3 py-2 text-ink"
-						type="password"
 						bind:value={row.draft}
 						placeholder="enter a new value to replace"
-						autocomplete="new-password"
 					/>
-				</label>
+				</div>
 			{/if}
 			<p>
 				<button
