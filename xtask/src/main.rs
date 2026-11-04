@@ -32,6 +32,7 @@ mod pii_sweep;
 mod provision;
 mod release;
 mod secrets;
+mod segments;
 mod setup;
 mod triage;
 mod up;
@@ -83,6 +84,7 @@ fn main() {
         Some("world-index") => world::run(&args[1..]),
         Some("worker") => worker::run(&args[1..]),
         Some("crawl") => crawl::run(&args[1..]),
+        Some("segments") => segments::run(&args[1..]),
         Some("triage") => triage::run(&args[1..]),
         Some("secrets-scan") => run_secrets_scan(&args[1..]),
         Some("up") => up::run(&args[1..]),
@@ -139,6 +141,7 @@ Tasks:
   admin-offboard  staff offboard: sessions, credentials, lock (§5.6)
   secrets-scan scan tracked files for secrets [--staged for the index]
   crawl   fetch packs/world seeds into WARC/1.1 drops [--packs --out]
+  segments  split HCCH authority pages into labelled, quoted segments with a Meta model (local endpoint, or --spark) [--pages <dir>] [--iso2 XX] [--out] (report only)
   triage  sort saved pages with the local Meta model (env LOCAL_MODEL_URL, LOCAL_MODEL) --pages <dir> [--pack <world pack>] [--out] (report only)
   archive-package  bundle a crawl run into WACZ/CSVs/index [--run]
   ask     answer one question with cited authority facts [<question> --slug --base --replay]

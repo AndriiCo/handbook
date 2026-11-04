@@ -713,10 +713,15 @@ It writes a report, and since D-3 stageable world packs. Status:
   Llama model with `llama-server` on plant, set `LOCAL_MODEL_URL` and
   `LOCAL_MODEL` in `worker.env`, run the gold eval and compare with
   Spark's `quality.json`.
-- [ ] **D-5** Have the local model split HCCH authority pages into
+- [x] **D-5** Have the local model split HCCH authority pages into
   authority, address, contact, document scope and note, each quoted
-  from the page. This replaces positional parsing (the P2-1 junk rows),
-  and scope lines become routing rules for P4-1. Not started. *code, M*
+  from the page. **Done as a report**: `xtask segments` (local endpoint,
+  or `--spark`) labels every segment of the recorded (or given) HCCH
+  detail pages, drops any whose quote is not on the page, and turns
+  scope segments that name a document class into pack v2 `scope`
+  proposals with their quote. It does not feed `world-index` itself:
+  P434's curation already fixed the junk rows, and staff copy proposals
+  into a pack for review. Not yet run against a real model.
 
 ---
 

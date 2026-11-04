@@ -185,6 +185,15 @@ visible authorities, which topics. Answers are checked against the
 closed lists (unknown slugs and topics dropped and listed); the result
 is a `triage.v1` report and nothing else.
 
+`xtask segments [--pages <dir>] [--iso2 XX] [--out <file>] [--spark]`
+(D-5) splits HCCH competent-authority pages (default: the recorded
+`evals/world/details-aid*.html`) into segments labelled authority,
+address, contact, scope or note, each with a verbatim quote; a segment
+whose quote is not on the page is dropped and listed. Scope segments
+naming a document class become pack v2 `scope` proposals (quote beside
+them) for staff to copy into a pack. `segments.v1` report only; the
+same local endpoint by default, Muse Spark with `--spark`.
+
 ## 5. `research.nonparty`
 
 Atlas pack `crates/atlas/packs/nonparty-sources.toml` (sources, model,
