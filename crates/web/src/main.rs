@@ -508,6 +508,7 @@ fn migrate_mission_p2(p2: &rusqlite::Connection) -> rusqlite::Result<()> {
     forms_map::migrate_p2_tables(p2)?;
     p2_labels::migrate_p2_tables(p2)?;
     customer_labels::migrate_p2_tables(p2)?;
+    stripe::migrate_p2_tables(p2)?;
     tracking::migrate_p2_tables(p2)
 }
 
@@ -3118,6 +3119,156 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn fake_stripe_checkout_pays_through_the_real_signed_webhook_with_a_demo_receipt() {
+        // W-3 `stripe.mode = fake`: no key, no network. The DEMO
+        // checkout's Pay button delivers a signed event to the real
+        // webhook handler, which verifies it and settles against the
+        // fake session; the receipt is marked DEMO.
+        let mut fx = fixture();
+        fx.state.fakes =
+            config::Modes::default().with(config::Integration::Stripe, config::Mode::Fake);
+        let id = paid_label_order(&fx);
+        let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+        p2.execute(
+            "UPDATE customer_order SET status = 'awaiting_payment' WHERE id = ?1",
+            [&id],
+        )
+        .unwrap();
+        let meta = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        let keys = stripe::keys(&fx.state, &meta).expect("fake keys need no sealed key");
+        assert!(!keys.live());
+        let (session, url) = stripe::create_checkout(
+            &keys,
+            &stripe::CheckoutRequest {
+                order_id: id.clone(),
+                expires_at: unix_now() + 1800,
+                bucket: 0,
+                currency: "usd".into(),
+                lines: vec![
+                    ("FedEx 2Day label to the office".into(), 1250),
+                    ("FedEx 2Day return label to you".into(), 1250),
+                ],
+                success_url: format!("https://andrii.ai/apostille/orders/{id}?checkout=success"),
+                cancel_url: format!("https://andrii.ai/apostille/order?order={id}"),
+            },
+        )
+        .unwrap();
+        assert!(session.starts_with(stripe::FAKE_SESSION_PREFIX));
+        assert_eq!(
+            url,
+            format!("/apostille/api/v1/stripe/fake/checkout/{session}")
+        );
+        p2.execute(
+            "INSERT INTO order_payment(order_id, session_id, checkout_url, amount_cents, currency, livemode, status, created_at)
+             VALUES (?1, ?2, ?3, 2500, 'usd', 0, 'open', 1)",
+            rusqlite::params![id, session, url],
+        )
+        .unwrap();
+        let get = |uri: String| Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let res = public_router_for(&fx.state)
+            .oneshot(get(url.clone()))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let page = body_text(res).await;
+        assert!(page.contains("DEMO — no card is charged"), "{page}");
+        assert!(page.contains("Pay 25.00 USD (demo)"), "{page}");
+        // A forged event (wrong secret) is refused by the real handler.
+        let forged = r#"{"id":"evt_x","type":"checkout.session.completed","data":{"object":{"id":"cs_fake_x"}}}"#;
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/apostille/api/v1/stripe/webhook")
+                    .header(
+                        "stripe-signature",
+                        format!("t={},v1={}", unix_now(), "00".repeat(32)),
+                    )
+                    .body(Body::from(forged))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        // Pay: a same-origin form post.
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("{url}/pay"))
+                    .header("origin", "https://andrii.ai")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            res.headers()[header::LOCATION],
+            format!("/apostille/orders/{id}?checkout=success").as_str()
+        );
+        let (pay_status, intent): (String, String) = p2
+            .query_row(
+                "SELECT status, payment_intent FROM order_payment WHERE order_id = ?1",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(pay_status, "paid");
+        assert!(intent.starts_with("pi_fake_"), "{intent}");
+        let event: String = p2
+            .query_row("SELECT type FROM stripe_event", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            event, "checkout.session.completed",
+            "the real webhook recorded it"
+        );
+        let paid_text: String = p2
+            .query_row(
+                "SELECT text FROM order_event WHERE order_id = ?1 AND kind = 'order.paid'",
+                [&id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(paid_text, "Paid $25.00 (DEMO, no card charged)");
+        drop(p2);
+        // The owner's order shows a DEMO receipt link; the page says DEMO.
+        make_session(&fx.state.store_root, "cust-1", auth::Role::Customer);
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/apostille/api/v1/p2/orders/{id}"))
+                    .header("cookie", format!("{}=cust-1", auth::PUB_COOKIE))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let order: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+        let receipt = &order["receipt"];
+        assert_eq!(receipt["demo"], true, "{order}");
+        let receipt_url = receipt["receipt_url"].as_str().unwrap().to_string();
+        let res = public_router_for(&fx.state)
+            .oneshot(get(receipt_url))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(body_text(res).await.contains("DEMO receipt"));
+        // Refunds move nothing either.
+        assert!(
+            stripe::refund(&keys, &id, &intent)
+                .unwrap()
+                .starts_with("re_fake_")
+        );
+        // Without the fake, the fake pages do not exist.
+        let res = public_router_for(&fixture().state)
+            .oneshot(get(url))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

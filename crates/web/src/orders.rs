@@ -469,9 +469,14 @@ fn switches(state: &AppState, meta: &Connection) -> Switches {
         return Switches::default();
     };
     let cache = &state.config_cache;
-    let stripe = config::get_secret_for_job(meta, kek, config::keys::STRIPE_SECRET_KEY)
-        .ok()
-        .flatten();
+    // W-3: the fake Stripe needs no key and is never live money.
+    let stripe = if state.fakes.is_fake(config::Integration::Stripe) {
+        Some(b"fake".to_vec())
+    } else {
+        config::get_secret_for_job(meta, kek, config::keys::STRIPE_SECRET_KEY)
+            .ok()
+            .flatten()
+    };
     Switches {
         orders_enabled: cache
             .bool(meta, kek, config::keys::ORDERS_ENABLED)
@@ -842,9 +847,13 @@ pub fn order_view(
         "return_to": {"name": ret["name"], "city": ret["city"], "region": ret["region"],
                       "postal_code": ret["postal_code"], "country": ret["country"]},
         "legs": legs, "form_fill_id": fill, "events": events,
+        // A W-3 fake payment links its DEMO receipt and says so.
         "receipt": p2
-            .query_row("SELECT paid_at, refund_id FROM order_payment WHERE order_id = ?1 AND status = 'paid'", [&id], |r| {
-                Ok(json!({"paid_at": r.get::<_, i64>(0)?, "receipt_url": Value::Null, "refunded": r.get::<_, Option<String>>(1)?.is_some()}))
+            .query_row("SELECT paid_at, refund_id, session_id FROM order_payment WHERE order_id = ?1 AND status = 'paid'", [&id], |r| {
+                let session: String = r.get(2)?;
+                let demo = session.starts_with(crate::stripe::FAKE_SESSION_PREFIX);
+                let receipt_url = demo.then(|| format!("/apostille/api/v1/stripe/fake/receipt/{session}"));
+                Ok(json!({"paid_at": r.get::<_, i64>(0)?, "receipt_url": receipt_url, "refunded": r.get::<_, Option<String>>(1)?.is_some(), "demo": demo}))
             })
             .optional()?
             .unwrap_or(Value::Null),
@@ -1787,7 +1796,13 @@ pub fn settle(
         &format!(
             "Paid {} ({})",
             dollars(amount),
-            if livemode == 1 { "live" } else { "test mode" }
+            if keys.fake.is_some() {
+                "DEMO, no card charged"
+            } else if livemode == 1 {
+                "live"
+            } else {
+                "test mode"
+            }
         ),
         now,
     );

@@ -327,7 +327,7 @@
 				{/if}
 				{#if order.receipt}
 					<p class="mt-3 mb-0 text-sm text-ink-muted">
-						Paid {fmtDateTime(order.receipt.paid_at)}{#if order.mode === 'test'}{' '}(test mode){/if}.
+						Paid {fmtDateTime(order.receipt.paid_at)}{#if order.receipt.demo}{' '}(DEMO — no card charged){:else if order.mode === 'test'}{' '}(test mode){/if}.
 						{#if safeHref(order.receipt.receipt_url)}
 							<a class="underline underline-offset-4" href={safeHref(order.receipt.receipt_url)} target="_blank" rel="noopener noreferrer">View receipt</a>
 						{/if}

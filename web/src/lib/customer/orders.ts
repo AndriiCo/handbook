@@ -99,7 +99,8 @@ export type Order = {
 	legs: Leg[];
 	form_fill_id: string | null;
 	events: OrderEvent[];
-	receipt: { paid_at: number; receipt_url: string | null } | null;
+	/** `demo`: a W-3 fake Stripe payment (no card charged). */
+	receipt: { paid_at: number; receipt_url: string | null; demo?: boolean } | null;
 	actions: { id: string; label: string }[];
 	topic: string;
 };
