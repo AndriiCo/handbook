@@ -58,7 +58,11 @@ model) to catch.
 Honest note: the gold set is 30 synthetic passages in
 `evals/authorities/`, not live government pages — it grades the
 drafter in isolation, before the quote-checker and human review add
-their own gates. The live-model rates above were measured
+their own gates. Real cases come next: `cargo xtask gold-export
+--store <backup copy>` turns accepted facts cited on official pages
+into cases in the same shape (`evals/authorities-real/`), graded on
+plant by an `eval.gold` job with `{"live": true, "gold":
+"authorities-real"}`. Not run yet. The live-model rates above were measured
 2026-11-02T17:32Z on all 30 cases (26 English, 4 Spanish/French; 68
 drafted records). `topic_accuracy` understates by construction: each
 gold case carries one topic, but every case drafts several records

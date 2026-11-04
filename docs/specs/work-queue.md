@@ -151,7 +151,7 @@ worker GPU jobs never overlap.
 |---|---|---|
 | `research.nonparty` | `{countries?: [ISO2], limit?: n, refresh?: bool}` | `application/json` packs bundle (§5) |
 | `scrape.urls` | `{urls: [https…], politeness_ms?: n}` | `application/json` `{pages: [{url, status, sha256, bytes, body_b64}]}` |
-| `eval.gold` | `{live?: bool, planted?: bool, prompt?: "v1"\|"v2"}` | `application/json` `quality.json` |
+| `eval.gold` | `{live?: bool, planted?: bool, prompt?: "v1"\|"v2", gold?: "<dir under evals/>"}` (default `authorities`; `authorities-real` from `xtask gold-export`) | `application/json` `quality.json` |
 | `precheck.glimmer` | `{sample, image_b64?}` | verdict JSON; announced in `hello` only when `GLIMMER_MODEL` is set in `worker.env` (or the environment), else jobs wait `pending` |
 
 ## 5. `research.nonparty`

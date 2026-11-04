@@ -23,6 +23,7 @@ mod demo_vietnam;
 mod eval;
 mod fetch_slug;
 mod form_scaffold;
+mod gold_export;
 mod instruct;
 mod judge;
 mod mcp_serve;
@@ -61,6 +62,7 @@ fn main() {
         Some("form-scaffold") => form_scaffold::run(&args[1..]),
         Some("demo-vietnam") => demo_vietnam::run(&args[1..]),
         Some("eval") => eval::run(&args[1..]),
+        Some("gold-export") => gold_export::run(&args[1..]),
         Some("backup") => backup::run(&args[1..]),
         Some("backup-verify") => backup::run_verify(&args[1..]),
         Some("packs-validate") => run_packs_validate(&args[1..]),
@@ -110,6 +112,7 @@ Tasks:
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
   analyze     draft proposed facts for an authority (stub default, --live for Meta API, --live --record <corpus>, --replay <corpus>)
   eval        grade drafts on evals/authorities/*.json [--live [--record <corpus>]] [--replay <corpus>] [--store <path>] [--evals <dir>] (writes quality.json)
+  gold-export real gold cases from a store's accepted facts on official captures [--store <path>] [--out evals/authorities-real] [--per-authority 10]
   fetch-url   fetch one URL into a warc capture (thin watch)
   fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
   atlas  run an Atlas task pack: --config <pack> --task <name> [--effort --model --protocol --out --refresh --limit --live --dry-run --run-id --pdf-tool]; --batch-poll <job>; --check

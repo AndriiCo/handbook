@@ -1,8 +1,10 @@
 //! `eval.gold`: the A5 gold-set grading (`xtask eval`) on plant.
 //!
-//! Payload `{"live": bool, "planted": bool, "prompt": "v1"|"v2"}`.
+//! Payload `{"live": bool, "planted": bool, "prompt": "v1"|"v2",
+//! "gold": "<dir under evals/>"}` (`gold` defaults to `authorities`;
+//! `authorities-real` holds cases from `xtask gold-export`).
 //! Runs this same binary as `xtask eval --store <job>/store --evals
-//! <repo>/evals/authorities [--live] [--planted] [--prompt …]` in a
+//! <repo>/evals/<gold> [--live] [--planted] [--prompt …]` in a
 //! child process (eval exits on its own errors, so a child keeps the
 //! worker alive), with `META_API_KEY` from `worker.env` for live
 //! drafts. The result is the `quality.json` it writes.
@@ -17,12 +19,22 @@ pub struct EvalGold;
 
 /// argv after the binary name (pure: unit-tested).
 fn eval_args(ctx: &JobContext, payload: &Value) -> Result<Vec<String>, JobError> {
+    let gold = payload["gold"].as_str().unwrap_or("authorities");
+    let named = (1..=40).contains(&gold.len())
+        && gold
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    if !named {
+        return Err(JobError::fatal(format!(
+            "gold must name a directory under evals/ ([a-z0-9-]), not {gold:?}"
+        )));
+    }
     let mut args = vec![
         "eval".to_string(),
         "--store".to_string(),
         ctx.dir.join("store").display().to_string(),
         "--evals".to_string(),
-        ctx.repo.join("evals/authorities").display().to_string(),
+        ctx.repo.join("evals").join(gold).display().to_string(),
     ];
     if payload["live"].as_bool().unwrap_or(false) {
         args.push("--live".to_string());
@@ -122,6 +134,11 @@ mod tests {
         .unwrap();
         assert_eq!(&args[5..], ["--live", "--planted", "--prompt", "v2"]);
         assert!(eval_args(&ctx(), &json!({"prompt": "v9"})).is_err());
+        let real = eval_args(&ctx(), &json!({"gold": "authorities-real"})).unwrap();
+        assert_eq!(real[4], "/repo/evals/authorities-real");
+        for bad in ["../secrets", "", "Authorities", "a/b"] {
+            assert!(eval_args(&ctx(), &json!({"gold": bad})).is_err(), "{bad:?}");
+        }
     }
 
     #[test]
