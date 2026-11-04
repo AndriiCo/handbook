@@ -1012,6 +1012,9 @@ pub mod keys {
     pub const TELNYX_FROM_NUMBER: &str = "telnyx.from_number";
     pub const TELNYX_CONNECTION_ID: &str = "telnyx.connection_id";
     pub const TELNYX_WEBHOOK_PUBLIC_KEY: &str = "telnyx.webhook_public_key";
+    /// Credential connection the staff browser phones (WebRTC)
+    /// register on; unset = real dials refuse (no audio path).
+    pub const TELNYX_WEBRTC_CONNECTION_ID: &str = "telnyx.webrtc_connection_id";
     pub const TELNYX_API_KEY: &str = "telnyx.api_key";
     /// Live FedEx buys (SA-19): master switch. Default false —
     /// sandbox fixtures only until staff opts in.
@@ -1199,6 +1202,7 @@ pub mod keys {
         (TELNYX_FROM_NUMBER, super::ConfigType::Text),
         (TELNYX_CONNECTION_ID, super::ConfigType::Text),
         (TELNYX_WEBHOOK_PUBLIC_KEY, super::ConfigType::Text),
+        (TELNYX_WEBRTC_CONNECTION_ID, super::ConfigType::Text),
         (TELNYX_API_KEY, super::ConfigType::Secret),
         (LABELS_LIVE, super::ConfigType::Bool),
         (LABELS_LIVE_DAILY_CAP, super::ConfigType::Text),
@@ -1756,6 +1760,7 @@ pub struct RuntimeConfig {
     pub telnyx_from_number: Option<String>,
     pub telnyx_connection_id: Option<String>,
     pub telnyx_webhook_public_key: Option<String>,
+    pub telnyx_webrtc_connection_id: Option<String>,
     pub telnyx_api_key: Option<SecretText>,
     pub labels_live: bool,
     pub labels_live_daily_cap: u32,
@@ -1840,6 +1845,7 @@ impl Default for RuntimeConfig {
             telnyx_from_number: None,
             telnyx_connection_id: None,
             telnyx_webhook_public_key: None,
+            telnyx_webrtc_connection_id: None,
             telnyx_api_key: None,
             labels_live: false,
             labels_live_daily_cap: 2,
@@ -2129,6 +2135,13 @@ impl RuntimeConfig {
             keys::TELNYX_WEBHOOK_PUBLIC_KEY,
             &mut warnings,
             &mut cfg.telnyx_webhook_public_key,
+        )?;
+        overlay_optional_text(
+            conn,
+            kek,
+            keys::TELNYX_WEBRTC_CONNECTION_ID,
+            &mut warnings,
+            &mut cfg.telnyx_webrtc_connection_id,
         )?;
         overlay_optional_text(
             conn,
@@ -2664,8 +2677,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_103_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 103);
+    fn registry_holds_104_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 104);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -2683,7 +2696,8 @@ mod runtime_tests {
         // and admin.require_cert (bool). P391 adds three text keys
         // (paths.meta_cache_dir, paths.fetch_cache_dir, meta.cache_mode);
         // P392 adds worker.token (secret). W-3 adds seven `<area>.mode`
-        // text keys.
+        // text keys. Browser audio adds telnyx.webrtc_connection_id
+        // (text).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -2692,7 +2706,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (12, 73, 18));
+        assert_eq!(counts, (12, 74, 18));
         for integration in Integration::ALL {
             assert!(
                 ALL_KEYS.contains(&(integration.key(), ConfigType::Text)),

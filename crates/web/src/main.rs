@@ -1219,6 +1219,22 @@ async fn main() {
             names.join(", ")
         );
     }
+    // Voice: with an API key the Calls page dials for real, so name the
+    // keys whose absence breaks a call silently (webhooks all 401, or
+    // no browser audio).
+    if cfg.telnyx_api_key.is_some() && !cfg.modes.is_fake(config::Integration::Telnyx) {
+        let unset = |v: &Option<String>| v.as_deref().is_none_or(|s| s.trim().is_empty());
+        if unset(&cfg.telnyx_webhook_public_key) {
+            eprintln!(
+                "WARNING: telnyx.webhook_public_key unset — every Telnyx webhook is refused (401): calls never record or transcribe"
+            );
+        }
+        if unset(&cfg.telnyx_webrtc_connection_id) {
+            eprintln!(
+                "WARNING: telnyx.webrtc_connection_id unset — no browser audio, so the Calls page refuses to dial"
+            );
+        }
+    }
     // Host routing, CSRF origins and the admin passkey origin follow
     // `net.public_host` (admin is `admin.<public_host>`), fixed once here.
     if !auth::init_hosts(&cfg.public_host) {
@@ -1250,6 +1266,11 @@ async fn main() {
             cfg.telnyx_from_number.as_deref().unwrap_or_default(),
             cfg.telnyx_connection_id.as_deref().unwrap_or_default(),
             cfg.telnyx_webhook_public_key.as_deref().unwrap_or_default(),
+        )
+        .with_webrtc_connection(
+            cfg.telnyx_webrtc_connection_id
+                .as_deref()
+                .unwrap_or_default(),
         ),
         // `Option::clone` spelling: keeps the secrets-scan
         // `generic-secret-assignment` run under its length floor.

@@ -51,6 +51,8 @@ const SERVICES: &[(&str, &str, &str, &[&str])] = &[
             "telnyx.api_key",
             "telnyx.connection_id",
             "telnyx.from_number",
+            "telnyx.webhook_public_key",
+            "telnyx.webrtc_connection_id",
         ],
     ),
     (

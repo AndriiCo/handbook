@@ -576,7 +576,17 @@ fn check_telnyx(v: &Values) -> CheckResult {
     let Some(key) = v.get("telnyx.api_key") else {
         return skip("telnyx", "telnyx.api_key unset");
     };
-    if let Some(public) = v.get("telnyx.webhook_public_key") {
+    // With an API key the Calls page dials for real. Without the
+    // webhook key every call event is refused (no recording, no
+    // transcript); without the WebRTC connection there is no audio.
+    let Some(public) = v.get("telnyx.webhook_public_key") else {
+        return verdict(
+            "telnyx",
+            Status::Fail,
+            "telnyx.webhook_public_key unset: every call webhook is refused",
+        );
+    };
+    {
         use base64::Engine as _;
         let parsed = base64::engine::general_purpose::STANDARD
             .decode(public.trim())
@@ -590,6 +600,13 @@ fn check_telnyx(v: &Values) -> CheckResult {
                 "telnyx.webhook_public_key is not an Ed25519 key (base64, 32 bytes)",
             );
         }
+    }
+    if v.get("telnyx.webrtc_connection_id").is_none() {
+        return verdict(
+            "telnyx",
+            Status::Fail,
+            "telnyx.webrtc_connection_id unset: calls have no browser audio",
+        );
     }
     let base = v
         .get("telnyx.base_url")
@@ -725,6 +742,32 @@ mod tests {
             "telnyx.webhook_public_key".to_string(),
             Value::String("bm90LWEta2V5".into()),
         );
-        assert_eq!(check_telnyx(&Values(bad)).status, Status::Fail);
+        assert_eq!(check_telnyx(&Values(bad.clone())).status, Status::Fail);
+        // A valid webhook key still fails without one of the two keys
+        // a working call needs (no network: both refuse first).
+        bad.remove("telnyx.webhook_public_key");
+        let r = check_telnyx(&Values(bad.clone()));
+        assert_eq!(r.status, Status::Fail);
+        assert!(
+            r.detail.contains("webhook_public_key unset"),
+            "{}",
+            r.detail
+        );
+        let synthetic_key = {
+            use base64::Engine as _;
+            let signing = ed25519_dalek::SigningKey::from_bytes(&[11u8; 32]);
+            base64::engine::general_purpose::STANDARD.encode(signing.verifying_key().as_bytes())
+        };
+        bad.insert(
+            "telnyx.webhook_public_key".to_string(),
+            Value::String(synthetic_key),
+        );
+        let r = check_telnyx(&Values(bad));
+        assert_eq!(r.status, Status::Fail);
+        assert!(
+            r.detail.contains("webrtc_connection_id unset"),
+            "{}",
+            r.detail
+        );
     }
 }

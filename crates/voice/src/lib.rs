@@ -12,6 +12,6 @@ pub mod store;
 pub mod webhook;
 
 pub use calls::CallStatus;
-pub use client::{DialOutcome, TelnyxClient, VoiceConfig, VoiceError};
+pub use client::{DialOutcome, PhoneCredential, TelnyxClient, VoiceConfig, VoiceError};
 pub use store::{NewCall, TranscriptSegment, VoiceAnnotation, VoiceCall};
 pub use webhook::{EventType, WebhookEnvelope, WebhookError, verify_signature};

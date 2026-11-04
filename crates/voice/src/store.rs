@@ -52,7 +52,14 @@ pub struct VoiceCall {
     pub created_at: i64,
     pub updated_at: i64,
     pub ended_at: Option<i64>,
+    /// Call-control id of the staff browser leg (empty for fake and
+    /// pre-browser-audio calls). `call_control_id` is the office leg.
+    pub browser_leg: String,
 }
+
+/// Placeholder office leg while only the browser leg exists: the
+/// office is dialed once the browser answers.
+pub const PENDING_OFFICE_LEG: &str = "pending-office";
 
 /// One live transcript segment.
 #[derive(Debug, Clone, PartialEq)]
@@ -141,6 +148,29 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             [],
         )?;
     }
+    // Browser audio: the staff browser leg bridged to the office leg.
+    let has_browser_leg: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('voice_call')
+         WHERE name = 'browser_leg'",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_browser_leg == 0 {
+        conn.execute(
+            "ALTER TABLE voice_call ADD COLUMN browser_leg TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_voice_call_browser_leg
+           ON voice_call(browser_leg);
+         CREATE TABLE IF NOT EXISTS voice_staff_phone(
+           user_id TEXT PRIMARY KEY,
+           credential_id TEXT NOT NULL,
+           sip_username TEXT NOT NULL,
+           created_at INTEGER NOT NULL
+         );",
+    )?;
     Ok(())
 }
 
@@ -172,6 +202,99 @@ pub fn insert_call(conn: &Connection, call: &NewCall<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Attach the staff browser leg to a call row.
+///
+/// # Errors
+///
+/// Returns rusqlite errors.
+pub fn set_browser_leg(conn: &Connection, id: &str, leg: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE voice_call SET browser_leg = ?2 WHERE id = ?1",
+        params![id, leg],
+    )?;
+    Ok(())
+}
+
+/// Swap the [`PENDING_OFFICE_LEG`] placeholder for the dialed office
+/// leg. `Ok(false)` when the office was already dialed (a duplicate
+/// answer webhook must not dial twice).
+///
+/// # Errors
+///
+/// Returns rusqlite errors.
+pub fn set_office_leg(
+    conn: &Connection,
+    id: &str,
+    outcome: &crate::DialOutcome,
+    now: i64,
+) -> Result<bool> {
+    let changed = conn.execute(
+        "UPDATE voice_call SET call_control_id = ?2, call_leg_id = ?3,
+                                call_session_id = ?4, updated_at = ?5
+         WHERE id = ?1 AND call_control_id = ?6",
+        params![
+            id,
+            outcome.call_control_id,
+            outcome.call_leg_id,
+            outcome.call_session_id,
+            now,
+            PENDING_OFFICE_LEG,
+        ],
+    )?;
+    Ok(changed == 1)
+}
+
+/// A staff member's browser phone (telephony credential id + SIP
+/// username); `None` until their first phone token.
+///
+/// # Errors
+///
+/// Returns rusqlite errors.
+pub fn get_staff_phone(conn: &Connection, user_id: &str) -> Result<Option<(String, String)>> {
+    conn.query_row(
+        "SELECT credential_id, sip_username FROM voice_staff_phone WHERE user_id = ?1",
+        [user_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+}
+
+/// Store (or replace) a staff member's browser phone credential.
+///
+/// # Errors
+///
+/// Returns rusqlite errors.
+pub fn put_staff_phone(
+    conn: &Connection,
+    user_id: &str,
+    credential_id: &str,
+    sip_username: &str,
+    now: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO voice_staff_phone(user_id, credential_id, sip_username, created_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(user_id) DO UPDATE SET credential_id = ?2, sip_username = ?3,
+                                            created_at = ?4",
+        params![user_id, credential_id, sip_username, now],
+    )?;
+    Ok(())
+}
+
+/// Forget a staff member's browser phone (its credential is gone at
+/// Telnyx; the next token request creates a new one).
+///
+/// # Errors
+///
+/// Returns rusqlite errors.
+pub fn delete_staff_phone(conn: &Connection, user_id: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM voice_staff_phone WHERE user_id = ?1",
+        [user_id],
+    )?;
+    Ok(())
+}
+
 /// Load one call by local id (`None` when unknown).
 ///
 /// # Errors
@@ -183,7 +306,7 @@ pub fn get_call(conn: &Connection, id: &str) -> Result<Option<VoiceCall>> {
                 to_hash, authority, status, status_detail,
                 questions_json, recording_sha, recording_status,
                 created_by, created_at, updated_at, ended_at,
-                script_id
+                script_id, browser_leg
          FROM voice_call WHERE id = ?1",
         [id],
         row_to_call,
@@ -202,8 +325,9 @@ pub fn get_call_by_leg(conn: &Connection, leg: &str) -> Result<Option<VoiceCall>
                 to_hash, authority, status, status_detail,
                 questions_json, recording_sha, recording_status,
                 created_by, created_at, updated_at, ended_at,
-                script_id
-         FROM voice_call WHERE call_control_id = ?1",
+                script_id, browser_leg
+         FROM voice_call
+         WHERE call_control_id = ?1 OR (browser_leg != '' AND browser_leg = ?1)",
         [leg],
         row_to_call,
     )
@@ -221,7 +345,7 @@ pub fn list_calls(conn: &Connection, limit: i64) -> Result<Vec<VoiceCall>> {
                 to_hash, authority, status, status_detail,
                 questions_json, recording_sha, recording_status,
                 created_by, created_at, updated_at, ended_at,
-                script_id
+                script_id, browser_leg
          FROM voice_call ORDER BY created_at DESC, id DESC LIMIT ?1",
     )?;
     stmt.query_map([limit], row_to_call)?.collect()
@@ -479,6 +603,7 @@ fn row_to_call(row: &rusqlite::Row<'_>) -> Result<VoiceCall> {
         updated_at: row.get(13)?,
         ended_at: row.get(14)?,
         script_id: row.get(15)?,
+        browser_leg: row.get(16)?,
     })
 }
 
@@ -560,6 +685,45 @@ mod tests {
         migrate(&conn).unwrap();
         let call = get_call(&conn, "c-0").unwrap().unwrap();
         assert_eq!(call.script_id, "inline");
+        assert_eq!(call.browser_leg, "");
+    }
+
+    #[test]
+    fn browser_leg_finds_the_call_and_office_leg_is_set_once() {
+        let conn = memory();
+        let mut call = new_call("c-1", 100);
+        call.call_control_id = PENDING_OFFICE_LEG;
+        insert_call(&conn, &call).unwrap();
+        set_browser_leg(&conn, "c-1", "web-1").unwrap();
+        assert_eq!(get_call_by_leg(&conn, "web-1").unwrap().unwrap().id, "c-1");
+        // An empty leg never matches a row with no browser leg.
+        assert!(get_call_by_leg(&conn, "").unwrap().is_none());
+        let office = crate::DialOutcome {
+            call_control_id: "office-1".to_string(),
+            call_leg_id: "office-leg".to_string(),
+            call_session_id: "sess".to_string(),
+        };
+        assert!(set_office_leg(&conn, "c-1", &office, 120).unwrap());
+        assert!(!set_office_leg(&conn, "c-1", &office, 121).unwrap());
+        let row = get_call_by_leg(&conn, "office-1").unwrap().unwrap();
+        assert_eq!(
+            (row.id.as_str(), row.browser_leg.as_str()),
+            ("c-1", "web-1")
+        );
+    }
+
+    #[test]
+    fn staff_phone_round_trips() {
+        let conn = memory();
+        assert!(get_staff_phone(&conn, "staff-1").unwrap().is_none());
+        put_staff_phone(&conn, "staff-1", "tc-1", "gencred1", 1).unwrap();
+        put_staff_phone(&conn, "staff-1", "tc-2", "gencred2", 2).unwrap();
+        assert_eq!(
+            get_staff_phone(&conn, "staff-1").unwrap(),
+            Some(("tc-2".to_string(), "gencred2".to_string()))
+        );
+        delete_staff_phone(&conn, "staff-1").unwrap();
+        assert!(get_staff_phone(&conn, "staff-1").unwrap().is_none());
     }
 
     #[test]

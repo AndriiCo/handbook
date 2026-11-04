@@ -108,7 +108,7 @@ export function normalizeCallSummary(row) {
 /**
  * Normalize a detail payload. Returns null for unknown shapes. Pure (tested).
  * @param {any} data
- * @returns {{ call_id: string, status: string, status_detail: string | null, authority: string | null, questions: { text: string, asked: boolean }[], transcript: { seq: number, speaker: string | null, text: string, at: number }[], transcript_status: string, recording_status: string, ended_at: number | null } | null}
+ * @returns {{ call_id: string, status: string, status_detail: string | null, authority: string | null, questions: { text: string, asked: boolean }[], transcript: { seq: number, speaker: string | null, text: string, at: number }[], transcript_status: string, recording_status: string, ended_at: number | null, audio: 'none' | 'browser' | 'office' } | null}
  */
 export function normalizeCallDetail(data) {
 	if (!data || typeof data.call_id !== 'string' || typeof data.status !== 'string') return null;
@@ -138,7 +138,10 @@ export function normalizeCallDetail(data) {
 		transcript_status:
 			typeof data.transcript_status === 'string' ? data.transcript_status : 'none',
 		recording_status: typeof data.recording_status === 'string' ? data.recording_status : 'none',
-		ended_at: typeof data.ended_at === 'number' ? data.ended_at : null
+		ended_at: typeof data.ended_at === 'number' ? data.ended_at : null,
+		// Browser audio: `browser` until the office is dialed, then
+		// `office`; `none` for fake and older calls.
+		audio: data.audio === 'browser' || data.audio === 'office' ? data.audio : 'none'
 	};
 }
 
@@ -183,10 +186,14 @@ async function throwForStatus(res, what) {
 	}
 	if (res.status === 404) throw new Error(`${what} not found (404).`);
 	if (res.status === 422) throw new Error('The server refused the request (422) — check the number and consent.');
+	// Other refusals carry the server's own reason (`{error}`): it
+	// names the missing config key or the Telnyx step that failed.
+	const reason = (await readErrorBody(res))?.error;
+	const said = typeof reason === 'string' && reason ? `${reason} (${res.status})` : null;
 	if (res.status === 503) {
-		throw new Error('Voice calling is not configured on this server (503).');
+		throw new Error(`Voice calling is not configured on this server: ${said ?? '503'}.`);
 	}
-	if (!res.ok) throw new Error(`${what} failed: HTTP ${res.status}.`);
+	if (!res.ok) throw new Error(`${what} failed: ${said ?? `HTTP ${res.status}`}.`);
 }
 
 /**
@@ -239,15 +246,34 @@ async function postCall(apiBase, path, body, what, fetchFn) {
 }
 
 /**
+ * `audio: 'browser'` means Telnyx is ringing the staff browser phone:
+ * answer it, and the office is dialed. Fake calls have no audio.
  * @param {string} apiBase
  * @param {{ to: string, questions: string[], consent_confirmed: true, authority?: string }} body
  * @param {typeof fetch} [fetchFn]
- * @returns {Promise<{ call_id: string, status: string }>}
+ * @returns {Promise<{ call_id: string, status: string, audio: 'browser' | 'none' }>}
  */
 export async function dialCall(apiBase, body, fetchFn = fetch) {
 	const data = await postCall(apiBase, '/calls/dial', body, 'Dial', fetchFn);
 	if (!data || typeof data.call_id !== 'string') throw new Error('Dial returned an unexpected shape.');
-	return { call_id: data.call_id, status: data.status };
+	return { call_id: data.call_id, status: data.status, audio: data.audio === 'browser' ? 'browser' : 'none' };
+}
+
+/**
+ * Login token for the signed-in staff member's browser phone. The
+ * first request creates their Telnyx telephony credential, which
+ * takes about 5 s. The token logs a browser in as that phone: keep
+ * it in memory only.
+ * @param {string} apiBase
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<string>}
+ */
+export async function fetchPhoneToken(apiBase, fetchFn = fetch) {
+	const data = await postCall(apiBase, '/calls/phone/token', undefined, 'Browser phone', fetchFn);
+	if (!data || typeof data.login_token !== 'string' || !data.login_token) {
+		throw new Error('Browser phone returned an unexpected shape.');
+	}
+	return data.login_token;
 }
 
 /**

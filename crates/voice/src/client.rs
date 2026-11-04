@@ -26,6 +26,10 @@ pub struct VoiceConfig {
     pub connection_id: String,
     /// Webhook signing public key, base64 (`telnyx.webhook_public_key`).
     pub webhook_public_key: String,
+    /// Credential connection the staff browser phones register on
+    /// (`telnyx.webrtc_connection_id`); empty = no browser audio, so
+    /// real dials refuse.
+    pub webrtc_connection_id: String,
     /// Script-pack directory override; empty reads as the default
     /// (`crates/voice/scripts`, repo-relative). Tests point this at
     /// a temp dir of fixture packs.
@@ -49,9 +53,34 @@ impl VoiceConfig {
             from_number: from_number.to_string(),
             connection_id: connection_id.to_string(),
             webhook_public_key: webhook_public_key.to_string(),
+            webrtc_connection_id: String::new(),
             scripts_dir: crate::scripts::DEFAULT_SCRIPTS_DIR.to_string(),
         }
     }
+
+    /// Set the browser-phone credential connection
+    /// (`telnyx.webrtc_connection_id`).
+    #[must_use]
+    pub fn with_webrtc_connection(mut self, connection_id: &str) -> Self {
+        self.webrtc_connection_id = connection_id.trim().to_string();
+        self
+    }
+}
+
+/// SIP domain a telephony credential registers on: a browser logged
+/// in with a credential's JWT rings when `sip:<sip_username>@` this
+/// domain is dialed (Telnyx WebRTC fundamentals, "Dialing Registered
+/// Clients"; the credential connection needs
+/// `sip_uri_calling_preference = internal`).
+pub const TELNYX_SIP_DOMAIN: &str = "sip.telnyx.com";
+
+/// A staff browser phone's telephony credential. Only the id and SIP
+/// username are kept: the SIP password and token material in the
+/// create response are dropped unread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhoneCredential {
+    pub id: String,
+    pub sip_username: String,
 }
 
 /// Blocking Telnyx client. Cheap to clone; safe to move across the
@@ -90,16 +119,45 @@ impl TelnyxClient {
     /// missing; [`VoiceError::Transport`] on I/O; [`VoiceError::Api`]
     /// when Telnyx answers non-2xx.
     pub fn dial(&self, to: &str, command_id: &str) -> Result<DialOutcome, VoiceError> {
+        self.dial_with_state(to, command_id, None)
+    }
+
+    /// Ring a staff browser phone (`sip:<sip_username>@sip.telnyx.com`)
+    /// from the Call Control app. `client_state` (base64) comes back
+    /// on every webhook for this leg.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`TelnyxClient::dial`].
+    pub fn dial_browser(
+        &self,
+        sip_username: &str,
+        command_id: &str,
+        client_state: &str,
+    ) -> Result<DialOutcome, VoiceError> {
+        let to = format!("sip:{sip_username}@{TELNYX_SIP_DOMAIN}");
+        self.dial_with_state(&to, command_id, Some(client_state))
+    }
+
+    fn dial_with_state(
+        &self,
+        to: &str,
+        command_id: &str,
+        client_state: Option<&str>,
+    ) -> Result<DialOutcome, VoiceError> {
         if self.api_key.is_empty() || self.connection_id.is_empty() || self.from_number.is_empty() {
             return Err(VoiceError::NotConfigured);
         }
-        let body = json!({
+        let mut body = json!({
             "to": to,
             "from": self.from_number,
             "connection_id": self.connection_id,
             "command_id": command_id,
             "webhook_url_method": "POST",
         });
+        if let Some(state) = client_state {
+            body["client_state"] = json!(state);
+        }
         let response = self.post_json(&format!("{}/v2/calls", self.base_url), &body)?;
         if !(200..300).contains(&response.status) {
             return Err(VoiceError::api(response.status, &response.body));
@@ -178,6 +236,108 @@ impl TelnyxClient {
             "transcription_stop",
             &json!({"command_id": command_id}),
         )
+    }
+
+    /// Join `other_leg` to `call_control_id`: both parties hear each
+    /// other (`POST /v2/calls/{id}/actions/bridge`).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`TelnyxClient::dial`].
+    pub fn bridge(
+        &self,
+        call_control_id: &str,
+        other_leg: &str,
+        command_id: &str,
+    ) -> Result<(), VoiceError> {
+        self.action(
+            call_control_id,
+            "bridge",
+            &json!({"call_control_id": other_leg, "command_id": command_id}),
+        )
+    }
+
+    /// Create a telephony credential on the browser-phone credential
+    /// connection (`POST /v2/telephony_credentials`).
+    ///
+    /// # Errors
+    ///
+    /// [`VoiceError::NotConfigured`] without a key or connection;
+    /// otherwise as [`TelnyxClient::dial`].
+    pub fn create_phone_credential(
+        &self,
+        credential_connection_id: &str,
+        name: &str,
+    ) -> Result<PhoneCredential, VoiceError> {
+        if self.api_key.is_empty() || credential_connection_id.is_empty() {
+            return Err(VoiceError::NotConfigured);
+        }
+        let body = json!({
+            "connection_id": credential_connection_id,
+            "name": name,
+            "tag": "apostille-staff",
+        });
+        let response = self.post_json(
+            &format!("{}/v2/telephony_credentials", self.base_url),
+            &body,
+        )?;
+        if !(200..300).contains(&response.status) {
+            return Err(VoiceError::api(response.status, &response.body));
+        }
+        // The body also holds the SIP password and token material:
+        // read two fields, never echo the body.
+        let value: serde_json::Value = serde_json::from_slice(&response.body)
+            .map_err(|_| VoiceError::Parse("credential response is not JSON".to_string()))?;
+        let field = |name: &str| value["data"][name].as_str().unwrap_or("").to_string();
+        let (id, sip_username) = (field("id"), field("sip_username"));
+        if id.is_empty() || sip_username.is_empty() {
+            return Err(VoiceError::Parse(
+                "credential response lacks id or sip_username".to_string(),
+            ));
+        }
+        Ok(PhoneCredential { id, sip_username })
+    }
+
+    /// Mint a browser login JWT for a telephony credential (`POST
+    /// /v2/telephony_credentials/{id}/token`, plain-text body, valid
+    /// 24 h). The token logs a browser in as that credential: hand it
+    /// to its staff member only, never log it.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`TelnyxClient::dial`]; a deleted credential is
+    /// `Api { status: 404, .. }`.
+    pub fn phone_token(&self, credential_id: &str) -> Result<String, VoiceError> {
+        if self.api_key.is_empty() {
+            return Err(VoiceError::NotConfigured);
+        }
+        let url = format!(
+            "{}/v2/telephony_credentials/{credential_id}/token",
+            self.base_url
+        );
+        let response = self
+            .agent
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send_empty()
+            .map_err(|e| VoiceError::Transport(e.to_string()))?;
+        let status = response.status().as_u16();
+        let body = response
+            .into_body()
+            .read_to_vec()
+            .map_err(|e| VoiceError::Transport(e.to_string()))?;
+        if !(200..300).contains(&status) {
+            return Err(VoiceError::api(status, &body));
+        }
+        let token = String::from_utf8_lossy(&body).trim().to_string();
+        let jwt_shaped = token.split('.').count() == 3
+            && token
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'));
+        if !jwt_shaped {
+            return Err(VoiceError::Parse("token response is not a JWT".to_string()));
+        }
+        Ok(token)
     }
 
     /// Hang up a leg (answered or still ringing).
@@ -535,6 +695,121 @@ mod tests {
             );
             handle.join().unwrap();
         }
+    }
+
+    #[test]
+    fn dial_browser_rings_the_credential_sip_uri_with_state() {
+        let (base, _seen, handle) = stub(|_head, body| {
+            let v: serde_json::Value = serde_json::from_str(body).unwrap();
+            assert_eq!(v["to"], "sip:gencredabc@sip.telnyx.com");
+            assert_eq!(v["from"], "+13605550000");
+            assert_eq!(v["connection_id"], "conn-1");
+            assert_eq!(v["client_state"], "c3RhdGU=");
+            (
+                200,
+                r#"{"data":{"call_control_id":"web-1","call_leg_id":"web-1","call_session_id":"s"}}"#
+                    .to_string(),
+            )
+        });
+        let out = client(&base)
+            .dial_browser("gencredabc", "cmd-1", "c3RhdGU=")
+            .unwrap();
+        assert_eq!(out.call_control_id, "web-1");
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn bridge_joins_the_other_leg() {
+        let (base, seen, handle) = stub(|_, body| {
+            let v: serde_json::Value = serde_json::from_str(body).unwrap();
+            assert_eq!(v["call_control_id"], "office-1");
+            (200, r#"{"data":{"result":"ok"}}"#.to_string())
+        });
+        client(&base).bridge("web-1", "office-1", "cmd-1").unwrap();
+        let raw = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            raw.starts_with("POST /v2/calls/web-1/actions/bridge "),
+            "{raw}"
+        );
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn phone_credential_keeps_id_and_sip_username_only() {
+        let (base, seen, handle) = stub(|_, body| {
+            let v: serde_json::Value = serde_json::from_str(body).unwrap();
+            assert_eq!(v["connection_id"], "cred-conn");
+            assert_eq!(v["name"], "apostille-staff-1");
+            (
+                200,
+                r#"{"data":{"id":"tc-1","sip_username":"gencredabc","sip_password":"pw-never-kept","token_material":{"signing_secret":"x"}}}"#
+                    .to_string(),
+            )
+        });
+        let cred = client(&base)
+            .create_phone_credential("cred-conn", "apostille-staff-1")
+            .unwrap();
+        assert_eq!(
+            cred,
+            PhoneCredential {
+                id: "tc-1".to_string(),
+                sip_username: "gencredabc".to_string(),
+            }
+        );
+        assert!(!format!("{cred:?}").contains("pw-never-kept"));
+        let raw = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(raw.starts_with("POST /v2/telephony_credentials "), "{raw}");
+        handle.join().unwrap();
+
+        let (base, _seen, handle) = stub(|_, _| {
+            (
+                200,
+                r#"{"data":{"sip_password":"pw-never-kept"}}"#.to_string(),
+            )
+        });
+        let err = client(&base)
+            .create_phone_credential("cred-conn", "n")
+            .unwrap_err();
+        assert!(!err.to_string().contains("pw-never-kept"), "{err}");
+        handle.join().unwrap();
+
+        let c = client("http://127.0.0.1:9");
+        assert_eq!(
+            c.create_phone_credential("", "n").unwrap_err(),
+            VoiceError::NotConfigured
+        );
+    }
+
+    #[test]
+    fn phone_token_reads_the_plain_text_jwt() {
+        let (base, seen, handle) = stub(|_, _| (200, "eyJhbGciOi.eyJzdWIiOi.c2ln\n".to_string()));
+        assert_eq!(
+            client(&base).phone_token("tc-1").unwrap(),
+            "eyJhbGciOi.eyJzdWIiOi.c2ln"
+        );
+        let raw = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(
+            raw.starts_with("POST /v2/telephony_credentials/tc-1/token "),
+            "{raw}"
+        );
+        handle.join().unwrap();
+
+        let (base, _seen, handle) = stub(|_, _| {
+            (
+                404,
+                r#"{"errors":[{"code":"10005","title":"Resource not found"}]}"#.to_string(),
+            )
+        });
+        let err = client(&base).phone_token("gone").unwrap_err();
+        assert!(matches!(err, VoiceError::Api { status: 404, .. }), "{err}");
+        handle.join().unwrap();
+
+        let (base, _seen, handle) = stub(|_, _| (200, "<html>nope</html>".to_string()));
+        assert!(matches!(
+            client(&base).phone_token("tc-1").unwrap_err(),
+            VoiceError::Parse(_)
+        ));
+        handle.join().unwrap();
     }
 
     #[test]

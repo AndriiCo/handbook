@@ -34,6 +34,9 @@
 		e164Valid,
 		fetchCalls
 	} from '#lib/admin/calls-client.js';
+	import { browserPhone } from '#lib/admin/browser-phone.svelte.js';
+	import { fakeSlugs } from '#lib/admin/fake-client.js';
+	import HeadsetIcon from '@lucide/svelte/icons/headset';
 	import PhoneOutgoingIcon from '@lucide/svelte/icons/phone-outgoing';
 	import PhoneIcon from '@lucide/svelte/icons/phone';
 	import MailIcon from '@lucide/svelte/icons/mail';
@@ -74,6 +77,9 @@
 	let picker = $state<AuthorityPicker | null>(null);
 	let reduceMotion = $state(false);
 	let nowSec = $state(Math.floor(Date.now() / 1000));
+	// W-3 `telnyx.mode = fake`: calls play a recorded WAV, so there is
+	// no audio to carry and no microphone to ask for.
+	let fakeCalls = $state(false);
 
 	const open = new OpenQuestionsState();
 	const motion = $derived(reduceMotion ? 0 : 200);
@@ -127,6 +133,10 @@
 		const wanted = parseEmailQuery(location.search).authority;
 		if (wanted) pick(wanted);
 		void load();
+		void fetch(`${api()}/admin/version`, { credentials: 'same-origin' })
+			.then((res) => (res.ok ? res.json() : null))
+			.then((data) => (fakeCalls = fakeSlugs(data?.fakes).includes('telnyx')))
+			.catch(() => {});
 		return () => open.dispose();
 	});
 
@@ -162,7 +172,13 @@
 		}
 		dialing = true;
 		try {
+			// You talk through this tab: log the browser phone in first
+			// (this click lets the browser ask for the microphone). If
+			// it cannot connect, the server still decides — a fake call
+			// needs no phone, a real one refuses with the reason.
+			if (!fakeCalls) await browserPhone.connect(api()).catch(() => {});
 			const out = await dialCall(api(), body);
+			if (out.audio === 'browser') browserPhone.expect(out.call_id);
 			await goto(`${resolve('/(admin)/calls')}/${encodeURIComponent(out.call_id)}`);
 		} catch (err) {
 			dialError = err instanceof Error ? err.message : 'Dial failed.';
@@ -307,6 +323,29 @@
 						</Button>
 						{#if questionsText.trim()}
 							<Button type="button" variant="ghost" onclick={() => (questionsText = '')}>Clear</Button>
+						{/if}
+					</div>
+					<div class="flex flex-wrap items-center gap-2 rounded-md border border-line px-3 py-2 text-sm" role="status">
+						<HeadsetIcon class="size-4 flex-none text-ink-muted" aria-hidden="true" />
+						<span class="min-w-0 flex-1">
+							{#if fakeCalls}
+								Fake calls: a recorded answer plays, nobody's phone rings, no microphone needed.
+							{:else if browserPhone.phase === 'ready'}
+								Browser phone ready: you talk through this tab.
+							{:else if browserPhone.phase === 'in_call'}
+								Browser phone is on a call.
+							{:else if browserPhone.phase === 'connecting'}
+								Connecting the browser phone… (the first time takes about 5 s)
+							{:else if browserPhone.phase === 'error'}
+								<span class="text-error">{browserPhone.error}</span>
+							{:else}
+								You talk through this tab. Dial connects the browser phone and asks for the microphone.
+							{/if}
+						</span>
+						{#if !fakeCalls && (browserPhone.phase === 'off' || browserPhone.phase === 'error')}
+							<Button type="button" variant="outline" size="sm" onclick={() => browserPhone.connect(api()).catch(() => {})}>
+								Connect now
+							</Button>
 						{/if}
 					</div>
 					<label class="flex items-start gap-2 text-sm" for="consent">

@@ -235,7 +235,13 @@ closed); the webhook answers 401 (no key to verify with).
 4. Outbound Voice Profile attached to the application (outbound
    billing + destinations).
 5. Webhook signing public key from the portal for signature
-   verification (`telnyx.webhook_public_key`).
+   verification (`telnyx.webhook_public_key`). Without it every
+   webhook is refused (401): no answer event, so no recording and
+   no transcript (the 2026-11-04 production calls).
+5a. Credential-type SIP connection for staff browser phones (§12),
+   with `sip_uri_calling_preference = internal` ("Receive SIP URI
+   calls: only from my connections"); its id is
+   `telnyx.webrtc_connection_id`.
 6. Budget note: Telnyx prices Call Control from $0.002/min
    ([source](https://telnyx.com/resources/what-is-call-control));
    confirm current voice + recording + transcription rates in the
@@ -572,3 +578,70 @@ on it (Meta transcription through the call cache). As for a real
 call, it stays untranscribed with no Meta key or recorded answer, or
 while `media.terms_read` is off. Hangup and record commands do not
 apply to a fake call (it is already over).
+
+## 12. Browser audio (staff talk through the admin tab)
+
+Added 2026-11-04. Before this, a dial rang the office from the Call
+Control app with nothing on the other side: the office heard silence
+and staff heard nothing. Now staff talk through the browser with the
+Telnyx WebRTC JS SDK (`@telnyx/webrtc`, MIT), and every leg stays on
+our Call Control app, so webhooks, signatures, recording and the
+post-hangup transcript work as before.
+
+Telnyx sources (WebRTC docs, fetched 2026-11-04): a client logged in
+with a telephony credential's JWT is rung by dialing
+`sip:<sip_username>@sip.telnyx.com` (fundamentals, "Dialing
+Registered Clients"); the credential connection needs
+`sip_uri_calling_preference = internal` (credential connections,
+"Pattern 2"); `POST /v2/telephony_credentials` creates a credential,
+`POST /v2/telephony_credentials/{id}/token` returns a plain-text JWT
+valid 24 h, and a new credential needs about 5 s before its first
+login; `POST /v2/calls/{id}/actions/bridge {call_control_id}` joins
+two legs (outbound dialer guide).
+
+Flow:
+
+1. **Phone.** Dial (or "Connect now") on `/calls` asks for the
+   microphone, then `POST /calls/phone/token` (staff + CSRF). The
+   first request creates the staff member's telephony credential on
+   `telnyx.webrtc_connection_id`, named `apostille-staff-<user_id>`,
+   and keeps only its id and SIP username (`voice_staff_phone`); the
+   SIP password and token material in the response are never read
+   into storage or logs. A credential deleted in the portal is
+   recreated once. The JWT is returned `no-store`, held in memory by
+   the page, and never logged.
+2. **Dial.** `POST /calls/dial` refuses with 503 when
+   `telnyx.webrtc_connection_id` is unset and 409 when the staff
+   member has no phone yet. Otherwise it dials the staff phone's SIP
+   URI with `client_state` = base64 of the office number, stores that
+   leg as `voice_call.browser_leg`, and leaves `call_control_id` as
+   the placeholder `pending-office`. The office number is not stored
+   (only `to_hash`, as before).
+3. **Browser answers.** The page answers the ringing call only once
+   the dial response named the call (an unexpected ring is refused
+   after 10 s). The browser leg's `call.answered` webhook decodes
+   `client_state`, checks it is E.164 and hashes to `to_hash`, and
+   dials the office; the office leg replaces the placeholder. A
+   mismatch fails the call and hangs up the browser leg; an office
+   dial error fails the call with Telnyx's reason (numbers masked).
+4. **Office answers.** The office leg's `call.answered` moves the call
+   to `in_progress`, starts recording on the office leg (dual
+   channel: office on one channel, staff on the other) and bridges
+   the browser leg to it. A failed bridge leaves a note on the call.
+5. **Hangup.** The office leg's `call.hangup` completes the call and
+   hangs up the browser leg. The browser leg's hangup hangs up the
+   office leg, or fails the call when the office was never dialed.
+   Staff hangup ends both legs. Browser-leg events never move call
+   status: status follows the office leg as in §2.
+
+The call detail carries `audio`: `browser` (office not dialed yet),
+`office`, or `none` (fake and older calls). The page warns before a
+reload, which would drop the staff side of a live call. Fake calls
+(`telnyx.mode = fake`) need no phone and never ask for the
+microphone.
+
+Not verified against live Telnyx from this repo (no test calls are
+placed from CI): the first production call is the check. The
+Content-Security-Policy and Permissions-Policy headers are not set on
+the admin host today; if they are added, they must allow the
+microphone and Telnyx's WebSocket and media hosts.

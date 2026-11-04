@@ -51,6 +51,7 @@
 		"@fontsource-variable/source-serif-4": "^5.3.1",
 		"@lucide/svelte": "^1.64.0",
 		"@tailwindcss/typography": "^0.5.20",
+		"@telnyx/webrtc": "2.28.0",
 		"bits-ui": "^2.20.2",
 		"clsx": "^2.1.1",
 		"d3-geo": "^3.1.1",

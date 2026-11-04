@@ -1123,13 +1123,14 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		id: 'voice',
 		title: 'Voice calls (Telnyx)',
 		summary:
-			'Outbound verification calls from the admin Calls page plus signed call webhooks. Dialling needs the API key, connection ID and from number; webhooks need the public key.',
+			'Outbound verification calls from the admin Calls page plus signed call webhooks. Staff talk through the browser: Telnyx rings their browser phone, then dials the office and joins the two. Dialling needs the API key, connection ID, from number and the WebRTC connection; webhooks (and so recording and transcripts) need the public key.',
 		setup: [
 			'https://portal.telnyx.com > API Keys > Create API Key. Copy it once into telnyx.api_key. (verify menu names)',
 			'Voice > Programmable Voice > Voice API Applications (Call Control): create an application with webhook URL https://admin.andrii.ai/apostille/api/v1/calls/webhook, method POST, API v2. Copy its ID into telnyx.connection_id.',
 			'Numbers > My Numbers: assign a voice-enabled number to that application and save it in E.164 as telnyx.from_number.',
 			'Keys & Credentials > Public Key: paste the base64 key into telnyx.webhook_public_key. Webhooks with a bad signature or a stale timestamp are rejected. (verify menu names)',
-			'The webhook path skips admin.allow_ips but still needs the admin host name. Restart and place a test call from /calls.'
+			'Voice > SIP Connections: create a Credentials-type connection for browser phones. Under Inbound, set Receive SIP URI calls to Only from my connections (API: sip_uri_calling_preference internal). Copy its ID into telnyx.webrtc_connection_id. Each staff member gets their own telephony credential on it the first time they connect. (verify menu names)',
+			'The webhook path skips admin.allow_ips but still needs the admin host name. Restart, open /calls, allow the microphone and place a test call.'
 		],
 		keys: [
 			{
@@ -1166,6 +1167,15 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				what: 'Ed25519 key that verifies the telnyx-signature-ed25519 header over timestamp|body.',
 				how: 'Setup step 4.',
 				format: 'Base64 of 32 bytes (44 characters ending in =).',
+				applies: 'boot'
+			},
+			{
+				key: 'telnyx.webrtc_connection_id',
+				type: 'text',
+				label: 'Browser phone connection ID',
+				what: 'Credential connection the staff browser phones register on. A call rings your browser first, then the office; without this key the Calls page refuses to dial (there would be no audio).',
+				how: 'Setup step 5.',
+				format: 'Numeric string. Example: 1234567890123456789',
 				applies: 'boot'
 			},
 			{

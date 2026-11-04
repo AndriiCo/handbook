@@ -8,6 +8,7 @@ import {
 	e164Valid,
 	fetchCall,
 	fetchCalls,
+	fetchPhoneToken,
 	hangupCall,
 	isLive,
 	markQuestionAsked,
@@ -84,6 +85,10 @@ test('normalizeCallDetail types questions and transcript', () => {
 	assert.equal(detail?.questions[0].asked, true);
 	assert.equal(detail?.transcript[0].text, 'hello');
 	assert.equal(detail?.transcript_status, 'untranscribed-terms');
+	assert.equal(detail?.audio, 'none', 'no audio field reads as none');
+	const browser = normalizeCallDetail({ call_id: 'c-1', status: 'queued', questions: [], transcript: [], audio: 'browser' });
+	assert.equal(browser?.audio, 'browser');
+	assert.equal(normalizeCallDetail({ call_id: 'c-1', status: 'queued', questions: [], transcript: [], audio: 'evil' })?.audio, 'none');
 	assert.equal(normalizeCallDetail({ call_id: 'c-1', status: 'x' }), null);
 	assert.equal(
 		normalizeCallDetail({
@@ -189,6 +194,37 @@ test('calls round-trip against a stub admin API', async () => {
 			'POST /api/v1/calls/c-1/questions/0/asked',
 			'POST /api/v1/calls/c-1/quote'
 		]);
+	} finally {
+		server.close();
+	}
+});
+
+test('phone token and refusals carry the server reason', async () => {
+	const server = createServer((req, res) => {
+		req.resume();
+		req.on('end', () => {
+			if (req.url === '/api/v1/calls/phone/token') {
+				assert.ok(req.headers['x-csrf'], 'token request sends x-csrf');
+				res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+				res.end(JSON.stringify({ login_token: 'a.b.c' }));
+			} else if (req.url === '/api/v1/calls/dial') {
+				res.writeHead(409, { 'content-type': 'application/json' });
+				res.end(JSON.stringify({ error: 'connect the browser phone before dialing' }));
+			} else {
+				res.writeHead(503, { 'content-type': 'application/json' });
+				res.end(JSON.stringify({ error: 'browser audio not configured: set telnyx.webrtc_connection_id' }));
+			}
+		});
+	});
+	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+	const base = `http://127.0.0.1:${server.address().port}/api/v1`;
+	try {
+		assert.equal(await fetchPhoneToken(base), 'a.b.c');
+		await assert.rejects(
+			dialCall(base, dialBody('+13605550100', null, ['q'], true)),
+			/Dial failed: connect the browser phone before dialing \(409\)\./
+		);
+		await assert.rejects(hangupCall(base, 'c-1'), /webrtc_connection_id \(503\)/);
 	} finally {
 		server.close();
 	}

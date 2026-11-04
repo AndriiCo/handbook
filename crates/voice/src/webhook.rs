@@ -70,6 +70,9 @@ pub struct EventPayload {
     pub call_control_id: Option<String>,
     pub call_leg_id: Option<String>,
     pub call_session_id: Option<String>,
+    /// Base64 state set at dial; Telnyx echoes it on every webhook
+    /// for that leg.
+    pub client_state: Option<String>,
     pub state: Option<String>,
     pub hangup_cause: Option<String>,
     pub hangup_source: Option<String>,

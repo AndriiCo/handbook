@@ -64,6 +64,7 @@ follow-up, see OQ-C4).
 | *(voice stream)* | `telnyx.from_number` | text (E.164, empty = unset) | empty |
 | *(voice stream)* | `telnyx.connection_id` | text (empty = unset) | empty |
 | *(voice stream)* | `telnyx.webhook_public_key` | text (empty = unset) | empty |
+| *(voice stream)* | `telnyx.webrtc_connection_id` | text (empty = unset = real dials 503) | empty |
 | *(voice stream)* | `telnyx.api_key` | **secret** | unset (= voice 503) |
 | *(quic stream)* | `quic.enabled` | bool | false |
 

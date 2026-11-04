@@ -37,6 +37,7 @@ const WEBHOOK_WINDOW_SECS: i64 = 300;
 pub fn staff_router(state: AppState) -> Router {
     Router::new()
         .route("/apostille/api/v1/calls/dial", post(dial))
+        .route("/apostille/api/v1/calls/phone/token", post(phone_token))
         .route("/apostille/api/v1/calls", get(list_calls))
         .route("/apostille/api/v1/calls/{id}", get(get_call))
         .route("/apostille/api/v1/calls/{id}/hangup", post(hangup))
@@ -202,24 +203,56 @@ async fn dial(
     // recorded WAV becomes its recording (below).
     let fake = state.fakes.is_fake(config::Integration::Telnyx);
     let call_id = new_call_id();
-    let outcome = if fake {
-        voice::DialOutcome {
+    // Browser audio: a real dial rings the staff member's browser
+    // phone first. The office is dialed when the browser answers
+    // (`apply_browser_event`) and bridged to it when the office
+    // answers, so the row starts with a placeholder office leg.
+    let (outcome, browser_leg) = if fake {
+        let outcome = voice::DialOutcome {
             call_control_id: format!("fake-{call_id}"),
             call_leg_id: format!("fake-leg-{call_id}"),
             call_session_id: format!("fake-session-{call_id}"),
-        }
+        };
+        (outcome, String::new())
     } else {
         let client = match voice_client(&state) {
             Some(client) => client,
             None => return voice_unconfigured(),
         };
-        let to = body.to.clone();
-        let command_id = format!("dial-{now}");
-        let outcome = tokio::task::spawn_blocking(move || client.dial(&to, &command_id)).await;
+        if state.voice_cfg.webrtc_connection_id.is_empty() {
+            return browser_audio_unconfigured();
+        }
+        let Ok(Some((_, sip_username))) = voice::store::get_staff_phone(&conn, &auth.user.user_id)
+        else {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({"error": "connect the browser phone before dialing"})),
+            )
+                .into_response();
+        };
+        // The office number rides in the browser leg's client_state
+        // (Telnyx echoes it on that leg's webhooks), so it is never
+        // stored here; the answer handler checks it against to_hash.
+        let client_state = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(body.to.as_bytes())
+        };
+        let command_id = format!("dial-browser-{call_id}");
+        let outcome = tokio::task::spawn_blocking(move || {
+            client.dial_browser(&sip_username, &command_id, &client_state)
+        })
+        .await;
         match outcome {
-            Ok(Ok(outcome)) => outcome,
+            Ok(Ok(browser)) => {
+                let pending = voice::DialOutcome {
+                    call_control_id: voice::store::PENDING_OFFICE_LEG.to_string(),
+                    call_leg_id: String::new(),
+                    call_session_id: String::new(),
+                };
+                (pending, browser.call_control_id)
+            }
             Ok(Err(e)) => {
-                tracing::warn!("voice dial failed: {e}");
+                tracing::warn!("voice dial failed: browser leg: {e}");
                 return (
                     StatusCode::BAD_GATEWAY,
                     Json(json!({"error": "telnyx dial failed"})),
@@ -249,7 +282,10 @@ async fn dial(
         created_by: &auth.user.user_id,
         now,
     };
-    if voice::store::insert_call(&conn, &call).is_err() {
+    if voice::store::insert_call(&conn, &call).is_err()
+        || (!browser_leg.is_empty()
+            && voice::store::set_browser_leg(&conn, &call_id, &browser_leg).is_err())
+    {
         return store_unavailable();
     }
     audit(
@@ -263,11 +299,121 @@ async fn dial(
     if fake {
         return fake_call(&state, &conn, &call_id, now);
     }
+    // The browser answers its ringing leg only after this response,
+    // so the row (with its browser leg) exists before any answer
+    // webhook can arrive.
     (
         StatusCode::OK,
-        Json(json!({"call_id": call_id, "status": "queued"})),
+        Json(json!({"call_id": call_id, "status": "queued", "audio": "browser"})),
     )
         .into_response()
+}
+
+fn browser_audio_unconfigured() -> axum::response::Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({
+            "error": "browser audio not configured: set telnyx.webrtc_connection_id"
+        })),
+    )
+        .into_response()
+}
+
+/// Telephony-credential name for one staff member's browser phone.
+fn phone_credential_name(user_id: &str) -> String {
+    format!("apostille-staff-{user_id}")
+}
+
+/// Telnyx asks for about 5 s between creating a telephony credential
+/// and its first login.
+const NEW_CREDENTIAL_SETTLE: std::time::Duration = if cfg!(test) {
+    std::time::Duration::ZERO
+} else {
+    std::time::Duration::from_secs(5)
+};
+
+/// Browser phone login token for the signed-in staff member. The
+/// first request creates their telephony credential on the
+/// `telnyx.webrtc_connection_id` connection (kept as id + SIP
+/// username only); a credential deleted in the portal is recreated
+/// once. The JWT logs a browser in as that credential, so it is
+/// returned `no-store` and never logged.
+async fn phone_token(auth: AdminAuth, State(state): State<AppState>) -> impl IntoResponse {
+    let Some(client) = voice_client(&state) else {
+        return voice_unconfigured();
+    };
+    let webrtc = state.voice_cfg.webrtc_connection_id.clone();
+    if webrtc.is_empty() {
+        return browser_audio_unconfigured();
+    }
+    let store = Store::new(&state.store_root);
+    let conn = match db::open(&store) {
+        Ok(conn) => conn,
+        Err(_) => return store_unavailable(),
+    };
+    let user_id = auth.user.user_id.clone();
+    let existing = match voice::store::get_staff_phone(&conn, &user_id) {
+        Ok(existing) => existing,
+        Err(_) => return store_unavailable(),
+    };
+    let token = tokio::task::spawn_blocking({
+        let store_root = state.store_root.clone();
+        move || -> Result<String, voice::VoiceError> {
+            let create = || -> Result<String, voice::VoiceError> {
+                let cred =
+                    client.create_phone_credential(&webrtc, &phone_credential_name(&user_id))?;
+                if let Ok(conn) = db::open(&Store::new(&store_root)) {
+                    let now = unix_now();
+                    let _ = voice::store::put_staff_phone(
+                        &conn,
+                        &user_id,
+                        &cred.id,
+                        &cred.sip_username,
+                        now,
+                    );
+                    audit(
+                        &conn,
+                        now,
+                        &user_id,
+                        "voice_phone_credential",
+                        "",
+                        "created",
+                    );
+                }
+                std::thread::sleep(NEW_CREDENTIAL_SETTLE);
+                Ok(cred.id)
+            };
+            let credential_id = match existing {
+                Some((id, _)) => id,
+                None => create()?,
+            };
+            match client.phone_token(&credential_id) {
+                Err(voice::VoiceError::Api { status: 404, .. }) => {
+                    let fresh = create()?;
+                    client.phone_token(&fresh)
+                }
+                other => other,
+            }
+        }
+    })
+    .await;
+    match token {
+        Ok(Ok(token)) => (
+            StatusCode::OK,
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            Json(json!({"login_token": token})),
+        )
+            .into_response(),
+        Ok(Err(e)) => {
+            tracing::warn!("voice phone token failed: {e}");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({"error": "telnyx phone token failed"})),
+            )
+                .into_response()
+        }
+        Err(_) => store_unavailable(),
+    }
 }
 
 /// W-3 fake call: the recorded WAV ([`crate::fake::recorded_call_wav`])
@@ -376,6 +522,14 @@ async fn get_call(
             "recording_status": call.recording_status,
             "created_at": call.created_at,
             "ended_at": call.ended_at,
+            // Browser audio: `browser` until the office leg exists,
+            // then `office`; `none` for fake and older calls.
+            "audio": match (call.browser_leg.is_empty(),
+                            call.call_control_id == voice::store::PENDING_OFFICE_LEG) {
+                (true, _) => "none",
+                (false, true) => "browser",
+                (false, false) => "office",
+            },
         })),
     )
         .into_response()
@@ -398,10 +552,21 @@ async fn hangup(
         Some(client) => client,
         None => return voice_unconfigured(),
     };
-    let leg = call.call_control_id.clone();
-    let command_id = format!("hup-{leg}");
-    let hung = tokio::task::spawn_blocking(move || client.hangup(&leg, &command_id)).await;
-    if !matches!(hung, Ok(Ok(()))) {
+    // Both legs of a browser-audio call: the office (once dialed)
+    // and the staff browser. One success is enough — the other leg
+    // may already have ended.
+    let legs: Vec<String> = [call.call_control_id.clone(), call.browser_leg.clone()]
+        .into_iter()
+        .filter(|leg| !leg.is_empty() && leg != voice::store::PENDING_OFFICE_LEG)
+        .collect();
+    let hung = tokio::task::spawn_blocking(move || {
+        legs.iter()
+            .map(|leg| client.hangup(leg, &format!("hup-{leg}")))
+            .filter(Result::is_ok)
+            .count()
+    })
+    .await;
+    if !matches!(hung, Ok(n) if n > 0) {
         tracing::warn!(call_id = %id, "voice hangup command failed");
         return (
             StatusCode::BAD_GATEWAY,
@@ -649,6 +814,13 @@ async fn record_command(
         Some(client) => client,
         None => return voice_unconfigured(),
     };
+    if call.call_control_id == voice::store::PENDING_OFFICE_LEG {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "the office is not on the line yet"})),
+        )
+            .into_response();
+    }
     let leg = call.call_control_id.clone();
     let command_id = format!("rec-{leg}");
     let ran = tokio::task::spawn_blocking(move || {
@@ -772,6 +944,9 @@ async fn telnyx_webhook(
             tracing::info!(event = event.as_str(), "voice webhook for unknown leg");
             return ack();
         }
+        (Ok(true), Some(call)) if !call.browser_leg.is_empty() && call.browser_leg == leg => {
+            apply_browser_event(&conn, &state, &call, &event, &envelope, now);
+        }
         (Ok(true), Some(call)) => apply_event(&conn, &state, &call, &event, &envelope, now),
     }
     ack()
@@ -832,6 +1007,16 @@ fn apply_event(
             // it), so recording + transcription start at answer.
             let _ = voice::store::set_recording(conn, &call.id, None, "recording", now);
             spawn_auto_record(state, &call.call_control_id);
+            // Browser audio: the office is on the line, so join it to
+            // the staff browser leg that dialed it.
+            if !call.browser_leg.is_empty() {
+                spawn_bridge(state, &call.id, &call.browser_leg, &call.call_control_id);
+            }
+        }
+        // The office hung up (or the call failed): drop the browser
+        // leg too, so the staff phone stops.
+        voice::EventType::Hangup if !call.browser_leg.is_empty() => {
+            spawn_hangup_leg(state, &call.browser_leg);
         }
         // `call.transcription` events are acked but never ingested:
         // Telnyx's live engine is not a Meta model, so its segments
@@ -858,6 +1043,165 @@ fn apply_event(
         _ => {}
     }
     tracing::info!(call_id = %call.id, event = event.as_str(), "voice webhook applied");
+}
+
+/// Apply one fresh webhook for a call's staff browser leg. Its
+/// answer dials the office (the number comes back in the leg's
+/// `client_state` and must match `to_hash`); its hangup ends the
+/// office leg, or fails the call when the office was never dialed.
+/// Other browser-leg events move nothing: call status follows the
+/// office leg.
+fn apply_browser_event(
+    conn: &rusqlite::Connection,
+    state: &AppState,
+    call: &voice::VoiceCall,
+    event: &voice::EventType,
+    envelope: &voice::WebhookEnvelope,
+    now: i64,
+) {
+    let terminal = voice::CallStatus::parse(&call.status).is_none_or(|s| s.is_terminal());
+    let office_pending = call.call_control_id == voice::store::PENDING_OFFICE_LEG;
+    match event {
+        voice::EventType::Answered if office_pending && !terminal => {
+            match office_number(envelope.data.payload.client_state.as_deref(), &call.to_hash) {
+                Some(to) => {
+                    publish_call(
+                        state,
+                        &call.id,
+                        json!({"type": "call.browser", "state": "answered", "at": now}),
+                    );
+                    spawn_office_dial(state, &call.id, &call.browser_leg, to);
+                }
+                None => {
+                    fail_call(conn, state, &call.id, "office number check failed", now);
+                    spawn_hangup_leg(state, &call.browser_leg);
+                }
+            }
+        }
+        voice::EventType::Hangup if !terminal => {
+            if office_pending {
+                let cause = hangup_detail(&envelope.data.payload).unwrap_or_default();
+                let detail = format!("browser phone ended before the office was dialed {cause}");
+                fail_call(conn, state, &call.id, detail.trim_end(), now);
+            } else {
+                spawn_hangup_leg(state, &call.call_control_id);
+            }
+        }
+        _ => {}
+    }
+    tracing::info!(call_id = %call.id, event = event.as_str(), "voice browser webhook applied");
+}
+
+/// Decode the office number from the browser leg's `client_state`;
+/// `None` unless it is E.164 and hashes to the row's `to_hash`.
+fn office_number(client_state: Option<&str>, to_hash: &str) -> Option<String> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(client_state?)
+        .ok()?;
+    let to = String::from_utf8(bytes).ok()?;
+    (voice::calls::validate_e164(&to).is_ok() && sha256_hex(to.as_bytes()) == to_hash).then_some(to)
+}
+
+/// Mark a call failed and tell its subscribers.
+fn fail_call(conn: &rusqlite::Connection, state: &AppState, call_id: &str, detail: &str, now: i64) {
+    let _ = voice::store::set_status(conn, call_id, voice::CallStatus::Failed, Some(detail), now);
+    publish_call(
+        state,
+        call_id,
+        json!({"type": "call.status", "status": "failed", "at": now}),
+    );
+}
+
+/// Dial the office once the staff browser leg answered. A failure
+/// fails the call (with Telnyx's reason, numbers masked) and hangs up
+/// the browser leg.
+fn spawn_office_dial(state: &AppState, call_id: &str, browser_leg: &str, to: String) {
+    let Some(client) = voice_client(state) else {
+        return;
+    };
+    let state = state.clone();
+    let call_id = call_id.to_string();
+    let browser_leg = browser_leg.to_string();
+    tokio::spawn(async move {
+        let command_id = format!("dial-office-{call_id}");
+        let dialed = tokio::task::spawn_blocking(move || client.dial(&to, &command_id)).await;
+        let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
+            return;
+        };
+        let now = unix_now();
+        match dialed {
+            Ok(Ok(outcome)) => {
+                let _ = voice::store::set_office_leg(&conn, &call_id, &outcome, now);
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(call_id = %call_id, "voice dial failed: office leg: {e}");
+                fail_call(
+                    &conn,
+                    &state,
+                    &call_id,
+                    &format!("office dial failed: {e}"),
+                    now,
+                );
+                spawn_hangup_leg(&state, &browser_leg);
+            }
+            Err(_) => {
+                fail_call(&conn, &state, &call_id, "office dial failed", now);
+                spawn_hangup_leg(&state, &browser_leg);
+            }
+        }
+    });
+}
+
+/// Join the office leg to the staff browser leg once the office
+/// answered. A failed bridge leaves the call up with a note: staff
+/// can hang up and redial.
+fn spawn_bridge(state: &AppState, call_id: &str, browser_leg: &str, office_leg: &str) {
+    let Some(client) = voice_client(state) else {
+        return;
+    };
+    let state = state.clone();
+    let call_id = call_id.to_string();
+    let (browser_leg, office_leg) = (browser_leg.to_string(), office_leg.to_string());
+    tokio::spawn(async move {
+        let command_id = format!("bridge-{office_leg}");
+        let bridged = tokio::task::spawn_blocking(move || {
+            client.bridge(&browser_leg, &office_leg, &command_id)
+        })
+        .await;
+        let failure = match bridged {
+            Ok(Ok(())) => None,
+            Ok(Err(e)) => Some(e.to_string()),
+            Err(_) => Some("bridge task failed".to_string()),
+        };
+        if let Some(e) = failure {
+            tracing::warn!(call_id = %call_id, "voice bridge failed: {e}");
+            if let Ok(conn) = db::open(&Store::new(&state.store_root)) {
+                let _ = voice::store::set_status(
+                    &conn,
+                    &call_id,
+                    voice::CallStatus::InProgress,
+                    Some(
+                        "office answered but could not be joined to your browser; hang up and redial",
+                    ),
+                    unix_now(),
+                );
+            }
+        }
+    });
+}
+
+/// Fire-and-forget hangup of one leg (the other side of a bridge).
+/// A leg that already ended answers non-2xx; that is fine.
+fn spawn_hangup_leg(state: &AppState, leg: &str) {
+    let Some(client) = voice_client(state) else {
+        return;
+    };
+    let leg = leg.to_string();
+    tokio::spawn(async move {
+        let command_id = format!("hup-{leg}");
+        let _ = tokio::task::spawn_blocking(move || client.hangup(&leg, &command_id)).await;
+    });
 }
 
 /// Fire-and-forget `record_start` at answer. Record only: the
@@ -1384,6 +1728,8 @@ mod tests {
         db::migrate(&conn).unwrap();
         auth::migrate_auth_tables(&conn).unwrap();
         voice::store::migrate(&conn).unwrap();
+        // staff-1's browser phone, so real-path dials can ring it.
+        voice::store::put_staff_phone(&conn, "staff-1", "tc-test", "gencredtest", 1).unwrap();
         auth::create_session(
             &conn,
             "staff-1",
@@ -1609,6 +1955,8 @@ mod tests {
     struct StubTelnyx {
         url: String,
         hits: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        /// `"<request line>\n<body>"` per request, in arrival order.
+        seen: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
         stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
         thread: Option<std::thread::JoinHandle<()>>,
     }
@@ -1620,9 +1968,11 @@ mod tests {
             listener.set_nonblocking(true).unwrap();
             let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
             let hits = std::sync::Arc::new(AtomicUsize::new(0));
+            let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
             let stop = std::sync::Arc::new(AtomicBool::new(false));
             let thread = std::thread::spawn({
                 let hits = hits.clone();
+                let seen = seen.clone();
                 let stop = stop.clone();
                 move || {
                     while !stop.load(Ordering::SeqCst) {
@@ -1633,7 +1983,8 @@ mod tests {
                                 continue;
                             }
                         };
-                        Self::answer(stream);
+                        let request = Self::answer(stream);
+                        seen.lock().unwrap().push(request);
                         hits.fetch_add(1, Ordering::SeqCst);
                     }
                 }
@@ -1641,6 +1992,7 @@ mod tests {
             StubTelnyx {
                 url,
                 hits,
+                seen,
                 stop,
                 thread: Some(thread),
             }
@@ -1650,8 +2002,30 @@ mod tests {
             self.hits.load(std::sync::atomic::Ordering::SeqCst)
         }
 
-        /// Drain one request, then answer with a synthetic leg.
-        fn answer(mut stream: std::net::TcpStream) {
+        /// Requests so far, waiting up to 5 s for at least `n`
+        /// (spawned commands land after the webhook acked).
+        async fn seen_at_least(&self, n: usize) -> Vec<String> {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                let seen = self.seen.lock().unwrap().clone();
+                if seen.len() >= n || std::time::Instant::now() > deadline {
+                    return seen;
+                }
+                // Yield: the commands under test run on this runtime.
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }
+
+        /// The JSON body of one recorded request.
+        fn body_of(request: &str) -> serde_json::Value {
+            serde_json::from_str(request.split_once('\n').map_or("", |(_, b)| b))
+                .unwrap_or(serde_json::Value::Null)
+        }
+
+        /// Drain one request, then answer: a telephony credential, a
+        /// login token, or (anything else) a synthetic leg. Returns
+        /// the request line and body.
+        fn answer(mut stream: std::net::TcpStream) -> String {
             use std::io::{BufRead, BufReader, Read, Write};
             stream.set_nonblocking(false).ok();
             stream
@@ -1660,6 +2034,10 @@ mod tests {
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             let mut content_len = 0usize;
             let mut chunked = false;
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line).ok();
+            let request_line = request_line.trim_end().to_string();
+            let mut body = Vec::new();
             loop {
                 let mut line = String::new();
                 if reader.read_line(&mut line).unwrap_or(0) == 0 {
@@ -1694,18 +2072,27 @@ mod tests {
                     if reader.read_exact(&mut chunk).is_err() {
                         break;
                     }
+                    body.extend_from_slice(&chunk);
                     reader.read_line(&mut String::new()).ok();
                 }
             } else {
-                let mut body = vec![0u8; content_len];
+                body = vec![0u8; content_len];
                 reader.read_exact(&mut body).ok();
             }
-            let reply = r#"{"data":{"call_control_id":"stub-leg-1","call_leg_id":"stub-leg-1","call_session_id":"stub-sess-1"}}"#;
+            let path = request_line.split(' ').nth(1).unwrap_or("");
+            let reply = if path == "/v2/telephony_credentials" {
+                r#"{"data":{"id":"tc-new","sip_username":"gencrednew","sip_password":"pw-stub"}}"#
+            } else if path.starts_with("/v2/telephony_credentials/") {
+                "stub.login.token"
+            } else {
+                r#"{"data":{"call_control_id":"stub-leg-1","call_leg_id":"stub-leg-1","call_session_id":"stub-sess-1"}}"#
+            };
             let text = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
                 reply.len()
             );
             stream.write_all(text.as_bytes()).ok();
+            format!("{request_line}\n{}", String::from_utf8_lossy(&body))
         }
     }
 
@@ -1725,6 +2112,7 @@ mod tests {
             base_url: stub.url.clone(),
             from_number: "+15550000000".to_string(),
             connection_id: "conn-test".to_string(),
+            webrtc_connection_id: "cred-conn-test".to_string(),
             ..voice::VoiceConfig::default()
         });
         fx.state.voice_api_key = Some(config::SecretText::from("test-key".to_string()));
@@ -2212,6 +2600,281 @@ mod tests {
         );
     }
 
+    /// Stub-backed fixture that also verifies webhooks (browser-audio
+    /// flow: webhooks in, Telnyx commands out).
+    fn browser_fixture(stub: &StubTelnyx) -> Fixture {
+        let mut fx = fixture(voice::VoiceConfig {
+            base_url: stub.url.clone(),
+            from_number: "+15550000000".to_string(),
+            connection_id: "conn-test".to_string(),
+            webrtc_connection_id: "cred-conn-test".to_string(),
+            ..webhook_config()
+        });
+        fx.state.voice_api_key = Some(config::SecretText::from("test-key".to_string()));
+        fx
+    }
+
+    /// A browser-audio call waiting on its browser leg `web-9`.
+    fn seed_browser_call(fx: &Fixture, office: &str) {
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        voice::store::insert_call(
+            &conn,
+            &voice::store::NewCall {
+                id: "c-b",
+                call_control_id: voice::store::PENDING_OFFICE_LEG,
+                call_leg_id: "",
+                call_session_id: "",
+                to_hash: &sha256_hex(office.as_bytes()),
+                authority: None,
+                questions_json: "[]",
+                script_id: "inline",
+                created_by: "staff-1",
+                now: 1,
+            },
+        )
+        .unwrap();
+        voice::store::set_browser_leg(&conn, "c-b", "web-9").unwrap();
+    }
+
+    async fn send_webhook(fx: &Fixture, id: &str, event: &str, payload: serde_json::Value) {
+        let body = event_body(id, event, payload);
+        let res = webhook_router(fx.state.clone())
+            .oneshot(webhook_request(
+                &test_signing_key(),
+                &unix_now().to_string(),
+                &body,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "{event}");
+    }
+
+    /// Poll the call row until `done` holds (spawned commands finish
+    /// after the webhook acked).
+    async fn wait_for_call(
+        fx: &Fixture,
+        done: impl Fn(&voice::VoiceCall) -> bool,
+    ) -> voice::VoiceCall {
+        for _ in 0..500 {
+            let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+            let call = voice::store::get_call(&conn, "c-b").unwrap().unwrap();
+            if done(&call) {
+                return call;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("call never reached the expected state");
+    }
+
+    fn b64(text: &str) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(text.as_bytes())
+    }
+
+    #[tokio::test]
+    async fn browser_answer_dials_office_then_bridge_and_hangups_follow() {
+        let stub = StubTelnyx::start();
+        let fx = browser_fixture(&stub);
+        seed_browser_call(&fx, "+15550001111");
+
+        // Browser answered: the office is dialed with the number from
+        // client_state, and its leg replaces the placeholder.
+        send_webhook(
+            &fx,
+            "wh-b1",
+            "call.answered",
+            json!({"call_control_id": "web-9", "client_state": b64("+15550001111")}),
+        )
+        .await;
+        let call = wait_for_call(&fx, |c| c.call_control_id == "stub-leg-1").await;
+        assert_eq!(call.status, "queued", "browser events move no status");
+        let seen = stub.seen_at_least(1).await;
+        assert!(seen[0].starts_with("POST /v2/calls "), "{seen:?}");
+        let dial = StubTelnyx::body_of(&seen[0]);
+        assert_eq!(dial["to"], "+15550001111");
+        assert_eq!(dial["connection_id"], "conn-test");
+
+        // Office answered: in progress, recording starts on the office
+        // leg and the browser leg is bridged to it.
+        send_webhook(
+            &fx,
+            "wh-o1",
+            "call.answered",
+            json!({"call_control_id": "stub-leg-1"}),
+        )
+        .await;
+        wait_for_call(&fx, |c| c.status == "in_progress").await;
+        let seen = stub.seen_at_least(3).await;
+        let bridge = seen
+            .iter()
+            .find(|r| r.starts_with("POST /v2/calls/web-9/actions/bridge "))
+            .unwrap_or_else(|| panic!("no bridge in {seen:?}"));
+        assert_eq!(StubTelnyx::body_of(bridge)["call_control_id"], "stub-leg-1");
+        assert!(
+            seen.iter()
+                .any(|r| r.starts_with("POST /v2/calls/stub-leg-1/actions/record_start ")),
+            "{seen:?}"
+        );
+
+        // Office hung up: the call completes and the browser leg is
+        // hung up too.
+        send_webhook(
+            &fx,
+            "wh-o2",
+            "call.hangup",
+            json!({"call_control_id": "stub-leg-1", "hangup_cause": "normal_clearing"}),
+        )
+        .await;
+        wait_for_call(&fx, |c| c.status == "completed").await;
+        let seen = stub.seen_at_least(4).await;
+        assert!(
+            seen.iter()
+                .any(|r| r.starts_with("POST /v2/calls/web-9/actions/hangup ")),
+            "{seen:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn browser_answer_with_a_mismatched_number_never_dials_the_office() {
+        let stub = StubTelnyx::start();
+        let fx = browser_fixture(&stub);
+        seed_browser_call(&fx, "+15550001111");
+        send_webhook(
+            &fx,
+            "wh-b1",
+            "call.answered",
+            json!({"call_control_id": "web-9", "client_state": b64("+15559999999")}),
+        )
+        .await;
+        let call = wait_for_call(&fx, |c| c.status == "failed").await;
+        assert_eq!(call.call_control_id, voice::store::PENDING_OFFICE_LEG);
+        let seen = stub.seen_at_least(1).await;
+        assert!(
+            seen.iter().all(|r| !r.starts_with("POST /v2/calls ")),
+            "{seen:?}"
+        );
+        assert!(
+            seen.iter()
+                .any(|r| r.starts_with("POST /v2/calls/web-9/actions/hangup ")),
+            "{seen:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn browser_hangup_before_the_office_fails_the_call() {
+        let stub = StubTelnyx::start();
+        let fx = browser_fixture(&stub);
+        seed_browser_call(&fx, "+15550001111");
+        send_webhook(
+            &fx,
+            "wh-b1",
+            "call.hangup",
+            json!({"call_control_id": "web-9", "hangup_cause": "call_rejected"}),
+        )
+        .await;
+        let call = wait_for_call(&fx, |c| c.status == "failed").await;
+        assert!(
+            call.status_detail
+                .as_deref()
+                .is_some_and(|d| d.contains("before the office was dialed")),
+            "{:?}",
+            call.status_detail
+        );
+        assert_eq!(stub.hits(), 0, "nothing to dial or hang up");
+    }
+
+    #[tokio::test]
+    async fn dial_needs_browser_audio_and_a_connected_phone() {
+        let stub = StubTelnyx::start();
+        let mut fx = configured_fixture(&stub);
+        fx.state.voice_cfg.webrtc_connection_id = String::new();
+        let dial = || {
+            staff_request(
+                "POST",
+                "/apostille/api/v1/calls/dial",
+                true,
+                true,
+                Some(
+                    json!({"to": "+15550001111", "questions": ["Fee?"], "consent_confirmed": true}),
+                ),
+            )
+        };
+        let res = staff_router(fx.state.clone())
+            .oneshot(dial())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        fx.state.voice_cfg.webrtc_connection_id = "cred-conn-test".to_string();
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        voice::store::delete_staff_phone(&conn, "staff-1").unwrap();
+        let res = staff_router(fx.state.clone())
+            .oneshot(dial())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        assert_eq!(stub.hits(), 0);
+        assert_eq!(call_count(&fx), 0);
+    }
+
+    #[tokio::test]
+    async fn phone_token_creates_the_credential_once() {
+        let stub = StubTelnyx::start();
+        let fx = configured_fixture(&stub);
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        voice::store::delete_staff_phone(&conn, "staff-1").unwrap();
+        let token = || {
+            staff_request(
+                "POST",
+                "/apostille/api/v1/calls/phone/token",
+                true,
+                true,
+                None,
+            )
+        };
+
+        let res = staff_router(fx.state.clone())
+            .oneshot(token())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()["cache-control"], "no-store");
+        assert_eq!(
+            json_body(res).await,
+            json!({"login_token": "stub.login.token"})
+        );
+        let seen = stub.seen_at_least(2).await;
+        assert!(
+            seen[0].starts_with("POST /v2/telephony_credentials "),
+            "{seen:?}"
+        );
+        let created = StubTelnyx::body_of(&seen[0]);
+        assert_eq!(created["name"], "apostille-staff-staff-1");
+        assert_eq!(created["connection_id"], "cred-conn-test");
+        assert!(
+            seen[1].starts_with("POST /v2/telephony_credentials/tc-new/token "),
+            "{seen:?}"
+        );
+        assert_eq!(
+            voice::store::get_staff_phone(&conn, "staff-1").unwrap(),
+            Some(("tc-new".to_string(), "gencrednew".to_string()))
+        );
+        assert_eq!(audit_count(&fx, "voice_phone_credential"), 1);
+
+        // Second token: the stored credential is reused.
+        let res = staff_router(fx.state.clone())
+            .oneshot(token())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let seen = stub.seen_at_least(3).await;
+        assert_eq!(seen.len(), 3, "{seen:?}");
+        assert!(
+            seen[2].starts_with("POST /v2/telephony_credentials/tc-new/token "),
+            "{seen:?}"
+        );
+    }
+
     #[tokio::test]
     async fn webhook_publishes_call_events_with_topic() {
         let fx = fixture(webhook_config());
@@ -2439,6 +3102,7 @@ mod tests {
             base_url: base_url.to_string(),
             from_number: "+13605550000".to_string(),
             connection_id: "conn-1".to_string(),
+            webrtc_connection_id: "cred-conn-1".to_string(),
             ..webhook_config()
         }
     }
@@ -2596,15 +3260,18 @@ mod tests {
         let store = Store::new(&fx.state.store_root);
         let conn = db::open(&store).unwrap();
         let call_id = dialed["call_id"].as_str().unwrap();
-        let (status, leg): (String, String) = conn
+        let (status, office, browser): (String, String, String) = conn
             .query_row(
-                "SELECT status, call_control_id FROM voice_call WHERE id = ?1",
+                "SELECT status, call_control_id, browser_leg FROM voice_call WHERE id = ?1",
                 [call_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
+        // The one Telnyx dial rang staff-1's browser; the office is
+        // dialed only when the browser answers.
         assert_eq!(status, "queued");
-        assert_eq!(leg, "leg-7");
+        assert_eq!(browser, "leg-7");
+        assert_eq!(office, voice::store::PENDING_OFFICE_LEG);
         let reason: String = conn
             .query_row(
                 "SELECT reason FROM audit WHERE action = 'voice_dial' AND after_ref = ?1",

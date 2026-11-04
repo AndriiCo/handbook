@@ -12,6 +12,7 @@
 		quoteToDraft,
 		recordCall
 	} from '../../../../lib/admin/calls-client.js';
+	import { browserPhone } from '../../../../lib/admin/browser-phone.svelte.js';
 
 	// Live call view (voice-telnyx.md §5): status, questions-to-ask
 	// panel, transcript. Polls the detail endpoint every 2 s while
@@ -39,6 +40,7 @@
 		transcript_status: string;
 		recording_status: string;
 		ended_at: number | null;
+		audio: 'none' | 'browser' | 'office';
 	}
 
 	let detail = $state<Detail | null>(null);
@@ -47,6 +49,29 @@
 	let actionError = $state<string | null>(null);
 	let acting = $state(false);
 	let timer: ReturnType<typeof setInterval> | null = null;
+
+	// Browser audio: this tab carries the staff side of the call.
+	const onThisTab = $derived(browserPhone.callId === id);
+	const audioNote = $derived.by(() => {
+		if (!detail || detail.audio === 'none' || !isLive(detail.status)) return null;
+		if (!onThisTab) {
+			return detail.audio === 'browser' && browserPhone.phase !== 'in_call'
+				? 'Ringing your browser phone…'
+				: 'This tab is not on the call audio (was the page reloaded?). Hang up and dial again to talk.';
+		}
+		if (detail.audio === 'browser') return 'Browser phone connected. Dialing the office…';
+		return detail.status === 'in_progress'
+			? 'You are on the call: talk through this tab.'
+			: 'Ringing the office. You will hear it answer.';
+	});
+
+	async function hangUp() {
+		try {
+			await hangupCall(api(), id);
+		} finally {
+			if (onThisTab) browserPhone.hangup();
+		}
+	}
 
 	// Quote-to-draft selection + form (voice-telnyx.md §7). Selection is
 	// keyed by stable segment seq, so the 2 s poll does not clear it.
@@ -137,6 +162,17 @@
 	<p class="font-bold text-error" role="alert">{loadError}</p>
 {:else if detail}
 	<h1>Call — {detail.status}</h1>
+
+	{#if audioNote}
+		<p class="flex flex-wrap items-center gap-2" role="status">
+			<span>{audioNote}</span>
+			{#if onThisTab && browserPhone.phase === 'in_call'}
+				<button class="min-h-11" type="button" aria-pressed={browserPhone.muted} onclick={() => browserPhone.toggleMute()}>
+					{browserPhone.muted ? 'Unmute' : 'Mute'}
+				</button>
+			{/if}
+		</p>
+	{/if}
 
 	{#if detail.status_detail}
 		<Notice variant="info" heading="Note."><p>{detail.status_detail}</p></Notice>
@@ -250,7 +286,7 @@
 						class="min-h-11"
 						type="button"
 						disabled={acting}
-						onclick={() => act('Hangup', () => hangupCall(api(), id))}
+						onclick={() => act('Hangup', hangUp)}
 					>
 						Hang up
 					</button>
