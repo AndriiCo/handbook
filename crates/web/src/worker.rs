@@ -88,6 +88,14 @@ pub(crate) const KINDS: &[KindInfo] = &[
         max_runtime_secs: 8 * 3600,
     },
     KindInfo {
+        kind: "discovery.bootstrap",
+        about: "From-scratch discovery report: countries from the live HCCH table \
+                (parties, future parties with entry-into-force dates, non-parties), \
+                a Muse cross-check of that list, and fetch-checked official URLs \
+                for the listed countries' authorities. Writes nothing.",
+        example: r#"{"countries": ["DE"], "batch_size": 15}"#,
+    },
+    KindInfo {
         kind: "scrape.urls",
         about: "Fetch public URLs with the repo fetch code; the result holds the raw bytes.",
         example: concat!(
