@@ -20,6 +20,10 @@
 //!   leg already bought and refunds the order in full. Anything that
 //!   might have bought (timeout, 5xx, an unreadable answer) is
 //!   `unknown`: the order goes to staff and is never retried here.
+//! - W-3 `labels.mode = fake`: [`connect`] hands out the demo carrier
+//!   (`labels::demo`: DEMO-stamped PDFs, `DEMO…` tracking numbers, no
+//!   network) and the switch reads on; a live-mode (real money) order
+//!   never gets a demo label.
 
 use std::sync::LazyLock;
 
@@ -104,19 +108,26 @@ pub fn parse_caps(live: Option<bool>, daily_cap: Option<&str>, max_usd: Option<&
 }
 
 pub fn caps(state: &AppState, meta: &Connection) -> Caps {
-    let Some(kek) = state.kek.as_deref() else {
-        return Caps::default();
+    let mut caps = match state.kek.as_deref() {
+        None => Caps::default(),
+        Some(kek) => {
+            let cache = &state.config_cache;
+            let text = |key| cache.text(meta, kek, key).ok().flatten();
+            parse_caps(
+                cache
+                    .bool(meta, kek, config::keys::LABELS_CUSTOMER_LIVE)
+                    .ok()
+                    .flatten(),
+                text(config::keys::LABELS_CUSTOMER_DAILY_CAP).as_deref(),
+                text(config::keys::LABELS_CUSTOMER_MAX_USD).as_deref(),
+            )
+        }
     };
-    let cache = &state.config_cache;
-    let text = |key| cache.text(meta, kek, key).ok().flatten();
-    parse_caps(
-        cache
-            .bool(meta, kek, config::keys::LABELS_CUSTOMER_LIVE)
-            .ok()
-            .flatten(),
-        text(config::keys::LABELS_CUSTOMER_DAILY_CAP).as_deref(),
-        text(config::keys::LABELS_CUSTOMER_MAX_USD).as_deref(),
-    )
+    // W-3: the demo carrier moves no money, so it is always on.
+    if state.fakes.is_fake(config::Integration::Labels) {
+        caps.live = true;
+    }
+    caps
 }
 
 /// `orders.fee_label_cents`: service fee per paid label order (default
@@ -191,6 +202,10 @@ pub fn fedex_mode_ok(base: &str, stripe_live: bool) -> bool {
 /// True when the customer tier `kind` can be quoted and bought now:
 /// switch on, carrier credentials present and the mode coherent.
 pub fn ready(state: &AppState, meta: &Connection, kind: &str, stripe_live: bool) -> bool {
+    if state.fakes.is_fake(config::Integration::Labels) {
+        // Demo labels are never sold for live money.
+        return !stripe_live && matches!(kind, "label_fedex" | "label_usps");
+    }
     if !caps(state, meta).live {
         return false;
     }
@@ -338,13 +353,16 @@ impl<T: HttpTransport> LabelLink for FedexLink<T> {
 /// The production link for `kind`, with a fresh bearer (blocking).
 /// `reserve`: label buys this call must still fit under the live USPS
 /// cap (2 at quote time; 0 for the buyer, which checks per leg).
-fn connect(
+pub(crate) fn connect(
     state: &AppState,
     meta: &Connection,
     kind: &str,
     stripe_live: bool,
     reserve: i64,
 ) -> Result<Box<dyn LabelLink>, String> {
+    if state.fakes.is_fake(config::Integration::Labels) {
+        return demo_link(kind, stripe_live);
+    }
     match kind {
         "label_fedex" => {
             let creds = fedex_creds(state, meta).ok_or("fedex credentials are not set")?;
@@ -362,6 +380,31 @@ fn connect(
             }))
         }
         "label_usps" => crate::usps::customer_link(state, meta, stripe_live, reserve),
+        _ => Err("not a carrier label order".to_string()),
+    }
+}
+
+/// The W-3 demo carrier for `kind` (no credentials, no network).
+fn demo_link(kind: &str, stripe_live: bool) -> Result<Box<dyn LabelLink>, String> {
+    use labels::demo::{DEMO_BASE, DemoTransport};
+    if stripe_live {
+        return Err("demo labels are never sold for live money".to_string());
+    }
+    match kind {
+        "label_fedex" => Ok(Box::new(FedexLink {
+            base: DEMO_BASE.to_string(),
+            bearer: "demo".to_string(),
+            account: "DEMO".to_string(),
+            transport: DemoTransport,
+        })),
+        "label_usps" => Ok(Box::new(crate::usps::UspsLink {
+            base: DEMO_BASE.to_string(),
+            bearer: "demo".to_string(),
+            payment: "DEMO".to_string(),
+            epa: "DEMO".to_string(),
+            live_max: None,
+            transport: DemoTransport,
+        })),
         _ => Err("not a carrier label order".to_string()),
     }
 }

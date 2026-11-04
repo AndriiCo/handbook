@@ -89,6 +89,10 @@ fn tick(state: &AppState) {
     let fedex: std::cell::OnceCell<Option<(String, String)>> = std::cell::OnceCell::new();
     let transport = UreqTransport::new();
     let fetch = |carrier: &str, tracking_no: &str| -> Result<Fetched, String> {
+        // W-3: a demo label's number is no carrier's; never ask one.
+        if labels::demo::is_demo_tracking(tracking_no) {
+            return Err("demo label: no carrier tracks it".to_string());
+        }
         match carrier {
             "usps" => {
                 let (base, bearer) = usps

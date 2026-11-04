@@ -329,3 +329,28 @@ differs only in who clicks buy.
 8. Who holds carrier accounts and pays postage (OQ-3 passthrough):
    customer-prepaid at checkout vs absorbed — blocks both (A) and
    (B) checkout copy.
+
+## 6. Fake carrier (W-3, `labels.mode = fake`)
+
+Loopback and staging boots only (`docs/specs/config-db.md` §9). Today
+`labels.live = false` means the carriers' sandbox; that stays the
+`sandbox` mode. `fake` swaps the network for `labels::demo::DemoTransport`,
+an `HttpTransport` that answers the FedEx Rate/Ship/cancel and USPS
+Prices/Labels/cancel calls in their documented shapes, so every buy
+path runs its real code — caps, the idempotency ledger, audit rows,
+blob storage, the customer's cabinet:
+
+- staff `/labels` (`fedex_live`): no credentials or account needed,
+  generous demo caps (50 a day), the requested ZIP allowed;
+- customer label orders (`customer_labels`): the switch reads on and
+  the demo link is used — but only for test-mode orders: a live-mode
+  (real money) order is never quoted or bought a demo label;
+- P2 prepaid USPS (`p2_labels`): no sandbox or certification gate;
+  a demo label voids locally.
+
+Every label is a 4x6 PDF stamped **"DEMO — NOT POSTAGE"** (plus a
+diagonal watermark and "No postage. Do not mail.") with a tracking
+number from the reserved fake range `DEMO` + 12 digits, which no
+carrier issues; `labels::demo::is_demo_tracking` keeps the tracking
+poller from ever sending one to a carrier. Quotes are flat demo
+prices (FedEx $12.50, USPS $9.85); postage is zero.

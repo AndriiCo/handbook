@@ -3043,6 +3043,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fake_labels_buy_a_paid_test_order_with_demo_pdfs_and_never_for_live_money() {
+        // W-3 `labels.mode = fake`: no `labels.customer_live`, no FedEx
+        // credentials — the real buyer and ledger run against the demo
+        // carrier, and the customer's cabinet serves a stamped PDF.
+        let mut fx = fixture();
+        fx.state.fakes =
+            config::Modes::default().with(config::Integration::Labels, config::Mode::Fake);
+        let meta = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        assert!(customer_labels::ready(
+            &fx.state,
+            &meta,
+            "label_fedex",
+            false
+        ));
+        assert!(customer_labels::ready(
+            &fx.state,
+            &meta,
+            "label_usps",
+            false
+        ));
+        assert!(
+            !customer_labels::ready(&fx.state, &meta, "label_fedex", true),
+            "demo labels are never sold for live money"
+        );
+        drop(meta);
+        let id = paid_label_order(&fx);
+        let demo = |state: &AppState, meta: &rusqlite::Connection, kind: &str, live: bool| {
+            customer_labels::connect(state, meta, kind, live, 0)
+        };
+        assert_eq!(
+            customer_labels::buy_order(&fx.state, &id, &demo),
+            customer_labels::BuyEnd::Ready
+        );
+        assert_eq!(order_status(&fx, &id), "labels_ready");
+        let p2 = db::open_p2(&Store::new(&fx.state.store_root)).unwrap();
+        let numbers: Vec<String> = p2
+            .prepare("SELECT tracking_number FROM order_shipment WHERE order_id = ?1")
+            .unwrap()
+            .query_map([&id], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        drop(p2);
+        assert_eq!(numbers.len(), 2);
+        assert!(
+            numbers.iter().all(|n| labels::demo::is_demo_tracking(n)),
+            "{numbers:?}"
+        );
+        make_session(&fx.state.store_root, "cust-1", auth::Role::Customer);
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/apostille/api/v1/p2/orders/{id}/labels/outbound"))
+                    .header("cookie", format!("{}=cust-1", auth::PUB_COOKIE))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let pdf = body_text(res).await;
+        assert!(pdf.starts_with("%PDF-"));
+        assert!(pdf.contains("(DEMO \\227 NOT POSTAGE)"), "stamped");
+        assert!(pdf.contains("98501"), "addressed to the office");
+        // A real-money order never reaches the demo carrier.
+        assert!(
+            customer_labels::connect(
+                &fx.state,
+                &db::open(&Store::new(&fx.state.store_root)).unwrap(),
+                "label_fedex",
+                true,
+                0
+            )
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn customer_labels_buy_each_leg_once_and_fail_safe() {
         let fx = fixture();
         seal(

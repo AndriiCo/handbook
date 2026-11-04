@@ -8,6 +8,12 @@
 //! only when `labels.live` is on and the caps/allowlist/credentials
 //! rows are set — otherwise 503, fail closed.
 //!
+//! W-3 `labels.mode = fake`: [`Carrier`] swaps FedEx for the demo
+//! carrier (`labels::demo`): no credentials, no OAuth, no network, the
+//! requested ZIP allowed, generous caps. The ledger, idempotency, audit
+//! and label storage below run unchanged; every label is a PDF stamped
+//! "DEMO — NOT POSTAGE" with a `DEMO…` tracking number.
+//!
 //! The label PDF FedEx returns is written to the content-addressed
 //! blob store and indexed in `fedex_live_label` in the same
 //! transaction as the ledger row, so staff can download it again
@@ -22,7 +28,8 @@ use axum::{
 };
 use handbook_store::{db, store::Store};
 use labels::{
-    BuyRequest, Direction, ShipmentPayload, UreqTransport,
+    BuyRequest, Direction, HttpTransport, ShipmentPayload, UreqTransport,
+    demo::{DEMO_BASE, DemoTransport},
     live::{
         AuditRow, BuyParams, Leg, LiveError, LiveShipment, MemLedger, StoredLabel, VoidParams,
         idempotency_key, oauth_token_pairs, oauth_token_url, parse_token_response,
@@ -35,6 +42,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     AppState,
     admin::{AdminAuth, admin_host_guard, csrf_guard, require_admin_ip},
+    customer_labels::By,
     unix_now,
 };
 
@@ -68,6 +76,64 @@ impl FedexLiveState {
         match (&self.client_id, &self.client_secret) {
             (Some(id), Some(secret)) => Some((id.clone(), secret.clone())),
             _ => None,
+        }
+    }
+}
+
+/// Demo-carrier caps: enough for a judge's afternoon, never money.
+const DEMO_DAILY_CAP: u32 = 50;
+const DEMO_MAX_USD_CENTS: i64 = 100_000;
+
+/// The carrier one staff call talks to: FedEx (credentials + OAuth) or,
+/// under W-3 `labels.mode = fake`, the demo carrier.
+struct Carrier {
+    base: &'static str,
+    account: String,
+    /// FedEx OAuth pair; `None` is the demo carrier.
+    creds: Option<(config::SecretText, config::SecretText)>,
+    cfg: labels::live::LiveConfig,
+}
+
+impl Carrier {
+    /// `None` while live FedEx is not configured (and not fake).
+    /// `ship_to` is the destination ZIP the demo carrier allows.
+    fn for_call(state: &AppState, ship_to: Option<&str>) -> Option<Self> {
+        if state.fakes.is_fake(config::Integration::Labels) {
+            return Some(Carrier {
+                base: DEMO_BASE,
+                account: "DEMO".to_string(),
+                creds: None,
+                cfg: labels::live::LiveConfig {
+                    enabled: true,
+                    daily_cap: DEMO_DAILY_CAP,
+                    max_usd_cents: DEMO_MAX_USD_CENTS,
+                    ship_to_allow: ship_to
+                        .map(|z| vec![z.trim().to_string()])
+                        .unwrap_or_default(),
+                },
+            });
+        }
+        let live = &state.fedex_live;
+        let account = live.account.clone().unwrap_or_default();
+        if account.trim().is_empty() {
+            return None;
+        }
+        Some(Carrier {
+            base: fedex_base(state),
+            account,
+            creds: Some(live.bearer_pair()?),
+            cfg: live.live_config(),
+        })
+    }
+
+    /// A bearer and the transport to use it on (blocking: FedEx OAuth).
+    fn connect(&self) -> Result<(String, Box<dyn HttpTransport + Send>), LiveError> {
+        match &self.creds {
+            None => Ok(("demo".to_string(), Box::new(DemoTransport))),
+            Some((id, secret)) => Ok((
+                fetch_bearer(self.base, id.as_str(), secret.as_str())?,
+                Box::new(UreqTransport::default()),
+            )),
         }
     }
 }
@@ -148,6 +214,8 @@ struct Caps {
     daily_cap: u32,
     bought_today: u32,
     max_usd: f64,
+    /// W-3: the demo carrier answers (`labels.mode = fake`).
+    demo: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -346,11 +414,18 @@ async fn get_caps(State(state): State<AppState>, _auth: AdminAuth) -> impl IntoR
             .unwrap_or(0),
         None => 0,
     };
+    let demo = state.fakes.is_fake(config::Integration::Labels);
+    let (enabled, daily_cap, max_cents) = if demo {
+        (true, DEMO_DAILY_CAP, DEMO_MAX_USD_CENTS)
+    } else {
+        (live.enabled, live.daily_cap, live.max_usd_cents)
+    };
     Json(Caps {
-        enabled: live.enabled,
-        daily_cap: live.daily_cap,
+        enabled,
+        daily_cap,
         bought_today,
-        max_usd: live.max_usd_cents as f64 / 100.0,
+        max_usd: max_cents as f64 / 100.0,
+        demo,
     })
     .into_response()
 }
@@ -449,12 +524,9 @@ async fn post_quote(
     if let Err(message) = validate_payload(&body.payload) {
         return err(StatusCode::UNPROCESSABLE_ENTITY, message);
     }
-    let live = state.fedex_live.clone();
     // Rate's `accountNumber.value` must be the shipper account: an
     // empty one is refused by FedEx (and was, before P393).
-    let account = live.account.clone().unwrap_or_default();
-    let Some((cred_id, cred_secret)) = live.bearer_pair().filter(|_| !account.trim().is_empty())
-    else {
+    let Some(carrier) = Carrier::for_call(&state, Some(&body.payload.to.postal)) else {
         return crate::tag_error(
             err(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -464,17 +536,15 @@ async fn post_quote(
         );
     };
     let payload = body.payload;
-    let cfg = live.live_config();
-    let base = fedex_base(&state);
     let out = tokio::task::spawn_blocking(move || {
-        let bearer = fetch_bearer(base, cred_id.as_str(), cred_secret.as_str())?;
-        let shipment = LiveShipment::new(base, UreqTransport::default());
+        let (bearer, transport) = carrier.connect()?;
+        let shipment = LiveShipment::new(carrier.base, By(transport.as_ref()));
         let request = BuyRequest {
             payload: &payload,
             direction: Direction::Outbound,
-            payment_ref: &account,
+            payment_ref: &carrier.account,
         };
-        shipment.quote(&cfg, &bearer, &request)
+        shipment.quote(&carrier.cfg, &bearer, &request)
     })
     .await;
     match out {
@@ -502,15 +572,7 @@ async fn post_purchase(
     if let Err(message) = require_phones(&body.payload) {
         return err(StatusCode::UNPROCESSABLE_ENTITY, message);
     }
-    let live = state.fedex_live.clone();
-    let account = live.account.clone().unwrap_or_default();
-    if account.trim().is_empty() {
-        return err(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "live fedex buys are not configured",
-        );
-    }
-    let Some((cred_id, cred_secret)) = live.bearer_pair() else {
+    let Some(carrier) = Carrier::for_call(&state, Some(&body.payload.to.postal)) else {
         return err(
             StatusCode::SERVICE_UNAVAILABLE,
             "live fedex buys are not configured",
@@ -532,18 +594,17 @@ async fn post_purchase(
     let leg_name = body.leg.trim().to_string();
     let payload = body.payload;
     let quoted_cents = body.quoted_cents;
-    let cfg = live.live_config();
     let order_id_owned = order_id.clone();
-    let base = fedex_base(&state);
     let out = tokio::task::spawn_blocking(move || {
-        let bearer = fetch_bearer(base, cred_id.as_str(), cred_secret.as_str())?;
-        let shipment = LiveShipment::new(base, UreqTransport::default());
+        let (bearer, transport) = carrier.connect()?;
+        let shipment = LiveShipment::new(carrier.base, By(transport.as_ref()));
+        let cfg = carrier.cfg;
         let key = idempotency_key(&order_id_owned, leg);
         let replayed = ledger.find(&key).is_some();
         let request = BuyRequest {
             payload: &payload,
             direction: leg.direction(),
-            payment_ref: &account,
+            payment_ref: &carrier.account,
         };
         let mut ledger = ledger;
         let bought = shipment.buy_pair(
@@ -664,11 +725,8 @@ async fn post_void(
     if body.order_id.trim().is_empty() {
         return err(StatusCode::UNPROCESSABLE_ENTITY, "order_id is required");
     }
-    let live = state.fedex_live.clone();
     // FedEx's cancel body names the shipper account.
-    let account = live.account.clone().unwrap_or_default();
-    let Some((cred_id, cred_secret)) = live.bearer_pair().filter(|_| !account.trim().is_empty())
-    else {
+    let Some(carrier) = Carrier::for_call(&state, None) else {
         return err(
             StatusCode::SERVICE_UNAVAILABLE,
             "live fedex buys are not configured",
@@ -687,21 +745,19 @@ async fn post_void(
     };
     let actor = auth.user.user_id.clone();
     let order_id = body.order_id.trim().to_string();
-    let cfg = live.live_config();
-    let base = fedex_base(&state);
     let out = tokio::task::spawn_blocking(move || {
-        let bearer = fetch_bearer(base, cred_id.as_str(), cred_secret.as_str())?;
-        let shipment = LiveShipment::new(base, UreqTransport::default());
+        let (bearer, transport) = carrier.connect()?;
+        let shipment = LiveShipment::new(carrier.base, By(transport.as_ref()));
         let mut ledger = ledger;
         shipment.void(
             VoidParams {
-                cfg: &cfg,
+                cfg: &carrier.cfg,
                 actor: &actor,
                 at: now,
                 order_id: &order_id,
                 leg,
                 bearer: &bearer,
-                account: &account,
+                account: &carrier.account,
             },
             &mut ledger,
         )?;
@@ -898,6 +954,83 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert!(v["error"].as_str().unwrap().contains("orders.ship_from"));
+    }
+
+    #[tokio::test]
+    async fn fake_labels_quote_buy_download_and_void_with_no_fedex() {
+        // W-3 `labels.mode = fake`: no credentials, no account, no
+        // network — the demo carrier answers through the real ledger.
+        let (_tmp, mut state) = state();
+        state.fakes =
+            config::Modes::default().with(config::Integration::Labels, config::Mode::Fake);
+        let mut with_phone = payload();
+        for side in ["from", "to"] {
+            with_phone[side]["phone"] = serde_json::json!("+1 360 555 0100");
+        }
+        let call = |method: &str, uri: &str, body: Option<serde_json::Value>| {
+            router(state.clone()).oneshot(request(method, uri, body))
+        };
+        let (status, v) = json(
+            call("GET", "/apostille/api/v1/fedex-live/caps", None)
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            (v["enabled"].clone(), v["demo"].clone()),
+            (serde_json::json!(true), serde_json::json!(true))
+        );
+        let (status, v) = json(
+            call(
+                "POST",
+                "/apostille/api/v1/fedex-live/quote",
+                Some(serde_json::json!({ "payload": with_phone })),
+            )
+            .await
+            .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        assert_eq!(v["quoted_cents"], labels::demo::DEMO_FEDEX_CENTS);
+        let (status, v) = json(
+            call(
+                "POST",
+                "/apostille/api/v1/fedex-live/purchase",
+                Some(serde_json::json!({
+                    "order_id": "o-demo",
+                    "leg": "outbound",
+                    "payload": with_phone,
+                    "quoted_cents": 1250,
+                })),
+            )
+            .await
+            .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        let tracking = v["tracking_no"].as_str().unwrap();
+        assert!(labels::demo::is_demo_tracking(tracking), "{tracking}");
+        let url = v["label_url"].as_str().unwrap().to_string();
+        let res = call("GET", &url, None).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let pdf = axum::body::to_bytes(res.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        assert!(pdf.starts_with(b"%PDF-"));
+        assert!(String::from_utf8_lossy(&pdf).contains("(DEMO \\227 NOT POSTAGE)"));
+        let (status, v) = json(
+            call(
+                "POST",
+                "/apostille/api/v1/fedex-live/void",
+                Some(serde_json::json!({ "order_id": "o-demo", "leg": "outbound" })),
+            )
+            .await
+            .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        assert_eq!(v["voided"], true);
     }
 
     #[tokio::test]
