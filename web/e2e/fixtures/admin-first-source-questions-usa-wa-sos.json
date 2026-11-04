@@ -13,8 +13,8 @@
    ]
   },
   {
-   "topic": "contacts",
-   "question": "Verify usa-wa-sos observation (po_box): SYNTHETIC FIXTURE: the request form names a PO box for mail-in requests.",
+   "topic": "po_box",
+   "question": "Is there a PO box for mail-in requests, and do couriers need a street address instead?",
    "reason": "open_task",
    "why": "A staff task is open for this office.",
    "priority": "high",

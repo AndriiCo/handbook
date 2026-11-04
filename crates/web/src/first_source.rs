@@ -222,6 +222,52 @@ fn spoken(statement: &str) -> &str {
     trimmed
 }
 
+/// An open staff task as a question an office can answer, with its
+/// topic. Task titles are written for staff (`Verify usa-wa-sos
+/// observation (fees)`, `fetch failed: <url>`), so each known shape is
+/// reworded; a pack observation's own text is a research note, so its
+/// topic's plain question is asked instead. Call, email and visit
+/// tasks are written by staff and kept as they are. Any other
+/// machine-made title stays off the list.
+fn task_question(kind: &str, title: &str) -> Option<(&'static str, String)> {
+    let max = voice::scripts::MAX_QUESTION_CHARS;
+    if let Some(step) = title.strip_prefix("Chain step needs verification: ") {
+        return Some((
+            "legalization_chain",
+            clip(
+                &format!(
+                    "Our guide lists this step for documents sent to your office: \"{}\". Is that step correct, and is anything else needed before it?",
+                    step.trim()
+                ),
+                max,
+            ),
+        ));
+    }
+    if let Some(rest) = title.strip_prefix("Verify ")
+        && let Some((_, topic)) = rest.rsplit_once(" observation (")
+        && let Some(topic) = topic.strip_suffix(')')
+    {
+        let topic = ASKABLE_TOPICS.iter().find(|t| **t == topic)?;
+        return Some((topic, topic_question(topic).to_string()));
+    }
+    if let Some(url) = title.strip_prefix("fetch failed: ") {
+        return Some((
+            "website",
+            clip(
+                &format!(
+                    "Our guide links to your page at {}, but it no longer opens. Has it moved, and where is the current version?",
+                    url.trim()
+                ),
+                max,
+            ),
+        ));
+    }
+    match kind {
+        "call" | "email_check" | "visit" => Some(("contacts", clip(title, max))),
+        _ => None,
+    }
+}
+
 fn has_table(conn: &Connection, name: &str) -> bool {
     conn.query_row(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
@@ -320,29 +366,29 @@ pub fn open_questions(
         }
     }
 
-    // Open staff tasks from the system (pack observations, drafting
-    // follow-ups, call/email/visit tasks): title only. `correction`
-    // tasks carry a customer's own note, so they never become a
-    // question that is emailed, dialled or sent to a model.
+    // Open staff tasks (pack chain steps and observations, fetch
+    // failures, call/email/visit tasks), reworded for the office by
+    // [`task_question`]. `correction` tasks carry a customer's own
+    // note, so they never become a question that is emailed, dialled
+    // or sent to a model.
     let mut stmt = conn.prepare(
-        "SELECT title FROM task
+        "SELECT kind, title FROM task
          WHERE authority_id = ?1 AND status IN ('open', 'batched', 'in_progress')
            AND kind IN ('validate_fact', 'call', 'email_check', 'visit')
          ORDER BY priority DESC, id",
     )?;
-    let rows = stmt.query_map([authority_id], |r| r.get::<_, String>(0))?;
+    let rows = stmt.query_map([authority_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
     for row in rows {
-        let title = row?;
+        let (kind, title) = row?;
         let title = title.trim();
         if title.is_empty() || looks_personal(title) {
             continue;
         }
-        push(
-            "contacts",
-            clip(title, voice::scripts::MAX_QUESTION_CHARS),
-            Reason::OpenTask,
-            Vec::new(),
-        );
+        if let Some((topic, question)) = task_question(&kind, title) {
+            push(topic, question, Reason::OpenTask, Vec::new());
+        }
     }
 
     // Newest accepted capture per topic, for staleness.
@@ -397,8 +443,15 @@ pub fn open_questions(
         }
     }
 
-    // Stable: reason first, then the asking order above.
+    // Stable: reason first, then the asking order above. A question a
+    // task already asks (an observation on `fees`, say) is asked once.
     out.sort_by_key(|q| q.reason);
+    let mut seen: Vec<String> = Vec::new();
+    out.retain(|q| {
+        let fresh = !seen.contains(&q.question);
+        seen.push(q.question.clone());
+        fresh
+    });
     out.truncate(voice::scripts::MAX_QUESTIONS);
     Ok(out)
 }
@@ -444,7 +497,7 @@ const MAX_SUBJECT: usize = 140;
 const MAX_BODY: usize = 8_000;
 const SIGNATURE: &str = "Apostille Handbook research team\nhttps://andrii.ai/apostille";
 
-const DRAFT_PROMPT: &str = "You write the opening and closing of a short email from the research team of Apostille Handbook, a public guide to apostille procedures, to a government office that issues apostilles. The server inserts the numbered questions between your opening and closing, word for word; never restate, answer or add questions.\n\nRules:\n- Opening: greet the office by its name, say in one or two sentences that we keep a public guide to its apostille procedure accurate and would be grateful for a short reply to the questions below.\n- Closing: thank them, say a reply to this email is enough, no attachments needed.\n- Subject: under 90 characters, names the office and says it is a question about apostille procedures.\n- Plain text. Polite, brief, neutral. No digits, no URLs, no email addresses, no promises, no claims about the office, no customer or personal details, no signature (the server adds it).";
+const DRAFT_PROMPT: &str = "You write the opening and closing of a short email from the research team of Apostille Handbook, a public guide to apostille procedures, to a government office that issues apostilles. The server inserts the numbered questions between your opening and closing, word for word; never restate, answer or add questions.\n\nRules:\n- Opening: a greeting line on its own, \"Hello <office name> team,\", then a blank line, then one or two sentences written to the people who will read it, for example: \"We keep a public guide to apostilles from your office, and we want every step in it to match how you work today. Would you help us with a short reply to the questions below?\"\n- Closing: thank them for their time, and say a reply to this email is all we need and no attachments are necessary.\n- Subject: under 90 characters, names the office and says it is a question about apostille procedures.\n- Plain text. Polite, brief, neutral. No digits, no URLs, no email addresses, no promises, no claims about the office, no customer or personal details, no signature (the server adds it).";
 
 pub fn migrate_tables(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
@@ -1402,6 +1455,78 @@ mod tests {
             !qs.iter()
                 .any(|q| q.topic == "fees" && q.reason == Reason::Stale)
         );
+    }
+
+    #[test]
+    fn staff_tasks_become_questions_an_office_can_answer() {
+        let (_dir, conn, a, _c) = store();
+        for (n, (kind, title)) in [
+            (
+                "validate_fact",
+                "Chain step needs verification: Notarization on the document",
+            ),
+            ("validate_fact", "Verify synthetic-sos observation (fees)"),
+            ("validate_fact", "Verify synthetic-sos observation (po_box)"),
+            (
+                "validate_fact",
+                "Verify synthetic-sos observation (parking)",
+            ),
+            (
+                "validate_fact",
+                "fetch failed: https://sos.example.gov/files/Request.Form.pdf",
+            ),
+            ("validate_fact", "Some other machine note"),
+            ("call", "Ask whether the counter closes at noon on Fridays"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            conn.execute(
+                "INSERT INTO task(authority_id, kind, title, status, dedup_key, created_at)
+                 VALUES (?1, ?2, ?3, 'open', ?4, 0)",
+                rusqlite::params![a, kind, title, format!("k{n}")],
+            )
+            .unwrap();
+        }
+        let qs = open_questions(&conn, a, 1_800_000_000).unwrap();
+        let tasks: Vec<(&str, &str)> = qs
+            .iter()
+            .filter(|q| q.reason == Reason::OpenTask)
+            .map(|q| (q.topic.as_str(), q.question.as_str()))
+            .collect();
+        assert_eq!(
+            tasks,
+            [
+                (
+                    "legalization_chain",
+                    "Our guide lists this step for documents sent to your office: \"Notarization on the document\". Is that step correct, and is anything else needed before it?"
+                ),
+                ("fees", topic_question("fees")),
+                ("po_box", topic_question("po_box")),
+                (
+                    "website",
+                    "Our guide links to your page at https://sos.example.gov/files/Request.Form.pdf, but it no longer opens. Has it moved, and where is the current version?"
+                ),
+                (
+                    "contacts",
+                    "Ask whether the counter closes at noon on Fridays"
+                ),
+            ]
+        );
+        // No slugs or internal labels reach the office, and the topic
+        // question a task already asks is not asked a second time.
+        assert!(!qs.iter().any(|q| q.question.contains("synthetic-sos")
+            || q.question.contains("observation")
+            || q.question.starts_with("fetch failed")));
+        for topic in ["fees", "po_box"] {
+            assert_eq!(
+                qs.iter()
+                    .filter(|q| q.question == topic_question(topic))
+                    .count(),
+                1,
+                "{topic}"
+            );
+        }
     }
 
     #[test]
