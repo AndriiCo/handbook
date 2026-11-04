@@ -5,6 +5,8 @@
 // for today override its hours. Everywhere else the page shows the
 // office's rules as printed. Pure: no window/fetch.
 
+import { guideCopy } from './copy/index.js';
+
 /** @typedef {import('./contract.js').Item} Item */
 
 /**
@@ -385,11 +387,12 @@ export function upcomingClosures(items, now, timeZone = DEFAULT_ZONE) {
  * current one).
  * @param {string} date
  * @param {string|null} [today]
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function dayLabel(date, today = null) {
+export function dayLabel(date, today = null, lang = 'en') {
 	const [y, m, d] = date.split('-').map(Number);
 	const sameYear = today ? today.slice(0, 4) === date.slice(0, 4) : true;
-	return new Intl.DateTimeFormat('en-US', {
+	return new Intl.DateTimeFormat(guideCopy(lang).intl, {
 		weekday: 'short',
 		month: 'short',
 		day: 'numeric',
@@ -400,13 +403,15 @@ export function dayLabel(date, today = null) {
 
 /**
  * Minutes after midnight as the office prints times: "3:30 p.m.",
- * "noon".
+ * "noon"; in Spanish and French the 24-hour clock ("15:30").
  * @param {number} minutes
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function clockText(minutes) {
+export function clockText(minutes, lang = 'en') {
 	const h = Math.floor(minutes / 60) % 24;
 	const m = minutes % 60;
-	if (h === 12 && m === 0) return 'noon';
+	if (lang === 'es' || lang === 'fr') return `${h}:${pad(m)}`;
+	if (h === 12 && m === 0) return guideCopy(lang).offices.noon;
 	const hour = h % 12 === 0 ? 12 : h % 12;
 	return `${hour}:${pad(m)} ${h < 12 ? 'a.m.' : 'p.m.'}`;
 }
@@ -553,10 +558,12 @@ export function closureApplies(closure, own, others) {
  * shown elsewhere on the page) and `aliases` this office's other names
  * (its instance name), so a closure that names one office closes only
  * that one.
- * @param {{ office: OfficeRecord, closures?: readonly Item[], cutoff?: Item|null, now: Date, others?: readonly (OfficeRecord|string)[], aliases?: readonly string[] }} args
+ * `lang` is the page language (doc/copy) of the status line.
+ * @param {{ office: OfficeRecord, closures?: readonly Item[], cutoff?: Item|null, now: Date, others?: readonly (OfficeRecord|string)[], aliases?: readonly string[], lang?: string }} args
  * @returns {LiveStatus|null}
  */
-export function liveStatus({ office, closures = [], cutoff = null, now, others = [], aliases = [] }) {
+export function liveStatus({ office, closures = [], cutoff = null, now, others = [], aliases = [], lang = 'en' }) {
+	const t = guideCopy(lang).offices;
 	if (!confirmedZone(office) || (office.hours ?? []).length === 0) return null;
 	const zone = /** @type {string} */ (office.timezone);
 	const here = zonedNow(now, zone);
@@ -571,7 +578,7 @@ export function liveStatus({ office, closures = [], cutoff = null, now, others =
 	const cutoffAt = (close) => {
 		if (!rule) return null;
 		const at = 'before' in rule ? close - rule.before : Math.min(rule.at, close);
-		return at > 0 ? clockText(at) : null;
+		return at > 0 ? clockText(at, lang) : null;
 	};
 	/**
 	 * What this office's closures do to one day: closed, closing early,
@@ -604,7 +611,7 @@ export function liveStatus({ office, closures = [], cutoff = null, now, others =
 	const today = dayEffect(here.date, spans);
 	const todayClosure = today.used[0] ?? null;
 	if (today.state === 'closed') {
-		return { open: false, text: 'Closed today', cutoff: null, closure: todayClosure, inputs: today.used };
+		return { open: false, text: t.closedToday, cutoff: null, closure: todayClosure, inputs: today.used };
 	}
 	if (today.state === 'unclear') return null;
 	if (today.close !== null) {
@@ -616,7 +623,7 @@ export function liveStatus({ office, closures = [], cutoff = null, now, others =
 		if (here.minutes >= s.open && here.minutes < s.close) {
 			return {
 				open: true,
-				text: `Open now · closes ${clockText(s.close)}`,
+				text: t.openNow(clockText(s.close, lang)),
 				cutoff: cutoffAt(s.close),
 				closure: todayClosure,
 				inputs
@@ -627,7 +634,7 @@ export function liveStatus({ office, closures = [], cutoff = null, now, others =
 	if (later) {
 		return {
 			open: false,
-			text: `Closed now · opens today at ${clockText(later.open)}`,
+			text: t.opensToday(clockText(later.open, lang)),
 			cutoff: cutoffAt(later.close),
 			closure: todayClosure,
 			inputs
@@ -643,10 +650,10 @@ export function liveStatus({ office, closures = [], cutoff = null, now, others =
 		// An unclear closure ahead: say only that it is closed now.
 		if (effect.state === 'unclear') break;
 		if (effect.close !== null && effect.close <= first.open) continue;
-		const when = k === 1 ? 'tomorrow' : dayLabel(date, here.date);
-		return { open: false, text: `Closed now · opens ${when} at ${clockText(first.open)}`, cutoff: null, closure: todayClosure, inputs };
+		const when = k === 1 ? t.tomorrow : dayLabel(date, here.date, lang);
+		return { open: false, text: t.opensOn(when, clockText(first.open, lang)), cutoff: null, closure: todayClosure, inputs };
 	}
-	return { open: false, text: 'Closed now', cutoff: null, closure: todayClosure, inputs };
+	return { open: false, text: t.closedNow, cutoff: null, closure: todayClosure, inputs };
 }
 
 /**

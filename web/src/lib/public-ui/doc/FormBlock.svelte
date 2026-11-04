@@ -6,6 +6,7 @@
 	import SquarePenIcon from '@lucide/svelte/icons/square-pen';
 	import ValueRow from './ValueRow.svelte';
 	import { SLOT, bySlot, formLink } from './items.js';
+	import { guide } from './lang.svelte.js';
 	import type { Item, Section } from './contract.js';
 
 	// "Fill in the request form" (plan §3 step 3, D6): the section body.
@@ -34,6 +35,7 @@
 		marker
 	}: { section: Section; forms?: FormRow[] | null; slug: string; marker?: Snippet<[Item]> } = $props();
 
+	const t = $derived(guide.t);
 	const form = $derived(bySlot(section.items, SLOT.form));
 	// What to enclose first, then the rest as the section lists them.
 	const rest = $derived([
@@ -73,7 +75,7 @@
 						data-form-link="pdf"
 					>
 						<FileDownIcon class="size-5 flex-none print:hidden" aria-hidden="true" />
-						Download the official form (PDF)
+						{t.form.download}
 					</a>
 				{:else if url}
 					<a
@@ -83,9 +85,9 @@
 						class="inline-flex min-h-11 items-center gap-2 rounded-sm border border-line bg-bg px-5 font-medium text-ink no-underline transition-colors hover:border-focus"
 						data-form-link="page"
 					>
-						Get the form on the office's page
+						{t.form.getOnPage}
 						<ExternalLinkIcon class="size-4 flex-none" aria-hidden="true" />
-						<span class="sr-only">(opens in a new tab)</span>
+						<span class="sr-only">{t.common.newTab}</span>
 					</a>
 				{/if}
 				{#if fillable}
@@ -95,7 +97,7 @@
 						data-form-link="fill"
 					>
 						<SquarePenIcon class="size-5 flex-none text-accent-strong" aria-hidden="true" />
-						Fill it in online — free
+						{t.form.fill}
 					</a>
 				{/if}
 			</div>
@@ -103,9 +105,7 @@
 				<p class="m-0 hidden break-all font-mono text-sm text-ink print:block">{url}</p>
 			{/if}
 			{#if fillable}
-				<p class="m-0 max-w-prose text-sm text-ink-muted print:hidden">
-					We put your answers into the office's own form; you print, sign and mail it. Needs a free account.
-				</p>
+				<p class="m-0 max-w-prose text-sm text-ink-muted print:hidden">{t.form.fillNote}</p>
 			{/if}
 		</div>
 	{/if}

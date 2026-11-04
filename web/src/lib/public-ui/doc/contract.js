@@ -75,7 +75,8 @@
  *   route: 'mail'|'courier'|'counter'|null,
  *   instance: string|null,
  *   terms?: { text: string, itemId: string|null }[],
- *   contest?: { id: number, kind: string, date: string|null, summary: string }[]|null
+ *   contest?: { id: number, kind: string, date: string|null, summary: string }[]|null,
+ *   own?: boolean
  * }} Item
  * - id: stable, DOM-safe, unique per page, e.g. "fees-per_document" or
  *   "address-office-tumwater".
@@ -106,6 +107,9 @@
  *   each term with the item id of the input it reads ("3 × $15.00"
  *   reads the per-document fee), so the card and the endnote print
  *   "3 × $15.00 [1a] + … = $145.00".
+ * - own (optional): `display` is the page's own words in the page
+ *   language (a glance pointer to a disputed value), not a value from
+ *   the office's pages.
  */
 
 /**

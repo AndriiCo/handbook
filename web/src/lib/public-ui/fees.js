@@ -24,6 +24,8 @@
 // none, and the page numbers it after every other item, so a changing
 // count or speed never renumbers the office's sources.
 
+import { guideCopy } from './doc/copy/index.js';
+
 /** @typedef {import('./doc/contract.js').Item} Item */
 
 /**
@@ -100,7 +102,7 @@ export const ESTIMATE_ID = 'fees-estimate';
 export const ASK_ID = 'fees-estimate-ask';
 
 /** What every "ask" answer but a bad count adds after its reason. */
-export const ASK_OFFICE = 'Ask the office before you pay.';
+export const ASK_OFFICE = guideCopy('en').fees.askOffice;
 
 /** Evidence kinds whose quote is the office's own text. */
 const QUOTE_KINDS = new Set(['web', 'pdf', 'upload']);
@@ -453,42 +455,39 @@ export function estimate(model, n, speed) {
 	};
 }
 
-const USD = new Intl.NumberFormat('en-US', {
-	style: 'currency',
-	currency: 'USD',
-	minimumFractionDigits: 2,
-	maximumFractionDigits: 2
-});
+/** @type {Map<string, Intl.NumberFormat>} */
+const USD = new Map();
 
 /**
- * Cents as printed money: 14500 → "$145.00".
+ * Cents as printed money in the page language's `Intl` format: 14500 →
+ * "$145.00" (English), "145,00 US$" (Spanish), "145,00 $US" (French).
  * @param {number} cents
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function money(cents) {
-	return USD.format(cents / 100);
-}
-
-/**
- * "1–10 documents", "1 document".
- * @param {{ from: number, to: number }} range
- */
-function rangeText(range) {
-	if (range.from === range.to) return `${range.from} document${range.from === 1 ? '' : 's'}`;
-	return `${range.from}–${range.to} documents`;
+export function money(cents, lang = 'en') {
+	const intl = guideCopy(lang).intl;
+	let f = USD.get(intl);
+	if (!f) {
+		f = new Intl.NumberFormat(intl, { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+		USD.set(intl, f);
+	}
+	return f.format(cents / 100).replace(/[\u00a0\u202f]/g, ' ');
 }
 
 /**
  * The calculator's sentence: "Total to enclose: $145.00 = 3 × $15.00 +
  * $100.00 expedite fee (1–10 documents)". Every number is the model's.
  * @param {Estimate} result
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function estimateText(result) {
-	const lead = result.route === 'counter' ? 'Total at the counter' : 'Total to enclose';
+export function estimateText(result, lang = 'en') {
+	const t = guideCopy(lang).fees;
+	const lead = result.route === 'counter' ? t.totalCounter : t.totalEnclose;
 	const [first, extra] = result.lines;
-	let text = `${lead}: ${money(result.totalCents)} = ${first.count} × ${money(first.unitCents)}`;
+	let text = `${lead}: ${money(result.totalCents, lang)} = ${first.count} × ${money(first.unitCents, lang)}`;
 	if (extra) {
-		const label = extra.kind === 'same_day' ? 'same-day fee' : 'expedite fee';
-		text += ` + ${money(extra.cents)} ${label} (${rangeText(extra)})`;
+		const label = extra.kind === 'same_day' ? t.sameDayFee : t.expediteFee;
+		text += ` + ${money(extra.cents, lang)} ${label} (${t.range(extra.from, extra.to)})`;
 	}
 	return text;
 }
@@ -499,17 +498,19 @@ export function estimateText(result) {
  * $100.00 expedite fee (1–10 documents) [1b] = $145.00"; doc/contract.js
  * Item.terms). Every number is the model's.
  * @param {Estimate} result
+ * @param {string} [lang] the page language (doc/copy)
  * @returns {{ text: string, itemId: string|null }[]}
  */
-export function estimateTerms(result) {
+export function estimateTerms(result, lang = 'en') {
+	const t = guideCopy(lang).fees;
 	const [first, extra] = result.lines;
 	/** @type {{ text: string, itemId: string|null }[]} */
-	const terms = [{ text: `${first.count} × ${money(first.unitCents)}`, itemId: first.itemId }];
+	const terms = [{ text: `${first.count} × ${money(first.unitCents, lang)}`, itemId: first.itemId }];
 	if (extra) {
-		const label = extra.kind === 'same_day' ? 'same-day fee' : 'expedite fee';
-		terms.push({ text: `+ ${money(extra.cents)} ${label} (${rangeText(extra)})`, itemId: extra.itemId });
+		const label = extra.kind === 'same_day' ? t.sameDayFee : t.expediteFee;
+		terms.push({ text: `+ ${money(extra.cents, lang)} ${label} (${t.range(extra.from, extra.to)})`, itemId: extra.itemId });
 	}
-	terms.push({ text: `= ${money(result.totalCents)}`, itemId: null });
+	terms.push({ text: `= ${money(result.totalCents, lang)}`, itemId: null });
 	return terms;
 }
 
@@ -532,16 +533,17 @@ function worstStale(inputs) {
  * @param {FeeModel|null|undefined} model
  * @param {number} n
  * @param {Speed} speed
+ * @param {string} [lang] the page language (doc/copy)
  * @returns {Item|null}
  */
-export function estimateItem(model, n, speed) {
+export function estimateItem(model, n, speed, lang = 'en') {
 	const result = estimate(model, n, speed);
 	if (result.ask) return null;
 	return {
 		id: ESTIMATE_ID,
 		slot: null,
-		label: 'Your total',
-		display: estimateText(result),
+		label: guideCopy(lang).fees.yourTotal,
+		display: estimateText(result, lang),
 		kind: 'money',
 		factIds: [],
 		cites: result.inputs.flatMap((i) => i.cites ?? []),
@@ -552,32 +554,21 @@ export function estimateItem(model, n, speed) {
 		copy: false,
 		route: result.route,
 		instance: null,
-		terms: estimateTerms(result)
+		terms: estimateTerms(result, lang)
 	};
 }
 
 /**
  * Why the calculator cannot answer, in one plain sentence (the page
  * adds "ask the office" with its phone).
+ * `over-max` is the calculator's own limit, not a gap in the office's
+ * pages: the per-document fee has none.
  * @param {AskReason} reason
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function askText(reason) {
-	switch (reason) {
-		case 'conflict':
-			return "The office's pages list different amounts for this fee.";
-		case 'contested':
-			return 'The office told us something different from its pages.';
-		case 'over-max':
-			// The calculator's own limit, not a gap in the office's pages:
-			// the per-document fee has none.
-			return "This calculator doesn't work out totals for that many documents.";
-		case 'no-tier':
-			return "The office's pages don't give this fee for that many documents.";
-		case 'count':
-			return 'Enter how many documents you are sending.';
-		default:
-			return "The office's own pages don't give enough to work out this total.";
-	}
+export function askText(reason, lang = 'en') {
+	const ask = guideCopy(lang).fees.ask;
+	return reason in ask ? ask[/** @type {keyof typeof ask} */ (reason)] : ask.other;
 }
 
 /**
@@ -594,7 +585,9 @@ export function asksOffice(reason) {
  * The calculator row's sentence for an "ask" answer: the reason, then
  * "Ask the office before you pay." unless the count is the problem.
  * @param {AskReason} reason
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function askSentence(reason) {
-	return asksOffice(reason) ? `${askText(reason)} ${ASK_OFFICE}` : askText(reason);
+export function askSentence(reason, lang = 'en') {
+	const text = askText(reason, lang);
+	return asksOffice(reason) ? `${text} ${guideCopy(lang).fees.askOffice}` : text;
 }

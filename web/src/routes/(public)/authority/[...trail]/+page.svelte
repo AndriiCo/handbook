@@ -329,7 +329,8 @@
 		)
 	]);
 
-	// The guide: every value from the accepted facts (present.js).
+	// The guide: every value from the accepted facts (present.js), its own
+	// words in the site language (re-presented in place on a switch).
 	const view = $derived.by((): GuidePage | null => {
 		if (facts === null || !planSettled || !code) return null;
 		return code.present({
@@ -339,7 +340,8 @@
 			offices: officeSet,
 			forms,
 			evidence,
-			now: nowTick
+			now: nowTick,
+			lang: site.locale
 		});
 	});
 	const nowDate = $derived(new Date(nowTick));
@@ -389,15 +391,6 @@
 		<Skeleton class="h-24 w-full" />
 	</div>
 {:else}
-	{#if copy.pending}
-		<div class="mb-6 print:hidden">
-			<Notice variant="info" heading={copy.pending.heading}>
-				<p>{copy.pending.body}</p>
-			</Notice>
-		</div>
-	{/if}
-	<!-- The guide's own words are English until its copy is translated. -->
-	<div lang="en">
 	<code.DossierGuide
 		page={view}
 		name={displayName}
@@ -420,5 +413,4 @@
 		{flash}
 		{announce}
 	/>
-	</div>
 {/if}

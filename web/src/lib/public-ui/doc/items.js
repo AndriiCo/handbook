@@ -4,6 +4,8 @@
 // few honest rows the page writes itself ("Not confirmed yet", the
 // remote-notarization row). Pure: no window/fetch.
 
+import { guideCopy } from './copy/index.js';
+
 /** @typedef {import('./contract.js').Item} Item */
 
 /**
@@ -49,8 +51,8 @@ export const OFFICE_SLOTS = Object.freeze([
 	SLOT.publicRecord
 ]);
 
-/** "Not confirmed yet — ask the office": the honest value of an unfilled row. */
-export const NOT_CONFIRMED = 'Not confirmed yet — ask the office';
+/** "Not confirmed yet — ask the office": the honest value of an unfilled row (English; doc/copy has the others). */
+export const NOT_CONFIRMED = guideCopy('en').present.notConfirmed;
 
 /**
  * The first item of a slot (any state), or null.
@@ -134,9 +136,10 @@ export function localItem(over) {
  * @param {string} id
  * @param {string} label
  * @param {string|null} [slot]
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function notConfirmed(id, label, slot = null) {
-	return localItem({ id, label, display: NOT_CONFIRMED, slot });
+export function notConfirmed(id, label, slot = null, lang = 'en') {
+	return localItem({ id, label, display: guideCopy(lang).present.notConfirmed, slot });
 }
 
 /**
@@ -170,13 +173,15 @@ export function isUS(country) {
  * An office's name as the object of a sentence ("Issued by …", "apply
  * directly to …"): "the" in front, unless the name already starts
  * with it or with its country's name ("Viet Nam — receiving
- * authorities" takes none).
+ * authorities" takes none). Spanish and French copy names the office
+ * without an article (the name stays as the office writes it).
  * @param {unknown} name
  * @param {unknown} [country]
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function issuerName(name, country = null) {
+export function issuerName(name, country = null, lang = 'en') {
 	const n = String(name ?? '').trim();
-	if (!n || /^the\s/i.test(n)) return n;
+	if (!n || lang === 'es' || lang === 'fr' || /^the\s/i.test(n)) return n;
 	const c = String(country ?? '').trim();
 	if (c && !isUS(c) && n.toLowerCase().startsWith(c.toLowerCase())) return n;
 	return `the ${n}`;
@@ -266,6 +271,36 @@ export function valueLang(text) {
 }
 
 /**
+ * The `lang` of a text from the office's pages (a value, a quote, a
+ * record) on a page in `pageLang`: its own language when its letters
+ * tell (`valueLang`), else English on a Spanish or French page (the
+ * pages this site reads are English unless their letters say
+ * otherwise), else none.
+ * @param {unknown} text
+ * @param {string} [pageLang]
+ * @returns {string|undefined}
+ */
+export function sourceLang(text, pageLang = 'en') {
+	return valueLang(text) ?? (pageLang === 'en' ? undefined : 'en');
+}
+
+/**
+ * The `lang` of an Item's display: as `sourceLang`, except the values
+ * the page writes itself (a missing or absent row, a calculation, a
+ * pointer) are in the page language already.
+ * @param {Item|null|undefined} item
+ * @param {string} [pageLang]
+ * @returns {string|undefined}
+ */
+export function itemLang(item, pageLang = 'en') {
+	if (!item) return undefined;
+	if (item.state === 'missing' || item.state === 'absent' || item.state === 'computed' || item.own === true) {
+		return valueLang(item.display) ?? undefined;
+	}
+	return sourceLang(item.display, pageLang);
+}
+
+/**
  * A value's text in runs, with each ZIP+4 code ("98504-0234") a run of
  * its own that the page keeps on one line (display only: the runs join
  * back to the same text).
@@ -297,8 +332,7 @@ const REMOTE_RE =
 const RON_RE = /\bRON\b/;
 const NOTARY_RE = /\bnotar/i;
 
-export const REMOTE_NOTARIZATION_TEXT =
-	"We haven't confirmed whether the office accepts remotely notarized documents. Ask before you pay for one.";
+export const REMOTE_NOTARIZATION_TEXT = guideCopy('en').present.remoteText;
 
 /**
  * True when a Prepare row speaks to remote notarization: a notarization
@@ -321,14 +355,16 @@ function speaksToRemote(item) {
  * one does. Pass the Prepare section's items and its `also` rows; only
  * notarization rows and unmapped rows about notarization are read.
  * @param {readonly (Item|null|undefined)[]|null|undefined} items
+ * @param {string} [lang] the page language (doc/copy)
  * @returns {Item|null}
  */
-export function remoteNotarizationRow(items) {
+export function remoteNotarizationRow(items, lang = 'en') {
 	const mentions = (items ?? []).some((i) => !!i && speaksToRemote(i));
 	if (mentions) return null;
+	const t = guideCopy(lang).present;
 	return localItem({
 		id: 'prepare-remote-notarization',
-		label: 'Remote notarization',
-		display: REMOTE_NOTARIZATION_TEXT
+		label: t.remoteLabel,
+		display: t.remoteText
 	});
 }

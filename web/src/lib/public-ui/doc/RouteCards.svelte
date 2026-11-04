@@ -3,6 +3,7 @@
 	import TruckIcon from '@lucide/svelte/icons/truck';
 	import BuildingIcon from '@lucide/svelte/icons/building-2';
 	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
+	import { guide } from './lang.svelte.js';
 
 	// The three ways to send (plan §3 row 1): anchor cards to the mail,
 	// courier and counter branches of "Send or bring your documents".
@@ -14,15 +15,12 @@
 	let { routes = [] }: { routes?: { id: string; label: string; href: string }[] } = $props();
 
 	const ICONS = { mail: MailIcon, courier: TruckIcon, visit: BuildingIcon } as const;
-	const HINTS: Record<string, string> = {
-		mail: 'Post the documents to the office.',
-		courier: 'Send them overnight with a courier service.',
-		visit: 'Bring them to the counter yourself.'
-	};
+	const t = $derived(guide.t.routes);
+	const HINTS: Record<string, string> = $derived(t.hints);
 </script>
 
 {#if routes.length > 0}
-	<nav aria-label="Ways to send your documents" class="mt-8">
+	<nav aria-label={t.label} class="mt-8">
 		<ul class="m-0 grid list-none gap-3 p-0 sm:grid-cols-3">
 			{#each routes as route (route.id)}
 				{@const Icon = ICONS[route.id as keyof typeof ICONS] ?? MailIcon}

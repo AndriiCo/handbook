@@ -8,6 +8,8 @@
 // are a dated banner above the guide (see `serviceNotices`), never a
 // step. Pure: no window/fetch, so node tests drive it directly.
 
+import { guideCopy } from './doc/copy/index.js';
+
 /**
  * Fixed guide steps: stable ids, titles, and their topics.
  */
@@ -117,24 +119,21 @@ export function parseStatement(statement) {
 }
 
 /**
- * Known analyser field keys get fixed labels; everything else is
- * humanised snake_case. `topic` disambiguates future same-key reuse.
+ * Known analyser field keys get fixed labels (in the page language,
+ * doc/copy `fields`); everything else is humanised snake_case, which
+ * stays as the key spells it. `topic` disambiguates future same-key
+ * reuse.
  * @param {string} topic
  * @param {string|null} fieldKey
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function fieldLabel(topic, fieldKey) {
+export function fieldLabel(topic, fieldKey, lang = 'en') {
+	const t = guideCopy(lang);
 	/** @type {Record<string, string>} */
-	const known = {
-		per_document: 'Fee per document',
-		apostille_main_branch_street: 'Office address',
-		standard: 'Standard processing',
-		weekday: 'Weekday hours',
-		po_box: 'PO Box',
-		methods: 'Accepted payment'
-	};
-	if (typeof fieldKey === 'string' && fieldKey in known) return known[fieldKey];
+	const known = t.fields;
+	if (typeof fieldKey === 'string' && Object.hasOwn(known, fieldKey)) return known[fieldKey];
 	const s = String(fieldKey ?? topic ?? '').replaceAll('_', ' ');
-	if (!s) return 'Detail';
+	if (!s) return t.present.detail;
 	return s.charAt(0).toUpperCase() + s.slice(1);
 }
 

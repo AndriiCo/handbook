@@ -6,6 +6,7 @@
 	import InlineValue from './InlineValue.svelte';
 	import { localItem, partOf, usable } from './items.js';
 	import { isPoBox, postalCity } from './postal.js';
+	import { guide } from './lang.svelte.js';
 	import type { Item } from './contract.js';
 
 	// The label offer beside a posting branch (plan §6, D10). It reads
@@ -71,6 +72,7 @@
 		issuer?: string;
 	} = $props();
 
+	const t = $derived(guide.t.label);
 	const list = $derived(Array.isArray(options?.options) ? options.options : []);
 	const fedex = $derived(list.find((o) => o?.kind === 'label_fedex') ?? null);
 	const freeLabel = $derived(list.find((o) => o?.kind === 'address_label') ?? null);
@@ -89,7 +91,7 @@
 		if (typeof fallback?.city === 'string' && fallback.city.trim() && typeof fallback.fact_id === 'number') {
 			return localItem({
 				id: 'orders-courier-city',
-				label: 'Courier city',
+				label: t.courierCity,
 				display: fallback.city.trim(),
 				factIds: [fallback.fact_id],
 				state: 'ok'
@@ -103,7 +105,7 @@
 		if (typeof cents !== 'number' || !Number.isFinite(cents) || cents <= 0) return null;
 		const code = (options?.currency || 'usd').toUpperCase();
 		try {
-			return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(cents / 100);
+			return new Intl.NumberFormat(guide.t.intl, { style: 'currency', currency: code }).format(cents / 100);
 		} catch {
 			return null;
 		}
@@ -140,18 +142,14 @@
 				>
 					<PrinterIcon class="mt-0.5 size-5 flex-none" aria-hidden="true" />
 					<span>
-						Print a prepaid FedEx label to the {#if city}<InlineValue item={city} />&nbsp;{/if}courier
-						address&nbsp;— from <span data-price>{price}</span>
+						{t.fedex[0]}{#if city}<InlineValue item={city} />&nbsp;{/if}{t.fedex[1]}<span data-price>{price}</span>
 					</span>
 					<ArrowRightIcon class="mt-1 size-4 flex-none transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
 				</a>
 			{:else}
-				<p class="m-0 text-ink">
-					Prepaid courier labels aren't available for this office right now. You can send by FedEx or UPS
-					yourself — copy the courier address above.
-				</p>
+				<p class="m-0 text-ink">{t.unavailable}</p>
 			{/if}
-			<p class="m-0 mt-2 text-sm text-ink-muted">Paid service by the Apostille Handbook, not {issuer}.</p>
+			<p class="m-0 mt-2 text-sm text-ink-muted">{t.paidBy(issuer)}</p>
 		{:else}
 			<a
 				href={orderHref('address_label')}
@@ -159,10 +157,10 @@
 				data-kind="address_label"
 			>
 				<TagIcon class="mt-0.5 size-5 flex-none" aria-hidden="true" />
-				<span>Print a free address label for the mailing address</span>
+				<span>{t.free}</span>
 				<ArrowRightIcon class="mt-1 size-4 flex-none transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
 			</a>
-			<p class="m-0 mt-2 text-sm text-ink-muted">Free service by the Apostille Handbook, not {issuer}.</p>
+			<p class="m-0 mt-2 text-sm text-ink-muted">{t.freeBy(issuer)}</p>
 		{/if}
 	</div>
 {/if}

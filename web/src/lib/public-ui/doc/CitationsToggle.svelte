@@ -32,9 +32,11 @@
 	import { Kbd } from '../../components/ui/kbd/index.js';
 	import { citations } from '../citations.svelte.js';
 	import { installCitationHotkey } from './hotkey.js';
+	import { guide } from './lang.svelte.js';
 
 	let { count = null, print = true }: { count?: number | null; print?: boolean } = $props();
 
+	const t = $derived(guide.t.toggle);
 	let button = $state<HTMLButtonElement | null>(null);
 	let apple = $state(false);
 
@@ -132,7 +134,7 @@
 		{:else}
 			<TextQuoteIcon class="size-4 flex-none" aria-hidden="true" />
 		{/if}
-		Citations
+		{t.citations}
 		<Kbd class="cite-kbd" aria-hidden="true">{apple ? '⌥C' : 'Alt+C'}</Kbd>
 	</button>
 	{#if print}
@@ -142,12 +144,12 @@
 			class="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border border-line bg-bg px-4 font-medium text-ink transition-colors hover:border-focus"
 		>
 			<PrinterIcon class="size-4 flex-none" aria-hidden="true" />
-			Print
+			{t.print}
 		</button>
 	{/if}
 	<p class="cite-hint m-0 text-sm text-ink-muted" data-print-hide>
-		<span class:cite-hint-off={citations.on}>Turn on citations to print sources.</span>
-		<span class:cite-hint-off={!citations.on}>Sources print at the end.</span>
+		<span class:cite-hint-off={citations.on}>{t.hintOff}</span>
+		<span class:cite-hint-off={!citations.on}>{t.hintOn}</span>
 	</p>
 	<span class="sr-only" aria-live="polite" aria-atomic="true">{citations.message}</span>
 </div>

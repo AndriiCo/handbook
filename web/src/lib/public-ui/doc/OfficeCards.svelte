@@ -6,7 +6,7 @@
 	import ClockIcon from '@lucide/svelte/icons/clock';
 	import ValueRow from './ValueRow.svelte';
 	import { zoneName, type Office, type PlanFact } from '../plan.js';
-	import { OFFICE_SLOTS, SLOT, bySlot, notConfirmed, partOf, traceAttrs } from './items.js';
+	import { OFFICE_SLOTS, SLOT, bySlot, itemLang, notConfirmed, partOf, traceAttrs } from './items.js';
 	import { mapLinks, mapQuery, postalCity } from './postal.js';
 	import {
 		DEFAULT_ZONE,
@@ -19,6 +19,7 @@
 		upcomingClosures
 	} from './offices.js';
 	import type { Item } from './contract.js';
+	import { guide } from './lang.svelte.js';
 
 	// "In person" (plan §3 step 5, D4): one card per office, then the
 	// next closures.
@@ -86,6 +87,8 @@
 		marker?: Snippet<[Item]>;
 	} = $props();
 
+	const t = $derived(guide.t);
+	const lang = $derived(guide.lang);
 	const NO_FACTS = new Map<number, PlanFact>();
 	const RULE_ORDER: string[] = [SLOT.hours, SLOT.cutoff, SLOT.sameDayOnly, SLOT.noMail, SLOT.publicRecord];
 	const PILL = `inline-flex min-h-8 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-sm font-medium text-ink no-underline transition-colors hover:border-focus`;
@@ -170,7 +173,7 @@
 		return {
 			kind: 'facts',
 			key: g.instance ?? `office-${index}`,
-			title: city || name || 'Office',
+			title: city || name || t.offices.office,
 			titleItem: city && usableAddress ? partOf(usableAddress, 'city', city) : null,
 			address,
 			rows: g.items.filter((i) => i !== address),
@@ -240,11 +243,11 @@
 	const upcoming = $derived(upcomingClosures(closures, now, zone));
 	const shownClosures = $derived(
 		upcoming.next.length > 0
-			? upcoming.next.map((c) => ({ item: c.item, label: dayLabel(c.date, upcoming.today) }))
+			? upcoming.next.map((c) => ({ item: c.item, label: dayLabel(c.date, upcoming.today, lang) }))
 			: upcoming.undated.map((item) => ({ item, label: item.label }))
 	);
 	const foldedClosures = $derived([
-		...upcoming.later.map((c) => ({ item: c.item, label: dayLabel(c.date, upcoming.today) })),
+		...upcoming.later.map((c) => ({ item: c.item, label: dayLabel(c.date, upcoming.today, lang) })),
 		...(upcoming.next.length > 0 ? upcoming.undated.map((item) => ({ item, label: item.label })) : [])
 	]);
 
@@ -260,7 +263,7 @@
 		return all.find((i) => sameOffice(office, i.instance)) ?? all.find((i) => !i.instance) ?? null;
 	}
 	function zoneLabel(office: Office): string {
-		return confirmedZone(office) ? zoneName(office.timezone as string, now) : '';
+		return confirmedZone(office) ? zoneName(office.timezone as string, now, lang) : '';
 	}
 </script>
 
@@ -271,7 +274,7 @@
 			target="_blank"
 			rel="noopener noreferrer"
 			class={PILL}
-			aria-label={`Open in Google Maps: ${title} (opens in a new tab)`}
+			aria-label={t.offices.google(title)}
 		>
 			<MapPinIcon class="size-4 flex-none text-accent-strong" aria-hidden="true" />Google Maps
 		</a>
@@ -280,7 +283,7 @@
 			target="_blank"
 			rel="noopener noreferrer"
 			class={PILL}
-			aria-label={`Open in Apple Maps: ${title} (opens in a new tab)`}
+			aria-label={t.offices.apple(title)}
 		>
 			<MapPinIcon class="size-4 flex-none text-accent-strong" aria-hidden="true" />Apple Maps
 		</a>
@@ -293,7 +296,7 @@
 			{@const office = entry.office}
 			{@const live = noticeActive
 				? null
-				: liveStatus({ office, closures, cutoff: cutoffFor(office), now, others: othersOf(entry), aliases: entry.names })}
+				: liveStatus({ office, closures, cutoff: cutoffFor(office), now, others: othersOf(entry), aliases: entry.names, lang })}
 			{@const ids = [...new Set([...(office.fact_ids ?? []), ...entry.backing.flatMap((i) => i.factIds)])]}
 			{@const zoneText = zoneLabel(office)}
 			<div class="flex flex-col gap-3" data-office={entry.key} data-print-keep>
@@ -311,14 +314,16 @@
 									<ClockIcon class="size-4 flex-none" aria-hidden="true" />
 								{/if}
 								<span>{live.text}</span>
-								{#if live.cutoff}<span class="text-ink">· Today's cut-off: {live.cutoff}</span>{/if}
+								{#if live.cutoff}<span class="text-ink">{t.offices.cutoff(live.cutoff)}</span>{/if}
 							</p>
 							{#if live.closure}
-								<p class="m-0 mb-2 text-sm text-ink" data-fact-ids={live.closure.factIds.join(' ')}>{live.closure.display}</p>
+								<p class="m-0 mb-2 text-sm text-ink" lang={itemLang(live.closure, lang)} data-fact-ids={live.closure.factIds.join(' ')}>
+									{live.closure.display}
+								</p>
 							{/if}
 						{/if}
 						{#if zoneText}
-							<p class="m-0 mb-2 text-sm text-ink-muted" data-office-zone>Times in {zoneText}</p>
+							<p class="m-0 mb-2 text-sm text-ink-muted" data-office-zone>{t.offices.timesIn(zoneText)}</p>
 						{/if}
 						{#if OfficeCard}<OfficeCard
 								office={{ ...office, timezone_source: null }}
@@ -326,6 +331,7 @@
 								{now}
 								heading="h4"
 								clocks="guide"
+								{lang}
 							/>{/if}
 						{#if entry.maps}
 							<div class="mt-3">{@render mapPills(entry.maps, office.name)}</div>
@@ -358,7 +364,7 @@
 						<ValueRow
 							item={entry.address}
 							{marker}
-							copyName={entry.titleItem ? `the ${entry.title} office address` : 'the office address'}
+							copyName={entry.titleItem ? t.common.copyNames.cityOffice(entry.title) : t.common.copyNames.office}
 						/>
 					{/if}
 					{#each entry.rows as row (row.id)}
@@ -369,12 +375,12 @@
 		{/if}
 	{:else}
 		<dl class="m-0 border-t border-line">
-			<ValueRow item={notConfirmed('visit-office-missing', 'Office address', SLOT.office)} />
+			<ValueRow item={notConfirmed('visit-office-missing', t.offices.officeMissing, SLOT.office, lang)} />
 		</dl>
 	{/each}
 	{#if sharedRows.length > 0}
 		<div>
-			<h4 class="m-0 text-body font-semibold text-ink">For every office</h4>
+			<h4 class="m-0 text-body font-semibold text-ink">{t.offices.every}</h4>
 			<dl class="m-0 mt-2 border-t border-line">
 				{#each sharedRows as row (row.id)}
 					<ValueRow item={row} {marker} />
@@ -387,7 +393,7 @@
 		<div>
 			<h4 class="m-0 flex items-center gap-2 text-body font-semibold text-ink">
 				<CalendarXIcon class="size-4 flex-none text-ink-muted" aria-hidden="true" />
-				Upcoming closures
+				{t.offices.upcoming}
 			</h4>
 			<dl class="m-0 mt-2 border-t border-line">
 				{#each shownClosures as c (c.item.id)}
@@ -397,7 +403,7 @@
 			{#if foldedClosures.length > 0}
 				<details class="mt-1">
 					<summary class="inline-flex min-h-11 cursor-pointer items-center font-medium text-accent-strong">
-						More closures
+						{t.offices.more}
 					</summary>
 					<dl class="m-0 border-t border-line">
 						{#each foldedClosures as c (c.item.id)}

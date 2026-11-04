@@ -58,8 +58,9 @@
 //   official and the rest as other pages.
 // - No public facts: the empty state, with the listed official site.
 //
-// Template copy here carries no digits, `$`, addresses or dates: every
-// such token comes from a fact value or a computation over values.
+// The page's own words come from doc/copy in the page language (`lang`);
+// that copy carries no digits, `$`, addresses or dates: every such token
+// comes from a fact value or a computation over values.
 
 import { SECTIONS, SLOTS, TOPIC_SECTION, pairNotices, profileFor, resolveSlot, slotById, splitKey } from './slots.js';
 import { NOTICE_TOPIC, domain, fieldLabel, parseStatement, staleMark } from './guide.js';
@@ -67,9 +68,10 @@ import { USPS_TOPICS, factsDisagree, statementsDisagree, valueTokens } from './c
 import { canonicalUrl, isPdfUrl, titleFromUrl } from './cite.js';
 import { amountsIn, readTiers } from './fees.js';
 import { flagFor } from './lanes.js';
-import { NOT_CONFIRMED, OFFICE_SLOTS, SLOT, isUS, issuerName, partOf, remoteNotarizationRow } from './doc/items.js';
+import { OFFICE_SLOTS, SLOT, isUS, issuerName, partOf, remoteNotarizationRow } from './doc/items.js';
 import { isPoBox, isStreetOnly, phoneIn, postalCity } from './doc/postal.js';
 import { DEFAULT_ZONE, confirmedZone, instanceName, sameOffice, upcomingClosures } from './doc/offices.js';
+import { guideCopy } from './doc/copy/index.js';
 
 /** @typedef {import('./doc/contract.js').Item} Item */
 /** @typedef {import('./doc/contract.js').Cite} Cite */
@@ -138,12 +140,6 @@ export const UPDATE_DAYS = 90;
 /** Copy is offered only on values this short (whole sentences never). */
 export const COPY_MAX = 120;
 
-const EYEBROW = 'Apostille guide';
-const STALE_WARNING = 'May be out of date — check with the office before you send money';
-const ABSENT_TEXT = "Not on the office's website";
-const POINTER_USPS = "The office's pages list different PO boxes — read the mailing step first";
-const POINTER = "The office's pages give different values — read the step below first";
-const POINTER_CONTESTED = 'The office told us something different — read the step below first';
 /** Hops of the legalization chain: ordered rows of step one, kind `chain`. */
 const CHAIN_TOPIC = 'legalization_chain';
 /** One key for comparing values of two alias keys as one field. */
@@ -225,12 +221,16 @@ export function publicFacts(facts) {
 	);
 }
 
-/** A page title from its URL: the last path segment, or "Home page". @param {string} url */
-function pageTitle(url) {
+/**
+ * A page title from its URL: the last path segment, or "Home page".
+ * @param {string} url
+ * @param {string} lang
+ */
+function pageTitle(url, lang) {
 	const own = titleFromUrl(url);
 	if (own) return own;
 	try {
-		return new URL(url).pathname === '/' ? 'Home page' : '';
+		return new URL(url).pathname === '/' ? guideCopy(lang).present.homePage : '';
 	} catch {
 		return '';
 	}
@@ -241,9 +241,10 @@ function pageTitle(url) {
  * @param {any} fact
  * @param {number|null} id
  * @param {number|null} acceptedAt
+ * @param {string} lang
  * @returns {Cite[]}
  */
-function citesOf(fact, id, acceptedAt) {
+function citesOf(fact, id, acceptedAt, lang) {
 	/** @type {Cite[]} */
 	const out = [];
 	for (const c of Array.isArray(fact?.citations) ? fact.citations : []) {
@@ -258,7 +259,7 @@ function citesOf(fact, id, acceptedAt) {
 			source: {
 				key,
 				kind,
-				title: url ? pageTitle(url) : '',
+				title: url ? pageTitle(url, lang) : '',
 				url,
 				host: url ? domain(url) : null,
 				capturedAt: iso(c.captured_at),
@@ -313,9 +314,10 @@ function distinctTitles(rows) {
 /**
  * Parse every public fact once.
  * @param {unknown} facts
+ * @param {string} lang
  * @returns {Row[]}
  */
-function rowsOf(facts) {
+function rowsOf(facts, lang) {
 	/** @type {Row[]} */
 	const out = [];
 	(Array.isArray(facts) ? facts : []).forEach((f, index) => {
@@ -335,7 +337,7 @@ function rowsOf(facts) {
 			value: cleanValue(value),
 			slot: hit?.slot ?? null,
 			instance: hit?.instance ?? null,
-			cites: citesOf(f, id, acceptedAt),
+			cites: citesOf(f, id, acceptedAt, lang),
 			acceptedAt,
 			flagged: f.conflict === true,
 			fact: f
@@ -468,12 +470,23 @@ function groupsClash(slot, a, b) {
 }
 
 /**
+ * A slot's label in the page language.
+ * @param {Slot} slot
+ * @param {string} lang
+ */
+function slotLabel(slot, lang) {
+	const own = /** @type {Record<string, string>} */ (guideCopy(lang).slots);
+	return own[slot.id] ?? slot.label;
+}
+
+/**
  * The label a fact's own field reads under (its slot's, or its key's).
  * @param {Row} r
+ * @param {string} lang
  */
-function rowLabel(r) {
-	if (r.slot) return r.slot.label;
-	return r.key ? fieldLabel(r.topic, splitKey(r.key).base) : '';
+function rowLabel(r, lang) {
+	if (r.slot) return slotLabel(r.slot, lang);
+	return r.key ? fieldLabel(r.topic, splitKey(r.key).base, lang) : '';
 }
 
 /**
@@ -507,17 +520,19 @@ function siblingsOf(rows, pool) {
  * decides; uncited facts never make a value look fresh.
  * @param {Row[]} rows
  * @param {number} now
+ * @param {string} lang
  * @returns {Item['stale']}
  */
-function staleOf(rows, now) {
+function staleOf(rows, now, lang) {
 	const marks = rows.filter((r) => r.cites.length > 0).map((r) => staleMark(r.fact, now));
 	if (marks.length === 0 || marks.some((m) => m === null)) return null;
 	const fresh = /** @type {{ months: number, warning: boolean }[]} */ (marks).reduce((a, b) =>
 		a.months <= b.months ? a : b
 	);
+	const t = guideCopy(lang).present;
 	return fresh.warning
-		? { level: 'warning', text: STALE_WARNING }
-		: { level: 'muted', text: `Captured ${fresh.months} months ago` };
+		? { level: 'warning', text: t.staleWarning }
+		: { level: 'muted', text: t.staleMonths(fresh.months) };
 }
 
 /**
@@ -529,7 +544,8 @@ function staleOf(rows, now) {
  *   route: Item['route'],
  *   instance: string|null,
  *   copyable: boolean,
- *   now: number
+ *   now: number,
+ *   lang: string
  * }} ItemSpec
  */
 
@@ -542,7 +558,7 @@ function staleOf(rows, now) {
 function valueItem(spec, rows) {
 	const rep = rows[0];
 	const cites = rows.flatMap((r) => r.cites);
-	const stale = staleOf(rows, spec.now);
+	const stale = staleOf(rows, spec.now, spec.lang);
 	/** @type {Item['state']} */
 	const state = cites.length === 0 ? 'uncited' : stale ? 'stale' : 'ok';
 	return {
@@ -589,7 +605,7 @@ function groupItem(spec, rows, pool = new Map()) {
 			.map((g, order) => ({ order, item: valueItem({ ...spec, copyable: false }, g) }))
 			.sort((a, b) => sourceCount(b.item) - sourceCount(a.item) || a.order - b.order)
 			.map(({ item }) => item),
-		...siblings.map((g) => valueItem({ ...spec, label: rowLabel(g[0]), copyable: false }, g))
+		...siblings.map((g) => valueItem({ ...spec, label: rowLabel(g[0], spec.lang), copyable: false }, g))
 	].map((item, k) => ({ ...item, id: `${spec.id}-v${k + 1}` }));
 	let clash = flagged;
 	for (let i = 0; i < groups.length && !clash; i++) {
@@ -841,8 +857,9 @@ function readAt(row) {
  * @param {Row[]} rows every public fact
  * @param {number} now
  * @param {(base: string) => string} uid
+ * @param {string} lang
  */
-function statusOf(noticeRows, rows, now, uid) {
+function statusOf(noticeRows, rows, now, uid, lang) {
 	const sorted = [...noticeRows].sort(
 		(a, b) => (a.id ?? Number.MAX_SAFE_INTEGER) - (b.id ?? Number.MAX_SAFE_INTEGER) || a.index - b.index
 	);
@@ -868,7 +885,7 @@ function statusOf(noticeRows, rows, now, uid) {
 		return {
 			id: uid(`status-${which}-${tag}`),
 			slot: slot?.id ?? null,
-			label: slot?.label ?? '',
+			label: slot ? slotLabel(slot, lang) : '',
 			display: row.value,
 			kind: slot?.kind ?? 'notice',
 			factIds: idsOf([row]),
@@ -992,7 +1009,8 @@ function glanceCopy(item, uid) {
  *   forms?: unknown,
  *   evidence?: unknown,
  *   options?: unknown,
- *   now?: number|Date
+ *   now?: number|Date,
+ *   lang?: string
  * }} input
  * - authority: `/plan` `authority` or the index row, with `crumbs`;
  * - facts: the `/facts` array; plan, forms, options: the `/plan` plan,
@@ -1000,10 +1018,14 @@ function glanceCopy(item, uid) {
  *   the page shape does not depend on them);
  * - offices: `/plan` `offices[]` (accepted office records), which name
  *   office groups; evidence: `/plan` `evidence[]`;
- * - now: ms epoch or Date (default the clock).
+ * - now: ms epoch or Date (default the clock);
+ * - lang: the page language (doc/copy; default English): the page's own
+ *   words (headings, labels, honest rows, pointers). Values stay as the
+ *   office's pages write them.
  * @returns {Page}
  */
-export function present({ authority = null, facts = [], offices = [], evidence = [], now = Date.now() } = {}) {
+export function present({ authority = null, facts = [], offices = [], evidence = [], now = Date.now(), lang = 'en' } = {}) {
+	const t = guideCopy(lang);
 	const nowMs = now instanceof Date ? now.getTime() : typeof now === 'number' && Number.isFinite(now) ? now : Date.now();
 	/** @type {AuthorityRow} */
 	const row = authority && typeof authority === 'object' ? authority : {};
@@ -1016,7 +1038,7 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 	// The US postal rules (D3: the mail branch shows no street) hold on a
 	// US page, profiled or not; SendBlock reads the same flag.
 	const usPostal = us || isUS(row.country);
-	const rows = rowsOf(facts);
+	const rows = rowsOf(facts, lang);
 	const notes = notesOf(evidence);
 	/** @type {Map<number, Row>} */
 	const pool = new Map(rows.filter((r) => r.id !== null).map((r) => [/** @type {number} */ (r.id), r]));
@@ -1038,14 +1060,14 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 
 	// The task heading names the region on a profiled page with values;
 	// an empty page keeps the office's own name.
-	const h1 = us && region && rows.length > 0 ? `Get an apostille in ${region}` : name;
-	const issuer = issuerName(name, row.country);
+	const h1 = us && region && rows.length > 0 ? t.present.h1(region) : name;
+	const issuer = issuerName(name, row.country, lang);
 	const site = officialSite(listed);
 	/** @type {Header} */
 	const header = {
-		eyebrow: EYEBROW,
+		eyebrow: t.present.eyebrow,
 		h1,
-		lede: name && h1 !== name ? `Issued by ${issuer}.` : null,
+		lede: name && h1 !== name ? t.present.lede(issuer) : null,
 		crumbs: (Array.isArray(row.crumbs) ? row.crumbs : []).filter((c) => c && typeof c.label === 'string' && c.label),
 		flag: flagFor(row.country, row.iso2),
 		officialHost: rows.length > 0 ? site.host : null,
@@ -1083,7 +1105,7 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 
 	// Service status.
 	const notices = rows.filter((r) => r.topic === NOTICE_TOPIC);
-	const { status, updates } = statusOf(notices, rows, nowMs, uid);
+	const { status, updates } = statusOf(notices, rows, nowMs, uid, lang);
 	page.status = status;
 	page.updates = updates;
 
@@ -1129,12 +1151,13 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 				{
 					id: uid(`chain-${r.id !== null ? `f${r.id}` : `n${r.index}`}`),
 					slot: null,
-					label: keyed ? fieldLabel(g.topic, keyed.base) : '',
+					label: keyed ? fieldLabel(g.topic, keyed.base, lang) : '',
 					kind: 'chain',
 					route: null,
 					instance: null,
 					copyable: false,
-					now: nowMs
+					now: nowMs,
+					lang
 				},
 				g.rows,
 				pool
@@ -1146,11 +1169,12 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 			const slot = g.slot;
 			const base = {
 				slot,
-				label: slot.label,
+				label: slotLabel(slot, lang),
 				kind: slot.kind,
 				route: slot.route,
 				copyable: slot.copy && (slot.kind === 'payee' || slot.kind === 'postal'),
-				now: nowMs
+				now: nowMs,
+				lang
 			};
 			/** @type {Item[]} */
 			const made = g.many
@@ -1163,9 +1187,9 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 		} else {
 			const section = TOPIC_SECTION[g.topic] && !SECTIONS.find((s) => s.id === TOPIC_SECTION[g.topic])?.pseudo ? TOPIC_SECTION[g.topic] : 'before';
 			const keyed = g.key ? splitKey(g.key) : null;
-			const label = keyed ? `${fieldLabel(g.topic, keyed.base)}${keyed.instance ? ` (${instanceName(keyed.instance)})` : ''}` : '';
+			const label = keyed ? `${fieldLabel(g.topic, keyed.base, lang)}${keyed.instance ? ` (${instanceName(keyed.instance)})` : ''}` : '';
 			const id = uid(g.key ? `also-${g.topic}-${g.key}` : `row-${g.rows[0].id ?? `n${g.rows[0].index}`}`);
-			const item = groupItem({ id, slot: null, label, kind: 'text', route: null, instance: keyed?.instance ?? null, copyable: false, now: nowMs }, g.rows, pool);
+			const item = groupItem({ id, slot: null, label, kind: 'text', route: null, instance: keyed?.instance ?? null, copyable: false, now: nowMs, lang }, g.rows, pool);
 			sectionOf(section).also.push({ item, first });
 		}
 	}
@@ -1181,7 +1205,8 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 		if (s.id === 'send') items = sendOrder(items, nowMs, zone);
 		if (s.id === 'form') items = formOrder(items);
 		const also = own.also.sort((a, b) => a.first - b.first).map((x) => x.item);
-		sections.push({ id: s.id, step: s.step, heading: s.heading, items, also });
+		const heading = /** @type {Record<string, string>} */ (t.sections)[s.id] ?? s.heading;
+		sections.push({ id: s.id, step: s.step, heading, items, also });
 	}
 
 	const all = () => [...page.status.active, ...page.status.resolved, ...sections.flatMap((s) => [...s.items, ...s.also]), ...page.updates];
@@ -1200,8 +1225,8 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 			const missing = {
 				id: uid(`${dash(id)}-missing`),
 				slot: id,
-				label: slot.label,
-				display: number ? `${NOT_CONFIRMED}: ${number}` : NOT_CONFIRMED,
+				label: slotLabel(slot, lang),
+				display: number ? `${t.present.notConfirmed}: ${number}` : t.present.notConfirmed,
 				kind: slot.kind,
 				factIds: phone && number ? phone.factIds : [],
 				cites: phone && number ? phone.cites : [],
@@ -1219,7 +1244,7 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 			else target.items.splice(at, 0, missing);
 		}
 		const prepare = sections.find((s) => s.id === 'prepare');
-		const remote = prepare ? remoteNotarizationRow([...prepare.items, ...prepare.also]) : null;
+		const remote = prepare ? remoteNotarizationRow([...prepare.items, ...prepare.also], lang) : null;
 		if (prepare && remote) prepare.items.push({ ...remote, id: uid(remote.id) });
 	}
 
@@ -1233,8 +1258,8 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 		const absent = {
 			id: uid(`${dash(slot.id)}${instance ? `-${instance}` : ''}-absent`),
 			slot: slot.id,
-			label: slot.label,
-			display: ABSENT_TEXT,
+			label: slotLabel(slot, lang),
+			display: t.present.absent,
 			kind: slot.kind,
 			factIds: [],
 			cites: [noteCite(note)],
@@ -1323,11 +1348,16 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 						...item,
 						id: uid(`glance-${item.id}`),
 						display:
-							item.state === 'contested' ? POINTER_CONTESTED : part.slot === SLOT.usps ? POINTER_USPS : POINTER,
+							item.state === 'contested'
+								? t.present.pointerContested
+								: part.slot === SLOT.usps
+									? t.present.pointerUsps
+									: t.present.pointer,
 						cites: [],
 						alternatives: null,
 						copy: false,
-						contest: null
+						contest: null,
+						own: true
 					});
 				} else {
 					glance.push(glanceCopy(item, uid));
@@ -1345,12 +1375,14 @@ export function present({ authority = null, facts = [], offices = [], evidence =
 			sections.some((s) => s.items.some((i) => i.slot === slot && real(i)))
 		);
 		if (sendItems.some((i) => i.slot === SLOT.usps && mailShown(i))) {
-			page.routes.push({ id: 'mail', label: 'By mail', href: '#send-mail' });
+			page.routes.push({ id: 'mail', label: t.present.routes.mail, href: '#send-mail' });
 		}
 		if (sendItems.some((i) => i.slot === SLOT.courier && courierShown(i))) {
-			page.routes.push({ id: 'courier', label: 'By courier', href: '#send-courier' });
+			page.routes.push({ id: 'courier', label: t.present.routes.courier, href: '#send-courier' });
 		}
-		if (has(SLOT.office)) page.routes.push({ id: 'visit', label: sameDay ? 'In person, same day' : 'In person', href: '#visit' });
+		if (has(SLOT.office)) {
+			page.routes.push({ id: 'visit', label: sameDay ? t.present.routes.visitSameDay : t.present.routes.visit, href: '#visit' });
+		}
 	}
 
 	// Rendered sections: those with rows, numbered on profiled pages; the

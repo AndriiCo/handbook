@@ -11,6 +11,7 @@
 	import { OFFICE_SLOTS, SLOT, bySlot, notConfirmed, usable } from './items.js';
 	import { carrierChips, isPoBox, isStreetOnly, telHref, type Chip, type EvidenceNote } from './postal.js';
 	import type { SendRepeats } from './send.js';
+	import { guide } from './lang.svelte.js';
 	import type { Office } from '../plan.js';
 	import type { Item, Section } from './contract.js';
 
@@ -109,6 +110,7 @@
 		inline?: Snippet<[Item]>;
 	} = $props();
 
+	const t = $derived(guide.t);
 	const own = $derived(section.items);
 	const all = $derived(items.length > 0 ? items : own);
 	const find = (slot: string) => bySlot(own, slot) ?? bySlot(all, slot);
@@ -166,19 +168,19 @@
 	const alsoRows = $derived([...moved, ...rest.filter((i) => !i.route), ...section.also]);
 
 	const chips = $derived(
-		carrierChips({ mail: [uspsUndisputed, ...mailExtra], courier: [courier, courierRule, ...courierExtra] })
+		carrierChips({ mail: [uspsUndisputed, ...mailExtra], courier: [courier, courierRule, ...courierExtra] }, guide.lang)
 	);
 
 	const sameDay = $derived(!!bySlot(all, SLOT.sameDay) || !!bySlot(all, SLOT.sameDayOnly) || !!bySlot(all, SLOT.sameDayTime));
 	const headings = $derived({
-		mail: us ? 'By mail (USPS)' : 'By mail',
-		courier: us ? 'By courier (FedEx, UPS)' : 'By courier',
-		visit: sameDay ? 'In person, same day' : 'In person'
+		mail: us ? t.send.mailUs : t.send.mail,
+		courier: us ? t.send.courierUs : t.send.courier,
+		visit: sameDay ? t.send.visitSameDay : t.send.visit
 	});
 </script>
 
 {#snippet chipRow(list: Chip[])}
-	<ul class="m-0 mt-3 flex list-none flex-wrap gap-2 p-0" aria-label="Carriers the office's pages name">
+	<ul class="m-0 mt-3 flex list-none flex-wrap gap-2 p-0" aria-label={t.send.carriers}>
 		{#each list as chip (chip.key)}
 			<li class="m-0 p-0">
 				{#if chip.stated}
@@ -193,7 +195,7 @@
 						class="inline-flex min-h-7 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-xs font-medium text-ink-muted"
 						data-state="missing"
 					>
-						<CircleQuestionMarkIcon class="size-3.5 flex-none" aria-hidden="true" />{chip.label}: not stated
+						<CircleQuestionMarkIcon class="size-3.5 flex-none" aria-hidden="true" />{t.send.notStated(chip.label)}
 					</span>
 				{/if}
 			</li>
@@ -217,11 +219,11 @@
 			/>
 		{:else if uspsShown}
 			<dl class="m-0 border-t border-line">
-				<ValueRow item={uspsShown} {marker} copyName="the mailing address" />
+				<ValueRow item={uspsShown} {marker} copyName={t.common.copyNames.mailing} />
 			</dl>
 		{:else}
 			<dl class="m-0 border-t border-line">
-				<ValueRow item={notConfirmed('send-mail-missing', 'Mailing address', SLOT.usps)} />
+				<ValueRow item={notConfirmed('send-mail-missing', t.send.mailingMissing, SLOT.usps, guide.lang)} />
 			</dl>
 		{/if}
 		{#if chips.mail.length > 0}{@render chipRow(chips.mail)}{/if}
@@ -241,9 +243,9 @@
 		<h3 class="text-h3 m-0 font-semibold text-ink">{headings.courier}</h3>
 		<dl class="m-0 border-t border-line">
 			{#if courier}
-				<ValueRow item={courier} {marker} copyName="the courier address" />
+				<ValueRow item={courier} {marker} copyName={t.common.copyNames.courier} />
 			{:else}
-				<ValueRow item={notConfirmed('send-courier-missing', 'Courier address', SLOT.courier)} />
+				<ValueRow item={notConfirmed('send-courier-missing', t.send.courierMissing, SLOT.courier, guide.lang)} />
 			{/if}
 			{#if courierRule}<ValueRow item={courierRule} {marker} />{/if}
 			{#each courierExtra as item (item.id)}<ValueRow {item} {marker} />{/each}
@@ -251,11 +253,11 @@
 		{#if chips.courier.length > 0}{@render chipRow(chips.courier)}{/if}
 		{#if courier && usable(courier) && courierPhone && usable(courierPhone.item)}
 			<p class="m-0 text-ink">
-				Courier labels ask for a recipient phone; the office's published number is <InlineValue
+				{t.send.courierPhone[0]}<InlineValue
 					item={courierPhone.item}
 					href={telHref(courierPhone.item.display)}
 					marker={courierPhone.marked ? inline : undefined}
-				/>.
+				/>{t.send.courierPhone[1]}
 			</p>
 		{/if}
 		{#if !thin}
@@ -284,7 +286,7 @@
 
 	{#if alsoRows.length > 0}
 		<div class="flex flex-col gap-4">
-			<h3 class="text-h3 m-0 font-semibold text-ink">Also on the office's pages</h3>
+			<h3 class="text-h3 m-0 font-semibold text-ink">{t.common.alsoOnPages}</h3>
 			<dl class="m-0 border-t border-line">
 				{#each alsoRows as item (item.id)}<ValueRow {item} {marker} />{/each}
 			</dl>

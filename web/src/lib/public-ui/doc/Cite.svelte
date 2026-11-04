@@ -38,6 +38,7 @@
 	// link's hit area to 24 x 24 px.
 	import { citations } from '../citations.svelte.js';
 	import type { MarkerRef } from '../cite.js';
+	import { guide } from './lang.svelte.js';
 
 	let {
 		refs = [],
@@ -94,7 +95,7 @@
 				data-cite-letters={(r.letters?.length ? r.letters : [r.letter]).join(' ')}
 				data-cite-item={itemId}
 				data-cite-key={r.key ?? ''}
-				><span class="sr-only">{'Citation '}</span><span class="cite-n">{r.n}</span
+				><span class="sr-only">{guide.t.cite.marker}</span><span class="cite-n">{r.n}</span
 				>{#if i < list.length - 1}<span class="cite-sep" aria-hidden="true">,</span>{/if}</a
 			>{/each}</span
 	>

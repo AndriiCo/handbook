@@ -7,6 +7,7 @@
 	import { countryName, silhouetteFor } from '../authority-meta.js';
 	import { trustLine } from '../cite.js';
 	import CitationsToggle from './CitationsToggle.svelte';
+	import { guide } from './lang.svelte.js';
 	import type { Header } from './contract.js';
 
 	// The guide's header band (plan §3 row 0): breadcrumbs, the eyebrow,
@@ -44,7 +45,8 @@
 	} = $props();
 
 	const sil = $derived(silhouetteFor({ region, country }));
-	const trust = $derived(trustLine(header.trust));
+	const t = $derived(guide.t);
+	const trust = $derived(trustLine(header.trust, { lang: guide.lang }));
 </script>
 
 <header class="relative overflow-clip py-10 xl:py-16">
@@ -63,10 +65,10 @@
 		/>
 	{/if}
 	<div class="relative max-w-3xl">
-		<nav aria-label="Breadcrumb">
+		<nav aria-label={t.header.breadcrumb}>
 			<ol class="m-0 flex list-none flex-wrap gap-1 p-0 text-sm text-ink-muted">
 				<li class="m-0 p-0">
-					<a class="inline-flex min-h-6 items-center text-ink-muted no-underline hover:text-ink hover:underline" href={resolve('/(public)')}>Home</a>
+					<a class="inline-flex min-h-6 items-center text-ink-muted no-underline hover:text-ink hover:underline" href={resolve('/(public)')}>{t.header.home}</a>
 				</li>
 				<li class="m-0 p-0" aria-hidden="true">/</li>
 				{#each header.crumbs as crumb, i (`${i}-${crumb.label}`)}
@@ -87,7 +89,7 @@
 		<p class="text-eyebrow mt-6 mb-0 font-semibold tracking-[0.06em] text-ink-muted uppercase">{header.eyebrow}</p>
 		<div class="mt-2 flex items-center gap-3">
 			{#if header.flag}
-				<Flag code={header.flag} label={`${countryName(country) || header.h1} flag`} class="size-8 vt-flag" />
+				<Flag code={header.flag} label={t.header.flag(countryName(country) || header.h1)} class="size-8 vt-flag" />
 			{/if}
 			<Heading level={1}>
 				<span id="guide-title" class="vt-title">{header.h1}</span>
@@ -98,16 +100,16 @@
 		{/if}
 		{@render status?.()}
 		<p class="mt-5 mb-0 text-sm text-ink-muted">
-			Unofficial guide, not a government website{#if header.officialHost}
+			{t.header.unofficial}{#if header.officialHost}
 				<span aria-hidden="true">&nbsp;·</span>
-				Official site:
+				{t.header.officialSite}
 				{#if header.officialUrl}
 					<a
 						href={header.officialUrl}
 						target="_blank"
 						rel="noopener noreferrer"
 						class="font-medium text-accent-strong underline underline-offset-2"
-						>{header.officialHost}<span aria-hidden="true">&nbsp;↗</span><span class="sr-only"> (opens in a new tab)</span></a
+						>{header.officialHost}<span aria-hidden="true">&nbsp;↗</span><span class="sr-only"> {t.common.newTab}</span></a
 					>
 				{:else}
 					<span class="font-medium text-ink">{header.officialHost}</span>
@@ -116,6 +118,9 @@
 		</p>
 		{#if trust}
 			<p class="mt-1 mb-0 font-mono text-xs text-ink-muted" data-print-hide>{trust}</p>
+		{/if}
+		{#if t.guide.originalNote}
+			<p class="mt-2 mb-0 max-w-prose text-sm text-ink-muted" data-original-note>{t.guide.originalNote}</p>
 		{/if}
 		{#if cited}
 			<div class="mt-6">

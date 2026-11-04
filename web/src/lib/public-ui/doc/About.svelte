@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { issuerName, partOf, traceAttrs } from './items.js';
 	import { draftKey, loadDraft } from '../report-draft.js';
+	import { guide } from './lang.svelte.js';
 	import type { Item } from './contract.js';
 
 	// "About this guide" (plan §3 row 13, printed): who we are not, what
@@ -48,7 +49,8 @@
 		apiBase?: string;
 	} = $props();
 
-	const office = $derived(issuerName(name, country));
+	const t = $derived(guide.t.about);
+	const office = $derived(issuerName(name, country, guide.lang));
 	const amount = $derived.by((): Item | null => {
 		if (!fee || fee.state !== 'ok' || fee.factIds.length === 0) return null;
 		const m = /\$\s?\d[\d,]*(?:\.\d{1,2})?/.exec(fee.display);
@@ -126,23 +128,21 @@
 
 <section bind:this={root} aria-labelledby="about-h" class="border-t border-line py-10 xl:py-16" data-about>
 	<div class="max-w-3xl">
-		<h2 id="about-h" class="text-h3 m-0 font-semibold text-ink">About this guide</h2>
+		<h2 id="about-h" class="text-h3 m-0 font-semibold text-ink">{t.heading}</h2>
 		<p class="mt-3 mb-0 max-w-prose text-ink">
-			Unofficial guide, not a government website.{#if issuer && office}{' '}You can apply directly to {office}{#if amount}{' '}for
-					<span class="font-medium" {...traceAttrs(amount)}>{amount.display}</span>{@render inline?.(amount)} per
-					document{/if}.{/if}
+			{t.unofficial}{#if issuer && office}{' '}{t.applyDirect[0]}{office}{t.applyDirect[1]}{#if amount}{t.perDocument[0]}<span
+						class="font-medium"
+						{...traceAttrs(amount)}>{amount.display}</span
+					>{@render inline?.(amount)}{t.perDocument[1]}{/if}.{/if}
 		</p>
-		<p class="mt-3 mb-0 max-w-prose text-ink-muted">
-			We publish a detail only after a staff reviewer matches it to the office's own words. General
-			information, not legal advice — confirm with the office before you send documents or money.
-		</p>
+		<p class="mt-3 mb-0 max-w-prose text-ink-muted">{t.rule}</p>
 		<p class="mt-3 mb-0 text-sm print:hidden">
 			<a
 				href={reportHref}
 				onclick={openReport}
 				aria-expanded={reporting}
 				class="inline-flex min-h-6 items-center font-medium text-accent-strong underline underline-offset-4"
-				>{hasDraft ? 'Continue your report of a change (draft saved)' : "Report a change on the office's pages"}</a
+				>{hasDraft ? t.reportContinue : t.report}</a
 			>
 		</p>
 		{#if reporting && Panel}

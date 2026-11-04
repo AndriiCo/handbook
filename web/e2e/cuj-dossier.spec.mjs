@@ -416,7 +416,8 @@ test.describe('customer guide CUJs D1–D11', () => {
 			await page.route(/\/_app\/immutable\/chunks\/.*\.js$/, async (route) => {
 				const res = await route.fetch();
 				const body = await res.text();
-				if (body.includes('Directions') && body.includes('Appointment required')) return route.abort();
+				// The card's own code (its words live in the guide's copy table).
+				if (body.includes('directions_url') && body.includes('mail_only')) return route.abort();
 				return route.fulfill({ response: res, body });
 			});
 			await guide(page, { ...size, time: new Date('2026-11-09T18:00:00Z'), plan: (p) => ({ ...p, offices: OFFICE_RECORDS }) });

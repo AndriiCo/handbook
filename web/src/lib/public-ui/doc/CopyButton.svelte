@@ -1,6 +1,7 @@
 <script lang="ts">
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import CheckIcon from '@lucide/svelte/icons/check';
+	import { guide } from './lang.svelte.js';
 
 	// Copy one value exactly as printed (a payee, an address). A polite
 	// live region says "Copied: …". When the browser refuses the
@@ -49,14 +50,10 @@
 		try {
 			if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
 			await navigator.clipboard.writeText(text);
-			settle(`Copied: ${text}`, true);
+			settle(guide.t.copyButton.copied(text), true);
 		} catch {
-			settle(
-				selectTarget()
-					? `Selected: ${text}. Copy it with your keyboard shortcut.`
-					: `Select and copy it yourself: ${text}`,
-				false
-			);
+			const t = guide.t.copyButton;
+			settle(selectTarget() ? t.selected(text) : t.selectYourself(text), false);
 		}
 	}
 
@@ -75,6 +72,6 @@
 	{:else}
 		<CopyIcon class="size-4 text-ink-muted" aria-hidden="true" />
 	{/if}
-	Copy{#if name}<span class="sr-only">&nbsp;{name}</span>{/if}
+	{guide.t.copyButton.label}{#if name}<span class="sr-only">&nbsp;{name}</span>{/if}
 </button>
 <span class="sr-only" role="status" aria-live="polite">{said}</span>

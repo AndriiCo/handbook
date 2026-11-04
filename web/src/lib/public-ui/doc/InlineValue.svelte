@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { traceAttrs, valueLang } from './items.js';
+	import { itemLang, traceAttrs } from './items.js';
+	import { guide } from './lang.svelte.js';
 	import type { Item } from './contract.js';
 
 	// One value inside a sentence ("the office's published number is
@@ -15,6 +16,6 @@
 	let { item, marker, href = null }: { item: Item; marker?: Snippet<[Item]>; href?: string | null } = $props();
 </script>
 
-<span class="break-words [overflow-wrap:anywhere]" lang={valueLang(item.display) ?? undefined} {...traceAttrs(item)}
+<span class="break-words [overflow-wrap:anywhere]" lang={itemLang(item, guide.lang)} {...traceAttrs(item)}
 	>{#if href}<a {href} class="font-medium underline underline-offset-2">{item.display}</a>{:else}{item.display}{/if}</span
 >{@render marker?.(item)}

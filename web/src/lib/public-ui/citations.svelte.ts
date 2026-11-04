@@ -19,6 +19,7 @@
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { CITE_STORAGE_KEY, citeAnnouncement, citeHref, citePreference } from './cite.js';
+import { site } from '../locale.svelte.js';
 
 function readStored(): string | null {
 	try {
@@ -96,7 +97,7 @@ class CitationsState {
 		writeStored(next);
 		writeUrl(next);
 		this.#mirror();
-		this.message = citeAnnouncement(next, this.count);
+		this.message = citeAnnouncement(next, this.count, site.locale);
 	}
 
 	toggle(): void {

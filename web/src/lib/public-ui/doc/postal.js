@@ -3,6 +3,8 @@
 // map searches, phone links, and the staff answer that settles a
 // disputed mailing address. Pure: no window/fetch.
 
+import { guideCopy } from './copy/index.js';
+
 /** @typedef {import('./contract.js').Item} Item */
 
 /**
@@ -90,9 +92,10 @@ export function saysUspsOnly(text) {
  * carrier is "not stated" (one chip), never ✗. A branch with nothing
  * stated gets no chips.
  * @param {{ mail: readonly (Item|null)[], courier: readonly (Item|null)[] }} branches
+ * @param {string} [lang] the page language (doc/copy)
  * @returns {{ mail: Chip[], courier: Chip[] }}
  */
-export function carrierChips(branches) {
+export function carrierChips(branches, lang = 'en') {
 	/** @param {readonly (Item|null)[]} items */
 	const cited = (items) =>
 		items.filter(
@@ -113,7 +116,7 @@ export function carrierChips(branches) {
 			courier.push({ key: c.key, label: c.label, stated: true, factIds: naming.flatMap((i) => i.factIds) });
 		}
 	}
-	const other = { key: 'other', label: 'Other carriers', stated: false, factIds: [] };
+	const other = { key: 'other', label: guideCopy(lang).send.otherCarriers, stated: false, factIds: [] };
 	return {
 		mail: mail.length > 0 ? [...mail, other] : [],
 		courier: courier.length > 0 ? [...courier, other] : []
@@ -305,20 +308,21 @@ export function officeAnswer(item, evidence) {
  * (`Item.contest`): "Staff note: the office told us otherwise by phone
  * on November 4, 2026".
  * @param {{ kind: string, date?: string|null }} contest
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function contestLead(contest) {
-	const how = contest.kind === 'email' ? 'by email' : contest.kind === 'visit' ? 'at the office' : 'by phone';
-	const day = noteDay(contest.date);
-	return `Staff note: the office told us otherwise ${how}${day ? ` on ${day}` : ''}`;
+export function contestLead(contest, lang = 'en') {
+	const how = contest.kind === 'email' ? 'email' : contest.kind === 'visit' ? 'visit' : 'call';
+	return guideCopy(lang).contest.lead(how, noteDay(contest.date, lang));
 }
 
 /**
  * A note's day (`YYYY-MM-DD`) as "November 4, 2026"; '' when unreadable.
  * @param {unknown} day
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function noteDay(day) {
+export function noteDay(day, lang = 'en') {
 	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day ?? ''));
 	if (!m) return '';
 	const at = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12);
-	return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(at);
+	return new Intl.DateTimeFormat(guideCopy(lang).intl, { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(at);
 }

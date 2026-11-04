@@ -37,7 +37,8 @@
 		type NumberedSource
 	} from '../cite.js';
 	import { markQuote, sourceUrl } from '../guide.js';
-	import { valueLang } from './items.js';
+	import { sourceLang } from './items.js';
+	import { guide } from './lang.svelte.js';
 
 	let {
 		sources = [],
@@ -52,6 +53,8 @@
 	const MARKER = 'a.cite[data-cite-n]';
 	const uid = $props.id();
 	const leadId = `${uid}-lead`;
+	const copy = $derived(guide.t);
+	const lang = $derived(guide.lang);
 
 	type Mode = 'hover' | 'focus' | 'click';
 
@@ -78,7 +81,7 @@
 		const letters = (m.dataset.citeLetters ?? '').split(/\s+/).filter(Boolean);
 		const picked = source.quotes.filter((q) => letters.includes(q.letter));
 		const quotes = picked.length ? picked : source.quotes.slice(0, 1);
-		const info = describeSource(source);
+		const info = describeSource(source, { lang });
 		// Pages and PDFs show when this quote was captured and approved;
 		// staff notes carry their own date in the lead line.
 		const page = source.kind === 'web' || source.kind === 'pdf' || source.kind === 'upload';
@@ -87,7 +90,7 @@
 			source,
 			info,
 			quotes,
-			dates: !page ? '' : one && (one.capturedAt || one.acceptedAt) ? datesLine(one) : info.dates,
+			dates: !page ? '' : one && (one.capturedAt || one.acceptedAt) ? datesLine(one, { lang }) : info.dates,
 			href: linkFor(info, quotes[0] ?? null)
 		};
 	});
@@ -363,7 +366,7 @@
 					{#if q.text}
 						<blockquote
 							class="cite-quote font-quote m-0 border-l-2 border-verified pl-3 break-words text-ink italic"
-							lang={valueLang(q.text) ?? undefined}
+							lang={sourceLang(q.text, lang)}
 						>
 							{@html markQuote(q.text, q.value)}
 						</blockquote>
@@ -396,7 +399,7 @@
 							</ul>
 						{/if}
 					{:else if q.summary}
-						<p class="m-0 break-words text-ink">{q.summary}</p>
+						<p class="m-0 break-words text-ink" lang={sourceLang(q.summary, lang)}>{q.summary}</p>
 					{/if}
 				{/each}
 				{#if active.dates}
@@ -407,7 +410,7 @@
 				{/if}
 				{#if active.source.basedOn.length > 0}
 					<p class="m-0 text-ink-muted">
-						Based on {#each active.source.basedOn as n, i (n)}{i > 0 ? ', ' : ''}<a
+						{copy.endnotes.basedOn} {#each active.source.basedOn as n, i (n)}{i > 0 ? ', ' : ''}<a
 								href={`#src-${n}`}
 								class="font-mono text-accent-strong underline underline-offset-2"
 								onclick={() => hide()}>[{n}]</a
@@ -423,7 +426,7 @@
 							class="inline-flex min-h-6 items-center gap-1 font-medium text-accent-strong underline underline-offset-4"
 						>
 							{active.info.link}<span aria-hidden="true">↗</span><span class="sr-only">
-								(opens in a new tab)</span
+								{copy.common.newTab}</span
 							>
 						</a>
 					{/if}
@@ -433,7 +436,7 @@
 						onclick={() => hide(true)}
 					>
 						<XIcon class="size-4" aria-hidden="true" />
-						Close
+						{copy.card.close}
 					</button>
 				</div>
 			{/if}

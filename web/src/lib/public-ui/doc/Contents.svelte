@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { guide } from './lang.svelte.js';
+
 	// "On this page" (plan §3 row 2): links to the guide's sections. In
 	// the wide layout it sits in the rail beside the reading column and
 	// stays in view (nothing critical lives in it); on phones it is an
@@ -14,8 +16,8 @@
 </script>
 
 {#if links.length > 0}
-	<nav aria-label="On this page">
-		<p class="text-eyebrow m-0 font-semibold tracking-[0.06em] text-ink-muted uppercase">On this page</p>
+	<nav aria-label={guide.t.contents.label}>
+		<p class="text-eyebrow m-0 font-semibold tracking-[0.06em] text-ink-muted uppercase">{guide.t.contents.label}</p>
 		<ul class="m-0 mt-2 flex list-none flex-wrap gap-x-1 gap-y-0 p-0 xl:flex-col">
 			{#each links as link (link.id)}
 				<li class="m-0 p-0">

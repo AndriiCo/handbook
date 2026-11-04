@@ -20,6 +20,7 @@
 	} from '../fees.js';
 	import { SLOT, bySlot, localItem, usable } from './items.js';
 	import { telHref } from './postal.js';
+	import { guide } from './lang.svelte.js';
 	import type { Item, Section } from './contract.js';
 
 	// "Pay the fees" (plan §3 step 4, D2): the section body. The section
@@ -86,11 +87,8 @@
 
 	const uid = $props.id();
 
-	const SPEED_LABEL: Record<Speed, string> = {
-		standard: 'Standard',
-		expedite: 'Expedited',
-		same_day: 'Same day, in person'
-	};
+	const t = $derived(guide.t);
+	const SPEED_LABEL: Record<Speed, string> = $derived(t.fees.speeds);
 
 	const own = $derived(section.items.filter((i) => i.id !== ESTIMATE_ID && i.id !== ASK_ID));
 	const feeRows = $derived(own.filter((i) => (i.slot ?? '').startsWith('fees.')));
@@ -113,10 +111,10 @@
 	const chosen = $derived<Speed>(offered.includes(speed) ? speed : 'standard');
 	const n = $derived(typeof docs === 'number' && Number.isFinite(docs) ? docs : 0);
 	const result = $derived(estimateOf(model, n, chosen));
-	const total = $derived(showCalc && ready ? estimateItem(model, n, chosen) : null);
+	const total = $derived(showCalc && ready ? estimateItem(model, n, chosen, guide.lang) : null);
 	const askItem = $derived(
 		showCalc && result.ask
-			? localItem({ id: ASK_ID, label: 'Your total', display: askSentence(result.reason) })
+			? localItem({ id: ASK_ID, label: t.fees.yourTotal, display: askSentence(result.reason, guide.lang) })
 			: null
 	);
 	const askPhone = $derived(showCalc && result.ask && asksOffice(result.reason));
@@ -153,7 +151,7 @@
 
 {#snippet officePhone()}
 	{#if askPhone && phone && usable(phone)}
-		<p class="m-0 mt-1 text-ink">Call the office: <InlineValue item={phone} href={phoneHref} /></p>
+		<p class="m-0 mt-1 text-ink">{t.fees.callOffice} <InlineValue item={phone} href={phoneHref} /></p>
 	{/if}
 {/snippet}
 
@@ -174,16 +172,16 @@
 			data-calculator
 			data-print-calc
 		>
-			<h3 id={`${uid}-calc`} class="text-h3 m-0 font-semibold text-ink print:hidden">Work out your total</h3>
+			<h3 id={`${uid}-calc`} class="text-h3 m-0 font-semibold text-ink print:hidden">{t.fees.calculator}</h3>
 			{#if ready}
 				<div class="mt-4 flex flex-wrap items-end gap-x-8 gap-y-5 print:hidden">
 					<div class="flex flex-col gap-1">
-						<label for={`${uid}-docs`} class="text-sm font-semibold text-ink-muted">Number of documents</label>
+						<label for={`${uid}-docs`} class="text-sm font-semibold text-ink-muted">{t.fees.documents}</label>
 						<div class="inline-flex w-fit items-center rounded-full border border-line bg-bg">
 							<button
 								type="button"
 								class={stepClass(n <= 1)}
-								aria-label="One document fewer"
+								aria-label={t.fees.fewer}
 								aria-controls={`${uid}-docs`}
 								aria-disabled={n <= 1}
 								onclick={() => step(-1)}
@@ -203,7 +201,7 @@
 							<button
 								type="button"
 								class={stepClass(n >= MAX_DOCS)}
-								aria-label="One document more"
+								aria-label={t.fees.more}
 								aria-controls={`${uid}-docs`}
 								aria-disabled={n >= MAX_DOCS}
 								onclick={() => step(1)}
@@ -214,7 +212,7 @@
 					</div>
 					{#if offered.length > 1}
 						<fieldset class="m-0 min-w-0 border-0 p-0">
-							<legend class="p-0 text-sm font-semibold text-ink-muted">Speed</legend>
+							<legend class="p-0 text-sm font-semibold text-ink-muted">{t.fees.speed}</legend>
 							<div class="mt-1 flex flex-wrap gap-2">
 								{#each offered as s (s)}
 									<label
@@ -244,7 +242,7 @@
 		<dl class="m-0 border-t border-line">
 			{#each payRows as item (item.id)}
 				{#if item.slot === SLOT.payee}
-					<ValueRow {item} {marker} copyName="the payee name" emphasis />
+					<ValueRow {item} {marker} copyName={t.common.copyNames.payee} emphasis />
 				{:else}
 					<ValueRow {item} {marker} />
 				{/if}

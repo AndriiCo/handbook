@@ -23,12 +23,15 @@
 	import { citations } from '../citations.svelte.js';
 	import { describeSource, sourceCount, type CiteQuote, type NumberedSource } from '../cite.js';
 	import { markQuote } from '../guide.js';
-	import { valueLang } from './items.js';
+	import { sourceLang } from './items.js';
+	import { guide } from './lang.svelte.js';
 
 	let { sources = [] }: { sources?: NumberedSource[] } = $props();
 
 	const shown = $derived(citations.on && sources.length > 0);
-	const paper = { year: 'always' } as const;
+	const copy = $derived(guide.t.endnotes);
+	const lang = $derived(guide.lang);
+	const paper = $derived({ year: 'always' as const, lang });
 
 	$effect(() => {
 		citations.count = sourceCount(sources);
@@ -81,11 +84,8 @@
 		class="border-t border-line py-10 xl:py-16"
 	>
 		<div class="max-w-3xl">
-			<h2 id="sources-h" class="text-h2 m-0 font-semibold">Sources</h2>
-			<p class="mt-2 mb-0 max-w-prose text-sm text-ink-muted">
-				Each number on the page points to a source below. Quotes are copied word for word from the
-				page named; anything else is labelled as a staff note or a calculation.
-			</p>
+			<h2 id="sources-h" class="text-h2 m-0 font-semibold">{copy.heading}</h2>
+			<p class="mt-2 mb-0 max-w-prose text-sm text-ink-muted">{copy.intro}</p>
 			<ol
 				class="m-0 mt-6 flex list-decimal flex-col gap-6 pl-8 marker:font-mono marker:text-sm marker:text-ink-muted"
 			>
@@ -116,7 +116,7 @@
 									<a
 										href={`#${q.refId}`}
 										role="doc-backlink"
-										aria-label={q.label ? `Back to ${q.label}` : 'Back to the citation'}
+										aria-label={q.label ? copy.backTo(q.label) : copy.backToCitation}
 										class="inline-flex min-h-6 min-w-6 items-center justify-center rounded-xs text-accent-strong no-underline hover:bg-surface"
 										onclick={(e) => back(e, s.n, q)}>↩</a
 									>
@@ -124,7 +124,7 @@
 								{#if q.text}
 									<blockquote
 										class="cite-quote font-quote m-0 mt-1 border-l-2 border-verified pl-3 text-ink italic"
-										lang={valueLang(q.text) ?? undefined}
+										lang={sourceLang(q.text, lang)}
 									>
 										{@html markQuote(q.text, q.value)}
 									</blockquote>
@@ -157,13 +157,13 @@
 										</ul>
 									{/if}
 								{:else if q.summary}
-									<p class="m-0 mt-1 text-ink">{q.summary}</p>
+									<p class="m-0 mt-1 text-ink" lang={sourceLang(q.summary, lang)}>{q.summary}</p>
 								{/if}
 							</div>
 						{/each}
 						{#if s.basedOn.length > 0}
 							<p class="m-0 mt-2 text-ink-muted">
-								Based on {#each s.basedOn as n, i (n)}{i > 0 ? ', ' : ''}<a
+								{copy.basedOn} {#each s.basedOn as n, i (n)}{i > 0 ? ', ' : ''}<a
 										href={`#src-${n}`}
 										class="font-mono text-accent-strong underline underline-offset-2">[{n}]</a
 									>{/each}

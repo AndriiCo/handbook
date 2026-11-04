@@ -11,7 +11,8 @@
 	import ValueText from './ValueText.svelte';
 	import { GLANCE_ROWS } from '../present.js';
 	import { DOC_IDS } from './contract.js';
-	import { SLOT, formLink, traceAttrs, valueLang } from './items.js';
+	import { SLOT, formLink, itemLang, traceAttrs } from './items.js';
+	import { guide } from './lang.svelte.js';
 	import type { Item } from './contract.js';
 
 	// "At a glance" (plan §3 row 1): cost, time, pay, send and form in
@@ -44,6 +45,10 @@
 		inline?: Snippet<[Item]>;
 	} = $props();
 
+	const t = $derived(guide.t);
+	const lang = $derived(guide.lang);
+	const partLabels: Record<string, string> = $derived(t.glance.parts);
+
 	type Part = (typeof GLANCE_ROWS)[number]['parts'][number];
 	type Entry = { key: string; part: Part; items: Item[] };
 
@@ -54,7 +59,8 @@
 				const own = items.filter((i) => i.slot === part.slot);
 				if (own.length > 0) entries.push({ key: `${row.id}-${part.slot}`, part, items: own });
 			}
-			return { id: row.id, label: row.label, entries };
+			const labels: Record<string, string> = t.glance.rows;
+			return { id: row.id, label: labels[row.id] ?? row.label, entries };
 		}).filter((r) => r.entries.length > 0)
 	);
 </script>
@@ -73,12 +79,12 @@
 						>
 							<div class="min-w-0 break-words [overflow-wrap:anywhere]">
 								{#if entry.part.label}
-									<span class="mr-2 text-sm font-medium text-ink-muted">{entry.part.label}</span>
+									<span class="mr-2 text-sm font-medium text-ink-muted">{partLabels[entry.part.slot] ?? entry.part.label}</span>
 								{/if}
 								{#if entry.part.slot === 'address.office'}
 									{#each entry.items as city, i (city.id)}{#if i > 0}<span class="text-ink-muted"
-												>&nbsp;or&nbsp;</span
-											>{/if}<span class="font-medium text-ink" {...traceAttrs(city)}>{city.display}</span>{@render inline?.(
+												>&nbsp;{t.glance.or}&nbsp;</span
+											>{/if}<span class="font-medium text-ink" lang={itemLang(city, lang)} {...traceAttrs(city)}>{city.display}</span>{@render inline?.(
 											city
 										)}{/each}
 								{:else if first.state === 'conflict' || first.state === 'contested'}
@@ -97,20 +103,20 @@
 										<span>
 											{#each first.alternatives as alt, i (alt.id)}{#if i > 0}<span class="text-ink-muted"
 														>&nbsp;/&nbsp;</span
-													>{/if}<span class="text-ink" lang={valueLang(alt.display) ?? undefined} {...traceAttrs(alt)}
+													>{/if}<span class="text-ink" lang={itemLang(alt, lang)} {...traceAttrs(alt)}
 													><ValueText text={alt.display} /></span
 												>{@render inline?.(alt)}{/each}
-											<span class="text-sm text-ink-muted">(worded differently on the office's pages)</span>
+											<span class="text-sm text-ink-muted">{t.glance.worded}</span>
 										</span>
 									</span>
 								{:else}
 									<span
 										class="font-medium whitespace-pre-line text-ink"
-										lang={valueLang(first.display) ?? undefined}
+										lang={itemLang(first, lang)}
 										{...traceAttrs(first)}><ValueText text={first.display} /></span
 									>
 									{#if first.copy}
-										<span class="ml-2 inline-block align-middle"><CopyButton text={first.display} name="the payee name" /></span>
+										<span class="ml-2 inline-block align-middle"><CopyButton text={first.display} name={t.common.copyNames.payee} /></span>
 									{/if}
 									{#if first.stale}
 										<span
@@ -127,7 +133,7 @@
 									{#if first.state === 'uncited'}
 										<span class="mt-1 flex items-start gap-1.5 text-sm text-ink-muted">
 											<CircleAlertIcon class="mt-0.5 size-4 flex-none" aria-hidden="true" />
-											Source not on file
+											{t.common.sourceNotOnFile}
 										</span>
 									{/if}
 								{/if}
@@ -142,10 +148,10 @@
 											data-glance-form={link.pdf ? 'pdf' : 'page'}
 										>
 											{#if link.pdf}
-												<FileDownIcon class="size-4 flex-none" aria-hidden="true" />Download (PDF)
+												<FileDownIcon class="size-4 flex-none" aria-hidden="true" />{t.glance.downloadPdf}
 											{:else}
-												Get it on the office's page<ExternalLinkIcon class="size-4 flex-none" aria-hidden="true" /><span
-													class="sr-only">(opens in a new tab)</span
+												{t.glance.getOnPage}<ExternalLinkIcon class="size-4 flex-none" aria-hidden="true" /><span
+													class="sr-only">{t.common.newTab}</span
 												>
 											{/if}
 										</a>
@@ -165,7 +171,7 @@
 									href={`#${DOC_IDS.fees}`}
 									class="inline-flex min-h-6 items-center text-sm font-medium text-accent-strong underline underline-offset-2"
 									data-glance-faster
-									>{#if faster.step !== null}Faster options in step {faster.step}{:else}Faster options under Pay the fees{/if}</a
+									>{#if faster.step !== null}{t.glance.fasterStep(faster.step)}{:else}{t.glance.fasterFees}{/if}</a
 								>
 							</li>
 						{/if}

@@ -45,10 +45,8 @@ export const CHROME = {
 };
 
 /**
- * The authority page's own words (states around the guide). The guide
- * itself is English until its presenter copy is translated: es/fr say
- * so up front (`pending`) rather than mix languages silently
- * (docs/site-theme.md §6).
+ * The authority page's own words (states around the guide; the guide's
+ * own are doc/copy).
  * @type {Record<'en' | 'es' | 'fr', {
  *   unknownHeading: (address: string) => string,
  *   unknownBody: string,
@@ -56,8 +54,7 @@ export const CHROME = {
  *   unavailableHeading: string,
  *   unavailableBody: string,
  *   loading: string,
- *   updated: string,
- *   pending: { heading: string, body: string } | null
+ *   updated: string
  * }>}
  */
 export const PAGE_COPY = {
@@ -68,8 +65,7 @@ export const PAGE_COPY = {
 		unavailableHeading: 'This guide is unavailable.',
 		unavailableBody: 'Could not load this guide — reload the page to try again.',
 		loading: 'Loading the guide',
-		updated: 'Updated',
-		pending: null
+		updated: 'Updated'
 	},
 	es: {
 		unknownHeading: (address) => `Autoridad desconocida «${address}».`,
@@ -78,11 +74,7 @@ export const PAGE_COPY = {
 		unavailableHeading: 'Esta guía no está disponible.',
 		unavailableBody: 'No se pudo cargar esta guía: vuelva a cargar la página para intentarlo de nuevo.',
 		loading: 'Cargando la guía',
-		updated: 'Actualizado',
-		pending: {
-			heading: 'Traducción pendiente: se muestra el original en inglés.',
-			body: 'Las instrucciones de esta guía aún no están traducidas. Los registros que ya tienen traducción automática aparecen en español al final de la página.'
-		}
+		updated: 'Actualizado'
 	},
 	fr: {
 		unknownHeading: (address) => `Autorité inconnue « ${address} ».`,
@@ -91,11 +83,7 @@ export const PAGE_COPY = {
 		unavailableHeading: 'Ce guide n’est pas disponible.',
 		unavailableBody: 'Impossible de charger ce guide : rechargez la page pour réessayer.',
 		loading: 'Chargement du guide',
-		updated: 'Mis à jour',
-		pending: {
-			heading: 'Traduction en attente : l’original anglais est affiché.',
-			body: 'Les instructions de ce guide ne sont pas encore traduites. Les enregistrements déjà traduits automatiquement s’affichent en français en bas de la page.'
-		}
+		updated: 'Mis à jour'
 	}
 };
 

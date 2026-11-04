@@ -13,6 +13,7 @@
 		type Office,
 		type PlanFact
 	} from '../plan.js';
+	import { guideCopy } from '../doc/copy/index.js';
 
 	// One accepted office record: how to visit (walk-in / appointment),
 	// "Open now" in the office's own grounded timezone, the hours table,
@@ -22,14 +23,16 @@
 	// The customer guide passes `heading` (its office cards are h4s under
 	// the "In person" h3) and `clocks="guide"` (times read "8:00 a.m.",
 	// as the rest of the guide prints them); the plan view keeps a
-	// paragraph title and "8:00 AM".
+	// paragraph title and "8:00 AM". `lang` (doc/copy; default English)
+	// is the guide's language: Spanish and French read "16:30".
 	let {
 		office,
 		facts,
 		now,
 		factIds = [],
 		heading = 'p',
-		clocks = 'plan'
+		clocks = 'plan',
+		lang = 'en'
 	}: {
 		office: Office;
 		facts: Map<number, PlanFact>;
@@ -37,22 +40,27 @@
 		factIds?: number[];
 		heading?: 'p' | 'h3' | 'h4';
 		clocks?: 'plan' | 'guide';
+		lang?: string;
 	} = $props();
+
+	const t = $derived(guideCopy(lang).officeCard);
+	// The record's own words (its name, its visit notes) stay English.
+	const source = $derived(lang === 'en' ? undefined : 'en');
 
 	/** "8:00 AM – 4:00 PM" → "8:00 a.m. – 4:00 p.m." in the guide. */
 	const clockText = (text: string) =>
 		clocks === 'guide' ? text.replace(/\s?\bAM\b/g, ' a.m.').replace(/\s?\bPM\b/g, ' p.m.') : text;
 
-	const status = $derived(openStatus(office, now));
-	const rowsOfHours = $derived(hoursRows(office).map((r) => ({ ...r, time: clockText(r.time) })));
-	const zone = $derived(hasGroundedZone(office) ? zoneName(office.timezone!, now) : '');
+	const status = $derived(openStatus(office, now, lang));
+	const rowsOfHours = $derived(hoursRows(office, lang).map((r) => ({ ...r, time: clockText(r.time) })));
+	const zone = $derived(hasGroundedZone(office) ? zoneName(office.timezone!, now, lang) : '');
 	const visit = $derived(
 		office.visit?.appointment_required || office.visit?.kind === 'appointment'
-			? { label: 'Appointment required', icon: CalendarClockIcon }
+			? { label: t.appointment, icon: CalendarClockIcon }
 			: office.visit?.kind === 'walk_in'
-				? { label: 'Walk-in', icon: DoorOpenIcon }
+				? { label: t.walkIn, icon: DoorOpenIcon }
 				: office.visit?.kind === 'mail_only'
-					? { label: 'Mail only', icon: MailIcon }
+					? { label: t.mailOnly, icon: MailIcon }
 					: null
 	);
 	const street = $derived(
@@ -111,16 +119,16 @@
 			</span>
 		{/if}
 	</div>
-	<svelte:element this={heading} class="text-h3 mt-3 mb-0 font-semibold text-ink">{office.name}</svelte:element>
+	<svelte:element this={heading} class="text-h3 mt-3 mb-0 font-semibold text-ink" lang={source}>{office.name}</svelte:element>
 	{#if office.visit?.notes}
-		<p class="mt-1 mb-0 text-sm text-ink-muted">{office.visit.notes}</p>
+		<p class="mt-1 mb-0 text-sm text-ink-muted" lang={source}>{office.visit.notes}</p>
 	{/if}
 
 	<div class="mt-4 grid gap-4 sm:grid-cols-2">
 		{#if street.length > 0}
 			<div class="min-w-0">
 				<p class="m-0 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
-					<MapPinIcon class="size-3.5" aria-hidden="true" /> Address
+					<MapPinIcon class="size-3.5" aria-hidden="true" /> {t.address}
 				</p>
 				<address class="mt-1 text-sm break-words text-ink not-italic">
 					{#each street as line, i (i)}<span class="block">{line}</span>{/each}
@@ -133,7 +141,7 @@
 						class="mt-2 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-accent-strong"
 					>
 						<NavigationIcon class="size-4" aria-hidden="true" />
-						Directions<span class="sr-only"> to {office.name} (opens in a new tab)</span>
+						{t.directions}<span class="sr-only">{t.directionsTo(office.name)}</span>
 					</a>
 				{/if}
 			</div>
@@ -142,7 +150,7 @@
 			<div class="min-w-0">
 				<table class="w-full border-collapse text-sm">
 					<caption class="text-left text-xs font-semibold tracking-wide text-ink-muted uppercase">
-						Hours
+						{t.hours}
 					</caption>
 					<tbody>
 						{#each rowsOfHours as row (row.days)}
@@ -154,7 +162,7 @@
 					</tbody>
 				</table>
 				{#if zone}
-					<p class="mt-1 mb-0 text-xs text-ink-muted">Times in {zone}</p>
+					<p class="mt-1 mb-0 text-xs text-ink-muted">{t.timesIn(zone)}</p>
 				{/if}
 			</div>
 		{/if}

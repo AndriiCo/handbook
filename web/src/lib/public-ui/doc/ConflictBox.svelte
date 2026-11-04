@@ -7,7 +7,8 @@
 	import InlineValue from './InlineValue.svelte';
 	import ValueText from './ValueText.svelte';
 	import { DOC_IDS } from './contract.js';
-	import { partOf, traceAttrs, usable, valueLang } from './items.js';
+	import { itemLang, partOf, sourceLang, traceAttrs, usable } from './items.js';
+	import { guide } from './lang.svelte.js';
 	import { contestLead, noteDay, officeAnswer, postalCity, telHref, type EvidenceNote } from './postal.js';
 	import type { Item } from './contract.js';
 
@@ -84,10 +85,10 @@
 		return name ? partOf(courierOk, 'city', name) : null;
 	});
 	const repeat = $derived(markRepeats ? inline : undefined);
-	const how = $derived(
-		answer?.channel === 'email' ? 'by email' : answer?.channel === 'visit' ? 'at the office' : 'by phone'
-	);
-	const decisionDay = $derived(answer ? noteDay(answer.decision.date) : '');
+	const t = $derived(guide.t);
+	const lang = $derived(guide.lang);
+	const how = $derived(answer?.channel === 'email' ? 'email' : answer?.channel === 'visit' ? 'visit' : 'call');
+	const decisionDay = $derived(answer ? noteDay(answer.decision.date, lang) : '');
 	const noteChannel = $derived((answer?.note?.channel ?? '').trim());
 
 	const valueEls: Record<string, HTMLElement | null> = $state({});
@@ -115,10 +116,10 @@
 	<h4 id={`${uid}-h`} class="m-0 flex items-start gap-2 text-body font-semibold text-ink">
 		{#if worded}
 			<InfoIcon class="mt-1 size-4 flex-none text-ink-muted" aria-hidden="true" />
-			Worded differently on the office's pages
+			{t.conflict.worded}
 		{:else}
 			<TriangleAlertIcon class="mt-1 size-4 flex-none text-changed" aria-hidden="true" />
-			The office's own pages list different mailing addresses
+			{t.conflict.heading}
 		{/if}
 	</h4>
 	<ul class="m-0 mt-3 list-none p-0">
@@ -137,26 +138,26 @@
 					<span
 						bind:this={valueEls[alt.id]}
 						class="block break-words whitespace-pre-line font-medium text-ink [overflow-wrap:anywhere]"
-						lang={valueLang(alt.display) ?? undefined}
+						lang={itemLang(alt, lang)}
 						{...traceAttrs(alt)}><ValueText text={alt.display} /></span
 					>
 					{#if pages}
-						<p class="m-0 mt-1 text-sm text-ink-muted">Printed on: {pages}</p>
+						<p class="m-0 mt-1 text-sm text-ink-muted">{t.conflict.printedOn} <span lang={sourceLang(pages, lang)}>{pages}</span></p>
 					{/if}
 					{#each alt.contest ?? [] as note (note.id)}
 						<p class="m-0 mt-1 text-sm font-medium text-changed" data-note-ids={String(note.id)}>
-							{contestLead(note)}: {note.summary}
+							{contestLead(note, lang)}: <span lang={sourceLang(note.summary, lang)}>{note.summary}</span>
 						</p>
 					{/each}
 					{#if preferred}
 						<!-- Screen only: on paper the recommendation line below names it. -->
 						<p class="m-0 mt-2 flex items-center gap-1.5 text-sm font-semibold text-verified print:hidden">
 							<BadgeCheckIcon class="size-4 flex-none" aria-hidden="true" />
-							Our recommendation
+							{t.conflict.recommendation}
 						</p>
 						{#if answer?.unlocks}
 							<div class="mt-2">
-								<CopyButton text={alt.display} name="the recommended mailing address" target={valueEls[alt.id] ?? null} />
+								<CopyButton text={alt.display} name={t.common.copyNames.recommended} target={valueEls[alt.id] ?? null} />
 							</div>
 						{/if}
 					{/if}
@@ -168,48 +169,44 @@
 	{#if answer && recommended}
 		<div class="mt-3 border-t border-line pt-3" data-recommendation>
 			<p class="m-0 text-ink" data-note-ids={String(answer.decision.id)}>
-				<span class="font-semibold">Our recommendation (staff{#if decisionDay},&nbsp;{decisionDay}{/if}):</span>
-				use <span class="font-medium" lang={valueLang(recommended.display) ?? undefined} {...traceAttrs(recommended)}
+				<span class="font-semibold">{t.conflict.recommendationStaff(decisionDay)}</span>
+				{t.conflict.use} <span class="font-medium" lang={itemLang(recommended, lang)} {...traceAttrs(recommended)}
 					><ValueText text={recommended.display} /></span
-				>{#if answer.note}&nbsp;— confirmed {how} with the office{#if noteChannel}&nbsp;({noteChannel}){/if}{/if}.
+				>{#if answer.note}{t.conflict.confirmed(how, noteChannel)}{/if}.
 			</p>
 			{#if answer.note}
 				<!-- Screen only: on paper the line above says how it was confirmed. -->
 				<p class="m-0 mt-1 text-ink print:hidden" data-note-ids={String(answer.note.id)}>
-					{answer.channel === 'email'
-						? 'The office told us by email'
-						: answer.channel === 'visit'
-							? 'The office told us at the office'
-							: 'The office told us by phone'}{#if noteDay(answer.note.date)}&nbsp;on {noteDay(answer.note.date)}{/if}: {answer
-						.note.summary}
+					{t.conflict.toldUs(how, noteDay(answer.note.date, lang))}
+					<span lang={sourceLang(answer.note.summary, lang)}>{answer.note.summary}</span>
 				</p>
 			{/if}
 		</div>
 	{/if}
 	{#if !worded}
 		<div class="mt-3 border-t border-line pt-3">
-			<p class="m-0 font-semibold text-ink">What you can do:</p>
+			<p class="m-0 font-semibold text-ink">{t.conflict.whatYouCanDo}</p>
 			<ul class="m-0 mt-1 list-disc pl-5 text-ink">
 				{#if callable}
 					<li class="m-0 mt-1">
-						Call <InlineValue item={callable} href={telHref(callable.display)} marker={repeat} />{#if option}&nbsp;(<InlineValue
+						{t.conflict.call[0]}<InlineValue item={callable} href={telHref(callable.display)} marker={repeat} />{#if option}&nbsp;(<InlineValue
 								item={option}
 								marker={repeat}
-							/>){/if} before you mail.
+							/>){/if}{t.conflict.call[1]}
 					</li>
 				{/if}
 				{#if courierOk}
 					<li class="m-0 mt-1">
-						{callable ? 'Or send' : 'Send'} by courier to the {#if city}<InlineValue item={city} />&nbsp;{/if}<a
+						{t.conflict.sendCourier(!callable)}{#if city}<InlineValue item={city} />&nbsp;{/if}<a
 							href={`#${DOC_IDS.sendCourier}`}
-							class="underline underline-offset-2">overnight address</a
+							class="underline underline-offset-2">{t.conflict.overnight}</a
 						>.
 					</li>
 				{/if}
 				{#if !callable && !courierOk}
 					<li class="m-0 mt-1">
-						Ask the office which address is current before you mail. Its contact details are under
-						<a href={`#${DOC_IDS.contact}`} class="underline underline-offset-2">Contact the office</a>.
+						{t.conflict.askWhich}
+						<a href={`#${DOC_IDS.contact}`} class="underline underline-offset-2">{t.conflict.contactLink}</a>.
 					</li>
 				{/if}
 			</ul>

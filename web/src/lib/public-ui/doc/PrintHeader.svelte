@@ -23,6 +23,7 @@
 	import { flushSync, onMount } from 'svelte';
 	import { citations } from '../citations.svelte.js';
 	import { formatDay, formatMoment, trustLine } from '../cite.js';
+	import { guide } from './lang.svelte.js';
 
 	type Trust = {
 		capturedMin: string | null;
@@ -49,12 +50,13 @@
 	let printedAt = $state<Date | null>(null);
 	let pageUrl = $state('');
 
-	const paper = { year: 'always' } as const;
+	const t = $derived(guide.t.print);
+	const paper = $derived({ year: 'always' as const, lang: guide.lang });
 	const trustText = $derived(trustLine(trust, paper));
 	const asOf = $derived(formatMoment(dataAsOf ?? trust?.acceptedMax ?? null, paper));
 	const printed = $derived(printedAt ? formatDay(printedAt, paper) : '');
 	const stamp = $derived(
-		[asOf ? `Data as of ${asOf}` : '', printed ? `Printed ${printed}` : '']
+		[asOf ? t.dataAsOf(asOf) : '', printed ? t.printed(printed) : '']
 			.filter(Boolean)
 			.join(' · ')
 	);
@@ -94,7 +96,7 @@
 
 <div class="print-header" data-print-header>
 	{#if printing}
-		<p class="m-0 text-sm font-semibold">Apostille Handbook</p>
+		<p class="m-0 text-sm font-semibold">{t.brand}</p>
 		{#if title}
 			<p class="text-h3 m-0 mt-1 font-semibold">{title}</p>
 		{/if}
@@ -106,11 +108,9 @@
 			<p class="m-0 text-sm">{stamp}</p>
 		{/if}
 		{#if citations.on}
-			<p class="m-0 text-sm">Numbers in brackets point to the sources listed at the end.</p>
+			<p class="m-0 text-sm">{t.brackets}</p>
 		{/if}
-		<p class="m-0 mt-2 text-sm font-semibold">
-			Check the live page before you send documents or money.
-		</p>
+		<p class="m-0 mt-2 text-sm font-semibold">{t.checkLive}</p>
 	{/if}
 </div>
 

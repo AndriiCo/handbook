@@ -20,6 +20,7 @@
 	import { notConfirmedLabels } from '../present.js';
 	import { SLOT, bySlot, isUS } from './items.js';
 	import { repeatItems, sendRepeats } from './send.js';
+	import { guide } from './lang.svelte.js';
 	import type { ComponentProps } from 'svelte';
 	import type { Speed } from '../fees.js';
 	import type { Office, Provenance } from '../plan.js';
@@ -60,7 +61,9 @@
 	// - evidence: `/plan` `evidence[]`; forms: `/plan` `forms[]`.
 	// - provenance, planVersion, planAcceptedAt: the accepted /plan's.
 	// - models: model names that drafted the records.
-	// - lang, translations, pathname: the `?lang` records view.
+	// - lang, translations, pathname: the records view's language
+	//   (stored machine translations), not the guide's: the guide's own
+	//   words follow the site language (lang.svelte.js).
 	// - now: the clock for office status and closures.
 	// - flash, announce: the live-update highlight and announcement.
 	let {
@@ -107,6 +110,7 @@
 		announce?: string;
 	} = $props();
 
+	const t = $derived(guide.t);
 	let column = $state<HTMLElement | null>(null);
 	let article = $state<HTMLElement | null>(null);
 	let docs = $state<number | null>(1);
@@ -119,7 +123,7 @@
 	const us = $derived(isUS(country) || page.profile === 'us_state');
 	const repeats = $derived(page.thin ? null : sendRepeats(page.sections));
 	const cited = $derived(
-		numberSources([...orderedItems(page), ...repeatItems(repeats), ...(estimate ? [estimate] : [])])
+		numberSources([...orderedItems(page), ...repeatItems(repeats), ...(estimate ? [estimate] : [])], guide.lang)
 	);
 	const count = $derived(sourceCount(cited.sources));
 	const values = $derived(page.sections.flatMap((s) => [...s.items, ...s.also]));
@@ -135,9 +139,9 @@
 		return any ? { step: fees.step } : null;
 	});
 	// "Get it back": mail takes time both ways when the page has a mail route.
-	const afterNote = $derived(page.routes.some((r) => r.id === 'mail') ? 'Allow extra time for mail both ways.' : null);
+	const afterNote = $derived(page.routes.some((r) => r.id === 'mail') ? t.guide.afterNote : null);
 	// Who the label service is not.
-	const issuer = $derived(/\bsecretary of state\b/i.test(name) ? 'the Secretary of State' : 'the issuing office');
+	const issuer = $derived(/\bsecretary of state\b/i.test(name) ? t.guide.issuerSos : t.guide.issuerOffice);
 	// "You can apply directly to …" only for an office that issues them.
 	const issuing = $derived(page.profile === 'us_state' || !!page.header.lede);
 
@@ -177,16 +181,7 @@
 		};
 	});
 
-	const LABELS: Record<string, string> = {
-		before: 'Right office',
-		prepare: 'Prepare',
-		form: 'Request form',
-		fees: 'Fees',
-		send: 'Send',
-		after: 'Get it back',
-		contact: 'Contact',
-		updates: 'Updates'
-	};
+	const LABELS: Record<string, string> = $derived(t.guide.nav);
 	// The office pages' change notes (`/changes`), read once and lazily:
 	// when the end of the guide nears the screen. A 404, an empty or an
 	// unreadable body reads as no notes (no console error of ours).
@@ -298,14 +293,14 @@
 			role="alert"
 			data-cite-failed
 		>
-			<span>Sources didn't load, so the numbers can't open them yet.</span>
+			<span>{t.guide.citeFailed}</span>
 			<button
 				type="button"
 				class="inline-flex min-h-11 items-center rounded-sm border border-line bg-bg px-4 font-medium text-ink hover:border-focus"
 				onclick={() => {
 					citeFailed = false;
 					citeTry += 1;
-				}}>Retry</button
+				}}>{t.guide.retry}</button
 			>
 		</div>
 	{/if}
@@ -317,7 +312,7 @@
 		{#if page.glance.length > 0}
 			<section aria-labelledby="glance-h" class="border-t border-line py-10 xl:py-16" data-glance-band>
 				<div class="max-w-3xl">
-					<h2 id="glance-h" class="m-0 font-brand text-h2 font-medium text-ink">At a glance</h2>
+					<h2 id="glance-h" class="m-0 font-brand text-h2 font-medium text-ink">{t.glance.heading}</h2>
 					<div class="mt-5">
 						<Glance items={page.glance} {faster} {marker} {inline} />
 					</div>
@@ -385,7 +380,7 @@
 					{/each}
 					{#if showUpdates}
 						<section id="updates" aria-labelledby="updates-h" class="guide-step scroll-mt-20" data-section="updates">
-							<h2 id="updates-h" class="m-0 font-brand text-h2 font-medium text-ink">Updates</h2>
+							<h2 id="updates-h" class="m-0 font-brand text-h2 font-medium text-ink">{t.guide.updates}</h2>
 							<div class="mt-5">
 								<Updates items={page.updates} changes={changes ?? null} {slug} {apiBase} {marker} />
 							</div>
@@ -408,7 +403,7 @@
 			records={page.records}
 			{changes}
 			{models}
-			pages={pagesPhrase(page.header.trust)}
+			pages={pagesPhrase(page.header.trust, guide.lang)}
 			{provenance}
 			{planVersion}
 			{planAcceptedAt}

@@ -770,12 +770,31 @@ function copyStrings(root) {
 	return out;
 }
 
-/** Every Svelte component and helper module of the money and send blocks. */
+/** Every Svelte component and helper module of the money and send blocks, and the guide's copy. */
 function sources() {
 	const files = readdirSync(DOC)
 		.filter((n) => n.endsWith('.svelte') || n.endsWith('.js'))
 		.map((n) => join(DOC, n));
-	return [...files, join(PUBLIC_UI, 'fees.js')];
+	const copy = readdirSync(join(DOC, 'copy'))
+		.filter((n) => n.endsWith('.js'))
+		.map((n) => join(DOC, 'copy', n));
+	return [...files, ...copy, join(PUBLIC_UI, 'fees.js')];
+}
+
+// Copy for components outside the guide's blocks (the follow form, the
+// pipeline panel) lives in doc/copy too; the block rules don't bind it.
+const OTHER_COPY = new Set(['follow', 'provenance']);
+
+/**
+ * A copy table's AST without the namespaces of OTHER_COPY.
+ * @param {any} ast
+ */
+function guideOnly(ast) {
+	for (const node of ast.body) {
+		if (node.type !== 'ExportDefaultDeclaration' || node.declaration.type !== 'ObjectExpression') continue;
+		node.declaration.properties = node.declaration.properties.filter((p) => !OTHER_COPY.has(p.key?.name));
+	}
+	return ast;
 }
 
 test('template copy in the money and send blocks: no digits, $, dates; no banned words', () => {
@@ -785,11 +804,13 @@ test('template copy in the money and send blocks: no digits, $, dates; no banned
 		const ast = file.endsWith('.svelte')
 			? parseSvelte(src, { modern: true })
 			: parseJs(src, { ecmaVersion: 'latest', sourceType: 'module' });
+		if (file.includes(`${join('doc', 'copy')}`)) guideOnly(ast);
 		for (const { text, where } of copyStrings(file.endsWith('.svelte') ? { instance: ast.instance, module: ast.module, fragment: ast.fragment } : ast)) {
 			checked += 1;
 			const name = `${file.slice(PUBLIC_UI.length + 1)} (${where}): ${JSON.stringify(text.trim().slice(0, 80))}`;
 			assert.doesNotMatch(text, /[\d$]/, `${name}: digits or $ in template copy`);
-			assert.doesNotMatch(text, BANNED, `${name}: banned word in template copy`);
+			// The banned words are English ("todo" is Spanish for "all").
+			if (!/[\\/]copy[\\/](?:es|fr)\.js$/.test(file)) assert.doesNotMatch(text, BANNED, `${name}: banned word in template copy`);
 		}
 	}
 	assert.ok(checked > 100, `only ${checked} strings linted`);

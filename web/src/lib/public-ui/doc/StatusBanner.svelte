@@ -3,7 +3,8 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
 	import { formatDay } from '../cite.js';
-	import { traceAttrs } from './items.js';
+	import { itemLang, traceAttrs } from './items.js';
+	import { guide } from './lang.svelte.js';
 	import type { Item } from './contract.js';
 
 	type Status = {
@@ -36,10 +37,12 @@
 	}: { status: Status; marker?: Snippet<[Item]>; inline?: Snippet<[Item]> } = $props();
 
 	const uid = $props.id();
+	const t = $derived(guide.t);
+	const opts = $derived({ lang: guide.lang });
 
 	const captured = (item: Item) => {
 		const at = item.cites.map((c) => c.source.capturedAt).find((v) => !!v);
-		return at ? formatDay(at) : '';
+		return at ? formatDay(at, opts) : '';
 	};
 
 	// Resolved notices pair by instance: the notice, then its restore.
@@ -57,7 +60,7 @@
 		}
 		return out;
 	});
-	const lastRead = $derived(status.lastRead ? formatDay(status.lastRead.capturedAt) : '');
+	const lastRead = $derived(status.lastRead ? formatDay(status.lastRead.capturedAt, opts) : '');
 </script>
 
 {#if status.active.length > 0}
@@ -68,16 +71,18 @@
 	>
 		<h2 id={`${uid}-h`} class="m-0 flex items-center gap-2 text-body font-semibold text-ink">
 			<TriangleAlertIcon class="size-5 flex-none text-changed" aria-hidden="true" />
-			Service notice
+			{t.status.serviceNotice}
 		</h2>
 		<ul class="m-0 mt-2 list-none p-0">
 			{#each status.active as item (item.id)}
 				{@const day = captured(item)}
 				<li class="m-0 grid grid-cols-[minmax(0,1fr)_minmax(3.5ch,max-content)] gap-x-3 py-1" data-item={item.id}>
 					<div class="min-w-0">
-						<p class="m-0 break-words text-ink [overflow-wrap:anywhere]" {...traceAttrs(item)}>{item.display}</p>
+						<p class="m-0 break-words text-ink [overflow-wrap:anywhere]" lang={itemLang(item, guide.lang)} {...traceAttrs(item)}>
+							{item.display}
+						</p>
 						{#if day}
-							<p class="m-0 mt-1 text-sm text-ink-muted">Captured from the office's page {day}</p>
+							<p class="m-0 mt-1 text-sm text-ink-muted">{t.status.capturedFrom(day)}</p>
 						{/if}
 					</div>
 					<span class="text-right text-sm leading-6">{@render marker?.(item)}</span>
@@ -91,14 +96,14 @@
 		<CircleCheckIcon class="mt-0.5 size-4 flex-none text-verified" aria-hidden="true" />
 		<div class="flex min-w-0 flex-col gap-1">
 			{#if lastRead && status.active.length === 0}
-				<p class="m-0">No open service notice in the office's notice log (last read {lastRead}).</p>
+				<p class="m-0">{t.status.noOpen(lastRead)}</p>
 			{/if}
 			{#each pairs as pair (pair.key)}
 				<p class="m-0 break-words [overflow-wrap:anywhere]" data-item={pair.restored?.id ?? pair.notice?.id}>
-					<span class="font-medium text-ink">Resolved:</span>
-					{#if pair.notice}<span {...traceAttrs(pair.notice)}>{pair.notice.display}</span>{@render inline?.(pair.notice)}{/if}
+					<span class="font-medium text-ink">{t.status.resolved}</span>
+					{#if pair.notice}<span lang={itemLang(pair.notice, guide.lang)} {...traceAttrs(pair.notice)}>{pair.notice.display}</span>{@render inline?.(pair.notice)}{/if}
 					{#if pair.notice && pair.restored}<span aria-hidden="true">&nbsp;—</span>{/if}
-					{#if pair.restored}<span {...traceAttrs(pair.restored)}>{pair.restored.display}</span>{@render inline?.(pair.restored)}{/if}
+					{#if pair.restored}<span lang={itemLang(pair.restored, guide.lang)} {...traceAttrs(pair.restored)}>{pair.restored.display}</span>{@render inline?.(pair.restored)}{/if}
 				</p>
 			{/each}
 		</div>

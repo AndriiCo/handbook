@@ -6,6 +6,7 @@
 // Pacific is read that day, not the next. Pure: no window/fetch.
 
 import { DEFAULT_ZONE, closureClauses, zonedDay, zonedNow } from './offices.js';
+import { guideCopy } from './copy/index.js';
 
 /** @typedef {import('./contract.js').Item} Item */
 
@@ -113,11 +114,12 @@ export function updateEntries({ items = [], panels = [] }) {
 /**
  * `YYYY-MM-DD` as "Nov 3, 2026"; '' when unreadable.
  * @param {unknown} day
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function shortDay(day) {
+export function shortDay(day, lang = 'en') {
 	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(day ?? ''));
 	if (!m) return '';
-	return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
+	return new Intl.DateTimeFormat(guideCopy(lang).intl, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
 		Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12)
 	);
 }

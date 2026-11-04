@@ -7,7 +7,8 @@
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import CopyButton from './CopyButton.svelte';
 	import ValueText from './ValueText.svelte';
-	import { traceAttrs, valueLang } from './items.js';
+	import { itemLang, sourceLang, traceAttrs } from './items.js';
+	import { guide } from './lang.svelte.js';
 	import { contestLead } from './postal.js';
 	import type { Item } from './contract.js';
 
@@ -60,6 +61,8 @@
 		extra?: Snippet;
 	} = $props();
 
+	const t = $derived(guide.t);
+	const lang = $derived(guide.lang);
 	let valueEl = $state<HTMLElement | null>(null);
 
 	const rowLabel = $derived(label ?? item.label);
@@ -87,12 +90,12 @@
 			{#if item.state === 'conflict'}
 				<p class="m-0 flex items-start gap-1.5 text-sm font-semibold text-changed">
 					<TriangleAlertIcon class="mt-0.5 size-4 flex-none" aria-hidden="true" />
-					The office's pages give different values
+					{t.row.conflict}
 				</p>
 			{:else}
 				<p class="m-0 flex items-start gap-1.5 text-sm font-medium text-ink-muted">
 					<InfoIcon class="mt-0.5 size-4 flex-none" aria-hidden="true" />
-					Worded differently on the office's pages
+					{t.row.worded}
 				</p>
 			{/if}
 			<ul class="m-0 mt-2 list-none p-0">
@@ -104,13 +107,13 @@
 							{/if}
 							<span
 								class="break-words whitespace-pre-line text-ink [overflow-wrap:anywhere]"
-								lang={valueLang(alt.display) ?? undefined}
+								lang={itemLang(alt, lang)}
 								{...traceAttrs(alt)}><ValueText text={alt.display} /></span
 							>
 							{#each alt.contest ?? [] as note (note.id)}
 								<p class="m-0 mt-1 flex items-start gap-1.5 text-sm font-medium text-changed" data-note-ids={String(note.id)}>
 									<TriangleAlertIcon class="mt-0.5 size-4 flex-none" aria-hidden="true" />
-									<span class="min-w-0 break-words [overflow-wrap:anywhere]">{contestLead(note)}: {note.summary}</span>
+									<span class="min-w-0 break-words [overflow-wrap:anywhere]">{contestLead(note, lang)}: <span lang={sourceLang(note.summary, lang)}>{note.summary}</span></span>
 								</p>
 							{/each}
 						</div>
@@ -131,7 +134,7 @@
 				<span
 					bind:this={valueEl}
 					class={`block min-w-0 break-words whitespace-pre-line text-ink [overflow-wrap:anywhere] ${emphasis ? 'font-semibold' : ''}`}
-					lang={valueLang(item.display) ?? undefined}
+					lang={itemLang(item, lang)}
 					{...traceAttrs(item)}><ValueText text={item.display} /></span
 				>
 			{/if}
@@ -150,13 +153,13 @@
 			{#each item.contest ?? [] as note (note.id)}
 				<p class="m-0 mt-1 flex items-start gap-1.5 text-sm font-medium text-changed" data-note-ids={String(note.id)}>
 					<TriangleAlertIcon class="mt-0.5 size-4 flex-none" aria-hidden="true" />
-					<span class="min-w-0 break-words [overflow-wrap:anywhere]">{contestLead(note)}: {note.summary}</span>
+					<span class="min-w-0 break-words [overflow-wrap:anywhere]">{contestLead(note, lang)}: <span lang={sourceLang(note.summary, lang)}>{note.summary}</span></span>
 				</p>
 			{/each}
 			{#if item.state === 'uncited'}
 				<p class="m-0 mt-1 flex items-start gap-1.5 text-sm text-ink-muted">
 					<CircleAlertIcon class="mt-0.5 size-4 flex-none" aria-hidden="true" />
-					Source not on file
+					{t.common.sourceNotOnFile}
 				</p>
 			{/if}
 			{#if canCopy}

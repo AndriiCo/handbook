@@ -29,6 +29,7 @@
 // Pure: no window, document or fetch, so node tests drive it directly.
 
 import { domain } from './guide.js';
+import { guideCopy } from './doc/copy/index.js';
 
 /** @typedef {import('./doc/contract.js').Item} Item */
 /** @typedef {import('./doc/contract.js').Cite} Cite */
@@ -214,9 +215,10 @@ export function sourceKey(ref) {
 /**
  * @param {Partial<SourceRef>} ref
  * @param {string} key
+ * @param {string} [lang] the page language (doc/copy)
  * @returns {SourceRef}
  */
-function normalizeRef(ref, key) {
+function normalizeRef(ref, key, lang = 'en') {
 	const url = canonicalUrl(ref.url) ?? canonicalUrl(/^https?:\/\//i.test(key) ? key : null);
 	/** @type {EvidenceKind} */
 	const kind = KINDS.includes(/** @type {EvidenceKind} */ (ref.kind))
@@ -228,7 +230,7 @@ function normalizeRef(ref, key) {
 	// A page with no title of its own reads its last path segment; the
 	// site root is the home page (never the host twice: "sos.wa.gov —
 	// sos.wa.gov").
-	const fallback = url ? (titleFromUrl(url) ?? (isSiteRoot(url) ? 'Home page' : '')) : '';
+	const fallback = url ? (titleFromUrl(url) ?? (isSiteRoot(url) ? guideCopy(lang).present.homePage : '')) : '';
 	return {
 		key,
 		kind,
@@ -291,9 +293,10 @@ function pickSecs(a, b, sign) {
  *   it, plus any keys in its SourceRef's optional `supports` array.
  *
  * @param {Item[]} items
+ * @param {string} [lang] the page language (doc/copy)
  * @returns {{ sources: NumberedSource[], refs: Record<string, MarkerRef[]> }}
  */
-export function numberSources(items) {
+export function numberSources(items, lang = 'en') {
 	/** @typedef {{ src: NumberedSource, letter: string, letters: string[], refId: string }} Mark */
 
 	/** Every source, in order of first appearance (numbered at the end). @type {NumberedSource[]} */
@@ -322,7 +325,7 @@ export function numberSources(items) {
 	const sourceFor = (raw) => {
 		const key = sourceKey(raw);
 		if (!raw || !key) return null;
-		const ref = normalizeRef(raw, key);
+		const ref = normalizeRef(raw, key, lang);
 		let s = byKey.get(key);
 		if (!s) {
 			s = {
@@ -650,8 +653,9 @@ export function numberPage(page) {
 // ---------- dates ----------
 
 /**
- * @typedef {{ timeZone?: string, now?: number, year?: 'auto'|'always' }} DateOpts
+ * @typedef {{ timeZone?: string, now?: number, year?: 'auto'|'always', lang?: string }} DateOpts
  * - timeZone: IANA zone; default the reader's own;
+ * - lang: the page language (doc/copy): its words and its `Intl` locale;
  * - now: ms epoch for the "this year" test (default Date.now());
  * - year: 'always' prints the year (paper); 'auto' only when it is not
  *   the current year.
@@ -700,15 +704,17 @@ function showYear(dates, opts) {
 /**
  * @param {boolean} year
  * @param {string|undefined} timeZone
+ * @param {string} [lang]
  */
-function dayFormat(year, timeZone) {
+function dayFormat(year, timeZone, lang) {
+	const intl = guideCopy(lang).intl;
 	/** @type {Intl.DateTimeFormatOptions} */
 	const o = { month: 'short', day: 'numeric', timeZone };
 	if (year) o.year = 'numeric';
 	try {
-		return new Intl.DateTimeFormat('en-US', o);
+		return new Intl.DateTimeFormat(intl, o);
 	} catch {
-		return new Intl.DateTimeFormat('en-US', { ...o, timeZone: undefined });
+		return new Intl.DateTimeFormat(intl, { ...o, timeZone: undefined });
 	}
 }
 
@@ -721,7 +727,7 @@ function dayFormat(year, timeZone) {
 export function formatDay(v, opts = {}) {
 	const d = toDate(v);
 	if (!d) return '';
-	return plain(dayFormat(showYear([d], opts), opts.timeZone).format(d));
+	return plain(dayFormat(showYear([d], opts), opts.timeZone, opts.lang).format(d));
 }
 
 /**
@@ -736,7 +742,7 @@ export function formatRange(a, b, opts = {}) {
 	const db = toDate(b);
 	if (!da || !db) return formatDay(da ?? db, opts);
 	const [lo, hi] = da.getTime() <= db.getTime() ? [da, db] : [db, da];
-	const f = dayFormat(showYear([lo, hi], opts), opts.timeZone);
+	const f = dayFormat(showYear([lo, hi], opts), opts.timeZone, opts.lang);
 	const left = plain(f.format(lo));
 	const right = plain(f.format(hi));
 	if (left === right) return left;
@@ -764,16 +770,18 @@ export function formatMoment(v, opts = {}) {
 		timeZone: opts.timeZone
 	};
 	if (showYear([d], opts)) o.year = 'numeric';
+	const intl = guideCopy(opts.lang).intl;
 	let text = '';
 	try {
-		text = new Intl.DateTimeFormat('en-US', { ...o, timeZoneName: 'shortGeneric' }).format(d);
+		text = new Intl.DateTimeFormat(intl, { ...o, timeZoneName: 'shortGeneric' }).format(d);
 	} catch {
 		try {
-			text = new Intl.DateTimeFormat('en-US', { ...o, timeZoneName: 'short' }).format(d);
+			text = new Intl.DateTimeFormat(intl, { ...o, timeZoneName: 'short' }).format(d);
 		} catch {
-			text = new Intl.DateTimeFormat('en-US', { ...o, timeZone: undefined }).format(d);
+			text = new Intl.DateTimeFormat(intl, { ...o, timeZone: undefined }).format(d);
 		}
 	}
+	if (intl !== 'en-US') return plain(text);
 	return plain(text)
 		.replace(/\s?\bAM\b/, ' a.m.')
 		.replace(/\s?\bPM\b/, ' p.m.');
@@ -788,29 +796,27 @@ export function formatMoment(v, opts = {}) {
 export function datesLine(d, opts = {}) {
 	const captured = formatRange(d.capturedMin ?? d.capturedAt, d.capturedAt, opts);
 	const approved = formatRange(d.acceptedMin ?? d.acceptedAt, d.acceptedAt, opts);
+	const t = guideCopy(opts.lang).cite;
 	const parts = [];
-	if (captured) parts.push(`Captured ${captured}`);
-	if (approved) parts.push(parts.length ? `approved ${approved}` : `Approved ${approved}`);
+	if (captured) parts.push(t.captured(captured));
+	if (approved) parts.push(t.approved(approved, parts.length === 0));
 	return parts.join(' · ');
 }
-
-/** @param {number} n @param {string} one @param {string} many */
-const counted = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 /**
  * The pages behind a page's values: "8 official pages" (on the
  * listed official site), "1 other web page" (any other host), or "2
  * web pages" when no page is on the official site; '' for none.
  * @param {{ pages?: number, otherPages?: number }|null|undefined} trust
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function pagesPhrase(trust) {
+export function pagesPhrase(trust, lang = 'en') {
+	const t = guideCopy(lang).cite;
 	const pages = Number(trust?.pages) || 0;
 	const others = Number(trust?.otherPages) || 0;
 	const parts = [];
-	if (pages > 0) parts.push(counted(pages, 'official page', 'official pages'));
-	if (others > 0) {
-		parts.push(pages > 0 ? counted(others, 'other web page', 'other web pages') : counted(others, 'web page', 'web pages'));
-	}
+	if (pages > 0) parts.push(t.officialPages(pages));
+	if (others > 0) parts.push(pages > 0 ? t.otherPages(others) : t.webPages(others));
 	return parts.join(', ');
 }
 
@@ -824,18 +830,19 @@ export function pagesPhrase(trust) {
  */
 export function trustLine(trust, opts = {}) {
 	if (!trust) return '';
+	const t = guideCopy(opts.lang).cite;
 	const parts = [];
 	const captured = formatRange(trust.capturedMin, trust.capturedMax, opts);
-	if (captured) parts.push(`Sources captured ${captured}`);
+	if (captured) parts.push(t.sourcesCaptured(captured));
 	const approved = formatDay(trust.acceptedMax, opts);
-	if (approved) parts.push(`approved by staff ${approved}`);
+	if (approved) parts.push(t.approvedByStaff(approved));
 	const counts = [];
 	const calls = Number(trust.calls) || 0;
 	const emails = Number(trust.emails) || 0;
-	const pages = pagesPhrase(trust);
+	const pages = pagesPhrase(trust, opts.lang);
 	if (pages) counts.push(pages);
-	if (calls > 0) counts.push(counted(calls, 'phone call', 'phone calls'));
-	if (emails > 0) counts.push(counted(emails, 'email', 'emails'));
+	if (calls > 0) counts.push(t.calls(calls));
+	if (emails > 0) counts.push(t.emails(emails));
 	if (counts.length) parts.push(counts.join(', '));
 	const line = parts.join(' · ');
 	return line ? line.charAt(0).toUpperCase() + line.slice(1) : '';
@@ -885,61 +892,57 @@ export function describeSource(s, opts = {}) {
 	const day = (v) => formatDay(v, s.dayOnly ? { ...opts, timeZone: 'UTC' } : opts);
 	const web = { url, href, dates: datesLine(s, opts), check: null };
 	const none = { title: null, url: null, href: null, dates: '', link: null, fragment: false };
+	const t = guideCopy(opts.lang).cite;
 	// A note that contradicts the value it is about says so first.
-	const against = s.stance === 'contradicts' ? 'contradicts the value shown' : null;
+	const against = s.stance === 'contradicts' ? t.contradicts : null;
 	switch (s.kind) {
 		case 'web':
 			return {
 				...web,
-				lead: dot(['Official web page', host]),
-				head: title
-					? `${title}${host ? ` — ${host}` : ''}.`
-					: `${host || 'Official web page'}.`,
+				lead: dot([t.webPage, host]),
+				head: title ? `${title}${host ? ` — ${host}` : ''}.` : `${host || t.webPage}.`,
 				title,
-				link: href ? 'Open the page' : null,
+				link: href ? t.openPage : null,
 				fragment: true
 			};
 		case 'pdf':
 			return {
 				...web,
-				lead: dot(['Official PDF', title, host]),
-				head: title
-					? `${title} — official PDF${host ? `, ${host}` : ''}.`
-					: `Official PDF${host ? ` — ${host}` : ''}.`,
+				lead: dot([t.officialPdf, title, host]),
+				head: t.pdfHead(title ?? '', host),
 				title: null,
-				link: href ? 'Open PDF' : null,
+				link: href ? t.openPdf : null,
 				fragment: false
 			};
 		case 'upload': {
-			const what = isPdfUrl(url) ? 'PDF' : 'document';
-			const from = host ? `uploaded by staff from ${host}` : 'uploaded by staff';
+			const pdf = isPdfUrl(url);
+			const from = t.uploadedBy(host);
 			return {
 				...web,
-				lead: dot([`Official ${what}`, title, from]),
-				head: title ? `${title} — official ${what} ${from}.` : `Official ${what} ${from}.`,
+				lead: dot([t.officialUpload(pdf), title, from]),
+				head: t.uploadHead(title ?? '', pdf, from),
 				title: null,
-				link: href ? (what === 'PDF' ? 'Open PDF' : 'Open the document') : null,
+				link: href ? (pdf ? t.openPdf : t.openDocument) : null,
 				fragment: false
 			};
 		}
 		case 'call': {
-			const notes = s.recorded === true ? 'staff notes' : 'staff notes, not recorded';
+			const notes = s.recorded === true ? t.staffNotes : t.notRecorded;
 			const when = s.dayOnly ? day(s.occurredAt) : formatMoment(s.occurredAt, opts);
 			return {
 				...none,
-				lead: dot(['Phone call', channel, when, notes, against]),
-				head: sentences(`Phone call${channel ? ` — ${channel}` : ''}`, dot([when, notes, against])),
-				check: channel ? 'Check it yourself on the same number.' : null
+				lead: dot([t.call, channel, when, notes, against]),
+				head: sentences(`${t.call}${channel ? ` — ${channel}` : ''}`, dot([when, notes, against])),
+				check: channel ? t.checkNumber : null
 			};
 		}
 		case 'email': {
 			const when = day(s.occurredAt);
-			const note = "staff note; the email isn't published";
-			const from = channel ? `Email from ${channel}` : 'Email';
+			const from = channel ? t.emailFrom(channel) : t.email;
 			return {
 				...none,
-				lead: dot([from, when, note, against]),
-				head: sentences(from, dot([when, note, against])),
+				lead: dot([from, when, t.emailNote, against]),
+				head: sentences(from, dot([when, t.emailNote, against])),
 				check: null
 			};
 		}
@@ -947,11 +950,8 @@ export function describeSource(s, opts = {}) {
 			const when = day(s.occurredAt);
 			return {
 				...none,
-				lead: dot(['Visit to the office', channel, when, 'staff notes', against]),
-				head: sentences(
-					`Visit to the office${channel ? ` — ${channel}` : ''}`,
-					dot([when, 'staff notes', against])
-				),
+				lead: dot([t.visit, channel, when, t.staffNotes, against]),
+				head: sentences(`${t.visit}${channel ? ` — ${channel}` : ''}`, dot([when, t.staffNotes, against])),
 				check: null
 			};
 		}
@@ -959,21 +959,19 @@ export function describeSource(s, opts = {}) {
 			// The evidence lane's `channel` names the pages staff checked
 			// ("FAQ and fee pages"); without it the card names none.
 			const when = s.occurredAt !== null ? day(s.occurredAt) : formatDay(s.acceptedAt, opts);
-			const lead = channel
-				? `Not found on these office pages: ${channel}`
-				: "Not found on the office's pages";
+			const lead = channel ? t.notFoundOn(channel) : t.notFound;
 			return {
 				...none,
-				lead: dot([lead, when, 'checked by staff']),
-				head: sentences(lead, dot([when, 'checked by staff'])),
+				lead: dot([lead, when, t.checkedByStaff]),
+				head: sentences(lead, dot([when, t.checkedByStaff])),
 				check: null
 			};
 		}
 		case 'computed':
 			return {
 				...none,
-				lead: 'Calculated on this page',
-				head: 'Calculated on this page.',
+				lead: t.calculated,
+				head: `${t.calculated}.`,
 				check: null
 			};
 		case 'decision':
@@ -981,8 +979,8 @@ export function describeSource(s, opts = {}) {
 			const when = s.occurredAt !== null ? day(s.occurredAt) : formatDay(s.acceptedAt, opts);
 			return {
 				...none,
-				lead: dot(['Staff note', when]),
-				head: sentences('Staff note', when),
+				lead: dot([t.staffNote, when]),
+				head: sentences(t.staffNote, when),
 				check: null
 			};
 		}
@@ -1029,9 +1027,10 @@ export function citeHref(href, on) {
  * The polite announcement after a toggle.
  * @param {boolean} on
  * @param {number} count numbered sources on the page
+ * @param {string} [lang] the page language (doc/copy)
  */
-export function citeAnnouncement(on, count) {
-	if (!on) return 'Citations hidden';
-	const n = Math.max(0, Math.floor(Number(count) || 0));
-	return `Citations shown: ${n} ${n === 1 ? 'source' : 'sources'} numbered`;
+export function citeAnnouncement(on, count, lang = 'en') {
+	const t = guideCopy(lang).cite;
+	if (!on) return t.hidden;
+	return t.shown(Math.max(0, Math.floor(Number(count) || 0)));
 }

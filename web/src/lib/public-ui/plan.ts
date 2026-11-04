@@ -4,6 +4,8 @@
 // kinds only, each resting on accepted facts it cites; anything else in
 // the payload is ignored. Pure helpers: no window/fetch.
 
+import { guideCopy } from './doc/copy/index.js';
+
 export type Citation = { quote?: string; source_url?: string; captured_at?: string };
 
 export type PlanFact = {
@@ -233,16 +235,28 @@ const DAY_SHORT: Record<string, string> = {
 
 const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 
-/** "16:30" → "4:30 PM" (Intl, fixed UTC instant so no zone shifts it). */
-export function clock(hhmm: string): string {
+/** Short weekday names in a language: "Mon" in English, else `Intl`'s. */
+function dayShort(day: string, lang: string): string {
+	const intl = guideCopy(lang).intl;
+	if (intl === 'en-US') return DAY_SHORT[day];
+	const at = DAYS.indexOf(day as (typeof DAYS)[number]);
+	// 2024-01-01 was a Monday.
+	return new Intl.DateTimeFormat(intl, { weekday: 'short', timeZone: 'UTC' }).format(Date.UTC(2024, 0, 1 + at, 12));
+}
+
+/**
+ * "16:30" → "4:30 PM" (Intl, fixed UTC instant so no zone shifts it);
+ * "16:30" in Spanish and French (`lang`, doc/copy).
+ */
+export function clock(hhmm: string, lang = 'en'): string {
 	const m = minutes(hhmm);
-	return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }).format(
+	return new Intl.DateTimeFormat(guideCopy(lang).intl, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }).format(
 		Date.UTC(2000, 0, 3, Math.floor(m / 60), m % 60)
 	);
 }
 
 /** Hours rows with consecutive days of equal times merged ("Mon–Fri"). */
-export function hoursRows(office: Office): { days: string; time: string; fact_id?: number }[] {
+export function hoursRows(office: Office, lang = 'en'): { days: string; time: string; fact_id?: number }[] {
 	const byDay = new Map<string, Hours>();
 	for (const h of office.hours) for (const d of h.days) if (DAY_SHORT[d] && !byDay.has(d)) byDay.set(d, h);
 	const out: { days: string; time: string; fact_id?: number }[] = [];
@@ -250,8 +264,9 @@ export function hoursRows(office: Office): { days: string; time: string; fact_id
 	const flush = () => {
 		if (!run.length) return;
 		const h = byDay.get(run[0])!;
-		const days = run.length > 1 ? `${DAY_SHORT[run[0]]}–${DAY_SHORT[run[run.length - 1]]}` : DAY_SHORT[run[0]];
-		out.push({ days, time: `${clock(h.open)} – ${clock(h.close)}`, fact_id: h.fact_id });
+		const days =
+			run.length > 1 ? `${dayShort(run[0], lang)}–${dayShort(run[run.length - 1], lang)}` : dayShort(run[0], lang);
+		out.push({ days, time: `${clock(h.open, lang)} – ${clock(h.close, lang)}`, fact_id: h.fact_id });
 		run = [];
 	};
 	for (const d of DAYS) {
@@ -282,9 +297,11 @@ export type OpenStatus = { open: boolean; text: string };
 /**
  * "Open now · closes 4:30 PM" / "Closed · opens Mon 8:00 AM", computed
  * with Intl in the office's own zone. Null without a grounded zone or
- * hours (the card then shows the hours table only).
+ * hours (the card then shows the hours table only). `lang` is the page
+ * language (doc/copy).
  */
-export function openStatus(office: Office, now: Date): OpenStatus | null {
+export function openStatus(office: Office, now: Date, lang = 'en'): OpenStatus | null {
+	const t = guideCopy(lang).officeCard;
 	if (!hasGroundedZone(office) || office.hours.length === 0) return null;
 	let parts: Intl.DateTimeFormatPart[];
 	try {
@@ -308,22 +325,22 @@ export function openStatus(office: Office, now: Date): OpenStatus | null {
 			.map((h) => ({ open: minutes(h.open), close: minutes(h.close), h }))
 			.sort((a, b) => a.open - b.open);
 	for (const s of spans(today)) {
-		if (nowMin >= s.open && nowMin < s.close) return { open: true, text: `Open now · closes ${clock(s.h.close)}` };
+		if (nowMin >= s.open && nowMin < s.close) return { open: true, text: t.openNow(clock(s.h.close, lang)) };
 	}
 	for (let k = 0; k < 7; k++) {
 		const d = (today + k) % 7;
 		const next = spans(d).find((s) => k > 0 || s.open > nowMin);
 		if (!next) continue;
-		const when = k === 0 ? 'today' : k === 1 ? 'tomorrow' : DAY_SHORT[DAYS[d]];
-		return { open: false, text: `Closed · opens ${when} ${clock(next.h.open)}` };
+		const when = k === 0 ? t.today : k === 1 ? t.tomorrow : dayShort(DAYS[d], lang);
+		return { open: false, text: t.opens(when, clock(next.h.open, lang)) };
 	}
-	return { open: false, text: 'Closed' };
+	return { open: false, text: t.closed };
 }
 
 /** Long zone name for the hours caption ("Pacific Standard Time"). */
-export function zoneName(tz: string, now: Date): string {
+export function zoneName(tz: string, now: Date, lang = 'en'): string {
 	try {
-		const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'long' }).formatToParts(now);
+		const p = new Intl.DateTimeFormat(guideCopy(lang).intl, { timeZone: tz, timeZoneName: 'long' }).formatToParts(now);
 		return p.find((x) => x.type === 'timeZoneName')?.value ?? tz;
 	} catch {
 		return tz;
@@ -374,20 +391,21 @@ export function modelLabel(model: string): string {
 		.join(' ');
 }
 
-export function roleLabel(role: string): string {
-	if (role === 'extract') return 'Extracted each fact from official pages';
-	if (role === 'cross_check') return 'Cross-checked each fact against its quote';
-	if (role === 'compose') return 'Composed this plan from accepted facts';
+export function roleLabel(role: string, lang = 'en'): string {
+	const roles: Record<string, string> = guideCopy(lang).provenance.roles;
+	if (Object.hasOwn(roles, role)) return roles[role];
 	const s = role.replaceAll('_', ' ');
 	return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-export function seconds(ms: number | undefined): string {
-	return typeof ms === 'number' && Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)} s` : '—';
+export function seconds(ms: number | undefined, lang = 'en'): string {
+	if (typeof ms !== 'number' || !Number.isFinite(ms)) return '—';
+	const f = new Intl.NumberFormat(guideCopy(lang).intl, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+	return `${f.format(ms / 1000)} s`;
 }
 
-export function count(n: number | undefined): string {
-	return typeof n === 'number' && Number.isFinite(n) ? new Intl.NumberFormat('en-US').format(n) : '—';
+export function count(n: number | undefined, lang = 'en'): string {
+	return typeof n === 'number' && Number.isFinite(n) ? new Intl.NumberFormat(guideCopy(lang).intl).format(n) : '—';
 }
 
 const TOPIC_LABEL: Record<string, string> = {

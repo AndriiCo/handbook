@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { changePanels, domain } from '../guide.js';
-	import { traceAttrs } from './items.js';
+	import { itemLang, sourceLang, traceAttrs } from './items.js';
+	import { guide } from './lang.svelte.js';
 	import { VISIBLE_UPDATES, shortDay, updateEntries, type UpdateEntry } from './updates.js';
 	import type { Item } from './contract.js';
 
@@ -36,6 +37,8 @@
 		marker?: Snippet<[Item]>;
 	} = $props();
 
+	const t = $derived(guide.t);
+	const lang = $derived(guide.lang);
 	let root = $state<HTMLElement | null>(null);
 	let fetched = $state<unknown>(undefined);
 	let settled = $state(false);
@@ -96,42 +99,42 @@
 		data-update={entry.kind}
 	>
 		<p class="col-span-2 m-0 text-sm font-semibold text-ink-muted sm:col-span-1">
-			{#if entry.date}<time datetime={entry.date}>{shortDay(entry.date)}</time>{/if}
+			{#if entry.date}<time datetime={entry.date}>{shortDay(entry.date, lang)}</time>{/if}
 		</p>
 		{#if entry.kind === 'notice'}
 			<div class="min-w-0">
 				<p class="m-0 text-sm font-medium text-ink-muted">{entry.item.label}</p>
-				<p class="m-0 mt-0.5 break-words text-ink [overflow-wrap:anywhere]" {...traceAttrs(entry.item)}>
+				<p class="m-0 mt-0.5 break-words text-ink [overflow-wrap:anywhere]" lang={itemLang(entry.item, lang)} {...traceAttrs(entry.item)}>
 					{entry.item.display}
 				</p>
 			</div>
 			<span class="text-right text-sm leading-6">{@render marker?.(entry.item)}</span>
 		{:else if entry.degenerate}
 			<p class="m-0 min-w-0 break-words text-ink">
-				Page re-captured {shortDay(entry.date)}; change too large to list
+				{t.updates.recaptured(shortDay(entry.date, lang))}
 				<span class="text-sm text-ink-muted">· {domain(entry.panel.sourceUrl)}</span>
 			</p>
 			<span></span>
 		{:else}
 			<div class="min-w-0">
-				<p class="m-0 text-sm font-medium text-ink-muted">Changes on {domain(entry.panel.sourceUrl)}</p>
+				<p class="m-0 text-sm font-medium text-ink-muted">{t.updates.changesOn(domain(entry.panel.sourceUrl))}</p>
 				<ul class="m-0 mt-1 list-none p-0">
 					{#each entry.panel.added as line, i (`a-${i}`)}
 						<li class="m-0 border-l-2 border-verified py-0.5 pl-3 text-sm break-words text-ink [overflow-wrap:anywhere]">
-							<span class="sr-only">Added: </span><span aria-hidden="true" class="font-mono">+&nbsp;</span>{line}
+							<span class="sr-only">{t.updates.added}</span><span aria-hidden="true" class="font-mono">+&nbsp;</span><span lang={sourceLang(line, lang)}>{line}</span>
 						</li>
 					{/each}
 					{#each entry.panel.removed as line, i (`r-${i}`)}
 						<li
 							class="m-0 border-l-2 border-changed py-0.5 pl-3 text-sm break-words text-ink-muted line-through [overflow-wrap:anywhere]"
 						>
-							<span class="sr-only">Removed: </span><span aria-hidden="true" class="font-mono">−&nbsp;</span>{line}
+							<span class="sr-only">{t.updates.removed}</span><span aria-hidden="true" class="font-mono">−&nbsp;</span><span lang={sourceLang(line, lang)}>{line}</span>
 						</li>
 					{/each}
 				</ul>
 				{#if entry.panel.more > 0}
 					<p class="m-0 mt-1 text-sm text-ink-muted">
-						{entry.panel.more === 1 ? 'One more changed line' : `${entry.panel.more} more changed lines`} on the page.
+						{t.updates.more(entry.panel.more)}
 					</p>
 				{/if}
 			</div>
@@ -148,7 +151,7 @@
 		{#if folded.length > 0}
 			<details>
 				<summary class="inline-flex min-h-11 cursor-pointer items-center font-medium text-accent-strong">
-					Older updates
+					{t.updates.older}
 				</summary>
 				<ol class="m-0 list-none border-t border-line p-0">
 					{#each folded as entry (entry.key)}{@render entryRow(entry)}{/each}
@@ -156,6 +159,6 @@
 			</details>
 		{/if}
 	{:else if ready}
-		<p class="m-0 text-ink-muted">No changes to list yet.</p>
+		<p class="m-0 text-ink-muted">{t.updates.none}</p>
 	{/if}
 </div>

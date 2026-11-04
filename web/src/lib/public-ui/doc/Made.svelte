@@ -4,6 +4,8 @@
 	import { topicLabel } from '../handbook.js';
 	import { CHROME, translateHref } from '../translate.js';
 	import type { Provenance } from '../plan.js';
+	import { sourceLang } from './items.js';
+	import { guide } from './lang.svelte.js';
 
 	type Rec = { id: number | null; topic: string; statement: string; acceptedAt: number | null };
 	type Translation = { statement: string; model: string };
@@ -65,7 +67,6 @@
 	let Panel = $state<Component<any> | null>(null);
 
 	const n = $derived(records.length);
-	const count = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
 	const groups = $derived.by(() => {
 		const out: { topic: string; rows: Rec[] }[] = [];
 		for (const r of records) {
@@ -78,7 +79,9 @@
 		}
 		return out;
 	});
-	const drafted = $derived(models.length > 0 ? models.join(' and ') : '');
+	const t = $derived(guide.t);
+	const ui = $derived(guide.lang);
+	const topicName = (topic: string) => t.topics[topic] ?? topicLabel(topic);
 
 	function onToggle(e: Event) {
 		open = (e.currentTarget as HTMLDetailsElement).open;
@@ -114,24 +117,21 @@
 
 <section id="made" aria-labelledby="made-h" class="border-t border-line py-10 xl:py-16">
 	<div class="max-w-3xl">
-		<p class="text-eyebrow m-0 font-semibold tracking-[0.06em] text-ink-muted uppercase">Drafted by a model, approved by a person</p>
-		<h2 id="made-h" class="text-h2 mt-2 mb-0 font-brand font-medium text-ink">How this page was made</h2>
-		<p class="mt-3 mb-0 max-w-prose text-ink-muted">
-			{count(n, 'record', 'records')}{#if drafted}, drafted by {drafted}{/if}{#if pages}
-				&nbsp;from {pages}{/if}, each approved by a staff reviewer before it
-			reached this page.
-		</p>
+		<p class="text-eyebrow m-0 font-semibold tracking-[0.06em] text-ink-muted uppercase">{t.made.eyebrow}</p>
+		<h2 id="made-h" class="text-h2 mt-2 mb-0 font-brand font-medium text-ink">{t.made.heading}</h2>
+		<p class="mt-3 mb-0 max-w-prose text-ink-muted">{t.made.summary(n, models, pages)}</p>
 		<details class="mt-6 rounded-md border border-line" ontoggle={onToggle}>
 			<summary class="flex min-h-11 cursor-pointer items-center px-4 font-medium text-accent-strong">
-				The records behind this page ({n})
+				{t.made.records(n)}
 			</summary>
 			{#if open}
 				<div class="border-t border-line px-4 pt-4 pb-6">
 					<p class="m-0 flex flex-wrap items-center gap-2 text-sm">
-						<span class="text-ink-muted">{CHROME[lang ?? 'en']?.readIn ?? 'Read in'}:</span>
+						<span class="text-ink-muted">{CHROME[ui].readIn}:</span>
 						<a
 							href={translateHref(pathname, null)}
 							aria-current={!lang ? 'true' : undefined}
+							lang="en"
 							class={`inline-flex min-h-8 items-center rounded-full px-3 no-underline ${!lang ? 'bg-accent-fill font-medium text-accent-ink' : 'text-ink-muted hover:bg-surface hover:text-ink'}`}
 							>English</a
 						>
@@ -139,6 +139,7 @@
 							<a
 								href={translateHref(pathname, code)}
 								aria-current={lang === code ? 'true' : undefined}
+								lang={code}
 								class={`inline-flex min-h-8 items-center rounded-full px-3 no-underline ${lang === code ? 'bg-accent-fill font-medium text-accent-ink' : 'text-ink-muted hover:bg-surface hover:text-ink'}`}
 								>{CHROME[code].langName}</a
 							>
@@ -146,7 +147,7 @@
 					</p>
 					{#each groups as group (group.topic)}
 						<div class="mt-6">
-							<h3 class="m-0 text-sm font-semibold text-ink">{topicLabel(group.topic)}</h3>
+							<h3 class="m-0 text-sm font-semibold text-ink">{topicName(group.topic)}</h3>
 							<ul class="m-0 mt-2 flex list-none flex-col gap-2 p-0">
 								{#each group.rows as r, i (`${r.id ?? 'row'}-${i}`)}
 									{@const own = lang && typeof r.id === 'number' ? translations[r.id] : null}
@@ -155,7 +156,7 @@
 											<Chip {lang} translated={own.statement} original={r.statement} model={own.model} />
 										{:else}
 											{#if r.id !== null}#{r.id} ·{/if}
-											{r.statement}
+											<span lang={sourceLang(r.statement, ui)}>{r.statement}</span>
 										{/if}
 									</li>
 								{/each}
@@ -164,24 +165,24 @@
 					{/each}
 					{#if Panel && provenance}
 						<div class="mt-8">
-							<Panel {provenance} version={planVersion} acceptedAt={planAcceptedAt} />
+							<Panel {provenance} version={planVersion} acceptedAt={planAcceptedAt} lang={ui} />
 						</div>
 					{/if}
 					{#each changes as change (change.sourceUrl)}
 						<div class="mt-8">
-							<h3 class="m-0 text-sm font-semibold text-ink">What changed on {change.date}</h3>
+							<h3 class="m-0 text-sm font-semibold text-ink">{t.made.whatChanged(change.date)}</h3>
 							<p class="m-0 mt-1 font-mono text-xs text-ink-muted">
-								{domain(change.sourceUrl)}{#if change.since}&nbsp;· since {change.since}{/if}
+								{domain(change.sourceUrl)}{#if change.since}&nbsp;{t.made.since(change.since)}{/if}
 							</p>
 							<ul class="m-0 mt-2 list-none p-0">
 								{#each change.added as line, i (`a-${i}`)}
 									<li class="m-0 border-l-2 border-verified py-1 pl-3 text-sm break-words text-ink">
-										<span class="sr-only">Added: </span><span aria-hidden="true" class="font-mono">+&nbsp;</span>{line}
+										<span class="sr-only">{t.updates.added}</span><span aria-hidden="true" class="font-mono">+&nbsp;</span><span lang={sourceLang(line, ui)}>{line}</span>
 									</li>
 								{/each}
 								{#each change.removed as line, i (`r-${i}`)}
 									<li class="m-0 border-l-2 border-changed py-1 pl-3 text-sm break-words text-ink-muted line-through">
-										<span class="sr-only">Removed: </span><span aria-hidden="true" class="font-mono">−&nbsp;</span>{line}
+										<span class="sr-only">{t.updates.removed}</span><span aria-hidden="true" class="font-mono">−&nbsp;</span><span lang={sourceLang(line, ui)}>{line}</span>
 									</li>
 								{/each}
 							</ul>

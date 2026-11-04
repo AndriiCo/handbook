@@ -3,9 +3,11 @@
 	import { Input } from '../components/ui/input/index.js';
 	import { Button } from '../components/ui/button/index.js';
 	import BellRing from '@lucide/svelte/icons/bell-ring';
+	import { guide } from './doc/lang.svelte.js';
 
 	let { slug, name, apiBase }: { slug: string; name: string; apiBase: string } = $props();
 
+	const t = $derived(guide.t.follow);
 	let email = $state('');
 	let busy = $state(false);
 	let done = $state(false);
@@ -44,7 +46,7 @@
 		error = null;
 		const address = email.trim();
 		if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) {
-			error = 'Enter a valid email address.';
+			error = t.invalid;
 			return;
 		}
 		busy = true;
@@ -58,16 +60,16 @@
 			if (res.ok) {
 				done = true;
 			} else if (res.status === 400) {
-				error = 'Enter a valid email address.';
+				error = t.invalid;
 			} else if (res.status === 429) {
-				error = 'Too many tries — wait a few minutes and try again.';
+				error = t.tooMany;
 			} else if (res.status === 503) {
-				error = 'Follow updates are off right now — try again later.';
+				error = t.off;
 			} else {
-				error = 'Something went wrong — try again later.';
+				error = t.failed;
 			}
 		} catch {
-			error = 'Something went wrong — try again later.';
+			error = t.failed;
 		} finally {
 			busy = false;
 		}
@@ -79,25 +81,20 @@
 	<Card.Header>
 		<Card.Title class="flex items-center gap-2">
 			<BellRing class="size-5 shrink-0" aria-hidden="true" />
-			Get updates for {name}
+			{t.title(name)}
 		</Card.Title>
-		<Card.Description>
-			One email when staff accept a changed fact for this office. Nothing else, ever.
-		</Card.Description>
+		<Card.Description>{t.description}</Card.Description>
 	</Card.Header>
 	<Card.Content>
 		{#if done}
 			<div role="status" class="rounded-lg border border-verified/40 bg-verified-bg p-4">
-				<p class="m-0 font-medium text-ink">Check your inbox to confirm.</p>
-				<p class="mt-1 mb-0 text-sm text-ink-muted">
-					We sent a confirm link to {email.trim()} — it dies in 24 hours, and nothing
-					sends until you click it.
-				</p>
+				<p class="m-0 font-medium text-ink">{t.checkInbox}</p>
+				<p class="mt-1 mb-0 text-sm text-ink-muted">{t.sent(email.trim())}</p>
 			</div>
 		{:else}
 			<form class="flex flex-col gap-3 sm:flex-row" onsubmit={submit}>
 				<div class="min-w-0 flex-1">
-					<label for="follow-email" class="sr-only">Email address</label>
+					<label for="follow-email" class="sr-only">{t.emailLabel}</label>
 					<Input
 						id="follow-email"
 						type="email"
@@ -111,7 +108,7 @@
 					/>
 				</div>
 				<Button type="submit" disabled={busy} class="min-h-11 sm:w-auto">
-					{busy ? 'Sending…' : 'Follow'}
+					{busy ? t.sending : t.follow}
 				</Button>
 			</form>
 			{#if error}
@@ -120,12 +117,7 @@
 		{/if}
 	</Card.Content>
 	<Card.Footer class="flex-col items-start gap-2">
-		<p class="m-0 text-xs text-ink-muted">
-			Privacy: we store only your address (sealed — staff cannot read it) and which
-			office you follow. Confirm before anything sends; at most one digest per office
-			per hour; every email carries a one-click unsubscribe link and our postal
-			address. Unsubscribing always works, instantly.
-		</p>
+		<p class="m-0 text-xs text-ink-muted">{t.privacy}</p>
 	</Card.Footer>
 </Card.Root>
 {/if}
