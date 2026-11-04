@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import { csrfHeaders } from '../../../lib/admin/config-client.js';
+	import { adminRequestError } from '../../../lib/admin/http-errors.js';
+	import RequestErrorNotice from '../../../lib/admin/RequestErrorNotice.svelte';
 
 	// Staff-only live FedEx purchase (SA-19). This route ships in the
 	// admin build only (never the public build). The staff API keeps
@@ -54,14 +56,17 @@
 	let quoteCents = $state<number | null>(null);
 	let quoteState = $state<'idle' | 'working' | 'done' | 'failed'>('idle');
 	let quoteError = $state<string | null>(null);
+	let quoteRequestId = $state<string | null>(null);
 
 	let tracking = $state<string | null>(null);
 	let labelUrl = $state<string | null>(null);
 	let buyState = $state<'idle' | 'working' | 'done' | 'failed'>('idle');
 	let buyError = $state<string | null>(null);
+	let buyRequestId = $state<string | null>(null);
 
 	let voidState = $state<'idle' | 'working' | 'done' | 'failed'>('idle');
 	let voidError = $state<string | null>(null);
+	let voidRequestId = $state<string | null>(null);
 	let voidMsg = $state<string | null>(null);
 
 	const idemKey = $derived(
@@ -118,6 +123,7 @@
 	async function quote() {
 		quoteState = 'working';
 		quoteError = null;
+		quoteRequestId = null;
 		quoteCents = null;
 		try {
 			const res = await fetch(`${api()}/quote`, {
@@ -125,12 +131,13 @@
 				headers: { 'content-type': 'application/json', ...csrfHeaders() },
 				body: JSON.stringify({ payload: payload() })
 			});
-			if (!res.ok) throw new Error(`quote failed (${res.status})`);
+			if (!res.ok) throw await adminRequestError(res, 'Quote failed.');
 			const data = (await res.json()) as { quoted_cents: number };
 			quoteCents = data.quoted_cents;
 			quoteState = 'done';
 		} catch (err) {
 			quoteError = err instanceof Error ? err.message : 'Quote failed.';
+			quoteRequestId = (err as { requestId?: string | null })?.requestId ?? null;
 			quoteState = 'failed';
 		}
 	}
@@ -138,6 +145,7 @@
 	async function buy() {
 		buyState = 'working';
 		buyError = null;
+		buyRequestId = null;
 		tracking = null;
 		labelUrl = null;
 		try {
@@ -151,7 +159,7 @@
 					quoted_cents: quoteCents
 				})
 			});
-			if (!res.ok) throw new Error(`purchase failed (${res.status})`);
+			if (!res.ok) throw await adminRequestError(res, 'Purchase failed.');
 			const data = (await res.json()) as { tracking_no: string; label_url?: string | null };
 			tracking = data.tracking_no;
 			labelUrl = data.label_url ?? null;
@@ -161,6 +169,7 @@
 			await loadCaps();
 		} catch (err) {
 			buyError = err instanceof Error ? err.message : 'Purchase failed.';
+			buyRequestId = (err as { requestId?: string | null })?.requestId ?? null;
 			buyState = 'failed';
 		}
 	}
@@ -168,6 +177,7 @@
 	async function voidLabel() {
 		voidState = 'working';
 		voidError = null;
+		voidRequestId = null;
 		voidMsg = null;
 		try {
 			const res = await fetch(`${api()}/void`, {
@@ -175,11 +185,12 @@
 				headers: { 'content-type': 'application/json', ...csrfHeaders() },
 				body: JSON.stringify({ order_id: orderId.trim(), leg })
 			});
-			if (!res.ok) throw new Error(`void failed (${res.status})`);
+			if (!res.ok) throw await adminRequestError(res, 'Void failed.');
 			voidMsg = `Voided ${idemKey}.`;
 			voidState = 'done';
 		} catch (err) {
 			voidError = err instanceof Error ? err.message : 'Void failed.';
+			voidRequestId = (err as { requestId?: string | null })?.requestId ?? null;
 			voidState = 'failed';
 		}
 	}
@@ -209,6 +220,15 @@
 				<li>Bought today: {caps.bought_today} of {caps.daily_cap}</li>
 				<li>Per-label max: USD {caps.max_usd}</li>
 			</ul>
+			{#if !caps.enabled}
+				<Notice variant="warning" heading="Live buys are off.">
+					<p class="m-0 text-sm">
+						Quotes and purchases both need <code>labels.live</code> On and the destination ZIP in
+						<code>labels.live_ship_to_allow</code> on <a href="/config">/config</a>, then Restart
+						service.
+					</p>
+				</Notice>
+			{/if}
 		{:else}
 			<Notice variant="error" heading="Caps unavailable"><p>{capsError ?? 'Unknown error.'}</p></Notice>
 			<button type="button" class="mt-2 rounded border border-accent-fill bg-accent-fill px-4 py-2 text-accent-ink" onclick={loadCaps}>
@@ -320,7 +340,11 @@
 				><p>Quoted {(quoteCents! / 100).toFixed(2)} USD. Cap check happens at purchase.</p></Notice
 			>
 		{:else if quoteState === 'failed'}
-			<Notice variant="error" heading="Quote failed"><p>{quoteError ?? 'Unknown error.'}</p></Notice>
+			<RequestErrorNotice
+				heading="Quote failed."
+				message={quoteError ?? 'Unknown error.'}
+				requestId={quoteRequestId}
+			/>
 		{/if}
 	</section>
 
@@ -353,7 +377,11 @@
 				</p>
 			</Notice>
 		{:else if buyState === 'failed'}
-			<Notice variant="error" heading="Purchase failed"><p>{buyError ?? 'Unknown error.'}</p></Notice>
+			<RequestErrorNotice
+				heading="Purchase failed."
+				message={buyError ?? 'Unknown error.'}
+				requestId={buyRequestId}
+			/>
 		{/if}
 	</section>
 
@@ -374,7 +402,11 @@
 		{:else if voidState === 'done' && voidMsg}
 			<Notice variant="success" heading="Voided"><p>{voidMsg}</p></Notice>
 		{:else if voidState === 'failed'}
-			<Notice variant="error" heading="Void failed"><p>{voidError ?? 'Unknown error.'}</p></Notice>
+			<RequestErrorNotice
+				heading="Void failed."
+				message={voidError ?? 'Unknown error.'}
+				requestId={voidRequestId}
+			/>
 		{/if}
 	</section>
 </main>

@@ -109,19 +109,25 @@ fn err(status: StatusCode, message: impl Into<String>) -> axum::response::Respon
     (status, Json(serde_json::json!({ "error": message.into() }))).into_response()
 }
 
+/// Map a live-buy refusal to its HTTP answer, tagged with an
+/// `error_kind` for the access log (the reason a reported
+/// `x-request-id` failed). Upstream FedEx failures log the message
+/// too: it names the failing step (oauth, rate, ship), never secrets.
 fn live_error(e: LiveError) -> axum::response::Response {
-    match &e {
-        LiveError::NotEnabled => err(StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
-        LiveError::StaffOnly | LiveError::ZipNotAllowed => {
-            err(StatusCode::FORBIDDEN, e.to_string())
-        }
-        LiveError::DailyCapReached { .. } | LiveError::OverCostCap { .. } => {
-            err(StatusCode::UNPROCESSABLE_ENTITY, e.to_string())
-        }
+    let (status, kind) = match &e {
+        LiveError::NotEnabled => (StatusCode::SERVICE_UNAVAILABLE, "fedex_live_off"),
+        LiveError::StaffOnly => (StatusCode::FORBIDDEN, "fedex_staff_only"),
+        LiveError::ZipNotAllowed => (StatusCode::FORBIDDEN, "fedex_zip_not_allowed"),
+        LiveError::DailyCapReached { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "fedex_daily_cap"),
+        LiveError::OverCostCap { .. } => (StatusCode::UNPROCESSABLE_ENTITY, "fedex_cost_cap"),
         // DuplicateLeg surfaces only when the ledger row is missing
         // mid-flight; the caller retries under a new order id.
-        _ => err(StatusCode::BAD_GATEWAY, e.to_string()),
-    }
+        _ => {
+            tracing::warn!(reason = %e, "fedex live call failed");
+            (StatusCode::BAD_GATEWAY, "fedex_upstream")
+        }
+    };
+    crate::tag_error(err(status, e.to_string()), kind)
 }
 
 #[derive(Debug, Serialize)]
@@ -437,9 +443,12 @@ async fn post_quote(
     let account = live.account.clone().unwrap_or_default();
     let Some((cred_id, cred_secret)) = live.bearer_pair().filter(|_| !account.trim().is_empty())
     else {
-        return err(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "live fedex buys are not configured",
+        return crate::tag_error(
+            err(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "live fedex buys are not configured",
+            ),
+            "fedex_not_configured",
         );
     };
     let payload = body.payload;
