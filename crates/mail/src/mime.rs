@@ -83,12 +83,52 @@ pub fn message_ids(value: &str) -> Vec<String> {
 
 /// Sender addr-spec from a `From:` value (`Name <addr>` or bare `addr`),
 /// lowercased. Empty when unparseable.
+///
+/// Quoted display names and `(comments)` are dropped first, so neither
+/// `"x <ops@sos.wa.gov>" <a@evil.test>` nor `<a@evil.test> (<ops@sos.wa.gov>)`
+/// reads as the official address; of what remains, the last `<…>` is
+/// the mailbox (an angle-addr ends a name-addr). A From naming several
+/// mailboxes has no single sender and yields empty.
 pub fn sender_addr(from: &str) -> String {
-    let addr = match (from.find('<'), from.find('>')) {
-        (Some(open), Some(close)) if open < close => &from[open + 1..close],
-        _ => from.trim(),
+    let bare = strip_quotes_and_comments(from);
+    let addr = match bare.rfind('<') {
+        Some(open) => match bare[open..].find('>') {
+            Some(close) => &bare[open + 1..open + close],
+            None => return String::new(),
+        },
+        None => bare.trim(),
     };
+    let outside_angle = match bare.rfind('<') {
+        Some(open) => &bare[..open],
+        None => bare.as_str(),
+    };
+    if outside_angle.contains([',', '<', '>']) || addr.contains([',', '<', '>']) {
+        return String::new();
+    }
     addr.trim().to_ascii_lowercase()
+}
+
+/// A header value with `"quoted strings"` and nested `(comments)`
+/// removed (backslash escapes honored inside both). An unterminated
+/// quote or comment drops the rest of the value.
+fn strip_quotes_and_comments(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut in_quote = false;
+    let mut depth = 0u32;
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' if in_quote || depth > 0 => {
+                chars.next();
+            }
+            '"' if depth == 0 => in_quote = !in_quote,
+            '(' if !in_quote => depth += 1,
+            ')' if !in_quote && depth > 0 => depth -= 1,
+            _ if !in_quote && depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Lowercased domain of an addr-spec, if any.
@@ -328,6 +368,34 @@ mod tests {
         assert_eq!(parse(b64.as_bytes()).body_text, "Hello there");
         let qp = "From: a@b.test\r\nContent-Type: text/plain\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nCaf=C3=A9 =\r\nand more";
         assert_eq!(parse(qp.as_bytes()).body_text, "Café and more");
+    }
+
+    #[test]
+    fn sender_addr_ignores_addresses_hidden_in_names_and_comments() {
+        // The display name quotes an official address; the mailbox is
+        // the attacker's.
+        assert_eq!(
+            sender_addr("\"x <ops@sos.wa.gov>\" <a@evil.test>"),
+            "a@evil.test"
+        );
+        // Unquoted display name carrying angle brackets: the last
+        // angle-addr is the mailbox.
+        assert_eq!(sender_addr("ops@sos.wa.gov <a@evil.test>"), "a@evil.test");
+        // A comment after the mailbox may not supply one.
+        assert_eq!(
+            sender_addr("<a@evil.test> (<ops@sos.wa.gov>)"),
+            "a@evil.test"
+        );
+        assert_eq!(
+            sender_addr("\"Ops \\\"Team\\\" (WA)\" <Ops@Example.GOV>"),
+            "ops@example.gov"
+        );
+        assert_eq!(sender_addr("ops@example.gov (Ops desk)"), "ops@example.gov");
+        // Several mailboxes, or broken brackets: no single sender.
+        assert_eq!(sender_addr("ops@sos.wa.gov, a@evil.test"), "");
+        assert_eq!(sender_addr("<ops@sos.wa.gov>, <a@evil.test>"), "");
+        assert_eq!(sender_addr("Ops <ops@example.gov"), "");
+        assert_eq!(sender_addr("\"unterminated <ops@example.gov>"), "");
     }
 
     #[test]

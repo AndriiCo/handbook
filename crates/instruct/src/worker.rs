@@ -3,7 +3,11 @@
 //! [`run_authority`] ties the pipeline together: triggers →
 //! condense → draft → diff → render → propose. Dry-run walks the
 //! same path with zero writes. [`sweep_all`] runs every authority
-//! with triggers past its cursor.
+//! with triggers past its cursor; one authority's failure is recorded
+//! and the sweep moves on, so a bad trigger never blocks the rest.
+//! A failing authority then waits out an exponential backoff
+//! ([`retry_delay`]) before the timer pays for another model call on
+//! it; the streak lives in `watermark` under `instruct-retry:<slug>`.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -136,7 +140,74 @@ pub fn run_authority<P: ModelPort>(
     })
 }
 
-/// Sweep every authority that has triggers past its cursor.
+/// One authority the sweep could not finish. Nothing was written for
+/// it (proposals and the cursor commit together), so its triggers are
+/// retried on the next run.
+#[derive(Debug)]
+pub struct AuthorityFailure {
+    pub slug: String,
+    pub error: Error,
+}
+
+/// Outcome of [`sweep_all`]: authorities that ran (with triggers),
+/// authorities that failed, and failing authorities still backing off
+/// (`(slug, retry_at)`).
+#[derive(Debug, Default)]
+pub struct SweepReport {
+    pub outcomes: Vec<AuthorityOutcome>,
+    pub failures: Vec<AuthorityFailure>,
+    pub deferred: Vec<(String, i64)>,
+}
+
+/// Wait after `failures` consecutive failures: 5 minutes, doubling,
+/// at most 6 hours.
+pub fn retry_delay(failures: i64) -> i64 {
+    (300i64 << (failures - 1).clamp(0, 7)).min(6 * 3600)
+}
+
+fn retry_key(slug: &str) -> String {
+    format!("instruct-retry:{slug}")
+}
+
+/// `(last_failed_at, consecutive_failures)` for one authority.
+fn retry_state(conn: &Connection, slug: &str) -> Result<Option<(i64, i64)>> {
+    match conn.query_row(
+        "SELECT last_run_at, last_capture_id FROM watermark WHERE authority_slug = ?1",
+        [retry_key(slug)],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ) {
+        Ok(state) => Ok(Some(state)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn record_retry(conn: &Connection, slug: &str, now: i64) -> Result<()> {
+    conn.execute(
+        "INSERT INTO watermark(authority_slug, last_run_at, last_prompt_version, last_capture_id)
+         VALUES (?1, ?2, ?3, 1)
+         ON CONFLICT(authority_slug) DO UPDATE SET
+           last_run_at = excluded.last_run_at,
+           last_capture_id = last_capture_id + 1",
+        rusqlite::params![retry_key(slug), now, crate::PROMPT_VERSION],
+    )?;
+    Ok(())
+}
+
+fn clear_retry(conn: &Connection, slug: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM watermark WHERE authority_slug = ?1",
+        [retry_key(slug)],
+    )?;
+    Ok(())
+}
+
+/// Sweep every authority that has triggers past its cursor. A failing
+/// authority is recorded in [`SweepReport::failures`] and the sweep
+/// continues with the next; only a failure to list authorities is an
+/// `Err`. Until its backoff passes, a failing authority is skipped
+/// ([`SweepReport::deferred`]); naming it in `limit_slugs` runs it
+/// anyway. A dry run neither reads nor writes the backoff.
 #[allow(clippy::too_many_arguments)]
 pub fn sweep_all<P: ModelPort>(
     conn: &Connection,
@@ -148,26 +219,51 @@ pub fn sweep_all<P: ModelPort>(
     now: i64,
     dry: bool,
     limit_slugs: Option<&[String]>,
-) -> Result<Vec<AuthorityOutcome>> {
+) -> Result<SweepReport> {
     let mut stmt = conn.prepare("SELECT slug FROM authority ORDER BY slug")?;
     let slugs: Vec<String> = stmt
         .query_map([], |row| row.get(0))?
         .collect::<rusqlite::Result<_>>()?;
-    let mut outcomes = Vec::new();
+    let mut report = SweepReport::default();
     for slug in &slugs {
         if let Some(only) = limit_slugs
             && !only.iter().any(|s| s == slug)
         {
             continue;
         }
-        let outcome = run_authority(
+        let retry = if dry { None } else { retry_state(conn, slug)? };
+        if limit_slugs.is_none()
+            && let Some((failed_at, failures)) = retry
+            && now < failed_at + retry_delay(failures)
+        {
+            report
+                .deferred
+                .push((slug.clone(), failed_at + retry_delay(failures)));
+            continue;
+        }
+        match run_authority(
             conn, store_root, port, pack, model_name, slug, actor, now, dry,
-        )?;
-        if outcome.triggers > 0 {
-            outcomes.push(outcome);
+        ) {
+            Ok(outcome) => {
+                if retry.is_some() {
+                    clear_retry(conn, slug)?;
+                }
+                if outcome.triggers > 0 {
+                    report.outcomes.push(outcome);
+                }
+            }
+            Err(error) => {
+                if !dry {
+                    record_retry(conn, slug, now)?;
+                }
+                report.failures.push(AuthorityFailure {
+                    slug: slug.clone(),
+                    error,
+                });
+            }
         }
     }
-    Ok(outcomes)
+    Ok(report)
 }
 
 /// Instruction cache/artifacts dir for one store.
@@ -292,6 +388,120 @@ mod tests {
         )
         .unwrap();
         assert_eq!(again.triggers, 0);
+    }
+
+    /// A failing authority (unusable model reply) is recorded and the
+    /// sweep still runs the authorities after it; the failed one keeps
+    /// its cursor so the next run retries it.
+    #[test]
+    fn sweep_continues_past_a_failing_authority() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = handbook_store::store::Store::new(tmp.path());
+        let conn = handbook_store::db::open(&store).unwrap();
+        handbook_store::db::migrate(&conn).unwrap();
+        let demo = seed_wa_demo(&conn, tmp.path(), 1_700_000_000).unwrap();
+        // "aaa-broken" sorts before the WA slug, so it runs first.
+        conn.execute(
+            "INSERT INTO authority(kind, country, region, name, slug)
+             VALUES ('state', 'Test', '', 'Broken Office', 'aaa-broken')",
+            [],
+        )
+        .unwrap();
+        let broken = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO capture(authority_id, source_id, captured_at, kind, path, bytes_raw,
+                                  bytes_stored, sha256, trust)
+             VALUES (?1, NULL, 1700000000, 'email', 'demo', 9, 9, 'broken', 'community')",
+            [broken],
+        )
+        .unwrap();
+        let capture = conn.last_insert_rowid();
+        std::fs::write(
+            tmp.path().join("text").join(format!("{capture}.txt")),
+            "Fee is $9.",
+        )
+        .unwrap();
+        let pack = TemplatePack::load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("packs/general.toml"),
+        )
+        .unwrap();
+        let mut script = vec!["not json".to_string()];
+        script.extend(wa_script(&demo.capture_ids));
+        let port = atlas::model::StubPort::with_script(script);
+        let report = sweep_all(
+            &conn,
+            tmp.path(),
+            &port,
+            &pack,
+            "spark",
+            "test",
+            1_700_000_001,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].slug, "aaa-broken");
+        assert!(
+            matches!(report.failures[0].error, Error::Validate(_)),
+            "{:?}",
+            report.failures[0].error
+        );
+        assert_eq!(report.outcomes.len(), 1);
+        assert_eq!(report.outcomes[0].slug, WA_SLUG);
+        assert_eq!(report.outcomes[0].report.proposed, 3);
+        assert_eq!(
+            crate::trigger::get_cursor(&conn, "aaa-broken").unwrap(),
+            0,
+            "the failed authority is retried next run"
+        );
+        assert!(crate::trigger::get_cursor(&conn, WA_SLUG).unwrap() > 0);
+
+        // Backoff: the next tick skips the failing authority instead of
+        // paying for another model call on it (an empty script would
+        // fail it again if it ran).
+        let sweep = |port: &atlas::model::StubPort, now: i64, only: Option<&[String]>| {
+            sweep_all(
+                &conn,
+                tmp.path(),
+                port,
+                &pack,
+                "spark",
+                "test",
+                now,
+                false,
+                only,
+            )
+            .unwrap()
+        };
+        let idle = atlas::model::StubPort::with_script(vec![]);
+        let later = sweep(&idle, 1_700_000_001 + 60, None);
+        assert!(later.failures.is_empty() && later.outcomes.is_empty());
+        assert_eq!(
+            later.deferred,
+            [("aaa-broken".to_string(), 1_700_000_001 + retry_delay(1))]
+        );
+        // Past the delay it runs again; a second failure doubles it.
+        let retried = sweep(&idle, 1_700_000_001 + retry_delay(1), None);
+        assert_eq!(retried.failures.len(), 1);
+        let after_two = sweep(&idle, 1_700_000_001 + retry_delay(1) + retry_delay(1), None);
+        assert_eq!(
+            after_two.deferred.len(),
+            1,
+            "two failures wait twice as long"
+        );
+        // Named explicitly, it runs at once; success clears the streak.
+        let fixed = atlas::model::StubPort::with_script(vec![
+            serde_json::json!({"sections": []}).to_string(),
+            serde_json::json!({"overrides": []}).to_string(),
+        ]);
+        let only = ["aaa-broken".to_string()];
+        let named = sweep(&fixed, 1_700_000_001 + retry_delay(1) + 1, Some(&only));
+        assert!(named.failures.is_empty(), "{:?}", named.failures);
+        assert!(retry_state(&conn, "aaa-broken").unwrap().is_none());
+        assert_eq!(retry_delay(1), 300);
+        assert_eq!(retry_delay(2), 600);
+        assert_eq!(retry_delay(40), 6 * 3600);
     }
 
     #[test]

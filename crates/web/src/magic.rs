@@ -139,12 +139,19 @@ fn build_message(
             .parse()
             .map_err(|_| flow::MailError::Transport("bad recipient".into()))?)
         .subject(subject);
-    // Closed header set: the RFC 8058 pair plus `Message-ID` (first-
-    // source outreach sets its own so the office's reply threads back
-    // to the draft); the values are mailbox/URL/id-shaped by
-    // construction at the call site.
+    // Closed header set: the RFC 8058 pair plus `Message-ID` and
+    // `Reply-To` (first-source outreach sets its own id so the office's
+    // reply threads back to the draft, and points replies at the polled
+    // mailbox); the values are mailbox/URL/id-shaped by construction at
+    // the call site.
     for (name, value) in headers {
-        if name.eq_ignore_ascii_case("List-Unsubscribe") {
+        if name.eq_ignore_ascii_case("Reply-To") {
+            builder = builder.reply_to(
+                value
+                    .parse()
+                    .map_err(|_| flow::MailError::Transport("bad reply-to".into()))?,
+            );
+        } else if name.eq_ignore_ascii_case("List-Unsubscribe") {
             builder = builder.header(ListUnsubscribe(value.to_string()));
         } else if name.eq_ignore_ascii_case("List-Unsubscribe-Post") {
             builder = builder.header(ListUnsubscribePost(value.to_string()));
@@ -235,6 +242,7 @@ impl FileMailer {
             if name.eq_ignore_ascii_case("List-Unsubscribe")
                 || name.eq_ignore_ascii_case("List-Unsubscribe-Post")
                 || name.eq_ignore_ascii_case("Message-ID")
+                || name.eq_ignore_ascii_case("Reply-To")
             {
                 content.push_str(&format!("{name}: {value}\n"));
             }
@@ -1343,6 +1351,37 @@ mod tests {
         drop(conn);
         let (status, _, _) = roundtrip(&app, me()).await;
         assert_eq!(status, StatusCode::OK);
+    }
+
+    #[test]
+    fn smtp_message_carries_reply_to_and_refuses_a_bad_one() {
+        let message = build_message(
+            "Apostille Handbook <outreach@andrii.ai>",
+            "apostille@sos.example.gov",
+            "Two questions",
+            "Hello.",
+            &[
+                ("Message-ID", "<outreach-7-ab@andrii.ai>"),
+                ("Reply-To", "notices@example.com"),
+            ],
+        )
+        .unwrap();
+        let wire = String::from_utf8(message.formatted()).unwrap();
+        assert!(wire.contains("Reply-To: notices@example.com\r\n"), "{wire}");
+        assert!(
+            wire.contains("Message-ID: <outreach-7-ab@andrii.ai>\r\n"),
+            "{wire}"
+        );
+        assert!(
+            build_message(
+                "outreach@andrii.ai",
+                "a@sos.example.gov",
+                "s",
+                "b",
+                &[("Reply-To", "not a mailbox")]
+            )
+            .is_err()
+        );
     }
 
     #[test]

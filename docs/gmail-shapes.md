@@ -58,11 +58,22 @@ loud (re-consent).
   — the next tick re-lists, sha-dedup absorbs re-delivery).
 - First run seeds from `getProfile` (no backfill); backfill only
   on the 404 path, bounded by `newer_than:7d` + the fetch cap.
-- Trust: sender domain ∈ `domain(status='official')` + DMARC
-  pass evidence → `official` + that authority; unknown →
-  `community` + `mail-inbox`; fake → `rejected` (kept, never
-  analyzed). Only the `mx.google.com` `Authentication-Results`
-  stamp is trusted (topmost wins).
+- Trust: sender domain ∈ `domain(status='official')` and
+  Gmail's stamp authenticates that domain → `official` + that
+  authority. Authenticated means `dmarc=pass` with
+  `header.from` equal to the parsed From domain, or any
+  `dkim=pass` clause (every clause is kept; signer from
+  `header.d`, else `header.i=@domain`, Gmail's shape) whose
+  signer equals the From domain or is its parent or child. SPF
+  alone never counts. Unauthenticated official-domain mail keeps
+  its authority, capped at `community`; unknown → `community` +
+  `mail-inbox`; fake → `rejected` (kept, never analyzed). Only
+  the `mx.google.com` `Authentication-Results` stamp is trusted
+  (topmost wins). The capture's `authenticity` records
+  `verified_by` (`dmarc` / `dkim` / `none`) and the sender.
+- Sender: quoted display names and comments are dropped before
+  reading the From mailbox, then the last `<…>` wins; a From
+  with several mailboxes has no sender (inbox, `community`).
 - Quotas (6,000 units/min/user): steady state is 2 units/poll;
   a 50-mail burst is ~3,000 units. Non-issue; sequential fetch.
 - No MTA-STS check in the poller (API path, not SMTP MX).

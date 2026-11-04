@@ -266,7 +266,9 @@ fn fetch_one(
         Err(e) => return Err(e),
     };
     let parsed = crate::mime::parse(&raw.raw);
-    let sender = resolve_sender(conn, &parsed, opts)?;
+    // Authentication evidence first: it decides the trust below.
+    let evidence = auth_results::parse(&parsed.auth_results);
+    let sender = resolve_sender(conn, &parsed, &evidence, opts)?;
     let source_id =
         find_or_create_source(conn, sender.authority_id, sender.source_kind, &sender.addr)?;
     let sidecar = format!(
@@ -291,7 +293,11 @@ fn fetch_one(
     )?;
     match outcome {
         IngestOutcome::Created { capture_id } => {
-            let evidence = auth_results::parse(&parsed.auth_results);
+            let dkim_all: Vec<serde_json::Value> = evidence
+                .dkim_all
+                .iter()
+                .map(|sig| serde_json::json!({"result": sig.result, "domain": sig.domain}))
+                .collect();
             let authenticity = serde_json::json!({
                 "gmail_id": raw.id,
                 "thread_id": raw.thread_id,
@@ -302,11 +308,14 @@ fn fetch_one(
                 "auth_results": {
                     "dkim": evidence.dkim,
                     "dkim_domain": evidence.dkim_domain,
+                    "dkim_all": dkim_all,
                     "spf": evidence.spf,
                     "spf_mailfrom": evidence.spf_mailfrom,
                     "dmarc": evidence.dmarc,
                     "from_domain": evidence.from_domain,
                 },
+                "sender": sender.addr,
+                "verified_by": sender.verified_by,
             });
             conn.execute(
                 "UPDATE capture SET authenticity = ?1 WHERE id = ?2",
@@ -370,20 +379,31 @@ struct Sender {
     authority_id: i64,
     trust: &'static str,
     source_kind: &'static str,
+    /// `dmarc` / `dkim` when Gmail's stamp authenticates the From
+    /// domain, else `none`.
+    verified_by: &'static str,
 }
 
 /// Authority + trust from the sender domain: official domains
-/// attribute to their own authority; everything else lands in the
-/// inbox as `community` (proposable, never directly promotable);
-/// known-fake domains capture as `rejected` (kept as evidence,
-/// never analyzed).
+/// attribute to their own authority, and earn `official` trust only
+/// when Gmail's stamp authenticates that domain (DMARC pass for it,
+/// or an aligned passing DKIM signature); unauthenticated mail from
+/// an official domain keeps its authority but caps at `community`.
+/// Everything else lands in the inbox as `community` (proposable,
+/// never directly promotable); known-fake domains capture as
+/// `rejected` (kept as evidence, never analyzed).
 fn resolve_sender(
     conn: &Connection,
     parsed: &crate::mime::ParsedMail,
+    evidence: &auth_results::AuthResults,
     opts: &PollOpts,
 ) -> Result<Sender, MailError> {
     let addr = crate::mime::sender_addr(&parsed.from);
     let domain = crate::mime::sender_domain(&addr);
+    let verified_by = domain
+        .as_deref()
+        .and_then(|d| evidence.verified_for(d))
+        .unwrap_or("none");
     let row: Option<(String, Option<i64>)> = match &domain {
         Some(name) => conn
             .query_row(
@@ -396,8 +416,17 @@ fn resolve_sender(
     };
     let inbox = || inbox_authority(conn, opts);
     let (authority_id, trust, source_kind) = match row {
-        Some((status, Some(auth))) if status == "official" => (auth, "official", "email_official"),
-        Some((status, None)) if status == "official" => (inbox()?, "official", "email_official"),
+        Some((status, auth)) if status == "official" => {
+            let authority_id = match auth {
+                Some(auth) => auth,
+                None => inbox()?,
+            };
+            if verified_by == "none" {
+                (authority_id, "community", "email_customer")
+            } else {
+                (authority_id, "official", "email_official")
+            }
+        }
         Some((status, _)) if status == "fake" => (inbox()?, "rejected", "email_customer"),
         Some((_, Some(auth))) => (auth, "community", "email_customer"),
         _ => (inbox()?, "community", "email_customer"),
@@ -407,6 +436,7 @@ fn resolve_sender(
         authority_id,
         trust,
         source_kind,
+        verified_by,
     })
 }
 
@@ -638,8 +668,12 @@ mod tests {
     }
 
     fn raw_message_json(id: &str) -> String {
+        raw_message_json_of(id, NOTICE)
+    }
+
+    fn raw_message_json_of(id: &str, raw: &str) -> String {
         use base64::Engine as _;
-        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(NOTICE.as_bytes());
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw.as_bytes());
         format!(
             r#"{{"id":"{id}","threadId":"t-{id}","labelIds":["INBOX"],"internalDate":"1729000000000","raw":"{encoded}"}}"#
         )
@@ -747,6 +781,7 @@ mod tests {
         assert_eq!(evidence["internal_date_ms"], 1_729_000_000_000i64);
         assert_eq!(evidence["auth_results"]["dkim"], "pass");
         assert_eq!(evidence["auth_results"]["dmarc"], "pass");
+        assert_eq!(evidence["verified_by"], "dmarc");
         let sidecar: String = conn
             .query_row(
                 "SELECT body FROM capture_fts WHERE capture_id = (SELECT id FROM capture WHERE id > 0)",
@@ -787,6 +822,80 @@ mod tests {
         assert_eq!(trust, "community");
         assert_eq!(slug, "mail-inbox");
         server.join().unwrap();
+    }
+
+    /// Poll one message from an official-domain store; returns the
+    /// capture's trust, authority slug, and authenticity evidence.
+    fn poll_official_store(raw: &str) -> (String, String, serde_json::Value) {
+        let (_dir, store, conn) = migrated();
+        let auth = seed_authority(&conn, "t-sos");
+        seed_domain(&conn, auth);
+        conn.execute(
+            "INSERT INTO mail_poll(id, email, history_id) VALUES (1, 'box@example.com', '100')",
+            [],
+        )
+        .unwrap();
+        let (base, server) = stub(vec![
+            (200, TOKEN_OK.to_string()),
+            (200, history_page(&["m1"], "101")),
+            (200, raw_message_json_of("m1", raw)),
+        ]);
+        let mut client = test_client(&base);
+        let report = poll(&conn, &store, &mut client, &opts()).expect("poll");
+        assert_eq!(report.created, 1);
+        server.join().unwrap();
+        let (trust, slug, authenticity): (String, String, String) = conn
+            .query_row(
+                "SELECT c.trust, a.slug, c.authenticity FROM capture c
+                 JOIN authority a ON a.id = c.authority_id WHERE c.id > 0",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        (trust, slug, serde_json::from_str(&authenticity).unwrap())
+    }
+
+    #[test]
+    fn official_trust_needs_authentication_of_the_from_domain() {
+        let notice = |from: &str, stamp: &str| {
+            format!(
+                "From: {from}\r\nTo: box@example.com\r\nSubject: Fee change\r\n{stamp}\r\nThe fee is now $90."
+            )
+        };
+        // DMARC fail: the mail is kept on the office, capped at community.
+        let (trust, slug, evidence) = poll_official_store(&notice(
+            "ops@example.gov",
+            "Authentication-Results: mx.google.com; dkim=fail header.d=example.gov; spf=softfail smtp.mailfrom=ops@example.gov; dmarc=fail header.from=example.gov\r\n",
+        ));
+        assert_eq!((trust.as_str(), slug.as_str()), ("community", "t-sos"));
+        assert_eq!(evidence["verified_by"], "none");
+        assert_eq!(evidence["auth_results"]["dmarc"], "fail");
+        // No Gmail stamp at all (or only a forwarder's): community.
+        let (trust, _, evidence) = poll_official_store(&notice(
+            "ops@example.gov",
+            "Authentication-Results: mx.evil.test; dmarc=pass header.from=example.gov\r\n",
+        ));
+        assert_eq!(trust, "community");
+        assert_eq!(evidence["auth_results"]["dmarc"], "none");
+        // The display name quotes the official address; the mailbox
+        // (and the domain DMARC passed for) is the attacker's.
+        let (trust, slug, evidence) = poll_official_store(&notice(
+            "\"x <ops@example.gov>\" <a@evil.test>",
+            "Authentication-Results: mx.google.com; dkim=pass header.i=@evil.test; spf=pass smtp.mailfrom=a@evil.test; dmarc=pass header.from=evil.test\r\n",
+        ));
+        assert_eq!((trust.as_str(), slug.as_str()), ("community", "mail-inbox"));
+        assert_eq!(evidence["sender"], "a@evil.test");
+        // Aligned DKIM without a DMARC record (Gmail's `header.i` shape).
+        let (trust, slug, evidence) = poll_official_store(&notice(
+            "Ops <ops@example.gov>",
+            "Authentication-Results: mx.google.com; dkim=pass header.i=@example.gov header.s=s1 header.b=Ab; spf=pass smtp.mailfrom=ops@example.gov; dmarc=none header.from=example.gov\r\n",
+        ));
+        assert_eq!((trust.as_str(), slug.as_str()), ("official", "t-sos"));
+        assert_eq!(evidence["verified_by"], "dkim");
+        assert_eq!(
+            evidence["auth_results"]["dkim_all"][0]["domain"],
+            "example.gov"
+        );
     }
 
     #[test]
