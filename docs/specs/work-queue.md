@@ -178,6 +178,13 @@ same prompt version, compared from the two `quality.json` files).
 Until then it grades only; facts are still drafted by Spark with the
 quote check and approved in `/review`.
 
+`xtask triage --pages <dir> [--pack packs/world/<ISO2>.json] [--out
+<file>]` sorts saved pages (e.g. a discovery job's `pages/`) with the
+same endpoint: relevant or not, main language, which of the pack's
+visible authorities, which topics. Answers are checked against the
+closed lists (unknown slugs and topics dropped and listed); the result
+is a `triage.v1` report and nothing else.
+
 ## 5. `research.nonparty`
 
 Atlas pack `crates/atlas/packs/nonparty-sources.toml` (sources, model,

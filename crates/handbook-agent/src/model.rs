@@ -767,20 +767,7 @@ fn draft_body(
     // `reasoning_effort: medium`: drafts ground claims in evidence
     // (measured: even trivial replies burn ~60 reasoning tokens, and
     // verdict-scale JSON runs to ~1.5k — both inside the 32k budget).
-    if local {
-        return json!({
-            "model": model,
-            "messages": [
-                {"role": "system", "content": developer.trim()},
-                {"role": "user", "content": user},
-            ],
-            "max_tokens": LOCAL_MAX_TOKENS,
-            "response_format": response_format_for(&req.doc_ids),
-            "stream": true,
-            "stream_options": {"include_usage": true},
-        });
-    }
-    json!({
+    let mut body = json!({
         "model": model,
         "messages": [
             {"role": "developer", "content": developer.trim()},
@@ -796,7 +783,28 @@ fn draft_body(
         // by default.
         "stream": true,
         "stream_options": {"include_usage": true},
-    })
+    });
+    if local {
+        localize(&mut body);
+        body["max_tokens"] = json!(LOCAL_MAX_TOKENS);
+    }
+    body
+}
+
+/// Reshape a Model API chat body for an OpenAI-compatible endpoint of
+/// our own ([`MetaRestClient::local`]): the standing rules as `system`
+/// (`developer` is the Model API's role), none of the Model API's own
+/// fields (`reasoning_effort`, `prompt_cache_key`), and the budget as
+/// `max_tokens`.
+fn localize(body: &mut serde_json::Value) {
+    body["messages"][0]["role"] = json!("system");
+    if let Some(fields) = body.as_object_mut() {
+        fields.remove("reasoning_effort");
+        fields.remove("prompt_cache_key");
+        if let Some(budget) = fields.remove("max_completion_tokens") {
+            fields.insert("max_tokens".to_string(), budget);
+        }
+    }
 }
 
 impl MetaRestClient {
@@ -849,10 +857,10 @@ impl MetaRestClient {
     /// (402), [`ModelError::Transport`] (other non-2xx, I/O),
     /// [`ModelError::BadOutput`] (refusal, truncation, non-JSON).
     pub fn chat_json(&self, req: &ChatJsonRequest<'_>) -> Result<ChatJsonResponse, ModelError> {
-        if self.api_key.is_empty() {
+        if self.api_key.is_empty() && !self.local {
             return Err(ModelError::Auth("meta api key not configured".to_string()));
         }
-        let body = json!({
+        let mut body = json!({
             "model": req.model,
             "messages": [
                 {"role": "developer", "content": req.developer.trim()},
@@ -868,6 +876,9 @@ impl MetaRestClient {
             "stream": true,
             "stream_options": {"include_usage": true},
         });
+        if self.local {
+            localize(&mut body);
+        }
         let raw = self.post_chat(&body, req.pipeline, req.run_id);
         let parsed = match &raw {
             Ok(r) if (200..300).contains(&r.status) => {
@@ -1261,6 +1272,53 @@ mod tests {
         let meta = MetaRestClient::new("http://127.0.0.1:9".to_string(), String::new());
         assert_eq!(meta.model_id(), DRAFT_MODEL);
         assert!(meta.draft_records(&sample_request()).is_err());
+    }
+
+    /// D-4: `chat_json` (page triage) takes the same local reshaping.
+    #[test]
+    fn local_endpoint_answers_chat_json() {
+        let (base, seen, handle) = stub(1, move |head, body| {
+            assert!(
+                !head.to_ascii_lowercase().contains("authorization:"),
+                "{head}"
+            );
+            let v: serde_json::Value = serde_json::from_str(body).unwrap();
+            assert_eq!(v["model"], "local-meta-model");
+            assert_eq!(v["messages"][0]["role"], "system");
+            assert_eq!(v["max_tokens"], 512);
+            for meta_only in [
+                "reasoning_effort",
+                "prompt_cache_key",
+                "max_completion_tokens",
+            ] {
+                assert!(v.get(meta_only).is_none(), "{meta_only}");
+            }
+            (
+                200,
+                sse_stream(
+                    serde_json::json!({"role": "assistant", "content": "{\"relevant\": true}"}),
+                    "stop",
+                ),
+            )
+        });
+        let client = MetaRestClient::local(base, String::new(), "local-meta-model");
+        let reply = client
+            .chat_json(&ChatJsonRequest {
+                model: "local-meta-model",
+                developer: "Sort pages.",
+                user: "page".to_string(),
+                schema_name: "Triage",
+                schema: serde_json::json!({"type": "object"}),
+                reasoning_effort: "low",
+                prompt_cache_key: "triage".to_string(),
+                max_completion_tokens: 512,
+                pipeline: "triage",
+                run_id: None,
+            })
+            .expect("answers");
+        assert_eq!(reply.value["relevant"], true);
+        let _ = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        handle.join().unwrap();
     }
 
     #[test]

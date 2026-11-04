@@ -111,7 +111,7 @@ pub(crate) fn is_meta_model(id: &str) -> bool {
 
 /// `(base_url, model, key)` for `--local` from `get` (the environment),
 /// or why not.
-fn local_endpoint(
+pub(crate) fn local_endpoint(
     get: impl Fn(&str) -> Option<String>,
 ) -> Result<(String, String, String), String> {
     let [url_var, model_var, key_var] = LOCAL_ENV;
