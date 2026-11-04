@@ -1680,6 +1680,9 @@ mod tests {
             json_of(app.clone().oneshot(put("sess-stale")).await.unwrap()).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         assert_eq!(json["error"], "step-up required: log in again first");
+        // Machine-readable for the in-place passkey confirm (P409).
+        assert_eq!(json["step_up"], "required");
+        assert_eq!(json["window_s"], auth::passkey::STEP_UP_WINDOW_SECS);
         // Fresh → sails past the gate (409 here: KEK generation
         // never enrolled on this scratch store).
         let (status, _, _) = json_of(app.clone().oneshot(put("sess-fresh")).await.unwrap()).await;

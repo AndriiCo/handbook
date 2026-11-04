@@ -6,7 +6,7 @@
 // SECRET values are write-only: the server never returns them and this
 // module never renders or stores one — set-new-only.
 
-import { authError, readErrorBody } from './http-errors.js';
+import { adminRequestError } from './http-errors.js';
 
 /**
  * Normalized row for the config page. Secret rows carry `set`, never a value.
@@ -131,18 +131,15 @@ export async function fetchConfig(apiBase, fetchFn = fetch) {
 export async function fetchConfigWithStart(apiBase, fetchFn = fetch) {
 	const res = await fetchFn(`${apiBase}/config`, { credentials: 'same-origin' });
 	// Auth failures show the server's answer verbatim (the 403
-	// body names the detected IP) via the shared helper. The guard
-	// above makes the `??` fallback unreachable; it only satisfies
-	// the helper's nullable type.
+	// body names the detected IP) via the shared helper, with the
+	// status and `x-request-id` appended for triage.
 	if (res.status === 401 || res.status === 403) {
-		throw new Error(
-			authError(res.status, await readErrorBody(res)) ?? 'The admin host refused the request.'
-		);
+		throw await adminRequestError(res, 'The admin host refused the request.');
 	}
 	if (res.status === 404) {
-		throw new Error('Config API not found (404) — the server lane has not landed yet.');
+		throw await adminRequestError(res, 'Config API not found — the server lane has not landed yet.');
 	}
-	if (!res.ok) throw new Error(`Config load failed: HTTP ${res.status}.`);
+	if (!res.ok) throw await adminRequestError(res, 'Config load failed.');
 	let data;
 	try {
 		data = await res.json();
@@ -171,17 +168,15 @@ export async function saveConfigKey(apiBase, row, fetchFn = fetch) {
 		body: JSON.stringify(putBody(row))
 	});
 	if (res.status === 401 || res.status === 403) {
-		throw new Error(
-			authError(res.status, await readErrorBody(res)) ?? 'The admin host refused the request.'
-		);
+		throw await adminRequestError(res, 'The admin host refused the request.');
 	}
 	if (res.status === 404) {
-		throw new Error(`Unknown key “${row.key}” (404).`);
+		throw await adminRequestError(res, `Unknown key “${row.key}”.`);
 	}
 	if (res.status === 422) {
-		throw new Error(`Rejected by the server (422) — check the value for “${row.key}”.`);
+		throw await adminRequestError(res, `Rejected by the server — check the value for “${row.key}”.`);
 	}
-	if (!res.ok) throw new Error(`Save failed: HTTP ${res.status}.`);
+	if (!res.ok) throw await adminRequestError(res, 'Save failed.');
 	try {
 		const data = await res.json();
 		return { updatedAt: typeof data?.updated_at === 'number' ? data.updated_at : null };

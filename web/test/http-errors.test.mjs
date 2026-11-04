@@ -40,3 +40,32 @@ test('readErrorBody never throws', async () => {
 	const bad = { clone: () => ({ json: async () => { throw new Error('no json'); } }) };
 	assert.equal(await readErrorBody(bad), null);
 });
+
+test('adminRequestError carries status, request id and step-up', async () => {
+	const { adminRequestError, isStepUpRefusal } = await import('../src/lib/admin/http-errors.js');
+	const res = new Response(
+		JSON.stringify({ error: 'step-up required: log in again first', step_up: 'required' }),
+		{ status: 403, headers: { 'x-request-id': '6377942e39bec1dc82efe1b812797868' } }
+	);
+	const err = await adminRequestError(res, 'fallback');
+	assert.equal(err.status, 403);
+	assert.equal(err.requestId, '6377942e39bec1dc82efe1b812797868');
+	assert.equal(err.stepUp, true);
+	assert.match(err.message, /request 6377942e39bec1dc82efe1b812797868/);
+	assert.match(err.message, /passkey check from the last 10 minutes/);
+	// Legacy body without the machine flag still reads as a step-up.
+	assert.equal(isStepUpRefusal(403, { error: 'step-up required: log in again first' }), true);
+	assert.equal(isStepUpRefusal(403, { error: 'csrf' }), false);
+	assert.equal(isStepUpRefusal(401, { step_up: 'required' }), false);
+});
+
+test('adminRequestError keeps server text and works without a request id', async () => {
+	const { adminRequestError } = await import('../src/lib/admin/http-errors.js');
+	const res = new Response(JSON.stringify({ error: 'value shape does not match type' }), {
+		status: 422
+	});
+	const err = await adminRequestError(res, 'Rejected');
+	assert.equal(err.requestId, null);
+	assert.equal(err.stepUp, false);
+	assert.equal(err.message, 'value shape does not match type (HTTP 422)');
+});

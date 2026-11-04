@@ -161,26 +161,67 @@ pub(crate) fn presented_cert_cn(
 
 /// Fresh step-up for destructive actions (spec §5.5): `step_up_at`
 /// within 600s, or the session itself minted within 600s (same
-/// freshness disjunct as customer mode-(b) link). Callers map
-/// `false` to `403 step-up required: log in again first`.
-pub(crate) fn require_step_up(
+/// freshness disjunct as customer mode-(b) link). Callers answer a
+/// stale one with [`step_up_refusal`] (`403 step-up required: log in
+/// again first`, logged as `step_up_stale` with both ages).
+pub(crate) struct StepUpAges {
+    pub fresh: bool,
+    /// Seconds since the last passkey step-up (`None`: never).
+    pub step_up_age: Option<i64>,
+    /// Seconds since this session was minted (`None`: unknown).
+    pub session_age: Option<i64>,
+}
+
+pub(crate) fn step_up_ages(
     conn: &rusqlite::Connection,
     user: &auth::AuthenticatedUser,
     now: i64,
-) -> bool {
+) -> StepUpAges {
     let window = auth::passkey::STEP_UP_WINDOW_SECS;
-    let stepped = auth::passkey::get_account(conn, &user.user_id)
+    let step_up_age = auth::passkey::get_account(conn, &user.user_id)
         .ok()
         .flatten()
         .and_then(|account| account.step_up_at)
-        .is_some_and(|at| now - at <= window);
-    if stepped {
-        return true;
-    }
-    auth::get_session(conn, &user.session_id)
+        .map(|at| now - at);
+    let session_age = auth::get_session(conn, &user.session_id)
         .ok()
         .flatten()
-        .is_some_and(|session| now - session.created_at <= window)
+        .map(|session| now - session.created_at);
+    let fresh = step_up_age.is_some_and(|age| age <= window)
+        || session_age.is_some_and(|age| age <= window);
+    StepUpAges {
+        fresh,
+        step_up_age,
+        session_age,
+    }
+}
+
+/// The 403 a stale step-up gets, logged with its ages under the
+/// request's `x-request-id` (`error_kind=step_up_stale`).
+pub(crate) fn step_up_refusal(
+    user: &auth::AuthenticatedUser,
+    ages: &StepUpAges,
+) -> axum::response::Response {
+    let staff: String = user.user_id.chars().take(8).collect();
+    tracing::warn!(
+        staff = %staff,
+        step_up_age_s = ages.step_up_age.unwrap_or(-1),
+        session_age_s = ages.session_age.unwrap_or(-1),
+        window_s = auth::passkey::STEP_UP_WINDOW_SECS,
+        "step-up stale: confirm the passkey again"
+    );
+    crate::tag_error(
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "step-up required: log in again first",
+                "step_up": "required",
+                "window_s": auth::passkey::STEP_UP_WINDOW_SECS,
+            })),
+        )
+            .into_response(),
+        "step_up_stale",
+    )
 }
 
 /// Host guard: the admin host, or loopback hosts in local dev.
@@ -638,12 +679,9 @@ async fn set_config(
         Ok(conn) => conn,
         Err(_) => return store_unavailable(),
     };
-    if !require_step_up(&conn, &auth.user, unix_now()) {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error": "step-up required: log in again first"})),
-        )
-            .into_response();
+    let ages = step_up_ages(&conn, &auth.user, unix_now());
+    if !ages.fresh {
+        return step_up_refusal(&auth.user, &ages);
     }
     let version = match config::active_kek_version(&conn) {
         Ok(Some(v)) => v,

@@ -100,7 +100,18 @@ pub(crate) struct RequestTransport(pub(crate) &'static str);
 /// [`request_id_and_log`], never sent to clients). Grow the
 /// taxonomy at the failure site; unmarked 5xx log `unclassified`.
 #[derive(Clone)]
-struct ErrorKind(&'static str);
+pub(crate) struct ErrorKind(pub(crate) &'static str);
+
+/// Tag a response with its failure kind for the access log (5xx at
+/// ERROR, tagged 4xx at WARN), e.g. `step_up_stale` on a refused
+/// config write, so a reported `x-request-id` explains itself.
+pub(crate) fn tag_error(
+    mut res: axum::response::Response,
+    kind: &'static str,
+) -> axum::response::Response {
+    res.extensions_mut().insert(ErrorKind(kind));
+    res
+}
 
 /// Request access log, one span per request: `id method uri
 /// transport branch route` in, `status latency_ms` (+ `error_kind`
@@ -169,6 +180,18 @@ async fn request_id_and_log(
                     .get::<ErrorKind>()
                     .map(|kind| kind.0)
                     .unwrap_or("unclassified"),
+                "response"
+            );
+        } else if let Some(kind) = res
+            .status()
+            .is_client_error()
+            .then(|| res.extensions().get::<ErrorKind>().map(|kind| kind.0))
+            .flatten()
+        {
+            tracing::warn!(
+                status = %res.status(),
+                latency_ms = started.elapsed().as_millis(),
+                error_kind = %kind,
                 "response"
             );
         } else {

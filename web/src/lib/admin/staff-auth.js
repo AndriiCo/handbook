@@ -175,6 +175,21 @@ export async function loginPasskey(account, io) {
 }
 
 /**
+ * Passkey step-up for the signed-in staffer (config writes need one
+ * from the last 10 minutes): read the session's own user id from the
+ * admin `/me`, then run the same UV ceremony as login, which stamps
+ * `step_up_at`. Returns the login result, or the `/me` failure.
+ * @param {any} io {get, post, credentials}
+ */
+export async function confirmPasskey(io) {
+	const me = await io.get('/me');
+	if (!me.ok) return me;
+	const account = typeof me.body?.user_id === 'string' ? me.body.user_id : '';
+	if (!account) return { ok: false, status: 401, body: { error: 'no staff session' } };
+	return loginPasskey(account, io);
+}
+
+/**
  * Friendly copy for enrol failures (status + server error mapped).
  * `serverError` is the exact `error` string; denial bodies pass
  * through verbatim (they name the refused IP by design).

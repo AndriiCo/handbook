@@ -48,3 +48,61 @@ export async function readErrorBody(res) {
 		return null;
 	}
 }
+
+/**
+ * A refused admin request, carrying what triage needs: the HTTP
+ * status, the server's `error` text, and the `x-request-id` the
+ * server logged it under (the same id the browser's network tab
+ * shows), plus whether a fresh passkey step-up would let it through.
+ */
+export class AdminRequestError extends Error {
+	/**
+	 * @param {string} message
+	 * @param {{ status: number, requestId?: string | null, serverError?: string | null, stepUp?: boolean }} info
+	 */
+	constructor(message, info) {
+		super(message);
+		this.name = 'AdminRequestError';
+		this.status = info.status;
+		this.requestId = info.requestId ?? null;
+		this.serverError = info.serverError ?? null;
+		this.stepUp = info.stepUp === true;
+	}
+}
+
+/**
+ * True when a 403 asks for a fresh passkey step-up (config writes,
+ * restarts): the server says `step_up: "required"` or the legacy
+ * "step-up required" text.
+ * @param {number} status
+ * @param {{ error?: unknown, step_up?: unknown } | null} body
+ */
+export function isStepUpRefusal(status, body) {
+	if (status !== 403 || !body) return false;
+	if (body.step_up === 'required') return true;
+	return typeof body.error === 'string' && body.error.startsWith('step-up required');
+}
+
+/**
+ * Build the error for a non-ok admin response: the message ends with
+ * the status and request id, so a screenshot or a copy-paste of the
+ * notice is enough to find the server log line.
+ * @param {Response} res
+ * @param {string} fallback message when the server sent no `error`
+ */
+export async function adminRequestError(res, fallback) {
+	const body = await readErrorBody(res);
+	const requestId = res.headers?.get?.('x-request-id') ?? null;
+	const serverError = typeof body?.error === 'string' && body.error ? body.error : null;
+	const stepUp = isStepUpRefusal(res.status, body);
+	const base = stepUp
+		? 'Confirm it’s you: config changes need a passkey check from the last 10 minutes.'
+		: (authError(res.status, body) ?? serverError ?? fallback);
+	const suffix = requestId ? ` (HTTP ${res.status}, request ${requestId})` : ` (HTTP ${res.status})`;
+	return new AdminRequestError(`${base}${suffix}`, {
+		status: res.status,
+		requestId,
+		serverError,
+		stepUp
+	});
+}

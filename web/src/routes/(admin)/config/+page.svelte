@@ -31,6 +31,13 @@
 		saveConfigKey
 	} from '../../../lib/admin/config-client.js';
 	import {
+		CANCELLED_COPY,
+		confirmPasskey,
+		cookieValue,
+		loginErrorCopy
+	} from '../../../lib/admin/staff-auth.js';
+	import RequestErrorNotice from '../../../lib/admin/RequestErrorNotice.svelte';
+	import {
 		CONFIRM_WORD,
 		fetchStartedAt,
 		isLockoutKey,
@@ -74,6 +81,11 @@
 		present?: boolean;
 		// Server clock, unix seconds: when the row was last saved.
 		updated_at?: number;
+		// Triage for a failed save: the server's `x-request-id`, and
+		// whether a fresh passkey step-up would let it through.
+		requestId?: string | null;
+		stepUp?: boolean;
+		confirming?: boolean;
 	}
 
 	interface GuideField {
@@ -459,6 +471,8 @@
 		row.dirty = true;
 		row.saved = false;
 		row.error = null;
+		row.requestId = null;
+		row.stepUp = false;
 	}
 
 	async function save(row: Row) {
@@ -475,8 +489,58 @@
 			}
 		} catch (err) {
 			row.error = err instanceof Error ? err.message : 'Save failed.';
+			const info = err as { requestId?: string | null; stepUp?: boolean };
+			row.requestId = info?.requestId ?? null;
+			row.stepUp = info?.stepUp === true;
 		} finally {
 			row.saving = false;
+		}
+	}
+
+	// Config writes need a passkey step-up from the last 10 minutes:
+	// confirm in place (same UV ceremony as login, for this session's
+	// own staff id), then retry the save — no re-login, no lost draft.
+	async function staffGet(path: string) {
+		const res = await fetch(`${api()}${path}`, { credentials: 'same-origin' });
+		const body = await res.json().catch(() => ({}));
+		return { ok: res.ok, status: res.status, body };
+	}
+
+	async function staffPost(path: string, body: unknown) {
+		const res = await fetch(`${api()}${path}`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-csrf': cookieValue(document.cookie, 'hb_csrf')
+			},
+			credentials: 'same-origin',
+			body: JSON.stringify(body)
+		});
+		const parsed = await res.json().catch(() => ({}));
+		return { ok: res.ok, status: res.status, body: parsed };
+	}
+
+	async function confirmAndSave(row: Row) {
+		row.confirming = true;
+		try {
+			const res = await confirmPasskey({
+				get: staffGet,
+				post: staffPost,
+				credentials: navigator.credentials
+			});
+			if (!res.ok) {
+				row.error = loginErrorCopy(res.status, res.body?.error ?? '');
+				return;
+			}
+			row.stepUp = false;
+			await save(row);
+		} catch (err) {
+			row.error =
+				err instanceof DOMException && err.name === 'NotAllowedError'
+					? CANCELLED_COPY
+					: 'Passkey check failed — try again.';
+		} finally {
+			row.confirming = false;
 		}
 	}
 
@@ -746,7 +810,13 @@
 							</label>
 						{/if}
 						{#if row.error}
-							<Notice variant="error" heading="Save failed."><p>{row.error}</p></Notice>
+							<RequestErrorNotice
+								message={row.error}
+								requestId={row.requestId}
+								stepUp={row.stepUp}
+								busy={row.confirming}
+								onConfirm={() => confirmAndSave(row)}
+							/>
 						{/if}
 						{#if row.saved}
 							<Notice variant="success" heading="Saved.">
@@ -1116,7 +1186,13 @@
 					</div>
 				{/if}
 				{#if row.error}
-					<Notice variant="error" heading="Save failed."><p class="m-0 text-sm">{row.error}</p></Notice>
+					<RequestErrorNotice
+						message={row.error}
+						requestId={row.requestId}
+						stepUp={row.stepUp}
+						busy={row.confirming}
+						onConfirm={() => confirmAndSave(row)}
+					/>
 				{/if}
 				<div class="flex flex-wrap items-center gap-3">
 					<Button

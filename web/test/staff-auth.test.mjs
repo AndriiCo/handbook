@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
 	b64urlDecode,
 	b64urlEncode,
+	confirmPasskey,
 	cookieValue,
 	credentialRequestArgs,
 	enrolErrorCopy,
@@ -257,5 +258,49 @@ describe('staff-auth ceremonies with fakes', () => {
 			'/auth/passkey/login/start',
 			'/auth/passkey/login/finish'
 		]);
+	});
+
+	it('confirms a step-up for the session’s own staff id', async () => {
+		const seen = [];
+		const io = {
+			get: async (path) => {
+				seen.push(path);
+				return { ok: true, status: 200, body: { user_id: 'a'.repeat(32), role: 'admin' } };
+			},
+			post: async (path, body) => {
+				seen.push(path);
+				if (path.endsWith('/login/start')) {
+					assert.equal(body.account, 'a'.repeat(32));
+					return {
+						ok: true,
+						body: {
+							challenge_id: 'c3',
+							options: { challenge: b64urlEncode(new Uint8Array([7])) }
+						}
+					};
+				}
+				return { ok: true, status: 200, body: { user_id: 'a'.repeat(32) } };
+			},
+			credentials: { create: async () => credential(), get: async () => credential() }
+		};
+		const res = await confirmPasskey(io);
+		assert.equal(res.ok, true);
+		assert.deepEqual(seen, ['/me', '/auth/passkey/login/start', '/auth/passkey/login/finish']);
+	});
+
+	it('stops at /me when there is no staff session', async () => {
+		let posted = false;
+		const io = {
+			get: async () => ({ ok: false, status: 401, body: { error: 'unauthorized' } }),
+			post: async () => {
+				posted = true;
+				return { ok: true, body: {} };
+			},
+			credentials: { create: async () => credential(), get: async () => credential() }
+		};
+		const res = await confirmPasskey(io);
+		assert.equal(res.ok, false);
+		assert.equal(res.status, 401);
+		assert.equal(posted, false);
 	});
 });
