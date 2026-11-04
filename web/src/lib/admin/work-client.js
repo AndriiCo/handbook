@@ -7,6 +7,7 @@
 // GET  {apiBase}/admin/work-items/{id}/result → result bytes (attachment)
 // POST {apiBase}/admin/work-items/{id}/retry  → { id, status } (failed → pending)
 // POST {apiBase}/admin/work-items/{id}/cancel → { id, status } (pending or leased → failed)
+// POST {apiBase}/admin/workers/token {name}  → { name, token } (shown once; fresh step-up)
 // POST {apiBase}/admin/work-items/{id}/stage-packs → { id, dir, packs, count }
 //      (done research.nonparty with a result only: 409 otherwise, 422 when
 //      the result is not a packs.v1 bundle; re-staging overwrites)
@@ -49,7 +50,10 @@ import { authError, readErrorBody } from './http-errors.js';
 
 /**
  * @typedef {object} WorkWorker
+ * @property {number | null} conn socket id (two sockets may share a name)
  * @property {string} name
+ * @property {'shared' | 'named' | null} identity which token it connected with
+ * @property {boolean | null} version_matches same build as the server (null: unknown)
  * @property {string[]} capabilities
  * @property {string | null} version
  * @property {number | null} connected_at
@@ -225,7 +229,10 @@ export function normalizeItem(row) {
 export function normalizeWorker(row) {
 	if (!row || typeof row.name !== 'string') return null;
 	return {
+		conn: num(row.conn),
 		name: row.name,
+		identity: row.identity === 'shared' || row.identity === 'named' ? row.identity : null,
+		version_matches: typeof row.version_matches === 'boolean' ? row.version_matches : null,
 		capabilities: Array.isArray(row.capabilities)
 			? row.capabilities.filter((/** @type {unknown} */ c) => typeof c === 'string')
 			: [],
@@ -769,6 +776,22 @@ export async function retryWork(apiBase, id, fetchFn = fetch) {
 		id: typeof data?.id === 'number' ? data.id : id,
 		status: typeof data?.status === 'string' ? data.status : 'pending'
 	};
+}
+
+/**
+ * Mint a token that admits only the worker `name` (shown once). Rotating
+ * `worker.token` in /config revokes every minted token.
+ * @param {string} apiBase
+ * @param {string} name
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<{ name: string, token: string }>}
+ */
+export async function mintWorkerToken(apiBase, name, fetchFn = fetch) {
+	const data = await postWork(apiBase, '/admin/workers/token', { name }, `Token for ${name}`, fetchFn, {
+		422: 'worker names are 1-32 of a-z, 0-9 and -.'
+	});
+	if (!data || typeof data.token !== 'string') throw new WorkError('The token reply had an unexpected shape.', 0);
+	return { name: typeof data.name === 'string' ? data.name : name, token: data.token };
 }
 
 /**

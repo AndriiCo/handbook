@@ -44,6 +44,12 @@ pub struct Config {
     pub gpu_lock: PathBuf,
     /// Exit after the first finished job (smoke runs, tests).
     pub once: bool,
+    /// While this file exists the worker takes no new job: it finishes
+    /// the current one, removes the file and exits (`worker-install.sh
+    /// --restart`; cron starts the new build).
+    pub drain: PathBuf,
+    /// `hello` version: `<semver>+<git sha>` when the build knows it.
+    pub version: String,
 }
 
 /// Run until killed (or, with `once`, until one job is acknowledged).
@@ -194,7 +200,7 @@ fn session(
     send(
         &mut ws,
         &json!({"type": "hello", "worker": cfg.name, "capabilities": caps,
-                "version": env!("CARGO_PKG_VERSION")}),
+                "version": cfg.version}),
     )?;
     let welcome = await_reply(&mut ws, CONNECT_TIMEOUT)?;
     if welcome["type"] != "welcome" {
@@ -213,6 +219,11 @@ fn session(
         .map_or(16 * 1024 * 1024, |n| n as usize);
     loop {
         let Some(job) = running.as_mut() else {
+            if cfg.drain.exists() {
+                let _ = std::fs::remove_file(&cfg.drain);
+                eprintln!("worker: drained (no job running); exiting");
+                return Ok(());
+            }
             send(&mut ws, &json!({"type": "checkout"}))?;
             let reply = await_reply(&mut ws, REPLY_TIMEOUT)?;
             match reply["type"].as_str() {
@@ -619,6 +630,8 @@ mod tests {
             env: WorkerEnv::default(),
             gpu_lock: dir.path().join("gpu.lock"),
             once: true,
+            drain: dir.path().join("worker.drain"),
+            version: "0.1.0+test".to_string(),
         };
         let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(Echo), Box::new(Hidden)];
         run_with(&cfg, Arc::new(handlers));
@@ -682,12 +695,74 @@ mod tests {
             env: WorkerEnv::default(),
             gpu_lock: dir.path().join("gpu.lock"),
             once: true,
+            drain: dir.path().join("worker.drain"),
+            version: "0.1.0+test".to_string(),
         };
         let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(Echo)];
         run_with(&cfg, Arc::new(handlers));
         let (sent, resent) = server.join().unwrap();
         assert_eq!(sent, resent, "the same frame, lease and bytes");
         assert_eq!(resent["lease"], LEASE);
+    }
+
+    /// A drain request lets the running job finish and upload, then the
+    /// worker exits instead of checking out the next job.
+    #[test]
+    fn drain_finishes_the_current_job_then_exits() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "ws://{}/apostille/api/v1/worker/ws",
+            listener.local_addr().unwrap()
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let drain = dir.path().join("worker.drain");
+        let flag = drain.clone();
+        let server = std::thread::spawn(move || {
+            let mut ws = accept(&listener);
+            let hello = welcome(&mut ws);
+            assert_eq!(hello["version"], "0.1.0+test");
+            assert_eq!(recv(&mut ws)["type"], "checkout");
+            reply(
+                &mut ws,
+                json!({"type": "job", "id": 3, "kind": "test.echo", "payload": {},
+                       "lease": LEASE, "lease_expires_at": 0, "attempt": 1}),
+            );
+            std::fs::write(&flag, b"").unwrap(); // operator: --restart
+            loop {
+                let frame = recv(&mut ws);
+                match frame["type"].as_str() {
+                    Some("heartbeat") => reply(
+                        &mut ws,
+                        json!({"type": "lease", "id": 3, "lease_expires_at": 1}),
+                    ),
+                    Some("complete") => break,
+                    other => panic!("unexpected frame {other:?}"),
+                }
+            }
+            reply(&mut ws, json!({"type": "ack", "id": 3, "status": "done"}));
+            // No further checkout arrives: the next read sees the close.
+            assert!(
+                !matches!(ws.read(), Ok(Message::Text(_))),
+                "no checkout after a drain"
+            );
+        });
+        let cfg = Config {
+            url,
+            token: TOKEN.to_string(),
+            name: "plant-test".to_string(),
+            workdir: dir.path().join("work"),
+            cache_dir: dir.path().to_path_buf(),
+            repo: super::super::repo_root(),
+            env: WorkerEnv::default(),
+            gpu_lock: dir.path().join("gpu.lock"),
+            once: false,
+            drain: drain.clone(),
+            version: "0.1.0+test".to_string(),
+        };
+        let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(Echo)];
+        run_with(&cfg, Arc::new(handlers));
+        server.join().unwrap();
+        assert!(!drain.exists(), "the worker removes the drain file");
     }
 
     struct Slow;
@@ -739,6 +814,8 @@ mod tests {
             env: WorkerEnv::default(),
             gpu_lock: dir.path().join("gpu.lock"),
             once: true,
+            drain: dir.path().join("worker.drain"),
+            version: "0.1.0+test".to_string(),
         };
         let started = Instant::now();
         let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(Slow)];

@@ -51,6 +51,7 @@ double-submit pair except the Stripe webhook.
 | GET `/apostille/api/v1/admin/work-items/{id}/result` | admin | staff | n/a | — | P392 | result bytes (attachment) |
 | POST `/apostille/api/v1/admin/work-items/{id}/retry` | admin | staff | yes | — | P392 | `retry_response` |
 | POST `/apostille/api/v1/admin/work-items/{id}/cancel` | admin | staff | yes | — | P433 | `cancel_response` (pending or leased → failed) |
+| POST `/apostille/api/v1/admin/workers/token` `{name}` | admin | staff, fresh step-up | yes | — | P433 | `token_response` (shown once) |
 | POST `/apostille/api/v1/admin/work-items/{id}/stage-packs` | admin | staff | yes | — | P392 | `stage_response`; files in `<store>/packs-inbox/{id}/` |
 | GET `/apostille/api/v1/worker/ws` (WebSocket) | public | plant worker (`worker.token` bearer) | n/a | 8 sockets/IP | P392 | `worker-frames.json` |
 | GET `/apostille/api/v1/admin/sources/{id}/captures` | admin | staff | n/a | — | SA-14 (P394) | `{source, captures: [{id, captured_at, kind, trust, sha256, bytes, previous_id, reread, added, removed}], count}` |

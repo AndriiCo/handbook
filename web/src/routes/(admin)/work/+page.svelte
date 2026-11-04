@@ -20,6 +20,7 @@
 		auditLabel,
 		canStagePacks,
 		cancelWork,
+		mintWorkerToken,
 		enqueueBody,
 		enqueueWork,
 		examplePayload,
@@ -97,6 +98,9 @@
 	}>({ state: 'idle', view: null, error: null });
 	let retrying = $state<Record<number, true>>({});
 	let cancelling = $state<Record<number, true>>({});
+	let mintName = $state('');
+	let minting = $state(false);
+	let minted = $state<{ name: string; token: string } | null>(null);
 	let staging = $state<Record<number, true>>({});
 	let stageNote = $state<{ id: number; ok: boolean; text: string } | null>(null);
 
@@ -212,6 +216,30 @@
 			const next = { ...retrying };
 			delete next[id];
 			retrying = next;
+		}
+	}
+
+	async function mint() {
+		const name = mintName.trim();
+		if (minting || name === '') return;
+		minting = true;
+		minted = null;
+		try {
+			minted = await mintWorkerToken(API, name);
+		} catch (err) {
+			toast.error(errorText(err, `No token was minted for ${name}.`));
+		} finally {
+			minting = false;
+		}
+	}
+
+	async function copyMinted() {
+		if (!minted) return;
+		try {
+			await navigator.clipboard.writeText(minted.token);
+			toast.success('Token copied.');
+		} catch {
+			toast.error('Copy failed; select the token and copy it by hand.');
 		}
 	}
 
@@ -597,11 +625,25 @@
 					</div>
 				{:else}
 					<ul class="m-0 flex list-none flex-col gap-3 p-0">
-						{#each list.workers as w (w.name)}
+						{#each list.workers as w (w.conn ?? w.name)}
 							<li class="flex flex-col gap-2 rounded-md border border-line p-3">
 								<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 									<span class="font-mono text-sm font-medium">{w.name}</span>
 									{#if w.version}<span class="font-mono text-xs text-ink-muted">v{w.version}</span>{/if}
+									{#if w.version_matches === false}
+										<span
+											class="rounded-full border border-changed px-2 py-0.5 text-xs text-changed"
+											title="This worker runs a different build from the server: reinstall it with worker-install.sh --restart."
+											>other build</span
+										>
+									{/if}
+									{#if w.identity === 'shared'}
+										<span
+											class="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-muted"
+											title="Connected with the shared worker.token, which admits any worker name. A minted token admits one name."
+											>shared token</span
+										>
+									{/if}
 									<span class="ml-auto text-sm">
 										{#if w.job_id !== null}
 											<button
@@ -636,6 +678,35 @@
 						{/each}
 					</ul>
 				{/if}
+				<form
+					class="flex flex-col gap-2 border-t border-line pt-4"
+					onsubmit={(e) => {
+						e.preventDefault();
+						void mint();
+					}}
+				>
+					<label for="mint-name" class="text-xs font-medium text-ink-muted">Token for one worker</label>
+					<div class="flex gap-2">
+						<Input id="mint-name" class="h-9 font-mono" bind:value={mintName} autocomplete="off" spellcheck={false} />
+						<Button type="submit" variant="outline" disabled={minting || mintName.trim() === ''}>
+							{#if minting}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{/if}
+							Mint
+						</Button>
+					</div>
+					<p class="m-0 text-xs text-ink-muted">
+						It admits only that worker name. Rotating <code class="font-mono">worker.token</code> in /config revokes every minted token.
+					</p>
+					{#if minted}
+						<div class="flex flex-col gap-2 rounded-md border border-line bg-surface-2 p-3" role="status">
+							<p class="m-0 text-xs">
+								Shown once. On {minted.name}, set it as <code class="font-mono">APOSTILLE_WORKER_TOKEN</code> in
+								<code class="font-mono">worker.env</code>, start the worker with <code class="font-mono">--name {minted.name}</code>.
+							</p>
+							<code class="block font-mono text-xs break-all select-all">{minted.token}</code>
+							<div><Button type="button" variant="outline" size="sm" onclick={copyMinted}>Copy</Button></div>
+						</div>
+					{/if}
+				</form>
 			</section>
 		</div>
 

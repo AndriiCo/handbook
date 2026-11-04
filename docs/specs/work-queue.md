@@ -69,6 +69,21 @@ Auth before upgrade: `Authorization: Bearer <token>`, compared in
 constant time (SHA-256 of both sides) with the sealed secret
 `worker.token` (`/config`, group "Plant workers"). No row → 503, wrong
 or missing token → 401, fewer than 32 characters configured → 503.
+Two token forms: the shared `worker.token` itself (any worker name;
+the Work page marks it "shared token"), or a named token
+`w1.<name>.<hex HMAC-SHA256(worker.token, "worker-name:<name>")>`
+minted on the Work page (`POST /apostille/api/v1/admin/workers/token
+{name}`, fresh step-up, shown once), which admits only `hello` from
+that name. Rotating `worker.token` revokes every named token, and open
+sockets re-check the secret on every ping: a rotated secret closes
+them. A socket with no inbound frame (pongs included) for 90 s is
+closed.
+
+`hello.version` is `<semver>+<git sha>` (the `.sha` file
+`worker-install.sh` writes, or `git rev-parse`); the Work page flags a
+worker whose SHA differs from the server's build ("other build").
+Restarts drain: while `<workdir>/worker.drain` exists the worker takes
+no new job, finishes the current one, removes the file and exits.
 At most 8 sockets per peer IP. Workers dial `wss://`; the client refuses
 `ws://` except to a loopback address (tests, the local judge boot), so
 the token never crosses a network in clear text. Frames are JSON text; inbound frames
@@ -106,6 +121,7 @@ lease). The server pings every 30 s.
 | `GET /apostille/api/v1/admin/work-items/{id}` | one item + its audit trail |
 | `GET /apostille/api/v1/admin/work-items/{id}/result` | result bytes (`Content-Disposition: attachment`) |
 | `POST /apostille/api/v1/admin/work-items/{id}/retry` | failed → pending (attempts reset) |
+| `POST /apostille/api/v1/admin/workers/token` | `{name}` → `{name, token}`: a named worker token (fresh step-up, shown once) |
 | `POST /apostille/api/v1/admin/work-items/{id}/cancel` | pending or leased → failed ("cancelled by …"); the worker's next heartbeat gets `lease_lost`; 409 otherwise |
 | `POST /apostille/api/v1/admin/work-items/{id}/stage-packs` | write a done `research.nonparty` bundle's packs to `<store>/packs-inbox/<id>/` |
 
