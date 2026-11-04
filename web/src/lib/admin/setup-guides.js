@@ -268,6 +268,59 @@ export const REQUIRED_KEYS = [
 ];
 
 /**
+ * Required keys that only a public server needs: its domain, TLS and
+ * ACME, and the voice and mail providers. A loopback boot (`xtask up`,
+ * the judge path) runs on plain HTTP with stubbed providers, so the
+ * wizard does not list them as missing there.
+ * @type {string[]}
+ */
+export const PRODUCTION_ONLY_KEYS = [
+	'net.public_host',
+	'paths.acme_challenge_dir',
+	'tls.cert_file',
+	'tls.key_file',
+	'acme.email',
+	'acme.domains',
+	'telnyx.api_key',
+	'telnyx.from_number',
+	'telnyx.connection_id',
+	'telnyx.webhook_public_key',
+	'mailer.host',
+	'mailer.username',
+	'mailer.password',
+	'mailer.from',
+	'mail.client_id',
+	'mail.client_secret',
+	'mail.refresh_token'
+];
+
+/**
+ * True for a console served from this machine (loopback name or
+ * address), i.e. a local boot, never a public server. Pure (tested).
+ * @param {string} hostname `location.hostname`
+ */
+export function isLoopbackHost(hostname) {
+	const host = hostname.toLowerCase();
+	return (
+		host === 'localhost' ||
+		host.endsWith('.localhost') ||
+		host === '[::1]' ||
+		host === '::1' ||
+		/^127(\.\d{1,3}){3}$/.test(host)
+	);
+}
+
+/**
+ * The required keys for the host the wizard runs on. Pure (tested).
+ * @param {string} hostname `location.hostname`
+ * @returns {string[]}
+ */
+export function requiredKeysFor(hostname) {
+	if (!isLoopbackHost(hostname)) return REQUIRED_KEYS;
+	return REQUIRED_KEYS.filter((key) => !PRODUCTION_ONLY_KEYS.includes(key));
+}
+
+/**
  * Every wizard key with its step id. Pure (tested).
  * @returns {Map<string, string>}
  */

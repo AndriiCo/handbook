@@ -42,10 +42,15 @@ Audit rows: `staff_invite_issue`, `staff_enrolled`,
 
 ## Login
 
-`https://admin.<host>/login` with the user ID given at enrolment and the
-passkey. A login refreshes the step-up window that destructive actions
-(config writes) require. `unknown account or no passkeys` (401) is the
-one answer for unknown, locked or credential-less accounts.
+`https://admin.<host>/staff-login` with the user ID given at enrolment
+and the passkey. (`/login` and the other customer pages answer 404 on
+the admin host.) A login refreshes the step-up window that destructive
+actions (config writes) require. `unknown account or no passkeys` (401)
+is the one answer for unknown, locked or credential-less accounts.
+When a session expires mid-use, the console sends the browser to
+`/staff-login?next=<page>` and returns there after sign-in. **Sign out**
+sits at the bottom of the console sidebar (`POST /auth/logout` on the
+admin host: ends the session, clears the cookie, audits `staff_logout`).
 
 ## Offboarding
 

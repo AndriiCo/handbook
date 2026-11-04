@@ -38,6 +38,7 @@
 	} from '../../../lib/admin/staff-auth.js';
 	import RequestErrorNotice from '../../../lib/admin/RequestErrorNotice.svelte';
 	import SecretInput from '../../../lib/admin/SecretInput.svelte';
+	import StaffEnrolForm from '../../../lib/admin/StaffEnrolForm.svelte';
 	import {
 		CONFIRM_WORD,
 		fetchStartedAt,
@@ -53,7 +54,12 @@
 		saveSetupKey,
 		setupKeyHeaders
 	} from '../../../lib/admin/setup-client.js';
-	import { STEPS, REQUIRED_KEYS } from '../../../lib/admin/setup-guides.js';
+	import {
+		STEPS,
+		REQUIRED_KEYS,
+		isLoopbackHost,
+		requiredKeysFor
+	} from '../../../lib/admin/setup-guides.js';
 
 	// Typed config keys per secure-config.md §1.5. SECRET rows are
 	// write-only: the page shows Set/Unset and a new-value box only —
@@ -106,7 +112,10 @@
 	}
 
 	const steps = STEPS as GuideStep[];
-	const requiredKeys = REQUIRED_KEYS as string[];
+	// A loopback boot (`xtask up`, the judge path) needs no TLS, ACME,
+	// voice or mail keys: the list narrows once the host is known.
+	let requiredKeys = $state<string[]>(REQUIRED_KEYS);
+	let localBoot = $state(false);
 
 	let mode = $state<'checking' | 'setup' | 'normal'>('checking');
 	let loadState = $state<'loading' | 'ready' | 'failed'>('loading');
@@ -120,6 +129,10 @@
 	let setupState = $state<'idle' | 'loading' | 'ready' | 'failed'>('idle');
 	let setupError = $state<string | null>(null);
 	let stepIdx = $state(0);
+	// Set once the wizard's own enrolment succeeds: the setup key is
+	// burned, this browser holds a staff session, and the page turns
+	// into the normal key list.
+	let enrolled = $state<{ role: string; userId: string } | null>(null);
 
 	// Normal mode: the guide (web/src/lib/admin/config-guide.ts) is
 	// left-joined with the server list, because GET /config returns
@@ -445,7 +458,16 @@
 		stepIdx = 0;
 	}
 
+	async function onEnrolled(grant: { role: string; userId: string }) {
+		enrolled = { role: grant.role, userId: grant.userId };
+		forgetKey();
+		mode = 'normal';
+		await load();
+	}
+
 	onMount(async () => {
+		localBoot = isLoopbackHost(window.location.hostname);
+		requiredKeys = requiredKeysFor(window.location.hostname);
 		try {
 			const status = await fetchSetupStatus(api());
 			if (status.setup_required) {
@@ -713,7 +735,16 @@
 			>
 		</p>
 	{:else}
-		<nav aria-label="Setup steps">
+		{#if localBoot}
+			<Notice variant="info" heading="Local boot.">
+				<p class="m-0">
+					This console runs on this machine, so TLS, ACME, voice and mail keys are not needed.
+					You can <a class="font-semibold underline" href="#setup-enrol">enrol the first passkey</a> now
+					and set keys later.
+				</p>
+			</Notice>
+		{/if}
+		<nav aria-label="Setup steps" class="mt-4">
 			<ol class="m-0 flex list-none flex-wrap gap-2 p-0">
 				{#each steps as step, i (step.id)}
 					<li>
@@ -883,13 +914,19 @@
 					{/each}
 				</ul>
 			{/if}
-			<p class="flex flex-wrap gap-2 pb-8">
-				<a
-					class="inline-flex min-h-11 items-center rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink"
-					href={`${resolve('/(admin)/enrol')}?setup=1`}
-					>Enrol the first passkey (burns the setup key)</a
-				>
+		</section>
+
+		<section id="setup-enrol" aria-labelledby="setup-enrol-title" class="max-w-[44rem] pb-8">
+			<h2 id="setup-enrol-title">Enrol the first staff passkey</h2>
+			<p>
+				Uses the setup key you pasted above and burns it: this wizard closes and every key
+				stays editable from the normal config list, signed in with your passkey.
 			</p>
+			<StaffEnrolForm
+				{setupKey}
+				submitLabel="Enrol passkey and sign in"
+				onenrolled={onEnrolled}
+			/>
 		</section>
 	{/if}
 {:else}
@@ -902,6 +939,18 @@
 				Secrets are write-only and every save writes an audit row.
 			</p>
 		</header>
+
+		{#if enrolled}
+			<Notice variant="success" heading="Enrolled and signed in.">
+				<p class="m-0">
+					You are the first {enrolled.role}; the setup key is burned. Keep this user ID, sign-in
+					asks for it: <code class="select-all break-all">{enrolled.userId}</code>
+				</p>
+				<p class="mt-3 mb-0">
+					<Button href={resolve('/(admin)/review')}>Continue to the review queue →</Button>
+				</p>
+			</Notice>
+		{/if}
 
 		{#if loadState === 'loading'}
 			{@render loadingBlock()}

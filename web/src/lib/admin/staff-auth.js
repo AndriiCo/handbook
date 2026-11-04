@@ -228,7 +228,15 @@ export function enrolErrorCopy(status, serverError, setupMode = false) {
  * @param {string} serverError
  */
 export function loginErrorCopy(status, serverError) {
-	if (status === 401) return 'Unknown account or no passkeys — check the user ID or ask your admin.';
+	// 401 from finish: the authenticator answered but the signature,
+	// user verification or account did not check out. From start: no
+	// usable passkey exists for the account given.
+	if (status === 401 && serverError === 'authentication failed') {
+		return 'The passkey check did not pass — try again with the passkey you enrolled on this server.';
+	}
+	if (status === 401) {
+		return 'No staff passkey matches that account — check the user ID, or ask an admin for an invite link.';
+	}
 	if (status === 403 && serverError === 'use the customer login') {
 		return 'This branch is for staff — use the customer login.';
 	}

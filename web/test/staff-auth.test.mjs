@@ -113,7 +113,10 @@ describe('staff-auth shapes', () => {
 	});
 
 	it('maps login failures, carrying denial bodies verbatim', () => {
-		assert.match(loginErrorCopy(401, 'unknown account or no passkeys'), /Unknown account/);
+		assert.match(loginErrorCopy(401, 'unknown account or no passkeys'), /No staff passkey matches/);
+		// A failed passkey check is not an unknown account (P1-7).
+		assert.match(loginErrorCopy(401, 'authentication failed'), /passkey check did not pass/);
+		assert.doesNotMatch(loginErrorCopy(401, 'authentication failed'), /user ID/);
 		assert.match(loginErrorCopy(403, 'use the customer login'), /customer login/);
 		assert.match(
 			loginErrorCopy(403, 'admin access is limited — your IP is 198.51.100.9'),

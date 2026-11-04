@@ -760,6 +760,40 @@ pub async fn login_finish(
         .into_response()
 }
 
+/// `POST /auth/logout` (admin branch) — idempotent staff sign-out:
+/// deletes the session behind the admin cookie, audits it, and
+/// clears the admin + CSRF cookies. Mirrors [`passkey::logout`] on
+/// the staff cookie. The CSRF layer passes `/auth/*` through, so
+/// the Origin check runs here: a cross-site page cannot sign staff
+/// out.
+pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !passkey::origin_ok(&headers, state.admin_mtls_off) {
+        return passkey::csrf_fail();
+    }
+    let now = unix_now();
+    let secure = !state.admin_mtls_off;
+    let token = headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|cookies| auth::cookie_value(cookies, auth::ADM_COOKIE));
+    if let Some(token) = token
+        && let Some(conn) = passkey::open_conn(&state)
+        && let Ok(Some(session)) = auth::get_session(&conn, token)
+    {
+        let _ = auth::delete_session(&conn, &session.id);
+        passkey::audit_auth(&conn, now, &session.user_id, "staff_logout", "");
+    }
+    (
+        StatusCode::OK,
+        passkey::set_cookies(&[
+            auth::clear_cookie(auth::ADM_COOKIE, secure),
+            auth::clear_cookie(auth::CSRF_COOKIE, secure),
+        ]),
+        Json(json!({"ok": true})),
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1687,5 +1721,100 @@ mod tests {
         // never enrolled on this scratch store).
         let (status, _, _) = json_of(app.clone().oneshot(put("sess-fresh")).await.unwrap()).await;
         assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn logout_ends_the_staff_session_and_clears_cookies() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = test_state(&tmp);
+        let now = unix_now();
+        let conn = open(&state.store_root);
+        store::ensure_staff_account(&conn, "u-out", "admin", now).unwrap();
+        auth::create_session(
+            &conn,
+            "sess-out",
+            &auth::NewSession {
+                user_id: "u-out",
+                role: auth::Role::Admin,
+                customer_ref: None,
+                now,
+                ip: "127.0.0.1",
+                user_agent: "test",
+            },
+        )
+        .unwrap();
+        drop(conn);
+        let app = crate::admin::router(state.clone());
+        let me = |session: &str| {
+            Request::builder()
+                .uri("/apostille/api/v1/me")
+                .header(header::HOST, "localhost")
+                .header(header::COOKIE, format!("{}={session}", auth::ADM_COOKIE))
+                .extension(addr())
+                .body(Body::empty())
+                .unwrap()
+        };
+        assert_eq!(
+            app.clone().oneshot(me("sess-out")).await.unwrap().status(),
+            StatusCode::OK
+        );
+        // Cross-site page → refused, session intact.
+        let evil = Request::builder()
+            .method("POST")
+            .uri("/apostille/api/v1/auth/logout")
+            .header(header::HOST, "localhost")
+            .header(header::ORIGIN, "https://evil.test")
+            .header(header::COOKIE, format!("{}=sess-out", auth::ADM_COOKIE))
+            .extension(addr())
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(evil).await.unwrap().status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            app.clone().oneshot(me("sess-out")).await.unwrap().status(),
+            StatusCode::OK
+        );
+        // Same-origin sign-out: 200, both cookies cleared (`Secure`
+        // even on the plain-HTTP boot, or the browser keeps them).
+        let req = with_cookies(
+            post("/apostille/api/v1/auth/logout", "{}"),
+            &format!("{}=sess-out", auth::ADM_COOKIE),
+        );
+        let (status, json, cookies) = json_of(app.clone().oneshot(req).await.unwrap()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["ok"], true);
+        assert!(
+            cookies.contains(&format!("{}=; Max-Age=0", auth::ADM_COOKIE)),
+            "{cookies}"
+        );
+        assert!(cookies.contains("Secure"), "{cookies}");
+        assert!(
+            cookies.contains(&format!("{}=; Max-Age=0", auth::CSRF_COOKIE)),
+            "{cookies}"
+        );
+        assert_eq!(
+            app.clone().oneshot(me("sess-out")).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+        // Idempotent: no session, still 200.
+        let (status, _, _) = json_of(
+            app.clone()
+                .oneshot(post("/apostille/api/v1/auth/logout", "{}"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let conn = open(&state.store_root);
+        let audited: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM audit WHERE action = 'staff_logout'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(-1);
+        assert_eq!(audited, 1);
     }
 }

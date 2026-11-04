@@ -490,12 +490,21 @@ pub fn admin_cert_valid(conn: &Connection, fingerprint: &str, now: i64) -> rusql
     Ok(matches!(row, Some((None, expires_at)) if now < expires_at))
 }
 
+/// True when `Set-Cookie` for `name` must carry `Secure`: always for
+/// `__Host-` names (browsers drop the cookie otherwise, on every
+/// origin), else only when the caller asks. Browsers accept `Secure`
+/// cookies from `http://localhost` and `http://127.0.0.1` (secure
+/// contexts), so the plain-HTTP loopback boot keeps its sessions.
+fn wants_secure(name: &str, secure: bool) -> bool {
+    secure || name.starts_with("__Host-")
+}
+
 /// `Set-Cookie` value for a session id. `__Host-` names require
-/// `Secure` + `Path=/` + no `Domain`; over plain-HTTP dev the
-/// browser will not store it, which is correct fail-closed behavior.
+/// `Secure` + `Path=/` + no `Domain`, so they get `Secure` even when
+/// `secure` is false (the loopback dev boot).
 pub fn session_cookie(name: &str, id: &str, secure: bool) -> String {
     let mut cookie = format!("{name}={id}; HttpOnly; SameSite=Lax; Path=/");
-    if secure {
+    if wants_secure(name, secure) {
         cookie.push_str("; Secure");
     }
     cookie
@@ -511,10 +520,11 @@ pub fn csrf_cookie(token: &str, secure: bool) -> String {
     cookie
 }
 
-/// Expire a cookie immediately (logout).
+/// Expire a cookie immediately (logout). Same `Secure` rule as
+/// [`session_cookie`]: a `__Host-` clear without it is dropped too.
 pub fn clear_cookie(name: &str, secure: bool) -> String {
     let mut cookie = format!("{name}=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/");
-    if secure {
+    if wants_secure(name, secure) {
         cookie.push_str("; Secure");
     }
     cookie
@@ -727,5 +737,24 @@ mod tests {
         );
         assert_eq!(cookie_value("a=1", ADM_COOKIE), None);
         assert_eq!(cookie_value("__Host-hb_adm=", ADM_COOKIE), None);
+    }
+
+    #[test]
+    fn host_prefixed_cookies_stay_secure_on_the_loopback_boot() {
+        // `secure = false` is the plain-HTTP loopback boot. A
+        // `__Host-` cookie without `Secure` is dropped by the browser,
+        // so the staff and customer sessions keep it there too.
+        for name in [ADM_COOKIE, PUB_COOKIE] {
+            assert!(
+                session_cookie(name, "id", false).ends_with("; Secure"),
+                "{name}"
+            );
+            assert!(clear_cookie(name, false).ends_with("; Secure"), "{name}");
+        }
+        // Unprefixed cookies follow the flag (the CSRF echo stays
+        // readable over plain HTTP).
+        assert!(!csrf_cookie("t", false).contains("Secure"));
+        assert!(!session_cookie("plain", "id", false).contains("Secure"));
+        assert!(session_cookie("plain", "id", true).ends_with("; Secure"));
     }
 }

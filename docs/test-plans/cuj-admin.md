@@ -14,9 +14,10 @@ Budget **3/3 per step** (arrival, key paste+submit amortized,
 fills, one Next with auto-save).
 
 Steps: shell mint (by design, untested in browser) → key
-entry → steps 1–8 → review → enrol `?setup=1` (manual:
-authenticator) → burn verified (`setup_required=false`,
-old key 403s — handler-tested). History: per-field Saves
+entry → steps 1–8 → review → enrol from the wizard with the
+same key (no second paste; `web/e2e/admin-first-run.spec.mjs`
+drives it with a stubbed authenticator) → burn verified
+(`setup_required=false`, old key 403s — handler-tested). History: per-field Saves
 cost 5 actions/step; auto-save on navigation (prompt 063)
 cut it to 3, and fixed unset-key edits never enabling Save
 (the left-join: all rows live in `$state`). Full 9-step +
