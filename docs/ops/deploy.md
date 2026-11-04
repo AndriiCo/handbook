@@ -138,6 +138,8 @@ on staging afterwards.
 
 ## Rebuild from scratch
 
+Start with the [setup guide](../setup.md) for local and SSH environments.
+
 One encrypted file holds every setting and secret for every target:
 `private/config.yaml` (sops + age; `private/` is git-ignored, kept out
 of Docker contexts and out of agent reads). Plaintext never touches

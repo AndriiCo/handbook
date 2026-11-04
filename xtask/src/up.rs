@@ -178,6 +178,149 @@ pub fn set_ports(public: u16, admin: u16) -> Result<(), String> {
     Ok(())
 }
 
+/// True when something listens on `port` on either loopback family
+/// (`localhost` may resolve to `::1` first, so a listener there takes
+/// the browser even with 127.0.0.1 free).
+pub fn port_busy(port: u16) -> bool {
+    let taken = |host: &str| {
+        matches!(
+            std::net::TcpListener::bind((host, port)),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse
+        )
+    };
+    taken("127.0.0.1") || taken("::1")
+}
+
+/// Who listens on a loopback port, as far as `lsof` and `ps` can say.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PortHolder {
+    pub command: String,
+    /// The holder's working directory, when `lsof` shows it.
+    pub cwd: String,
+}
+
+pub fn port_holder(port: u16) -> Option<PortHolder> {
+    let text = |bin: &str, args: &[&str]| {
+        Command::new(bin)
+            .args(args)
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    };
+    let pids = text(
+        "lsof",
+        &["-nP", "-t", &format!("-iTCP:{port}"), "-sTCP:LISTEN"],
+    )?;
+    let pid = pids.lines().next()?.trim().to_string();
+    let command = text("ps", &["-o", "command=", "-p", &pid]).unwrap_or_default();
+    let cwd = text("lsof", &["-a", "-p", &pid, "-d", "cwd", "-Fn"]).unwrap_or_default();
+    Some(PortHolder {
+        command: command.trim().chars().take(120).collect(),
+        cwd: cwd
+            .lines()
+            .find_map(|l| l.strip_prefix('n'))
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
+/// What holds these ports, for a person: `18318: ssh -N -L ...`.
+fn holders_text(ports: [u16; 2], busy: &dyn Fn(u16) -> bool) -> String {
+    ports
+        .into_iter()
+        .filter(|p| busy(*p))
+        .map(|p| {
+            let who = port_holder(p).map_or("another process".to_string(), |h| h.command);
+            format!("{p}: {who}")
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// This checkout's own server on one of the ports: a second boot would
+/// share its store and rotate its worker token, so it never starts.
+fn own_server(ports: [u16; 2], repo: &Path) -> Option<u16> {
+    ports.into_iter().find(|p| {
+        port_holder(*p).is_some_and(|h| !h.cwd.is_empty() && Path::new(&h.cwd).starts_with(repo))
+    })
+}
+
+/// The first free pair after `want`, keeping the ports' spacing: ten
+/// up, up to twenty tries.
+fn next_free_pair(want: (u16, u16), busy: &dyn Fn(u16) -> bool) -> Option<(u16, u16)> {
+    (1..=20u16).find_map(|step| {
+        let up = step.checked_mul(10)?;
+        let pair = (want.0.checked_add(up)?, want.1.checked_add(up)?);
+        (!busy(pair.0) && !busy(pair.1)).then_some(pair)
+    })
+}
+
+/// The ports a local boot may use, given the ones it wants. Taken by
+/// something else: the next free pair and a note saying why. Taken by
+/// this checkout's own server: an error. Checked before anything is
+/// built or minted, because `/healthz` from whatever holds a port (an
+/// SSH tunnel to staging, say) would otherwise pass as this boot's,
+/// and its setup key would be pasted into the wrong server.
+pub fn local_ports(want: (u16, u16), repo: &Path) -> Result<((u16, u16), Option<String>), String> {
+    pick_ports(want, repo, &port_busy)
+}
+
+fn pick_ports(
+    want: (u16, u16),
+    repo: &Path,
+    busy: &dyn Fn(u16) -> bool,
+) -> Result<((u16, u16), Option<String>), String> {
+    let ports = [want.0, want.1];
+    if !busy(want.0) && !busy(want.1) {
+        return Ok((want, None));
+    }
+    if let Some(port) = own_server(ports, repo) {
+        return Err(format!(
+            "this checkout's handbook already listens on :{port}: stop it first (Ctrl-C in its terminal, or Stop all in the wizard)"
+        ));
+    }
+    let held = holders_text(ports, busy);
+    let Some(pair) = next_free_pair(want, busy) else {
+        return Err(format!(
+            "ports {} and {} are taken ({held}) and no free pair follows them",
+            want.0, want.1
+        ));
+    };
+    Ok((
+        pair,
+        Some(format!(
+            "ports {} and {} are taken ({held}); serving on {} and {} instead",
+            want.0, want.1, pair.0, pair.1
+        )),
+    ))
+}
+
+/// Settle this boot's ports before any side effect. A pair nobody
+/// asked for moves out of the way; one that was asked for (`--port-base`,
+/// a setup file's after its own check, the Docker image's published
+/// pair) stops the boot, naming the holder.
+fn claim_ports(prebuilt: bool) {
+    let repo = std::env::current_dir().unwrap_or_default();
+    if PORTS.get().is_some() || prebuilt {
+        let ports = [public_port(), admin_port()];
+        if ports.iter().any(|p| port_busy(*p)) {
+            fail(&format!(
+                "ports {} and {} are not free ({}): stop the holder or pick others with --port-base",
+                ports[0],
+                ports[1],
+                holders_text(ports, &port_busy)
+            ));
+        }
+        return;
+    }
+    let (pair, note) =
+        local_ports((public_port(), admin_port()), &repo).unwrap_or_else(|e| fail(&e));
+    if let Some(note) = note {
+        println!("up: {note}");
+    }
+    set_ports(pair.0, pair.1).unwrap_or_else(|e| fail(&e));
+}
+
 /// Entry point (the builder wires the `up` arm in `main.rs`).
 pub fn run(args: &[String]) {
     let live = has(args, "--live");
@@ -209,6 +352,7 @@ pub fn run(args: &[String]) {
         assert_repo_root();
         check_toolchain();
     }
+    claim_ports(prebuilt);
     if fresh && Path::new(".local").exists() {
         wipe_local();
     }
@@ -1839,9 +1983,11 @@ fn print_banner(setup_key: Option<&str>, review_link: &str, prebuilt: bool) {
     match setup_key {
         Some(key) => {
             println!(
-                "  staff:   open http://localhost:{admin}/config first and paste this setup key"
+                "  staff:   open http://localhost:{admin}/config first and paste this setup key,"
             );
-            println!("           (it prints ONCE), then enrol a passkey:");
+            println!(
+                "           then enrol a passkey (a rerun prints a new key until one is enrolled):"
+            );
             println!("    {key}");
             println!("           later visits sign in at http://localhost:{admin}/staff-login");
         }
@@ -1969,6 +2115,52 @@ mod tests {
                 .unwrap_or("")
                 .starts_with("2026-11-01")
         );
+    }
+
+    #[test]
+    fn busy_ports_move_to_the_next_free_pair_keeping_their_spacing() {
+        let repo = tempfile::tempdir().unwrap();
+        let free = |_: u16| false;
+        assert_eq!(
+            pick_ports((18318, 18319), repo.path(), &free).unwrap(),
+            ((18318, 18319), None)
+        );
+        // An SSH tunnel on the default pair, and the next pair half taken.
+        let busy = |p: u16| [18318, 18319, 18329].contains(&p);
+        let (pair, note) = pick_ports((18318, 18319), repo.path(), &busy).unwrap();
+        assert_eq!(pair, (18338, 18339));
+        let note = note.unwrap();
+        assert!(note.contains("serving on 18338 and 18339"), "{note}");
+        assert!(note.contains("18318:"), "names the holder: {note}");
+        let all = |_: u16| true;
+        let err = pick_ports((18318, 18319), repo.path(), &all).unwrap_err();
+        assert!(err.contains("no free pair"), "{err}");
+    }
+
+    /// A real listener on loopback reads as busy, a closed port as free,
+    /// and the holder comes back with its working directory.
+    #[cfg(unix)]
+    #[test]
+    fn a_listener_is_busy_and_this_checkouts_own_server_refuses_a_second_boot() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(port_busy(port));
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let free = closed.local_addr().unwrap().port();
+        drop(closed);
+        assert!(!port_busy(free));
+        // Skipped where lsof is missing (the holder is best-effort).
+        let Some(holder) = port_holder(port) else {
+            return;
+        };
+        assert!(!holder.command.is_empty());
+        let here = std::env::current_dir().unwrap();
+        let err = pick_ports((port, free), &here, &port_busy).unwrap_err();
+        assert!(err.contains("already listens"), "{err}");
+        let elsewhere = tempfile::tempdir().unwrap();
+        let (pair, note) = pick_ports((port, free), elsewhere.path(), &port_busy).unwrap();
+        assert_ne!(pair.0, port);
+        assert!(note.is_some());
     }
 
     #[test]

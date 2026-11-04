@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 use serde::Serialize;
 
-use super::file::{SetupFile, TargetKind};
+use super::file::{self, SetupFile, TargetKind};
 use super::plan::{Action, Builtin, Conn, Facts, Feed, Phase, REHEARSAL_DIR, Step};
 use super::{build, rail, rehearsal, stage};
 
@@ -37,6 +37,17 @@ pub enum Event {
     },
     Finished {
         target: String,
+        ok: bool,
+        detail: String,
+    },
+    /// The wizard's Run all / Stop all / Remove all begins: one plan
+    /// per target follows.
+    Batch {
+        action: String,
+        targets: Vec<String>,
+    },
+    /// ...and ends.
+    BatchDone {
         ok: bool,
         detail: String,
     },
@@ -106,7 +117,11 @@ pub fn execute(ctx: &Ctx, steps: &[Step], from: Option<Phase>) -> Result<(), Str
     (ctx.emit)(Event::Finished {
         target: ctx.target.clone(),
         ok: true,
-        detail: format!("{} is up on {}", ctx.target, ctx.facts.version()),
+        detail: match steps.last().map(|s| s.phase) {
+            Some(Phase::Stop) => format!("{} stopped", ctx.target),
+            Some(Phase::Remove) => format!("{} removed", ctx.target),
+            _ => format!("{} is up on {}", ctx.target, ctx.facts.version()),
+        },
     });
     Ok(())
 }
@@ -350,13 +365,20 @@ fn builtin(ctx: &Ctx, index: usize, b: &Builtin) -> Result<(), String> {
         Builtin::LocalBoot => {
             let target = &ctx.file.targets[&ctx.target];
             let ports = target.ports_or_default();
-            crate::up::set_ports(ports.public, ports.admin)?;
+            let ((public, admin), note) =
+                crate::up::local_ports((ports.public, ports.admin), &ctx.repo)?;
+            if let Some(note) = note {
+                log(note);
+            }
+            crate::up::set_ports(public, admin)?;
             log(format!(
-                "public http://localhost:{} · admin http://localhost:{}",
-                ports.public, ports.admin
+                "public http://localhost:{public} · admin http://localhost:{admin}"
             ));
             let mut values = ctx.file.effective_values(&ctx.target, target);
-            for key in crate::up::loopback_keys() {
+            for key in crate::up::loopback_keys()
+                .into_iter()
+                .chain(file::NOT_LOCAL)
+            {
                 if values.remove(key).is_some() {
                     log(format!(
                         "{key}: ignored for a local target (`up` keeps it loopback; set targets.{}.ports to move ports)",

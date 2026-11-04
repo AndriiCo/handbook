@@ -13,7 +13,6 @@
 //! The doctor needs xtask compiled first; `ops/judge/preflight.sh`
 //! checks the C compiler, rustup, Node and npm before cargo builds.
 
-use std::net::TcpListener;
 use std::process::Command;
 
 /// Free disk the first build needs (release target + node_modules +
@@ -162,11 +161,11 @@ fn doctor(args: &[String]) -> Vec<Problem> {
     problems
 }
 
-/// The public and admin ports must be free on 127.0.0.1.
+/// The public and admin ports must be free on loopback.
 fn port_problems() -> Vec<Problem> {
     [crate::up::public_port(), crate::up::admin_port()]
         .into_iter()
-        .filter(|port| TcpListener::bind(("127.0.0.1", *port)).is_err())
+        .filter(|port| crate::up::port_busy(*port))
         .map(|port| {
             Problem::new(
                 format!("port {port} is in use on 127.0.0.1"),

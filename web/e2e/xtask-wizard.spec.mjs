@@ -91,7 +91,7 @@ async function mount(page, s, routes = {}) {
 		const method = route.request().method();
 		if (url.pathname === '/') return route.fulfill({ contentType: 'text/html', body: PAGE });
 		if (url.pathname === '/api/events')
-			return route.fulfill({ contentType: 'text/event-stream', body: '' });
+			return route.fulfill({ contentType: 'text/event-stream', body: routes.events ?? '' });
 		if (url.pathname === '/api/state') return route.fulfill({ json: s });
 		if (method === 'POST') {
 			const body = route.request().postDataJSON();
@@ -308,4 +308,108 @@ test('brand Fetch waits for acceptance, says where to download by hand, then lic
 		['/api/brand-fetch', { file: 'google.svg', url: GOOGLE_ZIP, pick: GOOGLE_PICK }],
 		['/api/brand-fetch', { file: 'google.svg', url: GOOGLE_ZIP, pick: GOOGLE_PICK }]
 	]);
+});
+
+/** The operator's file with the wizard's All units summary. */
+function allState() {
+	return {
+		...state(),
+		all: {
+			run: ['staging', 'production'],
+			stop: [
+				'docker: stop the handbook-rehearsal container',
+				'local: stop the handbook on :18318 and :18319 (this checkout’s processes only)',
+				'staging: stop staging web on plant (verified PID)'
+			],
+			remove: [
+				'docker: delete the handbook-rehearsal container (its key and CA stay)',
+				'local: stop the handbook on :18318 and :18319; delete .local/store (the setup file stays)',
+				'staging: stop staging web on plant; delete ~/staging/store and ~/staging/creds on plant'
+			],
+			servers: ['production'],
+			order_needed: true
+		}
+	};
+}
+
+test('All units asks before each action and never offers to stop production', async ({ page }) => {
+	const posts = await mount(page, allState(), {
+		'/api/all': (route) => route.fulfill({ status: 202, json: { started: true } })
+	});
+	const panel = page.getByRole('region', { name: 'All units' });
+	await expect(panel).toContainText('staging → production');
+	await expect(panel).toContainText('never production');
+	await expect(panel.getByLabel(/Operator order/)).toBeVisible();
+	const dialogs = [];
+	// Stop all: a confirm naming each target and the server left alone.
+	page.once('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
+	await panel.getByRole('button', { name: 'Stop all' }).click();
+	await expect.poll(() => posts.length).toBe(1);
+	expect(dialogs[0]).toContain('staging: stop staging web on plant');
+	expect(dialogs[0]).toContain('Left alone: production');
+	await expect(page.getByRole('tab', { name: 'Run' })).toHaveAttribute('aria-selected', 'true');
+	// Remove all: nothing is sent unless the word is typed.
+	await page.getByRole('tab', { name: 'System map' }).click();
+	page.once('dialog', (d) => d.accept('yes'));
+	await page.getByRole('button', { name: 'Remove all' }).first().click();
+	page.once('dialog', (d) => { dialogs.push(d.message()); d.accept('remove'); });
+	await page.getByRole('button', { name: 'Remove all' }).first().click();
+	await expect.poll(() => posts.length).toBe(2);
+	expect(dialogs[1]).toContain('cannot be undone');
+	expect(dialogs[1]).toContain('~/staging/store');
+	// Run all carries the operator order.
+	await page.getByRole('tab', { name: 'System map' }).click();
+	await page.getByLabel(/Operator order/).fill('Andrii, 11-04, ship P490');
+	page.once('dialog', (d) => d.accept());
+	await page.getByRole('button', { name: 'Run all' }).first().click();
+	await expect.poll(() => posts.length).toBe(3);
+	expect(posts.map((p) => p.body)).toEqual([
+		{ action: 'stop' },
+		{ action: 'remove', confirm: 'remove' },
+		{ action: 'run', order: 'Andrii, 11-04, ship P490' }
+	]);
+});
+
+test('a batch shows every target’s run and the summary', async ({ page }) => {
+	const ev = (e) => `data: ${JSON.stringify(e)}\n\n`;
+	const events = 'retry: 600000\n\n' + [
+		{ kind: 'batch', action: 'stop', targets: ['local', 'staging'] },
+		{ kind: 'plan', target: 'local', version: 'stop', steps: [['stop', 'stop the handbook on :18318 and :18319']] },
+		{ kind: 'start', index: 0, phase: 'stop', title: 'stop the handbook' },
+		{ kind: 'line', index: 0, text: 'stopped pid 4242 on :18318' },
+		{ kind: 'done', index: 0, ok: true, detail: '' },
+		{ kind: 'finished', target: 'local', ok: true, detail: 'local done' },
+		{ kind: 'plan', target: 'staging', version: 'stop', steps: [['stop', 'stop staging web on plant']] },
+		{ kind: 'start', index: 0, phase: 'stop', title: 'stop staging web' },
+		{ kind: 'line', index: 0, text: 'staging web is not running' },
+		{ kind: 'done', index: 0, ok: true, detail: '' },
+		{ kind: 'finished', target: 'staging', ok: true, detail: 'staging done' },
+		{ kind: 'batch_done', ok: true, detail: 'stop all: done; production left alone (servers are never stopped or removed here)' }
+	].map(ev).join('');
+	await mount(page, allState(), { events });
+	await page.getByRole('tab', { name: 'Run' }).click();
+	await expect(page.getByText('stop all: local, staging')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'local', exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'staging', exact: true })).toBeVisible();
+	await expect(page.getByText('stopped pid 4242 on :18318')).toBeVisible();
+	await expect(page.getByText('staging web is not running')).toBeVisible();
+	await expect(page.getByText(/production left alone/)).toBeVisible();
+});
+
+test('a first boot links its servers and lifts the setup key out of the log', async ({ page }) => {
+	const key = `setup_${'ab'.repeat(32)}`;
+	const ev = (e) => `data: ${JSON.stringify(e)}\n\n`;
+	const events = 'retry: 600000\n\n' + [
+		{ kind: 'plan', target: 'local', version: 'this checkout', steps: [['boot', 'boot the handbook']] },
+		{ kind: 'start', index: 0, phase: 'boot', title: 'boot the handbook' },
+		{ kind: 'line', index: 0, text: 'ports 18318 and 18319 are taken (18318: ssh -N); serving on 18328 and 18329 instead (saved on this target)' },
+		{ kind: 'line', index: 0, text: `    ${key}` },
+		{ kind: 'done', index: 0, ok: true, detail: '' },
+		{ kind: 'finished', target: 'local', ok: true, detail: 'local is up: public http://localhost:18328/apostille, staff http://localhost:18329/config (paste the setup key printed above).' }
+	].map(ev).join('');
+	await mount(page, allState(), { events });
+	await page.getByRole('tab', { name: 'Run' }).click();
+	await expect(page.locator('#setup-key')).toHaveText(key);
+	await expect(page.getByRole('link', { name: 'http://localhost:18329/config' })).toHaveAttribute('href', 'http://localhost:18329/config');
+	await expect(page.getByText(/serving on 18328 and 18329/)).toBeVisible();
 });

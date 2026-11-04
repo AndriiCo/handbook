@@ -31,6 +31,10 @@ pub enum Phase {
     Staff,
     Verify,
     Boot,
+    /// Wizard "Stop all" (not resumable: outside [`ALL_PHASES`]).
+    Stop,
+    /// Wizard "Remove all" (not resumable: outside [`ALL_PHASES`]).
+    Remove,
 }
 
 impl Phase {
@@ -48,6 +52,8 @@ impl Phase {
             Phase::Staff => "staff",
             Phase::Verify => "verify",
             Phase::Boot => "boot",
+            Phase::Stop => "stop",
+            Phase::Remove => "remove",
         }
     }
 
@@ -243,7 +249,7 @@ pub fn release_dir(version: &str, arch: Arch) -> String {
     format!("target/setup/{version}-{}", arch.triple())
 }
 
-fn step(phase: Phase, title: impl Into<String>, action: Action) -> Step {
+pub(super) fn step(phase: Phase, title: impl Into<String>, action: Action) -> Step {
     Step {
         phase,
         title: title.into(),
@@ -251,7 +257,7 @@ fn step(phase: Phase, title: impl Into<String>, action: Action) -> Step {
     }
 }
 
-fn ssh(conn: &Conn, script: impl Into<String>, feed: Feed) -> Action {
+pub(super) fn ssh(conn: &Conn, script: impl Into<String>, feed: Feed) -> Action {
     Action::Ssh {
         conn: conn.clone(),
         script: script.into(),

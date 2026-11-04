@@ -23,6 +23,11 @@ xtask is built. Nothing is installed for you. If those ports are taken,
 --port-base 28318` serves the public site on 28318 and the staff console
 on 28319 instead.
 
+Prefer a browser? `cargo xtask setup wizard` does the same boot from a
+page, moves to the next free ports by itself, and needs no sops or age.
+The [setup guide](setup.md) covers its defaults and the difference between
+local and SSH environments.
+
 ## Or in Docker
 
 Only Docker with Compose v2 is needed (no Rust, no Node):

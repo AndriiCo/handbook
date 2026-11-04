@@ -14,7 +14,9 @@
 //!
 //! The page edits targets and config values, runs the key checks,
 //! probes a target's box over SSH, runs a target with its phases and
-//! log streaming live (SSE), and walks the brand-licence step.
+//! log streaming live (SSE), runs, stops or removes every unit at once
+//! ([`batch`]; servers are never stopped or removed), and walks the
+//! brand-licence step.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -35,6 +37,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::broadcast;
 
+use super::batch::{self, All};
 use super::brand;
 use super::checks;
 use super::file::{self, Runtime, SetupFile, TargetKind};
@@ -382,6 +385,13 @@ fn state_json(app: &App, inner: &Inner) -> Value {
         "problems": f.validate().err().unwrap_or_default(),
         "running": inner.running,
         "map": map::state(f),
+        "all": {
+            "run": batch::run_order(f),
+            "stop": batch::describe(f, All::Stop),
+            "remove": batch::describe(f, All::Remove),
+            "servers": batch::servers(f),
+            "order_needed": batch::run_order(f).iter().any(|n| n == "production"),
+        },
     })
 }
 
@@ -681,6 +691,152 @@ struct RunReq {
     sha: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AllReq {
+    /// `run`, `stop` or `remove`.
+    action: String,
+    /// Run all: the operator's order, required when production is in it.
+    #[serde(default)]
+    order: Option<String>,
+    /// Remove all: the word `remove`, typed by the operator.
+    #[serde(default)]
+    confirm: Option<String>,
+}
+
+/// Run all, Stop all or Remove all ([`batch`]), streamed like a run.
+async fn api_all(State(app): State<App>, headers: HeaderMap, Json(req): Json<AllReq>) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    let Some(action) = All::parse(&req.action) else {
+        return deny(StatusCode::BAD_REQUEST, "action is run, stop or remove");
+    };
+    if action == All::Remove && req.confirm.as_deref() != Some("remove") {
+        return deny(
+            StatusCode::BAD_REQUEST,
+            "type remove to confirm: it deletes local and staging data",
+        );
+    }
+    let order = req
+        .order
+        .map(|o| o.trim().to_string())
+        .filter(|o| !o.is_empty());
+    let (f, targets) = {
+        let mut inner = app.inner.lock().unwrap();
+        if inner.running {
+            return deny(StatusCode::CONFLICT, "a run is in progress");
+        }
+        let f = inner.file.clone();
+        let targets = match action {
+            All::Run => {
+                if let Err(problems) = f.validate() {
+                    return deny(StatusCode::BAD_REQUEST, &problems.join("; "));
+                }
+                let targets = batch::run_order(&f);
+                if targets.iter().any(|n| n == "production") && order.is_none() {
+                    return deny(
+                        StatusCode::BAD_REQUEST,
+                        "Run all includes production: fill in the operator order (who, when, what)",
+                    );
+                }
+                targets
+            }
+            All::Stop | All::Remove => batch::local_targets(&f),
+        };
+        inner.running = true;
+        inner.history.clear();
+        (f, targets)
+    };
+    emit_event(
+        &app,
+        &Event::Batch {
+            action: action.as_str().to_string(),
+            targets: targets.clone(),
+        },
+    );
+    let (worker, list) = (app.clone(), targets.clone());
+    std::thread::spawn(move || run_batch(&worker, &f, action, &list, order.as_deref()));
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({ "started": true, "targets": targets })),
+    )
+        .into_response()
+}
+
+/// The batch itself, on its own thread. Run all stops at the first
+/// failed target; Stop and Remove go on and report every failure.
+fn run_batch(app: &App, f: &SetupFile, action: All, targets: &[String], order: Option<&str>) {
+    let emit = |event: Event| emit_event(app, &event);
+    let done = |ok: bool, detail: String| {
+        emit(Event::BatchDone { ok, detail });
+        app.inner.lock().unwrap().running = false;
+    };
+    let mut failed = Vec::new();
+    for name in targets {
+        let local_boot = f
+            .targets
+            .get(name)
+            .is_some_and(|t| t.kind == TargetKind::Local && t.runtime == Runtime::Native);
+        let result = match action {
+            All::Run if local_boot => {
+                // Last in the order: it keeps serving, and `start_local`
+                // clears `running` once its banner prints.
+                if app.local.lock().unwrap().is_some() {
+                    Err(format!("{name} is already serving"))
+                } else {
+                    emit(Event::BatchDone {
+                        ok: true,
+                        detail: format!("booting {name} last (it keeps serving)"),
+                    });
+                    match start_local(app, name) {
+                        Ok(()) => return,
+                        Err(e) => Err(e),
+                    }
+                }
+            }
+            All::Run => super::run_one(f, name, "HEAD", None, order, &emit),
+            All::Stop | All::Remove => batch::steps(f, name, action).and_then(|steps| {
+                let ctx = super::run::Ctx {
+                    repo: app.repo.clone(),
+                    file: f,
+                    target: name.clone(),
+                    facts: super::plan::Facts {
+                        sha: action.as_str().to_string(),
+                        arch: super::build::Arch::X86_64,
+                        migration_ack: None,
+                    },
+                    emit: &emit,
+                };
+                super::run::execute(&ctx, &steps, None)
+            }),
+        };
+        if let Err(e) = result {
+            if action == All::Run {
+                return done(false, format!("Run all stopped at {name}: {e}"));
+            }
+            failed.push(format!("{name}: {e}"));
+        }
+    }
+    let left = batch::servers(f);
+    let left = if action != All::Run && !left.is_empty() {
+        format!(
+            "; {} left alone (servers are never stopped or removed here)",
+            left.join(", ")
+        )
+    } else {
+        String::new()
+    };
+    if failed.is_empty() {
+        done(true, format!("{} all: done{left}", action.as_str()));
+    } else {
+        done(
+            false,
+            format!("{} all: {}{left}", action.as_str(), failed.join("; ")),
+        );
+    }
+}
+
 async fn api_run(State(app): State<App>, headers: HeaderMap, Json(req): Json<RunReq>) -> Response {
     if let Err(r) = app.guard(&headers, true) {
         return r;
@@ -754,6 +910,28 @@ fn emit_event(app: &App, event: &Event) {
     let _ = app.events.send(line);
 }
 
+/// Free ports for a local boot, saved on the target when they moved so
+/// the map's links and Stop all follow the server. See
+/// [`crate::up::local_ports`].
+fn settle_local_ports(app: &App, name: &str) -> Result<((u16, u16), Option<String>), String> {
+    let mut inner = app.inner.lock().unwrap();
+    let target = inner
+        .file
+        .targets
+        .get_mut(name)
+        .ok_or_else(|| format!("no target {name:?}"))?;
+    let want = target.ports_or_default();
+    let (pair, note) = crate::up::local_ports((want.public, want.admin), &app.repo)?;
+    if note.is_some() {
+        target.ports = Some(file::Ports {
+            public: pair.0,
+            admin: pair.1,
+        });
+        file::save(&app.path, &inner.file)?;
+    }
+    Ok((pair, note))
+}
+
 /// The local target serves in the foreground, so the wizard runs it as
 /// a child (`xtask setup --target <name> --file <path>`, the same boot
 /// as in a terminal) and streams its output into the run log. The run
@@ -765,6 +943,7 @@ fn emit_event(app: &App, event: &Event) {
 fn start_local(app: &App, name: &str) -> Result<(), String> {
     use std::io::BufRead as _;
     use std::process::{Command, Stdio};
+    let ((public, admin), moved) = settle_local_ports(app, name)?;
     let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let mut child = Command::new(exe)
         .args(["setup", "--target", name, "--file"])
@@ -796,6 +975,15 @@ fn start_local(app: &App, name: &str) -> Result<(), String> {
             title: "boot the handbook on loopback with this file's values".to_string(),
         },
     );
+    if let Some(note) = moved {
+        emit_event(
+            app,
+            &Event::Line {
+                index: 0,
+                text: format!("{note} (saved on this target)"),
+            },
+        );
+    }
     // Set once the banner has printed: later lines are server logs.
     let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let target = name.to_string();
@@ -832,7 +1020,7 @@ fn start_local(app: &App, name: &str) -> Result<(), String> {
                             target: target.clone(),
                             ok: true,
                             detail: format!(
-                                "{target} is up; its log continues in the wizard's terminal (Ctrl-C there stops it)"
+                                "{target} is up: public http://localhost:{public}/apostille, staff http://localhost:{admin}/config (paste the setup key printed above; a reboot prints a new one until a passkey is enrolled). Its log continues in the wizard's terminal; Stop all or Ctrl-C there stops it."
                             ),
                         },
                     );
@@ -1125,6 +1313,7 @@ fn router(app: App) -> Router {
         .route("/api/defaults", post(api_defaults))
         .route("/api/pull", post(api_pull))
         .route("/api/run", post(api_run))
+        .route("/api/all", post(api_all))
         .route("/api/events", get(api_events))
         .route("/api/licence", post(api_licence))
         .route("/api/brand/{name}", post(api_brand_file))
@@ -1359,6 +1548,52 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn all_units_refuse_without_their_confirmations_and_never_list_a_server() {
+        let app = app();
+        for (body, want) in [
+            (r#"{"action":"wipe"}"#, StatusCode::BAD_REQUEST),
+            (r#"{"action":"remove"}"#, StatusCode::BAD_REQUEST),
+            (
+                r#"{"action":"remove","confirm":"yes"}"#,
+                StatusCode::BAD_REQUEST,
+            ),
+            (r#"{"action":"run"}"#, StatusCode::BAD_REQUEST),
+            (r#"{"action":"run","order":"   "}"#, StatusCode::BAD_REQUEST),
+            (
+                r#"{"action":"stop","target":"production"}"#,
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+        ] {
+            let (status, text) = send(&app, post("/api/all", body)).await;
+            assert_eq!(status, want, "{body}: {text}");
+        }
+        assert!(!app.inner.lock().unwrap().running, "nothing started");
+        // One batch at a time, like one run.
+        app.inner.lock().unwrap().running = true;
+        let (status, _) = send(&app, post("/api/all", r#"{"action":"stop"}"#)).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let (_, state) = send(
+            &app,
+            req("GET", "/api/state", "127.0.0.1:4000", true, false),
+        )
+        .await;
+        let state: Value = serde_json::from_str(&state).unwrap();
+        let all = &state["all"];
+        assert_eq!(all["run"], json!(["staging", "production"]));
+        assert_eq!(all["servers"], json!(["production"]));
+        assert_eq!(all["order_needed"], true);
+        for list in ["stop", "remove"] {
+            let lines = all[list].as_array().unwrap();
+            assert_eq!(lines.len(), 3, "{list}: {lines:?}");
+            assert!(
+                lines
+                    .iter()
+                    .all(|l| !l.as_str().unwrap().starts_with("production"))
+            );
+        }
     }
 
     #[tokio::test]

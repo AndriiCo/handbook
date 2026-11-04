@@ -29,9 +29,11 @@
 //! [`run`] executes them, [`rail`] refuses unacknowledged migrations,
 //! [`checks`] probes every provider key,
 //! [`probe`] reads what an SSH box is, [`pull`] reads what a server's
-//! store holds, [`map`] lays out the system map, and [`wizard`] serves
-//! the browser UI.
+//! store holds, [`map`] lays out the system map, [`batch`] plans the
+//! wizard's Run all / Stop all / Remove all, and [`wizard`] serves the
+//! browser UI.
 
+pub mod batch;
 pub mod brand;
 pub mod build;
 pub mod checks;
@@ -357,6 +359,12 @@ pub fn print_event(event: Event) {
             }
         }
         Event::Finished { ok, detail, .. } => {
+            println!("setup: {}{detail}", if ok { "" } else { "STOPPED: " });
+        }
+        Event::Batch { action, targets } => {
+            println!("setup: {action} all: {}", targets.join(", "));
+        }
+        Event::BatchDone { ok, detail } => {
             println!("setup: {}{detail}", if ok { "" } else { "STOPPED: " });
         }
     }

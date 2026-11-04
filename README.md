@@ -290,7 +290,20 @@ opens on a fresh clone without sops or age: it keeps a plain,
 local-target-only `.local/setup.yaml` (0600) until you install them for
 staging and production. It opens on a system map, where the local
 target can be switched between Native (`xtask up`) and Docker (the
-judge image above).
+judge image above), and **All units** runs, stops or removes everything
+at once. A new local target works as it is: FedEx, USPS, Stripe, Telnyx
+and email run on their fakes, and if a port is taken the boot moves to
+the next free pair and says who held it.
+
+| | Local | SSH |
+|---|---|---|
+| Where | This machine, loopback only | `plant` (staging) or a server (production) |
+| Setup file | Plain `.local/setup.yaml`, or `private/config.yaml` | `private/config.yaml` (sops + age) |
+| Needs | Rust and Node, or Docker; no keys | An SSH alias; production also an operator order |
+| Good for | Trying everything against fakes | Customer passkeys, Google and Apple sign-in, webhooks, real email and labels |
+
+The defaults, ports, setup key and troubleshooting are in the
+[setup guide](docs/setup.md).
 
 ## Design
 

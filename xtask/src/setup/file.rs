@@ -529,6 +529,11 @@ pub enum LocalDefault {
     Bool(bool),
 }
 
+/// Shared values a local boot must not take: a bind off loopback
+/// refuses the boot, and an allowlist without loopback locks staff out
+/// of the local console. (`up` already owns the other loopback keys.)
+pub const NOT_LOCAL: [&str; 2] = ["net.bind6", "admin.allow_ips"];
+
 /// Add each [`LOCAL_DEFAULTS`] value the target does not set yet (a
 /// value already there wins); returns the keys added.
 pub fn fill_local_defaults(target: &mut Target) -> Vec<String> {

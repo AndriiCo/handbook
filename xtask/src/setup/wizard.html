@@ -36,6 +36,7 @@ button.primary, button.secondary { border-radius: 8px; padding: 7px 14px; font: 
 button.primary { background: var(--brand); color: #fff; }
 button.secondary { background: var(--brand-soft); color: var(--brand); }
 button:disabled { opacity: .5; cursor: default; }
+button.danger { border-radius: 8px; padding: 7px 14px; font: inherit; cursor: pointer; border: 1px solid var(--fail); background: none; color: var(--fail); }
 table { width: 100%; border-collapse: collapse; }
 td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font-size: 12px; color: var(--muted); font-weight: 500; }
@@ -124,7 +125,10 @@ ol.phases li { padding: 3px 0; display: flex; gap: 8px; }
 const CSRF = "__CSRF__";
 let S = null;          // last /api/state
 let tab = "map";
-let runState = { steps: [], status: {}, log: [], finished: null };
+// One entry per target plan; Run all / Stop all / Remove all stream
+// several in a row (`batch` ... `batch_done`).
+const freshRuns = () => ({ batch: null, batchDone: null, runs: [] });
+let runState = freshRuns();
 
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
@@ -302,7 +306,7 @@ function runControls(name) {
   const order = el("input", { type: "text", id: "order", placeholder: "who ordered it, when, what" });
   const go = el("button", { class: "primary", onclick: async () => {
     try {
-      runState = { steps: [], status: {}, log: [], finished: null };
+      runState = freshRuns();
       await api("/api/run", { target: name, from: from.value, sha: sha.value || null, order: order.value || null });
       tab = "run"; renderTabs(); render();
     } catch (e) { alert(e.message); }
@@ -505,8 +509,44 @@ function weightsCard() {
     el("p", { class: "muted" }, `Downloaded into ${W.dest} by ops/open-weights/glimmer-serve.sh.`));
 }
 
+// Run all / Stop all / Remove all ([`batch`] in the wizard). Each asks
+// first, saying exactly what it does where; Remove all takes the typed
+// word. Servers are never stopped or removed from here.
+function allPanel() {
+  const A = S.all;
+  if (!A) return null;
+  const order = el("input", { type: "text", id: "all-order", placeholder: "who ordered it, when, what" });
+  const start = async (body, ask) => {
+    if (!ask()) return;
+    try {
+      runState = freshRuns();
+      await api("/api/all", body);
+      tab = "run"; renderTabs(); render();
+    } catch (e) { alert(e.message); }
+  };
+  const left = A.servers.length ? `\n\nLeft alone: ${A.servers.join(", ")} (servers are never stopped or removed here).` : "";
+  const run = el("button", { class: "primary", disabled: S.running || !A.run.length, onclick: () => start(
+    { action: "run", order: order.value || null },
+    () => confirm(`Run all, in this order:\n\n${A.run.join(" → ")}\n\nEach target runs its whole plan; Run all stops at the first failure.`)) }, "Run all");
+  const stop = el("button", { class: "secondary", disabled: S.running || !A.stop.length, onclick: () => start(
+    { action: "stop" },
+    () => confirm(`Stop all:\n\n${A.stop.join("\n")}${left}`)) }, "Stop all");
+  const remove = el("button", { class: "danger", disabled: S.running || !A.remove.length, onclick: () => start(
+    { action: "remove", confirm: "remove" },
+    () => prompt(`Remove all deletes data and cannot be undone:\n\n${A.remove.join("\n")}${left}\n\nType remove to confirm.`) === "remove") }, "Remove all");
+  return el("section", { class: "panel", "aria-labelledby": "all-title" },
+    el("h2", { id: "all-title" }, "All units"),
+    el("p", { class: "muted" }, "Run all: ", el("span", { class: "mono" }, A.run.join(" → ") || "nothing on the map"),
+      ". Stop all and Remove all: every target on this machine and on plant",
+      A.servers.length ? `; never ${A.servers.join(", ")} (servers go back with the release tools).` : "."),
+    A.order_needed ? el("div", {}, el("label", { for: "all-order" }, "Operator order (Run all includes production; logged)"), order) : null,
+    el("p", { class: "row" }, run, stop, remove,
+      S.running ? el("span", { class: "muted" }, "A run is in progress (see Run).") : null));
+}
+
 function mapPanel() {
   return el("div", {},
+    allPanel(),
     el("div", { class: "panel" }, el("h2", {}, "System map"),
       el("p", { class: "muted" }, "Where each part runs and what it talks to. Solid lines are network paths; dashed arrows are «use» and «deploy» dependencies. Links open in a new tab."),
       el("div", { class: "map-box" }, mapSvg())),
@@ -574,26 +614,52 @@ function fetchForm(a, f) {
 }
 
 // ---------------------------------------------------------- run
-function runPanel() {
-  const steps = el("ol", { class: "phases" }, runState.steps.map((s, i) => {
-    const st = runState.status[i] || "";
+// Text with its http(s) addresses as links.
+const linked = text => String(text).split(/(https?:\/\/[^\s,;)]+)/).map((part, i) =>
+  i % 2 ? el("a", { href: part, target: "_blank", rel: "noopener noreferrer" }, part) : part);
+
+function runSection(r, last) {
+  const steps = el("ol", { class: "phases" }, r.steps.map((s, i) => {
+    const st = r.status[i] || "";
     return el("li", {}, el("span", { class: `dot ${st}` }), el("span", {}, el("span", { class: "muted mono" }, `[${s[0]}] `), s[1],
-      runState.status[`${i}:detail`] ? el("div", { class: "fail mono" }, runState.status[`${i}:detail`]) : null));
+      r.status[`${i}:detail`] ? el("div", { class: "fail mono" }, r.status[`${i}:detail`]) : null));
   }));
-  const log = el("pre", { class: "log", id: "log" }, runState.log.join("\n") || "No run yet. Start one from a target tab.");
-  const end = runState.finished ? el("p", { class: runState.finished.ok ? "ok" : "fail" }, runState.finished.detail) : null;
-  setTimeout(() => { log.scrollTop = log.scrollHeight; }, 0);
-  return el("div", { class: "panel" }, el("h2", {}, "Run"), end, steps, log);
+  const log = el("pre", { class: "log" }, r.log.join("\n"));
+  if (last) setTimeout(() => { log.scrollTop = log.scrollHeight; }, 0);
+  const end = r.finished ? el("p", { class: r.finished.ok ? "ok" : "fail" }, linked(r.finished.detail)) : null;
+  // The first-boot key, out of the build log (the last one printed works).
+  const key = r.log.join("\n").match(/setup_[0-9a-f]{64}/g)?.pop();
+  const copy = key ? el("button", { class: "secondary", onclick: () => navigator.clipboard.writeText(key).then(() => { copy.textContent = "Copied"; }) }, "Copy") : null;
+  return el("div", { class: "run" }, runState.batch ? el("h3", {}, r.target) : null, end,
+    key ? el("p", { class: "row" }, el("span", { class: "muted" }, "Setup key:"), el("span", { class: "mono", id: "setup-key" }, key), copy) : null,
+    steps, log);
+}
+
+function runPanel() {
+  const { batch, batchDone, runs } = runState;
+  const head = batch ? el("p", { class: "mono" }, `${batch.action} all: ${batch.targets.join(", ") || "nothing to do"}`) : null;
+  const end = batchDone ? el("p", { class: batchDone.ok ? "ok" : "fail" }, batchDone.detail) : null;
+  const body = runs.length ? runs.map((r, i) => runSection(r, i === runs.length - 1))
+    : el("pre", { class: "log", id: "log" }, batch ? "Starting…" : "No run yet. Start one from a target tab, or use All units on the System map.");
+  return el("div", {}, allPanel(), el("div", { class: "panel" }, el("h2", {}, "Run"), head, end, body));
 }
 
 const es = new EventSource("/api/events");
 es.onmessage = m => {
   const e = JSON.parse(m.data);
-  if (e.kind === "plan") runState = { steps: e.steps, status: {}, log: [`${e.target} at ${e.version}`], finished: null };
-  else if (e.kind === "start") { runState.status[e.index] = "run"; runState.log.push(`== ${e.index + 1} [${e.phase}] ${e.title}`); }
-  else if (e.kind === "line") runState.log.push(`   ${e.text}`);
-  else if (e.kind === "done") { runState.status[e.index] = e.ok ? "ok" : "fail"; if (!e.ok) runState.status[`${e.index}:detail`] = e.detail; }
-  else if (e.kind === "finished") { runState.finished = e; refresh(); }
+  const cur = runState.runs[runState.runs.length - 1];
+  if (e.kind === "batch") runState = { ...freshRuns(), batch: e };
+  else if (e.kind === "batch_done") { runState.batchDone = e; refresh(); }
+  else if (e.kind === "plan") {
+    // A single run starts its own list; a batch collects every target's.
+    if (!runState.batch) runState = freshRuns();
+    runState.runs.push({ target: e.target, steps: e.steps, status: {}, log: [["stop", "remove"].includes(e.version) ? `${e.target}: ${e.version}` : `${e.target} at ${e.version}`], finished: null });
+  }
+  else if (!cur) return;
+  else if (e.kind === "start") { cur.status[e.index] = "run"; cur.log.push(`== ${e.index + 1} [${e.phase}] ${e.title}`); }
+  else if (e.kind === "line") cur.log.push(`   ${e.text}`);
+  else if (e.kind === "done") { cur.status[e.index] = e.ok ? "ok" : "fail"; if (!e.ok) cur.status[`${e.index}:detail`] = e.detail; }
+  else if (e.kind === "finished") { cur.finished = e; refresh(); }
   if (tab === "run") render();
 };
 
