@@ -94,6 +94,9 @@ pub(crate) const KINDS: &[KindInfo] = &[
                 a Muse cross-check of that list, and fetch-checked official URLs \
                 for the listed countries' authorities. Writes nothing.",
         example: r#"{"countries": ["DE"], "batch_size": 15}"#,
+        // Default caps (10 batches of 15, each URL fetched politely)
+        // finish well inside an hour; "all" with more batches needs more.
+        max_runtime_secs: 2 * 3600,
     },
     KindInfo {
         kind: "scrape.urls",
