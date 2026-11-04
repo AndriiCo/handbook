@@ -90,8 +90,10 @@ pub(crate) const KINDS: &[KindInfo] = &[
     },
     KindInfo {
         kind: "eval.gold",
-        about: "Grade drafts on the gold set and return quality.json.",
-        example: r#"{"live": true, "planted": true}"#,
+        about: "Grade drafts on the gold set and return quality.json. \
+                Replays recorded drafts; \"live\": true drafts through the Meta API \
+                (needs META_API_KEY in worker.env).",
+        example: r#"{"live": false, "planted": true}"#,
     },
     KindInfo {
         kind: "precheck.glimmer",

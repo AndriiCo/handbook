@@ -51,7 +51,7 @@ pub struct Config {
 pub fn run_with(cfg: &Config, handlers: Arc<Vec<Box<dyn JobHandler>>>) {
     let caps: Vec<&'static str> = handlers
         .iter()
-        .filter(|h| h.available())
+        .filter(|h| h.available(&cfg.env))
         .map(|h| h.kind())
         .collect();
     let mut running: Option<Running> = None;
@@ -96,6 +96,10 @@ struct Running {
     last_beat: Instant,
     /// The server said the lease is gone: finish, but upload nothing.
     lost: bool,
+    /// The finished job's `complete`/`fail` frame (and whether it is a
+    /// success), kept until the server answers it: a socket that dies
+    /// mid-upload re-sends the same frame from the next session.
+    upload: Option<(bool, Value)>,
 }
 
 impl Running {
@@ -137,6 +141,7 @@ impl Running {
             rx,
             last_beat: Instant::now(),
             lost: false,
+            upload: None,
         }
     }
 
@@ -226,19 +231,39 @@ fn session(
             }
             continue;
         };
-        if let Some(outcome) = job.poll() {
-            let (id, kind, lost) = (job.id, job.kind.clone(), job.lost);
-            if lost {
-                eprintln!("worker: job {id} finished after its lease was lost; result dropped");
-            } else {
-                let ok = outcome.is_ok();
-                send(&mut ws, &finish_frame(job, outcome, max_result))?;
-                let reply = await_reply(&mut ws, UPLOAD_TIMEOUT)?;
+        if job.upload.is_none()
+            && let Some(outcome) = job.poll()
+        {
+            if job.lost {
                 eprintln!(
-                    "worker: job {id} ({kind}) {} → {reply}",
-                    if ok { "complete" } else { "failed" }
+                    "worker: job {} finished after its lease was lost; result dropped",
+                    job.id
                 );
+                *running = None;
+                if cfg.once {
+                    return Ok(());
+                }
+                continue;
             }
+            job.upload = Some((outcome.is_ok(), finish_frame(job, outcome, max_result)));
+        }
+        if let Some((ok, frame)) = &job.upload {
+            send(&mut ws, frame)?;
+            let reply = await_answer(&mut ws, UPLOAD_TIMEOUT)?;
+            if reply["code"] == "store" {
+                return Err(format!(
+                    "job {}: the server could not store the result ({reply}); re-sending",
+                    job.id
+                ));
+            }
+            // `ack`, or a final refusal: `lease_lost` after a re-send
+            // means an earlier upload landed and its ack was lost.
+            eprintln!(
+                "worker: job {} ({}) {} → {reply}",
+                job.id,
+                job.kind,
+                if *ok { "complete" } else { "failed" }
+            );
             *running = None;
             if cfg.once {
                 return Ok(());
@@ -268,6 +293,20 @@ fn pump_for(ws: &mut WebSocket<Stream>, span: Duration) -> Result<(), String> {
         read_frame(ws)?;
     }
     Ok(())
+}
+
+/// The server's answer to an upload within `budget`: the next frame
+/// that is not a `lease` reply to a heartbeat still in flight.
+fn await_answer(ws: &mut WebSocket<Stream>, budget: Duration) -> Result<Value, String> {
+    let until = Instant::now() + budget;
+    while Instant::now() < until {
+        if let Some(frame) = read_frame(ws)?
+            && frame["type"] != "lease"
+        {
+            return Ok(frame);
+        }
+    }
+    Err(format!("no reply within {}s", budget.as_secs()))
 }
 
 /// Next JSON text frame within `budget`.
@@ -389,6 +428,11 @@ fn connect(url: &str, token: &str) -> Result<WebSocket<Stream>, String> {
         .map_err(|e| format!("resolve {host}: {e}"))?
         .next()
         .ok_or_else(|| format!("resolve {host}: no address"))?;
+    if !tls && !addr.ip().is_loopback() {
+        return Err(format!(
+            "ws:// would send the token in clear text to {host}; use wss:// (ws:// is for loopback only)"
+        ));
+    }
     let tcp = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)
         .map_err(|e| format!("connect {host}:{port}: {e}"))?;
     tcp.set_read_timeout(Some(CONNECT_TIMEOUT))
@@ -450,7 +494,7 @@ mod tests {
         fn kind(&self) -> &'static str {
             "test.hidden"
         }
-        fn available(&self) -> bool {
+        fn available(&self, _env: &WorkerEnv) -> bool {
             false
         }
         fn run(&self, _ctx: &JobContext, _payload: &Value) -> Result<JobOutput, JobError> {
@@ -586,6 +630,78 @@ mod tests {
         assert!(dir.path().join("work/job-9-a1/result.json").is_file());
     }
 
+    /// The socket dies after the upload and before the ack: the next
+    /// session re-sends the same result instead of losing it.
+    #[test]
+    fn keeps_the_result_until_the_server_answers_it() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "ws://{}/apostille/api/v1/worker/ws",
+            listener.local_addr().unwrap()
+        );
+        let server = std::thread::spawn(move || {
+            let until_complete = |ws: &mut ServerWs| loop {
+                let frame = recv(ws);
+                match frame["type"].as_str() {
+                    Some("heartbeat") => {
+                        reply(ws, json!({"type": "lease", "id": 4, "lease_expires_at": 1}))
+                    }
+                    Some("complete") => break frame,
+                    other => panic!("unexpected frame {other:?}"),
+                }
+            };
+            let mut first = accept(&listener);
+            welcome(&mut first);
+            assert_eq!(recv(&mut first)["type"], "checkout");
+            reply(
+                &mut first,
+                json!({"type": "job", "id": 4, "kind": "test.echo", "payload": {"x": 2},
+                       "lease": LEASE, "lease_expires_at": 0, "attempt": 1}),
+            );
+            let sent = until_complete(&mut first);
+            // A heartbeat reply still in flight is not the answer.
+            reply(
+                &mut first,
+                json!({"type": "lease", "id": 4, "lease_expires_at": 1}),
+            );
+            drop(first); // the ack never arrives
+            let mut second = accept(&listener);
+            welcome(&mut second);
+            let resent = until_complete(&mut second);
+            reply(
+                &mut second,
+                json!({"type": "ack", "id": 4, "status": "done"}),
+            );
+            (sent, resent)
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config {
+            url,
+            token: TOKEN.to_string(),
+            name: "plant-test".to_string(),
+            workdir: dir.path().join("work"),
+            cache_dir: dir.path().to_path_buf(),
+            repo: super::super::repo_root(),
+            env: WorkerEnv::default(),
+            gpu_lock: dir.path().join("gpu.lock"),
+            once: true,
+        };
+        let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(Echo)];
+        run_with(&cfg, Arc::new(handlers));
+        let (sent, resent) = server.join().unwrap();
+        assert_eq!(sent, resent, "the same frame, lease and bytes");
+        assert_eq!(resent["lease"], LEASE);
+    }
+
+    #[test]
+    fn refuses_plain_ws_off_loopback() {
+        // 192.0.2.1 is TEST-NET-1: refused before any packet is sent.
+        let err = connect("ws://192.0.2.1:9/apostille/api/v1/worker/ws", TOKEN)
+            .err()
+            .expect("plain ws:// to a remote host");
+        assert!(err.contains("wss://"), "{err}");
+    }
+
     #[test]
     fn oversized_results_fail_instead_of_uploading() {
         let dir = tempfile::tempdir().unwrap();
@@ -598,6 +714,7 @@ mod tests {
             rx,
             last_beat: Instant::now(),
             lost: false,
+            upload: None,
         };
         let big = JobOutput::json(&json!({"x": "y".repeat(100)}), Value::Null);
         let frame = finish_frame(&job, Ok(big), 16);
@@ -635,6 +752,7 @@ mod tests {
             rx,
             last_beat: Instant::now(),
             lost: false,
+            upload: None,
         };
         let complete = finish_frame(&job, Ok(JobOutput::json(&json!({}), json!({}))), 1024);
         let fail = finish_frame(&job, Err(JobError::retry("x")), 1024);

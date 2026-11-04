@@ -106,8 +106,9 @@ pub trait JobHandler: Send + Sync {
         false
     }
     /// False keeps the kind out of `hello` capabilities, so its jobs
-    /// stay pending until a worker that can run them connects.
-    fn available(&self) -> bool {
+    /// stay pending until a worker that can run them connects. `env` is
+    /// `worker.env` (falling back to the process environment).
+    fn available(&self, _env: &WorkerEnv) -> bool {
         true
     }
     fn run(&self, ctx: &JobContext, payload: &Value) -> Result<JobOutput, JobError>;
@@ -265,10 +266,16 @@ pub fn run_job(
 }
 
 pub fn run(args: &[String]) {
+    let env_path =
+        flag(args, "env-file").map_or_else(|| home().join(DEFAULT_ENV_FILE), PathBuf::from);
     if args.iter().any(|a| a == "--kinds") {
+        let env = WorkerEnv::load(&env_path).unwrap_or_else(|e| {
+            eprintln!("worker: {e}");
+            WorkerEnv::default()
+        });
         for h in handlers() {
             let gpu = if h.gpu() { " (gpu)" } else { "" };
-            let ready = if h.available() {
+            let ready = if h.available(&env) {
                 ""
             } else {
                 " [not announced]"
@@ -297,8 +304,6 @@ pub fn run(args: &[String]) {
         },
         PathBuf::from,
     );
-    let env_path =
-        flag(args, "env-file").map_or_else(|| home().join(DEFAULT_ENV_FILE), PathBuf::from);
     let gpu_lock =
         flag(args, "gpu-lock").map_or_else(|| home().join(DEFAULT_GPU_LOCK), PathBuf::from);
     let env = WorkerEnv::load(&env_path).unwrap_or_else(|e| {
