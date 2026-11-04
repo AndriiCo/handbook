@@ -124,6 +124,8 @@ document.getElementById("defaults").addEventListener("change", saveOperator);
 
 function renderTabs() {
   const names = [...Object.keys(S.targets), "shared", "brand", "run"];
+  // A plain local-only file has no staging target: open the first one.
+  if (!names.includes(tab)) tab = Object.keys(S.targets)[0] || "shared";
   const label = n => ({ shared: "Shared config", brand: "Brand & licences", run: "Run" }[n] || n);
   document.getElementById("tabs").replaceChildren(...names.map(n =>
     el("button", { role: "tab", "aria-selected": String(n === tab), onclick: () => { tab = n; renderTabs(); render(); } }, label(n))));
@@ -192,8 +194,8 @@ function runControls(name) {
       await api("/api/run", { target: name, from: from.value, sha: sha.value || null, order: order.value || null });
       tab = "run"; renderTabs(); render();
     } catch (e) { alert(e.message); }
-  } }, t.kind === "local" ? "Run in a terminal: cargo xtask setup --target local" : `Rebuild ${name}`);
-  if (t.kind === "local" || S.running) go.disabled = true;
+  } }, t.kind === "local" ? `Boot ${name} (keeps serving in the background)` : `Rebuild ${name}`);
+  if (S.running) go.disabled = true;
   return el("div", { class: "panel" }, el("h2", {}, "Run"),
     el("div", { class: "grid" },
       el("div", {}, el("label", { for: "sha" }, "Commit (built in a throwaway worktree)"), sha),

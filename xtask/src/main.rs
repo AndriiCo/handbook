@@ -142,8 +142,8 @@ Tasks:
   a2-record  record the photo-precheck demo verdicts --png-dir --out-dir [--sam-backend open-weights --mask]
   world-index  build packs/world from HCCH status table [--live] [--out]
   worker  plant worker for the production work queue [--connect <wss>] [--run-local <job.json>] [--unpack <bundle>] [--kinds]
-  up    boot the handbook on loopback with synthetic data [--check] [--fresh] [--live] [--from-archive <url|dir>]
-  judge one-command local copy for hackathon judges: prerequisite doctor, fresh boot, staff sign-in link [--live] [--check]
+  up    boot the handbook on loopback with synthetic data and a local worker [--check] [--fresh] [--live] [--prebuilt] [--port-base N] [--from-archive <url|dir>]
+  judge one-command local copy for hackathon judges: prerequisite doctor, fresh boot, setup key and tour [--live] [--check] [--doctor] [--port-base N]
   model-gate  fail on non-Meta model ids/endpoints in tracked non-doc files
   voice-replay  replay webhook fixtures at the stub (see --corpus/--scenario)
   install-hooks point git at .githooks/ (pre-commit secret scan)

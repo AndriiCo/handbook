@@ -1,4 +1,4 @@
-//! One-command local boot: `cargo xtask up [--live | --record <corpus>] [--fresh] [--check]`.
+//! One-command local boot: `cargo xtask up [--live | --record <corpus>] [--fresh] [--check] [--prebuilt]`.
 //!
 //! Brings a fresh checkout to a running handbook on loopback: checks the
 //! pinned toolchains, installs the web dependencies (skipped when the
@@ -10,15 +10,22 @@
 //! `muse-spark-1.3` responses in `evals/replay/drafts-spark.jsonl` (no
 //! key needed; without that corpus, the offline stub plus one
 //! stub-fixture capture per authority), installs the recorded A2
-//! verdicts, grades `eval` into `quality.json`, mints the setup key,
-//! then serves the release `web` binary in the foreground.
+//! verdicts, grades `eval` into `quality.json`, mints the setup key
+//! (or, once staff passkeys exist, says to sign in at `/staff-login`),
+//! seals a fresh `worker.token` into `.local/worker.env`, then serves
+//! the release `web` binary in the foreground with a local
+//! `xtask worker` connected to it.
 //!
 //! `--live` swaps the synthetic captures for `fetch-slug` runs and
 //! drafts/scores through the Meta Model API (`META_API_KEY`).
 //! `--record <corpus>` drafts the synthetic captures live and appends
 //! every response to the corpus (how `drafts-spark.jsonl` is made).
+//! Both refuse to start without `META_API_KEY`.
 //! `--fresh` wipes `.local/` first. `--check` boots, probes the health,
-//! authorities, and setup-status endpoints, then exits without serving.
+//! authorities, and setup-status endpoints, runs one `scrape.urls` job
+//! through the local worker to `done`, then exits without serving.
+//! `--prebuilt` skips the toolchain checks and every build and runs the
+//! `web` binary next to this executable (the Docker image).
 //! `--from-archive <url|dir> [--country ISO2]` additionally imports
 //! response records from a crawl package (sha256-verified against its
 //! SHA256SUMS) as `kind='warc'` captures for authorities the loaded
@@ -37,6 +44,12 @@ const STORE_DIR: &str = ".local/store";
 const KEK_FILE: &str = ".local/handbook-kek";
 /// Remembers the lockfile hash the last `npm ci` installed.
 const NCI_HASH_FILE: &str = ".local/.npm-ci-hash";
+/// `APOSTILLE_WORKER_TOKEN` for the local worker (0600, minted every boot).
+const WORKER_ENV: &str = ".local/worker.env";
+/// The local worker's scratch (`xtask worker --workdir`).
+const WORKER_DIR: &str = ".local/work";
+/// How long `--check` waits for its `scrape.urls` job to reach `done`.
+const WORKER_CHECK_SECS: u64 = 120;
 /// Default ports match the staging runbook (operator forwards these
 /// over SSH); `--port-base N` serves public on N and admin on N+1.
 const DEFAULT_PORT_BASE: u16 = 18318;
@@ -86,6 +99,15 @@ impl Drafting {
             Drafting::Live => vec!["--live".to_string()],
         }
     }
+
+    /// The flag that makes this boot call the Meta Model API, if any.
+    fn needs_key(&self) -> Option<&'static str> {
+        match self {
+            Drafting::Stub | Drafting::Replay => None,
+            Drafting::Record(_) => Some("--record"),
+            Drafting::Live => Some("--live"),
+        }
+    }
 }
 
 fn drafting_mode(
@@ -105,15 +127,16 @@ fn drafting_mode(
 /// This boot's drafting mode, set once in [`run`] (read by [`web_env`]).
 static DRAFTING: std::sync::OnceLock<Drafting> = std::sync::OnceLock::new();
 
-/// Public port; admin is the next one (`--port-base`, first set wins).
-static PORT_BASE: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
+/// `(public, admin)` ports: `--port-base N` gives `(N, N+1)`, a setup
+/// file's local target gives its own pair (first set wins).
+static PORTS: std::sync::OnceLock<(u16, u16)> = std::sync::OnceLock::new();
 
 pub fn public_port() -> u16 {
-    PORT_BASE.get().copied().unwrap_or(DEFAULT_PORT_BASE)
+    PORTS.get().map_or(DEFAULT_PORT_BASE, |p| p.0)
 }
 
 pub fn admin_port() -> u16 {
-    public_port() + 1
+    PORTS.get().map_or(DEFAULT_PORT_BASE + 1, |p| p.1)
 }
 
 /// Read `--port-base N` (1024-65534, so N+1 is a valid port) and
@@ -127,7 +150,18 @@ pub fn apply_port_base(args: &[String]) -> Result<(), String> {
         .and_then(|v| v.parse::<u16>().ok())
         .filter(|b| (1024..=65534).contains(b))
         .ok_or("--port-base needs a port from 1024 to 65534")?;
-    let _ = PORT_BASE.set(base);
+    set_ports(base, base + 1)
+}
+
+/// Serve on `public` and `admin` (`setup --target local` passes the
+/// target's `ports`). Both unprivileged and distinct.
+pub fn set_ports(public: u16, admin: u16) -> Result<(), String> {
+    if public < 1024 || admin < 1024 || public == admin {
+        return Err(format!(
+            "ports public {public} / admin {admin}: want two different ports from 1024 up"
+        ));
+    }
+    let _ = PORTS.set((public, admin));
     Ok(())
 }
 
@@ -136,6 +170,7 @@ pub fn run(args: &[String]) {
     let live = has(args, "--live");
     let fresh = has(args, "--fresh");
     let check = has(args, "--check");
+    let prebuilt = has(args, "--prebuilt");
     let archive = archive_arg(args).unwrap_or_else(|| usage());
     check_flags(args);
     apply_port_base(args).unwrap_or_else(|e| fail(&e));
@@ -145,32 +180,48 @@ pub fn run(args: &[String]) {
         .map(|i| args.get(i + 1).cloned().unwrap_or_else(|| usage()));
     let drafting =
         drafting_mode(live, record, Path::new(REPLAY_CORPUS).exists()).unwrap_or_else(|e| fail(&e));
-    if matches!(drafting, Drafting::Record(_))
-        && std::env::var("META_API_KEY")
-            .map(|k| k.is_empty())
-            .unwrap_or(true)
+    // Before any build: a live boot without a key would only fail
+    // minutes later, at the first draft.
+    if let Some(flag) = drafting.needs_key()
+        && !meta_key_set()
     {
-        fail("--record drafts live: set META_API_KEY in the environment");
+        fail(&format!(
+            "{flag} drafts through the Meta Model API: set META_API_KEY in the environment (or drop {flag} for the recorded responses)"
+        ));
     }
     let _ = DRAFTING.set(drafting.clone());
-    assert_repo_root();
-    check_toolchain();
-    if fresh && Path::new(".local").exists() {
-        println!("up: --fresh: removing .local");
-        std::fs::remove_dir_all(".local").unwrap_or_else(|e| fail(&format!("rm .local: {e}")));
+    if prebuilt {
+        assert_prebuilt_layout();
+    } else {
+        assert_repo_root();
+        check_toolchain();
     }
-    npm_ci_if_needed();
-    npm_build("build");
-    npm_build("build:admin");
-    cargo_build_release();
-    let xtask = release_bin("xtask");
-    let web = release_bin("web");
+    if fresh && Path::new(".local").exists() {
+        wipe_local();
+    }
+    let (xtask, web) = if prebuilt {
+        let pair = (prebuilt_bin("xtask"), prebuilt_bin("web"));
+        println!(
+            "up: --prebuilt: no toolchain checks or builds; serving {}",
+            pair.1.display()
+        );
+        pair
+    } else {
+        npm_ci_if_needed();
+        npm_build("build");
+        npm_build("build:admin");
+        cargo_build_release();
+        (release_bin("xtask"), release_bin("web"))
+    };
     xtask_cmd(&xtask, &["init", "--store", STORE_DIR]);
     enroll_if_needed(&xtask);
     config_set_all(&xtask);
     if let Some(payload) = IMPORT.get() {
         import_setup_values(&xtask, payload);
     }
+    // After the import, so a setup file's value never strands the
+    // local worker on a token it does not hold.
+    seal_worker_token(&xtask);
     xtask_cmd(
         &xtask,
         &[
@@ -235,21 +286,26 @@ pub fn run(args: &[String]) {
     let cfg = load_runtime_config();
     let review_link = match staff_review_link(cfg.bind, cfg.bind6, admin_port()) {
         Ok(link) => link,
-        Err(e) => fail(&format!("staff login link refused: {e}")),
+        Err(e) => fail(&format!("admin URLs refused: {e}")),
     };
     if check {
-        run_check(&web, &setup_key, &review_link);
+        run_check(&web, &xtask, setup_key.as_deref(), &review_link);
         return;
     }
-    print_banner(&setup_key, &review_link);
-    serve_foreground(&web);
+    print_banner(setup_key.as_deref(), &review_link, prebuilt);
+    serve_foreground(&web, &xtask);
 }
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo xtask up [--live | --record <corpus>] [--fresh] [--check] [--port-base N] [--from-archive <url|dir> [--country ISO2]]"
+        "usage: cargo xtask up [--live | --record <corpus>] [--fresh] [--check] [--prebuilt] [--port-base N] [--from-archive <url|dir> [--country ISO2]]"
     );
     std::process::exit(2);
+}
+
+/// `META_API_KEY` is set and non-empty.
+fn meta_key_set() -> bool {
+    std::env::var("META_API_KEY").is_ok_and(|k| !k.trim().is_empty())
 }
 
 /// Value-taking flags. `--from-archive` takes the package URL or
@@ -298,7 +354,9 @@ fn check_flags(args: &[String]) {
             skip_next = true;
             continue;
         }
-        if arg.starts_with("--") && !["--live", "--fresh", "--check"].contains(&arg.as_str()) {
+        if arg.starts_with("--")
+            && !["--live", "--fresh", "--check", "--prebuilt"].contains(&arg.as_str())
+        {
             usage();
         }
     }
@@ -326,6 +384,63 @@ fn assert_repo_root() {
             fail(&format!("run from the repo root (missing {marker})"));
         }
     }
+}
+
+/// `--fresh`: empty `.local/`, except a plain local setup file
+/// (`cargo xtask setup` on a machine without sops keeps it there).
+fn wipe_local() {
+    let keep = Path::new(crate::setup::file::LOCAL_PATH);
+    let entries =
+        std::fs::read_dir(".local").unwrap_or_else(|e| fail(&format!("read .local: {e}")));
+    let mut kept = false;
+    for entry in entries {
+        let path = entry
+            .unwrap_or_else(|e| fail(&format!("list .local: {e}")))
+            .path();
+        if path == keep {
+            kept = true;
+            continue;
+        }
+        let gone = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        gone.unwrap_or_else(|e| fail(&format!("rm {}: {e}", path.display())));
+    }
+    if kept {
+        println!("up: --fresh: emptied .local (kept {})", keep.display());
+    } else {
+        println!("up: --fresh: emptied .local");
+    }
+}
+
+/// `--prebuilt` runs where nothing is built: the data `up` reads plus
+/// both finished SPA builds must already be in the working directory.
+fn assert_prebuilt_layout() {
+    for marker in [
+        "packs",
+        "evals/authorities",
+        "crates/web/static",
+        "web/build",
+        "web/build-admin",
+    ] {
+        if !Path::new(marker).exists() {
+            fail(&format!(
+                "--prebuilt: missing {marker} here (run from the image's /app or a built checkout)"
+            ));
+        }
+    }
+}
+
+/// `--prebuilt`: the binary named `name` beside the running executable.
+fn prebuilt_bin(name: &str) -> PathBuf {
+    let exe = std::env::current_exe().unwrap_or_else(|e| fail(&format!("current_exe: {e}")));
+    let bin = exe.parent().unwrap_or_else(|| Path::new(".")).join(name);
+    if !bin.is_file() {
+        fail(&format!("--prebuilt: no {} next to xtask", bin.display()));
+    }
+    bin
 }
 
 /// Minimum accepted Node major (SA-11: judges arrive on Node 24 LTS,
@@ -603,25 +718,13 @@ fn enroll_if_needed(xtask: &Path) {
 /// host), so it must be the loopback admin port for staff passkeys
 /// to verify there. Loopback-only: the header-level origin gate
 /// (`origin_allowed`) admits http localhost/127.0.0.1 solely under
-/// the dev seam, and the staff link below is refused past loopback.
+/// the dev seam, and the admin URLs below are refused past loopback.
 /// `admin.mtls_off` is what lets the admin host guard accept loopback
 /// browsers; the release dev-seam gate only honors it while every
 /// bind stays loopback.
 fn config_set_all(xtask: &Path) {
-    let (public, admin) = (public_port().to_string(), admin_port().to_string());
-    let origin = format!("http://localhost:{admin}");
-    let settings: [(&str, &str, &str); 9] = [
-        ("net.bind", "text", "127.0.0.1"),
-        ("net.port", "text", &public),
-        ("net.admin_port", "text", &admin),
-        ("auth.rp_id", "text", "localhost"),
-        ("auth.origin", "text", &origin),
-        ("paths.static_dir", "text", "crates/web/static"),
-        ("paths.spa_dir", "text", "web/build"),
-        ("paths.admin_spa_dir", "text", "web/build-admin"),
-        ("admin.mtls_off", "bool", "true"),
-    ];
-    for (key, kind, value) in settings {
+    for (key, kind, value) in loopback_settings() {
+        let value = value.as_str();
         xtask_cmd(
             xtask,
             &[
@@ -639,6 +742,99 @@ fn config_set_all(xtask: &Path) {
             ],
         );
     }
+}
+
+/// `(key, type, value)` rows [`config_set_all`] seals on every boot.
+fn loopback_settings() -> [(&'static str, &'static str, String); 9] {
+    let (public, admin) = (public_port().to_string(), admin_port().to_string());
+    let origin = format!("http://localhost:{admin}");
+    let s = |v: &str| v.to_string();
+    [
+        ("net.bind", "text", s("127.0.0.1")),
+        ("net.port", "text", public),
+        ("net.admin_port", "text", admin),
+        ("auth.rp_id", "text", s("localhost")),
+        ("auth.origin", "text", origin),
+        ("paths.static_dir", "text", s("crates/web/static")),
+        ("paths.spa_dir", "text", s("web/build")),
+        ("paths.admin_spa_dir", "text", s("web/build-admin")),
+        ("admin.mtls_off", "bool", s("true")),
+    ]
+}
+
+/// Keys `up` owns: a setup file's local target cannot override them
+/// (its `ports` move the ports; binds stay loopback).
+pub fn loopback_keys() -> Vec<&'static str> {
+    loopback_settings().iter().map(|(k, _, _)| *k).collect()
+}
+
+/// Mint a fresh `worker.token` (shared-token form, 64 hex), seal it
+/// through `config-set` on stdin (never argv), and write
+/// [`WORKER_ENV`] (0600) for the local `xtask worker --env-file`.
+/// Every boot rotates it; the server reads the row per connection.
+fn seal_worker_token(xtask: &Path) {
+    use std::io::Write as _;
+    let token = hex(&rand::random::<[u8; 32]>());
+    println!(
+        "up: + {} config-set --key worker.token (stdin)",
+        xtask.display()
+    );
+    let mut child = Command::new(xtask)
+        .args([
+            "config-set",
+            "--store",
+            STORE_DIR,
+            "--kek-file",
+            KEK_FILE,
+            "--key",
+            "worker.token",
+            "--type",
+            "secret",
+            "--value-from-stdin",
+            "--actor",
+            "xtask-up",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("spawn config-set: {e}")));
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(token.as_bytes())
+            .unwrap_or_else(|e| fail(&format!("config-set stdin: {e}")));
+    }
+    let status = child.wait().unwrap_or_else(|e| fail(&e.to_string()));
+    if !status.success() {
+        fail("sealing worker.token failed");
+    }
+    write_private(
+        Path::new(WORKER_ENV),
+        &format!(
+            "# Local worker token for `cargo xtask up` (re-minted every boot).\nAPOSTILLE_WORKER_TOKEN={token}\n"
+        ),
+    );
+    println!("up: worker token sealed; {WORKER_ENV} written (0600)");
+}
+
+/// Write `text` to `path` readable by its owner only (0600 on unix,
+/// enforced even when the file already existed wider).
+fn write_private(path: &Path, text: &str) {
+    use std::io::Write as _;
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).write(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
+        options.mode(0o600);
+        if path.exists() {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                .unwrap_or_else(|e| fail(&format!("chmod {}: {e}", path.display())));
+        }
+    }
+    let mut file = options
+        .open(path)
+        .unwrap_or_else(|e| fail(&format!("write {}: {e}", path.display())));
+    file.write_all(text.as_bytes())
+        .unwrap_or_else(|e| fail(&format!("write {}: {e}", path.display())));
 }
 
 /// Authority slugs in `evals/authorities/*.json` (sorted, stable).
@@ -1212,8 +1408,17 @@ fn install_verdicts() {
 }
 
 /// Mint the first-boot setup key (prints once; the caller relays it to
-/// the operator and never stores it elsewhere).
-fn setup_key_mint(xtask: &Path) -> String {
+/// the operator and never stores it elsewhere). `None` once staff
+/// passkeys exist in this store: the setup window is closed, so a
+/// rerun says to sign in at `/staff-login` instead of dying here.
+fn setup_key_mint(xtask: &Path) -> Option<String> {
+    if staff_enrolled() {
+        println!(
+            "up: staff already enrolled in {STORE_DIR}; sign in at http://localhost:{}/staff-login (no new setup key; --fresh starts over)",
+            admin_port()
+        );
+        return None;
+    }
     println!("up: + {} setup-key-mint", xtask.display());
     let out = Command::new(xtask)
         .args([
@@ -1227,10 +1432,21 @@ fn setup_key_mint(xtask: &Path) -> String {
         .unwrap_or_else(|e| fail(&format!("spawn setup-key-mint: {e}")));
     if !out.status.success() {
         eprint!("{}", String::from_utf8_lossy(&out.stderr));
-        fail("setup-key-mint failed (staff passkeys exist? use --fresh for a clean local boot)");
+        fail("setup-key-mint failed");
     }
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
-    parse_setup_key(&text).unwrap_or_else(|| fail("setup-key-mint printed no setup key"))
+    Some(parse_setup_key(&text).unwrap_or_else(|| fail("setup-key-mint printed no setup key")))
+}
+
+/// Live staff passkeys exist (the same count `setup-key-mint` gates on).
+fn staff_enrolled() -> bool {
+    let store = handbook_store::store::Store::new(STORE_DIR);
+    let conn =
+        handbook_store::db::open(&store).unwrap_or_else(|e| fail(&format!("open store: {e}")));
+    auth::migrate_auth_tables(&conn).unwrap_or_else(|e| fail(&format!("auth tables: {e}")));
+    auth::passkey::live_staff_passkey_count(&conn)
+        .unwrap_or_else(|e| fail(&format!("count staff passkeys: {e}")))
+        > 0
 }
 
 /// Pure: pull `setup_<64 hex>` out of the mint output.
@@ -1271,18 +1487,21 @@ fn load_runtime_config() -> sealed_config::RuntimeConfig {
     }
 }
 
-/// One-time staff login link for `/review`. Refused unless EVERY bind
-/// IP is loopback — a login link is never printed for a host that
-/// listens past localhost. The link always names `localhost`, never a
-/// numeric loopback: the bind is proven loopback-only above, and every
-/// printed URL in `up` uses the same host form judges type.
+/// The review queue's URL on the admin port. It is a plain URL, not a
+/// login link: it carries no token and signs nobody in (staff sign in
+/// at `/config` with the setup key, later at `/staff-login`). Refused
+/// unless EVERY bind IP is loopback, so `up` never prints admin URLs
+/// for a host that listens past localhost. It always names
+/// `localhost`, never a numeric loopback: WebAuthn's origin is
+/// `http://localhost:<admin port>`, and every printed URL in `up`
+/// uses the same host form judges type.
 fn staff_review_link(
     bind: std::net::IpAddr,
     bind6: Option<std::net::IpAddr>,
     admin_port: u16,
 ) -> Result<String, String> {
     if !sealed_config::RuntimeConfig::dev_seam_allowed(true, bind, bind6) {
-        return Err("every bind IP must be loopback (refusing to mint a staff link)".to_string());
+        return Err("every bind IP must be loopback (refusing to print admin URLs)".to_string());
     }
     Ok(format!("http://localhost:{admin_port}/review"))
 }
@@ -1322,6 +1541,124 @@ fn spawn_web(web: &Path) -> Child {
         .envs(web_env())
         .spawn()
         .unwrap_or_else(|e| fail(&format!("spawn {}: {e}", web.display())))
+}
+
+/// The worker socket on the public port (loopback, plain `ws://`).
+fn worker_url() -> String {
+    format!(
+        "ws://127.0.0.1:{}/apostille/api/v1/worker/ws",
+        public_port()
+    )
+}
+
+/// The plant worker binary, pointed at this boot: token from
+/// [`WORKER_ENV`], scratch and GPU lock under `.local/`.
+fn spawn_worker(xtask: &Path) -> Child {
+    let url = worker_url();
+    println!(
+        "up: + {} worker --connect {url} --name {} --workdir {WORKER_DIR}",
+        xtask.display(),
+        env_label()
+    );
+    Command::new(xtask)
+        .args([
+            "worker",
+            "--connect",
+            &url,
+            "--name",
+            env_label(),
+            "--workdir",
+            WORKER_DIR,
+            "--cache-dir",
+            ".local",
+            "--env-file",
+            WORKER_ENV,
+            "--gpu-lock",
+            ".local/gpu.lock",
+        ])
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("spawn worker: {e}")))
+}
+
+/// `--check`'s worker probe: enqueue one `scrape.urls` job for the
+/// public home page, start the real worker against the real server,
+/// and wait for the item to reach `done` with every page fetched.
+/// The item goes straight into `work.sqlite` (staff enqueue through
+/// `/work`, which needs a passkey session this boot does not have).
+fn check_worker(xtask: &Path) -> Result<(), String> {
+    let page = format!("http://127.0.0.1:{}/apostille/", public_port());
+    let store = handbook_store::store::Store::new(STORE_DIR);
+    let conn = handbook_store::work::open(&store).map_err(|e| format!("open work db: {e}"))?;
+    handbook_store::work::migrate(&conn).map_err(|e| format!("migrate work db: {e}"))?;
+    let payload = serde_json::json!({"urls": [page], "politeness_ms": 0}).to_string();
+    let id = handbook_store::work::enqueue(
+        &conn,
+        &handbook_store::work::NewItem {
+            kind: "scrape.urls",
+            payload_json: &payload,
+            max_attempts: 1,
+            actor: "xtask-up",
+            at: unix_now(),
+        },
+    )
+    .map_err(|e| format!("enqueue: {e}"))?;
+    println!("up: --check: enqueued scrape.urls job {id} for {page}");
+    let mut worker = spawn_worker(xtask);
+    // Every path below ends in `kill` (which reaps): no early return
+    // may leave the worker running.
+    let outcome = wait_for_job(&conn, id, &mut worker);
+    kill(&mut worker);
+    if outcome.is_ok() {
+        println!("up: --check: worker job {id} -> done (scrape.urls fetched {page})");
+    }
+    outcome
+}
+
+/// Poll work item `id` until `done` (with its page), `failed`, the
+/// worker exits, or [`WORKER_CHECK_SECS`] pass.
+fn wait_for_job(conn: &rusqlite::Connection, id: i64, worker: &mut Child) -> Result<(), String> {
+    use std::time::{Duration, Instant};
+    let deadline = Instant::now() + Duration::from_secs(WORKER_CHECK_SECS);
+    loop {
+        let item = handbook_store::work::get(conn, id)
+            .map_err(|e| format!("read job {id}: {e}"))?
+            .ok_or_else(|| format!("job {id} vanished"))?;
+        match item.status.as_str() {
+            "done" => return worker_job_ok(&item),
+            "failed" => {
+                return Err(format!(
+                    "job {id} failed: {}",
+                    item.error.unwrap_or_default()
+                ));
+            }
+            status if Instant::now() >= deadline => {
+                return Err(format!(
+                    "job {id} still {status} after {WORKER_CHECK_SECS} s (is the worker connected?)"
+                ));
+            }
+            _ if child_exited(worker) => {
+                return Err(format!("the worker exited before job {id} finished"));
+            }
+            _ => std::thread::sleep(Duration::from_millis(500)),
+        }
+    }
+}
+
+/// A `done` scrape item fetched every page (its summary counts them).
+fn worker_job_ok(item: &handbook_store::work::WorkItem) -> Result<(), String> {
+    let summary: serde_json::Value = item
+        .summary_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    if summary["pages"] == 1 && summary["failed"] == 0 && item.result.is_some() {
+        Ok(())
+    } else {
+        Err(format!(
+            "job {} done without the page: summary {summary}",
+            item.id
+        ))
+    }
 }
 
 /// Minimal blocking HTTP GET over `TcpStream` (xtask has no HTTP
@@ -1371,11 +1708,12 @@ fn probe(host: &str, port: u16, path: &str, want: &str) -> Result<(), String> {
     }
 }
 
-/// `--check`: boot the release binary, probe the three endpoints, stop
-/// it, exit. Exercises the release dev-seam gate end to end (the boot
-/// carries a dev KEK over loopback binds, plus the loopback-gated
-/// `admin.mtls_off` seam the admin probes need).
-fn run_check(web: &Path, setup_key: &str, review_link: &str) {
+/// `--check`: boot the release binary, probe the three endpoints, run
+/// one worker job to `done`, stop both, exit. Exercises the release
+/// dev-seam gate end to end (the boot carries a dev KEK over loopback
+/// binds, plus the loopback-gated `admin.mtls_off` seam the admin
+/// probes need) and the real worker against the real server.
+fn run_check(web: &Path, xtask: &Path, setup_key: Option<&str>, review_link: &str) {
     let mut child = spawn_web(web);
     let mut failure: Option<String> = None;
     match wait_healthy(&mut child) {
@@ -1408,13 +1746,27 @@ fn run_check(web: &Path, setup_key: &str, review_link: &str) {
             failure = Some(e);
         }
     }
+    if failure.is_none()
+        && let Err(e) = check_worker(xtask)
+    {
+        failure = Some(e);
+    }
     kill(&mut child);
     if let Some(e) = failure {
         fail(&e);
     }
     println!("up: --check: ok");
-    println!("up: setup key (prints once): {setup_key}");
-    println!("up: staff review link (loopback only): {review_link}");
+    match setup_key {
+        Some(key) => println!(
+            "up: setup key (prints once; paste at http://localhost:{}/config): {key}",
+            admin_port()
+        ),
+        None => println!(
+            "up: staff already enrolled; sign in at http://localhost:{}/staff-login",
+            admin_port()
+        ),
+    }
+    println!("up: review queue (needs a staff sign-in; not a login link): {review_link}");
 }
 
 /// Why the health wait ended (an enum, not a second `try_wait` at
@@ -1447,7 +1799,7 @@ fn wait_healthy_on(child: &mut Child, deadline: std::time::Instant, port: u16) -
     use std::time::Duration;
     loop {
         if child_exited(child) {
-            println!("up: --check: web exited while waiting for /healthz");
+            println!("up: web exited while waiting for /healthz");
             return WaitOutcome::Exited;
         }
         if std::time::Instant::now() >= deadline {
@@ -1472,32 +1824,66 @@ fn kill(child: &mut Child) {
     let _ = child.wait();
 }
 
-fn print_banner(setup_key: &str, review_link: &str) {
+/// The boot banner. Staff sign-in comes first: before anyone enrols,
+/// every console route needs the setup key pasted at `/config`.
+fn print_banner(setup_key: Option<&str>, review_link: &str, prebuilt: bool) {
     let (public, admin) = (public_port(), admin_port());
     println!();
     println!("handbook is up (loopback only, synthetic data):");
     println!("  public:  http://localhost:{public}/apostille");
-    println!("  admin:   http://localhost:{admin}/");
-    println!("  review:  {review_link}");
-    println!("  setup key (prints ONCE — paste at /config to enrol staff):");
-    println!("    {setup_key}");
+    match setup_key {
+        Some(key) => {
+            println!(
+                "  staff:   open http://localhost:{admin}/config first and paste this setup key"
+            );
+            println!("           (it prints ONCE), then enrol a passkey:");
+            println!("    {key}");
+            println!("           later visits sign in at http://localhost:{admin}/staff-login");
+        }
+        None => {
+            println!(
+                "  staff:   already enrolled in this store: sign in at http://localhost:{admin}/staff-login"
+            );
+            println!("           (`--fresh` starts over with a new setup key)");
+        }
+    }
+    println!(
+        "  review:  {review_link} (the queue itself; it needs that sign-in, it is not a login link)"
+    );
+    println!(
+        "  worker:  `xtask worker` connects as \"{}\"; its jobs are at http://localhost:{admin}/work",
+        env_label()
+    );
     println!("try this:");
-    println!("  - open the review queue and approve a proposed fact");
+    println!("  - sign in, open the review queue and approve a proposed fact");
     println!("  - curl -s http://localhost:{public}/apostille/api/v1/authorities");
     println!("  - POST {{\"sample\":\"syn-doc-clean\"}} to /apostille/api/v1/demo/precheck");
     if env_label() == "judge" {
-        crate::judge::print_tour(public, admin);
+        crate::judge::print_tour(public, admin, setup_key.is_some(), prebuilt);
     }
     println!();
 }
 
 /// Foreground serve: the release binary inherits stdio and holds the
-/// terminal (Ctrl-C stops it). Everything above already printed.
-fn serve_foreground(web: &Path) {
+/// terminal (Ctrl-C stops both it and the worker). Everything above
+/// already printed. The worker starts once `/healthz` answers, so its
+/// first dial finds the socket.
+fn serve_foreground(web: &Path, xtask: &Path) {
     let mut child = spawn_web(web);
+    let mut worker = match wait_healthy(&mut child) {
+        WaitOutcome::Healthy => Some(spawn_worker(xtask)),
+        WaitOutcome::Exited => None,
+        WaitOutcome::Timeout => {
+            eprintln!("up: web did not answer /healthz in time; no worker started");
+            None
+        }
+    };
     let status = child
         .wait()
         .unwrap_or_else(|e| fail(&format!("wait web: {e}")));
+    if let Some(worker) = worker.as_mut() {
+        kill(worker);
+    }
     std::process::exit(status.code().unwrap_or(1));
 }
 
@@ -1726,6 +2112,93 @@ mod tests {
         let rec = drafting_mode(false, Some("c.jsonl".into()), true).unwrap();
         assert_eq!(rec.flags(), ["--live", "--record", "c.jsonl"]);
         assert_eq!(Drafting::Replay.flags(), ["--replay", REPLAY_CORPUS]);
+    }
+
+    #[test]
+    fn live_and_record_need_a_key_replay_does_not() {
+        assert_eq!(Drafting::Live.needs_key(), Some("--live"));
+        assert_eq!(
+            Drafting::Record("c.jsonl".into()).needs_key(),
+            Some("--record")
+        );
+        assert_eq!(Drafting::Replay.needs_key(), None);
+        assert_eq!(Drafting::Stub.needs_key(), None);
+    }
+
+    #[test]
+    fn prebuilt_is_a_known_flag_and_loopback_keys_stay_loopback() {
+        check_flags(&["--prebuilt".to_string(), "--fresh".to_string()]);
+        let keys = loopback_keys();
+        assert_eq!(keys.len(), 9);
+        for key in [
+            "net.bind",
+            "net.port",
+            "net.admin_port",
+            "auth.origin",
+            "admin.mtls_off",
+        ] {
+            assert!(keys.contains(&key), "{key}");
+        }
+        let settings = loopback_settings();
+        assert!(settings.contains(&("net.bind", "text", "127.0.0.1".to_string())));
+        assert!(
+            settings
+                .iter()
+                .any(|(k, _, v)| *k == "auth.origin" && v.starts_with("http://localhost:"))
+        );
+    }
+
+    #[test]
+    fn set_ports_refuses_privileged_and_equal_ports() {
+        assert!(set_ports(80, 18319).is_err());
+        assert!(set_ports(18318, 443).is_err());
+        assert!(set_ports(18318, 18318).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn worker_env_is_private_even_over_a_wide_file() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().expect("scratch dir");
+        let path = dir.path().join("worker.env");
+        std::fs::write(&path, "old").expect("seed");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+        write_private(&path, "APOSTILLE_WORKER_TOKEN=x\n");
+        let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            "APOSTILLE_WORKER_TOKEN=x\n"
+        );
+    }
+
+    #[test]
+    fn worker_check_wants_the_page_fetched() {
+        let item = |summary: &str, result: bool| handbook_store::work::WorkItem {
+            id: 1,
+            kind: "scrape.urls".into(),
+            payload_json: "{}".into(),
+            status: "done".into(),
+            lease_owner: None,
+            lease_expires_at: None,
+            attempts: 1,
+            max_attempts: 1,
+            result: result.then(|| handbook_store::work::ResultRef {
+                sha256: "a".repeat(64),
+                bytes: 10,
+                content_type: "application/json".into(),
+            }),
+            summary_json: Some(summary.into()),
+            error: None,
+            created_by: "xtask-up".into(),
+            created_at: 0,
+            updated_at: 0,
+        };
+        let ok = r#"{"pages":1,"failed":0,"truncated":false}"#;
+        assert!(worker_job_ok(&item(ok, true)).is_ok());
+        assert!(worker_job_ok(&item(ok, false)).is_err(), "no result blob");
+        let robots = r#"{"pages":1,"failed":1,"truncated":false}"#;
+        assert!(worker_job_ok(&item(robots, true)).is_err());
     }
 
     #[test]

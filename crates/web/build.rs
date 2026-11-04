@@ -8,6 +8,17 @@
 use std::process::Command;
 
 fn main() {
+    // A build without `.git` (the judge Docker image, `ARG BUILD_SHA`)
+    // names its commit in the environment instead.
+    println!("cargo:rerun-if-env-changed=BUILD_SHA");
+    if let Ok(sha) = std::env::var("BUILD_SHA")
+        && !sha.is_empty()
+        && sha.len() <= 40
+        && sha.bytes().all(|b| b.is_ascii_alphanumeric())
+    {
+        println!("cargo:rustc-env=BUILD_SHA={sha}");
+        return;
+    }
     // Build scripts run with CWD = package dir, where `.git`
     // does NOT exist — resolve the workspace `.git` via
     // CARGO_MANIFEST_DIR or the stamp never re-runs (every

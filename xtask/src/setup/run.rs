@@ -348,7 +348,21 @@ fn builtin(ctx: &Ctx, index: usize, b: &Builtin) -> Result<(), String> {
         } => wait_health(ctx, url, ca.as_deref(), *timeout_secs, &log),
         Builtin::LocalBoot => {
             let target = &ctx.file.targets[&ctx.target];
-            let values = ctx.file.effective_values(&ctx.target, target);
+            let ports = target.ports_or_default();
+            crate::up::set_ports(ports.public, ports.admin)?;
+            log(format!(
+                "public http://localhost:{} · admin http://localhost:{}",
+                ports.public, ports.admin
+            ));
+            let mut values = ctx.file.effective_values(&ctx.target, target);
+            for key in crate::up::loopback_keys() {
+                if values.remove(key).is_some() {
+                    log(format!(
+                        "{key}: ignored for a local target (`up` keeps it loopback; set targets.{}.ports to move ports)",
+                        ctx.target
+                    ));
+                }
+            }
             let payload = serde_json::json!({
                 "format": crate::config_import::FORMAT,
                 "values": values,

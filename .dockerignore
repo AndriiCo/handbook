@@ -9,3 +9,7 @@ web/shots/
 .git/
 .claude/
 .muse/
+# Crawl drops (large) and operator-licensed brand files: never in an image.
+archive/
+web/static/fonts/brand/
+web/src/lib/assets/brand/*.svg

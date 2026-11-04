@@ -3,15 +3,20 @@
 //! ```text
 //! cargo xtask setup [--file private/config.yaml] [--target a,b] [--sha <rev>]
 //!     [--from <phase>] [--dry-run] [--operator-order "<text>"]
-//! cargo xtask setup wizard [--file <path>] [--no-open]
+//! cargo xtask setup wizard [--file <path>] [--host <name>] [--local] [--no-open]
 //! cargo xtask setup check  [--file <path>] [--target <name>]
 //! cargo xtask setup print  [--file <path>] --target <name>
-//! cargo xtask setup new    [--file <path>]
+//! cargo xtask setup new    [--file <path>] [--host <name>] [--local]
 //! cargo xtask setup wipe   --target docker
 //! ```
 //!
 //! With no file, `setup` creates one from the template and opens the
-//! wizard on localhost. With a file, it runs the file's
+//! wizard on localhost. `--host` names the production server the
+//! template adds (none without it). Without sops and an age key (or
+//! with `--local`), the file is the plain local-only
+//! `.local/setup.yaml` instead (0600, the local target only).
+//!
+//! With a file, it runs the file's
 //! `default_targets` (or `--target`) phase by phase: doctor, gate, dns,
 //! build, container, provision, seal, deploy, acme, staff, verify.
 //! A server target named production refuses to run without
@@ -43,12 +48,56 @@ fn fail(message: &str) -> ! {
     std::process::exit(1);
 }
 
-/// `--file`, or `private/config.yaml` at the repo root (from any subdirectory).
+/// `--file`; else `private/config.yaml` at the repo root (from any
+/// subdirectory) when it exists; else the plain `.local/setup.yaml`
+/// when it exists, `--local` asks for it, or sops/age are not set up;
+/// else a new `private/config.yaml`.
 fn file_path(args: &[String]) -> PathBuf {
-    crate::flag(args, "file").map_or_else(
-        || crate::repo_root().join(file::DEFAULT_PATH),
-        PathBuf::from,
-    )
+    if let Some(path) = crate::flag(args, "file") {
+        return PathBuf::from(path);
+    }
+    let repo = crate::repo_root();
+    let (sops_file, plain) = (repo.join(file::DEFAULT_PATH), repo.join(file::LOCAL_PATH));
+    if sops_file.exists() {
+        return sops_file;
+    }
+    if plain.exists() || args.iter().any(|a| a == "--local") {
+        return plain;
+    }
+    match file::sops_missing() {
+        None => sops_file,
+        Some(why) => {
+            println!(
+                "setup: {why}; using the plain local-only file {} (0600, local target only). Staging and production need sops and age.",
+                file::LOCAL_PATH
+            );
+            plain
+        }
+    }
+}
+
+/// The template a new file at `path` starts from: the local target in
+/// a plain file, else every target (production on `--host`).
+pub fn new_file(path: &Path, args: &[String]) -> SetupFile {
+    if file::is_plain(path) {
+        return SetupFile::local_template();
+    }
+    let host = crate::flag(args, "host");
+    if let Some(host) = host.as_deref()
+        && !file::valid_host(host)
+    {
+        fail(&format!("--host {host:?} is not a host name"));
+    }
+    SetupFile::template_for(host.as_deref())
+}
+
+/// How a file at `path` is stored, for the "created" lines.
+pub fn storage_note(path: &Path) -> &'static str {
+    if file::is_plain(path) {
+        "plain YAML, 0600, local target only"
+    } else {
+        "sops + age; plaintext never on disk"
+    }
 }
 
 /// Load the file, or `None` when it does not exist yet.
@@ -104,16 +153,13 @@ fn run_new(args: &[String]) {
     let path = file_path(args);
     if path.exists() {
         fail(&format!(
-            "{} exists; edit it with `sops {}` or the wizard",
+            "{} exists; edit it with the wizard (or `sops {}`)",
             path.display(),
             path.display()
         ));
     }
-    file::save(&path, &SetupFile::template()).unwrap_or_else(|e| fail(&e));
-    println!(
-        "created {} (sops + age; plaintext never on disk)",
-        path.display()
-    );
+    file::save(&path, &new_file(&path, args)).unwrap_or_else(|e| fail(&e));
+    println!("created {} ({})", path.display(), storage_note(&path));
 }
 
 fn run_print(args: &[String]) {
@@ -291,7 +337,7 @@ fn run_targets(args: &[String]) {
             "setup: {} does not exist; creating it and opening the wizard",
             path.display()
         );
-        file::save(&path, &SetupFile::template()).unwrap_or_else(|e| fail(&e));
+        file::save(&path, &new_file(&path, args)).unwrap_or_else(|e| fail(&e));
         wizard::run(args, &path);
         return;
     };
