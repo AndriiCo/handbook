@@ -1,0 +1,178 @@
+// The /login page's words in the three site languages (lib/i18n.ts
+// LOCALES). The page picks one set by the shared site locale
+// (lib/locale.svelte.ts), so the masthead switcher re-renders the form
+// in place. Server-sent `error` text and the OAuth / email-link helper
+// copy (oauth.js, magic.js) stay English for now.
+
+/**
+ * @typedef {{
+ *   tagline: string,
+ *   points: string[],
+ *   noPasskeys: string,
+ *   signedInBack: string,
+ *   loggedIn: string,
+ *   continueToOrders: string,
+ *   manageSignIn: string,
+ *   createAccount: string,
+ *   tabsLabel: string,
+ *   signingIn: string,
+ *   account: string,
+ *   passkeySignIn: string,
+ *   or: string,
+ *   checkingOptions: string,
+ *   continueWith: (provider: string) => string,
+ *   magicShow: string,
+ *   magicHide: string,
+ *   email: string,
+ *   sendLink: string,
+ *   magicSent: string,
+ *   fullName: string,
+ *   emailHint: string,
+ *   registerPasskey: string,
+ *   checkForm: string,
+ *   unknownAccount: string,
+ *   passkeyGone: string,
+ *   passkeyTaken: string,
+ *   expired: string,
+ *   verifyFailed: string,
+ *   rateLimited: string,
+ *   requestFailed: (status: number) => string,
+ *   registerCancelled: string,
+ *   registerFailed: string,
+ *   loginCancelled: string,
+ *   loginFailed: string
+ * }} LoginCopy
+ */
+
+/** @type {Record<'en' | 'es' | 'fr', LoginCopy>} */
+export const LOGIN_COPY = {
+	en: {
+		tagline: 'Your documents, verified quote by quote.',
+		points: [
+			'Muse Spark drafts from official pages',
+			'Every quote checked byte-exact',
+			'Staff approve before anything publishes'
+		],
+		noPasskeys: 'This browser cannot do passkeys. Use a current Safari, Chrome, Edge, or Firefox.',
+		signedInBack: 'Signed in. Taking you back…',
+		loggedIn: 'Logged in.',
+		continueToOrders: 'Continue to your orders',
+		manageSignIn: 'Manage sign-in methods',
+		createAccount: 'Create account',
+		tabsLabel: 'Sign in or create account',
+		signingIn: 'Signing you in…',
+		account: 'User ID or email',
+		passkeySignIn: 'Sign in with passkey',
+		or: 'or',
+		checkingOptions: 'Checking sign-in options',
+		continueWith: (provider) => `Continue with ${provider}`,
+		magicShow: 'Use an email link instead',
+		magicHide: 'Hide the email link option',
+		email: 'Email',
+		sendLink: 'Send sign-in link',
+		magicSent: 'Check your inbox — if that address has an account, a sign-in link is on its way.',
+		fullName: 'Full name',
+		emailHint: 'Receipts, order updates and account recovery go here.',
+		registerPasskey: 'Register passkey',
+		checkForm: 'Check the form values.',
+		unknownAccount: 'Unknown account or no passkeys on this account.',
+		passkeyGone: 'This device no longer has that passkey — register a new one below.',
+		passkeyTaken: 'This passkey is already registered — use log in instead.',
+		expired: 'The ceremony expired — try again.',
+		verifyFailed: 'Verification failed — try again.',
+		rateLimited: 'Too many attempts — wait a minute and try again.',
+		requestFailed: (status) => `Request failed (HTTP ${status}).`,
+		registerCancelled: 'Cancelled — no passkey was created.',
+		registerFailed: 'Passkey ceremony failed — is this browser allowed to create passkeys?',
+		loginCancelled: 'Cancelled — not logged in.',
+		loginFailed: 'Passkey ceremony failed — try again.'
+	},
+	es: {
+		tagline: 'Sus documentos, verificados cita por cita.',
+		points: [
+			'Muse Spark redacta a partir de páginas oficiales',
+			'Cada cita se comprueba byte a byte',
+			'El personal lo aprueba todo antes de publicarlo'
+		],
+		noPasskeys:
+			'Este navegador no admite llaves de acceso. Use una versión actual de Safari, Chrome, Edge o Firefox.',
+		signedInBack: 'Sesión iniciada. Volviendo…',
+		loggedIn: 'Sesión iniciada.',
+		continueToOrders: 'Ir a sus pedidos',
+		manageSignIn: 'Gestionar métodos de inicio de sesión',
+		createAccount: 'Crear cuenta',
+		tabsLabel: 'Iniciar sesión o crear cuenta',
+		signingIn: 'Iniciando sesión…',
+		account: 'ID de usuario o correo electrónico',
+		passkeySignIn: 'Iniciar sesión con llave de acceso',
+		or: 'o',
+		checkingOptions: 'Comprobando las opciones de inicio de sesión',
+		continueWith: (provider) => `Continuar con ${provider}`,
+		magicShow: 'Usar un enlace por correo electrónico',
+		magicHide: 'Ocultar la opción de enlace por correo',
+		email: 'Correo electrónico',
+		sendLink: 'Enviar enlace de inicio de sesión',
+		magicSent:
+			'Revise su bandeja de entrada: si esa dirección tiene una cuenta, le llegará un enlace de inicio de sesión.',
+		fullName: 'Nombre completo',
+		emailHint: 'Aquí recibirá recibos, novedades de sus pedidos y la recuperación de la cuenta.',
+		registerPasskey: 'Registrar llave de acceso',
+		checkForm: 'Revise los datos del formulario.',
+		unknownAccount: 'Cuenta desconocida o sin llaves de acceso.',
+		passkeyGone: 'Este dispositivo ya no tiene esa llave de acceso: registre una nueva abajo.',
+		passkeyTaken: 'Esta llave de acceso ya está registrada: inicie sesión con ella.',
+		expired: 'El proceso caducó: inténtelo de nuevo.',
+		verifyFailed: 'La verificación falló: inténtelo de nuevo.',
+		rateLimited: 'Demasiados intentos: espere un minuto e inténtelo de nuevo.',
+		requestFailed: (status) => `La solicitud falló (HTTP ${status}).`,
+		registerCancelled: 'Cancelado: no se creó ninguna llave de acceso.',
+		registerFailed:
+			'No se pudo crear la llave de acceso: ¿tiene este navegador permiso para crearlas?',
+		loginCancelled: 'Cancelado: no se inició sesión.',
+		loginFailed: 'Falló el inicio de sesión con llave de acceso: inténtelo de nuevo.'
+	},
+	fr: {
+		tagline: 'Vos documents, vérifiés citation par citation.',
+		points: [
+			'Muse Spark rédige à partir des pages officielles',
+			'Chaque citation vérifiée à l’octet près',
+			'Le personnel approuve tout avant publication'
+		],
+		noPasskeys:
+			'Ce navigateur ne prend pas en charge les clés d’accès. Utilisez une version récente de Safari, Chrome, Edge ou Firefox.',
+		signedInBack: 'Vous êtes connecté. Retour en cours…',
+		loggedIn: 'Vous êtes connecté.',
+		continueToOrders: 'Voir vos commandes',
+		manageSignIn: 'Gérer les méthodes de connexion',
+		createAccount: 'Créer un compte',
+		tabsLabel: 'Se connecter ou créer un compte',
+		signingIn: 'Connexion en cours…',
+		account: 'Identifiant ou adresse e-mail',
+		passkeySignIn: 'Se connecter avec une clé d’accès',
+		or: 'ou',
+		checkingOptions: 'Vérification des options de connexion',
+		continueWith: (provider) => `Continuer avec ${provider}`,
+		magicShow: 'Recevoir plutôt un lien par e-mail',
+		magicHide: 'Masquer l’option du lien par e-mail',
+		email: 'Adresse e-mail',
+		sendLink: 'Envoyer le lien de connexion',
+		magicSent:
+			'Consultez votre boîte de réception : si cette adresse a un compte, un lien de connexion est en route.',
+		fullName: 'Nom complet',
+		emailHint: 'Reçus, suivi des commandes et récupération du compte arrivent à cette adresse.',
+		registerPasskey: 'Enregistrer une clé d’accès',
+		checkForm: 'Vérifiez les champs du formulaire.',
+		unknownAccount: 'Compte inconnu ou sans clé d’accès.',
+		passkeyGone: 'Cet appareil n’a plus cette clé d’accès : enregistrez-en une nouvelle ci-dessous.',
+		passkeyTaken: 'Cette clé d’accès est déjà enregistrée : connectez-vous avec elle.',
+		expired: 'La demande a expiré : réessayez.',
+		verifyFailed: 'La vérification a échoué : réessayez.',
+		rateLimited: 'Trop de tentatives : patientez une minute puis réessayez.',
+		requestFailed: (status) => `La requête a échoué (HTTP ${status}).`,
+		registerCancelled: 'Annulé : aucune clé d’accès n’a été créée.',
+		registerFailed:
+			'La création de la clé d’accès a échoué : ce navigateur est-il autorisé à en créer ?',
+		loginCancelled: 'Annulé : vous n’êtes pas connecté.',
+		loginFailed: 'La connexion par clé d’accès a échoué : réessayez.'
+	}
+};

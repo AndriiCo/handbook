@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { Skeleton } from '../../../lib/components/ui/skeleton/index.js';
-	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
+	import { STRINGS } from '../../../lib/i18n';
+	import { site } from '../../../lib/locale.svelte.js';
+	import { LOGIN_COPY } from '../../../lib/customer/login-copy.js';
 	import {
 		cookieValue,
 		credentialRequestArgs,
@@ -24,7 +26,6 @@
 	import ApostilleCertificate from '../../../lib/components/brand/ApostilleCertificate.svelte';
 	import CheckIcon from '@lucide/svelte/icons/check';
 
-	let locale = $state<Locale>(resolveLocale());
 	let fullName = $state('');
 	let email = $state('');
 	let account = $state(
@@ -61,7 +62,8 @@
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
-	const t = $derived(STRINGS[locale]);
+	const t = $derived(STRINGS[site.locale]);
+	const c = $derived(LOGIN_COPY[site.locale]);
 	const webauthnOk = typeof navigator !== 'undefined' && !!navigator.credentials?.create;
 
 	async function post(path: string, body: unknown) {
@@ -79,14 +81,14 @@
 	}
 
 	function friendly(status: number, body: { error?: string }): string {
-		if (status === 400) return body.error ?? 'Check the form values.';
-		if (status === 401) return 'Unknown account or no passkeys on this account.';
-		if (status === 404) return 'This device no longer has that passkey — register a new one below.';
-		if (status === 409) return 'This passkey is already registered — use log in instead.';
-		if (status === 410) return 'The ceremony expired — try again.';
-		if (status === 422) return 'Verification failed — try again.';
-		if (status === 429) return 'Too many attempts — wait a minute and try again.';
-		return body.error ?? `Request failed (HTTP ${status}).`;
+		if (status === 400) return body.error ?? c.checkForm;
+		if (status === 401) return c.unknownAccount;
+		if (status === 404) return c.passkeyGone;
+		if (status === 409) return c.passkeyTaken;
+		if (status === 410) return c.expired;
+		if (status === 422) return c.verifyFailed;
+		if (status === 429) return c.rateLimited;
+		return body.error ?? c.requestFailed(status);
 	}
 
 	/** This tab's session storage, or null where storage is blocked. */
@@ -131,8 +133,8 @@
 			signedInAs(res.body.user_id);
 		} catch (e) {
 			error = e instanceof DOMException && e.name === 'AbortError'
-				? 'Cancelled — no passkey was created.'
-				: 'Passkey ceremony failed — is this browser allowed to create passkeys?';
+				? c.registerCancelled
+				: c.registerFailed;
 		} finally {
 			busy = false;
 		}
@@ -154,8 +156,8 @@
 			signedInAs(res.body.user_id);
 		} catch (e) {
 			error = e instanceof DOMException && e.name === 'AbortError'
-				? 'Cancelled — not logged in.'
-				: 'Passkey ceremony failed — try again.';
+				? c.loginCancelled
+				: c.loginFailed;
 		} finally {
 			busy = false;
 		}
@@ -322,10 +324,10 @@
 			<ApostilleCertificate highlight={2} />
 		</div>
 		<p class="font-brand text-h2 relative mt-8 max-w-[20ch] font-medium text-balance">
-			Your documents, verified quote by quote.
+			{c.tagline}
 		</p>
 		<ul class="relative mt-6 flex list-none flex-col gap-3 p-0 text-[0.95rem]">
-			{#each ['Muse Spark drafts from official pages', 'Every quote checked byte-exact', 'Staff approve before anything publishes'] as point (point)}
+			{#each c.points as point (point)}
 				<li class="flex items-center gap-2">
 					<CheckIcon class="size-5 flex-none" aria-hidden="true" />
 					<span>{point}</span>
@@ -339,16 +341,16 @@
 			{#if !webauthnOk}
 				<Heading level={1}>{t.loginLabel}</Heading>
 				<p class="rounded-md border border-line bg-error-bg px-4 py-3" role="alert">
-					This browser cannot do passkeys. Use a current Safari, Chrome, Edge, or Firefox.
+					{c.noPasskeys}
 				</p>
 			{:else if me && leaving}
 				<Heading level={1}>{t.loginLabel}</Heading>
-				<p class="rounded-md border border-line px-4 py-3" role="status">Signed in. Taking you back…</p>
+				<p class="rounded-md border border-line px-4 py-3" role="status">{c.signedInBack}</p>
 			{:else if me}
 				<Heading level={1}>{t.loginLabel}</Heading>
 				<p class="rounded-md border border-line px-4 py-3" role="status">
-					Logged in. <a href={resolve('/(customer)/orders')}>Continue to {t.orderLabel}s</a>
-					· <a href={resolve('/(customer)/security')}>Manage sign-in methods</a>
+					{c.loggedIn} <a href={resolve('/(customer)/orders')}>{c.continueToOrders}</a>
+					· <a href={resolve('/(customer)/security')}>{c.manageSignIn}</a>
 					· <button
 						type="button"
 						class="min-h-0 cursor-pointer border-0 bg-transparent p-0 font-normal text-accent-strong underline"
@@ -356,9 +358,9 @@
 					>
 				</p>
 			{:else}
-				<Heading level={1}>{tab === 'signin' ? t.loginLabel : 'Create account'}</Heading>
-				<div class="mt-4 flex rounded-md border border-line bg-surface p-1" role="tablist" aria-label="Sign in or create account">
-					{#each [{ v: 'signin', label: t.loginLabel }, { v: 'create', label: 'Create account' }] as opt (opt.v)}
+				<Heading level={1}>{tab === 'signin' ? t.loginLabel : c.createAccount}</Heading>
+				<div class="mt-4 flex rounded-md border border-line bg-surface p-1" role="tablist" aria-label={c.tabsLabel}>
+					{#each [{ v: 'signin', label: t.loginLabel }, { v: 'create', label: c.createAccount }] as opt (opt.v)}
 						<button
 							type="button"
 							role="tab"
@@ -374,12 +376,12 @@
 				</div>
 
 				{#if magicBusy}
-					<p class="rounded-md border border-line px-4 py-3" role="status">Signing you in…</p>
+					<p class="rounded-md border border-line px-4 py-3" role="status">{c.signingIn}</p>
 				{/if}
 
 				{#if tab === 'signin'}
 					<form class="mt-4 flex flex-col gap-2" onsubmit={login}>
-						<label class="font-bold" for="account">User ID or email</label>
+						<label class="font-bold" for="account">{c.account}</label>
 						<input
 							class="field"
 							id="account"
@@ -393,19 +395,19 @@
 						<button
 							class="mt-2 min-h-12 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 							type="submit"
-							disabled={busy}>Sign in with passkey</button
+							disabled={busy}>{c.passkeySignIn}</button
 						>
 					</form>
 
 					<div class="my-4 flex items-center gap-3 text-sm text-ink-muted" aria-hidden="true">
 						<span class="h-px flex-1 bg-line"></span>
-						<span>or</span>
+						<span>{c.or}</span>
 						<span class="h-px flex-1 bg-line"></span>
 					</div>
 
 					{#if providers === null}
-						<div role="status" aria-label="Checking sign-in options">
-							<span class="sr-only">Checking sign-in options</span>
+						<div role="status" aria-label={c.checkingOptions}>
+							<span class="sr-only">{c.checkingOptions}</span>
 							<Skeleton class="h-11 w-full" />
 						</div>
 					{:else}
@@ -420,7 +422,7 @@
 								{#if logo}
 									<img src={logo} alt="" width="18" height="18" class="size-[18px] flex-none" />
 								{/if}
-								Continue with {OAUTH_LABELS[provider] ?? provider}
+								{c.continueWith(OAUTH_LABELS[provider] ?? provider)}
 							</button>
 						{/each}
 					{/if}
@@ -431,11 +433,11 @@
 						onclick={() => (magicOpen = !magicOpen)}
 						class="mt-2 inline-flex min-h-11 cursor-pointer items-center font-medium text-accent-strong underline decoration-dotted underline-offset-4"
 					>
-						{magicOpen ? 'Hide the email link option' : 'Use an email link instead'}
+						{magicOpen ? c.magicHide : c.magicShow}
 					</button>
 					{#if magicOpen}
 						<form class="mt-2 flex flex-col gap-2" onsubmit={magicRequest}>
-							<label class="font-bold" for="magic-email">Email</label>
+							<label class="font-bold" for="magic-email">{c.email}</label>
 							<input
 								class="field"
 								id="magic-email"
@@ -449,18 +451,18 @@
 							<button
 								class="min-h-11 cursor-pointer rounded-sm border border-line bg-surface px-5 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
 								type="submit"
-								disabled={busy}>Send sign-in link</button
+								disabled={busy}>{c.sendLink}</button
 							>
 						</form>
 						{#if magicSent}
 							<p class="rounded-md border border-line px-4 py-3" role="status">
-								Check your inbox — if that address has an account, a sign-in link is on its way.
+								{c.magicSent}
 							</p>
 						{/if}
 					{/if}
 				{:else}
 					<form class="mt-4 flex flex-col gap-2" onsubmit={register}>
-						<label class="font-bold" for="full-name">Full name</label>
+						<label class="font-bold" for="full-name">{c.fullName}</label>
 						<input
 							class="field"
 							id="full-name"
@@ -471,7 +473,7 @@
 							maxlength="128"
 							autocomplete="name"
 						/>
-						<label class="font-bold" for="reg-email">Email</label>
+						<label class="font-bold" for="reg-email">{c.email}</label>
 						<input
 							class="field"
 							id="reg-email"
@@ -483,12 +485,12 @@
 							aria-describedby="reg-email-hint"
 						/>
 						<p class="m-0 text-sm text-ink-muted" id="reg-email-hint">
-							Receipts, order updates and account recovery go here.
+							{c.emailHint}
 						</p>
 						<button
 							class="mt-2 min-h-12 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 							type="submit"
-							disabled={busy}>Register passkey</button
+							disabled={busy}>{c.registerPasskey}</button
 						>
 					</form>
 				{/if}

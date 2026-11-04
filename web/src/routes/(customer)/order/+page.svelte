@@ -43,7 +43,8 @@
 		type Quote
 	} from '../../../lib/customer/orders';
 	import { validateSubmission } from '../../../lib/customer/forms-validate.js';
-	import { STRINGS, resolveLocale, type Locale } from '../../../lib/i18n';
+	import { STRINGS } from '../../../lib/i18n';
+	import { site } from '../../../lib/locale.svelte.js';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import LandmarkIcon from '@lucide/svelte/icons/landmark';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
@@ -75,8 +76,7 @@
 
 	type Authority = { slug: string; name: string; country: string; region?: string };
 
-	let locale = $state<Locale>(resolveLocale());
-	const t = $derived(STRINGS[locale]);
+	const t = $derived(STRINGS[site.locale]);
 
 	let step = $state(0);
 	let slug = $state('');

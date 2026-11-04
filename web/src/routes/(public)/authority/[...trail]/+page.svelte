@@ -28,7 +28,8 @@
 	import type { Page as GuidePage } from '../../../../lib/public-ui/doc/contract.js';
 	import { subscribe } from '../../../../lib/live.svelte.js';
 	import { listAuthorities, publicError, readDossier } from '../../../../lib/public-ui/handbook.js';
-	import { indexTranslations, parseLangParam } from '../../../../lib/public-ui/translate.js';
+	import { PAGE_COPY, indexTranslations, recordsLang } from '../../../../lib/public-ui/translate.js';
+	import { site } from '../../../../lib/locale.svelte.js';
 
 	// The address is a readable path (`usa/washington`, `us/wa`, a county
 	// `usa/new_york/chemung`) or the internal slug. A one-segment address
@@ -67,11 +68,12 @@
 	let facts = $state<any[] | null>(null);
 	let loadError = $state<string | null>(null);
 	let notFound = $state(false);
-	// Machine-translation view (SA-20): `?lang=es|fr` shows stored
-	// guard-passing rows next to the records; anything missing stays in
-	// English. Never a model call from this page.
-	const lang = $derived(parseLangParam(page.url.search));
-	const target = $derived(lang === 'es' || lang === 'fr' ? lang : null);
+	// Machine-translation view (SA-20): in Spanish or French (the site
+	// language, or an older `?lang=es|fr` link) stored guard-passing rows
+	// show next to the records; anything missing stays in English. Never
+	// a model call from this page.
+	const target = $derived(recordsLang(page.url.search, site.locale));
+	const copy = $derived(PAGE_COPY[site.locale]);
 	let translatedById = $state<Record<number, { statement: string; model: string }>>({});
 
 	// `GET /authorities/{slug}/plan` always answers 200: the authority
@@ -244,7 +246,7 @@
 		announce = '';
 		if (changed.labels.length > 0) {
 			await tick();
-			announce = `Updated: ${changed.labels.join(', ')}`;
+			announce = `${copy.updated}: ${changed.labels.join(', ')}`;
 		}
 	}
 
@@ -281,7 +283,7 @@
 	});
 
 	// Machine translations follow the same reload cycle: refetch
-	// whenever the slug or `?lang` changes; failures fall back to
+	// whenever the slug or the records language changes; failures fall back to
 	// English silently (the endpoint 404s unknown slugs the same way).
 	$effect(() => {
 		const current = slug;
@@ -369,24 +371,33 @@
 </svelte:head>
 
 {#if notFound || unknownPath}
-	<Notice variant="warning" heading="Unknown authority “{slug || trail}”.">
+	<Notice variant="warning" heading={copy.unknownHeading(slug || trail)}>
 		<p>
-			This address is not in the handbook index.
-			<a href={resolve('/(public)')}>Back to the authority index</a>.
+			{copy.unknownBody}
+			<a href={resolve('/(public)')}>{copy.backToIndex}</a>.
 		</p>
 	</Notice>
 {:else if loadError || codeFailed}
-	<Notice variant="error" heading="This guide is unavailable.">
-		<p>{loadError ?? 'Could not load this guide — reload the page to try again.'}</p>
+	<Notice variant="error" heading={copy.unavailableHeading}>
+		<p>{loadError ?? copy.unavailableBody}</p>
 	</Notice>
 {:else if !view || !code}
-	<div role="status" aria-label="Loading the guide" class="flex flex-col gap-2 pt-6">
-		<span class="sr-only">Loading the guide</span>
+	<div role="status" aria-label={copy.loading} class="flex flex-col gap-2 pt-6">
+		<span class="sr-only">{copy.loading}</span>
 		<Skeleton class="h-9 w-2/3" />
 		<Skeleton class="h-4 w-1/3" />
 		<Skeleton class="h-24 w-full" />
 	</div>
 {:else}
+	{#if copy.pending}
+		<div class="mb-6 print:hidden">
+			<Notice variant="info" heading={copy.pending.heading}>
+				<p>{copy.pending.body}</p>
+			</Notice>
+		</div>
+	{/if}
+	<!-- The guide's own words are English until its copy is translated. -->
+	<div lang="en">
 	<code.DossierGuide
 		page={view}
 		name={displayName}
@@ -409,4 +420,5 @@
 		{flash}
 		{announce}
 	/>
+	</div>
 {/if}
