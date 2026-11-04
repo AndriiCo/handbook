@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { ROLE_LABEL, type LegRole, type OrderKind } from './orders';
+	import type { LegRole, OrderKind } from './orders';
+	import { site } from '../locale.svelte.js';
+	import { ORDER_COPY } from './order-copy.js';
 
 	// The order's journey, drawn from its own data: which legs the chosen
 	// option has (outbound, return, kit to you) and, once quoted, the
@@ -20,13 +22,14 @@
 		if (kind === 'mail_kit') return ['kit_to_customer', 'outbound', 'return'];
 		return ['outbound', 'return'];
 	});
+	const c = $derived(ORDER_COPY[site.locale]);
 	const has = (r: LegRole) => legs.includes(r);
 	const arcStyle = (r: LegRole, on: string) => 'stroke: ' + (has(r) ? on : 'var(--border)') + ';';
-	const label = (r: LegRole) => (carriers[r] ? `${ROLE_LABEL[r]} · ${carriers[r]}` : ROLE_LABEL[r]);
+	const label = (r: LegRole) => (carriers[r] ? `${c.roles[r]} · ${carriers[r]}` : c.roles[r]);
 	const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 	// "Country — Office" names split onto two lines under the node.
 	const nameLines = $derived.by(() => {
-		if (!authority) return ['Choose a destination'];
+		if (!authority) return [c.chooseDestination];
 		const parts = authority.split(/\s+[—–-]\s+/);
 		return parts.length > 1
 			? [clip(parts[0], 30), clip(parts.slice(1).join(' — '), 30)]
@@ -35,9 +38,9 @@
 	const summary = $derived(
 		authority
 			? legs.length
-				? `Journey: ${legs.map((l) => label(l)).join(', ')}`
-				: `Journey between you and ${authority}`
-			: 'Journey: choose a destination'
+				? c.journeyLegs(legs.map((l) => label(l)).join(', '))
+				: c.journeyBetween(authority)
+			: c.journeyChoose
 	);
 </script>
 
@@ -51,7 +54,7 @@
 			stroke-width="2"
 			stroke-linejoin="round"
 		/>
-		<text y="50" text-anchor="middle" font-size="12" style="fill: var(--text-muted); font-family: var(--font-sans);">You</text>
+		<text y="50" text-anchor="middle" font-size="12" style="fill: var(--text-muted); font-family: var(--font-sans);">{c.you}</text>
 	</g>
 	<!-- Authority -->
 	<g transform="translate(390,92)">

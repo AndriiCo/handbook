@@ -16,21 +16,23 @@
 	import LivePill from '../../../../lib/customer/LivePill.svelte';
 	import { coalesce, liveTopics } from '../../../../lib/customer/live-topics.svelte';
 	import {
-		KIND_LABEL,
-		ROLE_LABEL,
 		carrierName,
 		fmtDate,
 		fmtDateTime,
 		formFillPdf,
 		getJson,
+		kindLabel,
 		loginHref,
 		money,
 		postJson,
+		roleLabel,
 		safeHref,
 		serviceName,
 		type Leg,
 		type Order
 	} from '../../../../lib/customer/orders';
+	import { ORDERS_COPY } from '../../../../lib/customer/orders-copy.js';
+	import { site } from '../../../../lib/locale.svelte.js';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import FileDownIcon from '@lucide/svelte/icons/file-down';
@@ -45,6 +47,8 @@
 	// billing topic and each leg's shipment topic; events are ids only,
 	// so every one triggers a re-read (bursts coalesce). No polling.
 	const id = $derived(page.params.id ?? '');
+	const c = $derived(ORDERS_COPY[site.locale]);
+	const role = (r: string) => roleLabel(r, site.locale);
 
 	let order = $state<Order | null>(null);
 	let view = $state<'loading' | 'ready' | 'login' | 'missing' | 'error'>('loading');
@@ -106,7 +110,7 @@
 				const r = await postJson<Order>(`/p2/orders/${encodeURIComponent(order.id)}/confirm`, {});
 				if (r.ok && typeof r.body?.id === 'string') {
 					apply(r.body, false);
-					toast.success('Payment confirmed. We will post updates here as they happen.');
+					toast.success(c.paymentConfirmed);
 				}
 				const u = new URL(window.location.href);
 				u.searchParams.delete('checkout');
@@ -130,61 +134,61 @@
 	async function copy(text: string) {
 		try {
 			await navigator.clipboard.writeText(text);
-			toast.success('Tracking number copied.');
+			toast.success(c.trackingCopied);
 		} catch {
-			toast.error('Copy is blocked in this browser; select the number instead.');
+			toast.error(c.copyBlocked);
 		}
 	}
 </script>
 
 <svelte:head>
-	<title>{order ? `${KIND_LABEL[order.kind] ?? 'Order'} ${order.id}` : 'Order'} — Apostille Handbook</title>
+	<title>{order ? `${kindLabel(order.kind, site.locale)} ${order.id}` : c.order} — Apostille Handbook</title>
 </svelte:head>
 
-<nav aria-label="Breadcrumb" class="mb-4 text-sm">
+<nav aria-label={c.breadcrumb} class="mb-4 text-sm">
 	<a class="inline-flex min-h-11 items-center gap-1" href={resolve('/(customer)/orders')}>
-		<ChevronLeftIcon class="size-4" aria-hidden="true" /> All orders
+		<ChevronLeftIcon class="size-4" aria-hidden="true" /> {c.allOrders}
 	</a>
 </nav>
 
 {#if view === 'loading'}
-	<Heading level={1} eyebrow="Order">Your order</Heading>
-	<div role="status" aria-label="Loading the order" class="mt-6 grid gap-3">
-		<span class="sr-only">Loading the order</span>
+	<Heading level={1} eyebrow={c.order}>{c.yourOrder}</Heading>
+	<div role="status" aria-label={c.loadingOrder} class="mt-6 grid gap-3">
+		<span class="sr-only">{c.loadingOrder}</span>
 		<Skeleton class="h-6 w-1/2" />
 		<Skeleton class="h-16 w-full rounded-lg" />
 		<Skeleton class="h-40 w-full rounded-lg" />
 	</div>
 {:else if view === 'login'}
-	<Heading level={1} eyebrow="Order">Your order</Heading>
+	<Heading level={1} eyebrow={c.order}>{c.yourOrder}</Heading>
 	<div class="mt-6">
-		<Notice variant="info" heading="Sign in to see this order.">
+		<Notice variant="info" heading={c.signInOrder}>
 			<p>
-				Orders live in your account.
-				<a class="underline underline-offset-4" href={loginHref(resolve('/(customer)/orders/[id]', { id }))}>Sign in</a> to continue.
+				{c.orderInAccount}
+				<a class="underline underline-offset-4" href={loginHref(resolve('/(customer)/orders/[id]', { id }))}>{c.signIn}</a> {c.toContinue}
 			</p>
 		</Notice>
 	</div>
 {:else if view === 'missing' || view === 'error' || !order}
-	<Heading level={1} eyebrow="Order">Order not found</Heading>
+	<Heading level={1} eyebrow={c.order}>{c.notFound}</Heading>
 	<div class="mt-6">
-		<Notice variant={view === 'error' ? 'error' : 'info'} heading={view === 'error' ? 'This order is unavailable right now.' : 'No order with this number in your account.'}>
-			<p><a class="underline underline-offset-4" href={resolve('/(customer)/orders')}>Back to your orders</a>.</p>
+		<Notice variant={view === 'error' ? 'error' : 'info'} heading={view === 'error' ? c.orderUnavailable : c.noSuchOrder}>
+			<p><a class="underline underline-offset-4" href={resolve('/(customer)/orders')}>{c.backToOrders}</a>.</p>
 		</Notice>
 	</div>
 {:else}
 	<div class="flex flex-col gap-3">
-		<Heading level={1} eyebrow="Order">{KIND_LABEL[order.kind] ?? order.kind}</Heading>
+		<Heading level={1} eyebrow={c.order}>{kindLabel(order.kind, site.locale)}</Heading>
 		<p class="m-0 text-body-lg text-ink-muted">
-			For
+			{c.for}
 			<a class="underline underline-offset-4" href={resolve('/(public)/authority/[...trail]', { trail: order.authority.slug })}>{order.authority.name}</a>
-			· placed {fmtDate(order.created_at)} · <span class="font-mono text-sm">{order.id}</span>
+			· {c.placed(fmtDate(order.created_at, site.locale))} · <span class="font-mono text-sm">{order.id}</span>
 		</p>
 		<div class="flex flex-wrap items-center gap-2 text-sm">
 			<StatusBadge status={order.status} />
 			{#if order.mode === 'test'}
 				<span class="inline-flex h-7 items-center rounded-full border border-changed px-3 font-medium text-changed">
-					Test mode
+					{c.testMode}
 				</span>
 			{/if}
 			<LivePill live={bus.live} lastAt={bus.lastAt} />
@@ -195,11 +199,11 @@
 		<StatusTrack kind={order.kind} status={order.status} />
 		{#if order.status === 'needs_staff'}
 			<p class="mt-4 mb-0 rounded-md bg-changed-bg px-3 py-2 text-sm text-ink">
-				Our team is checking this order by hand. Nothing is needed from you; updates appear here.
+				{c.needsStaff}
 			</p>
 		{:else if order.status === 'refunded'}
 			<p class="mt-4 mb-0 rounded-md bg-surface px-3 py-2 text-sm text-ink">
-				This order was refunded to your original payment method.
+				{c.refunded}
 			</p>
 		{/if}
 		{#if order.actions.length > 0}
@@ -217,10 +221,10 @@
 	<div class="mt-8 grid gap-8 lg:grid-cols-12">
 		<div class="flex min-w-0 flex-col gap-8 lg:col-span-7">
 			<div id="shipments" class="scroll-mt-20">
-				<Heading level={2}>Shipments</Heading>
+				<Heading level={2}>{c.shipments}</Heading>
 				{#if legs.length === 0}
 					<p class="mt-3 mb-0 rounded-lg border border-dashed border-line bg-surface p-4 text-sm text-ink-muted">
-						Labels and tracking appear here as soon as they are bought.
+						{c.noLegs}
 					</p>
 				{:else}
 					<ul class="m-0 mt-3 flex list-none flex-col gap-3 p-0">
@@ -231,7 +235,7 @@
 								<div class="flex flex-wrap items-center justify-between gap-2">
 									<span class="flex items-center gap-2 font-semibold text-ink">
 										<TruckIcon class="size-4 text-accent-strong" aria-hidden="true" />
-										{ROLE_LABEL[leg.role] ?? leg.role}
+										{role(leg.role)}
 									</span>
 									<StatusBadge status={leg.status} />
 								</div>
@@ -243,7 +247,7 @@
 											variant="ghost"
 											size="icon"
 											class="size-11"
-											aria-label={`Copy tracking number for ${ROLE_LABEL[leg.role] ?? leg.role}`}
+											aria-label={c.copyTracking(role(leg.role))}
 											onclick={() => copy(leg.tracking_number ?? '')}
 										>
 											<CopyIcon aria-hidden="true" />
@@ -254,12 +258,12 @@
 									<div class="mt-2 flex flex-wrap gap-2">
 										{#if track}
 											<Button variant="outline" class="h-11 px-4" href={track} target="_blank" rel="noopener noreferrer">
-												Track with {carrierName(leg.carrier)} <ExternalLinkIcon aria-hidden="true" />
+												{c.trackWith(carrierName(leg.carrier))} <ExternalLinkIcon aria-hidden="true" />
 											</Button>
 										{/if}
 										{#if label}
 											<Button variant="outline" class="h-11 px-4" href={label} download>
-												<FileDownIcon aria-hidden="true" /> Label PDF
+												<FileDownIcon aria-hidden="true" /> {c.labelPdf}
 											</Button>
 										{/if}
 									</div>
@@ -271,11 +275,11 @@
 			</div>
 
 			<div>
-				<Heading level={2}>Timeline</Heading>
+				<Heading level={2}>{c.timeline}</Heading>
 				{#if events.length === 0}
-					<p class="mt-3 mb-0 text-sm text-ink-muted">Updates appear here as they happen.</p>
+					<p class="mt-3 mb-0 text-sm text-ink-muted">{c.noEvents}</p>
 				{:else}
-					<ol class="relative m-0 mt-4 flex list-none flex-col gap-0 p-0" aria-label="Order timeline, newest first">
+					<ol class="relative m-0 mt-4 flex list-none flex-col gap-0 p-0" aria-label={c.timelineLabel}>
 						{#each events as e, i (eventKey(e))}
 							<li
 								class="relative flex gap-4 pb-5 last:pb-0"
@@ -294,7 +298,7 @@
 								<div class="flex min-w-0 flex-col">
 									<span class={`text-ink ${i === 0 ? 'font-semibold' : ''}`}>{e.text}</span>
 									<span class="text-sm text-ink-muted">
-										{fmtDateTime(e.at)}{#if e.leg} · {ROLE_LABEL[e.leg] ?? e.leg}{/if}
+										{fmtDateTime(e.at, site.locale)}{#if e.leg} · {role(e.leg)}{/if}
 									</span>
 								</div>
 							</li>
@@ -307,29 +311,29 @@
 		<div class="flex min-w-0 flex-col gap-4 lg:col-span-5">
 			<section class="rounded-xl border border-line bg-bg p-5 shadow-sm" aria-labelledby="receipt-h">
 				<h2 id="receipt-h" class="m-0 flex items-center gap-2 text-h3 font-semibold">
-					<ReceiptIcon class="size-5 text-accent-strong" aria-hidden="true" /> Receipt
+					<ReceiptIcon class="size-5 text-accent-strong" aria-hidden="true" /> {c.receipt}
 				</h2>
 				{#if order.amount && order.amount.lines.length > 0}
 					<ul class="m-0 mt-3 list-none p-0 text-sm">
 						{#each order.amount.lines as line, i (`${i}-${line.label}`)}
 							<li class="flex items-baseline justify-between gap-4 border-b border-line py-2">
 								<span class="text-ink">{line.label}</span>
-								<span class="font-mono text-ink">{money(line.cents, order.amount.currency)}</span>
+								<span class="font-mono text-ink">{money(line.cents, order.amount.currency, {}, site.locale)}</span>
 							</li>
 						{/each}
 					</ul>
 					<p class="m-0 mt-3 flex items-baseline justify-between gap-4">
-						<span class="font-semibold">Total</span>
-						<span class="font-mono text-h3 font-semibold">{money(order.amount.total_cents, order.amount.currency)}</span>
+						<span class="font-semibold">{c.total}</span>
+						<span class="font-mono text-h3 font-semibold">{money(order.amount.total_cents, order.amount.currency, {}, site.locale)}</span>
 					</p>
 				{:else}
-					<p class="mt-3 mb-0 text-sm text-ink-muted">Nothing to pay for this order.</p>
+					<p class="mt-3 mb-0 text-sm text-ink-muted">{c.nothingToPay}</p>
 				{/if}
 				{#if order.receipt}
 					<p class="mt-3 mb-0 text-sm text-ink-muted">
-						Paid {fmtDateTime(order.receipt.paid_at)}{#if order.receipt.demo}{' '}(DEMO — no card charged){:else if order.mode === 'test'}{' '}(test mode){/if}.
+						{c.paidAt(fmtDateTime(order.receipt.paid_at, site.locale))}{#if order.receipt.demo}{' '}{c.demoNote}{:else if order.mode === 'test'}{' '}{c.testNote}{/if}.
 						{#if safeHref(order.receipt.receipt_url)}
-							<a class="underline underline-offset-4" href={safeHref(order.receipt.receipt_url)} target="_blank" rel="noopener noreferrer">View receipt</a>
+							<a class="underline underline-offset-4" href={safeHref(order.receipt.receipt_url)} target="_blank" rel="noopener noreferrer">{c.viewReceipt}</a>
 						{/if}
 					</p>
 				{/if}
@@ -338,11 +342,11 @@
 			{#if order.form_fill_id}
 				<section class="rounded-xl border border-line bg-bg p-5 shadow-sm" aria-labelledby="form-h">
 					<h2 id="form-h" class="m-0 flex items-center gap-2 text-h3 font-semibold">
-						<FileTextIcon class="size-5 text-accent-strong" aria-hidden="true" /> Your form
+						<FileTextIcon class="size-5 text-accent-strong" aria-hidden="true" /> {c.yourForm}
 					</h2>
-					<p class="mt-2 mb-3 text-sm text-ink-muted">Filled from your answers, ready to print and sign.</p>
+					<p class="mt-2 mb-3 text-sm text-ink-muted">{c.formReady}</p>
 					<Button variant="outline" class="h-11 px-4" href={formFillPdf(order.form_fill_id)} download>
-						<FileDownIcon aria-hidden="true" /> Filled form PDF
+						<FileDownIcon aria-hidden="true" /> {c.formPdf}
 					</Button>
 				</section>
 			{/if}
@@ -350,7 +354,7 @@
 			{#if order.return_to}
 				<section class="rounded-xl border border-line bg-bg p-5 shadow-sm" aria-labelledby="return-h">
 					<h2 id="return-h" class="m-0 flex items-center gap-2 text-h3 font-semibold">
-						<MapPinIcon class="size-5 text-accent-strong" aria-hidden="true" /> Return address
+						<MapPinIcon class="size-5 text-accent-strong" aria-hidden="true" /> {c.returnAddress}
 					</h2>
 					<address class="mt-2 text-sm text-ink not-italic">
 						{order.return_to.name}<br />

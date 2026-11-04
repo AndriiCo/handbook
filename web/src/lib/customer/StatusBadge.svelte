@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { site } from '../locale.svelte.js';
 	import { STATUS_BADGE, statusLabel, statusTone } from './orders';
 
 	let { status }: { status: string } = $props();
@@ -10,5 +11,5 @@
 	data-status={status}
 >
 	<span aria-hidden="true" class="size-1.5 rounded-full bg-current"></span>
-	{statusLabel(status)}
+	{statusLabel(status, site.locale)}
 </span>

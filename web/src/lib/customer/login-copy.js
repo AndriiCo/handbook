@@ -1,8 +1,8 @@
 // The /login page's words in the three site languages (lib/i18n.ts
 // LOCALES). The page picks one set by the shared site locale
 // (lib/locale.svelte.ts), so the masthead switcher re-renders the form
-// in place. Server-sent `error` text and the OAuth / email-link helper
-// copy (oauth.js, magic.js) stay English for now.
+// in place. OAuth and email-link failures come from oauth.js and
+// magic.js in the same language; server-sent `error` text stays as sent.
 
 /**
  * @typedef {{

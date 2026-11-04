@@ -19,6 +19,10 @@
 		sourceHost,
 		type LocationView
 	} from '../../../../lib/public-ui/location.js';
+	import { PLACE_COPY } from '../../../../lib/public-ui/place-copy.js';
+	import { site } from '../../../../lib/locale.svelte.js';
+
+	const c = $derived(PLACE_COPY[site.locale]);
 
 	// A place page (P4-1): "What is your document?" answered with the
 	// office that apostilles it here and any prerequisite, then every
@@ -36,22 +40,26 @@
 
 	let view = $state<LocationView | null>(null);
 	let notFound = $state(false);
-	let loadError = $state<string | null>(null);
+	// The failed status, not its sentence, so a language switch re-words it.
+	let loadStatus = $state<number | null>(null);
+	const loadError = $derived(
+		loadStatus === null ? null : publicError(loadStatus, 'index', site.locale)
+	);
 
 	$effect(() => {
 		const current = path;
 		view = null;
 		notFound = false;
-		loadError = null;
+		loadStatus = null;
 		readLocation(current, { get })
 			.then((res) => {
 				if (current !== path) return;
 				if (res.status === 404) notFound = true;
-				else if (!res.ok) loadError = publicError(res.status, 'index');
+				else if (!res.ok) loadStatus = res.status;
 				else view = parseLocation(res.body);
 			})
 			.catch(() => {
-				if (current === path) loadError = publicError(500, 'index');
+				if (current === path) loadStatus = 500;
 			});
 	});
 
@@ -71,7 +79,14 @@
 	);
 	const picked = $derived(page.url.searchParams.get('doc') ?? '');
 	const answer = $derived(view && picked ? answerFor(view, picked) : null);
-	const pickedLabel = $derived(DOC_CLASSES.find((d) => d.id === picked)?.label ?? '');
+	// Chip labels in the site language; an id the copy lacks keeps the
+	// English label location.js gives it.
+	const docLabel = (d: { id: string; label: string }) => c.docClasses[d.id] ?? d.label;
+	const pickedLabel = $derived.by(() => {
+		const doc = DOC_CLASSES.find((d) => d.id === picked);
+		return doc ? docLabel(doc) : '';
+	});
+	const placeKind = $derived(view ? placeWord(view) : 'state');
 	function pick(id: string) {
 		const q = new URLSearchParams(page.url.search);
 		if (id === picked) q.delete('doc');
@@ -91,32 +106,32 @@
 </script>
 
 <svelte:head>
-	<title>{view ? `Apostille offices in ${view.location.label}` : 'Apostille offices'} — Apostille Handbook</title>
+	<title>{c.headTitle(view ? view.location.label : null)}</title>
 </svelte:head>
 
 {#if notFound}
-	<Notice variant="warning" heading="No offices are listed for “{path}”.">
+	<Notice variant="warning" heading={c.notFound(path)}>
 		<p>
-			This place is not in the handbook index.
-			<a href={resolve('/(public)')}>Back to the authority index</a>.
+			{c.notInIndex}
+			<a href={resolve('/(public)')}>{c.backToIndex}</a>.
 		</p>
 	</Notice>
 {:else if loadError}
-	<Notice variant="error" heading="This place is unavailable."><p>{loadError}</p></Notice>
+	<Notice variant="error" heading={c.unavailable}><p>{loadError}</p></Notice>
 {:else if !view}
-	<div role="status" aria-label="Loading place" class="flex flex-col gap-2 pt-6">
-		<span class="sr-only">Loading place</span>
+	<div role="status" aria-label={c.loading} class="flex flex-col gap-2 pt-6">
+		<span class="sr-only">{c.loading}</span>
 		<Skeleton class="h-9 w-2/3" />
 		<Skeleton class="h-4 w-1/3" />
 		<Skeleton class="h-24 w-full" />
 	</div>
 {:else}
 	<header class="py-10 xl:py-16" aria-labelledby="place-title">
-		<nav aria-label="Breadcrumb">
+		<nav aria-label={c.breadcrumb}>
 			<ol class="m-0 flex list-none flex-wrap gap-1 p-0 text-sm text-ink-muted">
 				<li class="m-0 p-0">
 					<a class="text-ink-muted no-underline hover:text-ink hover:underline" href={resolve('/(public)')}>
-						Home
+						{c.home}
 					</a>
 				</li>
 				{#each view.crumbs.slice(0, -1) as crumb (crumb.path)}
@@ -132,25 +147,24 @@
 			</ol>
 		</nav>
 		<p class="text-eyebrow mt-6 font-semibold tracking-[0.06em] text-ink-muted uppercase">
-			Apostille offices
+			{c.eyebrow}
 		</p>
 		<div class="mt-2 flex items-center gap-3">
 			{#if flag}
-				<Flag code={flag} label={`${view.location.label} flag`} class="size-8" />
+				<Flag code={flag} label={c.flagOf(view.location.label)} class="size-8" />
 			{/if}
 			<Heading level={1}><span id="place-title">{view.location.label}</span></Heading>
 		</div>
 		<p class="mt-3 mb-0 font-mono text-xs text-ink-muted">
-			{total}
-			{total === 1 ? 'office' : 'offices'}{#if view.places.length > 0}
-				· {view.places.length} {placeWord(view)}{view.places.length === 1 ? '' : 's'}{/if}
+			{c.officeCount(total)}{#if view.places.length > 0}
+				· {c.placeCount(view.places.length, placeKind)}{/if}
 		</p>
 	</header>
 
 	{#if docClasses.length > 0}
 		<section aria-labelledby="which-office" class="rounded border border-line bg-surface px-4 py-8 sm:px-6">
-			<h2 id="which-office" class="text-h2 m-0 font-semibold">What is your document?</h2>
-			<div class="mt-4 flex flex-wrap gap-2" role="group" aria-label="Document type">
+			<h2 id="which-office" class="text-h2 m-0 font-semibold">{c.whatDoc}</h2>
+			<div class="mt-4 flex flex-wrap gap-2" role="group" aria-label={c.docType}>
 				{#each docClasses as doc (doc.id)}
 					<button
 						type="button"
@@ -162,39 +176,39 @@
 								: 'border-line bg-bg text-ink hover:border-focus'
 						}`}
 					>
-						{doc.label}
+						{docLabel(doc)}
 					</button>
 				{/each}
 			</div>
 			<div aria-live="polite" class="mt-6">
 				{#if answer?.kind === 'route'}
 					{@const route = answer.route}
-					<article class="rounded border border-line bg-bg p-5" aria-label="Where to apostille it">
+					<article class="rounded border border-line bg-bg p-5" aria-label={c.whereLabel}>
 						<p class="text-eyebrow m-0 font-semibold tracking-wide text-ink-muted uppercase">
 							{pickedLabel}{#if route.inherited}
-								· federal{/if}
+								· {c.federal}{/if}
 						</p>
 						<h3 class="mt-2 mb-0 text-lg font-semibold">
 							<a href={dossierHref(route.office.path)}>{route.office.name}</a>
 						</h3>
 						{#if route.prereq}
-							<p class="mt-2 mb-0 text-sm text-ink">First: {route.prereq}</p>
+							<p class="mt-2 mb-0 text-sm text-ink">{c.first(route.prereq)}</p>
 						{/if}
 						<p class="mt-3 mb-0 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
 							{#if route.verified}
 								<span
 									class="inline-block rounded-xs border border-success bg-success-bg px-2 py-[0.15rem] font-mono font-semibold text-success"
-									data-verified="yes">Verified by staff</span
+									data-verified="yes">{c.verifiedByStaff}</span
 								>
 							{:else}
 								<span
 									class="inline-block rounded-xs border border-line bg-surface-2 px-2 py-[0.15rem] font-mono font-semibold text-ink-muted"
-									data-verified="no">Unverified</span
+									data-verified="no">{c.unverified}</span
 								>
 							{/if}
 							{#if route.source_uri}
 								<span>
-									Source:
+									{c.source}
 									<a href={route.source_uri} target="_blank" rel="noopener noreferrer"
 										>{sourceHost(route.source_uri)}</a
 									>
@@ -203,22 +217,19 @@
 						</p>
 					</article>
 				{:else if answer?.kind === 'by_place'}
-					<p class="m-0 text-sm text-ink">
-						A {pickedLabel.toLowerCase()} is apostilled in the {placeWord(view)} that issued it. Pick
-						the {placeWord(view)} below.
-					</p>
+					<p class="m-0 text-sm text-ink">{c.byPlaceAnswer(pickedLabel, placeKind)}</p>
 				{:else if picked}
-					<p class="m-0 text-sm text-ink-muted">No office here is listed for this document yet.</p>
+					<p class="m-0 text-sm text-ink-muted">{c.noOffice}</p>
 				{/if}
 			</div>
 			<p class="mt-6 mb-0 text-sm">
-				Not sure? <a href={orderHref}>We’ll route it</a> — start an order and staff pick the office.
+				{c.notSure} <a href={orderHref}>{c.routeIt}</a>{c.routeRest}
 			</p>
 		</section>
 	{/if}
 
 	<section aria-labelledby="all-offices" class="py-10">
-		<h2 id="all-offices" class="text-h2 m-0 font-semibold">All offices here</h2>
+		<h2 id="all-offices" class="text-h2 m-0 font-semibold">{c.allOffices}</h2>
 		{#each view.groups as group (group.level)}
 			<section aria-labelledby={`level-${group.level}`} class="mt-6">
 				<h3 id={`level-${group.level}`} class="m-0 text-sm font-semibold tracking-wide text-ink-muted uppercase">
@@ -239,7 +250,7 @@
 									<span class="hidden flex-none text-sm text-ink-muted sm:inline">{office.region}</span>
 								{/if}
 								<span class="flex-none font-mono text-xs text-ink-muted">
-									{factCount(office.fact_count)}
+									{factCount(office.fact_count, site.locale)}
 								</span>
 							</a>
 						</li>
@@ -251,9 +262,9 @@
 
 	{#if view.places.length > 0}
 		<section aria-labelledby="places" class="border-t border-line py-10">
-			<h2 id="places" class="text-h2 m-0 font-semibold">By {placeWord(view)}</h2>
+			<h2 id="places" class="text-h2 m-0 font-semibold">{c.byPlace(placeKind)}</h2>
 			<p class="mt-2 mb-4 max-w-prose text-sm text-ink-muted">
-				Each {placeWord(view)} page shows its own offices next to the federal ones.
+				{c.eachPlace(placeKind)}
 			</p>
 			<ul class="m-0 grid list-none grid-cols-2 gap-x-6 p-0 sm:grid-cols-3 lg:grid-cols-4">
 				{#each view.places as place (place.path)}

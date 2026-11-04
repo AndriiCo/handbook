@@ -3,6 +3,9 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
+	import { FORMS_COPY } from '../../../../lib/customer/forms-copy.js';
+	import { INTL_LOCALE } from '../../../../lib/customer/orders-copy.js';
+	import { site } from '../../../../lib/locale.svelte.js';
 
 	// Submission review screen (P2-U1 steps 5-8): field summary,
 	// replica notice, override flag, PDF download. Subscribes to
@@ -34,13 +37,18 @@
 		label: string;
 	}
 
+	// Page words follow the site language; messages are kept as
+	// functions of the copy so a language switch re-words them too.
+	const c = $derived(FORMS_COPY[site.locale]);
+	type Msg = (copy: typeof c) => string;
+
 	const id = $derived(page.params.id ?? '');
 	let submission = $state<Submission | null>(null);
 	let labels = $state<Record<string, string>>({});
-	let error = $state<string | null>(null);
+	let error = $state<Msg | null>(null);
 	let live = $state<'connecting' | 'live' | 'reconnecting' | 'offline'>('connecting');
 	let correctionNote = $state('');
-	let correctionDone = $state<string | null>(null);
+	let correctionDone = $state<Msg | null>(null);
 	let busy = $state(false);
 	let closeWs: (() => void) | null = null;
 
@@ -50,7 +58,7 @@
 
 	function displayValue(value: unknown): string {
 		if (value === undefined || value === null || value === '') return '—';
-		if (typeof value === 'boolean') return value ? 'yes' : 'no';
+		if (typeof value === 'boolean') return value ? c.yesValue : c.noValue;
 		if (typeof value === 'object') {
 			return Object.entries(value as Record<string, unknown>)
 				.map(([k, v]) => `${k}: ${v}`)
@@ -64,7 +72,7 @@
 		try {
 			const res = await fetch(api(`/p2/submissions/${id}`), { credentials: 'same-origin' });
 			if (res.status === 404) {
-				error = 'Submission not found. It may belong to another account.';
+				error = (k) => k.submissionNotFound;
 				return;
 			}
 			if (!res.ok) throw new Error(String(res.status));
@@ -79,7 +87,7 @@
 				labels = map;
 			}
 		} catch {
-			error = 'Submission service unreachable — is the API server running?';
+			error = (k) => k.submissionUnreachable;
 		}
 	}
 
@@ -99,10 +107,10 @@
 				})
 			});
 			if (!res.ok) throw new Error(String(res.status));
-			correctionDone = 'Thanks — staff will re-check this submission.';
+			correctionDone = (k) => k.submissionThanks;
 			correctionNote = '';
 		} catch {
-			correctionDone = 'Could not send the report. Please try again.';
+			correctionDone = (k) => k.correctionFailed;
 		} finally {
 			busy = false;
 		}
@@ -137,32 +145,32 @@
 </script>
 
 <svelte:head>
-	<title>Submission #{id} — Apostille Handbook</title>
+	<title>{c.submission(id)} — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Submission #{id}</h1>
+<h1>{c.submission(id)}</h1>
 
 {#if error}
-	<Notice variant="error" heading="Cannot load this submission."><p>{error}</p></Notice>
+	<Notice variant="error" heading={c.cannotLoadSubmission}><p>{error(c)}</p></Notice>
 {:else if !submission}
-	<p>Loading…</p>
+	<p>{c.loading}</p>
 {:else}
 	<p class="text-sm text-ink-muted">
 		{submission.code} v{submission.template_version} · {submission.status}
 		{#if submission.submitted_at}
-			· submitted {new Date(submission.submitted_at * 1000).toLocaleString()}
+			· {c.submittedAt(new Date(submission.submitted_at * 1000).toLocaleString(INTL_LOCALE[site.locale]))}
 		{/if}
-		· updates: {live}
+		· {c.updates(c.liveState[live])}
 	</p>
 
 	{#if submission.replica_notice}
-		<Notice variant="info" heading="About your printout.">
+		<Notice variant="info" heading={c.aboutPrintout}>
 			<p>{submission.replica_notice}</p>
 		</Notice>
 	{/if}
 	{#if submission.customer_override}
-		<Notice variant="info" heading="Prefill override on file.">
-			<p>You typed over a prefilled value; staff can see the flag.</p>
+		<Notice variant="info" heading={c.overrideOnFile}>
+			<p>{c.overrideOnFileBody}</p>
 		</Notice>
 	{/if}
 
@@ -184,19 +192,19 @@
 				href={submission.pdf_url}
 				download
 			>
-				Download filled PDF
+				{c.downloadPdf}
 			</a>
 		</p>
 		<p class="text-sm text-ink-muted">sha256: <code class="font-mono break-all">{submission.pdf_sha256}</code></p>
-		<p>Print it, sign in ink on the signature line, and mail it with your own postage.</p>
+		<p>{c.printSign}</p>
 	{:else}
-		<Notice variant="info" heading="No PDF yet.">
-			<p>This submission is still a draft, or the PDF is rendering — this page refreshes itself.</p>
+		<Notice variant="info" heading={c.noPdf}>
+			<p>{c.noPdfBody}</p>
 		</Notice>
 	{/if}
 
-	<h2>Something looks wrong?</h2>
-	<label for="correction">Report it and staff will re-check the prefilled values.</label>
+	<h2>{c.somethingWrong}</h2>
+	<label for="correction">{c.reportPrompt}</label>
 	<textarea
 		class="my-2 block w-full max-w-[36rem] rounded-sm border border-line bg-surface px-[0.6rem] py-2 text-ink"
 		id="correction"
@@ -210,10 +218,10 @@
 		onclick={reportCorrection}
 		disabled={busy}
 	>
-		{busy ? 'Sending…' : 'Send report'}
+		{busy ? c.sending : c.sendReport}
 	</button>
 	{#if correctionDone}
-		<Notice variant="info" heading="Report sent."><p>{correctionDone}</p></Notice>
+		<Notice variant="info" heading={c.reportSent}><p>{correctionDone(c)}</p></Notice>
 	{/if}
 {/if}
 

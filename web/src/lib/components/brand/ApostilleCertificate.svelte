@@ -2,27 +2,31 @@
 	// The 10 numbered fields of the HCCH model apostille certificate as a
 	// clean SVG. `highlight` (1–10) tints the field the current step reads.
 	// Never a real government seal or emblem — plain numbered rows.
+	// Field names follow the model certificate's own wording in each
+	// language (HCCH, Annex to the Convention); the title stays
+	// "Apostille" in all three, as on the certificate itself.
+	import { site } from '../../locale.svelte.js';
+
 	let { highlight = 0 }: { highlight?: number } = $props();
 
-	const fields = [
-		'Country',
-		'Signed by',
-		'Capacity',
-		'Seal of',
-		'At',
-		'Date',
-		'By',
-		'No.',
-		'Seal',
-		'Signature'
-	];
+	const FIELDS = {
+		en: ['Country', 'Signed by', 'Capacity', 'Seal of', 'At', 'Date', 'By', 'No.', 'Seal', 'Signature'],
+		es: ['País', 'Firmado por', 'En calidad de', 'Sello de', 'En', 'El día', 'Por', 'N.º', 'Sello', 'Firma'],
+		fr: ['Pays', 'Signé par', 'En qualité de', 'Sceau de', 'À', 'Le', 'Par', 'N°', 'Sceau', 'Signature']
+	};
+	const LABEL = {
+		en: 'Model apostille certificate with ten numbered fields',
+		es: 'Modelo de certificado de apostilla con diez campos numerados',
+		fr: 'Modèle de certificat d’apostille à dix rubriques numérotées'
+	};
+	const fields = $derived(FIELDS[site.locale]);
 </script>
 
 <svg
 	viewBox="0 0 240 300"
 	class="h-auto w-full"
 	role="img"
-	aria-label="Model apostille certificate with ten numbered fields"
+	aria-label={LABEL[site.locale]}
 	data-graphic="certificate"
 >
 	<rect
@@ -52,7 +56,7 @@
 	>
 		Apostille
 	</text>
-	{#each fields as label, i (label)}
+	{#each fields as label, i (i)}
 		{@const n = i + 1}
 		{@const on = highlight === n}
 		<g opacity={highlight === 0 || on ? 1 : 0.45}>

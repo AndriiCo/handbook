@@ -5,7 +5,10 @@
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import FactChip from './FactChip.svelte';
-	import { money, type DeliveryOption, type Fact } from './orders';
+	import type { DeliveryOption, Fact } from './orders';
+	import { site } from '../locale.svelte.js';
+	import { ORDER_COPY } from './order-copy.js';
+	import { money } from './orders';
 
 	// One delivery option from GET /p2/orders/options. Title, price and
 	// the disabled reason are the API's; a disabled card cites the
@@ -26,12 +29,13 @@
 
 	const ICONS = { label_fedex: PrinterIcon, label_usps: StampIcon, mail_kit: PackageIcon, address_label: TagIcon };
 	const Icon = $derived(ICONS[option.kind] ?? TagIcon);
+	const c = $derived(ORDER_COPY[site.locale]);
 	const price = $derived(
 		option.from_cents === null
 			? null
 			: option.from_cents === 0
-				? 'Free'
-				: `from ${money(option.from_cents, currency, { compact: true })}`
+				? c.free
+				: c.fromPrice(money(option.from_cents, currency, { compact: true }, site.locale))
 	);
 	const id = $derived(`delivery-${option.kind}`);
 </script>
@@ -74,7 +78,7 @@
 			{#if price && option.enabled}
 				<span class="text-sm text-ink-muted">{price}</span>
 			{:else if !option.enabled}
-				<span class="text-sm text-ink-muted">Unavailable for this authority</span>
+				<span class="text-sm text-ink-muted">{c.unavailableHere}</span>
 			{/if}
 		</span>
 		{#if option.enabled}

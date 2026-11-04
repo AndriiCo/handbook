@@ -14,7 +14,6 @@
 		kindLabel,
 		laneOf,
 		LANES,
-		LANE_LABEL,
 		latestCapture,
 		silhouetteFor,
 		verifiedAtOf,
@@ -31,15 +30,35 @@
 		relativeDay
 	} from '../../lib/public-ui/handbook.js';
 	import { placePath } from '../../lib/public-ui/location.js';
+	import { HOME_COPY, shortDate } from '../../lib/public-ui/home-copy.js';
+	import { site } from '../../lib/locale.svelte.js';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	type Authority = AuthorityRow & { name: string; country: string; fact_count: number };
 
+	const c = $derived(HOME_COPY[site.locale]);
+	// The three "How it works" cards: copy per language, certificate
+	// field fixed.
+	const STEP_FIELDS = [1, 9, 10];
+	const steps = $derived(c.steps.map((step, i) => ({ ...step, field: STEP_FIELDS[i] })));
+	// A row's status word: its lane in the site language, else the raw
+	// kind as the API sends it (kindLabel).
+	function kindText(a: Authority): string {
+		return (c.kinds as Record<string, string>)[laneOf(a)] ?? kindLabel(a);
+	}
+	// `groupByCountry` names rows without a country `International`.
+	const countryText = (country: string) =>
+		country === 'International' ? c.international : country;
+
 	let query = $state('');
 	let index = $state<Authority[] | null>(null);
-	let loadError = $state<string | null>(null);
+	// The failed status, not its sentence, so a language switch re-words it.
+	let loadStatus = $state<number | null>(null);
+	const loadError = $derived(
+		loadStatus === null ? null : publicError(loadStatus, 'index', site.locale)
+	);
 	let qualityPct = $state<number | null>(null);
 	let qualityModel = $state<string | null>(null);
 	let qualityRunAt = $state<string | null>(null);
@@ -105,23 +124,19 @@
 		(index ?? []).map((a) => ({ slug: a.slug, label: a.region || a.country || a.name }))
 	);
 
-	function shortDate(iso: string): string {
-		return String(iso ?? '').split('T')[0] || '';
-	}
-
 	$effect(() => {
 		void loadFeaturedFacts(FEATURED);
 		listAuthorities({ get })
 			.then((res) => {
 				if (!res.ok) {
-					loadError = publicError(res.status, 'index');
+					loadStatus = res.status;
 					return;
 				}
 				const rows = res.body?.authorities;
 				index = Array.isArray(rows) ? rows : [];
 			})
 			.catch(() => {
-				loadError = publicError(500, 'index');
+				loadStatus = 500;
 			});
 		get('/quality')
 			.then((res) => {
@@ -148,9 +163,9 @@
 	const others = $derived((index ?? []).filter((a) => !featuredSlugs.has(a.slug)));
 	const FILTERS = $derived.by(() => {
 		const lanes = new Set(others.map((a) => laneOf(a)));
-		const out: { v: Filter; label: string }[] = [{ v: 'all', label: 'All' }];
+		const out: { v: Filter; label: string }[] = [{ v: 'all', label: c.all }];
 		for (const lane of LANES) {
-			if (lanes.has(lane)) out.push({ v: lane, label: LANE_LABEL[lane] });
+			if (lanes.has(lane)) out.push({ v: lane, label: c.lanes[lane] });
 		}
 		return out.length > 2 ? out : out.slice(0, 1);
 	});
@@ -177,11 +192,8 @@
 </script>
 
 <svelte:head>
-	<title>Apostille Handbook — Start with your destination</title>
-	<meta
-		name="description"
-		content="Find apostille and authentication requirements by destination authority."
-	/>
+	<title>{c.headTitle}</title>
+	<meta name="description" content={c.metaDescription} />
 </svelte:head>
 
 <section class="grid items-center gap-10 py-10 xl:grid-cols-2 xl:gap-8 xl:py-16" aria-labelledby="start">
@@ -196,26 +208,26 @@
 					></span>
 					<span class="relative inline-flex size-2 rounded-full bg-verified"></span>
 				</span>
-				Eval: {qualityPct}% of Muse Spark drafts quote the source verbatim{#if qualityRunAt}
-					· {shortDate(qualityRunAt)}{/if}{#if qualityModel}
+				{c.evalLine(qualityPct)}{#if qualityRunAt}
+					· {shortDate(qualityRunAt, site.locale)}{/if}{#if qualityModel}
 					<span class="font-mono text-xs text-ink-muted">{qualityModel}</span>
 				{/if}
 			</p>
 		{/if}
 		<Heading level={1}>
-			<span class="[font-feature-settings:salt]">Apostille rules,</span>
-			<em class="font-brand">quoted</em> from the source.
+			<span class="[font-feature-settings:salt]">{c.heroA}</span>
+			<em class="font-brand">{c.heroEm}</em>
+			{c.heroB}
 		</Heading>
 		<p class="text-body-lg mt-4 text-ink-muted">
-			Every requirement comes from the office's own pages. On each guide, citations are off by
-			default: turn them on with Alt+C or the Citations button to see the quote, source and date.
+			{c.intro}
 		</p>
 		<div class="relative mt-6">
 			<div
 				class="flex h-14 items-center gap-2 rounded-lg border border-line bg-surface pr-2 pl-4 shadow-lg"
 			>
 				<SearchIcon class="size-5 flex-none text-ink-muted" aria-hidden="true" />
-				<label class="sr-only" for="hero-q">Search the handbook</label>
+				<label class="sr-only" for="hero-q">{c.searchLabel}</label>
 				<input
 					id="hero-q"
 					name="q"
@@ -231,7 +243,7 @@
 					onkeydown={(e) => {
 						if (e.key === 'Escape') comboOpen = false;
 					}}
-					placeholder="Country, state, or authority…"
+					placeholder={c.searchPlaceholder}
 					autocomplete="off"
 					class="h-full min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-muted"
 				/>
@@ -246,7 +258,7 @@
 				<ul
 					id="hero-results"
 					role="listbox"
-					aria-label="Matching authorities"
+					aria-label={c.matchingLabel}
 					class="absolute inset-x-0 top-full z-30 mt-2 list-none overflow-hidden rounded-xl border border-line bg-bg p-1 shadow-xl"
 				>
 					{#each results as a (a.slug)}
@@ -259,17 +271,17 @@
 							>
 								<span class="truncate font-medium text-ink">{a.name}</span>
 								<span class="ml-auto flex-none font-mono text-xs text-ink-muted">
-									{factCount(a.fact_count ?? 0)}
+									{factCount(a.fact_count ?? 0, site.locale)}
 								</span>
 							</button>
 						</li>
 					{:else}
-						<li class="px-3 py-2 text-sm text-ink-muted">No authority matches “{query}”.</li>
+						<li class="px-3 py-2 text-sm text-ink-muted">{c.noMatch(query)}</li>
 					{/each}
 				</ul>
 			{/if}
 		</div>
-		<ul class="mt-4 flex list-none flex-wrap gap-2 p-0" aria-label="Featured authorities">
+		<ul class="mt-4 flex list-none flex-wrap gap-2 p-0" aria-label={c.featuredLabel}>
 			{#each featured as authority, i (authority.slug)}
 				<li class="hero-pin m-0 p-0" style={`animation-delay: ${i * 40}ms`}>
 					<a
@@ -278,10 +290,10 @@
 					>
 						{#if index === null}
 							<Skeleton class="h-4 w-20" />
-							<span class="sr-only">Featured dossier {i + 1}</span>
+							<span class="sr-only">{c.featuredDossier(i + 1)}</span>
 						{:else}
 							{#if authority.flag}
-								<Flag code={authority.flag} label={`${authority.country} flag`} />
+								<Flag code={authority.flag} label={c.flagOf(authority.country)} />
 							{/if}
 							{authority.label}
 						{/if}
@@ -300,9 +312,9 @@
 </section>
 
 <section class="py-10 xl:py-16" aria-labelledby="how">
-	<Heading level={2} eyebrow="How it works">Three checks before anything is published</Heading>
+	<Heading level={2} eyebrow={c.howEyebrow}>{c.howTitle}</Heading>
 	<ul class="mt-8 grid list-none gap-4 p-0 md:grid-cols-3">
-		{#each [{ n: 1, model: 'Muse Spark', title: 'Spark drafts from official pages', text: 'Every fact starts as a quote copied from a watched government page — never from memory.', field: 1 }, { n: 9, model: 'Quote check', title: 'The quote is checked byte-exact', text: 'A refused or missing quote goes back to the model once; unverifiable drafts never publish.', field: 9 }, { n: 10, model: 'Human review', title: 'Staff approve, the dossier updates live', text: 'Only accepted facts reach the public dossier, seconds after approval.', field: 10 }] as step (step.title)}
+		{#each steps as step (step.field)}
 			<li
 				class="flex flex-col gap-3 rounded-xl border border-line bg-bg p-4 transition-shadow duration-200 hover:shadow-md"
 			>
@@ -322,9 +334,9 @@
 </section>
 
 <section class="py-10 xl:py-16" aria-labelledby="featured">
-	<Heading level={2} eyebrow="Featured">Start with a destination</Heading>
+	<Heading level={2} eyebrow={c.featuredEyebrow}>{c.featuredTitle}</Heading>
 	{#if loadError}
-		<Notice variant="error" heading="Featured destinations are unavailable."><p>{loadError}</p></Notice>
+		<Notice variant="error" heading={c.featuredUnavailable}><p>{loadError}</p></Notice>
 	{:else}
 		<div class="mt-8 grid gap-4 md:grid-cols-2">
 			{#each featured as authority, i (authority.slug)}
@@ -345,21 +357,25 @@
 					{/if}
 					<span class="relative flex min-h-5 items-center gap-2">
 						{#if authority.flag}
-							<Flag code={authority.flag} label={`${authority.country} flag`} class={i === 0 ? 'size-5 vt-flag' : 'size-5'} />
+							<Flag code={authority.flag} label={c.flagOf(authority.country)} class={i === 0 ? 'size-5 vt-flag' : 'size-5'} />
 						{/if}
 						{#if verifiedAt[authority.slug]}
 							<span
 								class="ml-auto font-mono text-xs text-ink-muted"
-								title={`Last verified ${verifiedAt[authority.slug]}`}
+								title={c.lastVerified(
+									site.locale === 'en'
+										? verifiedAt[authority.slug]
+										: shortDate(verifiedAt[authority.slug], site.locale)
+								)}
 							>
-								verified {relativeDay(verifiedAt[authority.slug])}
+								{c.verifiedAgo(relativeDay(verifiedAt[authority.slug], undefined, site.locale))}
 							</span>
 						{/if}
 					</span>
 					{#if index === null}
 						<Skeleton class="mt-3 h-7 w-3/4" />
 						<Skeleton class="mt-2 h-4 w-16" />
-						<span class="sr-only">Featured dossier {i + 1}</span>
+						<span class="sr-only">{c.featuredDossier(i + 1)}</span>
 					{:else}
 						{#if i === 0}
 							<span class="font-brand text-h2 vt-title mt-3 block font-medium text-balance text-ink">
@@ -369,13 +385,13 @@
 							<span class="text-h3 mt-3 block font-semibold text-ink">{authority.name}</span>
 						{/if}
 						<span class="mt-2 block font-mono text-xs text-ink-muted">
-							{factCount(authority.fact_count ?? 0)}
+							{factCount(authority.fact_count ?? 0, site.locale)}
 						</span>
 					{/if}
 					<span
 						class="mt-4 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-accent-strong"
 					>
-						Open the dossier
+						{c.openDossier}
 						<ArrowRightIcon class="size-4" aria-hidden="true" />
 					</span>
 				</a>
@@ -385,9 +401,9 @@
 </section>
 
 <section class="py-10 xl:py-16" aria-labelledby="index">
-	<Heading level={2} eyebrow="Index">All authorities</Heading>
+	<Heading level={2} eyebrow={c.indexEyebrow}>{c.indexTitle}</Heading>
 	{#if FILTERS.length > 1}
-		<div class="mt-6 flex flex-wrap gap-2" role="group" aria-label="Filter authorities">
+		<div class="mt-6 flex flex-wrap gap-2" role="group" aria-label={c.filterLabel}>
 			{#each FILTERS as opt (opt.v)}
 				<button
 					type="button"
@@ -401,10 +417,10 @@
 		</div>
 	{/if}
 	{#if loadError}
-		<Notice variant="error" heading="Search is unavailable."><p>{loadError}</p></Notice>
+		<Notice variant="error" heading={c.searchUnavailable}><p>{loadError}</p></Notice>
 	{:else if index === null}
-		<div role="status" aria-label="Loading the authority index" class="mt-4 flex flex-col gap-2">
-			<span class="sr-only">Loading the authority index</span>
+		<div role="status" aria-label={c.loadingIndex} class="mt-4 flex flex-col gap-2">
+			<span class="sr-only">{c.loadingIndex}</span>
 			<Skeleton class="h-11 w-full" />
 			<Skeleton class="h-11 w-full" />
 			<Skeleton class="h-11 w-2/3" />
@@ -412,22 +428,14 @@
 	{:else if tableRows.length === 0}
 		<div class="mt-4 rounded-xl border border-line p-6">
 			<p class="m-0 font-medium text-ink">
-				{#if tableFilter === 'all'}
-					No other authorities yet.
-				{:else}
-					No authorities in this group yet.
-				{/if}
+				{tableFilter === 'all' ? c.noOthers : c.noInGroup}
 			</p>
 			<p class="mt-1 mb-0 text-sm text-ink-muted">
-				{#if tableFilter === 'all'}
-					New destinations appear here as staff verify them.
-				{:else}
-					Try the “All” filter to see every destination.
-				{/if}
+				{tableFilter === 'all' ? c.newAppear : c.tryAll}
 			</p>
 			{#if tableFilter === 'all'}
 				<p class="mt-3 mb-0 text-sm">
-					Start with a featured dossier:{#each featured as f, i (f.slug)}
+					{c.startFeatured}{#each featured as f, i (f.slug)}
 						{#if i > 0}<span aria-hidden="true"> · </span>{/if}<a
 							class="underline underline-offset-4"
 							href={authorityHref(f.slug)}>{f.label}</a
@@ -438,12 +446,12 @@
 	{:else if !blank}
 		<p class="mt-4 mb-2 text-sm text-ink-muted" role="status">
 			{matches.length === 0
-				? `No authority matches “${query}”.`
+				? c.noMatch(query)
 				: matches.length > MATCH_CAP
-					? `Showing ${MATCH_CAP} of ${matches.length} matches — refine the search.`
-					: `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`}
+					? c.matchCap(MATCH_CAP, matches.length)
+					: c.matchCount(matches.length)}
 		</p>
-		<ul class="m-0 list-none p-0" aria-label={`Authorities matching “${query}”`}>
+		<ul class="m-0 list-none p-0" aria-label={c.matchingQuery(query)}>
 			{#each matches.slice(0, MATCH_CAP) as authority (authority.slug)}
 				<li class="m-0 border-b border-line p-0">
 					<a
@@ -458,7 +466,7 @@
 							{authority.country}
 						</span>
 						<span class="flex-none font-mono text-xs text-ink-muted">
-							{factCount(authority.fact_count ?? 0)}
+							{factCount(authority.fact_count ?? 0, site.locale)}
 						</span>
 					</a>
 				</li>
@@ -466,10 +474,9 @@
 		</ul>
 	{:else}
 		<p class="mt-4 mb-2 text-sm text-ink-muted">
-			{tableRows.length} authorities in {groups.length}
-			{groups.length === 1 ? 'country' : 'countries'}. Open a country to see its authorities.
+			{c.indexSummary(tableRows.length, groups.length)}
 		</p>
-		<ul class="m-0 list-none p-0" aria-label="Authorities by country">
+		<ul class="m-0 list-none p-0" aria-label={c.byCountry}>
 			{#each groups as group (group.country)}
 				{@const flag = flagFor(group.country, group.iso2)}
 				<li class="m-0 border-b border-line p-0">
@@ -489,13 +496,14 @@
 								aria-hidden="true"
 							/>
 							{#if flag}
-								<Flag code={flag} label={`${group.country} flag`} />
+								<Flag code={flag} label={c.flagOf(countryText(group.country))} />
 							{/if}
-							<span class="min-w-0 flex-1 font-medium break-words text-ink">{group.country}</span>
+							<span class="min-w-0 flex-1 font-medium break-words text-ink">
+								{countryText(group.country)}
+							</span>
 							<span class="flex-none font-mono text-xs text-ink-muted">
-								{group.rows.length}
-								{group.rows.length === 1 ? 'authority' : 'authorities'}{#if group.facts > 0}
-									· {factCount(group.facts)}{/if}
+								{c.authorityCount(group.rows.length)}{#if group.facts > 0}
+									· {factCount(group.facts, site.locale)}{/if}
 							</span>
 						</summary>
 						{#if opened[group.country]}
@@ -505,7 +513,7 @@
 									class="ml-2 inline-flex min-h-11 items-center text-sm sm:ml-8"
 									href={resolve('/(public)/in/[...path]', { path: place })}
 								>
-									Which office handles my document? All offices in {group.country}
+									{c.whichOffice(countryText(group.country))}
 								</a>
 							{/if}
 							<ul class="m-0 mb-3 list-none p-0 pl-2 sm:pl-8">
@@ -521,11 +529,11 @@
 											</span>
 											{#if showStatus && kindLabel(authority) && authority.kind !== 'country'}
 												<span class="hidden flex-none text-xs text-ink-muted md:inline">
-													{kindLabel(authority)}
+													{kindText(authority)}
 												</span>
 											{/if}
 											<span class="flex-none font-mono text-xs text-ink-muted">
-												{factCount(authority.fact_count ?? 0)}
+												{factCount(authority.fact_count ?? 0, site.locale)}
 											</span>
 										</a>
 									</li>

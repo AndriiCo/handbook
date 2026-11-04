@@ -34,7 +34,8 @@
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 	let me = $state<{ user_id: string } | null>(null);
-	let oauthError = $state<string | null>(null);
+	// The callback's ?error= (read once, then dropped from the address).
+	let oauthParams = $state<URLSearchParams | null>(null);
 	let providers = $state<string[] | null>(null);
 	let magicEmail = $state('');
 	let magicSent = $state(false);
@@ -64,6 +65,7 @@
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
 	const t = $derived(STRINGS[site.locale]);
 	const c = $derived(LOGIN_COPY[site.locale]);
+	const oauthError = $derived(oauthParams ? oauthErrorCopy(oauthParams, site.locale) : null);
 	const webauthnOk = typeof navigator !== 'undefined' && !!navigator.credentials?.create;
 
 	async function post(path: string, body: unknown) {
@@ -184,7 +186,7 @@
 		busy = false;
 		if (!res.ok) {
 			rememberNext(tabStore(), null);
-			error = oauthStartError(res.status, OAUTH_LABELS[provider] ?? provider);
+			error = oauthStartError(res.status, OAUTH_LABELS[provider] ?? provider, site.locale);
 		}
 	}
 
@@ -195,7 +197,7 @@
 		try {
 			const res = await requestMagic(magicEmail.trim(), { post });
 			if (!res.ok) {
-				error = magicError(res.status, 'request');
+				error = magicError(res.status, 'request', site.locale);
 				return;
 			}
 			// Identical for unknown addresses (anti-enumeration:
@@ -254,13 +256,13 @@
 			consumeMagic(hash.slice(3), { post })
 				.then((res) => {
 					if (!res.ok) {
-						error = magicError(res.status, 'consume');
+						error = magicError(res.status, 'consume', site.locale);
 						return;
 					}
 					signedInAs(res.body.user_id);
 				})
 				.catch(() => {
-					error = magicError(500, 'consume');
+					error = magicError(500, 'consume', site.locale);
 				})
 				.finally(() => {
 					magicBusy = false;
@@ -297,7 +299,7 @@
 		// $effect runs client-side only, so window is safe (and this
 		// avoids pulling $app/state into the chunk).
 		const params = new URLSearchParams(window.location.search);
-		oauthError = oauthErrorCopy(params);
+		oauthParams = params;
 		if (params.has('error')) {
 			history.replaceState(null, '', window.location.pathname);
 		}

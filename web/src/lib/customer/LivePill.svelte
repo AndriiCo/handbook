@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { site } from '../locale.svelte.js';
+	import { ORDERS_COPY } from './orders-copy.js';
 	import { fmtTime } from './orders';
 
 	// Shown once the bus has answered on this screen's topics; the
 	// time is the last ids-only event that triggered a re-read.
 	let { live, lastAt = null }: { live: boolean; lastAt?: number | null } = $props();
+	const c = $derived(ORDERS_COPY[site.locale]);
 </script>
 
 {#if live}
@@ -15,6 +18,6 @@
 			<span class="absolute inline-flex size-full animate-ping rounded-full bg-verified opacity-60 motion-reduce:animate-none"></span>
 			<span class="relative inline-flex size-2 rounded-full bg-verified"></span>
 		</span>
-		{lastAt ? `Live · updated ${fmtTime(Math.floor(lastAt / 1000))}` : 'Live'}
+		{lastAt ? c.liveUpdated(fmtTime(Math.floor(lastAt / 1000), site.locale)) : c.live}
 	</span>
 {/if}

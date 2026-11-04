@@ -1,6 +1,8 @@
 <script lang="ts">
 	import world from '../../geo/world.json';
 	import { membersFromFacts } from './HagueMap.members.js';
+	import { MAP_COPY } from '../../public-ui/home-copy.js';
+	import { site } from '../../locale.svelte.js';
 
 	// Hague member map: precomputed country paths (scripts/geo.mjs, no d3
 	// in the browser). Runtime-only: a country is tinted only when an
@@ -22,11 +24,9 @@
 	const labels = $derived(new Map(pins.map((p) => [p.slug, p.label])));
 	const shownPins = $derived(world.pins.filter((p) => labels.has(p.slug)));
 	const shownArcs = $derived(world.arcs.filter((a) => labels.has(a.slug)));
-	const caption = $derived(
-		tinted.size > 0
-			? `${tinted.size} ${tinted.size === 1 ? 'party' : 'parties'} named in staff-approved HCCH facts`
-			: 'Member states appear here once staff approve HCCH status facts'
-	);
+	// Caption in the site language (the switcher re-renders it in place).
+	const copy = $derived(MAP_COPY[site.locale]);
+	const caption = $derived(tinted.size > 0 ? copy.parties(tinted.size) : copy.empty);
 </script>
 
 <figure class={`m-0 ${klass}`}>
@@ -34,7 +34,7 @@
 		viewBox={`0 0 ${world.width} ${world.height}`}
 		class="w-full"
 		role="img"
-		aria-label={`World map: ${caption}`}
+		aria-label={copy.mapLabel(caption)}
 		data-graphic="map"
 	>
 		<g style="fill: var(--surface-2); stroke: var(--bg);" stroke-width="0.5">

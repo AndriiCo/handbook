@@ -3,6 +3,8 @@
 	import { page } from '$app/state';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import Heading from '../../../lib/components/brand/Heading.svelte';
+	import { REPORT_COPY } from '../../../lib/customer/report-copy.js';
+	import { site } from '../../../lib/locale.svelte.js';
 
 	// Walk-in report form (SA-21): signed-in visitors report a change
 	// at an issuing office — text plus up to 3 photos. Anonymous
@@ -12,6 +14,11 @@
 	// until the masking pass lands.
 
 	type Picked = { name: string; dataBase64: string };
+
+	// Page words follow the site language; the notice keeps functions
+	// of the copy so a language switch re-words it too.
+	const c = $derived(REPORT_COPY[site.locale]);
+	type Msg = (copy: typeof c) => string;
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
@@ -65,7 +72,7 @@
 	let authority = $state(page.url.searchParams.get('destination') ?? '');
 	let body = $state('');
 	let picked = $state<Picked[]>([]);
-	let notice = $state<{ variant: 'info' | 'error' | 'success'; heading: string; text: string } | null>(
+	let notice = $state<{ variant: 'info' | 'error' | 'success'; heading: Msg; text: Msg } | null>(
 		null
 	);
 	let needsLogin = $state(false);
@@ -85,14 +92,18 @@
 		if (!files) return;
 		for (const file of Array.from(files)) {
 			if (picked.length >= MAX_PHOTOS) {
-				notice = { variant: 'error', heading: 'At most 3 photos.', text: 'Extra photos were skipped.' };
+				notice = {
+					variant: 'error',
+					heading: (k) => k.tooManyHeading(MAX_PHOTOS),
+					text: (k) => k.tooManyText
+				};
 				break;
 			}
 			if (file.size > MAX_PHOTO_BYTES) {
 				notice = {
 					variant: 'error',
-					heading: 'Photo too large.',
-					text: `${file.name} is over 8 MiB and was skipped.`
+					heading: (k) => k.tooLargeHeading,
+					text: (k) => k.tooLargeText(file.name)
 				};
 				continue;
 			}
@@ -100,8 +111,8 @@
 			if (!MAGIC.some((m) => m.test(bytes))) {
 				notice = {
 					variant: 'error',
-					heading: 'Photo type not allowed.',
-					text: `${file.name} is not a JPEG, PNG, WebP or GIF photo and was skipped.`
+					heading: (k) => k.badTypeHeading,
+					text: (k) => k.badTypeText(file.name)
 				};
 				continue;
 			}
@@ -114,11 +125,11 @@
 		notice = null;
 		submittedId = null;
 		if (!authority.trim()) {
-			notice = { variant: 'error', heading: 'Pick an office.', text: 'Tell us which issuing office this is about.' };
+			notice = { variant: 'error', heading: (k) => k.pickOfficeHeading, text: (k) => k.pickOfficeText };
 			return;
 		}
 		if (!body.trim()) {
-			notice = { variant: 'error', heading: 'Describe the change.', text: 'A short note is required.' };
+			notice = { variant: 'error', heading: (k) => k.describeHeading, text: (k) => k.describeText };
 			return;
 		}
 		busy = true;
@@ -140,33 +151,34 @@
 			if (res.status === 429) {
 				notice = {
 					variant: 'error',
-					heading: 'Slow down.',
-					text: 'Too many reports just now — try again in a bit.'
+					heading: (k) => k.slowDownHeading,
+					text: (k) => k.slowDownText
 				};
 				return;
 			}
 			const data = await res.json().catch(() => ({}));
 			if (!res.ok) {
+				const text: unknown = data?.error;
 				notice = {
 					variant: 'error',
-					heading: 'Report not saved.',
-					text: typeof data?.error === 'string' ? data.error : 'Try again in a bit.'
+					heading: (k) => k.notSavedHeading,
+					text: typeof text === 'string' ? () => text : (k) => k.tryAgain
 				};
 				return;
 			}
 			submittedId = typeof data?.id === 'number' ? data.id : null;
 			notice = {
 				variant: 'success',
-				heading: 'Report received.',
-				text: 'It stays private while we remove personal details — nothing you wrote shows publicly until then.'
+				heading: (k) => k.receivedHeading,
+				text: (k) => k.receivedText
 			};
 			body = '';
 			picked = [];
 		} catch {
 			notice = {
 				variant: 'error',
-				heading: 'Report not saved.',
-				text: 'The service is unreachable. Try again in a bit.'
+				heading: (k) => k.notSavedHeading,
+				text: (k) => k.unreachableText
 			};
 		} finally {
 			busy = false;
@@ -175,30 +187,26 @@
 </script>
 
 <svelte:head>
-	<title>Report a change — Apostille Handbook</title>
+	<title>{c.title} — Apostille Handbook</title>
 </svelte:head>
 
-<Heading level={1}>Report a change</Heading>
-<p class="mt-2 max-w-[40rem] text-ink-muted">
-	Spotted a changed fee, address, or step at an issuing office? File a walk-in report. Photos are
-	checked on your device and stripped of camera metadata on our end; your note stays private while
-	personal details are removed.
-</p>
+<Heading level={1}>{c.title}</Heading>
+<p class="mt-2 max-w-[40rem] text-ink-muted">{c.intro}</p>
 
 {#if needsLogin}
-	<Notice variant="info" heading="Sign in to file a report.">
+	<Notice variant="info" heading={c.signInHeading}>
 		<p>
-			Walk-in reports live in your account.
-			<a href={loginHref}>Sign in</a>, then come back here.
+			{c.reportsInAccount}
+			<a href={loginHref}>{c.signIn}</a>{c.thenBack}
 		</p>
 	</Notice>
 {:else}
 	{#if notice}
-		<Notice variant={notice.variant} heading={notice.heading}><p>{notice.text}</p></Notice>
+		<Notice variant={notice.variant} heading={notice.heading(c)}><p>{notice.text(c)}</p></Notice>
 	{/if}
 	<form class="mt-6 flex max-w-[40rem] flex-col gap-4" onsubmit={onSubmit}>
 		<label class="flex flex-col gap-1 text-sm font-medium">
-			Issuing office (slug, e.g. usa-wa-sos)
+			{c.officeLabel}
 			<input
 				class="min-h-11 rounded-sm border border-line bg-bg px-3 font-normal"
 				name="authority"
@@ -209,7 +217,7 @@
 			/>
 		</label>
 		<label class="flex flex-col gap-1 text-sm font-medium">
-			What changed? ({body.length}/{MAX_BODY_CHARS})
+			{c.whatChanged(body.length, MAX_BODY_CHARS)}
 			<textarea
 				class="min-h-28 rounded-sm border border-line bg-bg px-3 py-2 font-normal"
 				name="body"
@@ -219,7 +227,7 @@
 			></textarea>
 		</label>
 		<div class="flex flex-col gap-1 text-sm font-medium">
-			Photos (up to {MAX_PHOTOS}; JPEG, PNG, WebP or GIF, 8 MiB each)
+			{c.photosLabel(MAX_PHOTOS)}
 			<input
 				class="font-normal"
 				type="file"
@@ -235,7 +243,7 @@
 							<button
 								type="button"
 								class="underline"
-								onclick={() => (picked = picked.filter((_, j) => j !== i))}>remove</button
+								onclick={() => (picked = picked.filter((_, j) => j !== i))}>{c.remove}</button
 							>
 						</li>
 					{/each}
@@ -247,10 +255,10 @@
 			disabled={busy}
 			class="inline-flex min-h-11 items-center justify-center rounded-sm bg-accent-fill px-5 font-medium text-accent-ink transition-colors hover:bg-accent-hover disabled:opacity-60"
 		>
-			{busy ? 'Sending…' : 'Send report'}
+			{busy ? c.sending : c.sendReport}
 		</button>
 		{#if submittedId !== null}
-			<p class="text-sm text-ink-muted">Saved as report #{submittedId}.</p>
+			<p class="text-sm text-ink-muted">{c.savedAs(submittedId)}</p>
 		{/if}
 	</form>
 {/if}

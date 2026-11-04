@@ -24,12 +24,12 @@
 		humanize,
 		isPaused,
 		loginHref,
-		money,
 		postJson,
 		probeSignedIn,
+		money as formatMoney,
+		fmtTime as formatTime,
 		safeHref,
 		serviceName,
-		fmtTime,
 		type DeliveryOption,
 		type Fact,
 		type FormFill,
@@ -45,6 +45,7 @@
 	import { validateSubmission } from '../../../lib/customer/forms-validate.js';
 	import { STRINGS } from '../../../lib/i18n';
 	import { site } from '../../../lib/locale.svelte.js';
+	import { ORDER_COPY } from '../../../lib/customer/order-copy.js';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import LandmarkIcon from '@lucide/svelte/icons/landmark';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
@@ -63,11 +64,11 @@
 	// map, delivery options and prices from /p2/orders/options, the
 	// quote from the server. Sign-in is required at Delivery.
 	const STEPS = [
-		{ id: 'destination', label: 'Destination' },
-		{ id: 'document', label: 'Document' },
-		{ id: 'form', label: 'Form' },
-		{ id: 'delivery', label: 'Delivery' },
-		{ id: 'pay', label: 'Pay' }
+		{ id: 'destination' },
+		{ id: 'document' },
+		{ id: 'form' },
+		{ id: 'delivery' },
+		{ id: 'pay' }
 	] as const;
 	type StepId = (typeof STEPS)[number]['id'];
 	const GENERAL = 'general';
@@ -77,6 +78,16 @@
 	type Authority = { slug: string; name: string; country: string; region?: string };
 
 	const t = $derived(STRINGS[site.locale]);
+	// The wizard's own words (lib/customer/order-copy.js); a page-written
+	// message is kept as a function of the copy so a language switch
+	// re-renders it too.
+	const c = $derived(ORDER_COPY[site.locale]);
+	type Copy = (typeof ORDER_COPY)['en'];
+	type Msg = (c: Copy) => string;
+	const steps = $derived(STEPS.map((s) => ({ id: s.id, label: c.steps[s.id] })));
+	const money = (cents: number, cur: string, opts: { compact?: boolean } = {}) =>
+		formatMoney(cents, cur, opts, site.locale);
+	const fmtTime = (unix: number) => formatTime(unix, site.locale);
 
 	let step = $state(0);
 	let slug = $state('');
@@ -95,7 +106,7 @@
 	});
 
 	let index = $state<Authority[] | null>(null);
-	let loadError = $state<string | null>(null);
+	let loadError = $state(false);
 	let signedIn = $state<boolean | null>(null);
 	let bundle = $state<PlanBundle | null>(null);
 	let bundleReady = $state(false);
@@ -108,7 +119,7 @@
 	let quote = $state<Quote | null>(null);
 	let busy = $state<null | 'order' | 'quote' | 'checkout' | 'free'>(null);
 	let paused = $state<string | null>(null);
-	let payError = $state<string | null>(null);
+	let payError = $state<Msg | null>(null);
 	let stepHeading = $state<HTMLElement | null>(null);
 	let stepperEl = $state<HTMLElement | null>(null);
 
@@ -121,7 +132,7 @@
 	const plan = $derived(bundle?.plan ?? null);
 	const planPaths = $derived<PlanPath[]>(Array.isArray(plan?.paths) ? plan.paths : []);
 	const docOptions = $derived<PlanPath[]>(
-		planPaths.length > 0 ? planPaths : [{ id: GENERAL, label: 'Public document', fact_ids: [] }]
+		planPaths.length > 0 ? planPaths : [{ id: GENERAL, label: c.publicDocument, fact_ids: [] }]
 	);
 	const pathLabel = $derived(docOptions.find((p) => p.id === pathId)?.label ?? '');
 	const allFacts = $derived<Fact[]>([...(bundle?.facts ?? []), ...facts]);
@@ -170,7 +181,7 @@
 	let fillAgree = $state(false);
 	let fillTried = $state(false);
 	let filling = $state(false);
-	let fillError = $state<string | null>(null);
+	let fillError = $state<Msg | null>(null);
 	let fillDone = $state<{ key: string; pdf: string } | null>(null);
 	let fillLink = $state<HTMLElement | null>(null);
 	/** The server refuses longer values (forms_map.rs `MAX_FILL_VALUE`). */
@@ -195,13 +206,13 @@
 	const fillPdf = $derived(fillDone !== null && fillDone.key === fillKey ? fillDone.pdf : null);
 	/** A readable file name (the URL's own is the fill id). */
 	const fillFile = $derived(
-		`${
+		c.filledFile(
 			(form?.title ?? '')
 				.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ')
 				.replace(/\s+/g, ' ')
 				.trim()
-				.slice(0, 80) || 'Official form'
-		} (filled).pdf`
+				.slice(0, 80) || c.officialForm
+		)
 	);
 	const fillProblems = $derived.by((): string[] => {
 		if (!form || !fillTried) return [];
@@ -215,8 +226,13 @@
 			max_len: f.type === 'date' ? undefined : fillMaxLen(f.max_len),
 			options: f.options
 		}));
-		const out = validateSubmission(defs, fillValues).map((e) => e.message);
-		if (!fillAgree) out.push('Tick the box to confirm you understand what the free fill does.');
+		// The shared validator speaks English (its wording is pinned to the
+		// Rust port); other languages re-word each problem by its code.
+		const out = validateSubmission(defs, fillValues).map((e) => {
+			const def = defs.find((d) => d.key === e.key);
+			return c.fieldProblem(e.code, def?.label ?? e.key, e.message, def?.max_len);
+		});
+		if (!fillAgree) out.push(c.fillTick);
 		return out;
 	});
 	// The current address (shallow step moves update `page.shallow`).
@@ -263,10 +279,13 @@
 	const grouped = $derived.by(() => {
 		const out = new Map<string, Destination[]>();
 		for (const a of index ?? []) {
-			const key = a.country || 'Other';
+			const key = a.country || '';
 			out.set(key, [...(out.get(key) ?? []), a]);
 		}
-		return [...out.entries()].sort((x, y) => x[0].localeCompare(y[0]));
+		// Unnamed countries ('') group last, under "Other" in the site language.
+		return [...out.entries()].sort((x, y) =>
+			!x[0] || !y[0] ? Number(!x[0]) - Number(!y[0]) : x[0].localeCompare(y[0])
+		);
 	});
 
 	// ------------------------------------------------------------ loading
@@ -339,7 +358,7 @@
 			const [idx, who] = await Promise.all([getJson('/authorities'), probeSignedIn()]);
 			signedIn = who;
 			if (!idx.ok) {
-				loadError = 'The authority index is unavailable right now. Try again in a minute.';
+				loadError = true;
 				index = [];
 				return;
 			}
@@ -361,7 +380,7 @@
 				}
 			}
 			if (params.get('checkout') === 'cancel') {
-				toast.info('Checkout closed. Your order is saved; pay when you are ready.');
+				toast.info(c.checkoutClosed);
 			}
 			if (!preset || !(index ?? []).some((a) => a.slug === preset)) return;
 			slug = preset;
@@ -464,9 +483,7 @@
 				// Never place the order silently without the form the
 				// customer filled: say why and let them fix it.
 				const why = (f.body as { error?: string } | null)?.error;
-				payError = why
-					? `The official form could not be filled: ${why}`
-					: 'The official form could not be filled. Check your answers and try again.';
+				payError = why ? (c) => c.fillRejected(why) : (c) => c.formFillGeneric;
 				busy = null;
 				return;
 			}
@@ -490,13 +507,13 @@
 			return;
 		}
 		if (!r.ok || typeof r.body?.id !== 'string') {
-			payError = 'We could not create the order. Check your connection and try again.';
+			payError = (c) => c.orderFailed;
 			busy = null;
 			return;
 		}
 		order = r.body;
 		if (k === 'address_label') {
-			toast.success('Free address label created.');
+			toast.success(c.freeLabelCreated);
 			await goto(resolve('/(customer)/orders/[id]', { id: r.body.id }));
 			return;
 		}
@@ -514,7 +531,7 @@
 		} else if (q.ok && Array.isArray(q.body?.lines)) {
 			quote = q.body;
 		} else {
-			payError = 'The quote is unavailable right now. Try again in a moment.';
+			payError = (c) => c.quoteUnavailable;
 		}
 		await go(4);
 	}
@@ -540,10 +557,10 @@
 			// Prices changed since the quote: fetch the new total and let
 			// the customer review it before paying.
 			await requote();
-			payError ??= 'Prices were updated. Review the new total, then pay.';
+			payError ??= (c) => c.pricesUpdated;
 			return;
 		}
-		payError = 'Checkout did not open. Your order is saved; try again in a moment.';
+		payError = (c) => c.checkoutFailed;
 	}
 
 	async function useFree() {
@@ -577,14 +594,14 @@
 			// The server counts the last 24 hours, not a calendar day.
 			fillError =
 				why === 'too many filled forms today'
-					? `Your account has reached the limit of ${FILL_DAY_CAP} filled forms in 24 hours. Try again later.`
-					: 'Too many attempts — wait a minute and try again.';
+					? (c) => c.fillDailyCap(FILL_DAY_CAP)
+					: (c) => c.rateLimited;
 		} else if (r.status === 422 && why) {
-			fillError = `The official form could not be filled: ${why}`;
+			fillError = (c) => c.fillRejected(why);
 		} else if (r.status === 404) {
-			fillError = 'This form is no longer on file. Reload the page to get the current one.';
+			fillError = (c) => c.fillGone;
 		} else {
-			fillError = 'The form could not be filled right now. Check your connection and try again.';
+			fillError = (c) => c.fillFailed;
 		}
 	}
 
@@ -599,35 +616,32 @@
 </svelte:head>
 
 <div class="flex flex-col gap-2">
-	<Heading level={1} eyebrow="Apostille order">{t.orderLabel}</Heading>
-	<p class="m-0 max-w-[60ch] text-body-lg text-ink-muted">
-		Pick where the document is going and how it travels. Every option and price below comes from the
-		authority's accepted facts.
-	</p>
+	<Heading level={1} eyebrow={c.eyebrow}>{t.orderLabel}</Heading>
+	<p class="m-0 max-w-[60ch] text-body-lg text-ink-muted">{c.intro}</p>
 </div>
 
 {#if loadError}
 	<div class="mt-8">
-		<Notice variant="error" heading="The order form is unavailable."><p>{loadError}</p></Notice>
+		<Notice variant="error" heading={c.unavailableHeading}><p>{c.loadFailed}</p></Notice>
 	</div>
 {:else if index === null}
 	<!-- The stepper renders before the index arrives, so a slow first
 	     read never hides where the visitor is (GP4 reads aria-current). -->
 	<div class="pt-10 lg:w-7/12">
-		<OrderStepper steps={STEPS} current={step} onpick={() => {}} />
+		<OrderStepper {steps} current={step} onpick={() => {}} />
 	</div>
-	<div role="status" aria-label="Loading order form" class="mt-8 flex max-w-lg flex-col gap-3">
-		<span class="sr-only">Loading order form</span>
+	<div role="status" aria-label={c.loadingForm} class="mt-8 flex max-w-lg flex-col gap-3">
+		<span class="sr-only">{c.loadingForm}</span>
 		<Skeleton class="h-7 w-full" />
 		<Skeleton class="h-11 w-full" />
 		<Skeleton class="h-11 w-2/3" />
 	</div>
 {:else if index.length === 0}
 	<div class="mt-8">
-		<Notice variant="info" heading="No destinations yet.">
+		<Notice variant="info" heading={c.noDestHeading}>
 			<p>
-				The handbook has no published authorities, so there is nothing to order yet.
-				<a class="underline underline-offset-4" href={resolve('/(public)')}>Back to the authority index</a>.
+				{c.noDestBody}
+				<a class="underline underline-offset-4" href={resolve('/(public)')}>{c.backToIndex}</a>.
 			</p>
 		</Notice>
 	</div>
@@ -635,7 +649,7 @@
 	<div class="grid gap-8 py-10 lg:grid-cols-12 xl:py-16">
 		<div class="min-w-0 lg:col-span-7">
 			<div bind:this={stepperEl} class="scroll-mt-20">
-				<OrderStepper steps={STEPS} current={step} onpick={(i) => go(i)} />
+				<OrderStepper {steps} current={step} onpick={(i) => go(i)} />
 			</div>
 
 			{#key step}
@@ -646,7 +660,7 @@
 							tabindex="-1"
 							class="m-0 text-h3 font-semibold outline-none"
 						>
-							Where will the document be used?
+							{c.whereUsed}
 						</h2>
 						<form
 							class="mt-4 flex max-w-lg flex-col gap-3"
@@ -655,7 +669,7 @@
 								if (slug) void go(1);
 							}}
 						>
-							<span class="text-sm font-semibold" id="dest-label">Destination authority</span>
+							<span class="text-sm font-semibold" id="dest-label">{c.destAuthority}</span>
 							<Popover.Root bind:open={comboOpen}>
 								<Popover.Trigger
 									role="combobox"
@@ -664,17 +678,17 @@
 									class="field flex cursor-pointer items-center justify-between gap-2 text-left shadow-sm"
 								>
 									<span class={`truncate ${slug ? 'text-ink' : 'text-ink-muted'}`}>
-										{slug ? authorityName : 'Choose an authority…'}
+										{slug ? authorityName : c.chooseAuthority}
 									</span>
 									<ChevronDownIcon class="size-4 flex-none text-ink-muted" aria-hidden="true" />
 								</Popover.Trigger>
 								<Popover.Content class="w-80 max-w-[calc(100vw-2rem)] p-0" align="start">
 									<Command.Root>
-										<Command.Input placeholder="Search destinations…" />
+										<Command.Input placeholder={c.searchDest} />
 										<Command.List>
-											<Command.Empty>No destination matches.</Command.Empty>
+											<Command.Empty>{c.noDestMatch}</Command.Empty>
 											{#each grouped as [country, rows] (country)}
-												<Command.Group heading={country}>
+												<Command.Group heading={country || c.otherCountry}>
 													{#each rows as a (a.slug)}
 														<Command.Item
 															value={`${a.name} ${a.country} ${a.slug}`}
@@ -692,16 +706,16 @@
 							</Popover.Root>
 							{#if slug && plan?.headline}
 								<p class="m-0 rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink">
-									<span class="font-semibold">From the accepted plan:</span>
+									<span class="font-semibold">{c.fromPlan}</span>
 									{plan.headline}
 								</p>
 							{/if}
 							<div class="mt-2 flex items-center gap-3">
 								<Button type="submit" class="h-11 px-5" disabled={!slug}>
-									Continue <ArrowRightIcon aria-hidden="true" />
+									{c.continue} <ArrowRightIcon aria-hidden="true" />
 								</Button>
 								{#if !slug}
-									<span class="text-sm text-ink-muted">Choose a destination to continue.</span>
+									<span class="text-sm text-ink-muted">{c.chooseDestHint}</span>
 								{/if}
 							</div>
 						</form>
@@ -711,17 +725,17 @@
 							tabindex="-1"
 							class="m-0 text-h3 font-semibold outline-none"
 						>
-							Which document are you sending?
+							{c.whichDoc}
 						</h2>
 						{#if !bundleReady}
-							<div role="status" aria-label="Loading document types" class="mt-4 grid gap-3">
-								<span class="sr-only">Loading document types</span>
+							<div role="status" aria-label={c.loadingDocs} class="mt-4 grid gap-3">
+								<span class="sr-only">{c.loadingDocs}</span>
 								<Skeleton class="h-16 w-full" />
 								<Skeleton class="h-16 w-full" />
 							</div>
 						{:else}
 							<fieldset class="m-0 mt-4 flex flex-col gap-3 border-0 p-0">
-								<legend class="sr-only">Document type for {authorityName}</legend>
+								<legend class="sr-only">{c.docTypeFor(authorityName)}</legend>
 								{#each docOptions as p (p.id)}
 									{@const on = pathId === p.id}
 									<div
@@ -750,12 +764,9 @@
 											<span class="flex min-w-0 flex-1 flex-col">
 												<span class="font-semibold text-ink">{p.label}</span>
 												{#if p.fact_ids.length > 0}
-													<span class="text-sm text-ink-muted">
-														Plan cites {p.fact_ids.length}
-														{p.fact_ids.length === 1 ? 'accepted fact' : 'accepted facts'}
-													</span>
+													<span class="text-sm text-ink-muted">{c.planCites(p.fact_ids.length)}</span>
 												{:else}
-													<span class="text-sm text-ink-muted">No document-specific plan yet</span>
+													<span class="text-sm text-ink-muted">{c.noDocPlan}</span>
 												{/if}
 											</span>
 										</label>
@@ -779,7 +790,7 @@
 							{#if planPaths.length === 0 && topics.length > 0}
 								<div class="mt-4 rounded-md border border-line bg-surface px-4 py-3 text-sm">
 									<p class="m-0 font-semibold text-ink">
-										{authorityName} has no page plan yet. Its accepted facts cover:
+										{c.noPagePlan(authorityName)}
 									</p>
 									<ul class="m-0 mt-2 flex list-none flex-wrap gap-2 p-0">
 										{#each topics as [topic, count] (topic)}
@@ -795,13 +806,13 @@
 						{/if}
 						<div class="mt-6 flex flex-wrap items-center gap-3">
 							<Button variant="outline" class="h-11 px-5" onclick={() => go(0)}>
-								<ArrowLeftIcon aria-hidden="true" /> Back
+								<ArrowLeftIcon aria-hidden="true" /> {c.back}
 							</Button>
 							<Button class="h-11 px-5" disabled={!pathId} onclick={() => go(2)}>
-								Continue <ArrowRightIcon aria-hidden="true" />
+								{c.continue} <ArrowRightIcon aria-hidden="true" />
 							</Button>
 							{#if !pathId && bundleReady}
-								<span class="text-sm text-ink-muted">Choose a document type to continue.</span>
+								<span class="text-sm text-ink-muted">{c.chooseDocHint}</span>
 							{/if}
 						</div>
 					{:else if step === 2}
@@ -810,11 +821,11 @@
 							tabindex="-1"
 							class="m-0 text-h3 font-semibold outline-none"
 						>
-							Fill in the request form
+							{c.fillForm}
 						</h2>
 						{#if !bundleReady}
-							<div role="status" aria-label="Loading the form" class="mt-4 grid gap-3">
-								<span class="sr-only">Loading the form</span>
+							<div role="status" aria-label={c.loadingTheForm} class="mt-4 grid gap-3">
+								<span class="sr-only">{c.loadingTheForm}</span>
 								<Skeleton class="h-11 w-full" />
 								<Skeleton class="h-11 w-full" />
 							</div>
@@ -828,7 +839,7 @@
 										target="_blank"
 										rel="noopener noreferrer"
 									>
-										Official form <ExternalLinkIcon class="size-3.5" aria-hidden="true" />
+										{c.officialForm} <ExternalLinkIcon class="size-3.5" aria-hidden="true" />
 									</a>
 								{/if}
 								{#if form.source_fact_id}
@@ -860,7 +871,7 @@
 											</label>
 										{:else if f.options.length > 0}
 											<span class="font-semibold text-ink" id={`${fieldId(f.name)}-label`}>
-												{f.label}{#if f.required}{' '}<span class="text-ink-muted">(required)</span>{/if}
+												{f.label}{#if f.required}{' '}<span class="text-ink-muted">{c.required}</span>{/if}
 											</span>
 											<div class="flex flex-wrap gap-2" role="radiogroup" aria-labelledby={`${fieldId(f.name)}-label`}>
 												{#each f.options as opt (opt)}
@@ -886,7 +897,7 @@
 											</div>
 										{:else}
 											<label class="font-semibold text-ink" for={fieldId(f.name)}>
-												{f.label}{#if f.required}{' '}<span class="text-ink-muted">(required)</span>{/if}
+												{f.label}{#if f.required}{' '}<span class="text-ink-muted">{c.required}</span>{/if}
 											</label>
 											<Input
 												id={fieldId(f.name)}
@@ -904,7 +915,7 @@
 										{/if}
 										{#if f.label_quote}
 											<p class="m-0 text-xs text-ink-muted">
-												On the official form:
+												{c.onOfficialForm}
 												<span class="font-quote italic">“{f.label_quote}”</span>
 											</p>
 										{/if}
@@ -917,23 +928,17 @@
 										data-free-fill
 									>
 										<h3 id="free-fill-heading" class="m-0 text-base font-semibold text-ink">
-											Fill it in online — free
+											{c.freeFillHeading}
 										</h3>
-										<p class="m-0 text-sm text-ink">
-											No order and no payment: we put your answers into {form.title}, the office's own
-											form. You print it, sign it and send it yourself.
-										</p>
+										<p class="m-0 text-sm text-ink">{c.freeFillIntro(form.title)}</p>
 										{#if signedIn === false}
-											<p class="m-0 text-sm text-ink-muted">
-												The free fill needs a free account. Only your account can open the filled
-												PDF.
-											</p>
+											<p class="m-0 text-sm text-ink-muted">{c.freeFillNeedsAccount}</p>
 											<Button
 												href={fillSignIn}
 												variant="outline"
 												class="h-auto min-h-11 self-start px-5 py-2 text-left whitespace-normal"
 											>
-												<LogInIcon aria-hidden="true" /> Sign in to fill it in
+												<LogInIcon aria-hidden="true" /> {c.signInToFill}
 											</Button>
 										{:else if signedIn}
 											<label class="flex cursor-pointer items-start gap-3 text-sm text-ink" for="fill-agree">
@@ -943,10 +948,7 @@
 													class="mt-0.5 size-5 flex-none accent-accent-fill"
 													bind:checked={fillAgree}
 												/>
-												<span>
-													I understand this fills the office's own form with my answers. It is general
-													information, not legal advice.
-												</span>
+												<span>{c.fillAgree}</span>
 											</label>
 											<Button
 												class="h-auto min-h-11 self-start px-5 py-2 text-left whitespace-normal"
@@ -958,20 +960,16 @@
 												{:else}
 													<DownloadIcon aria-hidden="true" />
 												{/if}
-												Download the filled form (free)
+												{c.downloadFilled}
 											</Button>
 											<!-- Only what the server does (R3 review): forms_map.rs stores each
 											     fill with the account and serves its PDF to that account only;
 											     erase_customer_data deletes fills on request (/privacy §4, §6);
 											     no route lists past fills. -->
-											<p class="m-0 text-sm text-ink-muted">
-												We keep your answers and the filled PDF with your account until you ask us to
-												delete them. Only your account can open the download link. Your account does not
-												list past fills, so save the PDF to your device.
-											</p>
+											<p class="m-0 text-sm text-ink-muted">{c.fillKeeps}</p>
 											{#if fillProblems.length > 0}
 												<div class="rounded-md border border-line bg-error-bg px-4 py-3 text-sm text-ink" role="alert">
-													<p class="m-0 font-semibold">Check these first:</p>
+													<p class="m-0 font-semibold">{c.checkFirst}</p>
 													<ul class="m-0 mt-1 list-disc pl-5">
 														{#each fillProblems as problem, i (i)}
 															<li>{problem}</li>
@@ -979,7 +977,7 @@
 													</ul>
 												</div>
 											{:else if fillError}
-												<p class="m-0 text-sm text-error" role="alert">{fillError}</p>
+												<p class="m-0 text-sm text-error" role="alert">{fillError(c)}</p>
 											{/if}
 											{#if fillPdf}
 												<div
@@ -993,18 +991,15 @@
 														variant="outline"
 														class="h-auto min-h-11 self-start bg-bg px-5 py-2 text-left whitespace-normal"
 													>
-														<FileDownIcon aria-hidden="true" /> Download your filled form (PDF)
+														<FileDownIcon aria-hidden="true" /> {c.downloadYours}
 													</Button>
-													<p class="m-0">
-														Print it, sign it, and send it with your documents and payment — the guide
-														lists the address and fee.
-													</p>
+													<p class="m-0">{c.printSign}</p>
 													{#if guideHref}
 														<a
 															class="inline-flex min-h-11 items-center self-start font-semibold text-accent-strong underline underline-offset-4"
 															href={guideHref}
 														>
-															Open the guide for {authorityName}
+															{c.openGuide(authorityName)}
 														</a>
 													{/if}
 												</div>
@@ -1014,10 +1009,10 @@
 								{/if}
 								<div class="flex flex-wrap items-center gap-3">
 									<Button variant="outline" class="h-11 px-5" onclick={() => go(1)}>
-										<ArrowLeftIcon aria-hidden="true" /> Back
+										<ArrowLeftIcon aria-hidden="true" /> {c.back}
 									</Button>
 									<Button type="submit" class="h-11 px-5" disabled={missingFields.length > 0}>
-										Continue <ArrowRightIcon aria-hidden="true" />
+										{c.continue} <ArrowRightIcon aria-hidden="true" />
 									</Button>
 									<Button
 										variant="ghost"
@@ -1027,30 +1022,27 @@
 											void go(3);
 										}}
 									>
-										Fill the paper form instead
+										{c.paperInstead}
 									</Button>
 								</div>
 								{#if missingFields.length > 0}
 									<p class="m-0 text-sm text-ink-muted">
-										Still needed: {missingFields.map((f) => f.label).join(', ')}.
+										{c.stillNeeded(missingFields.map((f) => f.label))}
 									</p>
 								{/if}
 							</form>
 						{:else}
 							<div class="mt-4">
-								<Notice variant="info" heading="No online form for this authority.">
-									<p>
-										There is no fillable form on file for {authorityName}. Continue to delivery; the
-										authority's dossier lists what to send.
-									</p>
+								<Notice variant="info" heading={c.noOnlineFormHeading}>
+									<p>{c.noOnlineFormBody(authorityName)}</p>
 								</Notice>
 							</div>
 							<div class="mt-6 flex flex-wrap gap-3">
 								<Button variant="outline" class="h-11 px-5" onclick={() => go(1)}>
-									<ArrowLeftIcon aria-hidden="true" /> Back
+									<ArrowLeftIcon aria-hidden="true" /> {c.back}
 								</Button>
 								<Button class="h-11 px-5" onclick={() => go(3)}>
-									Continue <ArrowRightIcon aria-hidden="true" />
+									{c.continue} <ArrowRightIcon aria-hidden="true" />
 								</Button>
 							</div>
 						{/if}
@@ -1061,11 +1053,11 @@
 								tabindex="-1"
 								class="m-0 text-h3 font-semibold outline-none"
 							>
-								How should it travel?
+								{c.howTravel}
 							</h2>
 							{#if options?.mode === 'test'}
 								<Badge variant="outline" class="h-7 border-changed px-3 text-sm text-changed">
-									Test mode · no real charges
+									{c.testModeNoCharges}
 								</Badge>
 							{/if}
 						</div>
@@ -1076,18 +1068,18 @@
 							>
 								<LockIcon class="size-5 flex-none" aria-hidden="true" />
 								<p class="m-0 flex-1 text-sm">
-									<span class="font-semibold">Sign in to choose delivery.</span>
-									Orders, labels and tracking live in your account. Your choices so far are kept.
+									<span class="font-semibold">{c.signInToChoose}</span>
+									{c.accountKeeps}
 								</p>
 								<Button href={nextHref} class="h-11 px-5">
-									<LogInIcon aria-hidden="true" /> Sign in
+									<LogInIcon aria-hidden="true" /> {c.signIn}
 								</Button>
 							</div>
 						{/if}
 
 						{#if optionsState === 'loading' || optionsState === 'idle'}
-							<div role="status" aria-label="Loading delivery options" class="mt-4 grid gap-3 sm:grid-cols-2">
-								<span class="sr-only">Loading delivery options</span>
+							<div role="status" aria-label={c.loadingDelivery} class="mt-4 grid gap-3 sm:grid-cols-2">
+								<span class="sr-only">{c.loadingDelivery}</span>
 								<Skeleton class="h-24 w-full" />
 								<Skeleton class="h-24 w-full" />
 								<Skeleton class="h-24 w-full" />
@@ -1095,8 +1087,8 @@
 							</div>
 						{:else if optionsState === 'error' || !options}
 							<div class="mt-4">
-								<Notice variant="error" heading="Delivery options are unavailable right now.">
-									<p>Try again in a moment; your choices so far are kept.</p>
+								<Notice variant="error" heading={c.deliveryUnavailable}>
+									<p>{c.deliveryRetry}</p>
 								</Notice>
 								<Button
 									variant="outline"
@@ -1104,19 +1096,19 @@
 									onclick={() => {
 										optionsState = 'idle';
 										void loadOptions(slug);
-									}}>Try again</Button
+									}}>{c.tryAgain}</Button
 								>
 							</div>
 						{:else}
 							{#if !options.paid_enabled}
 								<div class="mt-4">
-									<Notice variant="warning" heading="Paid options are paused right now.">
-										<p>The free address label still works.</p>
+									<Notice variant="warning" heading={c.paidPaused}>
+										<p>{c.freeStillWorks}</p>
 									</Notice>
 								</div>
 							{/if}
 							<fieldset class="m-0 mt-4 grid gap-3 border-0 p-0 sm:grid-cols-2">
-								<legend class="sr-only">Delivery option</legend>
+								<legend class="sr-only">{c.deliveryOption}</legend>
 								{#each options.options as o (o.kind)}
 									<DeliveryCard
 										option={o}
@@ -1130,31 +1122,29 @@
 
 							{#if signedIn && selected}
 								<fieldset class="m-0 mt-6 flex max-w-lg flex-col gap-3 rounded-lg border border-line p-4">
-									<legend class="px-1 font-semibold text-ink">Your return address</legend>
-									<p class="m-0 text-sm text-ink-muted">
-										Printed on your labels, and where the apostilled document comes back to.
-									</p>
-									<label class="text-sm font-semibold" for="ret-name">Full name</label>
+									<legend class="px-1 font-semibold text-ink">{c.returnAddress}</legend>
+									<p class="m-0 text-sm text-ink-muted">{c.returnAddressHint}</p>
+									<label class="text-sm font-semibold" for="ret-name">{c.fullName}</label>
 									<Input id="ret-name" class="h-11 bg-bg" autocomplete="name" bind:value={address.name} />
-									<label class="text-sm font-semibold" for="ret-line1">Street address</label>
+									<label class="text-sm font-semibold" for="ret-line1">{c.street}</label>
 									<Input id="ret-line1" class="h-11 bg-bg" autocomplete="address-line1" bind:value={address.line1} />
-									<label class="text-sm font-semibold" for="ret-line2">Apartment, suite (optional)</label>
+									<label class="text-sm font-semibold" for="ret-line2">{c.apartment}</label>
 									<Input id="ret-line2" class="h-11 bg-bg" autocomplete="address-line2" bind:value={address.line2} />
 									<div class="grid grid-cols-2 gap-3">
 										<div class="flex flex-col gap-1.5">
-											<label class="text-sm font-semibold" for="ret-city">City</label>
+											<label class="text-sm font-semibold" for="ret-city">{c.city}</label>
 											<Input id="ret-city" class="h-11 bg-bg" autocomplete="address-level2" bind:value={address.city} />
 										</div>
 										<div class="flex flex-col gap-1.5">
-											<label class="text-sm font-semibold" for="ret-region">State or region</label>
+											<label class="text-sm font-semibold" for="ret-region">{c.region}</label>
 											<Input id="ret-region" class="h-11 bg-bg" autocomplete="address-level1" bind:value={address.region} />
 										</div>
 										<div class="flex flex-col gap-1.5">
-											<label class="text-sm font-semibold" for="ret-postal">Postal code</label>
+											<label class="text-sm font-semibold" for="ret-postal">{c.postalCode}</label>
 											<Input id="ret-postal" class="h-11 bg-bg" autocomplete="postal-code" bind:value={address.postal_code} />
 										</div>
 										<div class="flex flex-col gap-1.5">
-											<label class="text-sm font-semibold" for="ret-country">Country code</label>
+											<label class="text-sm font-semibold" for="ret-country">{c.countryCode}</label>
 											<Input
 												id="ret-country"
 												class="h-11 bg-bg uppercase"
@@ -1165,21 +1155,21 @@
 											/>
 										</div>
 									</div>
-									<p class="m-0 text-xs text-ink-muted" id="ret-country-help">Two letters, for example GB.</p>
+									<p class="m-0 text-xs text-ink-muted" id="ret-country-help">{c.countryHelp}</p>
 								</fieldset>
 							{/if}
 						{/if}
 
 						{#if payError}
-							<p class="mt-4 mb-0 text-sm text-error" role="alert">{payError}</p>
+							<p class="mt-4 mb-0 text-sm text-error" role="alert">{payError(c)}</p>
 						{/if}
 						<div class="mt-6 flex flex-wrap items-center gap-3">
 							<Button variant="outline" class="h-11 px-5" onclick={() => go(2)}>
-								<ArrowLeftIcon aria-hidden="true" /> Back
+								<ArrowLeftIcon aria-hidden="true" /> {c.back}
 							</Button>
 							{#if signedIn === false}
 								<Button href={nextHref} class="h-11 px-5">
-									<LogInIcon aria-hidden="true" /> Sign in to continue
+									<LogInIcon aria-hidden="true" /> {c.signInToContinue}
 								</Button>
 							{:else if selected?.kind === 'address_label'}
 								<Button
@@ -1188,7 +1178,7 @@
 									onclick={() => placeOrder('address_label')}
 								>
 									{#if busy === 'free'}<LoaderIcon class="animate-spin" aria-hidden="true" />{/if}
-									Create free label
+									{c.createFreeLabel}
 								</Button>
 							{:else}
 								<Button
@@ -1197,13 +1187,13 @@
 									onclick={() => (kind ? placeOrder(kind) : undefined)}
 								>
 									{#if busy === 'order' || busy === 'quote'}<LoaderIcon class="animate-spin" aria-hidden="true" />{/if}
-									{busy === 'quote' ? 'Getting your quote' : 'Get quote'}
+									{busy === 'quote' ? c.gettingQuote : c.getQuote}
 									{#if busy === null}<ArrowRightIcon aria-hidden="true" />{/if}
 								</Button>
 							{/if}
 							{#if signedIn && optionsState === 'ready' && (!selected || !addressOk)}
 								<span class="text-sm text-ink-muted">
-									{!selected ? 'Choose a delivery option.' : 'Add your return address to continue.'}
+									{!selected ? c.chooseDeliveryHint : c.addAddressHint}
 								</span>
 							{/if}
 						</div>
@@ -1213,40 +1203,40 @@
 							tabindex="-1"
 							class="m-0 text-h3 font-semibold outline-none"
 						>
-							{paused !== null ? 'Paid options are paused' : 'Review and pay'}
+							{paused !== null ? c.pausedTitle : c.reviewPay}
 						</h2>
 						{#if signedIn === false}
 							<div class="mt-4">
-								<Notice variant="info" heading="Sign in to pay.">
+								<Notice variant="info" heading={c.signInToPay}>
 									<p>
-										Your order lives in your account. <a class="underline underline-offset-4" href={nextHref}>Sign in</a> and you will come
-										back to delivery.
+										{c.orderInAccount} <a class="underline underline-offset-4" href={nextHref}>{c.signIn}</a>
+										{c.comeBackToDelivery}
 									</p>
 								</Notice>
 							</div>
 						{:else if paused !== null}
 							<div class="mt-4 flex flex-col gap-4">
-								<Notice variant="warning" heading="Checkout is paused.">
-									<p>{paused || 'Paid options are paused right now.'}</p>
+								<Notice variant="warning" heading={c.checkoutPaused}>
+									<p>{paused || c.paidPaused}</p>
 								</Notice>
 								{#if freeOption || options === null}
 									<div class="flex flex-col gap-3 rounded-lg border border-line bg-bg p-4 shadow-sm sm:flex-row sm:items-center">
 										<p class="m-0 flex-1 text-sm text-ink">
-											<span class="font-semibold">{freeOption?.title ?? 'Free address label'}</span>
-											· print it at home and add your own postage.
+											<span class="font-semibold">{freeOption?.title ?? c.freeAddressLabel}</span>
+											{c.printAtHome}
 										</p>
 										<Button class="h-11 px-5" disabled={busy !== null || !addressOk} onclick={useFree}>
 											{#if busy === 'free'}<LoaderIcon class="animate-spin" aria-hidden="true" />{/if}
-											Use the free label
+											{c.useFreeLabel}
 										</Button>
 									</div>
 									{#if !addressOk}
 										<p class="m-0 text-sm text-ink-muted">
-											Add your return address in <button
+											{c.addAddressIn} <button
 												type="button"
 												class="cursor-pointer border-0 bg-transparent p-0 text-accent-strong underline"
-												onclick={() => go(3)}>Delivery</button
-											> first.
+												onclick={() => go(3)}>{c.steps.delivery}</button
+											>{c.addAddressFirst}
 										</p>
 									{/if}
 								{/if}
@@ -1254,7 +1244,7 @@
 						{:else if order && payTotal !== null && currency}
 							<div class="mt-4 overflow-hidden rounded-lg border border-line bg-bg shadow-sm">
 								<div class="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface px-4 py-3">
-									<span class="font-semibold text-ink">{selected?.title ?? 'Your order'}</span>
+									<span class="font-semibold text-ink">{selected?.title ?? c.yourOrder}</span>
 									<span class="font-mono text-xs text-ink-muted">{order.id}</span>
 								</div>
 								<ul class="m-0 list-none p-0">
@@ -1266,16 +1256,15 @@
 									{/each}
 								</ul>
 								<div class="flex items-baseline justify-between gap-4 px-4 py-4">
-									<span class="font-semibold text-ink">Total</span>
+									<span class="font-semibold text-ink">{c.total}</span>
 									<span class="font-mono text-h3 font-semibold text-ink">{money(payTotal, currency)}</span>
 								</div>
 								{#if quote && quote.carrier_quotes.length > 0}
 									<ul class="m-0 flex list-none flex-col gap-1 border-t border-line bg-surface px-4 py-3 text-sm text-ink-muted">
 										{#each quote.carrier_quotes as cq (cq.leg)}
 											<li>
-												{cq.leg === 'outbound' ? 'To the authority' : cq.leg === 'return' ? 'Back to you' : 'Kit to you'}:
-												{serviceName(cq.service, cq.carrier)}{#if cq.delivery_days}, about {cq.delivery_days}
-													{cq.delivery_days === 1 ? 'day' : 'days'}{/if}
+												{c.roles[cq.leg] ?? cq.leg}{c.colon}
+												{serviceName(cq.service, cq.carrier)}{#if cq.delivery_days}{c.aboutDays(cq.delivery_days)}{/if}
 											</li>
 										{/each}
 									</ul>
@@ -1283,45 +1272,45 @@
 							</div>
 							<div class="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
 								{#if mode === 'test'}
-									<Badge variant="outline" class="h-7 border-changed px-3 text-sm text-changed">Test mode</Badge>
+									<Badge variant="outline" class="h-7 border-changed px-3 text-sm text-changed">{c.testMode}</Badge>
 								{/if}
 								{#if quote?.expires_at}
-									<span>Quote held until {fmtTime(quote.expires_at)}.</span>
+									<span>{c.quoteHeld(fmtTime(quote.expires_at))}</span>
 								{/if}
-								<span>Payment opens on Stripe's secure checkout.</span>
+								<span>{c.stripeNote}</span>
 							</div>
 							{#if payError}
-								<p class="mt-3 mb-0 text-sm text-error" role="alert">{payError}</p>
+								<p class="mt-3 mb-0 text-sm text-error" role="alert">{payError(c)}</p>
 							{/if}
 							<div class="mt-6 flex flex-wrap items-center gap-3">
 								<Button variant="outline" class="h-11 px-5" onclick={() => go(3)}>
-									<ArrowLeftIcon aria-hidden="true" /> Back
+									<ArrowLeftIcon aria-hidden="true" /> {c.back}
 								</Button>
 								<Button class="h-11 px-6" disabled={busy !== null} onclick={pay}>
 									{#if busy === 'checkout'}
-										<LoaderIcon class="animate-spin" aria-hidden="true" /> Opening checkout
+										<LoaderIcon class="animate-spin" aria-hidden="true" /> {c.openingCheckout}
 									{:else}
-										<LockIcon aria-hidden="true" /> Pay {money(payTotal, currency)}
+										<LockIcon aria-hidden="true" /> {c.payAmount(money(payTotal, currency))}
 									{/if}
 								</Button>
 							</div>
 						{:else if order}
 							<div class="mt-4">
-								<Notice variant="info" heading="No quote yet.">
-									<p>{payError ?? 'Get a fresh quote for this order.'}</p>
+								<Notice variant="info" heading={c.noQuote}>
+									<p>{payError ? payError(c) : c.freshQuote}</p>
 								</Notice>
 								<Button class="mt-3 h-11 px-5" disabled={busy !== null} onclick={requote}>
 									{#if busy === 'quote'}<LoaderIcon class="animate-spin" aria-hidden="true" />{/if}
-									Get quote
+									{c.getQuote}
 								</Button>
 							</div>
 						{:else}
 							<div class="mt-4">
-								<Notice variant="info" heading="Choose delivery first.">
-									<p>Pick how the document travels, then the quote appears here.</p>
+								<Notice variant="info" heading={c.chooseDeliveryFirst}>
+									<p>{c.pickTravel}</p>
 								</Notice>
 								<Button variant="outline" class="mt-3 h-11 px-5" onclick={() => go(3)}>
-									<ArrowLeftIcon aria-hidden="true" /> Back to delivery
+									<ArrowLeftIcon aria-hidden="true" /> {c.backToDelivery}
 								</Button>
 							</div>
 						{/if}
@@ -1333,64 +1322,63 @@
 		<div class="min-w-0 lg:col-span-5">
 			<aside
 				class="rounded-xl border border-line bg-bg p-5 shadow-sm lg:sticky lg:top-20"
-				aria-label="Your apostille"
+				aria-label={c.yourApostille}
 			>
-				<h2 class="m-0 text-h3 font-semibold">Your apostille</h2>
+				<h2 class="m-0 text-h3 font-semibold">{c.yourApostille}</h2>
 				<div class="mt-3">
 					<JourneyGraphic authority={slug ? authorityName : null} {kind} {carriers} />
 				</div>
 				{#if !slug}
-					<div role="status" aria-label="Waiting for your choices" class="mt-4 flex flex-col gap-2">
-						<span class="sr-only">Choose a destination to see your order summary</span>
+					<div role="status" aria-label={c.waiting} class="mt-4 flex flex-col gap-2">
+						<span class="sr-only">{c.waitingHint}</span>
 						<Skeleton class="h-4 w-2/3" />
 						<Skeleton class="h-12 w-full" />
 						<Skeleton class="h-4 w-1/2" />
 					</div>
 				{:else}
 					<dl class="m-0 mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-						<dt class="text-ink-muted">Destination</dt>
+						<dt class="text-ink-muted">{c.steps.destination}</dt>
 						<dd class="m-0 text-ink">{authorityName}</dd>
-						<dt class="text-ink-muted">Document</dt>
-						<dd class="m-0 text-ink">{pathLabel || 'Not chosen yet'}</dd>
-						<dt class="text-ink-muted">Form</dt>
+						<dt class="text-ink-muted">{c.steps.document}</dt>
+						<dd class="m-0 text-ink">{pathLabel || c.notChosen}</dd>
+						<dt class="text-ink-muted">{c.steps.form}</dt>
 						<dd class="m-0 text-ink">
 							{#if !form}
-								None on file
+								{c.noneOnFile}
 							{:else if formSkipped}
-								Paper form
+								{c.paperForm}
 							{:else}
-								{filledCount} of {form.fields.length} fields filled
+								{c.fieldsFilled(filledCount, form.fields.length)}
 							{/if}
 						</dd>
-						<dt class="text-ink-muted">Delivery</dt>
+						<dt class="text-ink-muted">{c.steps.delivery}</dt>
 						<dd class="m-0 text-ink">
 							{#if selected}
 								{selected.title}
 								{#if selected.from_cents !== null && currency}
 									<span class="text-ink-muted">
-										· {selected.from_cents === 0 ? 'Free' : `from ${money(selected.from_cents, currency, { compact: true })}`}
+										· {selected.from_cents === 0 ? c.free : c.fromPrice(money(selected.from_cents, currency, { compact: true }))}
 									</span>
 								{/if}
 							{:else}
-								Not chosen yet
+								{c.notChosen}
 							{/if}
 						</dd>
 						{#if payTotal !== null && currency}
-							<dt class="text-ink-muted">Total</dt>
+							<dt class="text-ink-muted">{c.total}</dt>
 							<dd class="m-0 font-mono font-semibold text-ink">{money(payTotal, currency)}</dd>
 						{/if}
 					</dl>
 					{#if feeLines.length > 0 || timing}
 						<div class="mt-4 border-t border-line pt-4">
 							<p class="m-0 text-eyebrow font-semibold tracking-[0.06em] text-ink-muted uppercase">
-								From the authority
+								{c.fromAuthority}
 							</p>
 							<ul class="m-0 mt-2 flex list-none flex-col gap-1 p-0 text-sm">
 								{#each feeLines as fee, i (`${i}-${fee.label}`)}
 									<li class="flex flex-wrap items-center gap-x-2">
 										<span class="text-ink">
-											{fee.label}{#if currency}: {money(fee.amount_cents, currency)}{/if}{#if fee.per}{' '}per
-												{fee.per}{/if}
+											{fee.label}{#if currency}{c.colon} {money(fee.amount_cents, currency)}{/if}{#if fee.per}{' '}{c.per(fee.per)}{/if}
 										</span>
 										{#if fee.fact_id}<FactChip factId={fee.fact_id} fact={factById(fee.fact_id)} />{/if}
 									</li>
@@ -1413,5 +1401,5 @@
 {/if}
 
 <noscript>
-	<p class="rounded-md border border-line bg-surface px-4 py-3">Placing an order needs JavaScript.</p>
+	<p class="rounded-md border border-line bg-surface px-4 py-3">{c.needsJs}</p>
 </noscript>
