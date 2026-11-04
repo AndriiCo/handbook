@@ -106,7 +106,14 @@ pub(crate) const LOCAL_ENV: [&str; 3] = ["LOCAL_MODEL_URL", "LOCAL_MODEL", "LOCA
 /// at the wrong model, not proof of the weights the endpoint serves.
 pub(crate) fn is_meta_model(id: &str) -> bool {
     let id = id.trim().to_ascii_lowercase();
-    !id.is_empty() && (id.starts_with("muse-") || id.contains("llama"))
+    // A hub path names its uploader first (`meta-llama/…`, a GGUF
+    // re-upload): judge the model name after the last `/`. The name must
+    // start with a Meta family, so look-alikes such as TinyLlama or
+    // OpenLLaMA (not Meta's weights) are refused.
+    let name = id.rsplit('/').next().unwrap_or_default();
+    ["muse-", "llama", "meta-llama", "codellama"]
+        .iter()
+        .any(|family| name.starts_with(family))
 }
 
 /// `(base_url, model, key)` for `--local` from `get` (the environment),
@@ -957,6 +964,24 @@ mod tests {
         ]))
         .unwrap_err();
         assert!(wrong.contains("Meta model"), "{wrong}");
-        assert!(is_meta_model("muse-spark-1.3") && !is_meta_model(""));
+        for meta in [
+            "muse-spark-1.3",
+            "Llama-3.2-3B-Instruct",
+            "llama3.1:8b",
+            "meta-llama/Llama-3.1-8B-Instruct",
+            "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+            "CodeLlama-7b",
+        ] {
+            assert!(is_meta_model(meta), "{meta}");
+        }
+        for other in [
+            "",
+            "acme-7b-instruct",
+            "TinyLlama-1.1B",
+            "openllama-7b",
+            "mistral-7b-instruct",
+        ] {
+            assert!(!is_meta_model(other), "{other}");
+        }
     }
 }
