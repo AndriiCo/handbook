@@ -719,7 +719,7 @@ fn server_plan(target: &Target, facts: &Facts) -> Result<Vec<Step>, String> {
 }
 
 fn scoreboard(out: &str) -> Vec<String> {
-    ["node", "xtask/ops/scoreboard.mjs", "--out", out]
+    ["node", "xtask/ops/scoreboard.mjs", "--report", "--out", out]
         .map(String::from)
         .to_vec()
 }
