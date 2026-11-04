@@ -157,8 +157,26 @@ worker GPU jobs never overlap.
 | `research.nonparty` | `{countries?: [ISO2], limit?: n, refresh?: bool}` | `application/json` packs bundle (§5) |
 | `discovery.bootstrap` | `{recorded?: bool, crosscheck?: bool, countries?: [ISO2] \| "all", batch_size?: 5..25, max_batches?: n}` | `application/json` discovery report (§6) |
 | `scrape.urls` | `{urls: [https…], politeness_ms?: n}` | `application/json` `{pages: [{url, status, sha256, bytes, body_b64}]}` |
-| `eval.gold` | `{live?: bool, planted?: bool, prompt?: "v1"\|"v2", gold?: "<dir under evals/>"}` (default `authorities`; `authorities-real` from `xtask gold-export`) | `application/json` `quality.json` |
+| `eval.gold` | `{live?: bool, local?: bool, base_url?, model?, planted?: bool, prompt?: "v1"\|"v2", gold?: "<dir under evals/>"}` (default `authorities`; `authorities-real` from `xtask gold-export`; `local` grades an OpenAI-compatible endpoint serving a Meta model, from `LOCAL_MODEL_URL` / `LOCAL_MODEL` / optional `LOCAL_MODEL_KEY` in `worker.env`, payload `base_url` / `model` first; see §4.1) | `application/json` `quality.json` |
 | `precheck.glimmer` | `{sample, image_b64?}` | verdict JSON; announced in `hello` only when `GLIMMER_MODEL` is set in `worker.env` (or the environment), else jobs wait `pending` |
+
+### 4.1 Local Meta models (D-4)
+
+`xtask eval --local` (and `eval.gold` with `local: true`) drafts the
+gold set through an OpenAI-compatible endpoint on our own hardware,
+e.g. llama.cpp `llama-server` on plant serving a Llama model:
+`LOCAL_MODEL_URL` is its base (`http://127.0.0.1:8080/v1`), `LOCAL_MODEL`
+the id it serves, `LOCAL_MODEL_KEY` only if it wants one. The id comes
+from the environment, never the repo (`cargo xtask model-gate`), and
+must name a Meta family (`muse-…` or Llama) or the run is refused. The
+request is the drafting request with a `system` message and without
+the Model API's own fields; no call cache, no daily cap.
+
+Rule: a local model drafts only after it matches Spark on the gold set
+on `quote_found_rate` and `value_in_quote_rate` (same gold directory,
+same prompt version, compared from the two `quality.json` files).
+Until then it grades only; facts are still drafted by Spark with the
+quote check and approved in `/review`.
 
 ## 5. `research.nonparty`
 

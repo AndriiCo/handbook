@@ -231,6 +231,10 @@ pub struct MetaRestClient {
     /// Record/replay cache: a hit skips the network, the observer and
     /// the daily cap (`docs/ops/call-cache.md`).
     cache: Option<Arc<MetaCache>>,
+    /// The drafting model ([`DRAFT_MODEL`] on the Model API).
+    model: &'static str,
+    /// An OpenAI-compatible endpoint of our own ([`Self::local`]).
+    local: bool,
 }
 
 impl fmt::Debug for MetaRestClient {
@@ -238,6 +242,8 @@ impl fmt::Debug for MetaRestClient {
         f.debug_struct("MetaRestClient")
             .field("base_url", &self.base_url)
             .field("api_key", &"<redacted>")
+            .field("model", &self.model)
+            .field("local", &self.local)
             .finish()
     }
 }
@@ -269,7 +275,34 @@ impl MetaRestClient {
             pipeline: "draft",
             run_id: None,
             cache: None,
+            model: DRAFT_MODEL,
+            local: false,
         }
+    }
+
+    /// A drafting client for an OpenAI-compatible endpoint on our own
+    /// hardware serving a Meta model (llama.cpp `llama-server` on plant,
+    /// D-4): the same streamed chat completion and JSON schema, with
+    /// `model` as the endpoint names it, the standing rules as a `system`
+    /// message (`developer` is the Model API's role), none of the Model
+    /// API's own fields (`reasoning_effort`, `prompt_cache_key`) and the
+    /// key optional: without one no `Authorization` header is sent.
+    /// `model` is `'static` because [`ModelClient::model_id`] is; a
+    /// caller holding an id from the environment leaks it once.
+    ///
+    /// A local model only grades on the gold set until it matches Spark
+    /// there (`xtask eval --local`); it does not draft captures.
+    pub fn local(base_url: String, api_key: String, model: &'static str) -> Self {
+        Self {
+            model,
+            local: true,
+            ..Self::new(base_url, api_key)
+        }
+    }
+
+    /// The `Authorization` header value, when there is a key to send.
+    fn bearer(&self) -> Option<String> {
+        (!self.api_key.is_empty()).then(|| format!("Bearer {}", self.api_key))
     }
 
     /// Serve repeat requests from `cache` and count live calls in its
@@ -491,10 +524,11 @@ impl MetaRestClient {
         body: &serde_json::Value,
         started: Instant,
     ) -> Result<RawResponse, ModelError> {
-        let response = self
-            .stream_agent
-            .post(url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+        let mut request = self.stream_agent.post(url);
+        if let Some(bearer) = self.bearer() {
+            request = request.header("Authorization", bearer);
+        }
+        let response = request
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream")
             .send_json(body)
@@ -536,10 +570,11 @@ impl MetaRestClient {
     }
 
     fn get(&self, url: &str) -> Result<RawResponse, ModelError> {
-        let response = self
-            .agent
-            .get(url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+        let mut request = self.agent.get(url);
+        if let Some(bearer) = self.bearer() {
+            request = request.header("Authorization", bearer);
+        }
+        let response = request
             .call()
             .map_err(|e| ModelError::Transport(e.to_string()))?;
         let status = response.status().as_u16();
@@ -659,11 +694,11 @@ const MAX_COMPLETION_TOKENS: u32 = 32_000;
 
 impl ModelClient for MetaRestClient {
     fn model_id(&self) -> &'static str {
-        DRAFT_MODEL
+        self.model
     }
 
     fn draft_records(&self, req: &DraftRequest) -> Result<DraftResponse, ModelError> {
-        if self.api_key.is_empty() {
+        if self.api_key.is_empty() && !self.local {
             return Err(ModelError::Auth("meta api key not configured".to_string()));
         }
         match self.attempt(req, None) {
@@ -697,11 +732,21 @@ fn is_truncation_or_refusal(reason: &str) -> bool {
 /// everything after renders per run into the `user` message.
 const PER_RUN_MARKER: &str = "<!-- PER-RUN -->";
 
+/// Completion budget for a local endpoint: its models spend no
+/// reasoning tokens, and `llama-server` stops at its context anyway.
+const LOCAL_MAX_TOKENS: u32 = 8_192;
+
 /// Chat request body: stable rules first (`developer`), per-run values
 /// last (`user`). A lone `developer` message is rejected with HTTP 400
 /// (`` `messages` must contain at least one message with role `user`
-/// or `tool` ``), so the `user` message is always present.
-fn draft_body(req: &DraftRequest, previous_failure: Option<&str>) -> serde_json::Value {
+/// or `tool` ``), so the `user` message is always present. `local`
+/// shapes it for an OpenAI-compatible endpoint ([`MetaRestClient::local`]).
+fn draft_body(
+    req: &DraftRequest,
+    previous_failure: Option<&str>,
+    model: &str,
+    local: bool,
+) -> serde_json::Value {
     let template = template_for(req.prompt_version);
     let (developer, per_run) = template
         .split_once(PER_RUN_MARKER)
@@ -722,8 +767,21 @@ fn draft_body(req: &DraftRequest, previous_failure: Option<&str>) -> serde_json:
     // `reasoning_effort: medium`: drafts ground claims in evidence
     // (measured: even trivial replies burn ~60 reasoning tokens, and
     // verdict-scale JSON runs to ~1.5k — both inside the 32k budget).
+    if local {
+        return json!({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": developer.trim()},
+                {"role": "user", "content": user},
+            ],
+            "max_tokens": LOCAL_MAX_TOKENS,
+            "response_format": response_format_for(&req.doc_ids),
+            "stream": true,
+            "stream_options": {"include_usage": true},
+        });
+    }
     json!({
-        "model": DRAFT_MODEL,
+        "model": model,
         "messages": [
             {"role": "developer", "content": developer.trim()},
             {"role": "user", "content": user},
@@ -747,14 +805,14 @@ impl MetaRestClient {
         req: &DraftRequest,
         previous_failure: Option<&str>,
     ) -> Result<DraftResponse, ModelError> {
-        let body = draft_body(req, previous_failure);
+        let body = draft_body(req, previous_failure, self.model, self.local);
         let raw = self.post_chat(&body, self.pipeline, self.run_id);
         let parsed = match &raw {
             Ok(r) if (200..300).contains(&r.status) => Some(parse_stream(&r.body)),
             _ => None,
         };
         self.observe_attempt(
-            DRAFT_MODEL,
+            self.model,
             self.pipeline,
             self.run_id,
             &raw,
@@ -1153,6 +1211,56 @@ mod tests {
             err,
             ModelError::Auth("meta api key not configured".to_string())
         );
+    }
+
+    /// D-4: a local OpenAI-compatible endpoint gets the same schema with
+    /// its own model id, a `system` message, no Model API fields, and no
+    /// `Authorization` header without a key.
+    #[test]
+    fn local_endpoint_drafts_without_a_key() {
+        let records = r#"{"summary": "one record", "records": [
+            {"topic": "address", "field": "po_box", "value": "PO Box 40220",
+             "citation": {"doc_id": "fixture", "byte_start": 0, "byte_end": 12},
+             "confidence": 0.9}]}"#;
+        let (base, seen, handle) = stub(1, move |head, body| {
+            assert!(head.starts_with("POST /chat/completions "), "{head}");
+            assert!(
+                !head.to_ascii_lowercase().contains("authorization:"),
+                "{head}"
+            );
+            let v: serde_json::Value = serde_json::from_str(body).unwrap();
+            assert_eq!(v["model"], "local-meta-model");
+            assert_eq!(v["messages"][0]["role"], "system");
+            assert_eq!(v["messages"][1]["role"], "user");
+            assert_eq!(v["max_tokens"], LOCAL_MAX_TOKENS);
+            for meta_only in [
+                "reasoning_effort",
+                "prompt_cache_key",
+                "max_completion_tokens",
+            ] {
+                assert!(v.get(meta_only).is_none(), "{meta_only}");
+            }
+            assert_eq!(v["response_format"]["type"], "json_schema");
+            assert_eq!(v["stream"], true);
+            (
+                200,
+                sse_stream(
+                    serde_json::json!({"role": "assistant", "content": records}),
+                    "stop",
+                ),
+            )
+        });
+        let client = MetaRestClient::local(base, String::new(), "local-meta-model");
+        assert_eq!(client.model_id(), "local-meta-model");
+        let resp = client.draft_records(&sample_request()).expect("drafts");
+        assert_eq!(resp.records.len(), 1);
+        assert_eq!(resp.records[0].value, "PO Box 40220");
+        let _ = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        handle.join().unwrap();
+        // The Model API client still refuses to run without a key.
+        let meta = MetaRestClient::new("http://127.0.0.1:9".to_string(), String::new());
+        assert_eq!(meta.model_id(), DRAFT_MODEL);
+        assert!(meta.draft_records(&sample_request()).is_err());
     }
 
     #[test]

@@ -111,7 +111,7 @@ Tasks:
   add-authority   add an office/jurisdiction (see flags below)
   retention-sweep delete voice audio older than 365 days [--store <path>] [--actor <name>]
   analyze     draft proposed facts for an authority (stub default, --live for Meta API, --live --record <corpus>, --replay <corpus>)
-  eval        grade drafts on evals/authorities/*.json [--live [--record <corpus>]] [--replay <corpus>] [--store <path>] [--evals <dir>] (writes quality.json)
+  eval        grade drafts on evals/authorities/*.json [--live [--record <corpus>]] [--replay <corpus>] [--local (env LOCAL_MODEL_URL, LOCAL_MODEL, LOCAL_MODEL_KEY?)] [--store <path>] [--evals <dir>] (writes quality.json)
   gold-export real gold cases from a store's accepted facts on official captures [--store <path>] [--out evals/authorities-real] [--per-authority 10]
   fetch-url   fetch one URL into a warc capture (thin watch)
   fetch-slug  sweep one authority's watch URLs (manual, no scheduler)
