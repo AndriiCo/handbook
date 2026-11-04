@@ -111,6 +111,7 @@ worker GPU jobs never overlap.
 | Kind | Payload | Result |
 |---|---|---|
 | `research.nonparty` | `{countries?: [ISO2], limit?: n, refresh?: bool}` | `application/json` packs bundle (§5) |
+| `discovery.bootstrap` | `{recorded?: bool, crosscheck?: bool, countries?: [ISO2] \| "all", batch_size?: 5..25, max_batches?: n}` | `application/json` discovery report (§6) |
 | `scrape.urls` | `{urls: [https…], politeness_ms?: n}` | `application/json` `{pages: [{url, status, sha256, bytes, body_b64}]}` |
 | `eval.gold` | `{live?: bool, planted?: bool, prompt?: "v1"\|"v2"}` | `application/json` `quality.json` |
 | `precheck.glimmer` | builder-defined | stub: not announced in `hello`, so jobs wait `pending` |
@@ -147,3 +148,41 @@ Result bundle: `{"format": "packs.v1", "run": …, "packs": [Pack…],
 "report": [{iso2, country, dos_url, mfa_urls, steps_kept,
 steps_dropped, dropped: […]}]}`. `cargo xtask worker --unpack
 <bundle> --into packs/world-nonparty` writes and validates the files.
+
+## 6. `discovery.bootstrap`
+
+First slice of from-scratch discovery. Atlas pack
+`crates/atlas/packs/discovery-bootstrap.toml` (two tasks with
+schemas). Writes nothing to the store or to packs: the result is a
+report, and every value in it still needs staff review.
+
+1. Countries, no model: UN member states (recorded page) plus Holy See
+   and State of Palestine, joined by ISO code with the HCCH 1961 status
+   table, fetched live (`recorded: true` reads the recorded copy). The
+   EIF column makes each party a `party` (in force today) or a
+   `future_party` (joined; legalization applies until the date).
+   Status-table names this build cannot map to an ISO code are listed
+   as `unmapped_parties`, never dropped. Fewer than 100 parsed parties
+   fails the job (the page changed shape).
+2. `hague-crosscheck` (Spark, from memory, unless `crosscheck: false`):
+   the party list with EIF dates and the status-table URL, diffed
+   against the table: `missing_in_model`, `extra_in_model`,
+   `eif_mismatch`, `eif_unsure`. Never used as data; a model error is
+   reported and does not fail the job.
+3. `find-urls` (Spark, only with `countries`): world-pack authorities,
+   `batch_size` per call, at most `max_batches` calls (default 15 and
+   10). Fragment names (address, contact and heading lines, lower-case
+   descriptions) are skipped and listed. Each proposed URL is fetched;
+   it is kept only over https when its text names the authority (2+ of
+   its 5+-letter words) or an apostille term, with an `official_hint`
+   (`listed_by_hcch` or `government_domain`). Bad country codes fail
+   before any model call; if every batch fails at the model, the job
+   retries.
+
+Result: `{"format": "discovery.v1", "today", "hcch": {url, recorded,
+sha256}, "countries": [{iso2, name, status, entry_into_force}],
+"future_parties", "unmapped_parties", "crosscheck", "authorities":
+[{authority, unknown, urls: [{kept, candidate, evidence |
+reason, official_hint}]}], "names_skipped", "summary"}`. Offline run:
+`cargo xtask worker --run-local <job.json>` with `META_API_KEY` in the
+env file.

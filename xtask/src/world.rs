@@ -42,7 +42,7 @@ use callcache::{CacheMode, FetchCache, MetaCache};
 use crate::{flag, unix_now};
 
 /// The ONE status-table URI (the F2 feed).
-const STATUS_TABLE_URL: &str =
+pub(crate) const STATUS_TABLE_URL: &str =
     "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41";
 /// HCCH site root: authority/details hrefs are root-relative.
 const HCCH_ORIGIN: &str = "https://www.hcch.net";
@@ -424,6 +424,66 @@ pub(crate) fn party_names(html: &str) -> Vec<String> {
         .into_iter()
         .map(|party| party.name)
         .collect()
+}
+
+/// Party names with their entry-into-force date (`YYYY-MM-DD`) off the
+/// status table's EIF column (5th cell; same row rule). A date in the
+/// future marks a state that has joined but cannot issue or receive
+/// apostilles yet. `None` when the cell is empty or unreadable.
+pub(crate) fn party_entry_into_force(html: &str) -> Vec<(String, Option<String>)> {
+    split_rows(html)
+        .into_iter()
+        .filter(|row| !row.contains("<th"))
+        .filter_map(|row| {
+            let cells = cell_texts(row);
+            let name = cells.first().filter(|n| !n.is_empty())?.clone();
+            let eif = cells.get(4).and_then(|c| hcch_date(c));
+            Some((name, eif))
+        })
+        .collect()
+}
+
+/// Plain text of every `<td…>…</td>` in a row, in order.
+fn cell_texts(row: &str) -> Vec<String> {
+    let mut cells = Vec::new();
+    let mut rest = row;
+    while let Some(td) = rest.find("<td") {
+        let Some(open_end) = rest[td..].find('>') else {
+            break;
+        };
+        let body = &rest[td + open_end + 1..];
+        let Some(close) = body.find("</td>") else {
+            break;
+        };
+        cells.push(collapse_ws(&html_unescape(&strip_tags(&body[..close]))));
+        rest = &body[close..];
+    }
+    cells
+}
+
+/// HCCH table date (`28-II-2027`: day, Roman month, year) as
+/// `2027-02-28`.
+fn hcch_date(text: &str) -> Option<String> {
+    let mut parts = text.trim().split('-');
+    let day: u32 = parts.next()?.parse().ok()?;
+    let month = match parts.next()? {
+        "I" => 1,
+        "II" => 2,
+        "III" => 3,
+        "IV" => 4,
+        "V" => 5,
+        "VI" => 6,
+        "VII" => 7,
+        "VIII" => 8,
+        "IX" => 9,
+        "X" => 10,
+        "XI" => 11,
+        "XII" => 12,
+        _ => return None,
+    };
+    let year: u32 = parts.next()?.parse().ok()?;
+    (parts.next().is_none() && (1..=31).contains(&day) && year >= 1961)
+        .then(|| format!("{year:04}-{month:02}-{day:02}"))
 }
 
 /// Best-effort party count for the summary line (same row rule).
@@ -1803,6 +1863,30 @@ mod tests {
     fn urls_of(page: &str) -> Vec<String> {
         let html = fixture(page);
         page_urls(&html).into_iter().map(|hit| hit.url).collect()
+    }
+
+    /// EIF column: every recorded party has a readable date, and the
+    /// newest accessions (Algeria, Viet Nam; Thailand still ahead on the
+    /// 2026-11-02 capture) carry their own dates.
+    #[test]
+    fn status_table_entry_into_force_dates() {
+        let rows = party_entry_into_force(&fixture("status-table-cid41.html"));
+        assert_eq!(rows.len(), 130);
+        assert!(rows.iter().all(|(_, eif)| eif.is_some()), "{rows:?}");
+        let eif = |want: &str| {
+            rows.iter()
+                .find(|(name, _)| name == want)
+                .and_then(|(_, eif)| eif.clone())
+                .unwrap_or_else(|| panic!("missing party {want}"))
+        };
+        assert_eq!(eif("Thailand"), "2027-02-28");
+        assert_eq!(eif("Viet Nam"), "2026-09-11");
+        assert_eq!(eif("Algeria"), "2026-07-09");
+        assert_eq!(eif("Kosovo"), "2016-07-14");
+        assert_eq!(hcch_date(" 5-X-1961 "), Some("1961-10-05".to_string()));
+        for bad in ["", "28-XIII-2027", "32-I-2020", "1-I-2020-1", "A**"] {
+            assert_eq!(hcch_date(bad), None, "{bad}");
+        }
     }
 
     #[test]

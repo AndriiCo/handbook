@@ -78,7 +78,7 @@ const LINK_HINTS: [&str; 8] = [
 ];
 
 /// Observer states listed beside the 193 members (operator scope).
-const OBSERVERS: [(&str, &str); 2] = [("Holy See", "VA"), ("State of Palestine", "PS")];
+pub(crate) const OBSERVERS: [(&str, &str); 2] = [("Holy See", "VA"), ("State of Palestine", "PS")];
 
 pub struct ResearchNonparty;
 
@@ -172,7 +172,7 @@ pub(crate) fn un_members(html: &str) -> Vec<String> {
 }
 
 /// UN member-state name (as un.org spells it) to ISO 3166-1 alpha-2.
-fn un_iso2(name: &str) -> Option<&'static str> {
+pub(crate) fn un_iso2(name: &str) -> Option<&'static str> {
     Some(match fold(name).as_str() {
         "afghanistan" => "AF",
         "albania" => "AL",
@@ -524,7 +524,7 @@ fn clean_text(fragment: &str) -> String {
     page_text(fragment)
 }
 
-fn host_of(url: &str) -> Option<String> {
+pub(crate) fn host_of(url: &str) -> Option<String> {
     let rest = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))?;
@@ -827,7 +827,7 @@ fn pack_bytes(pack: &Pack) -> Vec<u8> {
 }
 
 /// Parse model output as JSON (whole text, else the outermost braces).
-fn model_json(text: &str) -> Option<Value> {
+pub(crate) fn model_json(text: &str) -> Option<Value> {
     serde_json::from_str(text).ok().or_else(|| {
         let (start, end) = (text.find('{')?, text.rfind('}')?);
         (start < end).then(|| serde_json::from_str(&text[start..=end]).ok())?

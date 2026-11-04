@@ -21,6 +21,7 @@
 //! `crates/web/src/worker.rs`).
 
 mod client;
+mod discovery_bootstrap;
 mod eval_gold;
 mod precheck_glimmer;
 pub(crate) mod research_nonparty;
@@ -117,6 +118,7 @@ pub trait JobHandler: Send + Sync {
 pub fn handlers() -> Vec<Box<dyn JobHandler>> {
     vec![
         Box::new(research_nonparty::ResearchNonparty),
+        Box::new(discovery_bootstrap::DiscoveryBootstrap),
         Box::new(scrape_urls::ScrapeUrls),
         Box::new(eval_gold::EvalGold),
         Box::new(precheck_glimmer::PrecheckGlimmer),
