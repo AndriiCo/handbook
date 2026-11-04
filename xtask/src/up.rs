@@ -34,6 +34,14 @@
 //! Release binaries never see real credentials here: the KEK is a fresh
 //! local file key, the evidence is synthetic, and every bind stays on
 //! loopback (the release dev-seam gate refuses anything else).
+//!
+//! W-3: while unset, every outside service defaults to its fake
+//! ([`fake_defaults`]): email to the console's Outbox and Compose
+//! screens, DEMO labels, the DEMO Stripe checkout, fake calls, recorded
+//! Glimmer verdicts, the replay-only Meta call cache (keyless boots),
+//! and `orders.enabled` on — so labels, payments and email work with no
+//! keys and nothing is sent, shipped or charged. A value set in
+//! `/config` or a setup file is kept on the next boot.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -723,7 +731,13 @@ fn enroll_if_needed(xtask: &Path) {
 /// browsers; the release dev-seam gate only honors it while every
 /// bind stays loopback.
 fn config_set_all(xtask: &Path) {
-    for (key, kind, value) in loopback_settings() {
+    let drafting = DRAFTING.get().cloned().unwrap_or(Drafting::Stub);
+    let unset: Vec<(&str, &str, String)> = fake_defaults(&drafting)
+        .into_iter()
+        .filter(|(key, _, _)| !config_row_set(key))
+        .map(|(key, kind, value)| (key, kind, value.to_string()))
+        .collect();
+    for (key, kind, value) in loopback_settings().into_iter().chain(unset) {
         let value = value.as_str();
         xtask_cmd(
             xtask,
@@ -760,6 +774,38 @@ fn loopback_settings() -> [(&'static str, &'static str, String); 9] {
         ("paths.admin_spa_dir", "text", s("web/build-admin")),
         ("admin.mtls_off", "bool", s("true")),
     ]
+}
+
+/// W-3 defaults sealed only while the row is unset: every outside
+/// service runs its fake, and paid tiers are on (the fake Stripe needs
+/// no key). A live or recording boot calls the Meta Model API, so it
+/// leaves `meta.mode` alone (fake is the replay-only call cache).
+fn fake_defaults(drafting: &Drafting) -> Vec<(&'static str, &'static str, &'static str)> {
+    let mut rows = vec![
+        ("mailer.mode", "text", "fake"),
+        ("mail.mode", "text", "fake"),
+        ("labels.mode", "text", "fake"),
+        ("stripe.mode", "text", "fake"),
+        ("telnyx.mode", "text", "fake"),
+        ("hf.mode", "text", "fake"),
+        ("orders.enabled", "bool", "true"),
+    ];
+    if matches!(drafting, Drafting::Replay | Drafting::Stub) {
+        rows.push(("meta.mode", "text", "fake"));
+    }
+    rows
+}
+
+/// True when the store holds a row for `key` (presence only, no KEK).
+fn config_row_set(key: &str) -> bool {
+    let store = handbook_store::store::Store::new(STORE_DIR);
+    handbook_store::db::open(&store)
+        .ok()
+        .and_then(|conn| {
+            conn.query_row("SELECT 1 FROM config WHERE key = ?1", [key], |_| Ok(()))
+                .ok()
+        })
+        .is_some()
 }
 
 /// Keys `up` owns: a setup file's local target cannot override them
@@ -806,10 +852,15 @@ fn seal_worker_token(xtask: &Path) {
     if !status.success() {
         fail("sealing worker.token failed");
     }
+    // W-3: the worker mirrors `hf.mode` (it reads no server config).
+    let hf_fake = load_runtime_config()
+        .modes
+        .is_fake(sealed_config::Integration::HuggingFace);
     write_private(
         Path::new(WORKER_ENV),
         &format!(
-            "# Local worker token for `cargo xtask up` (re-minted every boot).\nAPOSTILLE_WORKER_TOKEN={token}\n"
+            "# Local worker token for `cargo xtask up` (re-minted every boot).\nAPOSTILLE_WORKER_TOKEN={token}\n{}",
+            if hf_fake { "HF_MODE=fake\n" } else { "" }
         ),
     );
     println!("up: worker token sealed; {WORKER_ENV} written (0600)");
@@ -1854,6 +1905,18 @@ fn print_banner(setup_key: Option<&str>, review_link: &str, prebuilt: bool) {
         "  worker:  `xtask worker` connects as \"{}\"; its jobs are at http://localhost:{admin}/work",
         env_label()
     );
+    let fakes: Vec<&str> = load_runtime_config()
+        .modes
+        .fakes()
+        .iter()
+        .map(|i| i.label())
+        .collect();
+    if !fakes.is_empty() {
+        println!(
+            "  fake:    {} (nothing is sent, shipped or charged; email at /outbox and /compose)",
+            fakes.join(", ")
+        );
+    }
     println!("try this:");
     println!("  - sign in, open the review queue and approve a proposed fact");
     println!("  - curl -s http://localhost:{public}/apostille/api/v1/authorities");
@@ -2146,6 +2209,37 @@ mod tests {
                 .iter()
                 .any(|(k, _, v)| *k == "auth.origin" && v.starts_with("http://localhost:"))
         );
+    }
+
+    #[test]
+    fn fakes_default_on_and_meta_stays_live_for_live_or_recording_boots() {
+        let keys = |d: &Drafting| -> Vec<&str> { fake_defaults(d).iter().map(|r| r.0).collect() };
+        for d in [Drafting::Replay, Drafting::Stub] {
+            let k = keys(&d);
+            assert!(
+                k.contains(&"meta.mode") && k.contains(&"labels.mode"),
+                "{d:?}"
+            );
+        }
+        for d in [Drafting::Live, Drafting::Record("x.jsonl".to_string())] {
+            let k = keys(&d);
+            assert!(!k.contains(&"meta.mode"), "{d:?} calls the model");
+            assert!(k.contains(&"stripe.mode") && k.contains(&"mailer.mode"));
+        }
+        for (key, kind, value) in fake_defaults(&Drafting::Replay) {
+            let registered = sealed_config::keys::ALL
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, t)| t.as_str());
+            assert_eq!(registered, Some(kind), "{key}");
+            if kind == "text" {
+                assert_eq!(value, "fake", "{key}");
+            }
+        }
+        // Defaults never join the keys `up` owns: a setup file wins.
+        for (key, _, _) in fake_defaults(&Drafting::Replay) {
+            assert!(!loopback_keys().contains(&key), "{key}");
+        }
     }
 
     #[test]

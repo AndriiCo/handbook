@@ -561,8 +561,24 @@ system:
     OFL and already vendored (`web/static/fonts/fallback/`).
 
   *code, M*
-- [ ] **W-3** A **Fake** mode for every outside service. Each
-  integration gets one mode: `fake | sandbox | live`.
+- [x] **W-3** A **Fake** mode for every outside service. Each
+  integration gets one mode: `fake | sandbox | live`. **Done, commits
+  601c8ac (modes, guard, ribbon), c99955c (Outbox + Compose),
+  b60e15c (labels), e0ad757 (Stripe) and the W-3e commit (Telnyx,
+  Hugging Face, Meta, `up`/`judge` defaults)**; spec
+  `docs/specs/config-db.md` §9. Open:
+  - `sandbox` and `live` are recorded and shown but never override
+    the switches that already choose between them (`labels.live`, the
+    Stripe key prefix, `mailer.provider`); only `fake` changes
+    behaviour.
+  - A fake call's WAV is a synthetic tone and no recorded
+    transcription of it is committed: it is transcribed only with a
+    Meta key (or a call-cache answer recorded with one), and the
+    transcribe step still needs `media.terms_read`.
+  - The plant worker mirrors `hf.mode` through `HF_MODE=fake` in its
+    `worker.env` (workers read no server config); only `up` writes it.
+  - The staff `/labels` page shows the demo caps but no DEMO notice of
+    its own (the FAKE ribbon names labels).
   - **Guard:** fake is refused unless every bind is loopback, or on a
     staging target, mirroring the dev-key gate
     (`crates/config/src/lib.rs:675`). Fake output is watermarked, and

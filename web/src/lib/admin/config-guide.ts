@@ -1243,7 +1243,7 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 			'One mode per outside service: fake (a local stand-in: nothing is sent, shipped or charged), sandbox or live. An unset row keeps today\'s behaviour, and sandbox or live never override the switches that already choose between them.',
 		setup: [
 			'Fakes run only when every bind is loopback or on a staging target. A production host refuses to boot with a fake row, and this page refuses to save one there.',
-			'Set the rows to fake, then Restart service. The console shows a FAKE ribbon naming every fake.',
+			'Set the rows to fake, then Restart service. The console shows a FAKE ribbon naming every fake. cargo xtask up and cargo xtask judge set every unset row to fake for you.',
 			'Fake output is marked: the outbox says it was never sent, labels are stamped DEMO — NOT POSTAGE, receipts say DEMO.'
 		],
 		keys: [
@@ -1311,7 +1311,7 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				key: 'hf.mode',
 				type: 'text',
 				label: 'Hugging Face mode',
-				what: 'fake skips the weights download; Glimmer verdicts come from the recorded files. sandbox and live download the weights as before.',
+				what: 'fake skips the weights download; Glimmer verdicts come from the recorded files (a plant worker needs HF_MODE=fake in its worker.env; cargo xtask up writes it). sandbox and live download the weights as before.',
 				how: 'Leave unset on production. Set fake for a demo or a judge run, then restart.',
 				format: 'fake, sandbox or live. Unset keeps today\'s switches in charge.',
 				default: 'unset',

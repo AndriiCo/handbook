@@ -16,6 +16,8 @@
 //!   real address and the overall send budget is untouched. The rows
 //!   hold live magic links: the outbox exists only on loopback and
 //!   staging boots, where the data is synthetic;
+//! - the fake **call** audio (`telnyx.mode = fake`, used by
+//!   `admin_voice`): [`recorded_call_wav`];
 //! - the fake **inbox** (`mail.mode = fake`): `POST /admin/fake/inbox`
 //!   (the Compose screen) builds the message Gmail would deliver and
 //!   captures it through the Gmail poll's own capture step
@@ -37,6 +39,38 @@ use serde_json::json;
 
 use crate::{AppState, admin::AdminAuth, store_unavailable, unix_now};
 use auth::magic as flow;
+
+/// The recorded WAV a fake Telnyx call plays (`telnyx.mode = fake`):
+/// two seconds of a 440 Hz tone, mono 16-bit PCM at 16 kHz — the shape
+/// the transcribe step accepts. Synthetic and deterministic, so no
+/// binary rides in the repo and nobody's voice is in it.
+pub(crate) fn recorded_call_wav() -> Vec<u8> {
+    const RATE: u32 = 16_000;
+    let samples: Vec<i16> = (0..RATE * 2)
+        .map(|n| {
+            let t = f64::from(n) / f64::from(RATE);
+            ((t * 440.0 * std::f64::consts::TAU).sin() * 8_000.0) as i16
+        })
+        .collect();
+    let data_len = (samples.len() * 2) as u32;
+    let mut wav = Vec::with_capacity(44 + data_len as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    wav.extend_from_slice(&1u16.to_le_bytes()); // mono
+    wav.extend_from_slice(&RATE.to_le_bytes());
+    wav.extend_from_slice(&(RATE * 2).to_le_bytes()); // byte rate
+    wav.extend_from_slice(&2u16.to_le_bytes()); // block align
+    wav.extend_from_slice(&16u16.to_le_bytes()); // bits
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    for sample in samples {
+        wav.extend_from_slice(&sample.to_le_bytes());
+    }
+    wav
+}
 
 /// Outbox rows the list returns (newest first).
 const OUTBOX_LIST_MAX: i64 = 200;
@@ -332,6 +366,13 @@ pub(crate) fn refuse_fake_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_fake_call_wav_is_what_the_transcribe_step_accepts() {
+        let wav = recorded_call_wav();
+        assert_eq!(media::transcribe::validate_wav_audio(&wav).unwrap(), 2_000);
+        assert_eq!(wav, recorded_call_wav(), "deterministic");
+    }
 
     #[test]
     fn the_outbox_keeps_every_kind_of_mail_and_sends_none() {

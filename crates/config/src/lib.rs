@@ -1461,6 +1461,10 @@ pub struct CallCacheRows {
 }
 
 /// Read [`CallCacheRows`]; never fails (a bad row reads as unset).
+/// W-3: `meta.mode = fake` IS the call cache in `replay-only` mode (the
+/// recorded corpus answers; a miss is an error, never a model call),
+/// whatever `meta.cache_mode` says; `$META_CACHE_MODE` still overrides
+/// both, as for every sealed cache row.
 pub fn call_cache_rows(conn: &Connection, kek: &Kek) -> CallCacheRows {
     let text = |key: &str| {
         get_text_for_job(conn, kek, key)
@@ -1469,10 +1473,15 @@ pub fn call_cache_rows(conn: &Connection, kek: &Kek) -> CallCacheRows {
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
     };
+    let meta_fake = text(keys::META_MODE).and_then(|m| Mode::parse(&m)) == Some(Mode::Fake);
     CallCacheRows {
         meta_cache_dir: text(keys::PATHS_META_CACHE_DIR),
         fetch_cache_dir: text(keys::PATHS_FETCH_CACHE_DIR),
-        cache_mode: text(keys::META_CACHE_MODE),
+        cache_mode: if meta_fake {
+            Some("replay-only".to_string())
+        } else {
+            text(keys::META_CACHE_MODE)
+        },
         daily_call_cap: text(keys::META_DAILY_CALL_CAP),
     }
 }
@@ -2717,6 +2726,33 @@ mod runtime_tests {
         assert!(!fakes_allowed(any, None, Some("staging"), PRODUCTION_HOST));
         assert!(!fakes_allowed(any, None, Some("staging"), "Andrii.AI."));
         assert!(!fakes_allowed(any, None, Some("staging"), " "));
+    }
+
+    #[test]
+    fn a_fake_meta_mode_is_the_replay_only_call_cache() {
+        let conn = memory();
+        let kek = Kek::generate();
+        put(
+            &conn,
+            &kek,
+            keys::META_CACHE_MODE,
+            ConfigType::Text,
+            b"record",
+        );
+        assert_eq!(
+            call_cache_rows(&conn, &kek).cache_mode.as_deref(),
+            Some("record")
+        );
+        put(&conn, &kek, keys::META_MODE, ConfigType::Text, b"fake");
+        assert_eq!(
+            call_cache_rows(&conn, &kek).cache_mode.as_deref(),
+            Some("replay-only")
+        );
+        put(&conn, &kek, keys::META_MODE, ConfigType::Text, b"live");
+        assert_eq!(
+            call_cache_rows(&conn, &kek).cache_mode.as_deref(),
+            Some("record")
+        );
     }
 
     #[test]

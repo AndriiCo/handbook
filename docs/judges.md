@@ -59,10 +59,19 @@ compose build` stamps the commit into `/healthz`.
    only; nothing leaves your machine).
 3. Loads every authority pack, ingests synthetic evidence, and drafts
    proposals with recorded Meta model responses (no key needed).
-4. Seals a fresh worker token into `.local/worker.env` (mode 0600) and
+4. Runs every outside service as a **fake** (no accounts, no money,
+   nothing sent): email goes to the staff console's **Outbox**, office
+   replies are written on its **Compose** screen, labels are PDFs
+   stamped "DEMO — NOT POSTAGE", checkout is a DEMO page with a DEMO
+   receipt, calls play a recorded WAV, Glimmer verdicts are recorded
+   files, and Meta answers replay from the recorded corpus. A FAKE
+   ribbon on every console screen names them. Each one is a
+   `<area>.mode` row in `/config` (`docs/specs/config-db.md` §9); a
+   value you set there survives the next boot.
+5. Seals a fresh worker token into `.local/worker.env` (mode 0600) and
    starts `cargo xtask worker` beside the server, so the staff
    console's Work page shows a connected worker that runs jobs.
-5. Serves the public site on http://localhost:18318/apostille and the
+6. Serves the public site on http://localhost:18318/apostille and the
    staff console on http://localhost:18319. It prints the one-time
    setup key and says to open `/config` first, then the URL of the
    review queue. That URL is a plain link: it signs nobody in.
@@ -90,6 +99,15 @@ gate runs it after `cargo xtask ci` on every build
    date one tap away.
 5. Trace: "Draft from this capture" streams a model run with its tokens
    and latency.
+6. Email with no Gmail: on **Email** send an office a question; it
+   lands in **Outbox** (never sent). Press "Reply as …", write the
+   office's answer, pick DMARC pass and deliver: it is captured with
+   official trust and threaded to your email (pick fail and it stays
+   community). `cargo xtask instruct-sweep --store .local/store` drafts
+   facts from it into Review.
+7. Payments and labels with no keys: order FedEx labels on a dossier,
+   pay on the DEMO checkout, and print the DEMO-stamped labels from
+   the order page.
 
 Stop with Ctrl-C. Every `cargo xtask judge` starts fresh.
 `cargo xtask up` keeps its store: a rerun after you enrolled says

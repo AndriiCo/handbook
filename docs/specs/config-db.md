@@ -324,6 +324,13 @@ Rules (`config::Modes`, `config::fakes_allowed`):
   /admin/version` lists them as `fakes`, and the console shows a
   FAKE ribbon naming each one on every screen.
 
+Each fake in detail: email §9.1; labels `docs/specs/carrier-apis.md`
+§6; Stripe `docs/specs/payments-billing.md` §13; Telnyx
+`docs/specs/voice-telnyx.md` (Fake calls); Meta and Hugging Face §9.2.
+`cargo xtask up` and `cargo xtask judge` seal every row to `fake`
+while it is unset (and `orders.enabled` on), except `meta.mode` on a
+`--live` or `--record` boot, which calls the model.
+
 ### 9.1 Fake email (W-3b)
 
 - **Outbox** (`mailer.mode = fake`): `magic::mailer_from_config`
@@ -351,3 +358,20 @@ Rules (`config::Modes`, `config::fakes_allowed`):
   capture is watermarked (`X-Handbook-Fake` header, `fake-inbox:<id>`
   origin, `received_via: fake-inbox`, `fake: true`) and the next
   `xtask instruct-sweep` drafts from it into `/review` unchanged.
+
+### 9.2 Fake Meta Model API and Hugging Face (W-3e)
+
+- `meta.mode = fake` **is** the existing call cache in `replay-only`
+  mode (`config::call_cache_rows` reports it whatever
+  `meta.cache_mode` says): answers come from the recorded corpus under
+  `paths.meta_cache_dir`, a request with no recorded answer is an
+  error, and no model is called. As for every sealed cache row,
+  `$META_CACHE_MODE` and `--cache-mode` still override it, and the
+  mode covers the URL fetch cache too (`docs/ops/call-cache.md`).
+- `hf.mode = fake`: no Glimmer weights are downloaded (nothing runs
+  `ops/open-weights/glimmer-serve.sh download`) and verdicts come from
+  the recorded files in `evals/captures/demo_precheck/`: the public
+  demo precheck serves them from the store (`up` installs them), and
+  the plant `precheck.glimmer` worker answers from them when its
+  `worker.env` carries `HF_MODE=fake` — the worker reads no server
+  config, so `up` writes that line while `hf.mode` is fake.
