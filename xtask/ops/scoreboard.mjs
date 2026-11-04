@@ -44,7 +44,7 @@ const STAND_IN_FONTS = new Set([
 const CHECKS = [
   ['P0', 'Production answers /healthz', p0],
   ['GP2-data', `vietnam and usa-wa-sos each have >= ${MIN_FACTS} accepted facts`, gp2Data],
-  ['A1', 'Every public fact has a verified quote, source and date; Spark drafted them', a1],
+  ['A1', 'Every public fact has a verified quote, source and date; Spark drafts, staff may quote', a1],
   ['GP1', 'Home: real typeface, search, >= 3 authorities, clean at 390 px', gp1],
   ['GP2-page', `Guide: named h1, >= ${MIN_FACTS} facts on visible traced values, no raw keys, live WS`, gp2Page],
   ['GP3', 'Sign-in: passkey autofill + branded buttons for configured providers', gp3],

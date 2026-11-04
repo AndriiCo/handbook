@@ -169,7 +169,7 @@ test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
 		await checkClean(page, problems, 'home');
 
 		await scene('dossier', `${base}/apostille/authority/${HERO}`);
-		await caption(page, 'Muse Spark drafts every fact from official pages');
+		await caption(page, 'Muse Spark drafts facts from official pages');
 		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
 		// Citations beat (script scene 3): the first "Citation" button is
 		// the guide's Citations toggle, and the first blockquote is its

@@ -91,7 +91,8 @@ gate runs it after `cargo xtask ci` on every build
    setup key the command printed (it prints once), and enrol a passkey
    (Chrome and Safari allow passkeys on localhost). The badge says
    `judge`. Later visits sign in at http://localhost:18319/staff-login.
-3. Review: every Muse Spark draft shows the quote it came from. Keep
+3. Review: every Muse Spark draft shows the quote it came from, and the
+   **Quote a page** tab lets staff quote a line the drafter missed. Keep
    the Washington dossier open in another tab and accept a few: the
    dossier updates live over the `authority:{slug}` WebSocket, with no
    reload. Nothing is public until a person accepts it.
