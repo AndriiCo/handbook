@@ -6,8 +6,111 @@
 // session check, so claiming a login state there is false.
 // Admin-only: never imported from (public) or (customer) routes.
 
+// Shown for the moment before the session guard below navigates to
+// /staff-login?next=… (or where no guard runs).
 export const SESSION_EXPIRED_COPY =
 	'Staff session missing or expired — log in on the admin host again.';
+
+/** Console pages that run without a session (no redirect from them). */
+export const SIGN_IN_PATHS = ['/staff-login', '/enrol'];
+
+/** Where sign-in lands when no usable `next` is given. */
+export const DEFAULT_AFTER_SIGN_IN = '/dashboard';
+
+/**
+ * A same-origin console path to return to after sign-in, or the
+ * default. Only `/…` paths on this origin pass (no `//host`, no
+ * backslash or scheme tricks), never the sign-in pages themselves.
+ * @param {string | null | undefined} raw the `next` query value
+ * @returns {string}
+ */
+export function safeNext(raw) {
+	if (typeof raw !== 'string' || raw.length === 0 || raw.length > 2048) return DEFAULT_AFTER_SIGN_IN;
+	if (!raw.startsWith('/') || raw.startsWith('//') || /[\\\s]/.test(raw)) return DEFAULT_AFTER_SIGN_IN;
+	let url;
+	try {
+		url = new URL(raw, 'https://console.invalid');
+	} catch {
+		return DEFAULT_AFTER_SIGN_IN;
+	}
+	if (url.origin !== 'https://console.invalid') return DEFAULT_AFTER_SIGN_IN;
+	if (SIGN_IN_PATHS.includes(url.pathname)) return DEFAULT_AFTER_SIGN_IN;
+	return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/**
+ * The sign-in URL that returns to `here` (pathname + search + hash).
+ * @param {string} here
+ * @returns {string}
+ */
+export function signInHref(here) {
+	const next = safeNext(here);
+	return next === DEFAULT_AFTER_SIGN_IN ? '/staff-login' : `/staff-login?next=${encodeURIComponent(next)}`;
+}
+
+/**
+ * True when a response means the staff session is gone: a 401 from
+ * the admin API, except the sign-in ceremonies (their 401 is a failed
+ * passkey check) and the setup wizard (its 401 is a missing key).
+ * @param {string} url request URL (absolute or path)
+ * @param {number} status
+ */
+export function isSessionExpiry(url, status) {
+	if (status !== 401) return false;
+	let path;
+	try {
+		path = new URL(url, 'https://console.invalid').pathname;
+	} catch {
+		return false;
+	}
+	if (!path.startsWith('/apostille/api/v1/')) return false;
+	return !/^\/apostille\/api\/v1\/(auth|setup)\//.test(path);
+}
+
+/**
+ * Send every expired-session 401 to `/staff-login?next=…`: wraps the
+ * page's `fetch` once (the console layout installs it), so the six
+ * API clients and the pages that call `fetch` directly all land on
+ * the sign-in page with a way back. While the setup window is open no
+ * session can exist, so the 401 goes to the `/config` wizard instead.
+ * On the sign-in pages it never redirects. The caller still gets its
+ * response. Returns the uninstall function.
+ * @param {{ fetch: typeof fetch, location: { pathname: string, search: string, hash: string, assign: (href: string) => void } }} win
+ */
+export function installSessionGuard(win) {
+	const original = win.fetch;
+	let leaving = false;
+	/** @param {string} here */
+	async function leave(here) {
+		let dest = signInHref(here);
+		try {
+			const res = await original.call(win, '/apostille/api/v1/setup/status', { credentials: 'same-origin' });
+			if (res.ok && (await res.json())?.setup_required === true) dest = '/config';
+		} catch {
+			// Status unreachable: sign-in is the safe default.
+		}
+		if (dest === '/config' && win.location.pathname === '/config') {
+			leaving = false;
+			return;
+		}
+		win.location.assign(dest);
+	}
+	/** @type {typeof fetch} */
+	const guarded = async (input, init) => {
+		const res = await original.call(win, input, init);
+		const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+		const { pathname, search, hash } = win.location;
+		if (!leaving && isSessionExpiry(url, res.status) && !SIGN_IN_PATHS.includes(pathname)) {
+			leaving = true;
+			void leave(`${pathname}${search}${hash}`);
+		}
+		return res;
+	};
+	win.fetch = guarded;
+	return () => {
+		if (win.fetch === guarded) win.fetch = original;
+	};
+}
 
 /**
  * User-facing message for an admin auth failure, or null when the

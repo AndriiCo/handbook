@@ -175,6 +175,25 @@ export async function loginPasskey(account, io) {
 }
 
 /**
+ * Usernameless staff sign-in: start with no account, so the server
+ * sends a discoverable challenge (empty allow-list) and the browser
+ * offers the staff passkeys it holds for this console. The server
+ * resolves the account from the credential (spec §5.3).
+ * @param {any} io {credentials, post}
+ */
+export async function loginDiscoverable(io) {
+	const started = await io.post('/auth/passkey/login/start', { account: '' });
+	if (!started.ok) return started;
+	// No `mediation`: a button click opens the passkey sheet now
+	// rather than waiting for an autofill pick.
+	const cred = await io.credentials.get(credentialRequestArgs(started.body.options));
+	return io.post('/auth/passkey/login/finish', {
+		challenge_id: started.body.challenge_id,
+		credential: serializeAuthentication(cred)
+	});
+}
+
+/**
  * Passkey step-up for the signed-in staffer (config writes need one
  * from the last 10 minutes): read the session's own user id from the
  * admin `/me`, then run the same UV ceremony as login, which stamps
@@ -228,7 +247,15 @@ export function enrolErrorCopy(status, serverError, setupMode = false) {
  * @param {string} serverError
  */
 export function loginErrorCopy(status, serverError) {
-	if (status === 401) return 'Unknown account or no passkeys — check the user ID or ask your admin.';
+	// 401 from finish: the authenticator answered but the signature,
+	// user verification or account did not check out. From start: no
+	// usable passkey exists for the account given.
+	if (status === 401 && serverError === 'authentication failed') {
+		return 'The passkey check did not pass — try again with the passkey you enrolled on this server.';
+	}
+	if (status === 401) {
+		return 'No staff passkey matches that account — check the user ID, or ask an admin for an invite link.';
+	}
 	if (status === 403 && serverError === 'use the customer login') {
 		return 'This branch is for staff — use the customer login.';
 	}

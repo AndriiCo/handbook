@@ -60,10 +60,15 @@
     chunks therefore never exist on public origin — no URL guessing.
   - Root decision (run-100): because the admin build registers the
     `(public)` homepage at `/` too, the admin router answers `GET /`
-    with `303 → /admin` (dashboard; its layout gate forwards to
-     `/login` when unauthenticated) instead of serving the
-    shell. `/mock/*` is a server 404 on the staff origin (demo
-    routes must never render on prod admin, even client-side).
+    with `303 → /dashboard` (its layout gate forwards to
+    `/staff-login?next=…` when unauthenticated, and to `/config`
+    while the first-time setup window is open) instead of serving
+    the shell. Page paths carry no `/admin` segment: the host is
+    the console. `/mock` and `/mock/*` are server 404s on the staff
+    origin (demo routes must never render on prod admin), and so is
+    every `(customer)` page (`/login`, `/orders`, …): the admin
+    build bundles them, but they call the public API and break
+    there. Staff sign-in is `/staff-login`.
   - Simpler interim (hackathon): one build, but Caddy/axum on public
     host refuses to serve `/apostille/admin*` and
     `/_app/immutable/...admin...` chunk names. Weaker (chunk names

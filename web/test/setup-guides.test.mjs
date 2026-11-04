@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { STEPS, REQUIRED_KEYS, keyStepIndex } from '../src/lib/admin/setup-guides.js';
+import {
+	STEPS,
+	REQUIRED_KEYS,
+	PRODUCTION_ONLY_KEYS,
+	isLoopbackHost,
+	requiredKeysFor,
+	keyStepIndex
+} from '../src/lib/admin/setup-guides.js';
 
 // Every registry key except `setup.*`, generated from
 // crates/config/src/lib.rs (keys::ALL). A new registry key without
@@ -105,4 +112,28 @@ test('no guide leaks real credentials or endpoints', () => {
 			assert.doesNotMatch(text, pattern, `step ${step.id}`);
 		}
 	}
+});
+
+test('a loopback boot lists no production-only key as required', () => {
+	for (const host of ['localhost', '127.0.0.1', '127.1.2.3', '[::1]', 'admin.localhost']) {
+		assert.equal(isLoopbackHost(host), true, host);
+		const required = requiredKeysFor(host);
+		for (const key of required) assert.ok(!PRODUCTION_ONLY_KEYS.includes(key), `${host}: ${key}`);
+		for (const key of ['tls.cert_file', 'acme.email', 'telnyx.api_key', 'mailer.host', 'mail.refresh_token']) {
+			assert.ok(!required.includes(key), `${host} still requires ${key}`);
+		}
+		// Staff identity and the model gate still matter locally.
+		for (const key of ['auth.rp_id', 'auth.origin', 'media.terms_read']) {
+			assert.ok(required.includes(key), `${host} lost ${key}`);
+		}
+	}
+});
+
+test('a public host keeps every required key', () => {
+	for (const host of ['admin.andrii.ai', 'admin.staging.example', '10.0.0.5', 'localhost.evil.test']) {
+		assert.equal(isLoopbackHost(host), false, host);
+		assert.deepEqual(requiredKeysFor(host), REQUIRED_KEYS);
+	}
+	// Every production-only key is a required key (no typos).
+	for (const key of PRODUCTION_ONLY_KEYS) assert.ok(REQUIRED_KEYS.includes(key), key);
 });

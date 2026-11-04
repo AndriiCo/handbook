@@ -382,6 +382,7 @@ pub fn router(state: AppState) -> Router {
         .route("/console", get(root_to_dashboard))
         // Demo routes never serve on the staff origin: (mock) ships in
         // the admin JS bundle (client-routable) but must 404 server-side.
+        .route("/mock", get(admin_not_found))
         .route("/mock/{*rest}", get(admin_not_found))
         .route("/apostille/api/v1/me", get(admin_me))
         .route("/apostille/api/v1/admin/version", get(admin_version))
@@ -457,6 +458,40 @@ pub fn router(state: AppState) -> Router {
             "/apostille/api/v1/auth/passkey/login/finish",
             post(crate::staff_passkey::login_finish),
         )
+        .route(
+            "/apostille/api/v1/auth/logout",
+            post(crate::staff_passkey::logout),
+        )
+        // Staff page (customer-auth.md §5.6): list, invite, revoke, add
+        // a passkey. AdminAuth + the CSRF layer; mutations need step-up.
+        .route(
+            "/apostille/api/v1/staff",
+            get(crate::staff_passkey::staff_list),
+        )
+        .route(
+            "/apostille/api/v1/staff/invites",
+            post(crate::staff_passkey::invite_create),
+        )
+        .route(
+            "/apostille/api/v1/staff/invites/{id}/withdraw",
+            post(crate::staff_passkey::invite_withdraw),
+        )
+        .route(
+            "/apostille/api/v1/staff/passkeys/revoke",
+            post(crate::staff_passkey::passkey_revoke),
+        )
+        .route(
+            "/apostille/api/v1/staff/passkeys/add/start",
+            post(crate::staff_passkey::add_start),
+        )
+        .route(
+            "/apostille/api/v1/staff/passkeys/add/finish",
+            post(crate::staff_passkey::add_finish),
+        )
+        .route(
+            "/apostille/api/v1/staff/{user_id}/revoke",
+            post(crate::staff_passkey::staff_revoke),
+        )
         .route("/apostille/api/v1/bus/publish", post(publish))
         // Staff topic subscriptions (`proposals`, `run:{id}`) live on
         // the admin host only (M-A): the public branch ignores the
@@ -493,6 +528,7 @@ pub fn router(state: AppState) -> Router {
                 .post(admin_not_found)
                 .put(admin_not_found),
         )
+        .merge(customer_pages_not_found())
         .fallback_service(ServeDir::new(&state.admin_spa_dir).fallback(ServeFile::new(spa_index)))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -525,6 +561,26 @@ async fn admin_me(auth: AdminAuth) -> impl IntoResponse {
 
 async fn admin_not_found() -> impl IntoResponse {
     (StatusCode::NOT_FOUND, Json(json!({"error": "not found"})))
+}
+
+/// Top-level segments of the SPA's `(customer)` route group. The
+/// admin build bundles every route group, but customer pages call
+/// the public API under `/apostille` and break on the staff origin,
+/// so they 404 here like `/mock` (a test keeps this list in step
+/// with `web/src/routes/(customer)`).
+const CUSTOMER_PAGES: [&str; 10] = [
+    "billing", "forms", "login", "order", "orders", "precheck", "report", "security", "shipping",
+    "uploads",
+];
+
+/// `GET /{page}` and `GET /{page}/…` → JSON 404 for every
+/// [`CUSTOMER_PAGES`] entry (staff sign-in is `/staff-login`).
+fn customer_pages_not_found() -> Router<AppState> {
+    CUSTOMER_PAGES.iter().fold(Router::new(), |router, page| {
+        router
+            .route(&format!("/{page}"), get(admin_not_found))
+            .route(&format!("/{page}/{{*rest}}"), get(admin_not_found))
+    })
 }
 
 /// `GET /` (and the retired `/console`) on the admin host is never
@@ -1092,20 +1148,68 @@ mod tests {
     async fn mock_routes_404_on_staff_origin() {
         let tmp = tempfile::tempdir().unwrap();
         let app = router(state_with_spa(&tmp));
-        let res = app
-            .oneshot(
-                Request::builder()
-                    .uri("/mock/admin/config")
-                    .header("host", "admin.andrii.ai")
-                    .extension(axum::extract::ConnectInfo(
-                        "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
-                    ))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        for uri in ["/mock", "/mock/admin/config"] {
+            let res = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(uri)
+                        .header("host", "admin.andrii.ai")
+                        .extension(axum::extract::ConnectInfo(
+                            "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+                        ))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::NOT_FOUND, "uri: {uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn customer_pages_404_on_staff_origin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app = router(state_with_spa(&tmp));
+        let get = |uri: &str| {
+            Request::builder()
+                .uri(uri)
+                .header("host", "admin.andrii.ai")
+                .extension(axum::extract::ConnectInfo(
+                    "127.0.0.1:443".parse::<std::net::SocketAddr>().unwrap(),
+                ))
+                .body(Body::empty())
+                .unwrap()
+        };
+        for page in CUSTOMER_PAGES {
+            for uri in [format!("/{page}"), format!("/{page}/ord_x/detail")] {
+                let res = app.clone().oneshot(get(&uri)).await.unwrap();
+                assert_eq!(res.status(), StatusCode::NOT_FOUND, "uri: {uri}");
+            }
+        }
+        // Staff pages keep the shell, including the ones that share a
+        // prefix with a customer page.
+        for uri in ["/staff-login", "/staff-orders", "/review"] {
+            let res = app.clone().oneshot(get(uri)).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "uri: {uri}");
+        }
+    }
+
+    #[test]
+    fn customer_page_list_matches_the_route_group() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../web/src/routes/(customer)");
+        let mut found: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().is_dir())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        found.sort();
+        assert_eq!(
+            found, CUSTOMER_PAGES,
+            "a (customer) route was added or removed: update CUSTOMER_PAGES"
+        );
     }
 
     #[tokio::test]

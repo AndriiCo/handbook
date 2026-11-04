@@ -64,6 +64,9 @@ export function serveDir(dir, opts = {}) {
 	server.on('upgrade', (req, socket) => {
 		hijacked.add(socket);
 		socket.on('close', () => hijacked.delete(socket));
+		// A page that navigates away resets its socket: ECONNRESET
+		// here is expected and must not crash the test worker.
+		socket.on('error', () => socket.destroy());
 		try {
 			const path = new URL(req.url ?? '/', 'http://x').pathname;
 			const key = req.headers['sec-websocket-key'];

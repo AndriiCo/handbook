@@ -22,10 +22,13 @@ pub const KIND_LOGIN: &str = "login";
 /// boundary (cf. OAuth D2).
 pub const KIND_STAFF_REGISTER: &str = "staff_register";
 pub const KIND_STAFF_LOGIN: &str = "staff_login";
-/// Reserved for conditional mediation (spec §2.5, deferred past
-/// Phase 4 per OPEN-16).
-#[allow(dead_code)]
+/// Customer discoverable (usernameless) login: the credential names
+/// its user, so the challenge row has none (spec §2.5).
 pub const KIND_DISCOVERABLE: &str = "discoverable";
+/// Staff discoverable login (spec §5.3), apart from the customer kind.
+pub const KIND_STAFF_DISCOVERABLE: &str = "staff_discoverable";
+/// A signed-in staffer adding another passkey (spec §5.2).
+pub const KIND_STAFF_ADD: &str = "staff_add";
 
 /// Default staff-invite TTL, seconds (7d, single-use; spec §1.5).
 pub const INVITE_TTL_SECS: i64 = 604_800;
@@ -447,6 +450,133 @@ pub fn erase_identity(conn: &Connection, user_id: &str) -> rusqlite::Result<usiz
     )?;
     removed += conn.execute("DELETE FROM account WHERE user_id = ?1", [user_id])?;
     Ok(removed)
+}
+
+/// One staff/admin account as the console's Staff page lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StaffAccount {
+    pub user_id: String,
+    pub role: String,
+    pub created_at: i64,
+    pub locked_at: Option<i64>,
+    /// The invite name (`cn`) the account enrolled with; empty for the
+    /// setup-key admin, who enrolled without an invite.
+    pub name: String,
+}
+
+/// Every staff/admin account (locked ones too), oldest first.
+pub fn staff_accounts(conn: &Connection) -> rusqlite::Result<Vec<StaffAccount>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.user_id, a.role, a.created_at, a.locked_at,
+                COALESCE((SELECT i.cn FROM staff_invite i WHERE i.consumed_by = a.user_id
+                          ORDER BY i.consumed_at LIMIT 1), '')
+         FROM account a WHERE a.role IN ('staff', 'admin')
+         ORDER BY a.created_at, a.user_id",
+    )?;
+    stmt.query_map([], |r| {
+        Ok(StaffAccount {
+            user_id: r.get(0)?,
+            role: r.get(1)?,
+            created_at: r.get(2)?,
+            locked_at: r.get(3)?,
+            name: r.get(4)?,
+        })
+    })?
+    .collect()
+}
+
+/// One live passkey as the Staff page lists it (no key material).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredentialSummary {
+    pub credential_id: String,
+    pub label: String,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+/// Live passkeys of one account, oldest first.
+pub fn credential_summaries(
+    conn: &Connection,
+    user_id: &str,
+) -> rusqlite::Result<Vec<CredentialSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT credential_id, label, created_at, last_used_at FROM webauthn_credential
+         WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at, credential_id",
+    )?;
+    stmt.query_map([user_id], |r| {
+        Ok(CredentialSummary {
+            credential_id: r.get(0)?,
+            label: r.get(1)?,
+            created_at: r.get(2)?,
+            last_used_at: r.get(3)?,
+        })
+    })?
+    .collect()
+}
+
+/// Stamp `last_used_at` on a sign-in (the counter flow only rewrites
+/// the row when the authenticator's counter moved).
+pub fn touch_credential(conn: &Connection, credential_id: &str, now: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE webauthn_credential SET last_used_at = ?1 WHERE credential_id = ?2",
+        rusqlite::params![now, credential_id],
+    )?;
+    Ok(())
+}
+
+/// Unlocked admin accounts that hold at least one live passkey: the
+/// accounts that can still sign in and manage staff.
+pub fn live_admin_count(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM account a
+         WHERE a.role = 'admin' AND a.locked_at IS NULL
+           AND EXISTS (SELECT 1 FROM webauthn_credential c
+                       WHERE c.user_id = a.user_id AND c.revoked_at IS NULL)",
+        [],
+        |row| row.get(0),
+    )
+}
+
+/// One unconsumed, unexpired invite (hash, never the token).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingInvite {
+    pub token_hash: String,
+    pub role: String,
+    pub cn: String,
+    pub created_by: String,
+    pub created_at: i64,
+    pub expires_at: i64,
+}
+
+/// Invites still usable at `now`, newest first.
+pub fn pending_invites(conn: &Connection, now: i64) -> rusqlite::Result<Vec<PendingInvite>> {
+    let mut stmt = conn.prepare(
+        "SELECT token_hash, role, cn, created_by, created_at, expires_at FROM staff_invite
+         WHERE consumed_at IS NULL AND expires_at > ?1
+         ORDER BY created_at DESC, token_hash",
+    )?;
+    stmt.query_map([now], |r| {
+        Ok(PendingInvite {
+            token_hash: r.get(0)?,
+            role: r.get(1)?,
+            cn: r.get(2)?,
+            created_by: r.get(3)?,
+            created_at: r.get(4)?,
+            expires_at: r.get(5)?,
+        })
+    })?
+    .collect()
+}
+
+/// Withdraw a pending invite: it expires now, so start and finish
+/// answer it like any dead invite. Returns rows touched (0: already
+/// used, expired or unknown).
+pub fn withdraw_invite(conn: &Connection, token_hash: &str, now: i64) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE staff_invite SET expires_at = ?1
+         WHERE token_hash = ?2 AND consumed_at IS NULL AND expires_at > ?1",
+        rusqlite::params![now, token_hash],
+    )
 }
 
 /// True when this credential id exists on ANY account.
@@ -1004,5 +1134,84 @@ mod tests {
         );
         assert!(registration_decision(Some("u-1"), "u-1", false).is_err());
         assert!(registration_decision(Some("u-1"), "u-2", true).is_err());
+    }
+
+    #[test]
+    fn staff_listing_names_invites_and_counts_live_admins() {
+        let conn = memory();
+        ensure_staff_account(&conn, "u-admin", "admin", 100).unwrap();
+        ensure_staff_account(&conn, "u-staff", "staff", 200).unwrap();
+        ensure_account(&conn, "u-cust", 300).unwrap();
+        store_credential(&conn, "u-admin", "k-a1", "{}", "Judge", 110).unwrap();
+        store_credential(&conn, "u-staff", "k-s1", "{}", "", 210).unwrap();
+        store_invite(
+            &conn,
+            "h-used",
+            &NewInvite {
+                role: "staff",
+                cn: "jdoe",
+                created_by: "u-admin",
+                now: 150,
+                ttl_secs: 1000,
+            },
+        )
+        .unwrap();
+        consume_invite(&conn, "h-used", "u-staff", 190).unwrap();
+        store_invite(
+            &conn,
+            "h-open",
+            &NewInvite {
+                role: "admin",
+                cn: "ops",
+                created_by: "u-admin",
+                now: 400,
+                ttl_secs: 1000,
+            },
+        )
+        .unwrap();
+
+        let accounts = staff_accounts(&conn).unwrap();
+        let ids: Vec<_> = accounts.iter().map(|a| a.user_id.as_str()).collect();
+        assert_eq!(ids, ["u-admin", "u-staff"], "customers never list");
+        assert_eq!(accounts[0].name, "", "the setup admin has no invite");
+        assert_eq!(accounts[1].name, "jdoe");
+
+        let keys = credential_summaries(&conn, "u-admin").unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].label, "Judge");
+        assert_eq!(keys[0].last_used_at, None);
+        touch_credential(&conn, "k-a1", 500).unwrap();
+        assert_eq!(
+            credential_summaries(&conn, "u-admin").unwrap()[0].last_used_at,
+            Some(500)
+        );
+
+        let open = pending_invites(&conn, 450).unwrap();
+        assert_eq!(open.len(), 1, "the consumed invite is not pending");
+        assert_eq!(open[0].cn, "ops");
+        assert_eq!(withdraw_invite(&conn, "h-open", 460).unwrap(), 1);
+        assert!(pending_invites(&conn, 460).unwrap().is_empty());
+        assert_eq!(
+            get_invite(&conn, "h-open", 460).unwrap(),
+            None,
+            "withdrawn = dead"
+        );
+        assert_eq!(withdraw_invite(&conn, "h-open", 470).unwrap(), 0);
+        assert_eq!(withdraw_invite(&conn, "h-used", 470).unwrap(), 0);
+
+        assert_eq!(live_admin_count(&conn).unwrap(), 1);
+        revoke_credential(&conn, "u-admin", "k-a1", 600).unwrap();
+        assert_eq!(
+            live_admin_count(&conn).unwrap(),
+            0,
+            "no live passkey, no admin"
+        );
+        store_credential(&conn, "u-admin", "k-a2", "{}", "", 610).unwrap();
+        lock_account(&conn, "u-admin", 620).unwrap();
+        assert_eq!(
+            live_admin_count(&conn).unwrap(),
+            0,
+            "locked admins do not count"
+        );
     }
 }

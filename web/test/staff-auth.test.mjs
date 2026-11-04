@@ -9,6 +9,7 @@ import {
 	enrolErrorCopy,
 	enrolPasskey,
 	isTransportFailure,
+	loginDiscoverable,
 	loginErrorCopy,
 	loginPasskey,
 	serializeAuthentication,
@@ -113,7 +114,10 @@ describe('staff-auth shapes', () => {
 	});
 
 	it('maps login failures, carrying denial bodies verbatim', () => {
-		assert.match(loginErrorCopy(401, 'unknown account or no passkeys'), /Unknown account/);
+		assert.match(loginErrorCopy(401, 'unknown account or no passkeys'), /No staff passkey matches/);
+		// A failed passkey check is not an unknown account (P1-7).
+		assert.match(loginErrorCopy(401, 'authentication failed'), /passkey check did not pass/);
+		assert.doesNotMatch(loginErrorCopy(401, 'authentication failed'), /user ID/);
 		assert.match(loginErrorCopy(403, 'use the customer login'), /customer login/);
 		assert.match(
 			loginErrorCopy(403, 'admin access is limited — your IP is 198.51.100.9'),
@@ -258,6 +262,41 @@ describe('staff-auth ceremonies with fakes', () => {
 			'/auth/passkey/login/start',
 			'/auth/passkey/login/finish'
 		]);
+	});
+
+	it('signs in with no user ID: empty account, no mediation, server resolves the user', async () => {
+		const seen = [];
+		let asked = null;
+		const io = {
+			post: async (path, body) => {
+				seen.push([path, body]);
+				if (path.endsWith('/login/start')) {
+					return {
+						ok: true,
+						body: {
+							challenge_id: 'd1',
+							options: {
+								publicKey: { challenge: b64urlEncode(new Uint8Array([7])), allowCredentials: [] },
+								mediation: 'conditional'
+							}
+						}
+					};
+				}
+				return { ok: true, body: { user_id: 'u'.repeat(32), methods: ['passkey'] } };
+			},
+			credentials: {
+				get: async (args) => {
+					asked = args;
+					return credential();
+				}
+			}
+		};
+		const res = await loginDiscoverable(io);
+		assert.equal(res.ok, true);
+		assert.deepEqual(seen[0], ['/auth/passkey/login/start', { account: '' }]);
+		assert.equal(seen[1][1].challenge_id, 'd1');
+		assert.deepEqual(asked.publicKey.allowCredentials, []);
+		assert.equal('mediation' in asked, false, 'a click opens the sheet, not autofill');
 	});
 
 	it('confirms a step-up for the session’s own staff id', async () => {

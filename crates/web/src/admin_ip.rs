@@ -149,25 +149,31 @@ pub fn denied_response(ip: Option<IpAddr>, transport: &str) -> Response {
 
 /// Tiny static 403 page for browser navigations (`/`, `/config`,
 /// `/review`, …): no SPA, no JS, no admin asset. Names the refused
-/// peer, its family, the arriving transport, and the fix. Peer
-/// strings are dotted quads / colon hex only, so no escaping is
-/// needed.
+/// peer, its family and the arriving transport so the person can
+/// pass them to the operator, but not the config key or docs path
+/// (anyone probing the host sees this page). Peer strings are
+/// dotted quads / colon hex only, so no escaping is needed.
 pub fn denied_html(ip: Option<IpAddr>, transport: &str) -> String {
     let seen = seen_ip(ip);
-    let fix = match ip.map(|a| a.to_canonical()) {
-        Some(IpAddr::V4(_)) => format!("Add {seen} to admin.allow_ips, then restart apostille."),
+    let ask = match ip.map(|a| a.to_canonical()) {
+        Some(IpAddr::V4(_)) => {
+            format!("Ask the server operator to allow {seen}, then reload this page.")
+        }
         Some(IpAddr::V6(v6)) => format!(
-            "Add {seen} or its /64 {} to admin.allow_ips, then restart apostille.",
+            "Ask the server operator to allow {seen} or its /64 {}, then reload this page.",
             slash64(v6)
         ),
-        None => "No peer address was detected for this request. ".to_string(),
+        None => "No peer address was detected for this request.".to_string(),
     };
     format!(
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
-         <title>403 - Admin access refused</title></head><body>\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <title>403 - Admin access refused</title></head>\
+         <body style=\"font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5\">\
          <h1>Admin access refused (403)</h1>\
+         <p>This network address is not on the staff console allowlist.</p>\
          <p>Your IP address is {seen} ({}), over {transport}.</p>\
-         <p>{fix} See \"Admin IP allowlist\" in docs/specs/config-db.md to change it.</p>\
+         <p>{ask}</p>\
          </body></html>",
         family_name(ip),
     )
@@ -215,6 +221,20 @@ mod tests {
         assert_eq!(seen_ip(Some(mapped)), "203.0.113.7");
         assert_eq!(family_name(Some(mapped)), "IPv4");
         assert_eq!(seen_ip(None), "unknown");
+    }
+
+    #[test]
+    fn denied_page_fits_phones_and_names_no_config_key() {
+        let v4: IpAddr = "203.0.113.7".parse().unwrap();
+        let page = denied_html(Some(v4), "tcp");
+        assert!(page.contains("name=\"viewport\""), "{page}");
+        assert!(page.contains("203.0.113.7 (IPv4), over tcp"), "{page}");
+        assert!(!page.contains("allow_ips"), "{page}");
+        assert!(!page.contains("docs/"), "{page}");
+        let v6: IpAddr = "2001:db8:1:2:3:4:5:6".parse().unwrap();
+        let page = denied_html(Some(v6), "quic");
+        assert!(page.contains("2001:db8:1:2::/64"), "{page}");
+        assert!(!page.contains("allow_ips"), "{page}");
     }
 
     #[test]

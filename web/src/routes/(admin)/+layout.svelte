@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -24,6 +24,10 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
+	import UsersIcon from '@lucide/svelte/icons/users';
+	import LogOutIcon from '@lucide/svelte/icons/log-out';
+	import { installSessionGuard, signInHref, SIGN_IN_PATHS } from '#lib/admin/http-errors.js';
+	import { cookieValue } from '#lib/admin/staff-auth.js';
 	import type { Component } from 'svelte';
 	import type { LayoutProps } from './$types';
 
@@ -52,7 +56,8 @@
 				// first" or "By authority" (bulk). /triage stays as a page.
 				{ label: 'Review', href: resolve('/(admin)/review'), icon: ListChecksIcon, keywords: 'facts approve queue triage bulk by authority' },
 				{ label: 'Trace', href: resolve('/(admin)/trace'), icon: ActivityIcon, keywords: 'draft model tokens latency' },
-				{ label: 'Workers', href: resolve('/(admin)/workers'), icon: DatabaseIcon, keywords: 'fetch captures sweep' },
+				// URL download + analysis ingest; "Work queue" is the plant's jobs.
+				{ label: 'URL ingest', href: resolve('/(admin)/workers'), icon: DatabaseIcon, keywords: 'workers fetch captures sweep url' },
 				{ label: 'Packs', href: resolve('/(admin)/packs'), icon: GlobeIcon, keywords: 'authorities world load countries' },
 				{ label: 'Authorities', href: resolve('/(admin)/authorities'), icon: LandmarkIcon, keywords: 'offices rename hide aliases english name create' },
 				{ label: 'Work queue', href: resolve('/(admin)/work'), icon: ServerCogIcon, keywords: 'jobs plant worker research queue' }
@@ -76,19 +81,21 @@
 			label: 'System',
 			items: [
 				{ label: 'Config', href: resolve('/(admin)/config'), icon: SettingsIcon, keywords: 'keys settings' },
-				{ label: 'Mail', href: resolve('/(admin)/mail'), icon: InboxIcon, keywords: 'gmail poll inbox bounces readyz' }
+				{ label: 'Mail', href: resolve('/(admin)/mail'), icon: InboxIcon, keywords: 'gmail poll inbox bounces readyz' },
+				{ label: 'Staff', href: resolve('/(admin)/staff'), icon: UsersIcon, keywords: 'staff passkeys invite revoke accounts sign-in' }
 			]
 		}
 	];
 	const ALL = NAV.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })));
 
-	const BARE = ['/staff-login', '/enrol'];
+	const BARE = SIGN_IN_PATHS;
 	const bare = $derived(BARE.includes(page.url.pathname));
 	const current = $derived(ALL.find((i) => page.url.pathname.startsWith(i.href)) ?? null);
 
 	let env = $state<{ version: string; env: string } | null>(null);
 	let live = $state(false);
 	let paletteOpen = $state(false);
+	let signingOut = $state(false);
 
 	const ENV_TONE: Record<string, string> = {
 		production: 'bg-changed-bg text-changed',
@@ -109,35 +116,70 @@
 		await goto(href);
 	}
 
+	// Staff sign-out: ends the server session and clears both cookies
+	// (idempotent), then lands on the sign-in page with no way back
+	// into the cached shell.
+	async function signOut() {
+		if (signingOut) return;
+		signingOut = true;
+		try {
+			await fetch('/apostille/api/v1/auth/logout', {
+				method: 'POST',
+				headers: { 'x-csrf': cookieValue(document.cookie, 'hb_csrf') },
+				credentials: 'same-origin'
+			});
+		} catch {
+			// Offline: the cookie may survive, but the sign-in page
+			// shows the state either way.
+		}
+		window.location.replace(resolve('/(admin)/staff-login'));
+	}
+
+	// Any 401 from the admin API (an expired session mid-use) goes to
+	// /staff-login?next=…, or to /config while setup is open. Installed
+	// while the layout initialises, before any page's onMount fetches
+	// (children mount first), and never during prerender.
+	const unguard = typeof window === 'undefined' ? () => {} : installSessionGuard(window);
+	onDestroy(unguard);
+
 	// Client-side session gate (onMount only — never runs during
-	// prerender, so the static build stays green). /staff-login
-	// and /enrol are exempt (redirect loop otherwise), and
-	// /config is exempt while the setup window is open (no
-	// session can exist yet — the page runs the wizard instead).
+	// prerender, so the static build stays green). /staff-login and
+	// /enrol are exempt (redirect loop otherwise). While the setup
+	// window is open no session can exist yet, so every console route
+	// goes to /config, which runs the first-time setup wizard (a full
+	// navigation: a client-side goto from here can stall behind the
+	// first page's own load).
 	onMount(() => {
 		let stop: (() => void) | null = null;
 		(async () => {
 			const path = window.location.pathname;
+			const here = `${path}${window.location.search}${window.location.hash}`;
 			if (BARE.includes(path)) return;
-			if (path === '/config') {
-				try {
-					const setup = await fetch('/apostille/api/v1/setup/status', {
-						credentials: 'same-origin'
-					});
-					if (setup.ok && (await setup.json().catch(() => ({})))?.setup_required) return;
-				} catch {
-					// Fall through to the session check below.
-				}
-			}
 			try {
-				const res = await fetch('/apostille/api/v1/me', { credentials: 'same-origin' });
-				if (res.status === 401 || res.status === 403) {
-					window.location.href = resolve('/(admin)/staff-login');
+				const setup = await fetch('/apostille/api/v1/setup/status', {
+					credentials: 'same-origin'
+				});
+				if (setup.ok && (await setup.json().catch(() => ({})))?.setup_required) {
+					if (path !== resolve('/(admin)/config')) {
+						window.location.replace(resolve('/(admin)/config'));
+					}
 					return;
 				}
 			} catch {
-				// Offline or cert-less: pages surface their own errors;
-				// never strand the user on a blank shell.
+				// Fall through to the session check below.
+			}
+			try {
+				const res = await fetch('/apostille/api/v1/me', { credentials: 'same-origin' });
+				// A 401 is the session guard's (it adds ?next=); a 403 here
+				// is a signed-in account without the staff role.
+				if (res.status === 401) return;
+				if (res.status === 403) {
+					window.location.replace(signInHref(here));
+					return;
+				}
+			} catch {
+				// Offline: pages surface their own errors; never strand
+				// the user on a blank shell.
 			}
 			try {
 				const res = await fetch('/apostille/api/v1/admin/version', {
@@ -159,7 +201,13 @@
 <svelte:window onkeydown={onKey} />
 
 {#if bare}
-	{@render children()}
+	<main class="mx-auto flex min-h-svh w-full max-w-md flex-col px-4 py-10 sm:py-16">
+		<p class="m-0 mb-6 flex items-center gap-2 text-sm font-semibold">
+			<ShieldCheckIcon class="size-5 flex-none text-accent-strong" aria-hidden="true" />
+			Apostille console
+		</p>
+		{@render children()}
+	</main>
 {:else}
 	<Sidebar.Provider>
 		<Sidebar.Root collapsible="icon">
@@ -196,6 +244,14 @@
 				{/each}
 			</Sidebar.Content>
 			<Sidebar.Footer>
+				<Sidebar.Menu>
+					<Sidebar.MenuItem>
+						<Sidebar.MenuButton tooltipContent="Sign out" onclick={signOut} aria-busy={signingOut}>
+							<LogOutIcon aria-hidden="true" />
+							<span>{signingOut ? 'Signing out…' : 'Sign out'}</span>
+						</Sidebar.MenuButton>
+					</Sidebar.MenuItem>
+				</Sidebar.Menu>
 				<p class="m-0 px-2 text-xs text-ink-muted group-data-[collapsible=icon]:hidden" role="note">
 					Staff only — every action is audited.
 				</p>

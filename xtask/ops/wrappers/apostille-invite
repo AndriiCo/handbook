@@ -12,7 +12,9 @@ case "$CN" in ""|*[!A-Za-z0-9._-]*) echo "ABORT: bad cn" >&2; exit 1 ;; esac
 case "$DAYS" in ""|*[!0-9]*) echo "ABORT: days must be 1..30" >&2; exit 1 ;; esac
 { [ "$DAYS" -ge 1 ] && [ "$DAYS" -le 30 ]; } || { echo "ABORT: days must be 1..30" >&2; exit 1; }
 case "$ORIGIN" in ""|https://*|http://localhost*) ;; *) echo "ABORT: bad origin" >&2; exit 1 ;; esac
-ARGS="--store $STORE --role $ROLE --cn $CN --actor hal --days $DAYS"
-[ -n "$ORIGIN" ] && ARGS="$ARGS --origin $ORIGIN"
+# Production host: the full link defaults to the live admin origin
+# (xtask itself has no default origin).
+[ -n "$ORIGIN" ] || ORIGIN=https://admin.andrii.ai
+ARGS="--store $STORE --role $ROLE --cn $CN --actor hal --days $DAYS --origin $ORIGIN"
 # shellcheck disable=SC2086 (ARGS is fixed words + validated values)
 exec /srv/apostille/current/xtask admin-invite $ARGS

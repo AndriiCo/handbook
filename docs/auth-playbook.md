@@ -12,9 +12,10 @@
   fallback** for customers who cannot use the first four (Meta added
   prompt 009). Customers may link any number of methods in their
   profile, per the linking rules in §6. Staff/admin login:
-  **passkey (UV required) plus mTLS client cert** (decided
-  2026-10-28; password+TOTP rejected) — see the
-  [staff-enrolment runbook](ops/staff-enrolment.md) and
+  **passkey (UV required) from an address in `admin.allow_ips`**
+  (password+TOTP rejected 2026-10-28; the client certificate that
+  first paired with the passkey was replaced by the IP allowlist) —
+  see the [staff-enrolment runbook](ops/staff-enrolment.md) and
   [customer-auth.md](specs/customer-auth.md) §5.
 - Companion security rules: [SECURITY.md](SECURITY.md) §2
   (Auth/session) and §1 (verdicts 1–8) stay binding.

@@ -55,7 +55,7 @@ x509-parser = "0.18"
 # (ceremony state in server-side SQLite, single-use).
 # No `ring`: crypto backend is openssl (workspace TLS rule).
 # (conditional-ui arrives with §2.5 autofill in Phase 4.)
-webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation"] }
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation", "conditional-ui"] }
 uuid = { version = "1", features = ["v4"] }
 url = "2"
 # Google OAuth token/tokeninfo calls (spec customer-auth.md §9):
