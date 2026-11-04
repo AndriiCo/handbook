@@ -22,14 +22,16 @@
 //! weights on plant instead (`ops/open-weights/sam3_boxes.py`, run by
 //! `--sam3-python`, e.g. `~/sam3-venv/bin/python`); `--mask "faces,
 //! license plates"` blackens those boxes before Spark sees the pixels.
-//! Spark still judges over the hosted API.
+//! Spark still judges over the hosted API. A script run that outlives
+//! `--sam3-timeout` (seconds, default 1800) is killed and the run
+//! aborts; its output lands in `<out-dir>/.sam3-scratch/<sample>.log`.
 //!
 //! Key: `$META_API_KEY` only (never a file, never a flag).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use atlas::cached::CachedTransport;
 use atlas::model::{Transport, UreqTransport};
@@ -52,6 +54,11 @@ const MAX_ATTEMPTS: u32 = 4;
 const MAX_COMPLETION_TOKENS: u32 = 4_000;
 /// At most this many issues per verdict reach the public page.
 const MAX_ISSUES: usize = 8;
+/// Default `--sam3-timeout`: one `sam3_boxes.py` run (model load plus
+/// every prompt on one image) never takes longer on the plant GPU.
+const SAM3_TIMEOUT_SECS: u64 = 1_800;
+/// How often a running `sam3_boxes.py` is checked for exit.
+const SAM3_POLL: Duration = Duration::from_millis(200);
 
 /// Where the boxes come from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +68,7 @@ enum Backend {
         python: String,
         script: PathBuf,
         mask: String,
+        timeout: Duration,
     },
 }
 
@@ -93,6 +101,14 @@ impl Options {
         let png_dir = flag(args, "png-dir").ok_or("--png-dir is required")?;
         let out_dir = flag(args, "out-dir").ok_or("--out-dir is required")?;
         let mask = flag(args, "mask").unwrap_or_default();
+        let timeout = match flag(args, "sam3-timeout") {
+            None => SAM3_TIMEOUT_SECS,
+            Some(text) => text
+                .parse::<u64>()
+                .ok()
+                .filter(|secs| *secs > 0)
+                .ok_or_else(|| format!("--sam3-timeout {text}: want whole seconds > 0"))?,
+        };
         let backend = match flag(args, "sam-backend").as_deref() {
             None | Some("hosted") => {
                 if !mask.is_empty() {
@@ -109,6 +125,7 @@ impl Options {
                         .unwrap_or_else(|| "ops/open-weights/sam3_boxes.py".to_string()),
                 ),
                 mask,
+                timeout: Duration::from_secs(timeout),
             },
             Some(other) => {
                 return Err(format!(
@@ -295,10 +312,12 @@ fn record_one<T: Transport>(
             python,
             script,
             mask,
+            timeout,
         } => sam_boxes_via_script(
             python,
             script,
             mask,
+            *timeout,
             png,
             &opts.out_dir.join(".sam3-scratch"),
         )?,
@@ -397,6 +416,7 @@ fn sam_boxes_via_script(
     python: &str,
     script: &Path,
     mask: &str,
+    timeout: Duration,
     png: &Path,
     workdir: &Path,
 ) -> Result<Segmentation, String> {
@@ -416,22 +436,16 @@ fn sam_boxes_via_script(
     if let Some(path) = &masked_png {
         cmd.arg("--mask").arg(mask).arg("--masked-out").arg(path);
     }
+    let log = workdir.join(format!("{stem}.log"));
     let started = Instant::now();
-    let output = cmd
-        .output()
-        .map_err(|e| format!("run {python} {}: {e}", script.display()))?;
+    let status = run_with_timeout(&mut cmd, &log, timeout)
+        .map_err(|e| format!("sam3_boxes.py ({python} {}): {e}", script.display()))?;
     let secs = started.elapsed().as_secs_f64();
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let tail: String = stderr
-            .chars()
-            .rev()
-            .take(2_000)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        return Err(format!("sam3_boxes.py failed ({}): {tail}", output.status));
+    if !status.success() {
+        return Err(format!(
+            "sam3_boxes.py failed ({status}): {}",
+            log_tail(&log)
+        ));
     }
     let bytes = std::fs::read(&boxes_path)
         .map_err(|e| format!("sam3_boxes.py wrote no boxes file: {e}"))?;
@@ -452,6 +466,51 @@ fn sam_boxes_via_script(
         secs,
         masked_png,
     })
+}
+
+/// Run `cmd` to exit, or kill it once `timeout` passes. Stdout and
+/// stderr go to `log`, a file rather than a pipe, so a chatty child
+/// never stalls on a full pipe while it is being waited on.
+fn run_with_timeout(
+    cmd: &mut std::process::Command,
+    log: &Path,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, String> {
+    let out = std::fs::File::create(log).map_err(|e| format!("create {}: {e}", log.display()))?;
+    let err = out.try_clone().map_err(|e| e.to_string())?;
+    let mut child = cmd
+        .stdin(std::process::Stdio::null())
+        .stdout(out)
+        .stderr(err)
+        .spawn()
+        .map_err(|e| format!("start: {e}"))?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait().map_err(|e| format!("wait: {e}"))? {
+            return Ok(status);
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            // Reap after the kill so no zombie outlives the run.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "timed out after {}s (--sam3-timeout); killed. {}",
+                timeout.as_secs(),
+                log_tail(log)
+            ));
+        }
+        std::thread::sleep(SAM3_POLL.min(deadline - now));
+    }
+}
+
+/// The last 2000 characters of a child's log (empty when unreadable).
+fn log_tail(log: &Path) -> String {
+    let text = std::fs::read(log)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default();
+    let skip = text.chars().count().saturating_sub(2_000);
+    text.chars().skip(skip).collect()
 }
 
 /// The judge request: the pixels decide (flat synthetic shapes ground
@@ -944,8 +1003,20 @@ mod tests {
                 python: "python3".to_string(),
                 script: PathBuf::from("ops/open-weights/sam3_boxes.py"),
                 mask: "faces,license plates".to_string(),
+                timeout: Duration::from_secs(1_800),
             }
         );
+        masked.extend(["--sam3-timeout", "90"]);
+        let Backend::OpenWeights { timeout, .. } = Options::parse(&args(&masked)).unwrap().backend
+        else {
+            panic!("open weights");
+        };
+        assert_eq!(timeout, Duration::from_secs(90));
+        for bad in ["0", "soon", "-5"] {
+            let mut flags = base.to_vec();
+            flags.extend(["--sam-backend", "open-weights", "--sam3-timeout", bad]);
+            assert!(Options::parse(&args(&flags)).is_err(), "{bad}");
+        }
         assert!(Options::parse(&args(&["--png-dir", "a"])).is_err());
         assert!(
             Options::parse(&args(&[
@@ -989,6 +1060,7 @@ printf '\211PNGmasked' > "$masked"
             python: "sh".to_string(),
             script,
             mask: "faces".to_string(),
+            timeout: Duration::from_secs(60),
         };
         let fake = Fake::default();
         record_all(&fake, "key", &opts).unwrap();
@@ -1000,6 +1072,33 @@ printf '\211PNGmasked' > "$masked"
         assert_eq!(record["masked"], json!(["face"]));
         assert_eq!(record["boxes"][0]["label"], "face");
         assert_eq!(record["sam_counts"], json!({"face": 1}));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_script_is_killed_at_the_timeout_and_nothing_is_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut opts = fixture(tmp.path());
+        let script = tmp.path().join("hung_sam3.sh");
+        // `exec` so the kill lands on the sleeper itself.
+        std::fs::write(&script, "echo loading weights >&2\nexec sleep 30\n").unwrap();
+        opts.backend = Backend::OpenWeights {
+            python: "sh".to_string(),
+            script,
+            mask: String::new(),
+            timeout: Duration::from_secs(1),
+        };
+        let fake = Fake::default();
+        let started = Instant::now();
+        let err = record_all(&fake, "key", &opts).unwrap_err();
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "waited the full sleep"
+        );
+        assert!(err.contains("timed out after 1s"), "{err}");
+        assert!(err.contains("loading weights"), "log tail missing: {err}");
+        assert_eq!(fake.calls.get(), 0, "Spark is never asked");
+        assert!(!opts.out_dir.join("syn-doc-clean.json").exists());
     }
 
     #[test]
