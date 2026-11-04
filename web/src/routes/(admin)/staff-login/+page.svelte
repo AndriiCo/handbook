@@ -1,13 +1,15 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import {
 		CANCELLED_COPY,
+		autofillAvailable,
 		cookieValue,
 		isTransportFailure,
+		loginConditional,
 		loginDiscoverable,
 		loginErrorCopy,
 		loginPasskey
@@ -22,9 +24,15 @@
 	// that. No client certificate: the admin host's IP allowlist gates
 	// the branch. `?next=` (set when a session expired mid-use) is
 	// honoured after sign-in, same-origin console paths only.
+	// W-1: the email field (`username webauthn`) offers the passkeys in
+	// its autofill, each named by the email it was enrolled with. The
+	// typed email is never sent: the passkey picks the account.
 	const api = (path: string) => `/apostille/api/v1${path}`;
 
 	let account = $state('');
+	let email = $state('');
+	// The pending autofill request (a browser runs one at a time).
+	let autofill: AbortController | null = null;
 	let error = $state<string | null>(null);
 	let busy = $state(false);
 	let me = $state<{ user_id: string; role: string } | null>(null);
@@ -40,7 +48,43 @@
 		} catch {
 			setupRequired = null;
 		}
+		if (setupRequired !== true) {
+			await tick(); // the email field must be on the page first
+			startAutofill();
+		}
 	});
+	onDestroy(() => autofill?.abort());
+
+	// Offer passkeys in the email field's suggestions. Silent by design:
+	// no support, an abort or a dismissed sheet leaves the button path.
+	async function startAutofill() {
+		if (!webauthnOk || autofill || !(await autofillAvailable(globalThis.PublicKeyCredential))) {
+			return;
+		}
+		const controller = new AbortController();
+		autofill = controller;
+		// Only a picked passkey makes this path busy: an abort lands
+		// while the button's own ceremony runs, and must not clear it.
+		let picked = false;
+		try {
+			const res = await loginConditional(
+				{ post, credentials: navigator.credentials },
+				controller.signal
+			);
+			if (autofill === controller) autofill = null;
+			picked = busy = true;
+			await signedIn(res);
+		} catch (err) {
+			if (autofill === controller) autofill = null;
+			// Aborts and dismissed sheets stay silent; a dead network does not.
+			if (isTransportFailure(err)) {
+				error =
+					'Could not reach the admin host — check the connection and reload. (Refused networks answer with a 403 page naming the address instead.)';
+			}
+		} finally {
+			if (picked) busy = false;
+		}
+	}
 
 	async function post(path: string, body: unknown) {
 		const res = await fetch(api(path), {
@@ -59,28 +103,11 @@
 	async function login(withId: boolean) {
 		error = null;
 		busy = true;
+		autofill?.abort();
+		autofill = null;
 		try {
 			const io = { post, credentials: navigator.credentials };
-			const res = withId ? await loginPasskey(account.trim(), io) : await loginDiscoverable(io);
-			if (!res.ok) {
-				error = loginErrorCopy(res.status, res.body?.error ?? '');
-				return;
-			}
-			const check = await fetch(api('/me'), { credentials: 'same-origin' });
-			if (!check.ok) {
-				// Carry the denial text (it names the refused IP) into the copy.
-				const detail = await check
-					.clone()
-					.json()
-					.catch(() => null);
-				error = loginErrorCopy(
-					check.status,
-					typeof detail?.error === 'string' ? detail.error : ''
-				);
-				return;
-			}
-			me = await check.json();
-			window.location.replace(next);
+			await signedIn(withId ? await loginPasskey(account.trim(), io) : await loginDiscoverable(io));
 		} catch (err) {
 			if (err instanceof DOMException && err.name === 'NotAllowedError') {
 				error = CANCELLED_COPY;
@@ -92,7 +119,29 @@
 			}
 		} finally {
 			busy = false;
+			if (!me) startAutofill(); // autofill again after a failed try
 		}
+	}
+
+	// A finished ceremony (button or autofill): confirm the session the
+	// admin host sees, then continue to `next`.
+	async function signedIn(res: { ok: boolean; status: number; body: any }) {
+		if (!res.ok) {
+			error = loginErrorCopy(res.status, res.body?.error ?? '');
+			return;
+		}
+		const check = await fetch(api('/me'), { credentials: 'same-origin' });
+		if (!check.ok) {
+			// Carry the denial text (it names the refused IP) into the copy.
+			const detail = await check
+				.clone()
+				.json()
+				.catch(() => null);
+			error = loginErrorCopy(check.status, typeof detail?.error === 'string' ? detail.error : '');
+			return;
+		}
+		me = await check.json();
+		window.location.replace(next);
 	}
 </script>
 
@@ -123,15 +172,36 @@
 		</Button>
 	</p>
 {:else}
-	<p class="mb-4">Use the passkey you enrolled on this console. No user ID needed.</p>
-	<Button
-		size="lg"
-		class="min-h-11 w-full px-4 text-base"
-		disabled={busy}
-		onclick={() => login(false)}
+	<p class="mb-4">
+		Use the passkey you enrolled on this console: pick it in the email field, or press the button.
+		No user ID needed.
+	</p>
+	<!-- novalidate: the email only anchors the browser's passkey
+	     suggestions; the passkey itself picks the account. -->
+	<form
+		class="grid gap-3"
+		novalidate
+		onsubmit={(e) => {
+			e.preventDefault();
+			login(false);
+		}}
 	>
-		{busy ? 'Waiting for your passkey…' : 'Sign in with passkey'}
-	</Button>
+		<label class="font-bold" for="staff-email">Email</label>
+		<Input
+			id="staff-email"
+			class="h-11 text-base"
+			type="email"
+			name="username"
+			bind:value={email}
+			autocomplete="username webauthn"
+			inputmode="email"
+			spellcheck={false}
+			placeholder="you@example.com"
+		/>
+		<Button type="submit" size="lg" class="min-h-11 w-full px-4 text-base" disabled={busy}>
+			{busy ? 'Waiting for your passkey…' : 'Sign in with passkey'}
+		</Button>
+	</form>
 
 	<details class="mt-6 text-sm">
 		<summary class="cursor-pointer text-ink-muted">Passkey not offered? Sign in with your user ID</summary>
@@ -148,7 +218,7 @@
 				class="h-11 font-mono text-base"
 				type="text"
 				bind:value={account}
-				autocomplete="username"
+				autocomplete="off"
 				spellcheck={false}
 				placeholder="32-character ID from enrolment"
 				required
