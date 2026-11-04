@@ -483,7 +483,8 @@ To get one notice through end to end (fix P3-1 and P3-2 first):
 
 ## Setup wizard (`cargo xtask setup wizard`): see and configure the whole system
 
-Requested 2026-11-04. What the wizard does today:
+Requested 2026-11-04. What the wizard did then (W-2 to W-7 below
+changed the SSH, brand, sops and map points):
 
 - It is a localhost page (`xtask/src/setup/wizard.rs`, single-file
   `wizard.html`, 308 lines).
@@ -515,7 +516,19 @@ system:
     for older keys. Lost-passkey recovery stays an invite.
   - Open: accounts enrolled before W-1 have no email and no screen to
     add one.
-- [ ] **W-2** One-click brand assets: prefilled source URLs, and
+- [x] **W-2** **Done, commit 1bfcbd8**: each brand file has a Source
+  URL (`brand.sources`, overridable; prefilled only where checked),
+  the zip entry to take, and Fetch, disabled until acceptance is
+  ticked. HTTPS only, 20 MB, 30 s; zips through `unzip`; the SVG
+  sanitizer refuses `<script`, `on…=`, `<foreignObject` and outside
+  links; the hash goes into the acceptance. Open: the only checked
+  direct download is Google's bundle
+  (`developers.google.com/static/identity/images/signin-assets.zip`),
+  and all its current SVGs carry a `<foreignObject>` (a Figma gradient
+  export), so Fetch refuses them; Apple's logo is a .dmg (the button
+  API serves PNG only). Every asset is therefore still manual in
+  practice, and uploads are not sanitized. Original item: One-click
+  brand assets: prefilled source URLs, and
   **Fetch** downloads, unpacks and places each file. The tool still
   never accepts terms itself (`brand.rs:5-8`): Fetch is enabled only
   after the operator ticks acceptance. The wizard then:
@@ -579,8 +592,16 @@ system:
     come from recorded files.
 
   *code, L in total; S–M per integration*
-- [ ] **W-4** A system map as a UML deployment diagram, drawn as SVG
-  from the wizard's state JSON, with no new libraries:
+- [x] **W-4** **Done, commit 225bf6d**: the wizard opens on the map
+  (`xtask/src/setup/map.rs`, drawn in `wizard.html`). Local is the
+  `local` target (`runtime: native | docker`), Server the `server`
+  target (front end) or `plant` target (workers, staging); the choice
+  is `map.*` in the setup file, derived when unset. Server is disabled
+  with the reason when the file has no such target (no target is
+  created from the map). At 390 px the map box scrolls; dark mode
+  follows the page. Original item: A system map as a UML deployment
+  diagram, drawn as SVG from the wizard's state JSON, with no new
+  libraries:
   - **Three nodes:** Front end (public + admin site), Workers and
     Staging. Each toggles **Local | Server**, and Local offers
     **Docker | Native**.
@@ -590,9 +611,15 @@ system:
     model weights.
 
   *code, M*
-- [ ] **W-5** SSH box probe: enter a hostname or alias, and the wizard
-  connects with keys only (`BatchMode`; first-use host-key fingerprint
-  shown for confirmation). It shows on the node:
+- [x] **W-5** **Done, commit 2a3308c**: `xtask/src/setup/probe.rs`,
+  on plant and server tabs and on the map's server nodes, cached in
+  `targets.<name>.probe`. `StrictHostKeyChecking=yes`: an unknown key
+  fails with ssh's own words plus "run `ssh <host>` once in a terminal
+  to accept its key"; the wizard shows no fingerprint and never writes
+  `known_hosts`. Original item: SSH box probe: enter a hostname or
+  alias, and the wizard connects with keys only (`BatchMode`;
+  first-use host-key fingerprint shown for confirmation). It shows on
+  the node:
   - host name and user;
   - OS name and version (`/etc/os-release` or `sw_vers`), kernel and
     architecture (`uname -srm`);
@@ -600,8 +627,14 @@ system:
   - GPU (`nvidia-smi -L`) and Docker version.
 
   Results are cached in the setup file. *code, S–M*
-- [ ] **W-6** Endpoints and services appear on the map as values are
-  filled in:
+- [x] **W-6** **Done, commit 225bf6d**: links, staging URL (through
+  `ssh -L`), «use» Meta with model ids and a Test button
+  (`POST /api/meta`; the key stays in the wizard), «deploy» weights
+  from `map.weights_repo`, five service nodes with console links and a
+  mode where the file sets one (Stripe key prefix, `labels.live`,
+  `usps.live`; `map::mode` is where W-3's fake mode plugs in). Original
+  item: Endpoints and services appear on the map as values are filled
+  in:
   - **Front end:** the HTTPS server name, with a link to open the
     public site and the admin console.
   - **Workers:** a link to the admin **Work queue** tab.
@@ -615,9 +648,13 @@ system:
     mode (fake, sandbox or live) and linking to its console.
 
   *code, M*
-- [ ] **W-7** The Docker and native local paths, and the wizard without
-  sops: see P1-13 and P1-14. W-4's Local | Docker choice runs those
-  paths.
+- [x] **W-7** **Done**: the Docker judge path and the sops-less wizard
+  landed in P432/P432b (merged in P441); commit 225bf6d makes the map's
+  Local | Docker choice run them: a local target with `runtime: docker`
+  plans `docker compose up --build --detach` and a healthz wait instead
+  of `xtask up`. Original item: The Docker and native local paths, and
+  the wizard without sops: see P1-13 and P1-14. W-4's Local | Docker
+  choice runs those paths.
 
 ---
 
