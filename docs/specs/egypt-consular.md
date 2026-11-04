@@ -27,7 +27,11 @@
   corroborating third parties — all cited — but **must not be
   published as handbook facts until a staff-verified capture exists**
   (headless-browser WARC or manual save). Logged as capture tasks
-  V-1, V-2.
+  V-1, V-2. Status 2026-11-04: both pages are watched
+  (`packs/usdos.json`, `packs/usa-wa.json`); the staff-verified
+  capture is still owed. Plant's residential IP can fetch them with a
+  `scrape.urls` job from the admin Work queue; staff then check the
+  result and save it as the capture.
 - **Arabic-only sources** (DC translation page, signatures page, LA
   fee PDF) were read by this researcher; per methodology they need an
   independent bilingual check before any derived fact is `accepted`
@@ -380,7 +384,18 @@ Philippines, Singapore, Israel, Morocco, South Africa, Canada,
 Mexico, Viet Nam — all present in the table. Viet Nam (EIF
 11-IX-2026 per README) is the live example of the cost of stale
 data. **V-19:** regression-sweep any handbook copy still sending
-these destinations down consular legalization.
+these destinations down consular legalization. Done 2026-11-04: no
+pack, form, web copy or crate text routes any of the twelve through
+consular legalization; each has an apostille pack under
+`packs/world/`, and `IL`/`CA` in `packs/egypt-consular.json` are US
+consulate jurisdictions (Illinois, California), not destinations. The
+non-party research list test
+(`country_list_is_un_members_minus_parties_plus_observers`) now fails
+if any of the twelve ever lands there. The drafter prompt's
+`legalization_chain` example still names Viet Nam ("steps for use in
+Viet Nam"); it asks for the chain, not consular legalization, and the
+recorded replays key on that prompt text, so it stays until the next
+prompt version.
 
 **P3 — US-state "wrong certificate" traps (same failure mode as the
 Egypt MVP):** in EVERY state, customers requesting Egypt-bound
