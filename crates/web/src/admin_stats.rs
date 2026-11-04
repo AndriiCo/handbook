@@ -26,11 +26,17 @@ fn scalar(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> i64 {
 }
 
 /// Human line for one audit row (no staff identity on the dashboard).
-fn activity_text(action: &str, entity: &str, id: i64) -> String {
+/// A reveal names its key, the part of `reason` before `: ` (the
+/// staff-typed reason itself stays off the dashboard).
+fn activity_text(action: &str, entity: &str, id: i64, reason: Option<&str>) -> String {
     match action {
         "fact_accept" => format!("Fact #{id} accepted"),
         "fact_reject" => format!("Fact #{id} rejected"),
         "config_set" => "Config value updated".to_string(),
+        "config_revealed" => match reason.and_then(|r| r.split_once(": ")) {
+            Some((key, _)) => format!("Config value revealed: {key}"),
+            None => "Config value revealed".to_string(),
+        },
         other => format!("{} {entity} #{id}", other.replace(['_', '.'], " ")),
     }
 }
@@ -146,15 +152,17 @@ pub fn stats(
         .collect();
 
     let activity: Vec<serde_json::Value> = conn
-        .prepare("SELECT at, action, entity, entity_id FROM audit ORDER BY id DESC LIMIT 12")
+        .prepare(
+            "SELECT at, action, entity, entity_id, reason FROM audit ORDER BY id DESC LIMIT 12",
+        )
         .and_then(|mut s| {
             s.query_map([], |r| {
-                let (at, action, entity, id): (i64, String, String, i64) =
-                    (r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?);
+                let (at, action, entity, id, reason): (i64, String, String, i64, Option<String>) =
+                    (r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?);
                 Ok(json!({
                     "at": at,
                     "kind": action,
-                    "text": activity_text(&action, &entity, id),
+                    "text": activity_text(&action, &entity, id, reason.as_deref()),
                     "href": activity_href(&entity, id),
                 }))
             })?
@@ -236,10 +244,26 @@ mod tests {
 
     #[test]
     fn activity_lines_name_no_staff() {
-        assert_eq!(activity_text("fact_accept", "fact", 7), "Fact #7 accepted");
         assert_eq!(
-            activity_text("plan.accept", "page_plan", 3),
+            activity_text("fact_accept", "fact", 7, None),
+            "Fact #7 accepted"
+        );
+        assert_eq!(
+            activity_text("plan.accept", "page_plan", 3, None),
             "plan accept page_plan #3"
+        );
+        assert_eq!(
+            activity_text(
+                "config_revealed",
+                "config",
+                0,
+                Some("usps.client_secret: setup pull")
+            ),
+            "Config value revealed: usps.client_secret"
+        );
+        assert_eq!(
+            activity_text("config_revealed", "config", 0, None),
+            "Config value revealed"
         );
         assert_eq!(activity_href("fact", 7).as_deref(), Some("/review?fact=7"));
     }

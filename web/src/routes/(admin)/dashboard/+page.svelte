@@ -17,6 +17,7 @@
 	import { getJson, errorText } from '#lib/admin/admin-api.js';
 	import {
 		activityFromOps,
+		feedKeys,
 		isEmpty,
 		mergeActivity,
 		normalizeStats,
@@ -115,6 +116,7 @@
 		return Number.isInteger(n) && n > 0 ? n : null;
 	});
 	const feed = $derived(stats ? mergeActivity(stats.activity, live) : []);
+	const feedKey = $derived(feedKeys(feed));
 	const motion = $derived(reduceMotion ? 0 : 200);
 
 	const hourBars = $derived(
@@ -543,7 +545,7 @@
 						</div>
 					{:else}
 						<ol class="m-0 flex list-none flex-col gap-3 p-0" aria-label="Recent activity" aria-live="polite">
-							{#each feed as row (`${row.kind}|${row.at}|${row.text}`)}
+							{#each feed as row, i (feedKey[i])}
 								{@const Icon = kindIcon(row.kind)}
 								<li
 									class="flex items-start gap-3"

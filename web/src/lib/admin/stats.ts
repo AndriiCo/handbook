@@ -224,6 +224,21 @@ export function activityKey(a: Activity): string {
 	return `${a.kind}|${a.href ?? a.text}`;
 }
 
+/**
+ * One `{#each}` key per feed row: kind, time and text, with a `#n`
+ * suffix on repeats (several audit rows can land in the same second
+ * with the same line, and a duplicate key throws in Svelte).
+ */
+export function feedKeys(rows: Activity[]): string[] {
+	const counts = new Map<string, number>();
+	return rows.map((a) => {
+		const base = `${a.kind}|${a.at}|${a.text}`;
+		const n = counts.get(base) ?? 0;
+		counts.set(base, n + 1);
+		return n === 0 ? base : `${base}#${n}`;
+	});
+}
+
 /** Server rows plus live rows the server has not reported yet, newest first. */
 export function mergeActivity(server: Activity[], live: Activity[], cap = 12): Activity[] {
 	const seen = new Set(server.map(activityKey));

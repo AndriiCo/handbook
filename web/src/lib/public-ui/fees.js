@@ -318,13 +318,18 @@ function perDocumentOf(item) {
  * to that amount only; the item's value may restate them but never adds
  * or changes one. The first block (from 1) must be the item's own
  * amount: a first block at another amount means the text ties the
- * count range to another fee, so the speed asks.
+ * count range to another fee, so the speed asks. The item's own amount
+ * is its first one past a restated per-document fee ("Fee is $15.00
+ * per document and an additional $100 expedite fee per 10 documents"
+ * anchors on $100), or its first when it states no other.
  * @param {Item} item
+ * @param {number|null} perCents the per-document fee, in cents
  * @returns {{ tiers: Tier[], reason: Unusable|null }}
  */
-function speedTiers(item) {
+function speedTiers(item, perCents) {
 	if (disputed(item)) return { tiers: [], reason: 'conflict' };
-	const anchor = firstAmount(item.display);
+	const amounts = amountsIn(item.display);
+	const anchor = (amounts.find((a) => a.cents !== perCents) ?? amounts[0])?.cents ?? null;
 	if (anchor === null) return { tiers: [], reason: 'no-amount' };
 	const quotes = citedQuotes(item);
 	/** @type {Tier[]} */
@@ -394,7 +399,7 @@ export function feeModel(items) {
 	 * @returns {SpeedModel|null}
 	 */
 	const speedOf = (speed, item) =>
-		item ? { speed, item, itemIds: [per?.id, item.id].filter((id) => typeof id === 'string'), ...speedTiers(item) } : null;
+		item ? { speed, item, itemIds: [per?.id, item.id].filter((id) => typeof id === 'string'), ...speedTiers(item, perDocument?.cents ?? null) } : null;
 	return {
 		perDocument,
 		speeds: {

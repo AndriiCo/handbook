@@ -241,6 +241,28 @@ test('a "first N" or "per N" phrase binds only to the fee item’s own amount', 
 	});
 });
 
+test('a speed value that restates the per-document fee anchors on its own amount', () => {
+	// The live Washington values: each speed restates "$15.00 per document" first.
+	const expeditePage = 'Fee is $15.00 per document and an additional $100 expedite fee per 10 documents.';
+	const sameDayPage =
+		'Same day services in-person (Tumwater or Cheney): Fee is $15.00 per document and an additional $150 same day fee for the first 10 documents.';
+	const model = feeModel([
+		PER,
+		item({ ...EXPEDITE, display: expeditePage, cites: [cite(expeditePage)] }),
+		item({ ...SAME_DAY_FULL, display: sameDayPage, cites: [cite(sameDayPage)] })
+	]);
+	assert.deepEqual(model.speeds.expedite?.tiers, [{ from: 1, to: 10, cents: 10000 }]);
+	assert.deepEqual(model.speeds.same_day?.tiers, [{ from: 1, to: 10, cents: 15000 }]);
+	assert.equal(total(model, 3, 'expedite'), '$145.00');
+	assert.equal(total(model, 3, 'same_day'), '$195.00');
+	// A speed fee equal to the per-document fee still anchors on it.
+	const same = feeModel([
+		PER,
+		item({ ...EXPEDITE, display: '$15.00 expedite fee', cites: [cite('Expedite fee $15.00 for the first 10 documents.')] })
+	]);
+	assert.deepEqual(same.speeds.expedite?.tiers, [{ from: 1, to: 10, cents: 1500 }]);
+});
+
 test('a first block at another amount than the fee’s own asks', () => {
 	const model = feeModel([
 		PER,
