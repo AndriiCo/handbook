@@ -151,7 +151,7 @@ scp -r "$WT/evals/." "andrii.ai:apostille/staging/$VERSION/evals/" || exit 1
 git -C "$WT" rev-parse HEAD > /tmp/SHA-ship && scp /tmp/SHA-ship "andrii.ai:apostille/staging/$VERSION/SHA" || exit 1
 scp "$WT/docs/ops/apostille.service" "andrii.ai:apostille/staging/$VERSION/" || exit 1
 scp "$WT/xtask/ops/ops-deploy.sh" andrii.ai:apostille/scripts/ || exit 1
-for script in ops-gp2-proposals.sh ops-a2-record.sh a2-record.py ops-a5-eval.sh; do
+for script in ops-gp2-proposals.sh ops-a2-record.sh ops-a5-eval.sh; do
     scp "$WT/xtask/ops/$script" andrii.ai:apostille/scripts/ || exit 1
 done
 echo "stage OK"

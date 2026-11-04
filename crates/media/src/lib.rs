@@ -26,7 +26,8 @@ pub mod upload;
 
 pub use policy::{MediaPolicy, MediaSource, PolicyError, check};
 pub use redact::{
-    MetaSamClient, RedactBox, RedactError, RedactTarget, Redaction, Redactor, StubRedactor,
+    MetaSamClient, RedactBox, RedactError, RedactTarget, Redaction, Redactor, SamBox, StubRedactor,
+    parse_sam_answer, sam_request_body,
 };
 pub use transcribe::{TranscribeError, Transcript, TranscriptTurn, VoiceFileClient};
 pub use transcript::{Annotation, AnnotationKind, TranscriptError, apply_fix};

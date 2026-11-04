@@ -196,14 +196,14 @@ fn chat_body(messages: &[Value], reasoning_effort: &str) -> Value {
 
 /// Retryable Meta statuses: 429/5xx honour `Retry-After`; terminal
 /// 400/401/402/403/404/413 (and anything else) never retry.
-fn retryable(status: u16) -> bool {
+pub(crate) fn retryable(status: u16) -> bool {
     matches!(status, 429 | 500 | 502 | 503 | 504)
 }
 
 /// Backoff before retry `attempt_no` (1-based): exponential from the
 /// base plus nanos-clock jitter (no rng dependency), or the server's
 /// `Retry-After` when present.
-fn retry_delay(attempt_no: u32, retry_after: Option<u64>) -> Duration {
+pub(crate) fn retry_delay(attempt_no: u32, retry_after: Option<u64>) -> Duration {
     if let Some(after) = retry_after {
         return Duration::from_secs(after.min(MAX_RETRY_AFTER_SECS));
     }

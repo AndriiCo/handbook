@@ -12,8 +12,7 @@
 //!   `manifest.jsonl` (`url, fetched_at, status, headers, sha256`).
 //!
 //! No HTTP lives here: each seam keeps its transport and hands the
-//! cache a closure for the live call. `xtask/ops/a2-record.py` writes
-//! the same on-disk format (see `docs/ops/call-cache.md`).
+//! cache a closure for the live call (see `docs/ops/call-cache.md`).
 
 pub mod budget;
 pub mod fetch;

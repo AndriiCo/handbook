@@ -429,9 +429,9 @@ mod tests {
     }
 
     #[test]
-    fn key_matches_the_python_recorder_byte_for_byte() {
-        // Golden from `xtask/ops/a2-record.py` `cache_key` (same body):
-        // both writers must land on the same entry.
+    fn key_format_is_pinned() {
+        // Golden computed by the retired Python A2 recorder (P391-P409):
+        // a key change orphans every recorded answer, so it stays fixed.
         let body = json!({
             "model": "muse-spark-1.3",
             "messages": [{"role": "user", "content": "Frais: 15 € — «ok»\n\ttab"}],

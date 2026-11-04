@@ -11,7 +11,7 @@ nothing is `cargo xtask setup` plus `cargo xtask provision`.
 | `staging-accept.sh --sha <sha>` | Mac | you | Staging scoreboard plus a live demo take; prints the staging-green verdict |
 | `scoreboard.mjs` | Mac | you | Release checks against a base URL (`--base`, `--out`, `--only`) |
 | `ops-gp2-proposals.sh` | production | hal | Fetch and draft proposals for the hero authorities |
-| `ops-a2-record.sh`, `a2-record.py` | production | hal | Record the photo-precheck verdicts for the public sample |
+| `ops-a2-record.sh` | production | hal | Record the photo-precheck verdicts for the public sample (`xtask a2-record`) |
 | `ops-a5-eval.sh` | production | hal | Re-run the gold-set eval behind the home page's quality numbers |
 
 `wrappers/` holds the root-owned `/usr/local/sbin/apostille-*` wrappers

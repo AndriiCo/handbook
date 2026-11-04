@@ -7,6 +7,7 @@ use std::process::Command;
 
 use handbook_store::store::Store;
 
+mod a2_record;
 mod accept;
 mod admin_staff;
 mod archive;
@@ -74,6 +75,7 @@ fn main() {
         Some("admin-invite") => admin_staff::run_invite(&args[1..]),
         Some("admin-offboard") => admin_staff::run_offboard(&args[1..]),
         Some("ask") => ask::run(&args[1..]),
+        Some("a2-record") => a2_record::run(&args[1..]),
         Some("archive-package") => archive::run_package(&args[1..]),
         Some("world-index") => world::run(&args[1..]),
         Some("worker") => worker::run(&args[1..]),
@@ -134,6 +136,7 @@ Tasks:
   crawl   fetch packs/world seeds into WARC/1.1 drops [--packs --out]
   archive-package  bundle a crawl run into WACZ/CSVs/index [--run]
   ask     answer one question with cited authority facts [<question> --slug --base --replay]
+  a2-record  record the photo-precheck demo verdicts --png-dir --out-dir [--sam-backend open-weights --mask]
   world-index  build packs/world from HCCH status table [--live] [--out]
   worker  plant worker for the production work queue [--connect <wss>] [--run-local <job.json>] [--unpack <bundle>] [--kinds]
   up    boot the handbook on loopback with synthetic data [--check] [--fresh] [--live] [--from-archive <url|dir>]

@@ -140,29 +140,35 @@ impl<T: HttpTransport> MetaSamClient<T> {
         }
     }
 
-    /// Request body for one concept: model + one bare noun phrase in
-    /// `input_text` + the image in `input_image` (sam/segmenting).
-    /// Concept prompts name one thing per request — lists return zero
-    /// matches — so callers send one body per target.
+    /// Request body for one concept ([`sam_request_body`]).
     pub fn request_body(prompt: &str, image: &[u8]) -> Value {
-        use base64::Engine as _;
-        json!({
-            "model": SAM_MODEL_VERSION,
-            "input": [{
-                "type": "message",
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": prompt},
-                    {"type": "input_image",
-                     "image_url": format!("data:{};base64,{}",
-                        image_mime(image),
-                        base64::engine::general_purpose::STANDARD.encode(image))},
-                ],
-            }],
-            "stream": false,
-            "metadata": {"include_confidence": "true"},
-        })
+        sam_request_body(prompt, image)
     }
+}
+
+/// Request body for one concept: model + one bare noun phrase in
+/// `input_text` + the image in `input_image` (sam/segmenting).
+/// Concept prompts name one thing per request — lists return zero
+/// matches — so callers send one body per target. Shared by
+/// [`MetaSamClient`] and the A2 recorder (`xtask a2-record`).
+pub fn sam_request_body(prompt: &str, image: &[u8]) -> Value {
+    use base64::Engine as _;
+    json!({
+        "model": SAM_MODEL_VERSION,
+        "input": [{
+            "type": "message",
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": prompt},
+                {"type": "input_image",
+                 "image_url": format!("data:{};base64,{}",
+                    image_mime(image),
+                    base64::engine::general_purpose::STANDARD.encode(image))},
+            ],
+        }],
+        "stream": false,
+        "metadata": {"include_confidence": "true"},
+    })
 }
 
 impl<T: HttpTransport> Redactor for MetaSamClient<T> {
@@ -243,13 +249,48 @@ fn output_text(json: &Value) -> String {
 }
 
 /// Parse a SAM 3.1 segmentation answer into boxes for `target`.
+fn parse_segmentation(json: &Value, target: RedactTarget) -> Result<Vec<RedactBox>, RedactError> {
+    Ok(parse_sam_answer(json)?
+        .into_iter()
+        .map(|b| RedactBox {
+            target,
+            object_id: b.object_id,
+            x: b.x as f32,
+            y: b.y as f32,
+            w: b.w as f32,
+            h: b.h as f32,
+            score: b.score as f32,
+        })
+        .collect())
+}
+
+/// One SAM 3.1 box record, label-free: object id, box as fractions of
+/// the source image, confidence (1.0 when the answer carries none).
+/// [`Redactor`] tags it with its target; the A2 recorder with its
+/// concept prompt.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SamBox {
+    pub object_id: u32,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    pub score: f64,
+}
+
+/// Parse a SAM 3.1 Responses answer into its box records.
 ///
 /// Reads the documented token grammar
 /// (`<Nf>id<|box;x1;y1;x2;y2;w;h[;c]|><|mask;…|>,…`): box corners are
 /// source pixels, normalized by the record's own `w`/`h`; records key
 /// by object id, never by position. An empty lane (zero matches) is a
 /// normal result, not an error. `incomplete` and refusals are errors.
-fn parse_segmentation(json: &Value, target: RedactTarget) -> Result<Vec<RedactBox>, RedactError> {
+///
+/// # Errors
+///
+/// [`RedactError::BadResponse`] on a refusal, an `incomplete` answer
+/// or any status other than `completed`.
+pub fn parse_sam_answer(json: &Value) -> Result<Vec<SamBox>, RedactError> {
     if json
         .get("output")
         .and_then(Value::as_array)
@@ -281,24 +322,12 @@ fn parse_segmentation(json: &Value, target: RedactTarget) -> Result<Vec<RedactBo
         }
     }
     let text = output_text(json);
-    Ok(parse_records(&text, target))
-}
-
-/// One grammar record: object id + normalized box + score.
-#[derive(Debug, Clone, PartialEq)]
-struct SamRecord {
-    object_id: u32,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    score: f32,
-    has_mask: bool,
+    Ok(parse_records(&text))
 }
 
 /// Scan `output_text` lines for box records. Fields parse by key, so
 /// tokens read the same with or without confidence `c`.
-fn parse_records(text: &str, target: RedactTarget) -> Vec<RedactBox> {
+fn parse_records(text: &str) -> Vec<SamBox> {
     let mut boxes = Vec::new();
     for line in text.lines() {
         let mut rest = line.trim();
@@ -311,15 +340,7 @@ fn parse_records(text: &str, target: RedactTarget) -> Vec<RedactBox> {
                 && parsed.w > 0.0
                 && parsed.h > 0.0
             {
-                boxes.push(RedactBox {
-                    target,
-                    object_id: parsed.object_id,
-                    x: parsed.x,
-                    y: parsed.y,
-                    w: parsed.w,
-                    h: parsed.h,
-                    score: parsed.score,
-                });
+                boxes.push(parsed);
             }
         }
     }
@@ -372,7 +393,7 @@ fn split_records(line: &str) -> Vec<&str> {
 }
 
 /// Parse one `id<|box;x1=..;…|><|mask;…|>` record.
-fn parse_record(record: &str) -> Option<SamRecord> {
+fn parse_record(record: &str) -> Option<SamBox> {
     let (id_part, box_part) = record.split_once("<|box;")?;
     let object_id: u32 = id_part.trim().trim_start_matches(',').trim().parse().ok()?;
     let inner = box_part.split_once("|>")?.0;
@@ -382,7 +403,7 @@ fn parse_record(record: &str) -> Option<SamRecord> {
     let mut y2 = None;
     let mut w = None;
     let mut h = None;
-    let mut score = 1.0f32;
+    let mut score = 1.0f64;
     for field in inner.split(';') {
         let (key, value) = field.split_once('=')?;
         match key.trim() {
@@ -393,27 +414,24 @@ fn parse_record(record: &str) -> Option<SamRecord> {
             "w" => w = value.trim().parse().ok(),
             "h" => h = value.trim().parse().ok(),
             "c" => {
-                if let Ok(c) = value.trim().parse::<f32>() {
+                if let Ok(c) = value.trim().parse::<f64>() {
                     score = c;
                 }
             }
             _ => {}
         }
     }
-    let (x1, y1, x2, y2, w, h): (f32, f32, f32, f32, f32, f32) = (x1?, y1?, x2?, y2?, w?, h?);
+    let (x1, y1, x2, y2, w, h): (f64, f64, f64, f64, f64, f64) = (x1?, y1?, x2?, y2?, w?, h?);
     if w <= 0.0 || h <= 0.0 || x2 < x1 || y2 < y1 {
         return None;
     }
-    let after_box = box_part.split_once("|>")?.1;
-    let has_mask = after_box.trim_start().starts_with("<|mask;");
-    Some(SamRecord {
+    Some(SamBox {
         object_id,
         x: x1 / w,
         y: y1 / h,
         w: (x2 - x1) / w,
         h: (y2 - y1) / h,
         score,
-        has_mask,
     })
 }
 
@@ -602,14 +620,14 @@ mod tests {
         let text = "<0f>0<|box;x1=211;y1=228;x2=270;y2=254;w=320;h=334|>\
             <|mask;x=0;y=0;data=27,60,~a,b|>,2<|box;x1=155;y1=228;x2=202;y2=254;\
             w=320;h=334|><|mask;x=0;y=0;data=27,48,~c,d|>";
-        let boxes = parse_records(text, RedactTarget::Face);
+        let boxes = parse_records(text);
         assert_eq!(boxes.len(), 2);
         assert_eq!(boxes[0].object_id, 0);
         assert_eq!(boxes[1].object_id, 2);
         assert!((boxes[1].x - 155.0 / 320.0).abs() < 1e-4);
         // Zero matches is a normal result, not an error.
-        assert!(parse_records("", RedactTarget::Face).is_empty());
-        assert!(parse_records("<0f>", RedactTarget::Face).is_empty());
+        assert!(parse_records("").is_empty());
+        assert!(parse_records("<0f>").is_empty());
     }
 
     #[test]

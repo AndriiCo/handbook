@@ -9,7 +9,7 @@ Seed data installed by `cargo xtask up` into a fresh local store.
   `models`, `recorded_at`).
 - The files committed here are synthetic stand-ins (`"synthetic": true`)
   so a local boot works with no model key. The operator replaces them
-  with live-model recordings via `xtask/ops/a2-record.py`, which writes
+  with live-model recordings via `cargo xtask a2-record`, which writes
   the same shape from SAM 3.1 boxes plus a Muse Spark judgment.
 
 Capture rows themselves are not committed: `up` ingests one capture per
