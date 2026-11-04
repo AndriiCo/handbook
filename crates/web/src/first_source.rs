@@ -15,7 +15,9 @@
 //! - **Email outreach**: Muse Spark drafts the greeting and sign-off,
 //!   the server lays the questions out verbatim, staff edit and
 //!   approve, the configured mailer sends with our own `Message-ID`
-//!   so the office's reply threads back to the draft.
+//!   so the office's reply threads back to the draft, and with
+//!   `Reply-To` set to the polled mailbox (`mail_poll.email`) so the
+//!   reply lands where the mail poll reads it.
 
 use std::collections::HashMap;
 
@@ -903,6 +905,25 @@ async fn discard_email(
     }
 }
 
+/// Headers for one outreach send: our `Message-ID`, plus `Reply-To`
+/// naming the mailbox the Gmail poll reads (`mail_poll.email`, seeded
+/// from the Gmail profile) when one is set up. Without it the office
+/// replies to `mailer.from`, which nothing may read.
+fn outreach_headers(conn: &Connection, message_id: &str) -> Vec<(&'static str, String)> {
+    let mut headers = vec![("Message-ID", message_id.to_string())];
+    let polled: Option<String> = conn
+        .query_row("SELECT email FROM mail_poll WHERE id = 1", [], |r| r.get(0))
+        .optional()
+        .ok()
+        .flatten();
+    if let Some(mailbox) = polled.map(|m| m.trim().to_ascii_lowercase())
+        && valid_email(&mailbox)
+    {
+        headers.push(("Reply-To", mailbox));
+    }
+    headers
+}
+
 /// Human approval IS the send: staff read the final text and press
 /// Send. Capped per day; the office's reply threads back on our
 /// `Message-ID`.
@@ -955,6 +976,7 @@ async fn send_email(
     let Ok(Some(email)) = load_email(&conn, id) else {
         return store_unavailable();
     };
+    let headers = outreach_headers(&conn, &message_id);
     drop(conn);
     // The send and its bookkeeping run in a detached task: if the
     // request is cut off (the admin request budget), the email still
@@ -962,14 +984,11 @@ async fn send_email(
     let root = state.store_root.clone();
     let actor = auth.user.user_id.clone();
     let finish = tokio::spawn(async move {
-        let (to, subject, body, mid) = (
-            email.to.clone(),
-            email.subject.clone(),
-            email.body.clone(),
-            message_id.clone(),
-        );
+        let (to, subject, body) = (email.to.clone(), email.subject.clone(), email.body.clone());
         let sent = tokio::task::spawn_blocking(move || {
-            mailer.send_with_headers(&to, &subject, &body, &[("Message-ID", &mid)])
+            let headers: Vec<(&str, &str)> =
+                headers.iter().map(|(n, v)| (*n, v.as_str())).collect();
+            mailer.send_with_headers(&to, &subject, &body, &headers)
         })
         .await;
         let (status, error) = match sent {
@@ -1271,6 +1290,12 @@ pub fn admin_router(state: AppState) -> Router {
             "/apostille/api/v1/admin/first-source/emails/{id}/discard",
             post(discard_email),
         )
+        // Mail health for the admin mail page: the poll that reads the
+        // office's replies to this outreach, and the send budget.
+        .route(
+            "/apostille/api/v1/admin/mail",
+            get(crate::readyz::admin_mail),
+        )
         .with_state(state)
 }
 
@@ -1443,6 +1468,55 @@ mod tests {
         ] {
             assert!(clean_questions(&[public.to_string()]).is_ok(), "{public}");
         }
+    }
+
+    #[test]
+    fn outreach_replies_go_to_the_polled_mailbox() {
+        let (dir, conn, _, _) = store();
+        let mid = "<outreach-7-ab@andrii.ai>";
+        // No mail poll set up: our Message-ID only.
+        assert_eq!(
+            outreach_headers(&conn, mid),
+            [("Message-ID", mid.to_string())]
+        );
+        // Seeded but not yet profiled (empty email): still no Reply-To.
+        conn.execute("INSERT INTO mail_poll(id) VALUES (1)", [])
+            .unwrap();
+        assert_eq!(outreach_headers(&conn, mid).len(), 1);
+        conn.execute(
+            "UPDATE mail_poll SET email = 'Notices@Example.com' WHERE id = 1",
+            [],
+        )
+        .unwrap();
+        let headers = outreach_headers(&conn, mid);
+        assert_eq!(
+            headers,
+            [
+                ("Message-ID", mid.to_string()),
+                ("Reply-To", "notices@example.com".to_string())
+            ]
+        );
+        // The outbox file records the header as sent.
+        let mailer = crate::magic::FileMailer {
+            dir: dir.path().to_path_buf(),
+        };
+        let refs: Vec<(&str, &str)> = headers.iter().map(|(n, v)| (*n, v.as_str())).collect();
+        mailer
+            .send_with_headers(
+                "apostille@sos.example.gov",
+                "Two questions",
+                "Hello.",
+                &refs,
+            )
+            .unwrap();
+        let sent = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .find(|e| e.path().extension().is_some_and(|x| x == "txt"))
+            .map(|e| std::fs::read_to_string(e.path()).unwrap())
+            .unwrap();
+        assert!(sent.contains("Reply-To: notices@example.com\n"), "{sent}");
+        assert!(sent.contains(&format!("Message-ID: {mid}\n")), "{sent}");
     }
 
     #[test]

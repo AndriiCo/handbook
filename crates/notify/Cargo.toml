@@ -7,3 +7,7 @@ edition = "2024"
 auth = { path = "../auth" }
 config = { path = "../config" }
 rusqlite = { version = "0.32", features = ["bundled"] }
+regex = "1"
+
+[dev-dependencies]
+tempfile = "3"

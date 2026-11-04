@@ -22,6 +22,8 @@ use auth::passkey as store;
 /// STARTTLS host tomorrow (host/port/creds/From are config rows).
 /// Holds the password as a redacting `SecretText` and builds the
 /// transport per send (fallback-only volume — no pool needed).
+/// Every send first claims a slot of the store's overall daily budget
+/// (`notify::claim_send`), whatever the mail is.
 #[derive(Clone)]
 pub struct SmtpMailer {
     host: String,
@@ -29,6 +31,8 @@ pub struct SmtpMailer {
     username: String,
     password: config::SecretText,
     from: String,
+    /// Store root holding the send log (`None`: no budget, tests only).
+    send_budget: Option<std::path::PathBuf>,
 }
 
 impl SmtpMailer {
@@ -56,7 +60,33 @@ impl SmtpMailer {
             username: username.to_string(),
             password,
             from: from.to_string(),
+            send_budget: None,
         })
+    }
+
+    /// Count every send against the overall daily budget kept in this
+    /// store (`notify::OVERALL_DAILY_SEND_CAP`).
+    pub fn with_send_budget(mut self, store_root: &std::path::Path) -> Self {
+        self.send_budget = Some(store_root.to_path_buf());
+        self
+    }
+
+    /// Claim one send, or refuse before dialing: over the cap, or when
+    /// the budget cannot be read (fail closed).
+    fn claim_send(&self, kind: &str) -> Result<(), flow::MailError> {
+        let Some(root) = &self.send_budget else {
+            return Ok(());
+        };
+        let unavailable = || flow::MailError::Transport("send budget unavailable".into());
+        let conn = handbook_store::db::open(&handbook_store::store::Store::new(root))
+            .map_err(|_| unavailable())?;
+        match notify::claim_send(&conn, unix_now(), kind, notify::OVERALL_DAILY_SEND_CAP) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(flow::MailError::Transport(
+                "overall daily send cap reached".into(),
+            )),
+            Err(_) => Err(unavailable()),
+        }
     }
 
     fn transport(&self) -> Result<lettre::SmtpTransport, flow::MailError> {
@@ -139,12 +169,19 @@ fn build_message(
             .parse()
             .map_err(|_| flow::MailError::Transport("bad recipient".into()))?)
         .subject(subject);
-    // Closed header set: the RFC 8058 pair plus `Message-ID` (first-
-    // source outreach sets its own so the office's reply threads back
-    // to the draft); the values are mailbox/URL/id-shaped by
-    // construction at the call site.
+    // Closed header set: the RFC 8058 pair plus `Message-ID` and
+    // `Reply-To` (first-source outreach sets its own id so the office's
+    // reply threads back to the draft, and points replies at the polled
+    // mailbox); the values are mailbox/URL/id-shaped by construction at
+    // the call site.
     for (name, value) in headers {
-        if name.eq_ignore_ascii_case("List-Unsubscribe") {
+        if name.eq_ignore_ascii_case("Reply-To") {
+            builder = builder.reply_to(
+                value
+                    .parse()
+                    .map_err(|_| flow::MailError::Transport("bad reply-to".into()))?,
+            );
+        } else if name.eq_ignore_ascii_case("List-Unsubscribe") {
             builder = builder.header(ListUnsubscribe(value.to_string()));
         } else if name.eq_ignore_ascii_case("List-Unsubscribe-Post") {
             builder = builder.header(ListUnsubscribePost(value.to_string()));
@@ -168,6 +205,20 @@ impl SmtpMailer {
     ) -> Result<(), flow::MailError> {
         use lettre::Transport as _;
         let message = build_message(&self.from, to, subject, text_body, headers)?;
+        let kind = if headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("List-Unsubscribe"))
+        {
+            "digest"
+        } else if headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("Message-ID"))
+        {
+            "outreach"
+        } else {
+            "mail"
+        };
+        self.claim_send(kind)?;
         self.transport()?
             .send(&message)
             .map(|_| ())
@@ -179,6 +230,7 @@ impl flow::Mailer for SmtpMailer {
     fn send(&self, to: &str, subject: &str, text_body: &str) -> Result<(), flow::MailError> {
         use lettre::Transport as _;
         let message = build_message(&self.from, to, subject, text_body, &[])?;
+        self.claim_send("mail")?;
         self.transport()?
             .send(&message)
             .map(|_| ())
@@ -235,6 +287,7 @@ impl FileMailer {
             if name.eq_ignore_ascii_case("List-Unsubscribe")
                 || name.eq_ignore_ascii_case("List-Unsubscribe-Post")
                 || name.eq_ignore_ascii_case("Message-ID")
+                || name.eq_ignore_ascii_case("Reply-To")
             {
                 content.push_str(&format!("{name}: {value}\n"));
             }
@@ -315,7 +368,7 @@ pub fn mailer_from_config(
                     match port.parse::<u16>() {
                         Ok(parsed) => match SmtpMailer::new(host, parsed, user, pass.clone(), from)
                         {
-                            Ok(mailer) => Some(Mailer::Smtp(mailer)),
+                            Ok(mailer) => Some(Mailer::Smtp(mailer.with_send_budget(store_root))),
                             Err(why) => {
                                 eprintln!(
                                     "WARNING: config mailer.* ({why}) — magic login disabled"
@@ -1343,6 +1396,82 @@ mod tests {
         drop(conn);
         let (status, _, _) = roundtrip(&app, me()).await;
         assert_eq!(status, StatusCode::OK);
+    }
+
+    #[test]
+    fn smtp_refuses_past_the_overall_cap_without_dialing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let conn = open_store(tmp.path());
+        notify::migrate(&conn).unwrap();
+        let now = unix_now();
+        for i in 0..notify::OVERALL_DAILY_SEND_CAP {
+            assert!(
+                notify::claim_send(&conn, now - i, "digest", notify::OVERALL_DAILY_SEND_CAP)
+                    .unwrap()
+            );
+        }
+        let mailer = SmtpMailer::new(
+            "smtp.example.test",
+            587,
+            "user@example.test",
+            config::SecretText::from("pw".to_string()),
+            "noreply@example.test",
+        )
+        .unwrap()
+        .with_send_budget(tmp.path());
+        // The cap refuses before any connection (the host does not
+        // exist; reaching it would fail differently).
+        for result in [
+            flow::Mailer::send(&mailer, "a@example.test", "s", "b"),
+            mailer.send_with_headers(
+                "a@example.test",
+                "s",
+                "b",
+                &[("Message-ID", "<x@andrii.ai>")],
+            ),
+        ] {
+            match result {
+                Err(flow::MailError::Transport(why)) => {
+                    assert_eq!(why, "overall daily send cap reached")
+                }
+                other => panic!("expected the cap, got {other:?}"),
+            }
+        }
+        assert_eq!(
+            notify::sends_today(&conn, now).unwrap(),
+            notify::OVERALL_DAILY_SEND_CAP
+        );
+    }
+
+    #[test]
+    fn smtp_message_carries_reply_to_and_refuses_a_bad_one() {
+        let message = build_message(
+            "Apostille Handbook <outreach@andrii.ai>",
+            "apostille@sos.example.gov",
+            "Two questions",
+            "Hello.",
+            &[
+                ("Message-ID", "<outreach-7-ab@andrii.ai>"),
+                ("Reply-To", "notices@example.com"),
+            ],
+        )
+        .unwrap();
+        let wire = String::from_utf8(message.formatted()).unwrap();
+        assert!(wire.contains("Reply-To: notices@example.com\r\n"), "{wire}");
+        assert!(
+            wire.contains("Message-ID: <outreach-7-ab@andrii.ai>\r\n"),
+            "{wire}"
+        );
+        assert!(
+            build_message(
+                "outreach@andrii.ai",
+                "a@sos.example.gov",
+                "s",
+                "b",
+                &[("Reply-To", "not a mailbox")]
+            )
+            .is_err()
+        );
     }
 
     #[test]

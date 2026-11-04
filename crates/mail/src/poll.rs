@@ -7,6 +7,20 @@
 //! the old watermark — the next tick re-lists and dedup-hits.
 //! Expired watermarks reseed via `getProfile` + a bounded 7-day
 //! `messages.list` backfill. 401 refreshes once and retries once.
+//!
+//! `mail_poll` is also the poll's health record (`/readyz`, the admin
+//! mail page): a clean run clears `last_error` and moves
+//! `last_poll_at`; a held run (rate limit, fetch cap) records why and
+//! moves it; a failed run (dead refresh token, Gmail refusal) records
+//! why and leaves `last_poll_at` alone, so the poll reads stale.
+//!
+//! Per message: the sidecar text (what the model reads, what follower
+//! quotes are cut from) carries the sender's domain, never an address,
+//! and the body passes `notify::pii::redact`. A bounce or complaint
+//! authenticated by Gmail's stamp suppresses its recipients
+//! (`notify::suppress_address`) and is not captured; an
+//! unauthenticated one is captured as `rejected`. A PDF that kills the
+//! process mid-parse is skipped on the next run ([`PARSING_MARKER`]).
 
 use rusqlite::{Connection, OptionalExtension};
 
@@ -23,6 +37,12 @@ const INBOX_SLUG: &str = "mail-inbox";
 
 /// Backfill window on watermark expiry (never a full-mailbox scan).
 const BACKFILL_QUERY: &str = "newer_than:7d";
+
+/// Store-root file naming the Gmail id being parsed. A parse that
+/// takes the process down (a hostile PDF; release builds abort on
+/// panic) leaves it behind, and the next run reads that message
+/// without its PDFs instead of dying on it every 15 minutes.
+pub const PARSING_MARKER: &str = "mail-poll-parsing";
 
 /// One [`poll`] run's knobs.
 pub struct PollOpts {
@@ -47,6 +67,8 @@ pub struct PollReport {
     pub watermark: String,
     /// True when the run took the reseed path.
     pub reseeded: bool,
+    /// Addresses suppressed from authenticated bounces and complaints.
+    pub suppressed: usize,
 }
 
 /// Poll once: refresh, walk history from the cursor, ingest, advance.
@@ -65,6 +87,20 @@ pub fn poll(
     client: &mut MailClient,
     opts: &PollOpts,
 ) -> Result<PollReport, MailError> {
+    let result = poll_once(conn, store, client, opts);
+    if let Err(error) = &result {
+        // Best effort: a store error may refuse this write too.
+        let _ = record_failure(conn, &error.to_string());
+    }
+    result
+}
+
+fn poll_once(
+    conn: &Connection,
+    store: &Store,
+    client: &mut MailClient,
+    opts: &PollOpts,
+) -> Result<PollReport, MailError> {
     client.refresh()?;
     ensure_row(conn)?;
     let cursor = cursor(conn)?;
@@ -76,6 +112,7 @@ pub fn poll(
             created: 0,
             watermark: profile.history_id,
             reseeded: false,
+            suppressed: 0,
         });
     }
     match walk_history(conn, store, client, opts, &cursor.history_id)? {
@@ -88,6 +125,7 @@ pub fn poll(
                 created,
                 watermark: cursor.history_id,
                 reseeded: false,
+                suppressed: 0,
             })
         }
         WalkOutcome::Expired => reseed(conn, store, client, opts),
@@ -98,6 +136,7 @@ pub fn poll(
                 created,
                 watermark: cursor.history_id,
                 reseeded: false,
+                suppressed: 0,
             })
         }
     }
@@ -152,6 +191,15 @@ fn record_error(conn: &Connection, now: i64, error: &str) -> Result<(), MailErro
     Ok(())
 }
 
+/// A run that failed outright: name the cause, keep `last_poll_at`
+/// (the last run that worked). The row is created if needed — a poll
+/// that ran at all means mail is configured, so it is failing, not off.
+fn record_failure(conn: &Connection, error: &str) -> Result<(), MailError> {
+    ensure_row(conn)?;
+    conn.execute("UPDATE mail_poll SET last_error = ?1 WHERE id = 1", [error])?;
+    Ok(())
+}
+
 /// Refresh-once-and-retry-once for any Gmail call.
 fn with_refresh<T>(
     client: &mut MailClient,
@@ -192,6 +240,7 @@ fn walk_history(
     let mut page_token: Option<String> = None;
     let mut listed = 0;
     let mut created = 0;
+    let mut suppressed = 0;
     // Advance target, set from the last consumed page; the LIST
     // cursor stays fixed across pages (every page request carries the
     // original startHistoryId + pageToken). Deferred init: the loop
@@ -220,6 +269,7 @@ fn walk_history(
             match fetch_one(conn, store, client, opts, added, &page.history_id)? {
                 FetchOutcome::Created => created += 1,
                 FetchOutcome::Duplicate => {}
+                FetchOutcome::Report { suppressed: n } => suppressed += n,
                 FetchOutcome::RateLimited => {
                     return Ok(WalkOutcome::RateLimited {
                         fetched: listed,
@@ -240,12 +290,17 @@ fn walk_history(
         created,
         watermark,
         reseeded: false,
+        suppressed,
     }))
 }
 
 enum FetchOutcome {
     Created,
     Duplicate,
+    /// A bounce or complaint, handled without a capture.
+    Report {
+        suppressed: usize,
+    },
     RateLimited,
 }
 
@@ -265,14 +320,32 @@ fn fetch_one(
         Err(MailError::RateLimited) => return Ok(FetchOutcome::RateLimited),
         Err(e) => return Err(e),
     };
-    let parsed = crate::mime::parse(&raw.raw);
-    let sender = resolve_sender(conn, &parsed, opts)?;
+    // Crash guard: a marker naming this id means parsing it took the
+    // last run down; read it without its PDFs this time.
+    let marker = store.root().join(PARSING_MARKER);
+    let crashed_before = std::fs::read_to_string(&marker).is_ok_and(|id| id.trim() == raw.id);
+    let _ = std::fs::write(&marker, &raw.id);
+    let parsed = crate::mime::parse_with(&raw.raw, !crashed_before);
+    let _ = std::fs::remove_file(&marker);
+    // Authentication evidence first: it decides the trust below.
+    let evidence = auth_results::parse(&parsed.auth_results);
+    if let Some(report) = &parsed.report
+        && crate::mime::sender_domain(&crate::mime::sender_addr(&parsed.from))
+            .and_then(|domain| evidence.verified_for(&domain))
+            .is_some()
+    {
+        let suppressed = apply_report(conn, opts, &raw.id, report)?;
+        return Ok(FetchOutcome::Report { suppressed });
+    }
+    let mut sender = resolve_sender(conn, &parsed, &evidence, opts)?;
+    if parsed.report.is_some() {
+        // Anyone can write a bounce-shaped message: unauthenticated,
+        // it suppresses nobody and is kept as evidence only.
+        sender.trust = "rejected";
+    }
     let source_id =
         find_or_create_source(conn, sender.authority_id, sender.source_kind, &sender.addr)?;
-    let sidecar = format!(
-        "From: {}\nTo: {}\nDate: {}\nSubject: {}\n\n{}",
-        parsed.from, parsed.to, parsed.date, parsed.subject, parsed.body_text
-    );
+    let sidecar = email_sidecar(&parsed);
     let origin = format!("gmail:{}", raw.id);
     let outcome = ingest_bytes(
         conn,
@@ -291,7 +364,11 @@ fn fetch_one(
     )?;
     match outcome {
         IngestOutcome::Created { capture_id } => {
-            let evidence = auth_results::parse(&parsed.auth_results);
+            let dkim_all: Vec<serde_json::Value> = evidence
+                .dkim_all
+                .iter()
+                .map(|sig| serde_json::json!({"result": sig.result, "domain": sig.domain}))
+                .collect();
             let authenticity = serde_json::json!({
                 "gmail_id": raw.id,
                 "thread_id": raw.thread_id,
@@ -302,11 +379,24 @@ fn fetch_one(
                 "auth_results": {
                     "dkim": evidence.dkim,
                     "dkim_domain": evidence.dkim_domain,
+                    "dkim_all": dkim_all,
                     "spf": evidence.spf,
                     "spf_mailfrom": evidence.spf_mailfrom,
                     "dmarc": evidence.dmarc,
                     "from_domain": evidence.from_domain,
                 },
+                "sender": sender.addr,
+                "verified_by": sender.verified_by,
+                "attachments": parsed
+                    .attachments
+                    .iter()
+                    .map(|a| serde_json::json!({
+                        "name": a.name,
+                        "content_type": a.content_type,
+                        "chars": a.chars,
+                        "note": a.note,
+                    }))
+                    .collect::<Vec<_>>(),
             });
             conn.execute(
                 "UPDATE capture SET authenticity = ?1 WHERE id = ?2",
@@ -317,6 +407,74 @@ fn fetch_one(
         }
         IngestOutcome::Duplicate { .. } => Ok(FetchOutcome::Duplicate),
     }
+}
+
+/// The capture's text sidecar: what the instruction model reads and
+/// follower quotes are cut from. The sender appears as its domain only
+/// (`From: sender at example.gov`); the recipient (our own mailbox)
+/// and every display name are left out; subject and body pass
+/// `notify::pii::redact`. The raw message stays the capture blob.
+pub fn email_sidecar(parsed: &crate::mime::ParsedMail) -> String {
+    let from = crate::mime::sender_domain(&crate::mime::sender_addr(&parsed.from))
+        .map(|domain| format!("sender at {domain}"))
+        .unwrap_or_else(|| "unknown sender".to_string());
+    format!(
+        "From: {from}\nDate: {}\nSubject: {}\n\n{}",
+        notify::pii::redact(&parsed.date),
+        notify::pii::redact(&parsed.subject),
+        notify::pii::redact(&parsed.body_text)
+    )
+}
+
+/// An authenticated bounce or complaint: suppress every recipient it
+/// names (one audit row each, never the address), and mark a bounced
+/// outreach email failed. Returns how many addresses were suppressed.
+fn apply_report(
+    conn: &Connection,
+    opts: &PollOpts,
+    gmail_id: &str,
+    report: &crate::report::Report,
+) -> Result<usize, MailError> {
+    // Notify's tables are additive; the poll may run before the web
+    // process ever booted on this store.
+    notify::migrate(conn)?;
+    let mut suppressed = 0;
+    for recipient in &report.recipients {
+        if let Some(row) = notify::suppress_address(conn, opts.now, recipient)? {
+            conn.execute(
+                "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+                 VALUES (?1, ?2, 'notify.suppressed', 'notify_suppression', ?3, ?4)",
+                rusqlite::params![
+                    opts.now,
+                    opts.actor,
+                    row,
+                    format!("{} gmail:{gmail_id}", report.kind.as_str())
+                ],
+            )?;
+            suppressed += 1;
+        }
+    }
+    if report.kind == crate::report::ReportKind::Bounce && has_outreach_table(conn)? {
+        for id in &report.original_ids {
+            conn.execute(
+                "UPDATE outreach_email SET status = 'failed', error = 'bounced: the office address refused delivery'
+                 WHERE message_id = ?1 AND status = 'sent'",
+                [id],
+            )?;
+        }
+    }
+    Ok(suppressed)
+}
+
+fn has_outreach_table(conn: &Connection) -> rusqlite::Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'outreach_email'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
 }
 
 /// First-source threading: an office's reply names our outreach
@@ -330,15 +488,7 @@ pub fn link_outreach_reply(
     capture_id: i64,
     parsed: &crate::mime::ParsedMail,
 ) -> rusqlite::Result<Option<i64>> {
-    let has_table = conn
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'outreach_email'",
-            [],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some();
-    if !has_table {
+    if !has_outreach_table(conn)? {
         return Ok(None);
     }
     let mut ids = crate::mime::message_ids(&parsed.in_reply_to);
@@ -370,20 +520,31 @@ struct Sender {
     authority_id: i64,
     trust: &'static str,
     source_kind: &'static str,
+    /// `dmarc` / `dkim` when Gmail's stamp authenticates the From
+    /// domain, else `none`.
+    verified_by: &'static str,
 }
 
 /// Authority + trust from the sender domain: official domains
-/// attribute to their own authority; everything else lands in the
-/// inbox as `community` (proposable, never directly promotable);
-/// known-fake domains capture as `rejected` (kept as evidence,
-/// never analyzed).
+/// attribute to their own authority, and earn `official` trust only
+/// when Gmail's stamp authenticates that domain (DMARC pass for it,
+/// or an aligned passing DKIM signature); unauthenticated mail from
+/// an official domain keeps its authority but caps at `community`.
+/// Everything else lands in the inbox as `community` (proposable,
+/// never directly promotable); known-fake domains capture as
+/// `rejected` (kept as evidence, never analyzed).
 fn resolve_sender(
     conn: &Connection,
     parsed: &crate::mime::ParsedMail,
+    evidence: &auth_results::AuthResults,
     opts: &PollOpts,
 ) -> Result<Sender, MailError> {
     let addr = crate::mime::sender_addr(&parsed.from);
     let domain = crate::mime::sender_domain(&addr);
+    let verified_by = domain
+        .as_deref()
+        .and_then(|d| evidence.verified_for(d))
+        .unwrap_or("none");
     let row: Option<(String, Option<i64>)> = match &domain {
         Some(name) => conn
             .query_row(
@@ -396,8 +557,17 @@ fn resolve_sender(
     };
     let inbox = || inbox_authority(conn, opts);
     let (authority_id, trust, source_kind) = match row {
-        Some((status, Some(auth))) if status == "official" => (auth, "official", "email_official"),
-        Some((status, None)) if status == "official" => (inbox()?, "official", "email_official"),
+        Some((status, auth)) if status == "official" => {
+            let authority_id = match auth {
+                Some(auth) => auth,
+                None => inbox()?,
+            };
+            if verified_by == "none" {
+                (authority_id, "community", "email_customer")
+            } else {
+                (authority_id, "official", "email_official")
+            }
+        }
         Some((status, _)) if status == "fake" => (inbox()?, "rejected", "email_customer"),
         Some((_, Some(auth))) => (auth, "community", "email_customer"),
         _ => (inbox()?, "community", "email_customer"),
@@ -407,6 +577,7 @@ fn resolve_sender(
         authority_id,
         trust,
         source_kind,
+        verified_by,
     })
 }
 
@@ -482,6 +653,7 @@ fn reseed(
     let mut page_token: Option<String> = None;
     let mut listed = 0;
     let mut created = 0;
+    let mut suppressed = 0;
     loop {
         let page = match with_refresh(client, |c| {
             c.messages_list(BACKFILL_QUERY, page_token.as_deref())
@@ -496,6 +668,7 @@ fn reseed(
                     created,
                     watermark: held,
                     reseeded: true,
+                    suppressed,
                 });
             }
             Err(e) => return Err(e),
@@ -510,6 +683,7 @@ fn reseed(
             match fetch_one(conn, store, client, opts, added, &profile.history_id)? {
                 FetchOutcome::Created => created += 1,
                 FetchOutcome::Duplicate => {}
+                FetchOutcome::Report { suppressed: n } => suppressed += n,
                 FetchOutcome::RateLimited => {
                     backoff(&opts.backoff_secs);
                     record_error(conn, opts.now, "rate limited during reseed; watermark held")?;
@@ -519,6 +693,7 @@ fn reseed(
                         created,
                         watermark: held,
                         reseeded: true,
+                        suppressed,
                     });
                 }
             }
@@ -537,6 +712,7 @@ fn reseed(
         created,
         watermark: fresh.history_id,
         reseeded: true,
+        suppressed,
     })
 }
 
@@ -649,8 +825,12 @@ mod tests {
     }
 
     fn raw_message_json(id: &str) -> String {
+        raw_message_json_of(id, NOTICE)
+    }
+
+    fn raw_message_json_of(id: &str, raw: &str) -> String {
         use base64::Engine as _;
-        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(NOTICE.as_bytes());
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw.as_bytes());
         format!(
             r#"{{"id":"{id}","threadId":"t-{id}","labelIds":["INBOX"],"internalDate":"1729000000000","raw":"{encoded}"}}"#
         )
@@ -758,6 +938,7 @@ mod tests {
         assert_eq!(evidence["internal_date_ms"], 1_729_000_000_000i64);
         assert_eq!(evidence["auth_results"]["dkim"], "pass");
         assert_eq!(evidence["auth_results"]["dmarc"], "pass");
+        assert_eq!(evidence["verified_by"], "dmarc");
         let sidecar: String = conn
             .query_row(
                 "SELECT body FROM capture_fts WHERE capture_id = (SELECT id FROM capture WHERE id > 0)",
@@ -798,6 +979,277 @@ mod tests {
         assert_eq!(trust, "community");
         assert_eq!(slug, "mail-inbox");
         server.join().unwrap();
+    }
+
+    /// Poll one message from an official-domain store; returns the
+    /// capture's trust, authority slug, and authenticity evidence.
+    fn poll_official_store(raw: &str) -> (String, String, serde_json::Value) {
+        let (_dir, store, conn) = migrated();
+        let auth = seed_authority(&conn, "t-sos");
+        seed_domain(&conn, auth);
+        conn.execute(
+            "INSERT INTO mail_poll(id, email, history_id) VALUES (1, 'box@example.com', '100')",
+            [],
+        )
+        .unwrap();
+        let (base, server) = stub(vec![
+            (200, TOKEN_OK.to_string()),
+            (200, history_page(&["m1"], "101")),
+            (200, raw_message_json_of("m1", raw)),
+        ]);
+        let mut client = test_client(&base);
+        let report = poll(&conn, &store, &mut client, &opts()).expect("poll");
+        assert_eq!(report.created, 1);
+        server.join().unwrap();
+        let (trust, slug, authenticity): (String, String, String) = conn
+            .query_row(
+                "SELECT c.trust, a.slug, c.authenticity FROM capture c
+                 JOIN authority a ON a.id = c.authority_id WHERE c.id > 0",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        (trust, slug, serde_json::from_str(&authenticity).unwrap())
+    }
+
+    /// One message through the poll on a fresh store; returns the
+    /// store (for follow-up queries) and the report.
+    fn poll_message(raw: &str) -> (tempfile::TempDir, Store, Connection, PollReport) {
+        let (dir, store, conn) = migrated();
+        conn.execute(
+            "INSERT INTO mail_poll(id, email, history_id) VALUES (1, 'box@example.com', '100')",
+            [],
+        )
+        .unwrap();
+        let (base, server) = stub(vec![
+            (200, TOKEN_OK.to_string()),
+            (200, history_page(&["m1"], "101")),
+            (200, raw_message_json_of("m1", raw)),
+        ]);
+        let mut client = test_client(&base);
+        let report = poll(&conn, &store, &mut client, &opts()).expect("poll");
+        server.join().unwrap();
+        (dir, store, conn, report)
+    }
+
+    #[test]
+    fn authenticated_bounce_suppresses_the_recipient_without_a_capture() {
+        let bounce = crate::report::tests::GMAIL_BOUNCE;
+        let (_dir, _store, conn, report) = poll_message(bounce);
+        assert_eq!((report.created, report.suppressed), (0, 1));
+        assert_eq!(report.watermark, "101", "a handled bounce still advances");
+        let captures: i64 = conn
+            .query_row("SELECT COUNT(*) FROM capture WHERE id > 0", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(captures, 0, "a report quoting a follower is never captured");
+        let (action, row, reason): (String, i64, String) = conn
+            .query_row(
+                "SELECT action, entity_id, reason FROM audit WHERE entity = 'notify_suppression'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(action, "notify.suppressed");
+        assert_eq!(reason, "bounce gmail:m1");
+        assert!(!reason.contains('@'));
+        // The failed recipient is the one suppressed (same row); the
+        // delayed one is not (a delay is not a bounce).
+        assert_eq!(
+            notify::suppress_address(&conn, NOW, "gone@follower.example").unwrap(),
+            Some(row)
+        );
+        assert_eq!(notify::suppressed_count(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn a_bounce_marks_the_outreach_email_it_returns_failed() {
+        let (_dir, store, conn) = migrated();
+        conn.execute_batch(
+            "CREATE TABLE outreach_email (id INTEGER PRIMARY KEY, message_id TEXT NOT NULL,
+                 status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', reply_capture_id INTEGER);
+             INSERT INTO outreach_email(id, message_id, status) VALUES (4, '<digest-9-ab@andrii.ai>', 'sent');
+             INSERT INTO mail_poll(id, email, history_id) VALUES (1, 'box@example.com', '100');",
+        )
+        .unwrap();
+        let (base, server) = stub(vec![
+            (200, TOKEN_OK.to_string()),
+            (200, history_page(&["m1"], "101")),
+            (
+                200,
+                raw_message_json_of("m1", crate::report::tests::GMAIL_BOUNCE),
+            ),
+        ]);
+        let mut client = test_client(&base);
+        poll(&conn, &store, &mut client, &opts()).expect("poll");
+        server.join().unwrap();
+        let (status, error): (String, String) = conn
+            .query_row(
+                "SELECT status, error FROM outreach_email WHERE id = 4",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "failed");
+        assert!(error.starts_with("bounced"), "{error}");
+    }
+
+    #[test]
+    fn an_unauthenticated_bounce_suppresses_nobody() {
+        let forged = crate::report::tests::GMAIL_BOUNCE.replace(
+            "Authentication-Results: mx.google.com; dkim=pass header.i=@googlemail.com header.s=20230601\r\n",
+            "",
+        );
+        let (_dir, _store, conn, report) = poll_message(&forged);
+        assert_eq!((report.created, report.suppressed), (1, 0));
+        let trust: String = conn
+            .query_row("SELECT trust FROM capture WHERE id > 0", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(trust, "rejected", "kept as evidence, never analyzed");
+        let suppressions: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notify_suppression", [], |r| r.get(0))
+            .unwrap_or(0);
+        assert_eq!(suppressions, 0);
+    }
+
+    #[test]
+    fn the_sidecar_carries_no_address_or_phone() {
+        // Fictional values only.
+        let raw = "From: \"Jane Citizen\" <jane@citizen.example>\r\nTo: box@example.com\r\nDate: Mon, 26 Oct 2026 09:00:00 -0700\r\nSubject: Call me at (555) 010-0199\r\n\r\nThe office told me the fee is $30. Reach me at jane@citizen.example or 555.010.0123.";
+        let (dir, _store, conn, _) = poll_message(raw);
+        let id: i64 = conn
+            .query_row("SELECT id FROM capture WHERE id > 0", [], |r| r.get(0))
+            .unwrap();
+        let sidecar =
+            std::fs::read_to_string(dir.path().join("text").join(format!("{id}.txt"))).unwrap();
+        assert!(notify::pii::matches(&sidecar).is_empty(), "{sidecar}");
+        assert!(
+            sidecar.starts_with("From: sender at citizen.example\n"),
+            "{sidecar}"
+        );
+        assert!(
+            !sidecar.contains("Jane"),
+            "display names stay out: {sidecar}"
+        );
+        assert!(!sidecar.contains("box@example.com"), "{sidecar}");
+        assert!(sidecar.contains("the fee is $30"), "{sidecar}");
+        assert!(sidecar.contains("Subject: Call me at [phone]"), "{sidecar}");
+    }
+
+    #[test]
+    fn a_failed_run_is_recorded_without_moving_the_last_poll() {
+        let (_dir, store, conn) = migrated();
+        conn.execute(
+            "INSERT INTO mail_poll(id, email, history_id, last_poll_at) VALUES (1, 'box@example.com', '100', 7)",
+            [],
+        )
+        .unwrap();
+        let (base, server) = stub(vec![(
+            400,
+            r#"{"error":"invalid_grant","error_description":"Token has been expired or revoked."}"#
+                .to_string(),
+        )]);
+        let mut client = test_client(&base);
+        poll(&conn, &store, &mut client, &opts()).expect_err("dead grant");
+        server.join().unwrap();
+        let (at, error): (i64, String) = conn
+            .query_row(
+                "SELECT last_poll_at, last_error FROM mail_poll WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(at, 7, "the last good poll stays the last good poll");
+        assert!(error.contains("invalid_grant"), "{error}");
+        // A store that never polled gets a row: configured and failing.
+        let (_dir2, store2, conn2) = migrated();
+        let (base, server) = stub(vec![(400, r#"{"error":"invalid_grant"}"#.to_string())]);
+        let mut client = test_client(&base);
+        poll(&conn2, &store2, &mut client, &opts()).expect_err("dead grant");
+        server.join().unwrap();
+        let error: String = conn2
+            .query_row("SELECT last_error FROM mail_poll WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(!error.is_empty());
+    }
+
+    #[test]
+    fn a_message_that_killed_the_last_run_is_read_without_its_pdfs() {
+        let raw = crate::mime::tests::notice_with_pdf();
+        let (dir, store, conn) = migrated();
+        conn.execute(
+            "INSERT INTO mail_poll(id, email, history_id) VALUES (1, 'box@example.com', '100')",
+            [],
+        )
+        .unwrap();
+        // The previous run died while parsing m1.
+        std::fs::write(dir.path().join(PARSING_MARKER), "m1").unwrap();
+        let (base, server) = stub(vec![
+            (200, TOKEN_OK.to_string()),
+            (200, history_page(&["m1"], "101")),
+            (200, raw_message_json_of("m1", &raw)),
+        ]);
+        let mut client = test_client(&base);
+        let report = poll(&conn, &store, &mut client, &opts()).expect("poll");
+        server.join().unwrap();
+        assert_eq!(report.created, 1);
+        assert!(!dir.path().join(PARSING_MARKER).exists(), "marker cleared");
+        let authenticity: String = conn
+            .query_row("SELECT authenticity FROM capture WHERE id > 0", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let evidence: serde_json::Value = serde_json::from_str(&authenticity).unwrap();
+        assert_eq!(
+            evidence["attachments"][0]["note"],
+            "skipped after a failed read"
+        );
+    }
+
+    #[test]
+    fn official_trust_needs_authentication_of_the_from_domain() {
+        let notice = |from: &str, stamp: &str| {
+            format!(
+                "From: {from}\r\nTo: box@example.com\r\nSubject: Fee change\r\n{stamp}\r\nThe fee is now $90."
+            )
+        };
+        // DMARC fail: the mail is kept on the office, capped at community.
+        let (trust, slug, evidence) = poll_official_store(&notice(
+            "ops@example.gov",
+            "Authentication-Results: mx.google.com; dkim=fail header.d=example.gov; spf=softfail smtp.mailfrom=ops@example.gov; dmarc=fail header.from=example.gov\r\n",
+        ));
+        assert_eq!((trust.as_str(), slug.as_str()), ("community", "t-sos"));
+        assert_eq!(evidence["verified_by"], "none");
+        assert_eq!(evidence["auth_results"]["dmarc"], "fail");
+        // No Gmail stamp at all (or only a forwarder's): community.
+        let (trust, _, evidence) = poll_official_store(&notice(
+            "ops@example.gov",
+            "Authentication-Results: mx.evil.test; dmarc=pass header.from=example.gov\r\n",
+        ));
+        assert_eq!(trust, "community");
+        assert_eq!(evidence["auth_results"]["dmarc"], "none");
+        // The display name quotes the official address; the mailbox
+        // (and the domain DMARC passed for) is the attacker's.
+        let (trust, slug, evidence) = poll_official_store(&notice(
+            "\"x <ops@example.gov>\" <a@evil.test>",
+            "Authentication-Results: mx.google.com; dkim=pass header.i=@evil.test; spf=pass smtp.mailfrom=a@evil.test; dmarc=pass header.from=evil.test\r\n",
+        ));
+        assert_eq!((trust.as_str(), slug.as_str()), ("community", "mail-inbox"));
+        assert_eq!(evidence["sender"], "a@evil.test");
+        // Aligned DKIM without a DMARC record (Gmail's `header.i` shape).
+        let (trust, slug, evidence) = poll_official_store(&notice(
+            "Ops <ops@example.gov>",
+            "Authentication-Results: mx.google.com; dkim=pass header.i=@example.gov header.s=s1 header.b=Ab; spf=pass smtp.mailfrom=ops@example.gov; dmarc=none header.from=example.gov\r\n",
+        ));
+        assert_eq!((trust.as_str(), slug.as_str()), ("official", "t-sos"));
+        assert_eq!(evidence["verified_by"], "dkim");
+        assert_eq!(
+            evidence["auth_results"]["dkim_all"][0]["domain"],
+            "example.gov"
+        );
     }
 
     #[test]

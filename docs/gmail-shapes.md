@@ -58,11 +58,55 @@ loud (re-consent).
   — the next tick re-lists, sha-dedup absorbs re-delivery).
 - First run seeds from `getProfile` (no backfill); backfill only
   on the 404 path, bounded by `newer_than:7d` + the fetch cap.
-- Trust: sender domain ∈ `domain(status='official')` + DMARC
-  pass evidence → `official` + that authority; unknown →
-  `community` + `mail-inbox`; fake → `rejected` (kept, never
-  analyzed). Only the `mx.google.com` `Authentication-Results`
-  stamp is trusted (topmost wins).
+- Trust: sender domain ∈ `domain(status='official')` and
+  Gmail's stamp authenticates that domain → `official` + that
+  authority. Authenticated means `dmarc=pass` with
+  `header.from` equal to the parsed From domain, or any
+  `dkim=pass` clause (every clause is kept; signer from
+  `header.d`, else `header.i=@domain`, Gmail's shape) whose
+  signer equals the From domain or is its parent or child. SPF
+  alone never counts. Unauthenticated official-domain mail keeps
+  its authority, capped at `community`; unknown → `community` +
+  `mail-inbox`; fake → `rejected` (kept, never analyzed). Only
+  the `mx.google.com` `Authentication-Results` stamp is trusted
+  (topmost wins). The capture's `authenticity` records
+  `verified_by` (`dmarc` / `dkim` / `none`) and the sender.
+- Sender: quoted display names and comments are dropped before
+  reading the From mailbox, then the last `<…>` wins; a From
+  with several mailboxes has no sender (inbox, `community`).
+- Body (`mime`): trust-bearing headers come from our own raw
+  header scan; the readable text comes from `mail-parser`
+  (nested multiparts, every charset, RFC 2047 subjects, forwarded
+  `message/rfc822`, text attachments) plus the lopdf text layer
+  of PDF attachments (10 MiB, 50 pages, 100k characters each;
+  300k per message). A store-root marker (`mail-poll-parsing`)
+  names the message being parsed: if a PDF takes the process
+  down, the next run reads that message without its PDFs.
+- Sidecar privacy: the text file (what the instruction model
+  reads, what follower quotes are cut from) says `From: sender at
+  <domain>`, drops To and display names, and passes
+  `notify::pii::redact` (`[email]`, `[phone]`, `[ssn]`: the
+  patterns `xtask pii-sweep` refuses). The raw message stays the
+  capture blob, staff-only.
+- Bounces and complaints (`report`): a `multipart/report`
+  (`delivery-status`, `feedback-report`) whose sender Gmail's
+  stamp authenticates suppresses every permanently failed or
+  complaining recipient (`notify::suppress_address`, one audit
+  row each, no address), marks a bounced outreach email
+  `failed`, and is not captured. An unauthenticated one
+  suppresses nobody and is captured as `rejected`. Gmail's own
+  bounces come from `mailer-daemon@googlemail.com`: check on the
+  first real one that its stamp reads `dkim=pass
+  header.i=@googlemail.com`.
+- Health: a clean run clears `mail_poll.last_error` and moves
+  `last_poll_at`; a held run (rate limit, fetch cap) records why
+  and moves it; a failed run (dead refresh token, Gmail refusal)
+  records why and leaves `last_poll_at` alone. `/readyz` reports
+  `mail`: `ok` (clean within 45 minutes), `failing`, `stale`, or
+  `disabled` (no row: never ran); only `failing` and `stale`
+  fail readiness. The admin mail page shows the error text.
+- Outreach sends carry `Reply-To: <mail_poll.email>`, so an
+  office's answer lands in the polled mailbox and threads back.
 - Quotas (6,000 units/min/user): steady state is 2 units/poll;
   a 50-mail burst is ~3,000 units. Non-issue; sequential fetch.
 - No MTA-STS check in the poller (API path, not SMTP MX).
@@ -81,3 +125,10 @@ loud (re-consent).
    `mail.refresh_token`). Dead/rotated token → `invalid_grant`
    runbook = repeat this step.
 4. Use a dedicated low-volume mailbox, not a personal inbox.
+5. Send (`mailer.username`, SMTP) from that same Gmail account,
+   so bounces of digests and outreach arrive where the poll reads
+   them. Every SMTP send counts against one rolling 24-hour
+   budget (`notify::OVERALL_DAILY_SEND_CAP`, 400) under Gmail's
+   own daily limit.
+6. A custom `mailer.from` domain needs its own SPF, DKIM and
+   DMARC records (DNS, operator).

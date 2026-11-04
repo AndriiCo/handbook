@@ -34,7 +34,7 @@ pub fn run_sweep(args: &[String]) {
     let now = super::unix_now();
     if live {
         let client = super::atlas::live_client(args);
-        let outcomes = instruct::worker::sweep_all(
+        let sweep = instruct::worker::sweep_all(
             &conn,
             store.root(),
             &client,
@@ -49,10 +49,10 @@ pub fn run_sweep(args: &[String]) {
             eprintln!("instruct-sweep: {e}");
             std::process::exit(1);
         });
-        report(&outcomes);
+        finish(&sweep);
     } else {
         let port = StubPort::new("{}", "{}");
-        let outcomes = instruct::worker::sweep_all(
+        let sweep = instruct::worker::sweep_all(
             &conn,
             store.root(),
             &port,
@@ -67,13 +67,44 @@ pub fn run_sweep(args: &[String]) {
             eprintln!("instruct-sweep: {e}");
             std::process::exit(1);
         });
-        report(&outcomes);
+        finish(&sweep);
     }
 }
 
-fn report(outcomes: &[instruct::worker::AuthorityOutcome]) {
+/// Print the sweep, then exit 1 when any authority failed (after the
+/// others ran and committed): the timer unit shows failed, the next
+/// tick retries the failed authorities from their held cursors.
+fn finish(sweep: &instruct::worker::SweepReport) {
+    report(
+        &sweep.outcomes,
+        !sweep.failures.is_empty() || !sweep.deferred.is_empty(),
+    );
+    for (slug, retry_at) in &sweep.deferred {
+        println!("instruct-sweep: {slug}: backing off after failures, next try at {retry_at}");
+    }
+    for failure in &sweep.failures {
+        eprintln!("instruct-sweep: {}: {}", failure.slug, failure.error);
+    }
+    if !sweep.failures.is_empty() {
+        eprintln!(
+            "instruct-sweep: {} authorit{} failed, {} ran",
+            sweep.failures.len(),
+            if sweep.failures.len() == 1 {
+                "y"
+            } else {
+                "ies"
+            },
+            sweep.outcomes.len()
+        );
+        std::process::exit(1);
+    }
+}
+
+fn report(outcomes: &[instruct::worker::AuthorityOutcome], any_failed: bool) {
     if outcomes.is_empty() {
-        println!("instruct-sweep: no triggers");
+        if !any_failed {
+            println!("instruct-sweep: no triggers");
+        }
         return;
     }
     for outcome in outcomes {

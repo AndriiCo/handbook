@@ -5,6 +5,15 @@
 //! hour. Targets are sealed with the KEK (`config::encrypt_value`);
 //! only hashes are indexed. Double opt-in everywhere: nothing sends
 //! to an unconfirmed address.
+//!
+//! Every email the process sends over SMTP (magic links, follow
+//! confirmations, digests, outreach) also passes [`claim_send`]: one
+//! rolling 24-hour budget, [`OVERALL_DAILY_SEND_CAP`], under the
+//! sending account's own daily limit, so a runaway loop or a flood of
+//! sign-ups cannot get the account suspended. Bounces and complaints
+//! read from the polled mailbox land in [`suppress_address`].
+
+pub mod pii;
 
 use rusqlite::{Connection, OptionalExtension};
 
@@ -17,6 +26,10 @@ pub const BACKOFF_SECS: [i64; 4] = [60, 600, 3600, 3600];
 /// Digest window: one email per subscriber per authority per hour.
 pub const DIGEST_WINDOW_SECS: i64 = 3600;
 pub const DAY_SECS: i64 = 86400;
+/// SMTP sends per rolling 24 hours, across every kind of mail. A
+/// consumer Gmail account allows 500 a day (Workspace 2,000); 400
+/// leaves room for the operator's own mail on the same account.
+pub const OVERALL_DAILY_SEND_CAP: i64 = 400;
 /// Cursor row name for the `fact_accept` audit tail.
 pub const CURSOR_FACT_ACCEPT: &str = "fact_accept";
 
@@ -63,6 +76,12 @@ pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
            email_hash TEXT PRIMARY KEY,
            created_at INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS mail_send_log(
+           id INTEGER PRIMARY KEY,
+           at INTEGER NOT NULL,
+           kind TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_mail_send_log_at ON mail_send_log(at);
          CREATE INDEX IF NOT EXISTS idx_notify_outbox_due
            ON notify_outbox(state, not_before);
          CREATE INDEX IF NOT EXISTS idx_notify_outbox_sub
@@ -321,6 +340,63 @@ pub fn suppress(conn: &Connection, now: i64, email_hash: &str) -> rusqlite::Resu
     Ok(())
 }
 
+/// Suppress an address (bounce or complaint from the polled mailbox):
+/// normalized and hashed exactly like [`seal_email`], so the worker
+/// and `subscribe` see it. Returns the suppression's rowid (for the
+/// audit row) or `None` for an empty address.
+pub fn suppress_address(
+    conn: &Connection,
+    now: i64,
+    address: &str,
+) -> rusqlite::Result<Option<i64>> {
+    let norm = address.trim().to_lowercase();
+    if norm.is_empty() {
+        return Ok(None);
+    }
+    let hash = auth::hash_str(&norm);
+    suppress(conn, now, &hash)?;
+    conn.query_row(
+        "SELECT rowid FROM notify_suppression WHERE email_hash = ?1",
+        [&hash],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Suppressed addresses on file.
+pub fn suppressed_count(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row("SELECT COUNT(*) FROM notify_suppression", [], |row| {
+        row.get(0)
+    })
+}
+
+/// SMTP sends in the 24 hours before `now`.
+pub fn sends_today(conn: &Connection, now: i64) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM mail_send_log WHERE at > ?1",
+        [now - DAY_SECS],
+        |row| row.get(0),
+    )
+}
+
+/// Claim one send from the rolling budget: `true` (and logged) while
+/// fewer than `cap` sends happened in the last 24 hours, else `false`
+/// and the caller must not send. One statement, so two concurrent
+/// senders cannot both take the last slot. Rows older than two days
+/// are pruned as it goes.
+pub fn claim_send(conn: &Connection, now: i64, kind: &str, cap: i64) -> rusqlite::Result<bool> {
+    conn.execute(
+        "DELETE FROM mail_send_log WHERE at <= ?1",
+        [now - 2 * DAY_SECS],
+    )?;
+    let claimed = conn.execute(
+        "INSERT INTO mail_send_log(at, kind)
+         SELECT ?1, ?2 WHERE (SELECT COUNT(*) FROM mail_send_log WHERE at > ?3) < ?4",
+        rusqlite::params![now, kind, now - DAY_SECS, cap],
+    )?;
+    Ok(claimed == 1)
+}
+
 pub fn is_suppressed(conn: &Connection, email_hash: &str) -> rusqlite::Result<bool> {
     Ok(conn
         .query_row(
@@ -424,6 +500,13 @@ pub fn lease_due_groups(
     limit: usize,
 ) -> rusqlite::Result<Vec<DigestGroup>> {
     reclaim_stale_leases(conn, now)?;
+    // Never lease more rows than the overall send budget has left:
+    // a leased row that cannot send burns an attempt and dead-letters.
+    let left = OVERALL_DAILY_SEND_CAP - sends_today(conn, now)?;
+    if left <= 0 {
+        return Ok(Vec::new());
+    }
+    let limit = limit.min(left as usize);
     let rows: Vec<(i64, i64, i64)> = conn
         .prepare(
             "SELECT o.id, o.sub_id, o.fact_id FROM notify_outbox o
@@ -540,7 +623,10 @@ pub fn load_fact(
         let (s, e) = (start as usize, end as usize);
         if e <= bytes.len() {
             let slice = String::from_utf8_lossy(&bytes[s..e]).to_string();
-            if (8..=400).contains(&slice.chars().count()) {
+            // The quote goes to every follower: personal data in the
+            // cited slice (an older capture, a page that printed it)
+            // drops the quote, never the update.
+            if (8..=400).contains(&slice.chars().count()) && !pii::has_personal_data(&slice) {
                 quote = slice;
             }
         }
@@ -1256,5 +1342,107 @@ mod tests {
         ] {
             assert!(body.contains(want), "missing {want:?}");
         }
+    }
+
+    #[test]
+    fn bounced_address_is_suppressed_under_the_follower_hash() {
+        let conn = memory();
+        let kek = kek();
+        let (_, hash) = seal_email(&kek, "gone@follower.example");
+        assert!(!is_suppressed(&conn, &hash).unwrap());
+        let row = suppress_address(&conn, 100, " Gone@Follower.example ").unwrap();
+        assert!(row.is_some());
+        assert!(is_suppressed(&conn, &hash).unwrap());
+        // Again: idempotent, same row.
+        assert_eq!(
+            suppress_address(&conn, 200, "gone@follower.example").unwrap(),
+            row
+        );
+        assert_eq!(suppress_address(&conn, 200, "  ").unwrap(), None);
+        assert_eq!(suppressed_count(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn overall_send_cap_is_a_rolling_day() {
+        let conn = memory();
+        for i in 0..3 {
+            assert!(claim_send(&conn, 1_000 + i, "magic", 3).unwrap());
+        }
+        assert!(
+            !claim_send(&conn, 1_010, "digest", 3).unwrap(),
+            "fourth send refused"
+        );
+        assert_eq!(sends_today(&conn, 1_010).unwrap(), 3);
+        // A day after the first send, its slot frees up.
+        assert!(claim_send(&conn, 1_000 + DAY_SECS, "digest", 3).unwrap());
+        assert!(!claim_send(&conn, 1_000 + DAY_SECS, "digest", 3).unwrap());
+        // Two days on, old rows are pruned as sends are claimed.
+        assert!(claim_send(&conn, 1_000 + 3 * DAY_SECS, "outreach", 3).unwrap());
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mail_send_log", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 1);
+    }
+
+    #[test]
+    fn digests_never_lease_past_the_overall_budget() {
+        let conn = memory();
+        let kek = kek();
+        seed_authority(&conn);
+        let out = subscribe(&conn, 100, "vietnam", "a@example.com", &kek).expect("sub");
+        confirm(&conn, 101, &out.confirm_token.unwrap()).expect("confirm");
+        conn.execute(
+            "INSERT INTO audit(id, action, entity_id) VALUES (1, 'fact_accept', 7)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(enqueue_from_audit(&conn, 200).expect("enqueue"), 1);
+        for i in 0..OVERALL_DAILY_SEND_CAP {
+            assert!(claim_send(&conn, 250 + i, "magic", OVERALL_DAILY_SEND_CAP).unwrap());
+        }
+        assert!(lease_due_groups(&conn, 300, 10, 10).unwrap().is_empty());
+        let queued: String = conn
+            .query_row("SELECT state FROM notify_outbox", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(queued, "queued", "the row waits; no attempt is burned");
+        // The budget frees a day later and the digest leases.
+        assert_eq!(
+            lease_due_groups(&conn, 300 + DAY_SECS + 1_000, 10, 10)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_quote_carrying_personal_data_is_dropped() {
+        let conn = memory();
+        seed_authority(&conn);
+        conn.execute_batch(
+            "CREATE TABLE capture(id INTEGER PRIMARY KEY, source_id INTEGER, captured_at INTEGER);
+             CREATE TABLE source(id INTEGER PRIMARY KEY, authority_id INTEGER, kind TEXT, uri TEXT);
+             INSERT INTO capture VALUES (3, NULL, 1800000000);",
+        )
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("text")).unwrap();
+        // Fictional values only.
+        let text = "The fee is eight dollars. Questions: clerk@example.invalid today.";
+        std::fs::write(dir.path().join("text/3.txt"), text).unwrap();
+        let cite = |start: usize, end: usize| {
+            conn.execute(
+                "UPDATE fact SET capture_id = 3, citation_start = ?1, citation_end = ?2 WHERE id = 7",
+                rusqlite::params![start as i64, end as i64],
+            )
+            .unwrap();
+            load_fact(&conn, dir.path(), 7).unwrap().unwrap()
+        };
+        assert_eq!(cite(0, 25).quote, "The fee is eight dollars.");
+        let leaky = cite(26, text.len());
+        assert_eq!(leaky.quote, "", "the address never reaches a follower");
+        assert_eq!(
+            leaky.statement, "-eight dollars-",
+            "the update itself still goes"
+        );
     }
 }

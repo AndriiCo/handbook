@@ -6,9 +6,13 @@
 //! `location: pattern` and exits 1 on any hit (fail closed: nothing
 //! reaches publish with detectable PII). Real customer data must
 //! never live in these tables; this is the tripwire.
+//!
+//! The patterns are `notify::pii` (re-exported as `mail::pii`), the
+//! same ones the mail poller redacts email sidecars with, so a polled
+//! email capture passes by construction.
 
 use handbook_store::store::Store;
-use regex::Regex;
+use mail::pii;
 
 /// One sweep hit: where, and which pattern matched (never the value).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,20 +23,13 @@ pub struct Hit {
 
 /// Scan the store. Returns all hits (empty = clean).
 pub fn sweep(store: &Store) -> Result<Vec<Hit>, String> {
-    let email = Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}").unwrap();
-    let phone = Regex::new(r"\+?1?[-.\s()]*\d{3}[-.\s()]*\d{3}[-.\s()]*\d{4}").unwrap();
-    let ssn = Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").unwrap();
-    let patterns = [(&email, "email"), (&phone, "phone"), (&ssn, "ssn")];
-
     let mut hits = Vec::new();
     let mut check = |location: String, text: &str| {
-        for (re, name) in &patterns {
-            if re.is_match(text) {
-                hits.push(Hit {
-                    location: location.clone(),
-                    pattern: name,
-                });
-            }
+        for name in pii::matches(text) {
+            hits.push(Hit {
+                location: location.clone(),
+                pattern: name,
+            });
         }
     };
 
@@ -166,5 +163,26 @@ mod tests {
     fn clean_store_has_no_hits() {
         let (_dir, store) = seeded(false);
         assert!(sweep(&store).unwrap().is_empty());
+    }
+
+    #[test]
+    fn polled_email_captures_pass() {
+        let (_dir, store) = seeded(false);
+        // A citizen's mail full of personal data (fictional values).
+        let raw = "From: \"Jane Citizen\" <jane@citizen.example>\r\n\
+                   To: box@example.com\r\n\
+                   Date: Mon, 26 Oct 2026 09:00:00 -0700\r\n\
+                   Subject: My case, call (555) 010-0199\r\n\r\n\
+                   The clerk said the fee is $30. Reach me at jane@citizen.example \
+                   or +1 555.010.0123. SSN 000-12-3456.";
+        let sidecar = mail::poll::email_sidecar(&mail::mime::parse(raw.as_bytes()));
+        std::fs::create_dir_all(store.root().join("text")).unwrap();
+        std::fs::write(store.root().join("text").join("2.txt"), &sidecar).unwrap();
+        assert!(sweep(&store).unwrap().is_empty(), "{sidecar}");
+        assert!(sidecar.contains("the fee is $30"), "{sidecar}");
+        // The tripwire is live: the unredacted text would refuse.
+        std::fs::write(store.root().join("text").join("3.txt"), raw).unwrap();
+        let hits: Vec<&str> = sweep(&store).unwrap().iter().map(|h| h.pattern).collect();
+        assert_eq!(hits, ["email", "phone", "ssn"]);
     }
 }

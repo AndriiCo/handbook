@@ -20,6 +20,7 @@
 	import PackageIcon from '@lucide/svelte/icons/package';
 	import PhoneIcon from '@lucide/svelte/icons/phone';
 	import MailIcon from '@lucide/svelte/icons/mail';
+	import InboxIcon from '@lucide/svelte/icons/inbox';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
@@ -73,7 +74,10 @@
 		},
 		{
 			label: 'System',
-			items: [{ label: 'Config', href: resolve('/(admin)/config'), icon: SettingsIcon, keywords: 'keys settings' }]
+			items: [
+				{ label: 'Config', href: resolve('/(admin)/config'), icon: SettingsIcon, keywords: 'keys settings' },
+				{ label: 'Mail', href: resolve('/(admin)/mail'), icon: InboxIcon, keywords: 'gmail poll inbox bounces readyz' }
+			]
 		}
 	];
 	const ALL = NAV.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label })));

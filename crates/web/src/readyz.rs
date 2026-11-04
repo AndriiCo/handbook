@@ -1,5 +1,5 @@
 //! Readiness: `/readyz` tells the load balancer whether this
-//! process may take traffic. Four checks, no secrets in the
+//! process may take traffic. Five checks, no secrets in the
 //! output (only which check failed):
 //!
 //! 1. the store opens (a locked or missing DB is not ready);
@@ -10,7 +10,15 @@
 //! 3. the KEK is loaded (sealed rows are unreadable otherwise);
 //! 4. every instrumented in-process timer ticked recently (today
 //!    just the notify worker; the ACME loop's long sleeps are
-//!    covered by check 2 instead).
+//!    covered by check 2 instead);
+//! 5. the Gmail poll (`apostille-mail.timer`, a separate process)
+//!    finished a clean run within [`MAIL_MAX_POLL_AGE_SECS`], read
+//!    from `mail_poll` (`last_poll_at` with `last_error` empty: a
+//!    held or failed run records its reason there). No row means the
+//!    poll never ran here, so mail is disabled, not unready. The body
+//!    names the state (`mail`: `ok` / `failing` / `stale` /
+//!    `disabled`); the error text itself is staff-only, on the admin
+//!    mail page ([`admin_mail`]).
 //!
 //! Process statics (no `AppState` field): the leaf is
 //! re-recorded on every renewal, heartbeats by the loops
@@ -22,6 +30,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use rusqlite::{Connection, OptionalExtension};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{
@@ -30,13 +39,51 @@ use std::sync::{
 };
 
 use super::passkey;
-use super::{AppState, unix_now};
+use super::{AppState, admin::AdminAuth, store_unavailable, unix_now};
 
 /// Refuse traffic this far out from expiry (21 days: inside the
 /// ACME renewal window with margin for a failed attempt).
 pub const CERT_MIN_DAYS_LEFT: i64 = 21;
 /// The notify worker ticks every 60 s; silence past 5× is death.
 pub const NOTIFY_MAX_BEAT_AGE_SECS: i64 = 300;
+/// The mail poll runs every 15 minutes: three ticks without a clean
+/// run is a dead poll (an expired grant, a stopped timer).
+pub const MAIL_MAX_POLL_AGE_SECS: i64 = 45 * 60;
+
+/// The `mail_poll` row (the poller's only state).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailPoll {
+    pub mailbox: String,
+    pub last_poll_at: i64,
+    pub last_error: String,
+}
+
+/// Read `mail_poll` (None: the poll never ran on this store).
+pub fn mail_poll(conn: &Connection) -> rusqlite::Result<Option<MailPoll>> {
+    conn.query_row(
+        "SELECT email, last_poll_at, last_error FROM mail_poll WHERE id = 1",
+        [],
+        |row| {
+            Ok(MailPoll {
+                mailbox: row.get(0)?,
+                last_poll_at: row.get(1)?,
+                last_error: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+}
+
+/// `disabled` (no row), `failing` (the last run recorded an error),
+/// `stale` (no clean run within the window), else `ok`.
+pub fn mail_state(poll: Option<&MailPoll>, now: i64) -> &'static str {
+    match poll {
+        None => "disabled",
+        Some(p) if !p.last_error.is_empty() => "failing",
+        Some(p) if now - p.last_poll_at > MAIL_MAX_POLL_AGE_SECS => "stale",
+        Some(_) => "ok",
+    }
+}
 
 /// Serving leaf expiry as unix seconds (0 = none recorded).
 /// Atomic, not first-write-wins: every ACME renewal overwrites it.
@@ -93,13 +140,17 @@ pub struct Assessment {
     pub tls_certificate: bool,
     pub kek: bool,
     pub timers: Vec<(&'static str, bool)>,
+    /// True unless the mail poll is `failing` or `stale`.
+    pub mail_poll: bool,
 }
 
+/// `mail` is a [`mail_state`] (`disabled` passes).
 pub fn assess(
     db_ok: bool,
     cert_not_after: Option<i64>,
     kek_loaded: bool,
     beats: &[(&'static str, i64, i64)],
+    mail: &str,
     now: i64,
 ) -> Assessment {
     let cert_ok = cert_not_after
@@ -109,13 +160,15 @@ pub fn assess(
         .iter()
         .map(|(name, last, max_age)| (*name, now - *last <= *max_age))
         .collect();
-    let ready = db_ok && cert_ok && kek_loaded && timers.iter().all(|(_, ok)| *ok);
+    let mail_ok = matches!(mail, "ok" | "disabled");
+    let ready = db_ok && cert_ok && kek_loaded && mail_ok && timers.iter().all(|(_, ok)| *ok);
     Assessment {
         ready,
         database: db_ok,
         tls_certificate: cert_ok,
         kek: kek_loaded,
         timers,
+        mail_poll: mail_ok,
     }
 }
 
@@ -123,15 +176,23 @@ pub fn assess(
 /// 503 naming the failed checks otherwise.
 pub async fn readyz(State(state): State<AppState>) -> Response {
     let now = unix_now();
-    let db_ok = passkey::open_conn(&state)
+    let conn = passkey::open_conn(&state);
+    let db_ok = conn
+        .as_ref()
         .and_then(|conn| {
             conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
                 .ok()
         })
         .is_some();
+    // An unreadable mail row on a live database reads as failing.
+    let mail = match conn.as_ref().map(mail_poll) {
+        Some(Ok(poll)) => mail_state(poll.as_ref(), now),
+        _ => "failing",
+    };
+    drop(conn);
     let leaf = serving_leaf_not_after();
     let beats = [("notify", last_beat("notify"), NOTIFY_MAX_BEAT_AGE_SECS)];
-    let verdict = assess(db_ok, leaf, state.kek.is_some(), &beats, now);
+    let verdict = assess(db_ok, leaf, state.kek.is_some(), &beats, mail, now);
     let timers: serde_json::Map<String, serde_json::Value> = verdict
         .timers
         .iter()
@@ -147,13 +208,51 @@ pub async fn readyz(State(state): State<AppState>) -> Response {
             "tls_certificate": verdict.tls_certificate,
             "kek": verdict.kek,
             "timers": timers,
+            "mail_poll": verdict.mail_poll,
         },
+        "mail": mail,
     });
     if verdict.ready {
         (StatusCode::OK, axum::Json(body)).into_response()
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, axum::Json(body)).into_response()
     }
+}
+
+/// `GET /apostille/api/v1/admin/mail` (admin listener, staff): the
+/// poll's state, mailbox, last completed poll and last error, plus the
+/// overall send budget and the suppression count — everything the
+/// admin mail page shows.
+pub async fn admin_mail(_auth: AdminAuth, State(state): State<AppState>) -> Response {
+    let Some(conn) = passkey::open_conn(&state) else {
+        return store_unavailable();
+    };
+    let now = unix_now();
+    let Ok(poll) = mail_poll(&conn) else {
+        return store_unavailable();
+    };
+    // Notify's tables are additive (boot creates them); a store
+    // without them has sent and suppressed nothing.
+    let sends_today = notify::sends_today(&conn, now).unwrap_or(0);
+    let suppressed = notify::suppressed_count(&conn).unwrap_or(0);
+    let state_name = mail_state(poll.as_ref(), now);
+    let poll = poll.unwrap_or(MailPoll {
+        mailbox: String::new(),
+        last_poll_at: 0,
+        last_error: String::new(),
+    });
+    axum::Json(json!({
+        "state": state_name,
+        "mailbox": poll.mailbox,
+        "last_poll_at": poll.last_poll_at,
+        "last_error": poll.last_error,
+        "max_age_secs": MAIL_MAX_POLL_AGE_SECS,
+        "now": now,
+        "sends_today": sends_today,
+        "send_cap": notify::OVERALL_DAILY_SEND_CAP,
+        "suppressed": suppressed,
+    }))
+    .into_response()
 }
 
 #[cfg(test)]
@@ -163,6 +262,65 @@ mod tests {
     const DAY: i64 = 86_400;
 
     #[test]
+    fn mail_freshness_reads_the_poll_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = handbook_store::store::Store::new(dir.path());
+        store.init().unwrap();
+        let conn = handbook_store::db::open(&store).unwrap();
+        handbook_store::db::migrate(&conn).unwrap();
+        let now = 1_800_000_000;
+        let state = |conn: &Connection| mail_state(mail_poll(conn).unwrap().as_ref(), now);
+        // No row: the poll never ran, mail is off, readiness holds.
+        assert_eq!(state(&conn), "disabled");
+        // A clean run 10 minutes ago.
+        conn.execute(
+            "INSERT INTO mail_poll(id, email, history_id, last_poll_at, last_error)
+             VALUES (1, 'box@example.com', '100', ?1, '')",
+            [now - 600],
+        )
+        .unwrap();
+        assert_eq!(state(&conn), "ok");
+        // A failed refresh (the poller records it without moving
+        // `last_poll_at`): failing at once, whatever the age.
+        conn.execute(
+            "UPDATE mail_poll SET last_error = 'mail api: invalid_grant' WHERE id = 1",
+            [],
+        )
+        .unwrap();
+        assert_eq!(state(&conn), "failing");
+        // Error cleared but no clean run inside the window: stale.
+        conn.execute(
+            "UPDATE mail_poll SET last_error = '', last_poll_at = ?1 WHERE id = 1",
+            [now - MAIL_MAX_POLL_AGE_SECS - 1],
+        )
+        .unwrap();
+        assert_eq!(state(&conn), "stale");
+        conn.execute(
+            "UPDATE mail_poll SET last_poll_at = ?1 WHERE id = 1",
+            [now - MAIL_MAX_POLL_AGE_SECS],
+        )
+        .unwrap();
+        assert_eq!(state(&conn), "ok", "the window's edge still counts");
+    }
+
+    #[test]
+    fn readiness_fails_on_a_dead_mail_poll_but_not_a_disabled_one() {
+        let now = 1_800_000_000;
+        let beats = [("notify", now, 300)];
+        let leaf = Some(now + 30 * DAY);
+        for (mail, ready) in [
+            ("ok", true),
+            ("disabled", true),
+            ("failing", false),
+            ("stale", false),
+        ] {
+            let verdict = assess(true, leaf, true, &beats, mail, now);
+            assert_eq!(verdict.ready, ready, "{mail}");
+            assert_eq!(verdict.mail_poll, ready, "{mail}");
+        }
+    }
+
+    #[test]
     fn assess_passes_when_everything_holds() {
         let now = 1_800_000_000;
         let verdict = assess(
@@ -170,6 +328,7 @@ mod tests {
             Some(now + 30 * DAY),
             true,
             &[("notify", now, 300)],
+            "ok",
             now,
         );
         assert!(verdict.ready);
@@ -200,6 +359,7 @@ mod tests {
             Some(now + 21 * DAY),
             true,
             &[("notify", now, 300)],
+            "disabled",
             now,
         );
         assert!(boundary.ready, "21 days is the floor, not past it");
@@ -211,7 +371,7 @@ mod tests {
             (true, Some(now + 30 * DAY), true, now - 301, "stale beat"),
             (true, Some(now + 30 * DAY), true, 0, "never beat"),
         ] {
-            let verdict = assess(db, cert, kek, &[("notify", last, 300)], now);
+            let verdict = assess(db, cert, kek, &[("notify", last, 300)], "ok", now);
             assert!(!verdict.ready, "{want} must fail readiness");
         }
     }
