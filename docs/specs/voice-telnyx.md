@@ -1,7 +1,7 @@
 # Voice Calling via Telnyx Call Control (spec)
 
-- Status: draft (goal-025 stream 2 of 5, for author review; thin-slice
-  implementation alongside in `crates/voice` + `admin_voice.rs`)
+- Status: built (goal-025 stream 2 of 5): `crates/voice`,
+  `admin_voice.rs`, and the browser leg (§12, P487/P488).
 - Date: 2026-10-27
 - Source: Telnyx developer docs (fetched 2026-10-27) plus secondary
   sources where marked. Claims without a Telnyx-docs link need

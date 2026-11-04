@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use super::file::{SetupFile, TargetKind};
 use super::plan::{Action, Builtin, Conn, Facts, Feed, Phase, REHEARSAL_DIR, Step};
-use super::{build, rehearsal, stage};
+use super::{build, rail, rehearsal, stage};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -318,6 +318,7 @@ fn builtin(ctx: &Ctx, index: usize, b: &Builtin) -> Result<(), String> {
                 )
             })
         }
+        Builtin::MigrationRail { conn, url } => migration_rail(ctx, index, conn, url, &log),
         Builtin::DnsCheck { names, bind, bind6 } => {
             dns_check(names, bind.as_deref(), bind6.as_deref(), &log)
         }
@@ -402,6 +403,67 @@ fn dns_check(
     } else {
         Err(problems.join("; "))
     }
+}
+
+/// Refuse a release that migrates the store unless `--migration-ack`
+/// names a fresh server-side backup (see [`rail`]).
+fn migration_rail(
+    ctx: &Ctx,
+    index: usize,
+    conn: &Conn,
+    url: &str,
+    log: &dyn Fn(String),
+) -> Result<(), String> {
+    let out = Command::new("curl")
+        .args([
+            "-fsS",
+            "--retry",
+            "5",
+            "--retry-all-errors",
+            "--max-time",
+            "15",
+            url,
+        ])
+        .output()
+        .map_err(|e| format!("curl: {e}"))?;
+    let body = String::from_utf8_lossy(&out.stdout);
+    let Some(live) = rail::live_sha(&body) else {
+        // No answer: fine only on a server with no release yet.
+        let mut cmd = ssh_command(conn);
+        cmd.stdin(Stdio::null())
+            .arg("test -e /srv/apostille/current && echo LIVE || true");
+        let probe = cmd.output().map_err(|e| format!("ssh: {e}"))?;
+        if !probe.status.success() {
+            return Err(format!(
+                "{url} unreachable and the server did not answer ssh"
+            ));
+        }
+        if String::from_utf8_lossy(&probe.stdout).contains("LIVE") {
+            return Err(format!(
+                "{url} unreachable but a release is installed: fix it before shipping"
+            ));
+        }
+        log("no live release (first install): nothing to migrate from".into());
+        return Ok(());
+    };
+    log(format!("live {live}"));
+    let Some(delta) = rail::delta(&ctx.repo, &live, &ctx.facts.sha)? else {
+        log("no schema or migration change".into());
+        return Ok(());
+    };
+    let Some(ack) = ctx.facts.migration_ack.as_deref() else {
+        return Err(format!(
+            "{delta}\n(back up handbook.sqlite on the server, then rerun with --migration-ack <path>)"
+        ));
+    };
+    let mut cmd = ssh_command(conn);
+    cmd.stdin(Stdio::null()).arg(rail::fresh_backup_script(ack));
+    stream(ctx, index, &mut cmd, None).map_err(|_| {
+        format!("--migration-ack {ack} is missing, empty or older than 2 h on the server")
+    })?;
+    log(format!("MIGRATION ACK: {delta}"));
+    log(format!("rollback = restore {ack}"));
+    Ok(())
 }
 
 fn wait_health(

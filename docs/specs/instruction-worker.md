@@ -93,9 +93,9 @@ cargo xtask instruct-demo   # frozen WA drill on a temp store (never prod)
 
 Stub port by default (offline-safe, like `analyze`); `--live`
 uses the sealed `meta.api_key`. Exit 0/1/2 match the Atlas
-conventions. `docs/ops/apostille-instruct.{timer,service}`
-fire the sweep every 5 minutes (Persistent); installing them
-is operator/root work, like the mail timer.
+conventions. `xtask/ops/systemd/apostille-instruct.{timer,service}`
+fire the sweep every 5 minutes (Persistent); `xtask provision`
+installs them and enables the timer when the target lists `instruct`.
 
 ## 6. Testing
 

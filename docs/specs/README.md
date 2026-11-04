@@ -1,67 +1,79 @@
-# Specs (drafts for review)
+# Specs
 
-All specs below are **drafts for author review** (prompt 007). Nothing
-here is implemented yet. Each spec carries its own open questions;
-the consolidated author-decision list is at the bottom of this file.
+Design specs, written as drafts from prompt 007 on and built since.
+Each index line starts with its status: **built** (the code implements
+it; the spec is now the design record), **partial** (some of it is
+built; the spec says which), **plan** (not built yet) or **research**
+(findings that feed other specs). Each spec carries its own open
+questions; the consolidated author-decision list is at the bottom of
+this file.
 
 ## Index
 
-- [app-features.md](app-features.md) — all application features
-  (F1–F13) with acceptance criteria. Owns the single Viet Nam
-  demo script. (Its 10-day plan was superseded by the roadmap.)
-- [roadmap.md](roadmap.md) — the 5–7-day swarm plan (ranked
-  slice, cuts, streams S1–S7+H, day gates 2/4/6, external
-  register, gaps ledger). The execution plan of record.
-- [spa-separation.md](spa-separation.md) — anonymous / customer /
-  admin SPA split (route groups, two-build deploy), admin host +
-  mTLS + login, axum auth design, threat notes.
-- [analysis-agent.md](analysis-agent.md) — the in-project Model-API
+- **partial** [app-features.md](app-features.md) — all application
+  features (F1–F13) with acceptance criteria. Owns the single Viet Nam
+  demo script.
+- **built** [spa-separation.md](spa-separation.md) — anonymous /
+  customer / admin SPA split (route groups, two-build deploy), admin
+  host + passkey login, axum auth design, threat notes.
+- **built** [analysis-agent.md](analysis-agent.md) — the in-project Model-API
   agent that turns captures into proposed facts/tasks (F4/F5
   drafting clause); runner shape, prompt sketch, worked examples.
-- [p2-forms-labels.md](p2-forms-labels.md) — P2 requirements:
+- **built** [p2-forms-labels.md](p2-forms-labels.md) — P2 requirements:
   in-browser form fill-in + printpdf server rendering + FedEx/USPS
   labels (staff-manual purchase recommended). P2 = forms + labels
   only.
-- [user-journeys.md](user-journeys.md) — J1–J9 critical journeys
+- **partial** [user-journeys.md](user-journeys.md) — J1–J9 critical journeys
   across tiers (a) free → (b) labels → (c) door-kit → (d)
   full-service WA; pricing questions; ES/legal-review flags.
   Tiers (c)/(d) live here as P3/ops.
-- [egypt-consular.md](egypt-consular.md) — verified Egypt-in-USA
+- **research** [egypt-consular.md](egypt-consular.md) — verified Egypt-in-USA
   chain research with citations, USPS-only mail constraint,
   validation backlog V-1…V-19, next-country backlog.
-- [carrier-apis.md](carrier-apis.md) — USPS + FedEx label-API
+- **research** [carrier-apis.md](carrier-apis.md) — USPS + FedEx label-API
   research (endpoints, auth, sandbox/certification, P2 payload
   mapping, API-buy vs staff-manual pricing).
-- [payments-billing.md](payments-billing.md) — Stripe (Checkout
+- **built** [payments-billing.md](payments-billing.md) — Stripe (Checkout
   first) + Apple Pay via Stripe, invoice mirror model, Billing
   tab requirements, PCI SAQ A, refunds/disputes, P2 seam.
-- [secure-config.md](secure-config.md) — TPM2-sealed encrypted
+- **built** [secure-config.md](secure-config.md) — TPM2-sealed encrypted
   config (systemd-creds + XChaCha20-Poly1305 envelope, typed
   keys, write-only secrets, rotation, DR, Mac fallback).
-- [tpm-seal.md](tpm-seal.md) — software-TPM sealing abstraction
+- **built** [tpm-seal.md](tpm-seal.md) — software-TPM sealing abstraction
   (`Sealer` trait, software provider default, hardware stub seam,
   key hierarchy, Mac-vs-Linux matrix).
-- [admin-workers.md](admin-workers.md) — admin workers/captures
+- **built** [admin-workers.md](admin-workers.md) — admin workers/captures
   API + UI (status, retry, fetch, sweep; staff-only).
-- [work-queue.md](work-queue.md) — production work items in
+- **built** [work-queue.md](work-queue.md) — production work items in
   `work.sqlite`, plant workers over an outbound WebSocket
   (`cargo xtask worker`), `research.nonparty` packs (P392).
-- [form-framework.md](form-framework.md) — shared
+- **built** [form-framework.md](form-framework.md) — shared
   resemblance-form framework (validation, address, phone,
   country) + per-form projects under `forms/` + the US DOS
   DS-4194 pilot (goal-025 stream 3).
-- [config-db.md](config-db.md) — zero-env runtime config
+- **built** [config-db.md](config-db.md) — zero-env runtime config
   (29 DB keys, boot order, bootstrap remainder; staff-only).
-- [voice-telnyx.md](voice-telnyx.md) — Telnyx voice calls
+- **built** [voice-telnyx.md](voice-telnyx.md) — Telnyx voice calls
   (Call Control client, webhook verify, recording + transcript
   UI; staff-only, consent-gated).
-- [single-443-quic.md](single-443-quic.md) — single-443
+- **built** [single-443-quic.md](single-443-quic.md) — single-443
   Host-routed admin (444 deprecated, both-SANs cert) +
   native QUIC/HTTP-3 (quinn + h3 bridge, `quic.enabled`,
   Alt-Svc, aws-lc-rs only).
-- [customer-auth.md](customer-auth.md) — passkey ceremonies +
+- **built** [customer-auth.md](customer-auth.md) — passkey ceremonies +
   linked-methods endpoints (tables, RP-ID decision, §6 rule
   enforcement points, staff enrolment for Phase 4).
+- **partial** [shipping-design.md](shipping-design.md) — the shipping
+  and label design built on carrier-apis (FedEx first).
+- **built** [instruction-worker.md](instruction-worker.md) — the
+  instruct sweep: new captures become instruction drafts and
+  proposed fact updates (`crates/instruct`).
+- **built** [atlas-harness.md](atlas-harness.md) — the HCCH research
+  harness (`crates/atlas`, `cargo xtask atlas`).
+- **plan** [dossier-depth.md](dossier-depth.md) — the New York-grade
+  authority page (chain records, prompt v3, verify URLs).
+- **built** [TOPICS.md](TOPICS.md) — the frozen fact-topic enum,
+  enforced in code.
 - Legal drafts (lawyer review required, do not publish):
   [tos-draft.md](../legal/tos-draft.md),
   [privacy-draft.md](../legal/privacy-draft.md).
@@ -70,9 +82,10 @@ the consolidated author-decision list is at the bottom of this file.
   well-known, wow effects). Named `site-theme.md`, not
   `DESIGN.md`, because this Mac's filesystem is case-insensitive
   and `docs/design.md` already exists.
-- Security: [../SECURITY.md](../SECURITY.md) (claude-red
-  distillation for our stack + code findings F1–F8, the pre-API
-  must-fix list).
+- Security: [../ops/threat-model.md](../ops/threat-model.md) (the
+  current threat model and the one open-findings list) and
+  [../SECURITY.md](../SECURITY.md) (the claude-red baseline the code
+  cites).
 
 ## Applied cross-draft resolutions
 
@@ -333,8 +346,9 @@ G6. Postgres declined for the slice (decided 2026-10-27):
     public home + dossier together (OPEN-31); Phase-0 drive-bys
     approved — login `.notice.err` to `error-bg` + print-stylesheet
     stub (OPEN-30). Themes stay CSS-var-driven (no `dark:` variants
-    until a page needs non-var colors). See
-    [../ui-framework-proposal.md](../ui-framework-proposal.md).
+    until a page needs non-var colors). The proposal's analysis is
+    in git history (`docs/ui-framework-proposal.md`, removed
+    2026-11-04).
 39. D4 live-model plan approved as-is (author, 2026-10-28): no new
     binaries; pinned Meta/Gmail shapes; queue-not-pause; suppression
     A+B; Gmail historyId watermark; embedding vectors deferred.

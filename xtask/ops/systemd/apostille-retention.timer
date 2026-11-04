@@ -1,5 +1,4 @@
-# apostille-retention.timer — PROPOSED (no enable decision yet;
-# enable together with apostille-retention.service once decided).
+# apostille-retention.timer — enabled when the target's timers name `retention`.
 #
 # Daily sweep with a random delay so it never aligns with the watch
 # and backup runs into a burst. Persistent: a missed run (downtime)

@@ -59,23 +59,26 @@ box, or key.
    `error:` or `timed out` problem or more console errors than
    production's row, and the demo take is 3/3. A run that is not
    staging-green blocks the deploy and nothing else.
-6. **Ship** (Mac): `xtask/ops/ship-release.sh <sha>` checks the
-   stamp, the schema/migration/unit-file rails and the root-process
-   probe, runs the prod-before scoreboard, cross-builds that exact
-   SHA in a throwaway worktree, and stages it to
-   `~/apostille/staging/<sha7>` on production. It never deploys.
-7. **Deploy** (as `hal`, right after a fresh root-process probe):
-   `bash ~/apostille/scripts/ops-deploy.sh ~/apostille/staging/<sha7>
-   --skip-accept`. It installs the unit through the root-owned
-   wrapper, runs `xtask deploy` (atomic `current` swap, restart,
-   `/healthz` smoke naming the SHA, automatic revert on a failed
-   smoke) and prunes old releases.
-8. **Verify:** `node xtask/ops/scoreboard.mjs --out
-   web/shots/prod-after.json` and compare with
+6. **Ship** (Mac): `cargo xtask setup --target production --sha <sha>
+   --operator-order "<who, when, what>"` (add `--dry-run` to print
+   the plan first). In order, it:
+   - checks the plant stamp, the schema/migration rail and the
+     root-process probe, and runs the prod-before scoreboard;
+   - cross-builds that exact SHA in a throwaway worktree;
+   - re-provisions (wrappers, sudoers, every unit under
+     `xtask/ops/systemd/`) and re-seals the config;
+   - stages to `~/apostille/staging/<sha7>` with the operator
+     scripts, then deploys as `hal` through `ops-deploy.sh
+     --skip-accept`. That installs the unit through the root-owned
+     wrapper and runs `xtask deploy`: atomic `current` swap, restart,
+     a `/healthz` smoke naming the SHA, automatic revert on a failed
+     smoke, then pruning of old releases.
+7. **Verify:** setup waits for `/healthz` to name the SHA, then writes
+   `web/shots/prod-after.json`. Compare it with
    `web/shots/prod-before.json`.
 
-Root-process probe (must print nothing, checked again right before
-step 7):
+Root-process probe (setup runs it at the gate and again right before
+the deploy; must print nothing):
 
 ```sh
 ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "[a]postille/scripts/"'
@@ -85,7 +88,7 @@ ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "
 
 - Only a SHA with a green plant stamp and a staging-green run of the
   same SHA ships. It is built from a throwaway worktree, never from
-  a dirty checkout (`ship-release.sh` does this).
+  a dirty checkout (`cargo xtask setup` does this).
 - A SHA that changes `SCHEMA_VERSION` or `P2_SCHEMA_VERSION`
   (`crates/handbook-store/src/db.rs`), edits
   `crates/handbook-store/migrations/`, or adds `ALTER`, `DROP` or
@@ -96,13 +99,14 @@ ssh andrii.ai 'pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN; pgrep -af "
   the store online right before shipping
   (`echo ".backup /var/lib/apostille/pre-v<N>-<UTC>.sqlite" | sudo -n
   -u andrii-ai /usr/local/sbin/apostille-sqlite`), then
-  `ship-release.sh <sha> --migration-ack <that path>` (refused unless
-  the file is non-empty and under 2 hours old) and deploy as usual.
+  `cargo xtask setup --target production … --migration-ack <that path>`
+  (refused unless the file is non-empty and under 2 hours old; the
+  path lands in the release manifest's migration notes).
   Rollback is restoring that file with the service stopped; the
   migration must also be listed in `HARD_MIGRATIONS` (release.rs).
-- A SHA whose `docs/ops/apostille.service` differs from the
-  installed unit is an operator step too (a rollback does not
-  restore the unit).
+- Units live in `xtask/ops/systemd/`; setup's provision step rewrites
+  every installed unit on each run. A rollback does not restore a
+  unit, so a unit change is called out in the deploy report.
 - Never pass `--force`, `--backup-note`, `--skip-packs`,
   `--no-restart`, `--root` or `--smoke-url` to `xtask` on production.
 - During a freeze (set by the operator), no deploy without the
@@ -283,11 +287,15 @@ blocks it):
 - No production credentials on plant, no SSH from plant to
   production, no production database copies. The one link is
   outbound: plant workers (`cargo xtask worker`) dial
-  `wss://andrii.ai/apostille/api/v1/worker/ws` with the sealed
-  `worker.token` and check queued jobs out of production's
-  `work.sqlite` (operator decision 2026-11-03; spec
-  `docs/specs/work-queue.md`, runbook `ops/plant-pipeline/README.md`
-  § Work-queue worker). Production never connects to plant.
+  `wss://andrii.ai/apostille/api/v1/worker/ws` with their own `w2.`
+  token (each worker enrols once and staff approve its code on Work
+  queue → Workers; revoked per worker there) and check queued jobs out
+  of production's `work.sqlite`. Job settings, the Meta key included,
+  arrive in `welcome` and stay in the worker's memory, never on disk
+  (operator decisions 2026-11-03 and 2026-11-04; specs
+  `docs/specs/work-queue.md` and `docs/specs/worker-enrolment.md`,
+  runbook `ops/plant-pipeline/README.md` § Work-queue worker).
+  Production never connects to plant.
 - The gate is asynchronous: `submit.sh` returns in seconds; never
   block on it. The pipeline keeps the newest 3 runs
   (`ops/plant-pipeline/README.md` is its runbook).

@@ -89,7 +89,7 @@
   behind the `media.terms_read` gate; the A2 recorder
   (`xtask a2-record`, same SAM body and box parser) for replay fixtures. Add a
   realtime-STT client honoring the handshake-auth gotcha above.
-- `StubClient` + fixtures keep `cargo test` and `dev-seed`
+- `StubClient` + fixtures keep `cargo test` and `cargo xtask up`
   offline-safe; `--dry-run` prints projected calls/tokens.
 - Open: exact request/response JSON shapes (pin at implementation);
   Meta API data-handling terms for customer PII (audio/photos) —
@@ -123,7 +123,7 @@ Status: the fixes for F1-F14 were merged to `main` on 2026-11-01 (P207).
 ## Findings
 
 **F1. `temperature` is set everywhere; the docs say leave it unset.**
-Code: `handbook-agent/src/model.rs:349` (0), `a2-record.py:156` (0),
+Code: `handbook-agent/src/model.rs:349` (0) (the A2 recorder sets none),
 `atlas/src/task.rs:350,406,654` (0.1; `atlas/src/model.rs:384` only
 forwards `req.temperature`, and `:960` is a test fixture),
 `instruct/src/draft.rs:117,144` and `trigger.rs:164` (0.1). Official: Spark "is tuned to run at the default
@@ -176,7 +176,7 @@ full error body before settling.
 Both caps count reasoning plus visible text, and `length` can come back
 with empty content (`raw/reasoning.md`). Code: instruct and atlas use 4096
 (`crates/instruct/packs/general.toml:42`), atlas summaries 2048
-(`atlas/src/task.rs:653`), A2 4000 (`a2-record.py:157`). The analyzer needed 32k on staging. No call sets
+(`atlas/src/task.rs:653`); the A2 recorder sets no cap. The analyzer needed 32k on staging. No call sets
 `reasoning_effort` (values: minimal, low, medium, high, xhigh, max). Size
 caps from P177's measured usage.
 
@@ -201,10 +201,9 @@ retry stack on one draft. A2 has none. Official: 3–5 attempts with jitter
 honoring Retry-After on 429/500/503; never retry 400/401/402/403/404/413
 unchanged (`raw/error-handling.md`, `raw/cookbook_error-handling-retry.md`).
 
-**F10. The A2 Spark call doesn't check truncation or refusal.**
-`a2-record.py` parses `content` without checking `finish_reason` or
-`refusal`, and its failure path uses `"choice" in dir()`, which is fragile
-(`:173`).
+**F10. The A2 Spark call checks truncation (fixed in P411).**
+`xtask/src/a2_record.rs` refuses `finish_reason=length` and any other
+non-`stop` finish; the Python recorder it replaced did not.
 
 **F11. The Responses path ignores refusals and `status:"incomplete"`.**
 `atlas/src/model.rs` (≈:669). An incomplete response falls into "unknown
@@ -227,7 +226,7 @@ status". Official: truncation shows as `status:"incomplete"` with
 **F13. Config sprawl.**
 - The base URL const is in 4+ places. Rust bases include `/v1`; Python's
   doesn't; the media crate doubles it.
-- The env-key path ignores `meta.base_url`, and `web/draft.rs` ignores it
+- The env-key path ignores `meta.base_url`, and `crates/web/src/draft.rs` ignores it
   on every path.
 - `model.rs:93` says the key is "never env", but the code reads env first.
 - Model ids are hardcoded in the analyzer and A2, and the voice model id

@@ -5,7 +5,8 @@
 //! target/setup/<sha7>-<triple>/
 //!   web  xtask  SHA  apostille.service
 //!   spa/  spa-admin/  static/  packs/  evals/
-//!   units/*.service|timer   scripts/ops-deploy.sh
+//!   units/*.service|timer   (from xtask/ops/systemd)
+//!   scripts/ops-deploy.sh  scripts/ops-{a2-record,a5-eval,gp2-proposals}.sh
 //! ```
 //!
 //! The build runs in a throwaway worktree (`../hb-setup-<sha7>`), so a
@@ -18,6 +19,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::build::{self, Arch};
+
+/// Repo directory holding the systemd units a release installs.
+const UNIT_DIR: &str = "xtask/ops/systemd";
+
+/// Scripts staged next to `ops-deploy.sh` for operators to run on the
+/// server (the A2 record, the A5 eval, the GP2 proposal seed).
+const OPERATOR_SCRIPTS: [&str; 3] = ["ops-a2-record.sh", "ops-a5-eval.sh", "ops-gp2-proposals.sh"];
 use super::plan::release_dir;
 
 fn sh(cmd: &mut Command, what: &str) -> Result<(), String> {
@@ -225,12 +233,18 @@ fn build_in(
         &out.join("packs/general.toml"),
     )?;
     copy_dir(&wt.join("evals"), &out.join("evals"))?;
+    // Units moved out of docs/ops; older commits still ship from there.
+    let units = [UNIT_DIR, "docs/ops"]
+        .iter()
+        .map(|d| wt.join(d))
+        .find(|d| d.join("apostille.service").is_file())
+        .ok_or("no apostille.service in the commit")?;
     copy_file(
-        &wt.join("docs/ops/apostille.service"),
+        &units.join("apostille.service"),
         &out.join("apostille.service"),
     )?;
     std::fs::create_dir_all(out.join("units")).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(wt.join("docs/ops")).map_err(|e| e.to_string())? {
+    for entry in std::fs::read_dir(&units).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?.path();
         let name = path
             .file_name()
@@ -247,6 +261,13 @@ fn build_in(
         &wt.join("xtask/ops/ops-deploy.sh"),
         &out.join("scripts/ops-deploy.sh"),
     )?;
+    // Operator scripts run on the server from ~/apostille/scripts.
+    for script in OPERATOR_SCRIPTS {
+        let from = wt.join("xtask/ops").join(script);
+        if from.is_file() {
+            copy_file(&from, &out.join("scripts").join(script))?;
+        }
+    }
     std::fs::write(out.join("SHA"), format!("{sha}\n")).map_err(|e| e.to_string())?;
     crate::release::validate_release_src(out)?;
     log(format!("staged {}", out.display()));

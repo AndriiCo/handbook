@@ -11,7 +11,7 @@
 //! the service down until someone SSHes in. Otherwise it answers 202
 //! with the current `started_at`, drains every listener the way
 //! SIGTERM does, and exits with [`EXIT_CODE`]; systemd's
-//! `Restart=on-failure` (`docs/ops/apostille.service`, unchanged)
+//! `Restart=on-failure` (`xtask/ops/systemd/apostille.service`, unchanged)
 //! starts the new process. The page polls `/admin/version` until
 //! `started_at` moves.
 //!

@@ -137,7 +137,7 @@ fn image_of(ctx: &JobContext, payload: &Value) -> Result<String, JobError> {
 }
 
 /// The judge request: same rule and schema as the hosted Spark judge
-/// in `xtask/ops/a2-record.py`, so both backends grade alike.
+/// in `xtask/src/a2_record.rs`, so both backends grade alike.
 pub(crate) fn request_body(model: &str, sample: &str, image_b64: &str) -> Value {
     json!({
         "model": model,

@@ -219,14 +219,13 @@ account. Rules (enforced server-side, tested with fixtures):
 7. Every link/unlink/signal action writes an `audit` row with
    actor + method + provider `sub`/relay hash (never raw PII).
 
-## 7. Telnyx (purpose TBD — confirm before configuring)
+## 7. Telnyx
 
-The author listed Telnyx among platforms but its role in this
-project is not yet fixed. Best guess: voice/SMS numbers for the
-P1 call console (placing validation calls) — **confirm**. Do not
-configure anything until the purpose decision lands; when it does,
-this section gains the number-provisioning, recording-consent, and
-credential-rotation checklist.
+Telnyx carries staff voice calls (Call Control, recording and
+transcript, the browser leg). It is not a sign-in method. Its setup,
+webhook verification and credentials are in
+[specs/voice-telnyx.md](specs/voice-telnyx.md); the keys are sealed
+`telnyx.*` config rows.
 
 ## 8. Verification checklist (staging, before prod)
 

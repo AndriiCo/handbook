@@ -66,16 +66,12 @@ The page is **stale** when either of these holds:
 
 Both stamps are `<meta>` tags in `<head>` and never show on the page.
 
-Three places run the stale check:
+Two places run the stale check:
 
 - `cargo xtask ci` runs it last, and commits.
 - `cargo xtask setup` staging runs it with `--no-commit` in its
-  throwaway worktree.
-- `xtask/ops/ship-release.sh` runs it with `--no-commit` in its
-  throwaway worktree.
-
-The two ship paths never stage a page older than 7 days, even when the
-committed copy lags.
+  throwaway worktree, so a release never stages a page older than
+  7 days, even when the committed copy lags.
 
 The commit holds only `licenses.html` and `texts/` (`git commit --only`),
 so anything else you have staged stays staged. The message is:

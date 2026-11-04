@@ -1,6 +1,7 @@
-# Egypt Consular-Legalization Chain for US Documents, MVP (draft for review)
+# Egypt Consular-Legalization Chain for US Documents, MVP
 
-- Status: draft (prompt 007, for author review; no implementation yet)
+- Status: research (prompt 007). The chain view is built; the
+  validation backlog V-1…V-18 is still open (V-19 done in P436).
 - Date: 2026-10-26
 - Source: parallel researcher draft (full text recovered from child
   session log). All findings from researcher reads on 2026-10-26.

@@ -1,175 +1,170 @@
-# Threat model: Apostille Handbook (Day-1 slice)
+# Threat model: Apostille Handbook
 
-- Status: draft for author review. Scope: the code as it exists now
-  (axum scaffold + demo sessions + store + analysis runner + xtask),
-  plus the deploy path in `docs/ops/deploy.md` § Steps.
-- Rule: a control is listed as IMPLEMENTED only with a `file:line`
-  the author read; everything else is marked planned with its owning doc.
-- Line numbers are as of commit `510afaa`; symbols over lines when
-  they drift. Prompt-015 parent merge notes: Caddy is OUT (in-app
-  rustls shipped), access logging SHIPPED, the systemd unit is
-  DRAFTED (`docs/ops/apostille.service`, uninstalled).
+- Status: current as of 2026-11-04 (production `0.1.0+83602a0`). It
+  replaces the Day-1 slice model and the 2026-10-27 security review
+  (both in git history). `docs/SECURITY.md` keeps the claude-red
+  baseline the code is held to; this file holds what is built and the
+  one list of open findings.
+- Rule: a control is listed as built only with a file the author can
+  read; symbols over line numbers, which drift.
 
 ## 1. Assets
 
-| Asset | 1-line impact if compromised |
+| Asset | Impact if compromised |
 |---|---|
-| Customer PII / uploads (photos, scans, IDs) | Identity theft, regulatory harm; slice holds synthetic data ONLY |
-| Session tokens (`demo_session`) | Account impersonation within demo scope |
-| Handbook integrity + citations | Users plan visits / mailings on false facts; trust loss |
-| Audit log | Loss of attribution; tampered history hides abuse |
-| TLS keys + ACME EAB secrets | Traffic interception / impersonation of andrii.ai |
-| `META_API_KEY` + carrier/Stripe keys (future) | Spend, quota theft, customer-media exposure via processors |
-| Server availability | Demo dead; watch/publish loop stalls |
+| Customer PII: orders, uploads (photos, scans, IDs), addresses | Identity theft, regulatory harm |
+| Customer and staff sessions, passkeys, linked identities | Account takeover; staff takeover reaches every customer |
+| Handbook integrity and citations | People plan visits and mailings on false facts |
+| Audit log | Lost attribution; tampered history hides abuse |
+| Sealed config: KEK, Meta, Stripe, FedEx, Telnyx, Gmail, SMTP keys | Spend, data exposure through processors, impersonation |
+| TLS keys and ACME EAB secrets | Interception or impersonation of andrii.ai |
+| Call recordings and transcripts | Third-party PII; consent obligations |
+| Server availability | Orders and the public guides stop |
 
 ## 2. Actors
 
-- Anonymous network attacker: probes `/apostille/*`, WS, login; no creds.
-- Authenticated demo customer: holds a self-minted session; tries IDOR,
-  other customers' refs, stored-XSS via reflected fields.
-- Malicious customer upload (F8 path): hostile filenames, polyglots,
-  oversized media; arrives Day 3+ (no upload endpoint exists yet).
-- Compromised dependency: malicious crate / npm package / poisoned
-  zig binary; build-time code execution.
-- Malicious insider / operator: root on the box, or push access to the repo.
-- Thief with disk image: offline copy of SQLite + `store/` + creds.
+- Anonymous network attacker: probes `/apostille/*`, WS, sign-in.
+- Signed-in customer: tries IDOR on orders, uploads and WS topics,
+  stored XSS through submitted fields.
+- Hostile upload: polyglots, oversized media, EXIF payloads.
+- Staff account holder, or a stolen staff session: the highest-value
+  target.
+- Plant worker or its token: an outbound WebSocket client that leases
+  jobs.
+- Prompt injection: hostile text inside fetched pages, emails and
+  transcripts that reach the Meta models.
+- Compromised dependency (crate, npm package, toolchain binary).
+- Insider with root on the server, or push access to the repo.
+- Thief with a disk image of the store and backups.
 
-NON-threats (explicitly not modeled): nation-state with Google-PKI or
-Meta-internal access; the author's Mac being already rooted (deploy signer
-is trusted); customers attacking each other's browsers outside our pages.
+Not modelled: attackers inside Google PKI, Meta, Stripe, FedEx or
+Telnyx; an already rooted operator Mac (the trusted build signer).
 
-## 3. Trust boundaries (what crosses each)
+## 3. Trust boundaries
 
-- Browser ↔ axum (`/apostille`): JSON DTOs, `demo_session` cookie, WS
-  frames, static HTML/JS. Untrusted input; validated server-side.
-- axum ↔ SQLite/store: SQL via bound params; blob bytes via hex digests.
-  Stored `capture.path` is UNTRUSTED (see §4).
-- CLI (`xtask`) ↔ store: operator commands; `--actor` is self-declared.
-- Deploy path (Mac → server): cross-built ELF + `web/build/` over scp;
-  trust = author's Mac + SSH key + pinned zig tarball checksum.
-- ACME/Google PKI: EAB secret + HTTP/TLS challenges; certs back.
-- Meta / carrier / Stripe APIs (future; Meta client is an unwired
-  skeleton): evidence text + media out, drafted records back. Never
-  trusted as fact without validation + human approval.
+- **Browser ↔ axum, one 443 listener.** Host routing sends
+  `andrii.ai` to the public/customer app and `admin.andrii.ai` to the
+  staff app (`crates/web/src/host.rs`); HTTP/3 rides the same
+  certificate (`crates/web/src/quic.rs`). Port 80 only redirects.
+- **axum ↔ SQLite and the blob store.** Bound parameters only; blob
+  paths are hex digests (`crates/handbook-store`).
+- **Server ↔ providers.** Meta model API (evidence out, drafts back,
+  never trusted as fact), Stripe (Checkout plus signed webhooks),
+  FedEx (labels), Telnyx (calls plus signed webhooks), Gmail and SMTP,
+  Google PKI (ACME).
+- **Server ↔ plant worker.** The worker dials out over WebSocket with
+  a staff-minted token (`crates/web/src/worker.rs`); results are
+  proposals, never published facts.
+- **Operator Mac → server.** `cargo xtask setup` builds a stamped SHA
+  in a throwaway worktree and ships it over SSH as `hal`; root steps
+  run only through `xtask provision` and pinned wrappers
+  (`xtask/ops/wrappers/`, `docs/ops/deploy.md`).
 
-## 4. Per-component threats (STRIDE-lite)
+## 4. Controls by component (built)
 
-- SPA public/customer JS (`web/src/routes/**`): stored-XSS via reflected
-  `customer_ref` (Svelte `{...}` escapes by default — verify per page);
-  login page posts to demo login with `credentials: same-origin`. No
-  third-party JS (none observed in `web/`).
-- axum routes (`crates/web/src/main.rs`): healthz/version unauthenticated
-  by design (version string leaks build id — minor); `/static` ServeDir
-  traversal is handled by tower-http; unknown `/api/*` paths 404 as
-  JSON via an explicit wildcard (FIXED in parent merge — was SPA
-  fallback 200); `LoginBody` unknown-field rejection blocks
-  mass assignment.
-- Demo sessions: NO credential check — anyone mints a session for ANY
-  `customer_ref` (`:98-112`); tokens stored PLAINTEXT in DB (`:99-101`
-  comment); cookie lacks `Secure` and `__Host-` (`:130`); no rate limit
-  (`:124` comment admits Day-7 work); no CSRF/Origin checks anywhere.
-- WS echo (`:94-96`, `:201-218`): no auth, no Origin check — acceptable
-  ONLY because it echoes bytes and touches no state; real topics
-  (`authority:{slug}` …) MUST ship session+Origin+per-topic authz first
-  (planned: `docs/SECURITY.md` §1.5–1.6).
-- Blob store paths: `capture.path` from DB is untrusted; traversal guard
-  fails closed (IMPLEMENTED, §5). `blob_path` hex-gated (IMPLEMENTED).
-- Retention sweep: was non-atomic + traversalable (SECURITY F1/F2); both
-  FIXED (IMPLEMENTED, §5). Remaining: file deletes are outside the DB txn
-  by nature — crash between `remove_file` and COMMIT leaves row-without-
-  file (fail-safe direction: re-run deletes the row; audit may double-log).
-- Analysis runner (prompt injection!): untrusted captures/evidence flow
-  into the model prompt; exfil/overclaim shapes are: fabricated citations,
-  off-enum topics, `{{slug}}`-style template escape. Mitigations
-  IMPLEMENTED: evidence substituted LAST (`analyze.rs:14-19`), byte-exact
-  citation validator (`:42-88`), closed topic enum (`topics.rs:110-139`),
-  proposed-only storage + atomic audit (`runner.rs:99-131`), never
-  auto-accepts. Residual: validator checks citation SHAPE, not truth —
-  human approval (planned, roadmap Day 3) is the truth gate.
-- Migrations: forward-only at boot, single txn (IMPLEMENTED); rollback
-  across a migration needs explicit author call (`deploy.md` § Steps 7).
-  005's id-0 sentinel rows are labeled quorum-breakers — queries must
-  exclude them where provenance matters.
-- xtask CLIs: duplicate flags silently take the FIRST (`main.rs:66-74`,
-  SECURITY F6 still open); `--actor` defaults to `xtask` (unattributed
-  audit rows); `@path` input reads arbitrary local files (operator-only
-  tool — acceptable, document it).
-- Service process: hardened unit DRAFTED
-  (`docs/ops/apostille.service`: `User=andrii-ai`, only
-  `CAP_NET_BIND_SERVICE`, `NoNewPrivileges`,
-  `ProtectSystem=strict` — UNINSTALLED, needs root review).
-  Live state is still interim user-space: `setsid
-  ./current/web` as user `hal`, localhost-only, dies on reboot
-  (`deploy.md` § Hosts). In-app rustls terminates TLS
-  (axum-server, certs from files, fail-closed config).
-- secrets-scan hook: pre-commit trampoline + CI gate (IMPLEMENTED, §5).
-  Gaps: binary files SKIPPED (`secrets.rs`); untracked files never
-  scanned until staged; `--staged` covers ACMR only.
-- Logs: request-ID access log SHIPPED (one span per request:
-  id/method/uri/transport/branch/route in, status/latency out
-  plus `error_kind` on 5xx (ERROR level),
-  `x-request-id` echo, `request_id_and_log` in
-  `crates/web/src/main.rs`). PII-free by construction (fixed
-  fields; URLs never carry secrets).
+- **Customer sign-in:** passkeys (`crates/web/src/passkey.rs`,
+  `crates/auth/src/passkey.rs`), Apple/Google/Meta OAuth with explicit
+  linking (`crates/web/src/oauth.rs`, `oauth_apple.rs`,
+  `oauth_meta.rs`; RISC signals in `crates/auth/src/risc.rs`), and
+  magic links (`crates/web/src/magic.rs`). Opaque 256-bit sessions in
+  `__Host-hb_pub`; linking rules in `docs/auth-playbook.md` §6.
+- **Staff sign-in:** passkeys only, invite-based enrolment, step-up
+  for sensitive actions (`crates/web/src/staff_passkey.rs`, step-up
+  window in `crates/web/src/admin.rs`), `__Host-hb_adm` sessions, an
+  admin IP allowlist (`crates/web/src/admin_ip.rs`). Client
+  certificates are no longer an auth factor.
+- **CSRF and Origin:** double-submit token plus a strict Origin
+  allowlist on mutations (`crates/auth/src/csrf.rs`); WebSocket
+  upgrades check Origin before any session work and authorize every
+  topic (`crates/web/src/ws_bus.rs`, `crates/auth/src/ws.rs`); the
+  public bus ignores the staff cookie. The channel map is capped at
+  4096 with idle reaping.
+- **Rate limits:** every sign-in path (passkey, staff passkey, magic
+  link, OAuth, setup key, demo login).
+- **Headers:** nosniff, Referrer-Policy, X-Frame-Options and HSTS
+  (two years, includeSubDomains) on every response
+  (`crates/web/src/main.rs`).
+- **Uploads:** per-route body caps and a Content-Length pre-check
+  (`crates/web/src/uploads.rs`, `admin.rs`); redaction derivatives
+  drop EXIF (`crates/media/src/redact.rs`).
+- **Payments:** Stripe Checkout (no card data touches us) and
+  signature-verified webhooks (`crates/web/src/stripe.rs`).
+- **Voice:** Ed25519 webhook verification (`crates/voice/src/webhook.rs`);
+  the browser leg uses short-lived Telnyx credentials
+  (`crates/web/src/admin_voice.rs`); recordings are consent-gated and
+  swept after 365 days by `retention-sweep`.
+- **Worker:** per-token auth and a 24 MiB frame cap
+  (`crates/web/src/worker.rs`).
+- **Model output:** evidence substituted last in prompts, byte-exact
+  citation validation, a closed topic enum
+  (`crates/contracts/src/topics.rs`), proposed-only storage; a human
+  accepts every fact in `/review`.
+- **Store:** foreign keys on, CHECK constraints, append-only audit
+  triggers, WAL and busy timeout, transactional migrations, atomic
+  blob writes, a traversal-guarded and atomic retention sweep
+  (`crates/handbook-store/src/db.rs`, `store.rs`).
+- **Secrets:** sealed config rows under a KEK delivered as a systemd
+  credential (`crates/config/src/seal.rs`), zeroized in memory,
+  write-only in the admin UI; `xtask secrets-scan` in CI and the
+  pre-commit hook (`xtask/src/secrets.rs`).
+- **Service:** runs as `andrii-ai` with only `CAP_NET_BIND_SERVICE`,
+  `NoNewPrivileges`, `ProtectSystem=strict`
+  (`xtask/ops/systemd/apostille.service`); ACME and certificate hot
+  reload are in the binary (`crates/acme`, `docs/ops/acme.md`).
+- **Logs:** the request log records the path, never the query.
+- **Release binaries:** the `[profile.release]` hardening in
+  `Cargo.toml`; `cargo xtask harden-check` refuses a staged binary
+  without PIE, NX stack, full RELRO and the stack protector.
+- **Deploy:** a plant CI stamp, the migration rail, the root-process
+  probe, a `/healthz` smoke naming the SHA and automatic revert
+  (`docs/ops/deploy.md`); nightly backups (`apostille-backup.timer`)
+  with restore drills.
 
-## 5. Mitigations mapped to IMPLEMENTED controls
+## 5. Open findings
 
-- Bound SQL params everywhere, no `format!` SQL: `db.rs` (all queries).
-- FK enforcement + WAL/busy-timeout/sync PRAGMAs: `db.rs:30-37`.
-- Transactional migrate: `db.rs:43-73`. CHECKs + FKs + id-0 sentinels
-  + append-only audit triggers: `migrations/schema_baseline.sql`
-  (v11 squash of the 001–011 incrementals).
-- Atomic retention sweep + `saturating_sub` + traversal guard:
-  `db.rs:141-189`, `:194-200`.
-- Hex-validated `blob_path → Result`: `store.rs:54-71`. Atomic
-  temp+rename blob write, random suffix + `create_new`: `store.rs:79-129`.
-- 256-bit CSPRNG session tokens: `main.rs:113-117`. `HttpOnly` +
-  `SameSite=Lax` + `/apostille` path: `main.rs:130`. Expiry enforced
-  server-side: `main.rs:170-172`. Expired-row sweep on login: `:125`.
-  Generic error shapes (no SQLite text leaks): `:193-199`.
-- Citation validator / prompt ordering / redaction helper:
-  `analyze.rs:14-19`, `:42-88`, `:95-117`. Proposed-only atomic runner:
-  `runner.rs:99-131`. API-key Debug redaction: `model.rs:137-144`.
-- secrets-scan rules + CI-first gate + hook installer:
-  `xtask/src/secrets.rs:21-44`, `:87-183`; `xtask/src/main.rs:96-98`,
-  `:319-370`, `:373-402`; `.githooks/pre-commit`.
-- Deploy: localhost-only bind `main.rs:239`; zig tarball sha-pinned
-  (`deploy.md` § Steps 5); SSH key never in repo.
+Ranked. IDs keep their source: H/M/L from the 2026-10-27 review,
+F from `docs/SECURITY.md`.
 
-PLANNED (owning doc): rate limits + lockout (`SECURITY.md` Baseline);
-Origin/CSRF + security headers + `__Host-` cookies (same); token hashing
-(demo-login comment); real auth playbook (`auth-playbook.md`);
-TPM-sealed config (`secure-config.md`); ACME issuance + unit install
-(`acme.md`, `apostille.service` — both drafted, need root);
-offsite audit ship + backup drills (`deploy.md` § Watch, `SECURITY.md` Q8);
-upload allowlist/magic-bytes/EXIF/redaction pipeline (F8/F9,
-`SECURITY.md` Uploads).
+| ID | Finding | Where | Fix |
+|---|---|---|---|
+| H2 | SSRF on the watch/fetch path: no scheme allowlist, no private/loopback/link-local rejection, no DNS pinning, ureq's default redirects; robots fails open and is read uncapped. Staff URLs reach it from `/workers`. | `crates/ingest/src/fetch.rs` (`get_raw`, `check_robots`) | Reuse the WARC path's guard, pinning and hop cap (`crates/ingest/src/warc.rs`); cap robots. |
+| H4 | The demo login is still mounted on the public router in production (hashed tokens, `demo-` refs only, 10/min/IP; cookie lacks `__Host-`). | `crates/web/src/main.rs` (`/api/v1/demo/login`) | Gate it off in production or remove it. |
+| H3 | Upload type comes from the client's Content-Type; no magic-byte sniff. Originals keep EXIF, including GPS. | `crates/media/src/upload.rs` (`classify`) | Sniff and store a canonical MIME; strip or quarantine EXIF at intake. |
+| M2 | No Content-Security-Policy; HSTS not preloaded. | `crates/web/src/main.rs` | Nonce or hash CSP for both SPAs; preload once stable. |
+| M1 | No rate limit on WS upgrades, uploads or bus publish. | `ws_bus.rs`, `uploads.rs`, `admin.rs` | Per-IP and per-account buckets. |
+| M3 | IPs, user agents and emails are hashed with plain SHA-256, which a dictionary reverses. | `crates/auth/src/lib.rs` (`hash_str`) | HMAC with a sealed pepper. |
+| M4 | `pii-sweep` misses `audit.reason`, `task.detail`, `source.uri` and transcripts. | `xtask/src/pii_sweep.rs` | Extend the sweep to those surfaces. |
+| M6 | `config-set --value` accepts secrets on the command line (shell history, `ps`). | `xtask/src/config.rs` | Refuse `--value` for `--type secret`; use stdin. |
+| L2 | The served `robots.txt` is `Allow: /` with no `Disallow: /apostille/api/` (only `web/static/robots.txt` has it). | `crates/web/static/robots.txt` | Serve one file with the Disallow. |
+| L3 | Secrets-scan has no KEK-shaped rule, no `.cred`/`eab-*` filename rule, and skips untracked files. | `xtask/src/secrets.rs` | Add the rules; scan untracked files in CI. |
+| L4 | TLS versions and suites are rustls defaults, not pinned. | `crates/web/src/mtls.rs` | Pin TLS 1.2+ with modern suites. |
+| SC | No `deny.toml`; `cargo xtask ci` runs no cargo-deny, cargo-audit or npm audit. | `xtask/src/main.rs` (`run_ci`) | Add `deny.toml` and the three checks. |
+| F6 | `flag()` takes the first of duplicate flags silently; `--actor` defaults to `xtask`. | `xtask/src/main.rs` | Reject duplicates; require or derive the actor. |
+| H6r | Dead mTLS remains: optional client-CA layer, the `x-admin-cert-sha256` dev header behind `admin.mtls_off` (refused on non-loopback release binds), and the unused `admin_cert_valid`. | `crates/web/src/mtls.rs`, `admin.rs`, `crates/auth/src/lib.rs` | Remove the cert path, or keep it only for invite enrolment and say so. |
 
-## 6. Residual + accepted risks
+Closed since the review (evidence in the files above): H1 (WS Origin),
+H5 (expired certs; certs no longer authenticate), M5 (query in logs),
+L1 (staff cookie on the public bus), the KEK zeroize half of M6, the
+body-limit half of H3, F1–F5 and F7.
 
-- ACCEPTED (slice): demo auth with no password and plaintext tokens —
-  safe ONLY while data stays synthetic and the slice stays localhost /
-  author-audience. Real auth before any PII (`roadmap.md` §2).
-- ACCEPTED: env-only secrets — box has NO TPM (`deploy.md` § Hosts), so the
-  TPM design's fallback is ACTIVE. Revisit on hardware change.
-- RESIDUAL: staging-gated deploys are the process now (`deploy.md`
-  § Steps); the plant gate + `ship-release.sh` rails are that gate, built.
-- RESIDUAL: supply chain — `cargo install cargo-zigbuild` unpinned, no
-  `cargo audit`/`cargo-deny` in CI yet, no npm audit gate; `Cargo.lock` +
-  `package-lock.json` committed (good) but unaudited.
-- RESIDUAL: audit triggers stop code bugs, not `DROP TRIGGER` by SQL
-  access (`SECURITY.md` Q9); no offsite audit ship yet.
-- RESIDUAL: Meta API data-handling terms unread — no real media to Meta
-  until SEC reads them (`roadmap.md` §5).
-- RESIDUAL: single box, no reboot survival (Linger=no). Restore-drill
-  proof CLOSED 2026-10-30 (drill 3 green ×3 at 72ae915; offsite leg
-  still open — see Q8).
+## 6. Accepted and residual risks
+
+- RESIDUAL: one server. Backups are nightly and restore-drilled, but
+  the offsite copy is still open (`docs/ops/deploy.md` § Watch).
+- RESIDUAL: audit triggers stop code bugs, not `DROP TRIGGER` by
+  someone with SQL access; true tamper evidence needs the offsite copy.
+- RESIDUAL: no hardware TPM on the server; the KEK is a software-sealed
+  systemd credential (`docs/specs/tpm-seal.md`).
+- RESIDUAL: model output is validated for shape, not truth; a human
+  accepting each fact is the truth gate.
+- ACCEPTED: the plant worker runs on a machine we control but do not
+  harden like production; its token can lease jobs and post proposals,
+  nothing more, and re-minting `worker.token` in `/config` cuts it off.
 
 ## 7. Out of scope
 
-- DDoS absorption (single small box; 429s + firewall only raise the bar).
-- Physical theft beyond disk encryption; powered-off FDE assumed, not this doc.
-- Breaches inside Meta / carrier / Stripe / Google PKI — we bound exposure
-  (least data sent, write-only secrets, single-use EAB), we cannot fix them.
-- The author's Mac / SSH key hygiene (trusted signer; key compromise =
-  redeploy from a clean checkout + rotate EAB/keys).
+- DDoS absorption beyond rate limits and the firewall.
+- Physical theft beyond disk encryption.
+- Breaches inside the providers listed in §3; we limit what we send.
+- The operator Mac and SSH key hygiene (a key compromise means
+  redeploying from a clean checkout and rotating keys).

@@ -3,9 +3,9 @@
 Parent question: who scans the Apostille Convention's own sources
 (HCCH status table, footnotes, per-country restrictions, objections,
 bilateral non-requirement agreements) and turns them into
-jurisdiction data + slugs? Today nothing does: `xtask hcch-poll`
-only change-detects the status table, `ingest::hcch` only routes
-from already-known rows. This spec defines the **harness** that
+jurisdiction data + slugs? Before this spec nothing did: `xtask
+hcch-poll` only change-detected the status table. Status: built
+(`crates/atlas`, `cargo xtask atlas`). This spec defines the **harness** that
 runs such workers — rerunnable, debuggable, model-backed. Slugs,
 prompts, and jurisdiction content are task-pack data, not this
 spec and not this code.

@@ -1,7 +1,7 @@
-# Form Resemblance Framework + DS-4194 Pilot (draft for review)
+# Form Resemblance Framework + DS-4194 Pilot
 
-- Status: draft (goal-025 stream 3 of 5; for author review; pilot
-  implemented, not production-wired)
+- Status: built (goal-025 stream 3 of 5). The framework and the DS-4194
+  pilot ship; the order flow's Form step uses them.
 - Date: 2026-10-27
 - Decides: goal-025 decision 26 (common framework + per-form
   projects compiled into releases now, dynamic sandboxed hosting
@@ -190,7 +190,7 @@ warn in console, never crash).
 
 ### 6.2 Budgets
 
-`cargo xtask web-budget` reports the built size with the pilot
+`web/scripts/route-budget.mjs` reports the built size with the pilot
 built (advisory since 2026-10-28 — the Day-1 gate was removed; no
 budget to raise). The framework + pilot stay code-split per route
 regardless.
@@ -216,7 +216,7 @@ decisions 10/14–16.
 - A4: DS-4194 pilot route renders all non-TBD fields, prints
   on US Letter, shows the replica banner, and posts nothing.
 - A5: `cargo xtask ci` + `npm run build && build:admin &&
-  smoke` green (`cargo xtask web-budget` reports size, advisory).
+  smoke` green (`web/scripts/route-budget.mjs` reports size, advisory).
 - A6: Synthetic fixtures only; no PII, no invented DOS
   semantics; TBDs explicit in `REQUIREMENTS.md`.
 

@@ -1,7 +1,7 @@
 # DS-4194 — Request for Authentications Service (US DOS)
 
 Per-form project for the form-resemblance pilot (goal-025,
-[form-framework.md](../../docs/specs/form-framework.md)). This file
+[form-framework.md](../../../docs/specs/form-framework.md)). This file
 is the human-owned source; `v1.json` is the machine-readable
 `FormTemplate` compiled from it.
 

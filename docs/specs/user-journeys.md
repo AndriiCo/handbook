@@ -1,6 +1,7 @@
-# Critical User Journeys (draft for review)
+# Critical User Journeys
 
-- Status: draft (prompt 007, for author review; no implementation yet)
+- Status: partly built. Tiers (a) free and (b) labels ship; tiers (c)
+  door-kit and (d) full service remain plans.
 - Date: 2026-10-26
 - Source: parallel researcher draft (full text recovered from child
   session log).

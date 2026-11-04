@@ -1,6 +1,8 @@
-# Application Feature Specs (draft for review)
+# Application Feature Specs
 
-- Status: draft (prompt 007, for author review; no implementation yet)
+- Status: partly built. F1–F13 were written for author review (prompt
+  007); most ship today (see `README.md` § Promised → delivered). The
+  text below is the feature record, not a to-do list.
 - Date: 2026-10-26
 - Source: parallel researcher draft (recovered from workflow delivery);
   F7 updated by parent per the verified Egypt-chain research
@@ -126,7 +128,7 @@ end-to-end (fetch → extract → proposed record → approval) green in
 CI-seeded synthetic fixtures; (4) unsupported-language sources are
 marked, not misread (task opened, no fabricated record).
 Data/API: extraction helpers in `crates/handbook`; fixtures under
-synthetic `dev-seed` (never committed real data).
+synthetic `cargo xtask up` seed (never committed real data).
 Dependencies: F1/F4; Meta Models API text/models availability.
 
 ## F6 — Contradiction flagging (e.g. Washington's two PO Boxes)
@@ -300,8 +302,8 @@ currently accepted set. Build-pinned reads (serve facts as of
 - Empty prod is a valid state: zero authorities → search empty
   state; zero facts → dossier empty tabs (not errors).
 - O3 (audit checkpoints, staff on demand — no daemon, no served
-  `out_dir`): `cargo xtask build-handbook --out <dir>` then
-  `cargo xtask accept`; builds stay under the given dir for
+  `out_dir`): `cargo xtask build-handbook --out <dir>`, recorded by the deploy's
+  accept gate (`xtask deploy --expect-build`); builds stay under the given dir for
   audit/hash verification only.
 - Out of slice: FTS search, pagination, build-pinned reads,
   per-fact permalinks, ES body content.
@@ -364,15 +366,6 @@ approver rejects #1 with reason → audit row; page rebuild shows only
 #2. All bulk analysis follows this shape via the Model-API agent.
 Canonical fixture values are `40220`/`40234` everywhere — never invent
 other PO Box values in fixtures or tests.
-
-## Workstream plan (agent cohort)
-
-Superseded prompt 011: the 10-day plan was replaced by the
-5–7-day swarm plan in [roadmap.md](roadmap.md) (deep-research
-replan: ranked slice, cuts, streams S1–S7+H with file ownership,
-day gates 2/4/6, day-7 buffer). F1–F13 above remain the feature
-specs; the roadmap decides what ships in which week. (The
-original 10-day text is preserved in git history.)
 
 ## Open questions (from this draft)
 

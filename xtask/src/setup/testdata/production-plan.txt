@@ -2,34 +2,38 @@
       builtin Doctor { tools: ["zig", "cargo-zigbuild", "ssh", "scp", "tar", "curl", "npm"] }
  2. [gate] plant stamp for 0123456 (ci_green)
       builtin GateStamp
- 3. [gate] root-process probe (no operator script may be running)
+ 3. [gate] schema and migration rail against the live release
+      builtin MigrationRail { conn: Conn { dest: "andrii.ai", port: None, identity: None, known_hosts: None }, url: "https://andrii.ai/apostille/healthz" }
+ 4. [gate] root-process probe (no operator script may be running)
       ssh andrii.ai -- out=$( (pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN); pgrep -af '[a]postille/scripts/'); [ -z "$out" ] || { echo "$out"; exit 1; }
- 4. [dns] every certificate name resolves to this server
+ 5. [gate] scoreboard before the deploy
+      $ node xtask/ops/scoreboard.mjs --out web/shots/prod-before.json
+ 6. [dns] every certificate name resolves to this server
       builtin DnsCheck { names: ["andrii.ai", "admin.andrii.ai", "www.andrii.ai"], bind: None, bind6: None }
- 5. [build] build 0123456 for x86_64-unknown-linux-gnu
+ 7. [build] build 0123456 for x86_64-unknown-linux-gnu
       builtin BuildRelease { arch: X86_64 }
- 6. [provision] upload release 0123456 for provisioning
+ 8. [provision] upload release 0123456 for provisioning
       upload target/setup/0123456-x86_64-unknown-linux-gnu/ -> andrii.ai:~/setup/0123456/
- 7. [provision] upload the provision manifest (0600)
+ 9. [provision] upload the provision manifest (0600)
       ssh andrii.ai -- umask 077 && cat > ~/setup/manifest.json
       stdin: Manifest (rendered at run time, never printed)
- 8. [provision] provision: users, layout, KEK, wrappers, sudoers, units, firewall, first install
+10. [provision] provision: users, layout, KEK, wrappers, sudoers, units, firewall, first install
       ssh andrii.ai -- sudo -n ~/setup/0123456/xtask provision --manifest ~/setup/manifest.json --release ~/setup/0123456 --version 0123456 --sha 0123456789abcdef0123456789abcdef01234567 --config-stdin; rc=$?; rm -f ~/setup/manifest.json; exit $rc
       stdin: ConfigPayload (rendered at run time, never printed)
- 9. [seal] seal this file's config (merge; one transaction, boot-load checked)
+11. [seal] seal this file's config (merge; one transaction, boot-load checked)
       ssh andrii.ai -- sudo -n -u andrii-ai /usr/local/sbin/apostille-config-import
       stdin: ConfigPayload (rendered at run time, never printed)
-10. [deploy] stage release 0123456 as hal
+12. [deploy] stage release 0123456 as hal
       upload target/setup/0123456-x86_64-unknown-linux-gnu/ -> andrii.ai:apostille/staging/0123456/
-11. [deploy] install ops-deploy.sh from the staged release
-      ssh andrii.ai -- mkdir -p ~/apostille/scripts && cp ~/apostille/staging/0123456/scripts/ops-deploy.sh ~/apostille/scripts/
-12. [deploy] root-process probe (no operator script may be running)
+13. [deploy] install the operator scripts from the staged release
+      ssh andrii.ai -- mkdir -p ~/apostille/scripts && cp ~/apostille/staging/0123456/scripts/*.sh ~/apostille/scripts/
+14. [deploy] root-process probe (no operator script may be running)
       ssh andrii.ai -- out=$( (pgrep -u 0 -c . >/dev/null || echo ROOT-PROCS-HIDDEN); pgrep -af '[a]postille/scripts/'); [ -z "$out" ] || { echo "$out"; exit 1; }
-13. [deploy] deploy 0123456 unless it is already live (restarts on the sealed config)
+15. [deploy] deploy 0123456 unless it is already live (restarts on the sealed config)
       ssh andrii.ai -- if [ "$(readlink /srv/apostille/current)" = /srv/apostille/releases/0123456 ]; then echo "0123456 is live (first install)"; sudo -n systemctl restart apostille; else bash ~/apostille/scripts/ops-deploy.sh ~/apostille/staging/0123456 --skip-accept; fi
-14. [acme] certificate issued and healthz names 0123456 on https://andrii.ai
+16. [acme] certificate issued and healthz names 0123456 on https://andrii.ai
       builtin WaitHealth { url: "https://andrii.ai/apostille/healthz", ca: None, timeout_secs: 600 }
-15. [staff] mint the first-boot setup key (prints once; refused once staff exist)
+17. [staff] mint the first-boot setup key (prints once; refused once staff exist)
       ssh andrii.ai -- sudo -n -u andrii-ai /usr/local/sbin/apostille-setup-key || echo 'setup key not minted (staff exist)'
-16. [verify] production scoreboard
+18. [verify] production scoreboard
       $ node xtask/ops/scoreboard.mjs --out web/shots/prod-after.json
