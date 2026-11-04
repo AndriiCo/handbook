@@ -88,7 +88,9 @@ gate runs it after `cargo xtask ci` on every build
    reload. Nothing is public until a person accepts it.
 4. The guide: citations are off by default. Press the Citations button
    or Alt+C (⌥C on a Mac) to number every value's source; hover, focus
-   or tap a marker for its quote, source and capture date.
+   or tap a marker for its quote, source and capture date. Adding
+   `?cite=1` to the address opens a guide with them on, as in
+   <https://andrii.ai/apostille/authority/usa/washington?cite=1>.
 5. Trace: "Draft from this capture" streams a model run with its tokens
    and latency.
 
