@@ -1,8 +1,8 @@
 //! Approval API (roadmap item 6): staff list/accept/reject over
 //! proposed facts, every decision audited, plus the conflict banner.
 //!
-//! Conflict policy (decided: **banner**): facts sharing
-//! `(authority, topic)` with differing statements publish with a
+//! Conflict policy (decided: **banner**): facts of one authority and
+//! field whose values disagree ([`db::facts_disagree`]) publish with a
 //! visible banner citing both sources. Accept proceeds despite
 //! conflicts; the banner is the policy. Anonymous readers see
 //! accepted facts only ([`public_facts`]).
@@ -18,10 +18,12 @@ use serde_json::json;
 
 use crate::{AppState, admin::AdminAuth, store_unavailable, unix_now};
 
-/// One conflicting sibling: same authority + topic, other statement.
+/// One conflicting sibling: same authority and field, a disagreeing
+/// value (a disputed PO box may sit in the other USPS topic).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ConflictView {
     pub id: i64,
+    pub topic: String,
     pub statement: String,
     pub status: String,
 }
@@ -33,6 +35,10 @@ pub struct PublicCitation {
     pub quote: String,
     pub source_url: String,
     pub captured_at: String,
+    /// `web`, `pdf` or `upload` ([`crate::citation`]).
+    pub kind: &'static str,
+    /// The cited capture.
+    pub capture_id: i64,
 }
 
 /// One fact with its conflict banner.
@@ -48,19 +54,20 @@ pub struct FactView {
     /// `"<model> via <pipeline>"`; surfaced under its own key for A1).
     pub drafted_by: String,
     pub created_at: i64,
+    /// Newest staff accept (unix seconds), `None` while never accepted.
+    pub accepted_at: Option<i64>,
     pub citations: Vec<PublicCitation>,
     pub conflict: bool,
     pub conflicts: Vec<ConflictView>,
 }
 
-/// Topics whose facts never conflict: `service_notice` facts are
-/// dated announcements that stack (newest first in the dossier
-/// banner), so a second notice is news, not a disagreement.
-pub const NON_CONFLICTING_TOPICS: &[&str] = &["service_notice"];
+/// Topics whose facts never conflict (the shared rule's list).
+pub use handbook_store::db::NON_CONFLICTING_TOPICS;
 
-/// Sibling facts that disagree: same authority + topic, different
-/// statement, still live (`accepted`/`proposed`). Capped at 10.
-/// Always empty for [`NON_CONFLICTING_TOPICS`].
+/// Sibling facts that disagree under the field rule
+/// ([`db::facts_disagree`]), still live (`accepted`/`proposed`):
+/// filtered before the cap of 10, published siblings first. Always
+/// empty for [`NON_CONFLICTING_TOPICS`].
 pub fn sibling_conflicts(
     conn: &Connection,
     authority_id: i64,
@@ -71,26 +78,11 @@ pub fn sibling_conflicts(
     if NON_CONFLICTING_TOPICS.contains(&topic) {
         return Vec::new();
     }
-    conn.prepare(
-        "SELECT id, statement, status FROM fact
-         WHERE authority_id = ?1 AND topic = ?2 AND id != ?3
-           AND status IN ('accepted', 'proposed')
-         ORDER BY id LIMIT 10",
-    )
-    .and_then(|mut stmt| {
-        stmt.query_map(rusqlite::params![authority_id, topic, exclude_id], |row| {
-            Ok(ConflictView {
-                id: row.get(0)?,
-                statement: row.get(1)?,
-                status: row.get(2)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()
-    })
-    .unwrap_or_default()
-    .into_iter()
-    .filter(|c| c.statement != statement)
-    .collect()
+    crate::conflicts::disagreeing_siblings(conn, authority_id, topic, statement, exclude_id, false)
+        .unwrap_or_default()
+        .into_iter()
+        .take(10)
+        .collect()
 }
 
 /// One fact row as selected (list/decide/public share the shape).
@@ -113,6 +105,7 @@ fn fact_view(
     store_root: &std::path::Path,
     fact: &StoredFact,
     public_only: bool,
+    accepted_at: Option<i64>,
 ) -> FactView {
     let mut conflicts = sibling_conflicts(
         conn,
@@ -134,6 +127,7 @@ fn fact_view(
         created_by: fact.created_by.clone(),
         drafted_by: fact.created_by.clone(),
         created_at: fact.created_at,
+        accepted_at,
         citations: public_citations(conn, store_root, fact),
         conflict,
         conflicts,
@@ -143,7 +137,8 @@ fn fact_view(
 /// Quote-verified citations for one fact (A1): at most one entry, only
 /// when the cited sidecar slice exists and is long enough to verify.
 /// The URL is the capture's own source, falling back to the
-/// authority's official website source; unattributed or uncited facts
+/// authority's official website source only for a source-less page or
+/// upload ([`crate::citation`]); unattributed or uncited facts
 /// honestly carry zero citations. Quotes over 400 chars and non-https
 /// sources never ship: a `javascript:` or `mailto:` URI from a pack
 /// cannot reach the public dossier.
@@ -165,40 +160,18 @@ fn public_citations(
     if !(8..=400).contains(&quote_len) {
         return vec![];
     }
-    let (source_id, captured_at): (Option<i64>, Option<i64>) = conn
-        .query_row(
-            "SELECT source_id, captured_at FROM capture WHERE id = ?1",
-            [fact.capture_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap_or((None, None));
-    let captured_at = captured_at.unwrap_or(0);
-    let mut source_url: Option<String> = source_id.and_then(|id| {
-        conn.query_row("SELECT uri FROM source WHERE id = ?1", [id], |row| {
-            row.get(0)
-        })
-        .ok()
-    });
-    if source_url.is_none() {
-        source_url = conn
-            .query_row(
-                "SELECT uri FROM source WHERE authority_id = ?1 AND kind = 'website_official'
-                 ORDER BY id LIMIT 1",
-                [fact.authority_id],
-                |row| row.get(0),
-            )
-            .ok();
-    }
-    let Some(source_url) = source_url else {
+    let Some(capture) = crate::citation::CitedCapture::load(conn, fact.capture_id) else {
         return vec![];
     };
-    if !source_url.starts_with("https://") {
+    let Some(source_url) = capture.source_url(conn, fact.authority_id) else {
         return vec![];
-    }
+    };
     vec![PublicCitation {
         quote,
+        kind: capture.citation_kind(store_root, &source_url),
         source_url,
-        captured_at: iso8601(captured_at),
+        captured_at: iso8601(capture.captured_at),
+        capture_id: fact.capture_id,
     }]
 }
 
@@ -306,9 +279,14 @@ pub async fn list_facts(
         }
     })()
     .unwrap_or_default();
+    let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
+    let accepted = crate::citation::accepted_at(&conn, &ids);
     let facts: Vec<FactView> = rows
         .iter()
-        .map(|row| fact_view(&conn, &state.store_root, row, false))
+        .map(|row| {
+            let at = accepted.get(&row.id).copied();
+            fact_view(&conn, &state.store_root, row, false, at)
+        })
         .collect();
     let count = facts.len();
     (
@@ -333,6 +311,8 @@ pub struct DecisionBody {
     pub reason: Option<String>,
     /// Accept-only: replacement statement (non-empty, ≤2000 chars).
     pub statement: Option<String>,
+    /// Accept-only: move the fact to this frozen topic as it publishes.
+    pub topic: Option<String>,
     /// Reject-only: also create a `suppress_rule` row.
     pub suppress: Option<SuppressBody>,
 }
@@ -341,7 +321,7 @@ pub struct DecisionBody {
 /// `{field}: {value}` shape into its edited value: `Some(value)` only
 /// when the key matches the guide's field-key grammar
 /// (`[a-z][a-z0-9_]*`, colon, whitespace). Anything else is an
-/// unkeyed statement and skips the value-in-quote gate.
+/// unkeyed statement, which the value-in-quote gate checks whole.
 fn edited_value(statement: &str) -> Option<&str> {
     let (key, rest) = statement.split_once(':')?;
     if !key.chars().next().is_some_and(|c| c.is_ascii_lowercase())
@@ -385,43 +365,21 @@ pub async fn accept_fact(
         }
         Some(s) => Some(s),
     };
-    // Accept-with-edit value-in-quote gate: a `field: value`
-    // replacement must keep its value inside the fact's cited quote
-    // (same normalization as the analysis validator), else the edit
-    // publishes unquoted text. A missing fact or a down store falls
-    // through to `decide`, which answers 404/503 for those.
-    if let Some(s) = statement
-        && let Some(value) = edited_value(s)
-    {
-        let inside = open(&state).and_then(|conn| {
-            let bounds: Option<(i64, i64, i64)> = conn
-                .query_row(
-                    "SELECT capture_id, citation_start, citation_end FROM fact WHERE id = ?1",
-                    rusqlite::params![id],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                )
-                .optional()
-                .unwrap_or(None);
-            bounds.map(|(capture_id, start, end)| {
-                let quote = sidecar_slice(&state.store_root, capture_id, start, end);
-                handbook_agent::analyze::normalize(&quote)
-                    .contains(&handbook_agent::analyze::normalize(value))
-            })
-        });
-        if inside == Some(false) {
-            return (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                Json(json!({"error": "edited value not in citation quote"})),
-            )
-                .into_response();
-        }
-    }
+    // Re-topic at accept (plan §5.5): only onto the frozen topic list.
+    let topic = match body.topic.as_deref().map(contracts::topics::Topic::parse) {
+        None => None,
+        Some(Ok(topic)) => Some(topic.as_str()),
+        Some(Err(_)) => return unprocessable("unknown handbook topic"),
+    };
+    // The value-in-quote and `phone_script` gates run inside `decide`'s
+    // transaction ([`edit_refusal`]), so they fail closed.
     decide(
         &state,
         &auth,
         id,
         body.reason.as_deref(),
         statement,
+        topic,
         None,
         "accepted",
     )
@@ -451,6 +409,9 @@ pub async fn reject_fact(
         )
             .into_response();
     }
+    if body.topic.is_some() {
+        return unprocessable("topic is accept-only");
+    }
     if let Some(sup) = body.suppress.as_ref()
         && sup.scope != "authority"
         && sup.scope != "global"
@@ -466,6 +427,7 @@ pub async fn reject_fact(
         &auth,
         id,
         Some(reason),
+        None,
         None,
         body.suppress.as_ref(),
         "rejected",
@@ -553,16 +515,19 @@ fn unprocessable(msg: &str) -> axum::response::Response {
         .into_response()
 }
 
-/// True when the authority already publishes a different statement
-/// on this topic (the proposal would change a published fact).
+/// True when the proposal would change a published fact: an accepted
+/// sibling disagrees with it under the field rule (same field, other
+/// value, or another USPS box). Other fields of the topic never count.
 fn changes_published_fact(conn: &Connection, fact: &StoredFact) -> rusqlite::Result<bool> {
-    conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM fact
-                       WHERE authority_id = ?1 AND topic = ?2 AND id != ?3
-                         AND status = 'accepted' AND statement != ?4)",
-        rusqlite::params![fact.authority_id, fact.topic, fact.id, fact.statement],
-        |row| row.get(0),
+    crate::conflicts::disagreeing_siblings(
+        conn,
+        fact.authority_id,
+        &fact.topic,
+        &fact.statement,
+        fact.id,
+        true,
     )
+    .map(|found| !found.is_empty())
 }
 
 /// Latest Wonder verdict on a fact, tolerating a store without the
@@ -830,6 +795,7 @@ async fn decide(
     id: i64,
     reason: Option<&str>,
     statement: Option<&str>,
+    topic: Option<&str>,
     suppress: Option<&SuppressBody>,
     to: &str,
 ) -> axum::response::Response {
@@ -861,6 +827,7 @@ async fn decide(
             to,
             reason,
             statement,
+            topic,
             suppress,
             now,
             action,
@@ -874,15 +841,54 @@ struct Decision<'a> {
     reason: Option<&'a str>,
     /// Accept-only replacement statement (pre-validated).
     statement: Option<&'a str>,
+    /// Accept-only re-topic (pre-validated frozen topic).
+    topic: Option<&'a str>,
     /// Reject-only suppression request (pre-validated).
     suppress: Option<&'a SuppressBody>,
     now: i64,
     action: &'a str,
 }
 
-/// Transaction outcome: DB failure, HTTP outcome, or the decided fact
+/// A refused decision: its HTTP status and `{"error"}` text.
+type Refusal = (StatusCode, &'static str);
+
+/// Transaction outcome: DB failure, a refusal, or the decided fact
 /// plus an adopted rule id (`Some((id, deduped))` on reject-with-suppress).
-type DecideOutcome = rusqlite::Result<Result<(StoredFact, Option<(i64, bool)>), StatusCode>>;
+type DecideOutcome = rusqlite::Result<Result<(StoredFact, Option<(i64, bool)>), Refusal>>;
+
+/// The accept-with-edit gates (plan §5.5), run by `decide_inner` on the
+/// row its `BEGIN IMMEDIATE` holds, so a store error answers 503 and
+/// never skips them. A changed statement must keep its text inside the
+/// fact's cited quote (the analysis validator's normalization): a
+/// `field: value` statement checks its value, an unkeyed one its whole
+/// text, else the edit would publish unquoted text. A re-topic never
+/// moves a fact into or out of the staff-only `phone_script`.
+fn edit_refusal(
+    store_root: &std::path::Path,
+    fact: &StoredFact,
+    new_statement: Option<&str>,
+    new_topic: Option<&str>,
+) -> Option<Refusal> {
+    if new_topic.is_some_and(|t| t == "phone_script" || fact.topic == "phone_script") {
+        return Some((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "phone_script stays staff-only: no re-topic to or from it",
+        ));
+    }
+    let statement = new_statement?;
+    let quote = sidecar_slice(
+        store_root,
+        fact.capture_id,
+        fact.citation_start,
+        fact.citation_end,
+    );
+    let normalize = handbook_agent::analyze::normalize;
+    (!normalize(&quote).contains(&normalize(edited_value(statement).unwrap_or(statement))))
+        .then_some((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "edited value not in citation quote",
+        ))
+}
 
 fn decide_inner(
     state: &AppState,
@@ -923,11 +929,19 @@ fn decide_inner(
             .optional()?;
         let Some((status, fact)) = row else {
             conn.execute_batch("ROLLBACK")?;
-            return Ok(Err(StatusCode::NOT_FOUND));
+            return Ok(Err((StatusCode::NOT_FOUND, "fact not found")));
         };
         if status != "proposed" {
             conn.execute_batch("ROLLBACK")?;
-            return Ok(Err(StatusCode::CONFLICT));
+            return Ok(Err((StatusCode::CONFLICT, "fact is not proposed")));
+        }
+        // Accept-with-edit: only a changed statement or topic counts (an
+        // unchanged one publishes the draft, like a plain accept).
+        let new_statement = decision.statement.filter(|s| *s != fact.statement);
+        let new_topic = decision.topic.filter(|t| *t != fact.topic);
+        if let Some(refusal) = edit_refusal(&state.store_root, &fact, new_statement, new_topic) {
+            conn.execute_batch("ROLLBACK")?;
+            return Ok(Err(refusal));
         }
         // Accepting a fact requires a verified citation (operator fix
         // `a1-integrity`): quote 8-400 chars from the capture sidecar
@@ -935,25 +949,26 @@ fn decide_inner(
         if decision.to == "accepted" && public_citations(conn, &state.store_root, &fact).is_empty()
         {
             conn.execute_batch("ROLLBACK")?;
-            return Ok(Err(StatusCode::UNPROCESSABLE_ENTITY));
+            return Ok(Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "accept requires a verified citation (quote 8-400 chars, https source)",
+            )));
         }
-        // Accept-with-edit: the replacement statement lands in the same
-        // UPDATE; unchanged-or-absent keeps the current text. The audit
-        // reason becomes the §11.5 envelope when the text changed.
-        let edited = decision.statement.is_some_and(|s| s != fact.statement);
-        if edited {
-            conn.execute(
-                "UPDATE fact SET status = ?1, statement = ?2 WHERE id = ?3",
-                rusqlite::params![decision.to, decision.statement, id],
-            )?;
-        } else {
-            conn.execute(
-                "UPDATE fact SET status = ?1 WHERE id = ?2",
-                (decision.to, id),
-            )?;
-        }
-        let audit_reason = if edited {
-            edit_envelope(decision.reason.unwrap_or(""), &fact.statement)
+        // The replacement statement and a re-topic land in the same
+        // UPDATE; absent keeps the current values. The audit reason
+        // becomes the §11.5 envelope when either changed.
+        conn.execute(
+            "UPDATE fact SET status = ?1, statement = COALESCE(?2, statement),
+                             topic = COALESCE(?3, topic)
+             WHERE id = ?4",
+            rusqlite::params![decision.to, new_statement, new_topic, id],
+        )?;
+        let audit_reason = if new_statement.is_some() || new_topic.is_some() {
+            edit_envelope(
+                decision.reason.unwrap_or(""),
+                new_statement.map(|_| fact.statement.as_str()),
+                new_topic.map(|t| (fact.topic.as_str(), t)),
+            )
         } else {
             decision.reason.unwrap_or("").to_string()
         };
@@ -984,10 +999,14 @@ fn decide_inner(
                 decision.now,
             )?);
         }
-        // Serve the decided text (post-edit) in the response view.
+        // Serve the decided text and topic (post-edit) in the response
+        // view, so its banner lists the new topic's siblings.
         let mut fact = fact;
-        if edited {
-            fact.statement = decision.statement.unwrap_or("").to_string();
+        if let Some(statement) = new_statement {
+            fact.statement = statement.to_string();
+        }
+        if let Some(topic) = new_topic {
+            fact.topic = topic.to_string();
         }
         conn.execute_batch("COMMIT")?;
         // Follower fan-out: tail the fresh `fact_accept` audit row
@@ -1004,16 +1023,7 @@ fn decide_inner(
     })();
     let (fact, rule) = match outcome {
         Ok(Ok(found)) => found,
-        Ok(Err(status)) => {
-            let body = if status == StatusCode::NOT_FOUND {
-                json!({"error": "fact not found"})
-            } else if status == StatusCode::CONFLICT {
-                json!({"error": "fact is not proposed"})
-            } else {
-                json!({"error": "accept requires a verified citation (quote 8-400 chars, https source)"})
-            };
-            return (status, Json(body)).into_response();
-        }
+        Ok(Err((status, error))) => return (status, Json(json!({"error": error}))).into_response(),
         Err(_) => return store_unavailable(),
     };
     if decision.to == "accepted" {
@@ -1036,7 +1046,9 @@ fn decide_inner(
         // `plan.auto_compose`: a fresh plan proposal (off by default).
         crate::plan::auto_compose_after_accept(state, &fact.slug);
     }
-    let view = fact_view(conn, &state.store_root, &fact, false);
+    // A proposed fact has no earlier accept: this one is its newest.
+    let accepted_at = (decision.to == "accepted").then_some(decision.now);
+    let view = fact_view(conn, &state.store_root, &fact, false, accepted_at);
     if let Some((rule_id, deduped)) = rule {
         let mut body = serde_json::to_value(&view).unwrap_or(json!({}));
         body["rule"] = json!({"id": rule_id, "deduped": deduped});
@@ -1045,19 +1057,31 @@ fn decide_inner(
     (StatusCode::OK, Json(view)).into_response()
 }
 
-/// §11.5 edit envelope: `{"note","edit_before"}`, capped at 1024
-/// chars total by truncating `edit_before` with a `…` marker.
-fn edit_envelope(note: &str, edit_before: &str) -> String {
-    let envelope = |before: &str| json!({"note": note, "edit_before": before}).to_string();
+/// §11.5 edit envelope: `{"note","edit_before"}` for an edited
+/// statement, plus `"topic_before"`/`"topic_after"` for a re-topic
+/// (either may come alone), capped at 1024 chars total by truncating
+/// `edit_before` with a `…` marker.
+fn edit_envelope(note: &str, edit_before: Option<&str>, topic: Option<(&str, &str)>) -> String {
+    let envelope = |before: Option<&str>| {
+        let mut body = json!({"note": note});
+        if let Some(before) = before {
+            body["edit_before"] = json!(before);
+        }
+        if let Some((from, to)) = topic {
+            body["topic_before"] = json!(from);
+            body["topic_after"] = json!(to);
+        }
+        body.to_string()
+    };
     let full = envelope(edit_before);
-    if full.len() <= 1024 {
+    let Some(edit_before) = edit_before.filter(|_| full.len() > 1024) else {
         return full;
-    }
+    };
     // Budget the fixed framing by measuring with an empty before.
-    let framing = envelope("").len();
+    let framing = envelope(Some("")).len();
     let keep = 1024usize.saturating_sub(framing + "…".len()).max(1);
     let truncated: String = edit_before.chars().take(keep).collect();
-    envelope(&format!("{truncated}…"))
+    envelope(Some(&format!("{truncated}…")))
 }
 
 /// Public accepted-facts read for one authority, with conflict
@@ -1128,9 +1152,11 @@ pub fn accepted_fact_views(
             .collect::<rusqlite::Result<Vec<_>>>()
         })
         .unwrap_or_default();
+    let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
+    let accepted = crate::citation::accepted_at(conn, &ids);
     Some(
         rows.iter()
-            .map(|row| fact_view(conn, store_root, row, true))
+            .map(|row| fact_view(conn, store_root, row, true, accepted.get(&row.id).copied()))
             .collect(),
     )
 }
@@ -1145,8 +1171,9 @@ fn index_rows(conn: &Connection, slug: Option<&str>) -> Vec<serde_json::Value> {
         .prepare(
             // `kind` (country/state/province/office) drives the home
             // lanes; `verified_at` is the newest staff accept of any of
-            // this authority's facts (audit `fact_accept`), so the UI
-            // never hardcodes either.
+            // this authority's still-accepted facts (audit
+            // `fact_accept`; a retired fact's accept no longer counts),
+            // so the UI never hardcodes either.
             "SELECT a.slug, a.name, a.country, a.region,
                     COUNT(CASE WHEN f.status = 'accepted' THEN 1 END),
                     a.kind,
@@ -1155,6 +1182,7 @@ fn index_rows(conn: &Connection, slug: Option<&str>) -> Vec<serde_json::Value> {
              LEFT JOIN (SELECT f2.authority_id AS aid, MAX(au.at) AS v
                         FROM audit au JOIN fact f2 ON f2.id = au.entity_id
                         WHERE au.entity = 'fact' AND au.action = 'fact_accept'
+                          AND f2.status = 'accepted'
                         GROUP BY f2.authority_id) va ON va.aid = a.id
              WHERE a.id != 0 AND a.hidden_at IS NULL AND (?1 IS NULL OR a.slug = ?1)
              GROUP BY a.id ORDER BY a.slug",
@@ -1278,5 +1306,63 @@ mod tests {
             !handbook_agent::analyze::normalize(quote)
                 .contains(&handbook_agent::analyze::normalize(estranged))
         );
+    }
+
+    /// The gates `decide_inner` runs on the row it holds: no move into
+    /// or out of `phone_script`, and an edit stays inside its quote.
+    #[test]
+    fn approval_edit_gates_refuse_phone_script_moves_and_unquoted_text() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("text")).unwrap();
+        let quote = "Call 360-725-0377, option 3.";
+        std::fs::write(tmp.path().join("text").join("5.txt"), quote).unwrap();
+        let fact = |topic: &str, capture_id: i64| StoredFact {
+            id: 1,
+            authority_id: 1,
+            slug: "usa-wa-sos".into(),
+            topic: topic.into(),
+            statement: "phone: 360-725-0377".into(),
+            status: "accepted".into(),
+            created_by: String::new(),
+            created_at: 0,
+            capture_id,
+            citation_start: 0,
+            citation_end: quote.len() as i64,
+        };
+        let gate = |topic: &str, statement: Option<&str>, to: Option<&str>| {
+            edit_refusal(tmp.path(), &fact(topic, 5), statement, to).map(|(status, error)| {
+                assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+                error
+            })
+        };
+        let staff_only = Some("phone_script stays staff-only: no re-topic to or from it");
+        let unquoted = Some("edited value not in citation quote");
+        assert_eq!(gate("contacts", None, Some("phone_script")), staff_only);
+        assert_eq!(gate("phone_script", None, Some("contacts")), staff_only);
+        assert_eq!(
+            gate("phone_script", Some("say: option 3"), Some("contacts")),
+            staff_only
+        );
+        assert_eq!(gate("contacts", None, Some("hours")), None);
+        assert_eq!(gate("phone_script", None, None), None, "nothing changed");
+        // Keyed edits check the value, unkeyed ones the whole text.
+        assert_eq!(gate("contacts", Some("phone: 360-725-0377"), None), None);
+        assert_eq!(gate("contacts", Some("CALL  360-725-0377"), None), None);
+        assert_eq!(
+            gate("contacts", Some("phone: 360-725-0378"), None),
+            unquoted
+        );
+        assert_eq!(
+            gate("contacts", Some("Call 360-725-0377 any time"), None),
+            unquoted
+        );
+        // A sidecar that cannot be read never lets an edit through.
+        let lost = edit_refusal(
+            tmp.path(),
+            &fact("contacts", 6),
+            Some("phone: 360-725-0377"),
+            None,
+        );
+        assert_eq!(lost.map(|(_, error)| error), unquoted);
     }
 }

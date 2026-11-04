@@ -1,0 +1,404 @@
+[
+  {
+    "name": "WA fees: different keys are different fields",
+    "topic": "fees",
+    "a": "per_document: Fee is $15.00 per document.",
+    "b": "expedited_fee: An additional $100 expedite fee per 10 documents.",
+    "disagree": false
+  },
+  {
+    "name": "USPS variants: the box differs",
+    "topic": "mailing",
+    "a": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "b": "apostille_mailing_address: PO Box 40234, Olympia, WA 98504-0234",
+    "disagree": true,
+    "tokens_a": ["box:40220", "zip:98504", "zip:98504-0220"],
+    "tokens_b": ["box:40234", "zip:98504", "zip:98504-0234"]
+  },
+  {
+    "name": "USPS variants: same box, the ZIP+4 differs",
+    "topic": "mailing",
+    "a": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "b": "apostille_mailing_address: PO Box 40220, Olympia, WA 98504-0234",
+    "disagree": true
+  },
+  {
+    "name": "USPS variants: the box differs, same ZIP+4",
+    "topic": "mailing",
+    "a": "apostille_mailing_address: PO Box 40234, Olympia, WA 98504-0234",
+    "b": "apostille_mailing_address: PO Box 40220, Olympia, WA 98504-0234",
+    "disagree": true
+  },
+  {
+    "name": "USPS: a punctuation-only variant of one address agrees",
+    "topic": "mailing",
+    "a": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "b": "apostille_mailing_address: P.O. Box 40220, Olympia, WA 98504-0220.",
+    "disagree": false
+  },
+  {
+    "name": "USPS: a less specific value of the same box agrees",
+    "topic": "mailing",
+    "a": "apostille_mailing_address: PO Box 40220",
+    "b": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "disagree": false
+  },
+  {
+    "name": "money: a partial amount set disagrees with the fuller one",
+    "topic": "fees",
+    "a": "same_day: $150 for the first 10 documents",
+    "b": "same_day: $15 per document plus a $150 same-day fee for the first 10 documents",
+    "disagree": true,
+    "tokens_a": ["amt:15000"],
+    "tokens_b": ["amt:1500", "amt:15000"]
+  },
+  {
+    "name": "money: $15 equals $15.00",
+    "topic": "fees",
+    "a": "per_document: $15 per document",
+    "b": "per_document: Fee is $15.00 per document.",
+    "disagree": false
+  },
+  {
+    "name": "money: a different fee",
+    "topic": "fees",
+    "a": "per_document: $15 per document",
+    "b": "per_document: $20 per document",
+    "disagree": true
+  },
+  {
+    "name": "legacy: unkeyed PO boxes",
+    "topic": "po_box",
+    "a": "PO Box 40220",
+    "b": "PO Box 40234",
+    "disagree": true,
+    "tokens_a": ["box:40220"],
+    "tokens_b": ["box:40234"]
+  },
+  {
+    "name": "legacy: unkeyed token-free hours",
+    "topic": "hours",
+    "a": "open 9 to 5",
+    "b": "open 8 to 6",
+    "disagree": true,
+    "tokens_a": [],
+    "tokens_b": []
+  },
+  {
+    "name": "legacy: unkeyed text differing only in case and punctuation",
+    "topic": "hours",
+    "a": "open 9 to 5",
+    "b": "Open 9 to 5.",
+    "disagree": false
+  },
+  {
+    "name": "legacy: an unkeyed fact compares with a keyed one",
+    "topic": "po_box",
+    "a": "PO Box 40220",
+    "b": "po_box: PO Box 40234",
+    "disagree": true
+  },
+  {
+    "name": "legacy: an unkeyed fee compares with every keyed fee",
+    "topic": "fees",
+    "a": "Fee is $15.00 per document.",
+    "b": "expedited_fee: An additional $100 expedite fee per 10 documents.",
+    "disagree": true
+  },
+  {
+    "name": "instance keys are different fields",
+    "topic": "hours",
+    "a": "weekday__tumwater: Monday-Thursday 8 a.m. to 4 p.m.",
+    "b": "weekday__cheney: Monday-Wednesday and Friday 9 a.m. to 3 p.m.",
+    "disagree": false,
+    "tokens_a": ["dow:mon", "dow:thu", "dow:tue", "dow:wed", "time:08:00", "time:16:00"],
+    "tokens_b": ["dow:fri", "dow:mon", "dow:tue", "dow:wed", "time:09:00", "time:15:00"]
+  },
+  {
+    "name": "Viet Nam: distinct keys of one topic are different fields",
+    "topic": "jurisdiction",
+    "a": "authorized_issuer: Consular Department, Ministry of Foreign Affairs of Viet Nam",
+    "b": "site_title: Consular Department e-portal",
+    "disagree": false
+  },
+  {
+    "name": "phone: a different number",
+    "topic": "contacts",
+    "a": "phone: (360) 555-0100",
+    "b": "phone: 360-555-0199",
+    "disagree": true
+  },
+  {
+    "name": "phone: the same number in another format",
+    "topic": "contacts",
+    "a": "phone: (360) 555-0100",
+    "b": "phone: Call +1 360.555.0100, option 3",
+    "disagree": false,
+    "tokens_a": ["tel:3605550100"],
+    "tokens_b": ["tel:3605550100"]
+  },
+  {
+    "name": "business days: a different range",
+    "topic": "processing_time",
+    "a": "standard: Typically 7 to 10 business days",
+    "b": "standard: 10 to 15 business days",
+    "disagree": true
+  },
+  {
+    "name": "business days: the same range in other words",
+    "topic": "processing_time",
+    "a": "standard: Typically 7 to 10 business days",
+    "b": "standard: 7-10 business days after we receive your request",
+    "disagree": false,
+    "tokens_a": ["days:7-10"],
+    "tokens_b": ["days:7-10"]
+  },
+  {
+    "name": "business days: an en dash range equals a hyphen range",
+    "topic": "processing_time",
+    "a": "expedited: 2\u20133 business days",
+    "b": "expedited: 2 to 3 business days",
+    "disagree": false
+  },
+  {
+    "name": "hours: weekday sets must match",
+    "topic": "hours",
+    "a": "weekday__tumwater: Mon-Thu 8 a.m.-4 p.m.",
+    "b": "weekday__tumwater: Mon-Thu 8-5, Fri 8-4",
+    "disagree": true
+  },
+  {
+    "name": "hours: the same days and times in another format",
+    "topic": "hours",
+    "a": "weekday__tumwater: Mon-Thu 8 a.m.-4 p.m.",
+    "b": "weekday__tumwater: Monday through Thursday, 8:00 a.m. to 4:00 p.m.",
+    "disagree": false
+  },
+  {
+    "name": "times: 12-hour equals 24-hour",
+    "topic": "walkin",
+    "a": "cutoff: 3:30 p.m.",
+    "b": "cutoff: Arrive by 15:30",
+    "disagree": false,
+    "tokens_a": ["time:15:30"],
+    "tokens_b": ["time:15:30"]
+  },
+  {
+    "name": "times: a no-break space before p.m.",
+    "topic": "walkin",
+    "a": "cutoff: 3:30\u00a0p.m.",
+    "b": "cutoff: 3:30 p.m.",
+    "disagree": false
+  },
+  {
+    "name": "times: a different cut-off",
+    "topic": "walkin",
+    "a": "cutoff: 3:30 p.m.",
+    "b": "cutoff: 3 p.m.",
+    "disagree": true
+  },
+  {
+    "name": "times: a bare clock time agrees with its p.m. reading",
+    "topic": "walkin",
+    "a": "cutoff: 3:30 p.m.",
+    "b": "cutoff: Walk-in service ends at 3:30",
+    "disagree": false,
+    "tokens_a": ["time:15:30"],
+    "tokens_b": ["time:03:30|15:30"]
+  },
+  {
+    "name": "times: a bare clock time agrees with its a.m. reading",
+    "topic": "walkin",
+    "a": "opening: 9:30 a.m.",
+    "b": "opening: Doors open at 9:30",
+    "disagree": false
+  },
+  {
+    "name": "times: a bare clock time still disagrees with another time",
+    "topic": "walkin",
+    "a": "cutoff: 3:30 p.m.",
+    "b": "cutoff: Walk-in service ends at 4:30",
+    "disagree": true
+  },
+  {
+    "name": "times: a leading zero writes a 24-hour time",
+    "topic": "walkin",
+    "a": "cutoff: 03:30",
+    "b": "cutoff: 3:30 p.m.",
+    "disagree": true,
+    "tokens_a": ["time:03:30"]
+  },
+  {
+    "name": "times: a bare 12:00 agrees with noon",
+    "topic": "walkin",
+    "a": "cutoff: 12 noon",
+    "b": "cutoff: 12:00",
+    "disagree": false,
+    "tokens_b": ["time:00:00|12:00"]
+  },
+  {
+    "name": "hours: bare office hours agree with a.m./p.m. hours",
+    "topic": "hours",
+    "a": "weekday__tumwater: Monday through Friday, 8 a.m. to 4:30 p.m.",
+    "b": "weekday__tumwater: Monday through Friday, 8:00-4:30",
+    "disagree": false,
+    "tokens_a": ["dow:fri", "dow:mon", "dow:thu", "dow:tue", "dow:wed", "time:08:00", "time:16:30"],
+    "tokens_b": ["dow:fri", "dow:mon", "dow:thu", "dow:tue", "dow:wed", "time:04:30|16:30", "time:08:00|20:00"]
+  },
+  {
+    "name": "hours: bare office hours with another opening time",
+    "topic": "hours",
+    "a": "weekday__tumwater: Monday through Friday, 9 a.m. to 4:30 p.m.",
+    "b": "weekday__tumwater: Monday through Friday, 8:00-4:30",
+    "disagree": true
+  },
+  {
+    "name": "dates: the same date in another format",
+    "topic": "holiday_hours",
+    "a": "closure__2026_11_11: Closed November 11, 2026",
+    "b": "closure__2026_11_11: Closed 11/11/2026",
+    "disagree": false,
+    "tokens_a": ["date:2026-11-11"],
+    "tokens_b": ["date:2026-11-11"]
+  },
+  {
+    "name": "dates: a different date",
+    "topic": "holiday_hours",
+    "a": "closure__2026_11_11: Closed November 11, 2026",
+    "b": "closure__2026_11_11: Closed November 12, 2026",
+    "disagree": true
+  },
+  {
+    "name": "ZIP: a different ZIP under one key",
+    "topic": "address",
+    "a": "office__tumwater: 243 Example Rd SE, Tumwater, WA 98501",
+    "b": "office__tumwater: 243 Example Rd SE, Tumwater, WA 98502",
+    "disagree": true,
+    "tokens_a": ["zip:98501"],
+    "tokens_b": ["zip:98502"]
+  },
+  {
+    "name": "ZIP: a bare ZIP agrees with its own ZIP+4",
+    "topic": "address",
+    "a": "office__olympia: Olympia, WA 98504",
+    "b": "office__olympia: Olympia, WA 98504-0228",
+    "disagree": false,
+    "tokens_a": ["zip:98504"],
+    "tokens_b": ["zip:98504", "zip:98504-0228"]
+  },
+  {
+    "name": "ZIP: two different +4 codes of one ZIP still disagree",
+    "topic": "address",
+    "a": "office__olympia: Olympia, WA 98504-0228",
+    "b": "office__olympia: Olympia, WA 98504-0234",
+    "disagree": true,
+    "tokens_a": ["zip:98504", "zip:98504-0228"],
+    "tokens_b": ["zip:98504", "zip:98504-0234"]
+  },
+  {
+    "name": "ZIP: a bare ZIP disagrees with another ZIP's ZIP+4",
+    "topic": "address",
+    "a": "office__olympia: Olympia, WA 98501",
+    "b": "office__olympia: Olympia, WA 98504-0228",
+    "disagree": true
+  },
+  {
+    "name": "USPS: the same box without its +4 agrees",
+    "topic": "mailing",
+    "a": "apostille_mailing_address: PO Box 40220, Olympia, WA 98504",
+    "b": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "disagree": false,
+    "tokens_a": ["box:40220", "zip:98504"],
+    "tokens_b": ["box:40220", "zip:98504", "zip:98504-0220"]
+  },
+  {
+    "name": "USPS cross-topic: the same box without its +4 agrees under another key",
+    "topic": "po_box",
+    "topic_b": "mailing",
+    "a": "po_box: PO Box 40220, Olympia, WA 98504",
+    "b": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "disagree": false
+  },
+  {
+    "name": "text: token-free wording differs",
+    "topic": "payment",
+    "a": "payee: Secretary of State",
+    "b": "payee: Washington Secretary of State",
+    "disagree": true
+  },
+  {
+    "name": "text: token-free values differing only in case and punctuation",
+    "topic": "payment",
+    "a": "payee: Secretary of State.",
+    "b": "payee: secretary of state",
+    "disagree": false
+  },
+  {
+    "name": "service notices never conflict",
+    "topic": "service_notice",
+    "a": "notice: Closed November 2, 2026 for an outage",
+    "b": "notice: Closed November 11, 2026 for Veterans Day",
+    "disagree": false
+  },
+  {
+    "name": "facts of different topics never conflict",
+    "topic": "hours",
+    "topic_b": "address",
+    "a": "Mon-Fri 9-5",
+    "b": "243 Example Rd SE, Tumwater, WA 98501",
+    "disagree": false
+  },
+  {
+    "name": "USPS cross-key: a box dispute under different keys",
+    "topic": "mailing",
+    "a": "mailing_address: PO Box 40234, Olympia, WA 98504-0234",
+    "b": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "disagree": true
+  },
+  {
+    "name": "USPS cross-key: same box, the ZIP+4 differs",
+    "topic": "mailing",
+    "a": "mailing_address: PO Box 40220, Olympia, WA 98504-0220",
+    "b": "apostille_mailing_address: PO Box 40220, Olympia, WA 98504-0234",
+    "disagree": true
+  },
+  {
+    "name": "USPS cross-topic: a po_box fact against a mailing fact",
+    "topic": "po_box",
+    "topic_b": "mailing",
+    "a": "po_box: PO Box 40234",
+    "b": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "disagree": true
+  },
+  {
+    "name": "USPS cross-topic: the same box agrees",
+    "topic": "po_box",
+    "topic_b": "mailing",
+    "a": "po_box: PO Box 40234",
+    "b": "mailing_address: PO Box 40234, Olympia, WA 98504-0234",
+    "disagree": false
+  },
+  {
+    "name": "USPS: a courier street is never compared with a box",
+    "topic": "mailing",
+    "a": "courier: 243 Example Rd SE, Tumwater, WA 98501",
+    "b": "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+    "disagree": false
+  },
+  {
+    "name": "USPS cross-topic: a courier street against a po_box fact",
+    "topic": "mailing",
+    "topic_b": "po_box",
+    "a": "courier: 243 Example Rd SE, Tumwater, WA 98501",
+    "b": "po_box: PO Box 40234",
+    "disagree": false
+  },
+  {
+    "name": "USPS: a box outside the USPS topics is not compared across topics",
+    "topic": "address",
+    "topic_b": "mailing",
+    "a": "office__tumwater: PO Box 40220",
+    "b": "apostille_mailing_address: PO Box 40234",
+    "disagree": false
+  }
+]

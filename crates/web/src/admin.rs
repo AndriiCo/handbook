@@ -396,6 +396,11 @@ pub fn router(state: AppState) -> Router {
             post(approval::reject_fact),
         )
         .route("/apostille/api/v1/facts/bulk", post(approval::bulk_decide))
+        // Undo a wrong approval: accepted → superseded (plan §5.5).
+        .route(
+            "/apostille/api/v1/admin/facts/{id}/retire",
+            post(crate::retire::retire_fact),
+        )
         .route(
             "/apostille/api/v1/facts/{id}/translate",
             post(crate::translate::translate_fact),
@@ -810,8 +815,9 @@ fn publish_body_too_large(body: &serde_json::Value) -> bool {
 
 /// Staff publish to one bus channel. Authority channels accept only
 /// the ids-only kinds in `ws_bus::AUTHORITY_KINDS` (`fact_accepted`,
-/// `plan_accepted`, `offices_accepted`) — this is what keeps anonymous
-/// subscribers on accepted content only.
+/// `fact_retired`, `plan_accepted`, `offices_accepted`,
+/// `evidence_updated`) — this is what keeps anonymous subscribers on
+/// published content only.
 async fn publish(
     _auth: AdminAuth,
     State(state): State<AppState>,

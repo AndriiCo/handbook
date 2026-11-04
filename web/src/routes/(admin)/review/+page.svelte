@@ -12,6 +12,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { Kbd } from '#lib/components/ui/kbd/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import PlanReview from '#lib/admin/PlanReview.svelte';
 	import OfficeReview from '#lib/admin/OfficeReview.svelte';
@@ -33,6 +34,8 @@
 		ruleBody
 	} from '#lib/admin/review-client.js';
 	import { isVerified, markChanged, plural, riskCls, riskiestFirst, riskOf, splitBlocked, WONDER } from '#lib/admin/review-signals.js';
+	import { LOCKED_TOPIC, canMoveTopic, chipStatement, editAcceptBody, keyNote, statementKey, topicChoices } from '#lib/admin/review-keys.js';
+	import { canonicalKeys, splitKey } from '#lib/public-ui/slots.js';
 	import { getJson, postJson, errorText } from '#lib/admin/admin-api.js';
 	import { fetchFactChecks, type FactCheck } from '#lib/admin/proposals.js';
 	import { ago, modelName } from '#lib/admin/format.js';
@@ -97,6 +100,8 @@
 		quoteOpen: boolean;
 		editing: boolean;
 		editText: string;
+		// Accept-with-edit topic: the draft's own until the select moves it.
+		topic: string;
 		rejectOpen: boolean;
 		reason: string;
 		suppressOn: boolean;
@@ -275,6 +280,7 @@
 				quoteOpen: false,
 				editing: false,
 				editText: '',
+				topic: '',
 				rejectOpen: false,
 				reason: '',
 				suppressOn: false,
@@ -649,13 +655,13 @@
 		card.editing = true;
 		card.rejectOpen = false;
 		card.editText = item.statement;
+		card.topic = item.topic;
 		card.error = null;
 	}
 
 	async function acceptEdit(item: QueueItem) {
 		const card = cardUi(item.id);
-		const unchanged = card.editText === item.statement;
-		const body = acceptBody(undefined, unchanged ? undefined : card.editText);
+		const body = editAcceptBody(item, card.editText, card.topic);
 		if (!body) {
 			card.error = 'Edited statement must be 1–2000 chars.';
 			return;
@@ -666,7 +672,8 @@
 			const out = await acceptFact(api(), item.id, body);
 			decided[item.id] = out.status;
 			select(nextOpen(item.id));
-			toast.success(`Accepted with edit — the ${item.authority_slug} dossier updates live.`);
+			const moved = body.topic ? ` as ${body.topic}` : '';
+			toast.success(`Accepted with edit${moved} — the ${item.authority_slug} dossier updates live.`);
 		} catch (err) {
 			handleDecisionError(item.id, err, 'Accept failed.');
 		} finally {
@@ -708,13 +715,14 @@
 	}
 
 	// j/k move, a accept, r reject — facts tab, risk view only, never
-	// while typing. Shift+key belongs to the by-authority view (Shift+A
+	// while typing or picking a topic (the select's typeahead takes
+	// letters). Shift+key belongs to the by-authority view (Shift+A
 	// accepts a whole group there), which handles its own keys.
 	function onKey(e: KeyboardEvent) {
 		if (tab !== 'facts' || view !== 'risk') return;
 		if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat) return;
 		const t = e.target as HTMLElement | null;
-		if (t && (t.closest('input, textarea, select, [contenteditable="true"]') || t.isContentEditable)) return;
+		if (t && (t.closest('input, textarea, select, [contenteditable="true"], [role="combobox"], [role="listbox"]') || t.isContentEditable)) return;
 		if (document.querySelector('[role="dialog"]')) return;
 		const key = e.key.toLowerCase();
 		if (key !== 'j' && key !== 'k' && key !== 'a' && key !== 'r') return;
@@ -728,6 +736,9 @@
 			return;
 		}
 		if (!selected || decided[selected.id]) return;
+		// An open edit keeps its text: `a` would accept the draft
+		// unedited and `r` would close the edit.
+		if (ui[selected.id]?.editing) return;
 		if (key === 'a') void accept(selected.id);
 		else void openReject(selected);
 	}
@@ -771,6 +782,7 @@
 		void loadRules();
 	}
 
+	const TOPIC_CHOICES = topicChoices();
 	const tabLabel = (n: number | null) => (n === null ? '' : ` ${n}`);
 	// Inactive triggers in full muted ink (the primitive's 60% ink
 	// misses 4.5:1 on the muted track).
@@ -1134,11 +1146,65 @@
 								{/if}
 
 								{#if card.editing}
+									{@const keys = canonicalKeys(card.topic)}
+									{@const current = statementKey(card.editText)}
 									<div class="flex flex-col gap-2">
+										<div class="flex flex-col gap-1">
+											<span id={`topic-label-${item.id}`} class="text-sm font-medium">Topic</span>
+											<Select.Root
+												type="single"
+												value={card.topic}
+												onValueChange={(value) => {
+													if (value) card.topic = value;
+												}}
+												disabled={card.acting || item.topic === LOCKED_TOPIC}
+											>
+												<Select.Trigger
+													id={`topic-${item.id}`}
+													class="h-9 w-full font-mono"
+													aria-labelledby={`topic-label-${item.id} topic-${item.id}`}
+												>
+													{card.topic}
+												</Select.Trigger>
+												<Select.Content>
+													{#each TOPIC_CHOICES as choice (choice.topic)}
+														<Select.Item value={choice.topic} label={choice.topic} disabled={!canMoveTopic(item.topic, choice.topic)}>
+															<span class="flex min-w-0 flex-col">
+																<span class="font-mono">{choice.topic}</span>
+																<span class="text-xs text-ink-muted">{choice.where}</span>
+															</span>
+														</Select.Item>
+													{/each}
+												</Select.Content>
+											</Select.Root>
+											{#if card.topic !== item.topic}
+												<p class="m-0 text-xs text-ink-muted">Accepting moves it from {item.topic} to {card.topic}.</p>
+											{/if}
+										</div>
 										<label class="flex flex-col gap-1 text-sm font-medium" for={`edit-${item.id}`}>
 											Edited statement
 											<Textarea id={`edit-${item.id}`} rows={3} bind:value={card.editText} />
 										</label>
+										{#if keys.length > 0}
+											<div class="flex flex-wrap items-center gap-1" role="group" aria-labelledby={`keys-label-${item.id}`}>
+												<span id={`keys-label-${item.id}`} class="mr-1 text-xs font-medium text-ink-muted">Key</span>
+												{#each keys as chip (chip.key)}
+													{@const on = current !== null && splitKey(current).base === chip.key}
+													<Button
+														size="xs"
+														variant={on ? 'secondary' : 'outline'}
+														class="font-mono"
+														title={chip.label}
+														aria-pressed={on}
+														disabled={card.acting}
+														onclick={() => (card.editText = chipStatement(card.editText, chip.key, card.topic, item.topic))}
+													>
+														{#if on}<CheckIcon aria-hidden="true" />{/if}{chip.key}
+													</Button>
+												{/each}
+											</div>
+										{/if}
+										<p class="m-0 text-xs text-ink-muted">{keyNote(card.editText, card.topic)}</p>
 										{#if card.editText !== item.statement}
 											{@const preview = markChanged(item.statement, card.editText)}
 											<p class="m-0 rounded-sm border border-line px-3 py-2 text-sm" aria-label="Diff preview">

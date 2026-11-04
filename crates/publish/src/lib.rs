@@ -8,19 +8,21 @@
 //! `facts_hash` over the accepted inputs) plus an `audit` row.
 //!
 //! Conflict policy (decided: **banner, not block**): [`conflicts`]
-//! finds same authority + same topic with two `accepted` facts carrying
-//! different statements, and every affected page renders a visible
-//! banner naming both citations. Contradictions are never published
-//! silently.
+//! finds two `accepted` facts of one authority that disagree under the
+//! field rule ([`handbook_store::db::facts_disagree`]), and every
+//! affected page renders a visible banner naming both citations.
+//! Contradictions are never published silently.
 
 use std::path::{Path, PathBuf};
 
 use contracts::Result;
+use handbook_store::db;
 use handbook_store::store::{Store, sha256_hex};
 use rusqlite::Connection;
 
-/// One F6 conflict: two `accepted` facts, same authority + topic,
-/// different statements.
+/// One F6 conflict: two `accepted` facts of one authority that
+/// disagree under the field rule. `topic` is the first fact's (a
+/// PO-box dispute may span `mailing` and `po_box`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conflict {
     pub authority_id: i64,
@@ -34,36 +36,70 @@ pub struct Conflict {
     pub second_capture_id: i64,
 }
 
-/// Every unresolved F6 conflict in the store, ordered deterministically.
+/// One accepted fact as [`conflicts`] pairs it.
+struct Live {
+    slug: String,
+    authority_id: i64,
+    topic: String,
+    id: i64,
+    statement: String,
+    capture_id: i64,
+}
+
+/// Every unresolved F6 conflict in the store, ordered by authority
+/// slug, topic, then both ids. The rule needs both statements, so the
+/// accepted facts are paired in Rust per authority; `service_notice`
+/// facts never conflict.
 pub fn conflicts(conn: &Connection) -> Result<Vec<Conflict>> {
     let mut stmt = conn.prepare(
-        "SELECT a.slug, f.authority_id, f.topic,
-                f.id, f.statement, f.capture_id,
-                g.id, g.statement, g.capture_id
-         FROM fact f
-         JOIN fact g ON g.authority_id = f.authority_id
-                    AND g.topic = f.topic
-                    AND g.status = 'accepted'
-                    AND g.id > f.id
-                    AND g.statement != f.statement
-         JOIN authority a ON a.id = f.authority_id
+        "SELECT a.slug, f.authority_id, f.topic, f.id, f.statement, f.capture_id
+         FROM fact f JOIN authority a ON a.id = f.authority_id
          WHERE f.status = 'accepted'
-         ORDER BY a.slug, f.topic, f.id, g.id",
+         ORDER BY a.slug, f.id",
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(Conflict {
-            authority_slug: row.get(0)?,
-            authority_id: row.get(1)?,
-            topic: row.get(2)?,
-            first_id: row.get(3)?,
-            first_statement: row.get(4)?,
-            first_capture_id: row.get(5)?,
-            second_id: row.get(6)?,
-            second_statement: row.get(7)?,
-            second_capture_id: row.get(8)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    let live: Vec<Live> = stmt
+        .query_map([], |row| {
+            Ok(Live {
+                slug: row.get(0)?,
+                authority_id: row.get(1)?,
+                topic: row.get(2)?,
+                id: row.get(3)?,
+                statement: row.get(4)?,
+                capture_id: row.get(5)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut found = Vec::new();
+    for (i, f) in live.iter().enumerate() {
+        // Slug order keeps each authority's facts contiguous.
+        for g in live[i + 1..]
+            .iter()
+            .take_while(|g| g.authority_id == f.authority_id)
+        {
+            if db::facts_disagree(&f.topic, &f.statement, &g.topic, &g.statement) {
+                found.push(Conflict {
+                    authority_id: f.authority_id,
+                    authority_slug: f.slug.clone(),
+                    topic: f.topic.clone(),
+                    first_id: f.id,
+                    first_statement: f.statement.clone(),
+                    first_capture_id: f.capture_id,
+                    second_id: g.id,
+                    second_statement: g.statement.clone(),
+                    second_capture_id: g.capture_id,
+                });
+            }
+        }
+    }
+    found.sort_by(|x, y| {
+        (&x.authority_slug, &x.topic, x.first_id, x.second_id).cmp(&(
+            &y.authority_slug,
+            &y.topic,
+            y.first_id,
+            y.second_id,
+        ))
+    });
+    Ok(found)
 }
 
 /// One accepted fact with its citation, for page rendering.
@@ -621,5 +657,54 @@ mod tests {
         assert_eq!(found[0].authority_slug, "usa-wa-sos");
         assert_eq!(found[0].topic, "po_box");
         assert_ne!(found[0].first_statement, found[0].second_statement);
+    }
+
+    #[test]
+    fn conflicts_follow_the_field_rule() {
+        let (_dir, _store, conn) = seeded();
+        let wa: i64 = conn
+            .query_row(
+                "SELECT id FROM authority WHERE slug = 'usa-wa-sos'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        for (topic, statement) in [
+            // Different fields of one topic: never a conflict.
+            ("fees", "per_document: $15.00 per document"),
+            ("fees", "expedite: $100 per 10 documents"),
+            // Notices stack.
+            ("service_notice", "notice: Closed November 2, 2026"),
+            ("service_notice", "notice: Closed November 11, 2026"),
+            // Same box as fact 2 under another key and topic: agrees
+            // with it, but disputes fact 1's box across the split.
+            (
+                "mailing",
+                "mailing_address: PO Box 40234, Olympia, WA 98504-0234",
+            ),
+        ] {
+            conn.execute(
+                "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                                  status, created_by, created_at)
+                 VALUES (?1, 1, ?2, ?3, 'accepted', 'test', 1)",
+                rusqlite::params![wa, topic, statement],
+            )
+            .unwrap();
+        }
+        let mailing: i64 = conn
+            .query_row("SELECT MAX(id) FROM fact", [], |row| row.get(0))
+            .unwrap();
+        let pairs: Vec<(String, i64, i64)> = conflicts(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|c| (c.topic, c.first_id, c.second_id))
+            .collect();
+        assert_eq!(
+            pairs,
+            [
+                ("po_box".to_string(), 1, 2),
+                ("po_box".to_string(), 1, mailing)
+            ]
+        );
     }
 }

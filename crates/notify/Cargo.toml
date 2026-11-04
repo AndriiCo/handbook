@@ -6,6 +6,9 @@ edition = "2024"
 [dependencies]
 auth = { path = "../auth" }
 config = { path = "../config" }
+# The shared field rule (`db::same_field`) and citation-URL rule
+# (`citation`) the public reads use, so emails never disagree with them.
+handbook-store = { path = "../handbook-store" }
 rusqlite = { version = "0.32", features = ["bundled"] }
 regex = "1"
 

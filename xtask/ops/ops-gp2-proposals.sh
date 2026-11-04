@@ -65,7 +65,9 @@ echo "=== 1b. retire sources whose URI left the packs"
 # A pack URI change (e.g. http->https) orphans the old store row, and
 # fetch-slug would keep polling it; facts approved from a stale capture
 # would fail A1 for good. Scoped to the two GP2 slugs only. Assumed:
-# their store sources come from these packs alone.
+# their store sources come from these packs alone. A source that has
+# captures is kept and listed: deleting it would leave capture.source_id
+# dangling and strip the citation from every fact drawn from it.
 command -v python3 >/dev/null || { echo "ABORT: python3 missing (retire step needs it)"; exit 1; }
 python3 - "$SEEDDIR" "$DB" <<'EOF' || { echo "ABORT: retire step failed (output above)"; exit 1; }
 import json, sqlite3, sys, glob
@@ -76,17 +78,29 @@ for path in glob.glob(packdir + '/*.json'):
     for seed in pack.get('watch', []):
         wanted.setdefault(seed['authority'], set()).add(seed['uri'])
 conn = sqlite3.connect(db)
+# Write lock before the counts: no capture can land between a count of
+# zero and its delete (the watch-sweep timer writes captures).
+conn.execute("BEGIN IMMEDIATE")
+retire, kept = [], 0
 for slug, uris in wanted.items():
     aid = conn.execute("SELECT id FROM authority WHERE slug=?", (slug,)).fetchone()
     if not aid:
         continue
     rows = conn.execute("SELECT id, uri FROM source WHERE authority_id=?", (aid[0],)).fetchall()
     for sid, uri in rows:
-        if uri not in uris:
-            print(f"retire source {sid} {uri}")
-            conn.execute("DELETE FROM source WHERE id=?", (sid,))
+        if uri in uris:
+            continue
+        n = conn.execute("SELECT COUNT(*) FROM capture WHERE source_id=?", (sid,)).fetchone()[0]
+        if n:
+            print(f"keep source {sid} {uri} ({n} captures)")
+            kept += 1
+        else:
+            retire.append((sid, uri))
+for sid, uri in retire:
+    print(f"retire source {sid} {uri} (0 captures)")
+    conn.execute("DELETE FROM source WHERE id=?", (sid,))
 conn.commit()
-print("retire: done")
+print(f"retire: done ({len(retire)} retired, {kept} kept)")
 EOF
 rm -rf "$SEEDDIR"
 
@@ -104,12 +118,18 @@ chmod 0600 "$STAGED"
 echo "staged: $STAGED (0600, owned by $USER)"
 
 echo "=== 4. analyze --scan-captures --live per slug (drafts proposed facts)"
-for slug in vietnam usa-wa-sos; do
+analyze_slug() {
+    slug="$1"
+    shift
     echo "--- analyze $slug"
     CREDENTIALS_DIRECTORY="$CREDS" "$XTASK" analyze --store "$STORE" \
-        --scan-captures --slug "$slug" --live --actor gp2-proposals \
+        --scan-captures --slug "$slug" --live --actor gp2-proposals "$@" \
         || echo "WARNING: analyze $slug exited nonzero (output above) — continuing"
-done
+}
+analyze_slug vietnam
+# 24 records per draft call: the WA division contact page alone lists
+# ~19 values, past the default 8 (vietnam keeps the default).
+analyze_slug usa-wa-sos --max-records 24
 rm -rf "$CREDS"
 trap - EXIT
 [ -e "$STAGED" ] && { echo "ABORT: staged KEK undeletable"; exit 1; }

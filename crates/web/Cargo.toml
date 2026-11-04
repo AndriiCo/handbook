@@ -23,6 +23,9 @@ labels = { path = "../labels" }
 media = { path = "../media" }
 notify = { path = "../notify" }
 rand = "0.9"
+# Unicode classes for the evidence PII guard (`\p{Cf}`, dashes); already
+# locked via handbook-store's conflict rule.
+regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 rustls-pemfile = "2"

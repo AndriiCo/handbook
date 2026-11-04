@@ -1,8 +1,10 @@
 {
   "slug": "hcch",
+  "authority": null,
   "plan": null,
   "facts": [],
   "offices": [],
   "forms": [],
-  "provenance": null
+  "provenance": null,
+  "evidence": []
 }

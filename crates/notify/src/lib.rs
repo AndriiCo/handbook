@@ -469,8 +469,9 @@ pub struct DigestFact {
     pub quote: String,
     pub source_url: String,
     pub captured_day: String,
-    /// Newest previously-accepted statement on the same
-    /// authority+topic (the "before"); empty on first acceptance.
+    /// Newest previously-accepted statement of the same field (same
+    /// authority and topic, `db::same_field`: the "before"); empty on
+    /// the field's first acceptance.
     pub previous: String,
 }
 
@@ -581,9 +582,21 @@ pub fn lease_due_groups(
 /// row id, authority slug and name).
 type FactHead = (String, String, i64, i64, i64, i64, i64, String, String);
 
+/// How many earlier accepted facts of one topic the "was:" lookup reads
+/// to find the same field.
+const PREVIOUS_SCAN: i64 = 200;
+
 /// Load one fact's digest content: statement, topic, quote slice,
-/// https source (capture's own, else the official website), capture
-/// day, and the previous accepted statement on the topic.
+/// https source, capture day, and the statement it replaced. Only a
+/// fact the public reads serve loads (accepted, never the staff-only
+/// `phone_script`), so a fact retired before its digest sends, or a
+/// phone script, never reaches a follower (`Ok(None)`). The source
+/// follows the public citation rule ([`handbook_store::citation`]):
+/// the capture's own https source, the official website only for a
+/// source-less page or upload, nothing for a dangling source. The
+/// "was:" statement is the newest earlier accepted fact of the same
+/// field ([`handbook_store::db::same_field`]), never another field of
+/// the topic.
 pub fn load_fact(
     conn: &Connection,
     store_root: &std::path::Path,
@@ -594,7 +607,7 @@ pub fn load_fact(
             "SELECT f.statement, f.topic, f.authority_id, f.capture_id,
                     f.citation_start, f.citation_end, f.id, a.slug, a.name
              FROM fact f JOIN authority a ON a.id = f.authority_id
-             WHERE f.id = ?1",
+             WHERE f.id = ?1 AND f.status = 'accepted' AND f.topic != 'phone_script'",
             [fact_id],
             |row| {
                 Ok((
@@ -631,49 +644,53 @@ pub fn load_fact(
             }
         }
     }
-    let source_url: String = conn
+    // The capture's origin and kind, read once: a missing capture row
+    // cites nothing (the public `/facts` rule).
+    let capture: Option<(Option<i64>, Option<String>, String, i64)> = conn
         .query_row(
-            "SELECT so.uri FROM capture c JOIN source so ON so.id = c.source_id
+            "SELECT c.source_id, so.uri, c.kind, c.captured_at
+             FROM capture c LEFT JOIN source so ON so.id = c.source_id
              WHERE c.id = ?1",
             [capture_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
-        .optional()?
-        .unwrap_or_default();
-    let source_url = if source_url.starts_with("https://") {
-        source_url
-    } else {
-        conn.query_row(
-            "SELECT uri FROM source WHERE authority_id = ?1 AND kind = 'website_official'
-             ORDER BY id LIMIT 1",
-            [authority_id],
-            |row| row.get(0),
-        )
-        .optional()?
-        .unwrap_or_default()
+        .optional()?;
+    let (source_url, captured_at) = match capture {
+        Some((source_id, uri, kind, captured_at)) => (
+            handbook_store::citation::source_url(
+                conn,
+                &handbook_store::citation::Origin::of(source_id, uri),
+                &kind,
+                authority_id,
+            )
+            .unwrap_or_default(),
+            captured_at,
+        ),
+        None => (String::new(), 0),
     };
-    let captured_at: i64 = conn
-        .query_row(
-            "SELECT captured_at FROM capture WHERE id = ?1",
-            [capture_id],
-            |row| row.get(0),
-        )
-        .optional()?
-        .unwrap_or(0);
     // A service notice adds to the ones before it (the dossier stacks
     // them newest first); it never replaces one, so no "was:" line.
     let previous: String = if topic == "service_notice" {
         String::new()
     } else {
-        conn.query_row(
+        let mut stmt = conn.prepare(
             "SELECT statement FROM fact
              WHERE authority_id = ?1 AND topic = ?2 AND status = 'accepted' AND id < ?3
-             ORDER BY id DESC LIMIT 1",
-            rusqlite::params![authority_id, topic, fact_id],
-            |row| row.get(0),
-        )
-        .optional()?
-        .unwrap_or_default()
+             ORDER BY id DESC LIMIT ?4",
+        )?;
+        let earlier = stmt.query_map(
+            rusqlite::params![authority_id, topic, fact_id, PREVIOUS_SCAN],
+            |row| row.get::<_, String>(0),
+        )?;
+        let mut previous = String::new();
+        for earlier in earlier {
+            let earlier = earlier?;
+            if handbook_store::db::same_field(&earlier, &statement) {
+                previous = earlier;
+                break;
+            }
+        }
+        previous
     };
     Ok(Some(DigestFact {
         fact_id,
@@ -919,7 +936,8 @@ mod tests {
         .unwrap();
         assert_eq!(enqueue_from_audit(&conn, 102).expect("enqueue"), 1);
         conn.execute_batch(
-            "CREATE TABLE capture(id INTEGER PRIMARY KEY, source_id INTEGER, captured_at INTEGER);
+            "CREATE TABLE capture(id INTEGER PRIMARY KEY, source_id INTEGER, captured_at INTEGER,
+                                  kind TEXT);
              CREATE TABLE source(id INTEGER PRIMARY KEY, authority_id INTEGER, kind TEXT,
                                  uri TEXT);",
         )
@@ -1419,9 +1437,10 @@ mod tests {
         let conn = memory();
         seed_authority(&conn);
         conn.execute_batch(
-            "CREATE TABLE capture(id INTEGER PRIMARY KEY, source_id INTEGER, captured_at INTEGER);
+            "CREATE TABLE capture(id INTEGER PRIMARY KEY, source_id INTEGER, captured_at INTEGER,
+                                  kind TEXT);
              CREATE TABLE source(id INTEGER PRIMARY KEY, authority_id INTEGER, kind TEXT, uri TEXT);
-             INSERT INTO capture VALUES (3, NULL, 1800000000);",
+             INSERT INTO capture VALUES (3, NULL, 1800000000, 'warc');",
         )
         .unwrap();
         let dir = tempfile::tempdir().unwrap();
@@ -1444,5 +1463,146 @@ mod tests {
             leaky.statement, "-eight dollars-",
             "the update itself still goes"
         );
+    }
+
+    /// The tables `load_fact` reads, with one official https site.
+    fn citation_tables(conn: &Connection) {
+        conn.execute_batch(
+            "CREATE TABLE capture(id INTEGER PRIMARY KEY, source_id INTEGER, captured_at INTEGER,
+                                  kind TEXT);
+             CREATE TABLE source(id INTEGER PRIMARY KEY, authority_id INTEGER, kind TEXT, uri TEXT);
+             INSERT INTO source VALUES (1, 1, 'website_official', 'https://mofa.example/apostille');
+             INSERT INTO source VALUES (2, 1, 'website_official', 'https://mofa.example/fees');",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn only_published_facts_load_for_followers() {
+        let conn = memory();
+        seed_authority(&conn);
+        citation_tables(&conn);
+        assert!(
+            load_fact(&conn, std::path::Path::new("/nonexistent"), 7)
+                .unwrap()
+                .is_some()
+        );
+        // Retired within the digest window: the email never goes.
+        conn.execute("UPDATE fact SET status = 'superseded' WHERE id = 7", [])
+            .unwrap();
+        assert!(
+            load_fact(&conn, std::path::Path::new("/nonexistent"), 7)
+                .unwrap()
+                .is_none()
+        );
+        // Proposed facts and staff-only phone scripts never go either.
+        conn.execute_batch(
+            "INSERT INTO fact(id, authority_id, topic, statement, status, capture_id,
+                              citation_start, citation_end)
+             VALUES (8, 1, 'phone_script', 'script: ask for the desk', 'accepted', 0, -1, -1),
+                    (9, 1, 'fees', 'per_document: $9', 'proposed', 0, -1, -1);",
+        )
+        .unwrap();
+        for id in [8, 9] {
+            assert!(
+                load_fact(&conn, std::path::Path::new("/nonexistent"), id)
+                    .unwrap()
+                    .is_none(),
+                "fact {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_source_line_follows_the_public_citation_rule() {
+        let conn = memory();
+        seed_authority(&conn);
+        citation_tables(&conn);
+        let source_of = |capture: &str| {
+            conn.execute("DELETE FROM capture", []).unwrap();
+            conn.execute(
+                &format!("INSERT INTO capture(id, source_id, captured_at, kind) VALUES {capture}"),
+                [],
+            )
+            .unwrap();
+            conn.execute("UPDATE fact SET capture_id = 3 WHERE id = 7", [])
+                .unwrap();
+            load_fact(&conn, std::path::Path::new("/nonexistent"), 7)
+                .unwrap()
+                .unwrap()
+                .source_url
+        };
+        // The capture's own source; a source-less page or upload borrows
+        // the official site.
+        assert_eq!(
+            source_of("(3, 2, 1800000000, 'warc')"),
+            "https://mofa.example/fees"
+        );
+        for kind in ["warc", "file"] {
+            assert_eq!(
+                source_of(&format!("(3, NULL, 1800000000, '{kind}')")),
+                "https://mofa.example/apostille",
+                "{kind}"
+            );
+        }
+        // Transcripts, comments and emails never borrow it, and a
+        // dangling source (row deleted) cites nothing.
+        for kind in ["transcript", "comment", "email"] {
+            assert_eq!(
+                source_of(&format!("(3, NULL, 1800000000, '{kind}')")),
+                "",
+                "{kind}"
+            );
+        }
+        assert_eq!(source_of("(3, 99, 1800000000, 'warc')"), "");
+        // No capture row: no source line.
+        conn.execute("DELETE FROM capture", []).unwrap();
+        let fact = load_fact(&conn, std::path::Path::new("/nonexistent"), 7)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (fact.source_url.as_str(), fact.captured_day.as_str()),
+            ("", "1970-01-01")
+        );
+    }
+
+    #[test]
+    fn the_was_line_names_the_same_field_not_the_topic() {
+        let conn = memory();
+        seed_authority(&conn);
+        citation_tables(&conn);
+        // The seed's unkeyed fee would pair with every field (a legacy
+        // pin); retired, it is out of the way.
+        conn.execute_batch(
+            "UPDATE fact SET status = 'superseded' WHERE id = 7;
+             INSERT INTO fact(id, authority_id, topic, statement, status, capture_id,
+                              citation_start, citation_end)
+             VALUES (20, 1, 'fees', 'per_document: $15 per document', 'accepted', 0, -1, -1),
+                    (21, 1, 'fees', 'per_document: $14 per document', 'superseded', 0, -1, -1),
+                    (22, 1, 'fees', 'expedited: $100 per 10 documents', 'accepted', 0, -1, -1),
+                    (23, 1, 'fees', 'per_document: $20 per document', 'accepted', 0, -1, -1),
+                    (24, 1, 'fees', 'same_day: $50', 'accepted', 0, -1, -1);",
+        )
+        .unwrap();
+        let previous = |id: i64| {
+            load_fact(&conn, std::path::Path::new("/nonexistent"), id)
+                .unwrap()
+                .unwrap()
+                .previous
+        };
+        // The newer `expedited` fee is another field, and the retired $14
+        // is no longer published: the $20 fee replaced the $15 one.
+        assert_eq!(previous(23), "per_document: $15 per document");
+        // A field's first accept has no "was:" line.
+        assert_eq!(previous(24), "");
+        // An unkeyed legacy fact still compares with its whole topic.
+        conn.execute(
+            "INSERT INTO fact(id, authority_id, topic, statement, status, capture_id,
+                              citation_start, citation_end)
+             VALUES (25, 1, 'fees', 'Fees are $25', 'accepted', 0, -1, -1)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(previous(25), "same_day: $50");
     }
 }

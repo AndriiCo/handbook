@@ -26,10 +26,13 @@ mod admin_workers;
 mod approval;
 mod authority_path;
 mod call_cache;
+mod citation;
 mod compile;
+mod conflicts;
 mod customer_labels;
 mod demo_precheck;
 mod draft;
+mod evidence;
 mod factcheck;
 mod fedex_live;
 mod first_source;
@@ -55,6 +58,7 @@ mod quic;
 mod readyz;
 mod reconcile;
 mod reports;
+mod retire;
 mod setup;
 mod source_history;
 mod staff_passkey;
@@ -493,6 +497,7 @@ fn migrate_mission_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     offices::migrate_tables(conn)?;
     first_source::migrate_tables(conn)?;
     authority_path::migrate_tables(conn)?;
+    evidence::migrate_tables(conn)?;
     forms_map::migrate_tables(conn)
 }
 
@@ -559,6 +564,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(admin_authorities::admin_router(state.clone()))
         .merge(worker::admin_router(state.clone()))
         .merge(source_history::admin_router(state.clone()))
+        .merge(evidence::admin_router(state.clone()))
 }
 
 /// Public router with explicit state (admin routes are NEVER here —
@@ -2651,8 +2657,35 @@ mod tests {
     async fn public_plan_read_is_always_200_and_model_free() {
         // M2: the dossier fetches /plan on every load, so an unknown slug
         // or a slug without an accepted plan reads as `plan: null` (a 404
-        // would be a console error on GP2-page).
+        // would be a console error on GP2-page). The authority row heads
+        // the page without the `/authorities` index; unknown reads null.
         let fx = fixture();
+        {
+            let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+            let wa = db::add_authority(
+                &conn,
+                &db::NewAuthority {
+                    kind: "state",
+                    country: "USA",
+                    region: "Washington",
+                    name: "WA Secretary of State",
+                    slug: "usa-wa-sos",
+                    actor: "t",
+                    at: 1,
+                },
+            )
+            .unwrap();
+            for uri in [
+                "https://www.sos.wa.gov/corporations-charities/apostilles",
+                "https://www.sos.wa.gov/",
+            ] {
+                conn.execute(
+                    "INSERT INTO source(authority_id, kind, uri) VALUES (?1, 'website_official', ?2)",
+                    rusqlite::params![wa, uri],
+                )
+                .unwrap();
+            }
+        }
         for slug in ["usa-wa-sos", "no-such-authority"] {
             let res = public_router_for(&fx.state)
                 .oneshot(
@@ -2673,6 +2706,14 @@ mod tests {
             for key in ["facts", "offices", "forms"] {
                 assert!(v[key].is_array(), "{slug}: {key}");
             }
+            let want = (slug == "usa-wa-sos").then(|| {
+                serde_json::json!({
+                    "slug": "usa-wa-sos", "name": "WA Secretary of State",
+                    "region": "Washington", "country": "USA", "kind": "state",
+                    "path": "usa/washington", "official_url": "https://www.sos.wa.gov/",
+                })
+            });
+            assert_eq!(v.get("authority"), Some(&serde_json::json!(want)), "{slug}");
         }
     }
 
@@ -2984,6 +3025,7 @@ mod tests {
             id: 204,
             topic: "mailing".into(),
             text: "Mail to 801 Capitol Way S, Olympia, WA 98501.".into(),
+            disputed: false,
         }])
         .unwrap();
         let body = orders::CreateBody {
@@ -3304,6 +3346,7 @@ mod tests {
             id: 203,
             topic: "po_box".into(),
             text: "Send to PO Box 4000, Olympia, WA 98504.".into(),
+            disputed: false,
         }])
         .unwrap();
         let body = |kind: &str| orders::CreateBody {
@@ -4728,6 +4771,590 @@ mod tests {
         assert_eq!(public["facts"][0]["id"], fact_a);
         // B is rejected, so no live conflict remains on the public banner.
         assert_eq!(public["facts"][0]["conflict"], false);
+    }
+
+    /// `(topic, statement, status)` facts of `usa-wa-sos`, all citing one
+    /// source-less page capture whose whole sidecar is `quote`.
+    fn seed_cited_facts(
+        store_root: &std::path::Path,
+        quote: &str,
+        rows: &[(&str, &str, &str)],
+    ) -> Vec<i64> {
+        let conn = db::open(&Store::new(store_root)).unwrap();
+        let authority = db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "WA",
+                name: "WA",
+                slug: "usa-wa-sos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO source(authority_id, kind, uri)
+             VALUES (?1, 'website_official', 'https://example.gov/office')",
+            [authority],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO capture(authority_id, captured_at, kind, path,
+                                  bytes_raw, bytes_stored, sha256, trust)
+             VALUES (?1, 1, 'warc', 'p', 0, 0, 's', 'official')",
+            [authority],
+        )
+        .unwrap();
+        let cap = conn.last_insert_rowid();
+        std::fs::create_dir_all(store_root.join("text")).unwrap();
+        std::fs::write(store_root.join("text").join(format!("{cap}.txt")), quote).unwrap();
+        rows.iter()
+            .map(|(topic, statement, status)| {
+                conn.execute(
+                    "INSERT INTO fact(authority_id, capture_id, topic, statement,
+                                       status, created_by, created_at,
+                                       citation_start, citation_end)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 't', 1, 0, ?6)",
+                    rusqlite::params![authority, cap, topic, statement, status, quote.len()],
+                )
+                .unwrap();
+                conn.last_insert_rowid()
+            })
+            .collect()
+    }
+
+    /// Staff POST on the admin router: session, CSRF pair and Origin.
+    async fn staff_post(
+        fx: &Fixture,
+        uri: &str,
+        body: serde_json::Value,
+    ) -> (StatusCode, serde_json::Value) {
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                uri,
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                Some(body),
+            ))
+            .await
+            .unwrap();
+        let status = res.status();
+        (status, json_body(res).await)
+    }
+
+    /// Anonymous GET on the public router (loopback peer).
+    async fn public_get(fx: &Fixture, uri: &str) -> axum::response::Response {
+        public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .extension(ConnectInfo("127.0.0.1:443".parse::<SocketAddr>().unwrap()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn fact_row(store_root: &std::path::Path, id: i64) -> (String, String, String) {
+        db::open(&Store::new(store_root))
+            .unwrap()
+            .query_row(
+                "SELECT status, topic, statement FROM fact WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap()
+    }
+
+    /// `(action, before_ref, after_ref, reason)` of a fact's audit rows.
+    fn fact_audit(store_root: &std::path::Path, id: i64) -> Vec<(String, String, String, String)> {
+        db::open(&Store::new(store_root))
+            .unwrap()
+            .prepare(
+                "SELECT action, before_ref, after_ref, reason FROM audit
+                 WHERE entity = 'fact' AND entity_id = ?1 ORDER BY id",
+            )
+            .unwrap()
+            .query_map([id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn retire_hides_the_fact_from_every_public_read_and_audits() {
+        let fx = fixture();
+        let (slug, fact_a, _) = seed_conflicting_facts(&fx.state.store_root);
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        // Translation rows exist before the accept, so it queues them.
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        translate::migrate_translate_tables(&conn).unwrap();
+        let (status, _) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{fact_a}/accept"),
+            json!({"reason": "matches the office page"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        conn.execute(
+            "UPDATE fact_translation SET statement = 'abierto de 9 a 5', guard_ok = 1
+             WHERE fact_id = ?1 AND lang = 'es'",
+            [fact_a],
+        )
+        .unwrap();
+        // An accepted office whose hours quote fact A.
+        let office = json!({
+            "name": "Apostille counter",
+            "visit": {"kind": "unknown", "appointment_required": false, "notes": "", "fact_ids": []},
+            "address": null, "mail": null,
+            "hours": [{"days": ["mon", "tue", "wed", "thu", "fri"],
+                       "open": "09:00", "close": "17:00", "fact_id": fact_a}],
+            "timezone": null, "timezone_source": null, "phone": null,
+            "directions_url": null, "fact_ids": [fact_a],
+        });
+        let office_id = offices::insert_proposed(&conn, &slug, &office, &[], None, 1).unwrap();
+        offices::decide(&conn, office_id, true, None, "staff-1", 2)
+            .unwrap()
+            .unwrap();
+        let facts_uri = format!("/apostille/api/v1/authorities/{slug}/facts");
+        let plan_uri = format!("/apostille/api/v1/authorities/{slug}/plan");
+        let translations_uri = format!("/apostille/api/v1/authorities/{slug}/translations?lang=es");
+        let row = |body: &serde_json::Value, key: &str| {
+            body["authorities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["slug"] == slug.as_str())
+                .unwrap()[key]
+                .clone()
+        };
+        let count = |body: &serde_json::Value| row(body, "fact_count");
+
+        // Published: /facts (accept time + citation payload), the index
+        // count, /plan, translations, the crawler head, order destinations.
+        let public = json_body(public_get(&fx, &facts_uri).await).await;
+        assert_eq!(public["facts"].as_array().unwrap().len(), 1);
+        assert!(public["facts"][0]["accepted_at"].as_i64().unwrap() > 0);
+        let citation = &public["facts"][0]["citations"][0];
+        assert_eq!(citation["kind"], "upload", "source-less staff upload");
+        assert!(citation["capture_id"].as_i64().unwrap() > 0);
+        let index = json_body(public_get(&fx, "/apostille/api/v1/authorities").await).await;
+        assert_eq!(count(&index), 1);
+        assert!(row(&index, "verified_at").as_i64().unwrap() > 0);
+        let plan = json_body(public_get(&fx, &plan_uri).await).await;
+        assert_eq!(plan["facts"].as_array().unwrap().len(), 1);
+        assert_eq!(plan["offices"][0]["id"], office_id);
+        let translated = json_body(public_get(&fx, &translations_uri).await).await;
+        assert_eq!(translated["count"], 1);
+        let head = body_text(public_get(&fx, &format!("/apostille/authority/{slug}")).await).await;
+        assert!(head.contains("open 9 to 5"), "{head}");
+        assert_eq!(orders::fact_texts(&fx.state, &conn, &slug).len(), 1);
+
+        let mut live = fx.state.bus.subscribe(&format!("authority:{slug}"));
+        let (status, retired) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/admin/facts/{fact_a}/retire"),
+            json!({"reason": "  wrong office: the counter moved  "}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            retired,
+            json!({"id": fact_a, "authority_slug": slug, "status": "superseded"})
+        );
+        let event: serde_json::Value = serde_json::from_str(&live.try_recv().unwrap()).unwrap();
+        assert_eq!(event["type"], "fact_retired");
+        assert_eq!(event["fact_id"], fact_a);
+        assert_eq!(fact_row(&fx.state.store_root, fact_a).0, "superseded");
+        let audit = fact_audit(&fx.state.store_root, fact_a);
+        assert_eq!(audit.len(), 2);
+        assert_eq!(audit[0].0, "fact_accept");
+        assert_eq!(
+            audit[1],
+            (
+                "fact_retire".to_string(),
+                "accepted".to_string(),
+                "superseded".to_string(),
+                "wrong office: the counter moved".to_string()
+            )
+        );
+
+        // Gone from every public read.
+        let public = json_body(public_get(&fx, &facts_uri).await).await;
+        assert_eq!(public["facts"], json!([]));
+        let index = json_body(public_get(&fx, "/apostille/api/v1/authorities").await).await;
+        assert_eq!(count(&index), 0);
+        assert_eq!(
+            row(&index, "verified_at"),
+            json!(null),
+            "no accepted fact left"
+        );
+        let plan = json_body(public_get(&fx, &plan_uri).await).await;
+        assert_eq!(plan["facts"], json!([]));
+        assert_eq!(plan["offices"], json!([]), "its office leaves with it");
+        let translated = json_body(public_get(&fx, &translations_uri).await).await;
+        assert_eq!(translated["count"], 0);
+        let head = body_text(public_get(&fx, &format!("/apostille/authority/{slug}")).await).await;
+        assert!(!head.contains("open 9 to 5"), "{head}");
+        assert!(orders::fact_texts(&fx.state, &conn, &slug).is_empty());
+    }
+
+    #[tokio::test]
+    async fn retire_refuses_facts_that_are_not_accepted() {
+        let fx = fixture();
+        let (_, fact_a, fact_b) = seed_conflicting_facts(&fx.state.store_root);
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let retire = |id: i64| format!("/apostille/api/v1/admin/facts/{id}/retire");
+        let reason = json!({"reason": "approved by mistake"});
+
+        // Proposed: 409, nothing changes.
+        let (status, body) = staff_post(&fx, &retire(fact_a), reason.clone()).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["error"], "fact is not accepted");
+        // Rejected: 409.
+        let (status, _) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{fact_b}/reject"),
+            json!({"reason": "duplicate"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = staff_post(&fx, &retire(fact_b), reason.clone()).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        // Accepted: retires once; a second retire is 409.
+        let (status, _) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{fact_a}/accept"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = staff_post(&fx, &retire(fact_a), reason.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = staff_post(&fx, &retire(fact_a), reason.clone()).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        // Unknown id: 404.
+        let (status, body) = staff_post(&fx, &retire(999_999), reason).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "fact not found");
+
+        assert_eq!(fact_row(&fx.state.store_root, fact_b).0, "rejected");
+        let retires = |id| {
+            fact_audit(&fx.state.store_root, id)
+                .into_iter()
+                .filter(|row| row.0 == "fact_retire")
+                .count()
+        };
+        assert_eq!((retires(fact_a), retires(fact_b)), (1, 0));
+    }
+
+    #[tokio::test]
+    async fn retire_needs_a_staff_session_and_csrf() {
+        let fx = fixture();
+        let (_, fact_a, _) = seed_conflicting_facts(&fx.state.store_root);
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        make_session(&fx.state.store_root, "cust-1", auth::Role::Customer);
+        let (status, _) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{fact_a}/accept"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let uri = format!("/apostille/api/v1/admin/facts/{fact_a}/retire");
+        let body = Some(json!({"reason": "approved by mistake"}));
+        let attempt = |session: Option<&'static str>, csrf: Option<&'static str>| {
+            admin_router_for(&fx.state).oneshot(admin_request(
+                "POST",
+                &uri,
+                Some("admin.andrii.ai"),
+                session,
+                csrf,
+                Some("https://admin.andrii.ai"),
+                body.clone(),
+            ))
+        };
+        // No session (CSRF passes): 401.
+        let res = attempt(None, Some("csrf-token")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        // A customer session: 403.
+        let res = attempt(Some("cust-1"), Some("csrf-token")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        // Staff without the double-submit pair: refused by the CSRF guard.
+        let res = attempt(Some("staff-1"), None).await.unwrap();
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert_eq!(json_body(res).await["error"], "csrf check failed");
+        // A full staff request on a wrong host, or on the public router,
+        // never reaches the handler.
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                &uri,
+                Some("evil.test"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                body.clone(),
+            ))
+            .await
+            .unwrap();
+        assert!(res.status().is_client_error(), "wrong host refused");
+        let res = public_router_for(&fx.state)
+            .oneshot(admin_request(
+                "POST",
+                &uri,
+                Some("andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://andrii.ai"),
+                body.clone(),
+            ))
+            .await
+            .unwrap();
+        assert!(res.status().is_client_error(), "never public");
+        assert_eq!(fact_row(&fx.state.store_root, fact_a).0, "accepted");
+    }
+
+    #[tokio::test]
+    async fn retire_reason_must_be_8_to_500_chars() {
+        let fx = fixture();
+        let (_, fact_a, _) = seed_conflicting_facts(&fx.state.store_root);
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (status, _) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{fact_a}/accept"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let uri = format!("/apostille/api/v1/admin/facts/{fact_a}/retire");
+        for reason in ["wrong", "   wrong   ", "x".repeat(501).as_str()] {
+            let (status, body) = staff_post(&fx, &uri, json!({"reason": reason})).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{reason:?}");
+            assert_eq!(body["error"], "reason must be 8-500 chars");
+        }
+        // A missing reason or an unknown field is refused by the body.
+        for body in [
+            json!({}),
+            json!({"reason": "approved by mistake", "status": "x"}),
+        ] {
+            let res = admin_router_for(&fx.state)
+                .oneshot(admin_request(
+                    "POST",
+                    &uri,
+                    Some("admin.andrii.ai"),
+                    Some("staff-1"),
+                    Some("csrf-token"),
+                    Some("https://admin.andrii.ai"),
+                    Some(body),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        }
+        assert_eq!(fact_row(&fx.state.store_root, fact_a).0, "accepted");
+        // Exactly 8 characters is enough.
+        let (status, _) = staff_post(&fx, &uri, json!({"reason": "dup fact"})).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn approval_retopic_moves_the_fact_and_audits_both_topics() {
+        let fx = fixture();
+        let ids = seed_cited_facts(
+            &fx.state.store_root,
+            "Mail requests to PO Box 40234; older forms still list PO Box 40220.",
+            &[
+                ("mailing", "po_box: PO Box 40234", "proposed"),
+                ("po_box", "po_box: PO Box 40220", "accepted"),
+            ],
+        );
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let (status, view) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{}/accept", ids[0]),
+            json!({"reason": "a box number is po_box", "topic": "po_box"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+        assert_eq!(view["topic"], "po_box");
+        assert!(view["accepted_at"].as_i64().unwrap() > 0);
+        // Sibling conflicts are the new topic's: the published 40220 box.
+        assert_eq!(view["conflict"], true);
+        assert_eq!(view["conflicts"][0]["id"], ids[1]);
+        assert_eq!(
+            fact_row(&fx.state.store_root, ids[0]),
+            (
+                "accepted".to_string(),
+                "po_box".to_string(),
+                "po_box: PO Box 40234".to_string()
+            )
+        );
+        let audit = fact_audit(&fx.state.store_root, ids[0]);
+        assert_eq!(audit.len(), 1);
+        assert_eq!(
+            (audit[0].1.as_str(), audit[0].2.as_str()),
+            ("proposed", "accepted")
+        );
+        let envelope: serde_json::Value = serde_json::from_str(&audit[0].3).unwrap();
+        assert_eq!(
+            envelope,
+            json!({"note": "a box number is po_box", "topic_before": "mailing", "topic_after": "po_box"})
+        );
+    }
+
+    #[tokio::test]
+    async fn approval_retopic_moves_notices_both_ways_with_edits() {
+        let fx = fixture();
+        let quote = "The Cheney office is closed Wednesday, November 11, for Veterans Day.";
+        let ids = seed_cited_facts(
+            &fx.state.store_root,
+            quote,
+            &[
+                (
+                    "service_notice",
+                    "notice: The Cheney office is closed November 11",
+                    "proposed",
+                ),
+                ("holiday_hours", "closed: Veterans Day", "proposed"),
+            ],
+        );
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        // A closure filed as a notice becomes holiday hours, re-keyed too.
+        let (status, view) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{}/accept", ids[0]),
+            json!({"topic": "holiday_hours", "statement": "closed: Wednesday, November 11"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+        assert_eq!(view["topic"], "holiday_hours");
+        assert_eq!(view["statement"], "closed: Wednesday, November 11");
+        let envelope: serde_json::Value =
+            serde_json::from_str(&fact_audit(&fx.state.store_root, ids[0])[0].3).unwrap();
+        assert_eq!(
+            envelope,
+            json!({
+                "note": "",
+                "edit_before": "notice: The Cheney office is closed November 11",
+                "topic_before": "service_notice",
+                "topic_after": "holiday_hours",
+            })
+        );
+        // The validator drafts `service_notice` like any topic, so the
+        // other direction is open as well.
+        let (status, view) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{}/accept", ids[1]),
+            json!({"topic": "service_notice"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+        assert_eq!(fact_row(&fx.state.store_root, ids[1]).1, "service_notice");
+    }
+
+    #[tokio::test]
+    async fn approval_retopic_refuses_unknown_topics_and_phone_script() {
+        let fx = fixture();
+        let ids = seed_cited_facts(
+            &fx.state.store_root,
+            "Call 360-725-0377 and choose option 3 for apostilles.",
+            &[
+                ("contacts", "phone: 360-725-0377", "proposed"),
+                ("phone_script", "say: option 3 for apostilles", "proposed"),
+            ],
+        );
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let accept = |id: i64| format!("/apostille/api/v1/facts/{id}/accept");
+        for (id, topic, error) in [
+            (ids[0], "bitcoin", "unknown handbook topic"),
+            (ids[0], "PO_BOX", "unknown handbook topic"),
+            (ids[0], " contacts", "unknown handbook topic"),
+            (
+                ids[0],
+                "phone_script",
+                "phone_script stays staff-only: no re-topic to or from it",
+            ),
+            (
+                ids[1],
+                "contacts",
+                "phone_script stays staff-only: no re-topic to or from it",
+            ),
+        ] {
+            let (status, body) = staff_post(&fx, &accept(id), json!({"topic": topic})).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{topic}");
+            assert_eq!(body["error"], error, "{topic}");
+        }
+        // Reject takes no topic.
+        let (status, body) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{}/reject", ids[0]),
+            json!({"reason": "dup", "topic": "contacts"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["error"], "topic is accept-only");
+        for id in &ids {
+            assert_eq!(fact_row(&fx.state.store_root, *id).0, "proposed");
+        }
+        assert!(fact_audit(&fx.state.store_root, ids[0]).is_empty());
+        // Naming the draft's own topic is no re-topic: a plain accept.
+        let (status, _) = staff_post(&fx, &accept(ids[1]), json!({"topic": "phone_script"})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(fact_audit(&fx.state.store_root, ids[1])[0].3, "");
+    }
+
+    #[tokio::test]
+    async fn approval_unkeyed_edit_runs_the_quote_gate() {
+        let fx = fixture();
+        let (_, fact_a, fact_b) = seed_conflicting_facts(&fx.state.store_root);
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        // Fact A cites "open 9 to 5". An unkeyed replacement that says
+        // more than the quote used to publish unchecked.
+        for statement in ["open 9 to 5 and Saturdays", "Hours: open 9 to 5"] {
+            let (status, body) = staff_post(
+                &fx,
+                &format!("/apostille/api/v1/facts/{fact_a}/accept"),
+                json!({"statement": statement}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{statement}");
+            assert_eq!(body["error"], "edited value not in citation quote");
+        }
+        assert_eq!(fact_row(&fx.state.store_root, fact_a).0, "proposed");
+        // Inside the quote under the validator's normalization: accepted.
+        let (status, view) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{fact_a}/accept"),
+            json!({"statement": "Open 9  to 5"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+        assert_eq!(view["statement"], "Open 9  to 5");
+        // A keyed edit still gates on its value only (fact B's quote is
+        // "open 9 to 5; open 8 to ").
+        let (status, body) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{fact_b}/accept"),
+            json!({"statement": "weekdays: open 8 to 6"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        let (status, view) = staff_post(
+            &fx,
+            &format!("/apostille/api/v1/facts/{fact_b}/accept"),
+            json!({"statement": "weekdays: open 9 to 5"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{view}");
     }
 
     fn seed_authority_index(store_root: &std::path::Path) {

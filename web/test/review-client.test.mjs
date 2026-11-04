@@ -126,6 +126,16 @@ test('acceptBody builds valid bodies and rejects the rest', () => {
 	assert.equal(acceptBody(undefined, '   '), null);
 	assert.equal(acceptBody(undefined, 'x'.repeat(2001)), null);
 	assert.equal(acceptBody(undefined, 42), null);
+	// A topic move travels only when given, in the wire form.
+	assert.deepEqual(acceptBody(undefined, undefined, 'holiday_hours'), { topic: 'holiday_hours' });
+	assert.deepEqual(acceptBody(undefined, 'closure: Closed.', 'holiday_hours'), {
+		statement: 'closure: Closed.',
+		topic: 'holiday_hours'
+	});
+	assert.deepEqual(acceptBody(undefined, undefined, null), {});
+	assert.equal(acceptBody(undefined, undefined, 'Holiday Hours'), null);
+	assert.equal(acceptBody(undefined, undefined, ''), null);
+	assert.equal(acceptBody(undefined, undefined, 7), null);
 });
 
 test('rejectBody requires a reason and gates suppress scope', () => {

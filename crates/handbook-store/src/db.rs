@@ -10,6 +10,10 @@
 //! (`migrations/p2_schema_baseline.sql`, = P2 v2) and its own
 //! [`migrate_p2`].
 
+use std::collections::BTreeSet;
+use std::sync::LazyLock;
+
+use regex::{Captures, Regex};
 use rusqlite::{Connection, OptionalExtension};
 
 use contracts::{HandbookError, Result};
@@ -783,6 +787,473 @@ pub fn normalize_statement(s: &str) -> String {
         .to_lowercase()
 }
 
+// One field-level conflict rule (plan §5.1). Its JS twin is
+// `web/src/lib/public-ui/compare.js`; both run the golden cases in
+// `docs/contracts/conflict-cases.json`, so a change here lands there.
+
+/// Topics whose facts never conflict: `service_notice` facts are
+/// dated announcements that stack (newest first in the dossier
+/// banner), so a second notice is news, not a disagreement.
+pub const NON_CONFLICTING_TOPICS: &[&str] = &["service_notice"];
+
+/// Topics that share one USPS identity. Two facts here that both name
+/// a PO box are compared on box and ZIP whatever their keys or topic,
+/// so a real box dispute cannot hide behind ad-hoc keys or the
+/// `po_box`/`mailing` split. Courier street facts (no box) never are.
+pub const USPS_TOPICS: &[&str] = &["mailing", "po_box"];
+
+/// The statement grammar, exactly the guide's `parseStatement`
+/// (`/^([a-z][a-z0-9_]*):\s+(.+)$/s`), with JavaScript's `\s` spelled
+/// out so both twins split the same strings.
+static STATEMENT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"(?s)^([a-z][a-z0-9_]*):",
+        r"[\t\n\x0B\x0C\r \x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}]+",
+        r"(.+)$",
+    ))
+    .expect("statement grammar compiles")
+});
+
+/// Split `{field}: {value}` into its key and value; anything else is
+/// unkeyed, `(None, s)`. An instance suffix (`weekday__tumwater`) is
+/// part of the key.
+pub fn split_statement(s: &str) -> (Option<&str>, &str) {
+    match STATEMENT.captures(s) {
+        Some(c) => (
+            c.get(1).map(|m| m.as_str()),
+            c.get(2).map_or(s, |m| m.as_str()),
+        ),
+        None => (None, s),
+    }
+}
+
+/// True when two statements of one topic describe the same field:
+/// equal keys (instance suffix included), or either side unkeyed (a
+/// legacy pin is compared with everything in its topic).
+pub fn same_field(a: &str, b: &str) -> bool {
+    !other_fields(split_statement(a).0, split_statement(b).0)
+}
+
+/// Weekday names and abbreviations; the first three letters name the day.
+const DAY_NAMES: &str = "monday|tuesday|wednesday|thursday|friday|saturday|sunday\
+                         |mon|tues|tue|weds|wed|thurs|thur|thu|fri|sat|sun";
+
+/// Month names and abbreviations; the first three letters name the month.
+const MONTH_NAMES: &str = "january|february|march|april|may|june|july|august\
+                           |september|october|november|december\
+                           |jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec";
+
+const WEEKDAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+const MONTHS: [&str; 12] = [
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+];
+
+/// One token pattern over the [`token_text`] haystack, compiled once.
+/// Every pattern is plain ASCII regex syntax the JS twin shares as is.
+fn token_re(pattern: &str) -> Regex {
+    Regex::new(pattern).expect("token pattern compiles")
+}
+
+static BOX_RE: LazyLock<Regex> = LazyLock::new(|| {
+    token_re(r"\b(?:p ?\.? ?o ?\.?|post office) ?box ?(?::|#|no\.?|number)? ?([0-9]+)\b")
+});
+static AMT_RE: LazyLock<Regex> =
+    LazyLock::new(|| token_re(r"\$ ?([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.([0-9]{1,2}))?"));
+static TEL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    token_re(
+        r"(?:^|[^0-9])((?:\+?1[ .-]?)?(?:\(([0-9]{3})\) ?|([0-9]{3})[ .-]?)([0-9]{3})[ .-]?([0-9]{4}))\b",
+    )
+});
+static DATE_MDY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    token_re(&format!(
+        r"\b({MONTH_NAMES})\.? ([0-9]{{1,2}})(?:st|nd|rd|th)?,? ([0-9]{{4}})\b"
+    ))
+});
+static DATE_DMY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    token_re(&format!(
+        r"\b([0-9]{{1,2}})(?:st|nd|rd|th)? ({MONTH_NAMES})\.?,? ([0-9]{{4}})\b"
+    ))
+});
+static DATE_NUM_RE: LazyLock<Regex> =
+    LazyLock::new(|| token_re(r"\b([0-9]{1,2})[/]([0-9]{1,2})[/]([0-9]{4})\b"));
+static DATE_ISO_RE: LazyLock<Regex> =
+    LazyLock::new(|| token_re(r"\b([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})\b"));
+static ZIP_RE: LazyLock<Regex> = LazyLock::new(|| token_re(r"\b([0-9]{5})(?:-([0-9]{4}))?\b"));
+static TIME_AMPM_RE: LazyLock<Regex> =
+    LazyLock::new(|| token_re(r"\b([0-9]{1,2})(?::([0-9]{2}))? ?([ap])\.? ?m\b\.?"));
+static TIME_NOON_RE: LazyLock<Regex> = LazyLock::new(|| token_re(r"\b(?:12 )?noon\b"));
+static TIME_24H_RE: LazyLock<Regex> = LazyLock::new(|| token_re(r"\b([0-9]{1,2}):([0-9]{2})\b"));
+static DAYS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    token_re(r"\b([0-9]{1,3})(?: ?(?:-|to) ?([0-9]{1,3}))? (?:business|working) days?\b")
+});
+static DOW_RANGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    token_re(&format!(
+        r"\b({DAY_NAMES})s?\b\.? ?(?:-|to|through|thru) ?({DAY_NAMES})s?\b\.?"
+    ))
+});
+static DOW_RE: LazyLock<Regex> = LazyLock::new(|| token_re(&format!(r"\b({DAY_NAMES})s?\b\.?")));
+
+/// The token haystack: lowercased, every dash variant folded to `-`,
+/// every other non-ASCII or non-printing character (NBSP, newline) to
+/// one space, runs collapsed and trimmed. Pure ASCII, so Rust byte
+/// offsets and JS UTF-16 offsets agree.
+fn token_text(v: &str) -> String {
+    let mut out = String::with_capacity(v.len());
+    for c in v.to_lowercase().chars() {
+        let c = match c {
+            '\u{2010}'..='\u{2014}' | '\u{2212}' => '-',
+            c if c.is_ascii_graphic() => c,
+            _ => ' ',
+        };
+        if c != ' ' || !(out.is_empty() || out.ends_with(' ')) {
+            out.push(c);
+        }
+    }
+    if out.ends_with(' ') {
+        out.pop();
+    }
+    out
+}
+
+/// Read every match of `re` in `text`, then blank each match's `body`
+/// group to spaces, so later kinds never re-read it (a box number is
+/// not also a ZIP). `text` is ASCII, so blanking keeps every offset.
+fn take(text: &mut String, re: &Regex, body: usize, mut read: impl FnMut(&Captures<'_>)) {
+    let spans: Vec<(usize, usize)> = re
+        .captures_iter(text.as_str())
+        .filter_map(|c| {
+            read(&c);
+            c.get(body).map(|m| (m.start(), m.end()))
+        })
+        .collect();
+    for (start, end) in spans {
+        text.replace_range(start..end, &" ".repeat(end - start));
+    }
+}
+
+/// `"007"` → `"7"`, `"000"` → `"0"`.
+fn trim_zeros(digits: &str) -> &str {
+    let trimmed = digits.trim_start_matches('0');
+    if trimmed.is_empty() { "0" } else { trimmed }
+}
+
+/// `date:YYYY-MM-DD` for a calendar-shaped month/day, else nothing.
+fn date_token(year: &str, month: u32, day: u32) -> Option<String> {
+    ((1..=12).contains(&month) && (1..=31).contains(&day))
+        .then(|| format!("date:{year}-{month:02}-{day:02}"))
+}
+
+/// Month number from a [`MONTH_NAMES`] match.
+fn month_number(name: &str) -> u32 {
+    MONTHS
+        .iter()
+        .position(|m| name.starts_with(m))
+        .map_or(0, |i| i as u32 + 1)
+}
+
+/// Weekday index (Monday = 0) from a [`DAY_NAMES`] match.
+fn weekday(name: &str) -> usize {
+    WEEKDAYS
+        .iter()
+        .position(|d| name.starts_with(d))
+        .unwrap_or(0)
+}
+
+/// Typed tokens of one statement value: the conflict rule's evidence,
+/// each `kind:value`.
+/// - `box:40228`: PO boxes ("PO Box", "P.O. Box", "PO BOX", "Post Office Box");
+/// - `amt:1500`: dollar amounts in cents (`$15` = `$15.00`);
+/// - `tel:3607250377`: 10-digit phone numbers in any common format;
+/// - `date:2026-11-11`: full dates ("November 11, 2026", "11/11/2026", ISO);
+/// - `zip:98501`; a ZIP+4 yields `zip:98504-0228` and also its bare
+///   `zip:98504`, so under the identity rule `98504` agrees with
+///   `98504-0228` while two different +4 codes still disagree;
+/// - `time:16:00`: clock times with a.m./p.m., noon, or 24h; a bare
+///   `h:mm` with no a.m./p.m. and an hour of 1-12 written without a
+///   leading zero reads either way, as `time:03:30|15:30` (`3:30` is
+///   03:30 or 15:30, `12:30` is 00:30 or 12:30; see [`times_agree`]);
+/// - `days:7-10`: business- or working-day counts and ranges;
+/// - `dow:mon`: weekdays, ranges expanded (`Mon-Thu` = mon..thu).
+///
+/// Kinds read in that order, each blanking what it took (see [`take`]).
+pub fn value_tokens(v: &str) -> BTreeSet<String> {
+    let mut text = token_text(v);
+    let mut out = BTreeSet::new();
+    take(&mut text, &BOX_RE, 0, |c| {
+        out.insert(format!("box:{}", &c[1]));
+    });
+    take(&mut text, &AMT_RE, 0, |c| {
+        let dollars: String = c[1].chars().filter(|ch| *ch != ',').collect();
+        let cents = c.get(2).map_or("", |m| m.as_str());
+        out.insert(format!(
+            "amt:{}",
+            trim_zeros(&format!("{dollars}{cents:0<2}"))
+        ));
+    });
+    take(&mut text, &TEL_RE, 1, |c| {
+        let area = c.get(2).or_else(|| c.get(3)).map_or("", |m| m.as_str());
+        out.insert(format!("tel:{area}{}{}", &c[4], &c[5]));
+    });
+    let num = |c: &Captures<'_>, i: usize| c[i].parse::<u32>().unwrap_or(0);
+    take(&mut text, &DATE_MDY_RE, 0, |c| {
+        out.extend(date_token(&c[3], month_number(&c[1]), num(c, 2)));
+    });
+    take(&mut text, &DATE_DMY_RE, 0, |c| {
+        out.extend(date_token(&c[3], month_number(&c[2]), num(c, 1)));
+    });
+    take(&mut text, &DATE_NUM_RE, 0, |c| {
+        out.extend(date_token(&c[3], num(c, 1), num(c, 2)));
+    });
+    take(&mut text, &DATE_ISO_RE, 0, |c| {
+        out.extend(date_token(&c[1], num(c, 2), num(c, 3)));
+    });
+    take(&mut text, &ZIP_RE, 0, |c| {
+        out.insert(format!("zip:{}", &c[1]));
+        if let Some(plus4) = c.get(2) {
+            out.insert(format!("zip:{}-{}", &c[1], plus4.as_str()));
+        }
+    });
+    take(&mut text, &TIME_AMPM_RE, 0, |c| {
+        let (hour, minute) = (num(c, 1), c.get(2).map_or(0, |_| num(c, 2)));
+        if (1..=12).contains(&hour) && minute < 60 {
+            let hour = hour % 12 + if &c[3] == "p" { 12 } else { 0 };
+            out.insert(format!("time:{hour:02}:{minute:02}"));
+        }
+    });
+    take(&mut text, &TIME_NOON_RE, 0, |_| {
+        out.insert("time:12:00".to_string());
+    });
+    take(&mut text, &TIME_24H_RE, 0, |c| {
+        let (hour, minute) = (num(c, 1), num(c, 2));
+        if (1..=12).contains(&hour) && minute < 60 && !c[1].starts_with('0') {
+            let am = hour % 12;
+            out.insert(format!(
+                "time:{am:02}:{minute:02}|{:02}:{minute:02}",
+                am + 12
+            ));
+        } else if hour < 24 && minute < 60 {
+            out.insert(format!("time:{hour:02}:{minute:02}"));
+        }
+    });
+    take(&mut text, &DAYS_RE, 0, |c| {
+        out.insert(match c.get(2) {
+            Some(_) => format!("days:{}-{}", num(c, 1), num(c, 2)),
+            None => format!("days:{}", num(c, 1)),
+        });
+    });
+    take(&mut text, &DOW_RANGE_RE, 0, |c| {
+        let (from, to) = (weekday(&c[1]), weekday(&c[2]));
+        for step in 0..=(to + 7 - from) % 7 {
+            out.insert(format!("dow:{}", WEEKDAYS[(from + step) % 7]));
+        }
+    });
+    take(&mut text, &DOW_RE, 0, |c| {
+        out.insert(format!("dow:{}", WEEKDAYS[weekday(&c[1])]));
+    });
+    out
+}
+
+/// Token kinds, and how two sides' sets of one kind agree: identities
+/// (box, ZIP, phone) when either set contains the other, so a less
+/// specific value agrees; measures (amount, time, day count, date,
+/// weekday) only when the sets are equal (times once each bare clock
+/// time takes the reading the other side names, [`times_agree`]).
+const TOKEN_KINDS: [(&str, bool); 8] = [
+    ("box", true),
+    ("zip", true),
+    ("tel", true),
+    ("amt", false),
+    ("time", false),
+    ("days", false),
+    ("date", false),
+    ("dow", false),
+];
+
+fn of_kind<'a>(tokens: &'a BTreeSet<String>, kind: &str) -> BTreeSet<&'a str> {
+    tokens
+        .iter()
+        .filter(|t| t.split_once(':').is_some_and(|(k, _)| k == kind))
+        .map(String::as_str)
+        .collect()
+}
+
+/// Two identity sets disagree when both are present and neither
+/// contains the other.
+fn identities_disagree(a: &BTreeSet<&str>, b: &BTreeSet<&str>) -> bool {
+    !a.is_empty() && !b.is_empty() && !a.is_subset(b) && !b.is_subset(a)
+}
+
+/// True when two ZIP strings agree under the conflict rule's identity
+/// test ([`value_tokens`]): `98504` agrees with `98504-0228`, and two
+/// different +4 codes of one ZIP disagree. A side with no ZIP agrees.
+/// Orders' PO-box dispute check uses it, so labels and `/facts` read
+/// one ZIP the same way.
+pub fn zips_agree(a: &str, b: &str) -> bool {
+    let (tokens_a, tokens_b) = (value_tokens(a), value_tokens(b));
+    !identities_disagree(&of_kind(&tokens_a, "zip"), &of_kind(&tokens_b, "zip"))
+}
+
+/// Token-free values compare as text: [`normalize_statement`] after
+/// folding punctuation. Letters, digits and `$` stay; `.`, `:` and `-`
+/// stay only between two digits (`$15.00`, `4:30`, `98504-0228`);
+/// other periods and apostrophes vanish (`P.O.` = `PO`); anything
+/// else breaks words.
+fn fold_text(v: &str) -> String {
+    let chars: Vec<char> = v
+        .to_lowercase()
+        .chars()
+        .map(|c| match c {
+            '\u{2010}'..='\u{2014}' | '\u{2212}' => '-',
+            c => c,
+        })
+        .collect();
+    let digit = |i: Option<usize>| {
+        i.and_then(|i| chars.get(i))
+            .is_some_and(char::is_ascii_digit)
+    };
+    let mut out = String::with_capacity(v.len());
+    for (i, &c) in chars.iter().enumerate() {
+        if c.is_alphanumeric()
+            || c == '$'
+            || (matches!(c, '.' | ':' | '-') && digit(i.checked_sub(1)) && digit(Some(i + 1)))
+        {
+            out.push(c);
+        } else if !matches!(c, '.' | '\'' | '\u{2019}') {
+            out.push(' ');
+        }
+    }
+    normalize_statement(&out)
+}
+
+/// One side's time tokens with each bare clock time
+/// (`time:03:30|15:30`) read as the reading the other side names: its
+/// p.m. reading if the other side has it, else its a.m. one, else as
+/// written (so it agrees only with the same bare time).
+fn read_times<'a>(own: &BTreeSet<&'a str>, other: &BTreeSet<&'a str>) -> BTreeSet<String> {
+    own.iter()
+        .map(|token| {
+            let readings = token
+                .strip_prefix("time:")
+                .and_then(|v| v.split_once('|'))
+                .filter(|_| !other.contains(token));
+            let Some((am, pm)) = readings else {
+                return (*token).to_string();
+            };
+            [pm, am]
+                .iter()
+                .map(|reading| format!("time:{reading}"))
+                .find(|reading| other.contains(reading.as_str()))
+                .unwrap_or_else(|| (*token).to_string())
+        })
+        .collect()
+}
+
+/// Two sides' time sets agree when they are equal once each bare clock
+/// time takes the reading the other side names ([`read_times`]): `3:30`
+/// agrees with `3:30 p.m.` and with `03:30`, and `8:00-4:30` with `8
+/// a.m. to 4:30 p.m.`, while `3:30` still disagrees with `4:30 p.m.`.
+fn times_agree(a: &BTreeSet<&str>, b: &BTreeSet<&str>) -> bool {
+    read_times(a, b) == read_times(b, a)
+}
+
+/// The value rule over each side's [`value_tokens`]: every token kind
+/// both sides carry must agree (see [`TOKEN_KINDS`]); sides that share
+/// no kind compare as folded text.
+fn values_disagree(
+    a: &str,
+    tokens_a: &BTreeSet<String>,
+    b: &str,
+    tokens_b: &BTreeSet<String>,
+) -> bool {
+    let mut shared = false;
+    for (kind, identity) in TOKEN_KINDS {
+        let (set_a, set_b) = (of_kind(tokens_a, kind), of_kind(tokens_b, kind));
+        if set_a.is_empty() || set_b.is_empty() {
+            continue;
+        }
+        shared = true;
+        let agree = if identity {
+            !identities_disagree(&set_a, &set_b)
+        } else if kind == "time" {
+            times_agree(&set_a, &set_b)
+        } else {
+            set_a == set_b
+        };
+        if !agree {
+            return true;
+        }
+    }
+    !shared && fold_text(a) != fold_text(b)
+}
+
+/// Both keyed with different keys: different fields.
+fn other_fields(key_a: Option<&str>, key_b: Option<&str>) -> bool {
+    matches!((key_a, key_b), (Some(a), Some(b)) if a != b)
+}
+
+/// True when two statements of ONE topic disagree: the same field
+/// ([`same_field`]) with values that disagree (every shared token
+/// kind must agree, else folded text must match). Different fields
+/// never disagree. Callers comparing live facts use
+/// [`facts_disagree`], which adds the topic rules.
+pub fn statements_disagree(a: &str, b: &str) -> bool {
+    let ((key_a, value_a), (key_b, value_b)) = (split_statement(a), split_statement(b));
+    !other_fields(key_a, key_b)
+        && values_disagree(
+            value_a,
+            &value_tokens(value_a),
+            value_b,
+            &value_tokens(value_b),
+        )
+}
+
+/// The USPS identity rule: both sides name a PO box, and their box
+/// sets differ or their ZIP sets disagree.
+fn boxes_disagree(tokens_a: &BTreeSet<String>, tokens_b: &BTreeSet<String>) -> bool {
+    let (box_a, box_b) = (of_kind(tokens_a, "box"), of_kind(tokens_b, "box"));
+    if box_a.is_empty() || box_b.is_empty() {
+        return false;
+    }
+    box_a != box_b || identities_disagree(&of_kind(tokens_a, "zip"), &of_kind(tokens_b, "zip"))
+}
+
+/// The conflict rule for two live facts of one authority.
+/// [`NON_CONFLICTING_TOPICS`] never conflict; two [`USPS_TOPICS`] facts
+/// that both name a PO box disagree on box or ZIP whatever their keys
+/// or topic; otherwise only facts of one topic compare, by
+/// [`statements_disagree`]. Each side is tokenized at most once.
+pub fn facts_disagree(topic_a: &str, a: &str, topic_b: &str, b: &str) -> bool {
+    if NON_CONFLICTING_TOPICS.contains(&topic_a) || NON_CONFLICTING_TOPICS.contains(&topic_b) {
+        return false;
+    }
+    let usps = USPS_TOPICS.contains(&topic_a) && USPS_TOPICS.contains(&topic_b);
+    let ((key_a, value_a), (key_b, value_b)) = (split_statement(a), split_statement(b));
+    let one_field = topic_a == topic_b && !other_fields(key_a, key_b);
+    if !usps && !one_field {
+        return false;
+    }
+    let (tokens_a, tokens_b) = (value_tokens(value_a), value_tokens(value_b));
+    (usps && boxes_disagree(&tokens_a, &tokens_b))
+        || (one_field && values_disagree(value_a, &tokens_a, value_b, &tokens_b))
+}
+
+/// The topics whose live facts one fact is compared with under
+/// [`facts_disagree`]: its own, plus every [`USPS_TOPICS`] topic when
+/// it is one and names a PO box.
+pub fn compared_topics<'a>(topic: &'a str, statement: &str) -> Vec<&'a str> {
+    let names_box = || {
+        value_tokens(split_statement(statement).1)
+            .iter()
+            .any(|t| t.starts_with("box:"))
+    };
+    if USPS_TOPICS.contains(&topic) && names_box() {
+        USPS_TOPICS.to_vec()
+    } else {
+        vec![topic]
+    }
+}
+
 /// A suppression-check hit: path A (rejected-memory) or B (rule id).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SuppressionHit {
@@ -1216,6 +1687,168 @@ mod tests {
     fn normalize_statement_folds_whitespace_and_case() {
         assert_eq!(normalize_statement("  PO   Box 40220. "), "po box 40220.");
         assert_eq!(normalize_statement("Fee\t$8\nMonday"), "fee $8 monday");
+    }
+
+    #[test]
+    fn split_statement_keeps_the_guide_grammar() {
+        assert_eq!(
+            split_statement("per_document: $15"),
+            (Some("per_document"), "$15")
+        );
+        assert_eq!(
+            split_statement("weekday__tumwater: Mon-Thu"),
+            (Some("weekday__tumwater"), "Mon-Thu")
+        );
+        for unkeyed in ["PO Box 40220", "UPPER: not a key", "field:nospace", ": v"] {
+            assert_eq!(split_statement(unkeyed), (None, unkeyed));
+        }
+        // JavaScript's `\s`: NBSP splits, NEL does not.
+        assert_eq!(
+            split_statement("field:\u{a0}no-break space"),
+            (Some("field"), "no-break space")
+        );
+        assert_eq!(split_statement("field:\u{85}x"), (None, "field:\u{85}x"));
+        assert!(same_field("fee: $1", "fee: $2"));
+        assert!(!same_field("fee: $1", "expedite: $2"));
+        assert!(same_field("Fee is $1", "expedite: $2"));
+    }
+
+    fn tokens(v: &str) -> Vec<String> {
+        value_tokens(v).into_iter().collect()
+    }
+
+    #[test]
+    fn value_tokens_reads_each_kind_in_canonical_form() {
+        assert_eq!(
+            tokens("PO Box 40228, P.O. Box 7, Post Office Box #12"),
+            ["box:12", "box:40228", "box:7"]
+        );
+        assert_eq!(
+            tokens("$15, $15.00, $1,000.5 and $0.50"),
+            ["amt:100050", "amt:1500", "amt:50"]
+        );
+        for phone in [
+            "(360) 555-0100",
+            "360.555.0100",
+            "+1 360 555 0100",
+            "1-360-555-0100",
+            "3605550100",
+        ] {
+            assert_eq!(tokens(phone), ["tel:3605550100"], "{phone}");
+        }
+        // A ZIP+4 also yields its bare ZIP (the identity subset rule
+        // then lets `98504` agree with `98504-0228`).
+        assert_eq!(
+            tokens("Olympia, WA 98504-0228; Tumwater 98501"),
+            ["zip:98501", "zip:98504", "zip:98504-0228"]
+        );
+        assert_eq!(tokens("4:00 p.m., 4 PM, 16:00"), ["time:16:00"]);
+        assert_eq!(
+            tokens("12 noon, 12 a.m., 9:30am"),
+            ["time:00:00", "time:09:30", "time:12:00"]
+        );
+        // A bare 12-hour clock time reads either way; a leading zero or
+        // an hour past 12 is a 24-hour time.
+        assert_eq!(
+            tokens("8:00-4:30, 12:15, 08:15, 16:30"),
+            [
+                "time:00:15|12:15",
+                "time:04:30|16:30",
+                "time:08:00|20:00",
+                "time:08:15",
+                "time:16:30"
+            ]
+        );
+        assert_eq!(
+            tokens("7 to 10 business days, 2-3 working days, 1 business day"),
+            ["days:1", "days:2-3", "days:7-10"]
+        );
+        for date in [
+            "November 11, 2026",
+            "Nov. 11th 2026",
+            "11 November 2026",
+            "11/11/2026",
+            "2026-11-11",
+        ] {
+            assert_eq!(tokens(date), ["date:2026-11-11"], "{date}");
+        }
+        assert_eq!(
+            tokens("Mon.-Thu."),
+            ["dow:mon", "dow:thu", "dow:tue", "dow:wed"]
+        );
+        assert_eq!(tokens("Fridays"), ["dow:fri"]);
+        assert_eq!(
+            tokens("Fri-Mon"),
+            ["dow:fri", "dow:mon", "dow:sat", "dow:sun"]
+        );
+        // A box number is never re-read as a ZIP; prose yields nothing.
+        assert_eq!(tokens("PO Box 40228"), ["box:40228"]);
+        assert!(tokens("Secretary of State").is_empty());
+    }
+
+    #[test]
+    fn facts_disagree_compares_fields_not_topics() {
+        // Different fields of one topic, then one field's two values.
+        assert!(!facts_disagree(
+            "fees",
+            "per_document: $15",
+            "fees",
+            "expedite: $100"
+        ));
+        assert!(facts_disagree(
+            "fees",
+            "per_document: $15",
+            "fees",
+            "per_document: $20"
+        ));
+        // The USPS rule crosses keys and the po_box/mailing split.
+        assert!(facts_disagree(
+            "po_box",
+            "po_box: PO Box 40220",
+            "mailing",
+            "mailing_address: PO Box 40234"
+        ));
+        assert!(!facts_disagree(
+            "service_notice",
+            "PO Box 40220",
+            "service_notice",
+            "PO Box 40234"
+        ));
+        // A bare ZIP agrees with its own ZIP+4, on one key and across
+        // the USPS topics; two different +4 codes still disagree.
+        assert!(!facts_disagree(
+            "address",
+            "office__olympia: Olympia, WA 98504",
+            "address",
+            "office__olympia: Olympia, WA 98504-0228"
+        ));
+        assert!(!facts_disagree(
+            "po_box",
+            "po_box: PO Box 40220, Olympia, WA 98504",
+            "mailing",
+            "apostille_mailing_address: PO Box 40220 Olympia, WA 98504-0220"
+        ));
+        assert!(facts_disagree(
+            "address",
+            "office__olympia: Olympia, WA 98504-0228",
+            "address",
+            "office__olympia: Olympia, WA 98504-0234"
+        ));
+        assert!(facts_disagree(
+            "po_box",
+            "po_box: PO Box 40220, Olympia, WA 98504-0220",
+            "mailing",
+            "apostille_mailing_address: PO Box 40220, Olympia, WA 98504-0234"
+        ));
+        assert_eq!(
+            compared_topics("po_box", "po_box: PO Box 40220"),
+            ["mailing", "po_box"]
+        );
+        assert_eq!(
+            compared_topics("mailing", "courier: 243 Example Rd"),
+            ["mailing"]
+        );
+        assert_eq!(compared_topics("address", "PO Box 40220"), ["address"]);
     }
 
     #[test]

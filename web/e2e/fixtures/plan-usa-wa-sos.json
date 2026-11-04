@@ -1,5 +1,14 @@
 {
   "slug": "usa-wa-sos",
+  "authority": {
+    "slug": "usa-wa-sos",
+    "name": "SYNTHETIC Washington Secretary of State",
+    "region": "Washington",
+    "country": "USA",
+    "kind": "state",
+    "path": "usa/washington",
+    "official_url": "https://example.test/apostille"
+  },
   "plan": {
     "id": 12,
     "version": 3,
@@ -121,11 +130,14 @@
       "conflict": false,
       "conflicts": [],
       "created_at": 1793664000,
+      "accepted_at": 1793750400,
       "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "citations": [
         {
+          "capture_id": 501,
           "captured_at": "2026-11-02T18:00:00Z",
+          "kind": "web",
           "quote": "The fee is $15 per document.",
           "source_url": "https://example.test/apostille/faq"
         }
@@ -140,11 +152,14 @@
       "conflict": false,
       "conflicts": [],
       "created_at": 1793664000,
+      "accepted_at": 1793750400,
       "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "citations": [
         {
+          "capture_id": 501,
           "captured_at": "2026-11-02T18:00:00Z",
+          "kind": "web",
           "quote": "open Monday through Friday, 8:00 a.m. to 4:30 p.m.",
           "source_url": "https://example.test/apostille/faq"
         }
@@ -159,11 +174,14 @@
       "conflict": false,
       "conflicts": [],
       "created_at": 1793664000,
+      "accepted_at": 1793750400,
       "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "citations": [
         {
+          "capture_id": 501,
           "captured_at": "2026-11-02T18:00:00Z",
+          "kind": "web",
           "quote": "Mail requests to PO Box 4000",
           "source_url": "https://example.test/apostille/faq"
         }
@@ -178,11 +196,14 @@
       "conflict": false,
       "conflicts": [],
       "created_at": 1793664000,
+      "accepted_at": 1793750400,
       "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "citations": [
         {
+          "capture_id": 501,
           "captured_at": "2026-11-02T18:00:00Z",
+          "kind": "web",
           "quote": "100 Fixture Way, Olympia, WA 98501",
           "source_url": "https://example.test/apostille/faq"
         }
@@ -197,11 +218,14 @@
       "conflict": false,
       "conflicts": [],
       "created_at": 1793664000,
+      "accepted_at": 1793750400,
       "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "citations": [
         {
+          "capture_id": 501,
           "captured_at": "2026-11-02T18:00:00Z",
+          "kind": "web",
           "quote": "Walk-in requests are processed the same day",
           "source_url": "https://example.test/apostille/faq"
         }
@@ -216,11 +240,14 @@
       "conflict": false,
       "conflicts": [],
       "created_at": 1793664000,
+      "accepted_at": 1793750400,
       "created_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "drafted_by": "muse-spark-1.3 via analysis-agent/aa-prompt-v2",
       "citations": [
         {
+          "capture_id": 501,
           "captured_at": "2026-11-02T18:00:00Z",
+          "kind": "web",
           "quote": "include the Apostille Request Form",
           "source_url": "https://example.test/apostille/faq"
         }
@@ -305,7 +332,8 @@
           "required": true,
           "options": [],
           "prefill_topic": null,
-          "label_quote": "Name of person requesting"
+          "label_quote": "Name of person requesting",
+          "max_len": 60
         },
         {
           "name": "Country",
@@ -315,7 +343,8 @@
           "required": true,
           "options": [],
           "prefill_topic": null,
-          "label_quote": "Country of destination"
+          "label_quote": "Country of destination",
+          "max_len": 40
         },
         {
           "name": "DocCount",
@@ -325,7 +354,8 @@
           "required": true,
           "options": [],
           "prefill_topic": "fees",
-          "label_quote": "Number of documents"
+          "label_quote": "Number of documents",
+          "max_len": null
         },
         {
           "name": "ReturnMail",
@@ -335,7 +365,8 @@
           "required": false,
           "options": [],
           "prefill_topic": "mailing",
-          "label_quote": "Return by mail"
+          "label_quote": "Return by mail",
+          "max_len": null
         }
       ],
       "accepted_at": 1793750400
@@ -387,5 +418,35 @@
         "captured_at": "2026-11-02T18:00:00Z"
       }
     ]
-  }
+  },
+  "evidence": [
+    {
+      "id": 7,
+      "kind": "call",
+      "stance": "confirms",
+      "fact_id": 203,
+      "preferred_fact_id": null,
+      "slot": "mailing.po_box",
+      "date": "2026-11-04",
+      "channel": "Apostille desk, the phone line on the office's contact page",
+      "summary": "SYNTHETIC FIXTURE: The desk said mailed requests still go to PO Box 4000.",
+      "recorded": false,
+      "supports": [],
+      "by": "Staff reviewer"
+    },
+    {
+      "id": 8,
+      "kind": "absence",
+      "stance": "context",
+      "fact_id": null,
+      "preferred_fact_id": null,
+      "slot": "fees.same_day",
+      "date": "2026-11-04",
+      "channel": "FAQ and fee pages",
+      "summary": "SYNTHETIC FIXTURE: Neither page names a same-day fee.",
+      "recorded": false,
+      "supports": [],
+      "by": "Staff reviewer"
+    }
+  ]
 }

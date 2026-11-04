@@ -500,13 +500,23 @@ Same route, extended body (existing clients keep working):
 - `reason` optional, ≤1024 chars (existing
   `reason too long (max 1024 chars)` rule).
 - `statement` optional: non-empty after trim, ≤2000 chars, else
-  `422`. Topic is immutable here; to change topic, reject and
-  re-propose (OQ-4).
+  `422`. A changed statement must keep its text inside the cited
+  quote (analysis-validator normalization): the value of a
+  `field: value` statement, the whole text of an unkeyed one, else
+  `422 {"error":"edited value not in citation quote"}`.
+- `topic` optional (OQ-4, resolved by plan §5.5: re-topic at
+  accept): one of the frozen topics (`Topic::parse`, else
+  `422 {"error":"unknown handbook topic"}`); never into or out of
+  the staff-only `phone_script` (`422`). `service_notice` moves
+  like any topic (the validator drafts it like any topic). The
+  response banner is computed for the new topic.
 - Semantics: through the existing `decide()` transaction —
-  `BEGIN IMMEDIATE`, re-check `status = 'proposed'`,
-  `UPDATE fact SET status='accepted'` (plus `statement = ?`
-  when edited), one `audit` row (§11.5), `COMMIT`, then the
-  unchanged `fact_accepted` fan-out.
+  `BEGIN IMMEDIATE`, re-check `status = 'proposed'`, run the
+  value-in-quote and `phone_script` gates on the row it holds (a
+  store error answers `503`, never an unchecked accept),
+  `UPDATE fact SET status='accepted'` (plus `statement = ?` /
+  `topic = ?` when changed), one `audit` row (§11.5), `COMMIT`,
+  then the unchanged `fact_accepted` fan-out.
 - Codes: `200` (`FactView`), `404` (unknown id),
   `409 {"error":"fact is not proposed"}` (already decided — the
   UI treats this as "someone else decided; refresh"), `422`,
@@ -572,6 +582,26 @@ n}`. Params: `authority`, `limit` (default 50, max 200),
 | standalone rule duplicating a live rule | 409 | `{"error":"duplicate rule","rule_id":N}` |
 | revoke an already-revoked rule | 409 | `{"error":"rule already revoked"}` |
 | reject-with-`suppress` when rule exists | 200, not 409 | decision wins; `{"rule":{"id":N,"deduped":true}}` |
+| retire a non-`accepted` fact | 409 | `{"error":"fact is not accepted"}` |
+
+#### 11.2.8 `POST .../admin/facts/{id}/retire` — undo an accept
+
+`{"reason": "..."}` (required, 8-500 chars after trim, else `422`).
+Staff session + CSRF, like accept/reject. One `BEGIN IMMEDIATE`:
+`accepted` → `superseded`, one `audit` row (`fact_retire`,
+`before_ref='accepted'`, `after_ref='superseded'`, the reason),
+`COMMIT`, then `fact_retired {fact_id}` on `authority:{slug}`.
+Every public read serves `accepted` rows only, so the fact leaves
+`/facts`, the index count and `verified_at`, translations, the
+crawler head, order destinations and the MCP lookup together;
+`/plan` drops it with every block, path and accepted office that
+quotes it (an office is served only while all its `fact_ids` and
+piece `fact_id`s are accepted). Follower emails already queued for
+it drop it too: `notify::load_fact` loads only accepted, non-
+`phone_script` facts. Not yet covered: no client acts on
+`fact_retired`, so an open dossier shows the fact until it reloads.
+Codes: `200
+{id, authority_slug, status}`, `404`, `409`, `422`, `401/403/503`.
 
 ### 11.3 Analyzer consultation rule (suppression check)
 
@@ -683,7 +713,9 @@ edit — keeps `decide()` single-write):
   `after_ref='accepted'` (existing pair, unchanged).
 - `reason`: unedited → staff reason verbatim (existing).
   Edited → JSON envelope `{"note":"<reason or
-  \"\">","edit_before":"<previous statement>"}`. The ≤1024
+  \"\">","edit_before":"<previous statement>"}`; a re-topic adds
+  `"topic_before"`/`"topic_after"` (alone when the text is
+  unchanged). The ≤1024
   check applies to the final stored value; on overflow,
   `edit_before` truncates with a `…` marker (statements are one
   short claim — never triggers in practice). Consumers tolerate

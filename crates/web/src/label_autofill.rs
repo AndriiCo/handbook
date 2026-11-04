@@ -133,8 +133,38 @@ fn loose_address_in(line: &str) -> Option<FoundAddress> {
     if state.len() != 2 || !state.bytes().all(|b| b.is_ascii_uppercase()) || !is_zip(zip) {
         return None;
     }
-    // Drop a `key:` label (`apostille_mailing_address: PO BOX …`).
-    let head = head.rsplit(':').next().unwrap_or(head).trim();
+    // Drop a `key:` label (`apostille_mailing_address: PO BOX …`), but
+    // never the `:` of `PO Box: 40228`.
+    let label_end = |end: usize| head[..end].rfind(':').map_or(0, |i| i + 1);
+    let head = match crate::orders::po_box_in(head) {
+        Some((span, _)) => &head[label_end(span.start)..],
+        None => &head[label_end(head.len())..],
+    }
+    .trim();
+    // PO box, any spelling: `PO BOX 40228 City`, `P.O. Box 40228 City`,
+    // `P.O.Box #40228 City`, `Post Office Box No. 40228 City`. The city
+    // follows the number after a space and holds no digit.
+    if let Some((span, number)) = crate::orders::po_box_in(head) {
+        let rest = &head[span.end..];
+        let city = rest.split_whitespace().collect::<Vec<_>>().join(" ");
+        let fits = rest.starts_with(char::is_whitespace)
+            && !city.is_empty()
+            && city.len() <= 40
+            && !city.chars().any(|c| c.is_ascii_digit());
+        return fits.then(|| FoundAddress {
+            address: UsAddress {
+                street: format!("PO Box {number}"),
+                city,
+                state: state.to_string(),
+                zip: zip.to_string(),
+            },
+            line2: None,
+        });
+    }
+    // A box keyword with no number is no street either.
+    if crate::orders::names_box_keyword(head) {
+        return None;
+    }
     let tokens: Vec<&str> = head.split_whitespace().collect();
     let lower: Vec<String> = tokens
         .iter()
@@ -144,25 +174,6 @@ fn loose_address_in(line: &str) -> Option<FoundAddress> {
         })
         .collect();
     let numeric = |i: usize| lower[i].bytes().all(|b| b.is_ascii_digit()) && !lower[i].is_empty();
-    // PO box: `PO BOX 40228 City` / `P.O. Box 40228 City`.
-    if let Some(i) = (0..tokens.len().saturating_sub(2)).find(|&i| {
-        (lower[i] == "po" && lower[i + 1] == "box") || (lower[i] == "p" && lower[i + 1] == "o")
-    }) {
-        let box_at = if lower[i + 1] == "box" { i + 2 } else { i + 3 };
-        if box_at < tokens.len() && numeric(box_at) && box_at + 1 < tokens.len() {
-            let city = tokens[box_at + 1..].join(" ");
-            return Some(FoundAddress {
-                address: UsAddress {
-                    street: format!("PO Box {}", tokens[box_at]),
-                    city,
-                    state: state.to_string(),
-                    zip: zip.to_string(),
-                },
-                line2: None,
-            });
-        }
-        return None;
-    }
     // Street: the last number before the first street-type word.
     let suffix = (1..tokens.len()).find(|&i| SUFFIXES.contains(&lower[i].as_str()))?;
     let start = (0..suffix).rev().find(|&i| numeric(i))?;
@@ -448,6 +459,7 @@ mod tests {
             id,
             topic: topic.to_string(),
             text: text.to_string(),
+            disputed: false,
         }
     }
 
@@ -489,6 +501,29 @@ mod tests {
         let street = address_in("Visit us at\n243 Israel Rd SE\nTumwater, WA 98501").unwrap();
         assert_eq!(street.address.street, "243 Israel Rd SE");
         assert_eq!(street.address.city, "Tumwater");
+    }
+
+    #[test]
+    fn every_po_box_spelling_reads_as_a_box() {
+        for written in [
+            "apostille_mailing_address: P.O. Box 40228 Olympia, WA 98504-0228",
+            "apostille_mailing_address: P.O.Box 40228 Olympia, WA 98504-0228",
+            "apostille_mailing_address: Post Office Box 40228 Olympia, WA 98504-0228",
+            "apostille_mailing_address: PO Box #40228 Olympia, WA 98504-0228",
+            "po_box: PO Box: 40228 Olympia, WA 98504-0228",
+            "po_box: PO Box No. 40228 Olympia, WA 98504-0228",
+        ] {
+            let po = address_in(written).unwrap_or_else(|| panic!("{written}"));
+            assert_eq!(po.address.street, "PO Box 40228", "{written}");
+            assert_eq!(po.address.city, "Olympia", "{written}");
+            assert!(po.address.is_po_box(), "{written}");
+        }
+        // Two boxes before one city, or a box with no number: no address.
+        assert_eq!(
+            address_in("PO Box 40220 or PO Box 40234 Olympia, WA 98504"),
+            None
+        );
+        assert_eq!(address_in("PO Box Olympia, WA 98504"), None);
     }
 
     #[test]

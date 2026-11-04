@@ -4,8 +4,8 @@
 //! BEFORE the upgrade and binds the subscription to the caller's
 //! identity ([`auth::ws::authorize`]). Anonymous callers may read
 //! `authority:{slug}` only — and only accepted facts, which the
-//! publish path enforces by accepting just `fact_accepted` events
-//! for authority channels.
+//! publish path enforces by accepting just the ids-only
+//! [`AUTHORITY_KINDS`] for authority channels.
 
 use axum::{
     extract::{
@@ -71,8 +71,16 @@ impl Drop for WsConnGuard {
 
 /// Event kinds anonymous `authority:{slug}` subscribers may receive.
 /// Each carries ids only (the client re-reads the public API), so no
-/// unpublished text ever reaches an anonymous socket.
-pub const AUTHORITY_KINDS: &[&str] = &["fact_accepted", "plan_accepted", "offices_accepted"];
+/// unpublished text ever reaches an anonymous socket. `fact_retired`
+/// names a fact that just left the public reads; `evidence_updated`
+/// names a staff note published or withdrawn.
+pub const AUTHORITY_KINDS: &[&str] = &[
+    "fact_accepted",
+    "fact_retired",
+    "plan_accepted",
+    "offices_accepted",
+    "evidence_updated",
+];
 
 /// Publish one ids-only event on `authority:{slug}`. Kinds outside
 /// [`AUTHORITY_KINDS`] are dropped (debug builds panic), so a lane can

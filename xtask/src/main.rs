@@ -188,6 +188,8 @@ analyze flags:
   --actor <a>     audit actor (default: xtask)
   --scan-captures Option-B mode: analyze captures with id > watermark (no --input)
   --limit <n>     max captures per scan (default: 25, scan mode only)
+  --max-records <n>  records asked of each draft call, 1..=32 (default: 8; a retry asks for half;
+                  also --max-records=<n>); every run prints max_records <n> for <slug>
   --live          draft via the Meta Model API (key from sealed meta.api_key)
   --check         probe the Meta API key only (GET /models, no drafting)
 
@@ -406,9 +408,72 @@ fn run_retention_sweep(args: &[String]) {
     }
 }
 
+/// Accepted `analyze --max-records` values. 32 already overran the 32k
+/// completion budget on staging (`DEFAULT_MAX_RECORDS`); a draft that
+/// overruns retries with half as many records.
+const MAX_RECORDS_RANGE: std::ops::RangeInclusive<u32> = 1..=32;
+
+/// `analyze --max-records <n>` (or `--max-records=<n>`): records per
+/// draft call. `None` (no flag) keeps the runner default.
+fn max_records_flag(args: &[String]) -> Result<Option<u32>, String> {
+    let mut given: Vec<&str> = Vec::new();
+    for (i, arg) in args.iter().enumerate() {
+        if arg == "--max-records" {
+            // A trailing `--max-records`, or one followed by another
+            // flag, has no value: it must not fall back to the default
+            // silently.
+            match args.get(i + 1) {
+                Some(value) if !value.starts_with("--") => given.push(value),
+                _ => {
+                    return Err(format!(
+                        "--max-records needs a value in {MAX_RECORDS_RANGE:?}"
+                    ));
+                }
+            }
+        } else if let Some(value) = arg.strip_prefix("--max-records=") {
+            given.push(value);
+        }
+    }
+    let text = match given.as_slice() {
+        [] => return Ok(None),
+        [one] => *one,
+        _ => {
+            return Err(format!(
+                "--max-records given {} times: pass one value in {MAX_RECORDS_RANGE:?}",
+                given.len()
+            ));
+        }
+    };
+    text.parse::<u32>()
+        .ok()
+        .filter(|n| MAX_RECORDS_RANGE.contains(n))
+        .map(Some)
+        .ok_or_else(|| {
+            format!("--max-records {text}: want a whole number in {MAX_RECORDS_RANGE:?}")
+        })
+}
+
+/// The record budget one analyze run drafts `slug` with, printed first
+/// by every run so pasted ops output proves the budget took effect (an
+/// older binary prints no such line).
+fn budget_line(slug: &str, max_records: Option<u32>) -> String {
+    match max_records {
+        Some(n) => format!("max_records {n} for {slug}"),
+        None => format!(
+            "max_records {} for {slug} (default)",
+            handbook_agent::runner::DEFAULT_MAX_RECORDS
+        ),
+    }
+}
+
 fn run_analyze(args: &[String]) {
     use std::collections::HashMap;
 
+    // Before the store opens: a bad budget fails without a write.
+    let max_records = max_records_flag(args).unwrap_or_else(|e| {
+        eprintln!("analyze: {e}");
+        std::process::exit(2);
+    });
     let store = open_store(args);
     let conn = open_db(&store);
     if let Err(e) = handbook_store::db::migrate(&conn) {
@@ -419,9 +484,10 @@ fn run_analyze(args: &[String]) {
         return run_analyze_check(&conn);
     }
     if args.iter().any(|a| a == "--scan-captures") {
-        return run_analyze_scan(&conn, &store, args);
+        return run_analyze_scan(&conn, &store, args, max_records);
     }
     let slug = required(args, "slug");
+    println!("{}", budget_line(&slug, max_records));
     let lang = flag(args, "lang").unwrap_or_else(|| "en".to_string());
     let raw_input = required(args, "input");
     let input = match raw_input.strip_prefix('@') {
@@ -447,7 +513,12 @@ fn run_analyze(args: &[String]) {
         at: unix_now(),
         capture_id: handbook_agent::runner::UNATTRIBUTED_CAPTURE_ID,
     };
-    match handbook_agent::runner::run_analysis(&conn, client.as_ref(), &req) {
+    match handbook_agent::runner::run_analysis_with_max_records(
+        &conn,
+        client.as_ref(),
+        &req,
+        max_records,
+    ) {
         Ok(report) => {
             println!(
                 "authority: {}\nproposed: {}\nrejected: {}\nsuppressed: {}\nskipped: {}",
@@ -574,11 +645,13 @@ fn run_analyze_scan(
     conn: &rusqlite::Connection,
     store: &handbook_store::store::Store,
     args: &[String],
+    max_records: Option<u32>,
 ) {
     use std::collections::HashMap;
 
     let client = draft_client(args, || live_client(conn));
     let slug = required(args, "slug");
+    println!("{}", budget_line(&slug, max_records));
     let lang = flag(args, "lang").unwrap_or_else(|| "en".to_string());
     let actor = flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
     let limit: i64 = match flag(args, "limit") {
@@ -648,7 +721,12 @@ fn run_analyze_scan(
             at: now,
             capture_id: *id,
         };
-        match handbook_agent::runner::run_analysis(conn, client.as_ref(), &req) {
+        match handbook_agent::runner::run_analysis_with_max_records(
+            conn,
+            client.as_ref(),
+            &req,
+            max_records,
+        ) {
             Ok(r) => {
                 proposed += r.proposed;
                 rejected += r.rejected;
@@ -668,8 +746,9 @@ fn run_analyze_scan(
         }
     }
     println!(
-        "analyze: {slug} scanned={} proposed={proposed} rejected={rejected} skipped={skipped} watermark={watermark}",
-        rows.len()
+        "analyze: {slug} scanned={} proposed={proposed} rejected={rejected} skipped={skipped} watermark={watermark} max_records={}",
+        rows.len(),
+        max_records.unwrap_or(handbook_agent::runner::DEFAULT_MAX_RECORDS)
     );
 }
 
@@ -1121,5 +1200,50 @@ mod tests {
         assert!(hits[0].ends_with(MODEL_NEEDLES[0]), "got: {}", hits[0]);
         assert!(hits[1].contains(MODEL_NEEDLES[8]), "got: {}", hits[1]);
         assert!(model_gate_hits("crates/y.rs", b"muse-voice-transcribe-1.0\nsam-3.1\n").is_empty());
+    }
+
+    #[test]
+    fn max_records_flag_takes_1_to_32_and_defaults_to_none() {
+        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // No flag: the runner default (nothing changes).
+        assert_eq!(
+            max_records_flag(&args(&["--slug", "usa-wa-sos", "--scan-captures"])),
+            Ok(None)
+        );
+        for (text, n) in [("1", 1), ("24", 24), ("32", 32)] {
+            assert_eq!(
+                max_records_flag(&args(&["--scan-captures", "--max-records", text, "--live"])),
+                Ok(Some(n)),
+                "{text}"
+            );
+            // The `=` form reads the same value.
+            let joined = format!("--max-records={text}");
+            assert_eq!(
+                max_records_flag(&args(&["--scan-captures", &joined, "--live"])),
+                Ok(Some(n)),
+                "{joined}"
+            );
+        }
+        for bad in ["0", "33", "-1", "8.5", "eight", ""] {
+            let err = max_records_flag(&args(&["--max-records", bad])).unwrap_err();
+            assert!(err.contains("1..=32"), "{bad}: {err}");
+            let joined = format!("--max-records={bad}");
+            let err = max_records_flag(&args(&[&joined])).unwrap_err();
+            assert!(err.contains("1..=32"), "{joined}: {err}");
+        }
+        // A missing value is refused, never read as the default or as
+        // the next flag; so is a second budget.
+        assert!(max_records_flag(&args(&["--scan-captures", "--max-records"])).is_err());
+        assert!(max_records_flag(&args(&["--max-records", "--live"])).is_err());
+        assert!(max_records_flag(&args(&["--max-records", "24", "--max-records=8"])).is_err());
+        // Every run names its budget per slug.
+        assert_eq!(
+            budget_line("usa-wa-sos", Some(24)),
+            "max_records 24 for usa-wa-sos"
+        );
+        assert_eq!(
+            budget_line("vietnam", None),
+            "max_records 8 for vietnam (default)"
+        );
     }
 }

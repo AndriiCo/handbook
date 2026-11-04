@@ -34,7 +34,8 @@ pub const PROMPT_VERSION: &str = "aa-prompt-v1";
 /// Day-2 was EN-only; SA-16 adds Spanish (Mexico SRE) and French.
 pub const SUPPORTED_LANGS: [&str; 3] = ["en", "es", "fr"];
 
-/// Cap on records requested per draft call (the runner takes no caller budget yet).
+/// Cap on records requested per draft call, unless the caller passes its
+/// own ([`run_analysis_with_max_records`], `xtask analyze --max-records`).
 /// Records per draft call. Spark reasons per record, so 32 blows past
 /// even a 32k completion budget (`finish_reason = length` on staging);
 /// 8 fits and still clears the 8-facts-per-slug bar across captures.
@@ -182,6 +183,19 @@ pub fn run_analysis(
     client: &dyn ModelClient,
     req: &RunRequest<'_>,
 ) -> Result<RunReport, ModelError> {
+    run_analysis_with_max_records(conn, client, req, None)
+}
+
+/// [`run_analysis`] asking for up to `max_records` records per draft
+/// call instead of [`DEFAULT_MAX_RECORDS`] (`None` keeps the default;
+/// `xtask analyze --max-records`). The refused-quote retry below, like
+/// the live client's truncation retry, asks for half of it.
+pub fn run_analysis_with_max_records(
+    conn: &Connection,
+    client: &dyn ModelClient,
+    req: &RunRequest<'_>,
+    max_records: Option<u32>,
+) -> Result<RunReport, ModelError> {
     let authority_id = authority_id(conn, req.slug)?;
 
     // Supported-langs + unknown-skip (roadmap item 5): never
@@ -197,7 +211,7 @@ pub fn run_analysis(
         authority_slug: req.slug.to_string(),
         prompt_version: PROMPT_VERSION,
         input_text: req.input_text.to_string(),
-        max_records: DEFAULT_MAX_RECORDS,
+        max_records: max_records.unwrap_or(DEFAULT_MAX_RECORDS),
         capture_id: req.capture_id,
         doc_ids,
     };
@@ -666,6 +680,7 @@ mod tests {
         NewAuthority, add_authority, get_capture_watermark, get_watermark, migrate, open,
     };
     use handbook_store::store::Store;
+    use std::cell::RefCell;
 
     fn migrated_with_authority(slug: &str) -> (tempfile::TempDir, Store, Connection) {
         let dir = tempfile::tempdir().unwrap();
@@ -1253,6 +1268,94 @@ mod tests {
         assert_eq!((report.attempts[1].n, report.attempts[1].drafted), (2, 0));
         assert_eq!(report.attempts[1].kinds, vec!["call failed".to_string()]);
         assert!(report.errors.iter().any(|e| e.contains("retry: ")));
+    }
+
+    /// Records every call's `max_records`, so tests see the budget each
+    /// draft asked the model for (attempt 1 first).
+    struct BudgetSpy<'a> {
+        inner: &'a dyn ModelClient,
+        seen: RefCell<Vec<u32>>,
+    }
+
+    impl ModelClient for BudgetSpy<'_> {
+        fn model_id(&self) -> &'static str {
+            self.inner.model_id()
+        }
+
+        fn draft_records(&self, req: &DraftRequest) -> Result<DraftResponse, ModelError> {
+            self.seen.borrow_mut().push(req.max_records);
+            self.inner.draft_records(req)
+        }
+    }
+
+    fn budget_spy(inner: &dyn ModelClient) -> BudgetSpy<'_> {
+        BudgetSpy {
+            inner,
+            seen: RefCell::new(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn max_records_override_reaches_the_draft_request() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "PO Box 40220, Mon-Fri 9-5!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        // No override: the draft asks for the default.
+        let spy = budget_spy(&StubClient);
+        run_analysis(&conn, &spy, &req).unwrap();
+        assert_eq!(spy.seen.into_inner(), vec![DEFAULT_MAX_RECORDS]);
+        let spy = budget_spy(&StubClient);
+        run_analysis_with_max_records(&conn, &spy, &req, None).unwrap();
+        assert_eq!(spy.seen.into_inner(), vec![DEFAULT_MAX_RECORDS]);
+        // `--max-records 24`: the draft asks for 24.
+        let spy = budget_spy(&StubClient);
+        run_analysis_with_max_records(&conn, &spy, &req, Some(24)).unwrap();
+        assert_eq!(spy.seen.into_inner(), vec![24]);
+        // The budget binds: the stub's two records cap at one.
+        let report = run_analysis_with_max_records(&conn, &StubClient, &req, Some(1)).unwrap();
+        assert_eq!((report.proposed, report.rejected), (1, 0));
+    }
+
+    #[test]
+    fn refused_quote_retry_halves_the_override() {
+        let (_dir, _store, conn) = migrated_with_authority("usa-wa-sos");
+        let text = "PO Box 40220, Mon-Fri 9-5!";
+        let mut sources = HashMap::new();
+        sources.insert("fixture".to_string(), text.to_string());
+        let req = RunRequest {
+            slug: "usa-wa-sos",
+            lang: "en",
+            input_text: text,
+            sources: &sources,
+            actor: "test",
+            at: 1_800_000_100,
+            capture_id: UNATTRIBUTED_CAPTURE_ID,
+        };
+        let spy = budget_spy(&RefuseThenSucceed);
+        run_analysis(&conn, &spy, &req).unwrap();
+        assert_eq!(
+            spy.seen.into_inner(),
+            vec![DEFAULT_MAX_RECORDS, DEFAULT_MAX_RECORDS / 2]
+        );
+        let spy = budget_spy(&RefuseThenSucceed);
+        let report = run_analysis_with_max_records(&conn, &spy, &req, Some(24)).unwrap();
+        assert_eq!(spy.seen.into_inner(), vec![24, 12]);
+        assert_eq!((report.proposed, report.rejected), (1, 2));
+        // A budget of one has nothing to halve: no retry.
+        let spy = budget_spy(&RefuseThenSucceed);
+        let report = run_analysis_with_max_records(&conn, &spy, &req, Some(1)).unwrap();
+        assert_eq!(spy.seen.into_inner(), vec![1]);
+        assert_eq!((report.proposed, report.attempts.len()), (0, 1));
     }
 
     /// A 300-char rejected value stores at most 200 chars, in both the

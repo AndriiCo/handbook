@@ -953,8 +953,10 @@ pub fn translate_one(
     })
 }
 
-/// Guard-passing translations for one authority slug + language.
-/// Serves the public `?lang` dossier: anonymous, rate-limited, model-free.
+/// Guard-passing translations for one authority slug + language, of
+/// exactly the facts `/facts` serves (accepted, not `phone_script`):
+/// a retired fact's translation leaves with it. Serves the public
+/// `?lang` dossier: anonymous, rate-limited, model-free.
 fn translations_for_slug(
     conn: &Connection,
     slug: &str,
@@ -972,6 +974,7 @@ fn translations_for_slug(
         "SELECT t.fact_id, t.statement, t.model, t.created_at
          FROM fact_translation t JOIN fact f ON f.id = t.fact_id
          WHERE f.authority_id = ?1 AND t.lang = ?2
+           AND f.status = 'accepted' AND f.topic != 'phone_script'
            AND t.guard_ok = 1 AND t.statement != ''
          ORDER BY t.fact_id LIMIT 200",
     )?;

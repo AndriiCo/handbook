@@ -7,11 +7,15 @@
 //! to end, and every paid tier answers 503 `paid_tiers_paused` until C2
 //! (Stripe Checkout) and the carrier ledger (SA-25 C3) land.
 //!
-//! Delivery options come only from accepted facts: the destination is a
-//! US postal address written in an accepted `mailing`, `po_box` or
-//! `address` fact (or an accepted office), a PO box (or a cited "USPS
-//! only") disables FedEx and the card cites that fact, and with no such
-//! fact every mail option is disabled with the reason.
+//! Delivery options come only from accepted facts: the USPS destination
+//! is a US postal address written in an accepted `mailing` or `po_box`
+//! fact (an office with neither falls back to its `address` fact), a PO
+//! box (or a cited "USPS only") disables FedEx and the card cites that
+//! fact, and with no such fact every mail option is disabled with the
+//! reason. A PO-box fact the public `/facts` read banners as in conflict
+//! (the shared rule, [`db::facts_disagree`]) pauses every USPS kind
+//! until the office confirms one box; FedEx reads only a cited courier
+//! street, never the walk-in counter or a box.
 
 use std::sync::LazyLock;
 
@@ -135,10 +139,39 @@ pub struct UsAddress {
 }
 
 impl UsAddress {
+    /// The street is a PO box, however it is spelled ([`PO_BOX`]).
     pub fn is_po_box(&self) -> bool {
-        let s = self.street.to_lowercase().replace('.', "");
-        s.starts_with("po box") || s.contains(" po box")
+        PO_BOX.is_match(&self.street)
     }
+}
+
+/// The PO box keyword however it is written: `PO Box`, `PO BOX`,
+/// `P.O. Box`, `P.O.Box`, `P O Box`, `POBox`, `Post Office Box`.
+static PO_BOX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\b(?:p\s*\.?\s*o\s*\.?\s*|post\s+office\s+)box(?:\b|[0-9])")
+        .expect("PO box keyword compiles")
+});
+
+/// A PO box and its number: the keyword ([`PO_BOX`]), then an optional
+/// `#`, `:`, `No.` or `Number`, then the digits (`PO Box #40234`,
+/// `PO Box No. 40220`, `Post Office Box 40220`).
+static PO_BOX_NUMBER: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+        r"(?i)\b(?:p\s*\.?\s*o\s*\.?\s*|post\s+office\s+)box\s*(?:(?:#|:|no\b\.?|num\b\.?|number\b)\s*)?#?\s*([0-9]+)",
+    )
+    .expect("PO box number compiles")
+});
+
+/// The first PO box written in `text` with its number: the byte span
+/// from the keyword through the digits, and the digits as written.
+pub(crate) fn po_box_in(text: &str) -> Option<(std::ops::Range<usize>, &str)> {
+    let c = PO_BOX_NUMBER.captures(text)?;
+    Some((c.get(0)?.range(), c.get(1)?.as_str()))
+}
+
+/// `text` writes the PO box keyword, with or without a number.
+pub(crate) fn names_box_keyword(text: &str) -> bool {
+    PO_BOX.is_match(text)
 }
 
 fn is_zip(s: &str) -> bool {
@@ -158,7 +191,8 @@ fn is_zip(s: &str) -> bool {
 
 /// The first `street, City, ST 12345` written in `text` (deterministic;
 /// the address is quoted, never inferred). The street starts at its
-/// first digit or at "PO Box".
+/// PO box keyword (any spelling, [`PO_BOX`]: `Post Office Box 40220` is
+/// a box, never a street named `40220`), else at its first digit.
 pub fn us_address_in(text: &str) -> Option<UsAddress> {
     let parts: Vec<&str> = text.split(',').map(str::trim).collect();
     for i in 2..parts.len() {
@@ -173,11 +207,9 @@ pub fn us_address_in(text: &str) -> Option<UsAddress> {
         }
         let city = parts[i - 1].rsplit(['.', ':']).next().unwrap_or("").trim();
         let raw = parts[i - 2];
-        // ASCII lowercase keeps byte offsets identical to `raw`.
-        let lower = raw.to_ascii_lowercase();
-        let start = lower
-            .find("po box")
-            .or_else(|| lower.find("p.o. box"))
+        let start = PO_BOX
+            .find(raw)
+            .map(|m| m.start())
             .or_else(|| raw.find(|c: char| c.is_ascii_digit()));
         let Some(start) = start else { continue };
         let street = raw[start..].trim();
@@ -199,21 +231,58 @@ pub fn us_address_in(text: &str) -> Option<UsAddress> {
 pub struct FactText {
     pub id: i64,
     pub topic: String,
+    /// The statement, then each citation quote on its own line.
     pub text: String,
+    /// The public `/facts` read banners this fact: an accepted sibling
+    /// disagrees with it under the shared rule ([`db::facts_disagree`],
+    /// `FactView::conflict`).
+    pub disputed: bool,
+}
+
+/// The USPS mail address and the fact it is quoted from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MailAddress {
+    pub address: UsAddress,
+    pub fact_id: i64,
 }
 
 /// Where mail for this authority goes, and why FedEx may not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Destination {
-    pub address: UsAddress,
-    pub fact_id: i64,
+    /// Where USPS kinds ship; `None` when the office's `mailing` and
+    /// `po_box` facts name no address the reader can place (USPS kinds
+    /// are then off: the walk-in counter never stands in for them).
+    pub mail: Option<MailAddress>,
     /// Fact that makes this route USPS-only (a PO box or a cited
     /// "USPS only"), if any.
     pub usps_only_fact: Option<i64>,
-    /// Where a FedEx envelope goes: the mail address when it is a
-    /// street, else a cited courier street address (see [`destination`]);
-    /// `None` disables FedEx.
+    /// Where a FedEx envelope goes: a street address that a `mailing`
+    /// fact gives or that a fact cites for couriers (see
+    /// [`destination`]); `None` disables FedEx.
     pub fedex: Option<CourierAddress>,
+    /// Accepted USPS facts naming a PO box that another one contradicts
+    /// (the shared conflict rule, or the address reader's box number or
+    /// ZIP), mail facts first. While any is listed, no USPS kind ships:
+    /// the mail address may be the wrong box.
+    pub disputed: Vec<i64>,
+}
+
+impl Destination {
+    /// Where an order of `kind` ships, with its building line and the
+    /// fact it comes from: FedEx only to the courier address, never the
+    /// mail address; a USPS kind only to an undisputed mail address.
+    pub fn ship_to(&self, kind: &str) -> Option<(&UsAddress, Option<&str>, i64)> {
+        if kind == "label_fedex" {
+            return self
+                .fedex
+                .as_ref()
+                .map(|c| (&c.address, c.line2.as_deref(), c.fact_id));
+        }
+        if !self.disputed.is_empty() {
+            return None;
+        }
+        self.mail.as_ref().map(|m| (&m.address, None, m.fact_id))
+    }
 }
 
 /// A street address FedEx can deliver to, with its building line.
@@ -252,18 +321,86 @@ fn cites_courier(text: &str) -> bool {
     })
 }
 
-/// Mailing destination from accepted facts: `mailing` and `po_box`
-/// first (that is where requests are mailed), then `address`. Each
-/// fact is read line by line (statement, then each citation quote),
-/// both `street, City, ST ZIP` and `street City, ST ZIP`
-/// ([`crate::label_autofill::address_in`]).
+/// Why every USPS kind (`label_usps`, `mail_kit`, `address_label`) is
+/// off while the office's pages disagree on its PO box.
+pub const DISPUTED_PO_BOX: &str = "The office's pages list different PO boxes. \
+     Labels are paused for this office until it confirms which one is current.";
+
+/// Why FedEx is off when the office's mail is a PO box and no fact
+/// names a street for couriers (the card cites the box fact).
+pub const PO_BOX_NO_COURIER: &str = "This office receives mail at a PO Box, which FedEx cannot \
+     deliver to, and no approved fact names a street address for couriers.";
+
+/// Why FedEx is off when no approved fact names a courier street: a
+/// walk-in counter address alone never receives a customer's envelope.
+pub const NO_COURIER_STREET: &str = "No approved fact names a street address for couriers at \
+     this office.";
+
+/// The PO box a `mailing` or `po_box` fact names, as the address reader
+/// parses it ([`crate::label_autofill::address_in`]): (box number, ZIP),
+/// the number without its leading zeros (`PO Box #040220` is `40220`),
+/// or empty when the reader finds the keyword but no number (such a box
+/// never matches another, so the pair reads as disputed). `None` for
+/// other topics and for a street address.
+fn usps_box(f: &FactText) -> Option<(String, String)> {
+    if !db::USPS_TOPICS.contains(&f.topic.as_str()) {
+        return None;
+    }
+    let address = crate::label_autofill::address_in(&f.text)?.address;
+    if !address.is_po_box() {
+        return None;
+    }
+    let number = po_box_in(&address.street).map_or("", |(_, digits)| {
+        let trimmed = digits.trim_start_matches('0');
+        if trimmed.is_empty() { "0" } else { trimmed }
+    });
+    Some((number.to_string(), address.zip))
+}
+
+/// Two parsed PO boxes are the same box: equal (read) numbers, and ZIPs
+/// that agree under the shared conflict rule ([`db::zips_agree`]): a
+/// five-digit ZIP agrees with the ZIP+4 that extends it (`98504` and
+/// `98504-0228`), two different +4 codes do not.
+fn same_box(a: &(String, String), b: &(String, String)) -> bool {
+    !a.0.is_empty() && a.0 == b.0 && db::zips_agree(&a.1, &b.1)
+}
+
+/// A `mailing` or `po_box` fact that names a PO box: its topic is
+/// `po_box`, the shared rule reads a `box:` token in its text
+/// ([`db::value_tokens`]), or its address is a box.
+fn names_po_box(f: &FactText) -> bool {
+    db::USPS_TOPICS.contains(&f.topic.as_str())
+        && (f.topic == "po_box"
+            || db::value_tokens(&f.text)
+                .iter()
+                .any(|t| t.starts_with("box:"))
+            || crate::label_autofill::address_in(&f.text).is_some_and(|a| a.address.is_po_box()))
+}
+
+/// Mailing destination from accepted facts. Each fact is read line by
+/// line (statement, then each citation quote), both `street, City, ST
+/// ZIP` and `street City, ST ZIP` ([`crate::label_autofill::address_in`]).
 ///
-/// FedEx goes to the same address when it is a street. When it is a
-/// PO box, FedEx goes only to a street address a fact cites for mail
-/// or couriers: a non-PO-box `mailing` fact, or an `address`/`dropbox`
-/// fact that names couriers (FedEx, UPS, overnight, express…). A walk-in
-/// counter address alone never receives a customer's envelope; a
-/// cited "USPS only" disables FedEx outright.
+/// USPS kinds ship to the first `mailing`, then `po_box`, fact that
+/// reads as an address (that is where requests are mailed). Only an
+/// office with no `mailing` or `po_box` fact at all falls back to its
+/// `address` street; when those facts exist but none reads as an
+/// address, USPS kinds are off rather than sent to the walk-in counter.
+///
+/// FedEx goes only to a street address (never a PO box, however it is
+/// spelled) that a `mailing` fact gives or that a fact cites for
+/// couriers (FedEx, UPS, overnight, express…); an `address` or
+/// `dropbox` street that names no courier is a walk-in counter and
+/// never receives a customer's envelope. A cited "USPS only" disables
+/// FedEx outright.
+///
+/// The PO box is disputed when a `mailing`/`po_box` fact that names a
+/// box is in conflict on the public read ([`FactText::disputed`], the
+/// shared rule `/facts` banners with), and, as an extra fail-closed
+/// check, when two such facts parse to different box numbers or ZIPs
+/// (`PO BOX 40220 Olympia` and `P.O. Box 40220, Olympia` agree; a bare
+/// `98504` agrees with `98504-0220`). Then no USPS kind ships, and
+/// FedEx still reads only its courier street.
 pub fn destination(facts: &[FactText]) -> Option<Destination> {
     let rank = |t: &str| match t {
         "mailing" => 0,
@@ -275,33 +412,45 @@ pub fn destination(facts: &[FactText]) -> Option<Destination> {
     let mut candidates: Vec<&FactText> = facts.iter().filter(|f| rank(&f.topic) < 9).collect();
     candidates.sort_by_key(|f| (rank(&f.topic), f.id));
     let read = |f: &FactText| crate::label_autofill::address_in(&f.text);
-    let (fact, found) = candidates
+    let usps = |f: &FactText| db::USPS_TOPICS.contains(&f.topic.as_str());
+    let has_usps = candidates.iter().any(|f| usps(f));
+    let mail = candidates
         .iter()
-        .filter(|f| f.topic != "dropbox")
-        .find_map(|f| read(f).map(|a| (*f, a)))?;
+        .filter(|f| {
+            if has_usps {
+                usps(f)
+            } else {
+                f.topic == "address"
+            }
+        })
+        .find_map(|f| {
+            read(f).map(|found| MailAddress {
+                address: found.address,
+                fact_id: f.id,
+            })
+        });
     let cited_usps_only = facts
         .iter()
         .find(|f| {
             let t = f.text.to_lowercase();
-            matches!(f.topic.as_str(), "mailing" | "po_box")
+            usps(f)
                 && (t.contains("usps only")
                     || t.contains("u.s. postal service only")
                     || t.contains("only by usps"))
         })
         .map(|f| f.id);
-    let usps_only_fact = if found.address.is_po_box() {
-        Some(fact.id)
-    } else {
-        cited_usps_only
+    // The fact that makes this office's mail a box: the mail address
+    // itself, a cited "USPS only", or (when no address reads at all) the
+    // first USPS fact that names a box.
+    let usps_only_fact = match &mail {
+        Some(m) if m.address.is_po_box() => Some(m.fact_id),
+        Some(_) => cited_usps_only,
+        None => {
+            cited_usps_only.or_else(|| candidates.iter().find(|f| names_po_box(f)).map(|f| f.id))
+        }
     };
     let fedex = if cited_usps_only.is_some() {
         None
-    } else if !found.address.is_po_box() {
-        Some(CourierAddress {
-            address: found.address.clone(),
-            line2: found.line2.clone(),
-            fact_id: fact.id,
-        })
     } else {
         candidates.iter().find_map(|f| {
             let a = read(f)?;
@@ -313,15 +462,33 @@ pub fn destination(facts: &[FactText]) -> Option<Destination> {
             })
         })
     };
+    let boxes: Vec<(i64, (String, String))> = candidates
+        .iter()
+        .filter_map(|f| Some((f.id, usps_box(f)?)))
+        .collect();
+    let parsed_dispute = |id: i64| {
+        boxes
+            .iter()
+            .find(|(box_id, _)| *box_id == id)
+            .is_some_and(|(_, a)| boxes.iter().any(|(_, b)| !same_box(a, b)))
+    };
+    let disputed: Vec<i64> = candidates
+        .iter()
+        .filter(|f| (f.disputed && names_po_box(f)) || parsed_dispute(f.id))
+        .map(|f| f.id)
+        .collect();
+    if mail.is_none() && fedex.is_none() && usps_only_fact.is_none() && disputed.is_empty() {
+        return None;
+    }
     Some(Destination {
-        address: found.address,
-        fact_id: fact.id,
+        mail,
         usps_only_fact: if fedex.is_some() {
             None
         } else {
             usps_only_fact
         },
         fedex,
+        disputed,
     })
 }
 
@@ -345,42 +512,53 @@ pub struct Switches {
     pub label_fee_cents: i64,
 }
 
-/// The four delivery cards (contracts `order-options.json`).
+/// Why a paid card is off while paid tiers are paused (POST answers
+/// 503 `paid_tiers_paused` for it; every other refusal is a 409).
+const PAID_PAUSED: &str = "Paid options are paused right now. The free address label still works.";
+
+/// The four delivery cards (contracts `order-options.json`). A disputed
+/// PO box turns off every USPS card, citing the first disputed fact,
+/// and `destination` reads null: no USPS kind has one to use. So does
+/// an office whose mailing facts name no address the reader can place.
 pub fn options(slug: &str, dest: Option<&Destination>, sw: &Switches) -> Value {
     let paid_enabled = sw.orders_enabled && sw.stripe_key;
     let no_dest = "No staff-approved US mailing address for this office yet.";
-    let paused = "Paid options are paused right now. The free address label still works.";
     let card = |kind: &str, title: &str, from: Option<i64>| -> Value {
         let (enabled, reason, fact_id): (bool, Option<&str>, Option<i64>) = match (kind, dest) {
             (_, None) => (false, Some(no_dest), None),
-            ("label_fedex", Some(d)) if d.fedex.is_none() => (
-                false,
-                Some(
-                    "This office receives mail at a PO Box, which FedEx cannot deliver to, \
-                     and no approved fact names a street address for couriers.",
-                ),
-                d.usps_only_fact,
-            ),
-            ("address_label", Some(_)) => (true, None, None),
-            (_, Some(_)) if !paid_enabled => (false, Some(paused), None),
-            ("mail_kit", Some(_)) if from.is_none() || !sw.ship_from_ok => {
-                (false, Some(paused), None)
+            ("label_fedex", Some(d)) if d.fedex.is_none() => match d.usps_only_fact {
+                Some(id) => (false, Some(PO_BOX_NO_COURIER), Some(id)),
+                None => (false, Some(NO_COURIER_STREET), None),
+            },
+            ("label_usps" | "mail_kit" | "address_label", Some(d)) if !d.disputed.is_empty() => {
+                (false, Some(DISPUTED_PO_BOX), d.disputed.first().copied())
             }
-            ("label_fedex", Some(_)) if !sw.fedex_ready => (false, Some(paused), None),
-            ("label_usps", Some(_)) if !sw.usps_ready => (false, Some(paused), None),
+            ("label_usps" | "mail_kit" | "address_label", Some(d)) if d.mail.is_none() => {
+                (false, Some(no_dest), None)
+            }
+            ("address_label", Some(_)) => (true, None, None),
+            (_, Some(_)) if !paid_enabled => (false, Some(PAID_PAUSED), None),
+            ("mail_kit", Some(_)) if from.is_none() || !sw.ship_from_ok => {
+                (false, Some(PAID_PAUSED), None)
+            }
+            ("label_fedex", Some(_)) if !sw.fedex_ready => (false, Some(PAID_PAUSED), None),
+            ("label_usps", Some(_)) if !sw.usps_ready => (false, Some(PAID_PAUSED), None),
             _ => (true, None, None),
         };
         json!({"kind": kind, "enabled": enabled, "title": title, "reason": reason,
                "fact_id": fact_id, "from_cents": if enabled { from } else { None }})
     };
+    let mail = dest
+        .filter(|d| d.disputed.is_empty())
+        .and_then(|d| d.mail.as_ref());
     json!({
         "slug": slug,
         "mode": if sw.stripe_live { "live" } else { "test" },
         "paid_enabled": paid_enabled,
         "currency": if sw.currency.is_empty() { "usd" } else { sw.currency.as_str() },
-        "destination": dest.map(|d| json!({
-            "city": d.address.city, "region": d.address.state, "postal_code": d.address.zip,
-            "po_box": d.address.is_po_box(), "fact_id": d.fact_id,
+        "destination": mail.map(|m| json!({
+            "city": m.address.city, "region": m.address.state, "postal_code": m.address.zip,
+            "po_box": m.address.is_po_box(), "fact_id": m.fact_id,
         })),
         "fedex_destination": dest.and_then(|d| d.fedex.as_ref()).map(|c| json!({
             "city": c.address.city, "region": c.address.state, "postal_code": c.address.zip,
@@ -444,7 +622,8 @@ fn new_order_id() -> String {
     format!("ord_{tail}")
 }
 
-/// Accepted facts of `slug` (statement + quotes), for destinations.
+/// Accepted facts of `slug` (statement + quotes), for destinations,
+/// each with the conflict flag the public `/facts` read banners it with.
 pub(crate) fn fact_texts(state: &AppState, meta: &Connection, slug: &str) -> Vec<FactText> {
     crate::approval::accepted_fact_views(meta, &state.store_root, slug)
         .unwrap_or_default()
@@ -459,6 +638,7 @@ pub(crate) fn fact_texts(state: &AppState, meta: &Connection, slug: &str) -> Vec
                 id: f.id,
                 topic: f.topic,
                 text,
+                disputed: f.conflict,
             }
         })
         .collect()
@@ -640,6 +820,15 @@ pub fn create_order_from(
     mode: &str,
     now: i64,
 ) -> rusqlite::Result<String> {
+    // A FedEx order ships to the courier address, every other kind to
+    // the mail address ([`Destination::ship_to`]). The options gate
+    // refuses the rest first; this never falls back to the mail address
+    // for FedEx, or to a disputed box for USPS.
+    let Some((address, line2, fact_id)) = dest.ship_to(&body.kind) else {
+        return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
+            std::io::Error::other(format!("no {} destination for this office", body.kind)),
+        )));
+    };
     let tx = p2.unchecked_transaction()?;
     tx.execute(
         "INSERT INTO form_submission(form_template_id, authority_id, customer_ref, values_json,
@@ -651,13 +840,6 @@ pub fn create_order_from(
     let id = new_order_id();
     let free = body.kind == "address_label";
     let status = if free { "labels_ready" } else { "draft" };
-    // A FedEx order ships to the courier address; everything else to
-    // the mail address (the options gate already refused FedEx when
-    // there is none).
-    let (address, line2, fact_id) = match (&*body.kind, &dest.fedex) {
-        ("label_fedex", Some(c)) => (&c.address, c.line2.as_deref(), c.fact_id),
-        _ => (&dest.address, None, dest.fact_id),
-    };
     let mut dest_json = json!({
         "name": authority_name, "street1": address.street, "city": address.city,
         "state_province": address.state, "postal": address.zip, "country": "US",
@@ -1016,7 +1198,7 @@ async fn create(
         .cloned()
         .unwrap_or(json!({}));
     if card["enabled"] != true {
-        if PAID.contains(&body.kind.as_str()) && card["fact_id"].is_null() {
+        if PAID.contains(&body.kind.as_str()) && card["reason"] == PAID_PAUSED {
             return paused();
         }
         return err(
@@ -1946,6 +2128,7 @@ mod tests {
             id,
             topic: topic.into(),
             text: text.into(),
+            disputed: false,
         }
     }
 
@@ -2040,11 +2223,12 @@ mod tests {
     #[test]
     fn wa_mail_destination_reads_the_po_box_without_garbling_the_city() {
         let d = destination(&wa_facts()).unwrap();
-        assert_eq!(d.address.street, "PO Box 40228");
-        assert_eq!(d.address.city, "Olympia");
-        assert_eq!(d.address.state, "WA");
-        assert_eq!(d.address.zip, "98504-0228");
-        assert_eq!(d.fact_id, 2);
+        let mail = d.mail.clone().unwrap();
+        assert_eq!(mail.address.street, "PO Box 40228");
+        assert_eq!(mail.address.city, "Olympia");
+        assert_eq!(mail.address.state, "WA");
+        assert_eq!(mail.address.zip, "98504-0228");
+        assert_eq!(mail.fact_id, 2);
         // The Tumwater counter is a walk-in address: no courier cite, no FedEx.
         assert_eq!(d.fedex, None);
         assert_eq!(d.usps_only_fact, Some(2));
@@ -2073,11 +2257,12 @@ mod tests {
             ),
         ];
         let d = destination(&facts).unwrap();
+        let mail = d.mail.clone().unwrap();
         assert_eq!(
-            (d.address.street.as_str(), d.address.city.as_str()),
+            (mail.address.street.as_str(), mail.address.city.as_str()),
             ("PO Box 40220", "Olympia")
         );
-        assert_eq!(d.fact_id, 25);
+        assert_eq!(mail.fact_id, 25);
         assert_eq!(d.fedex, None);
     }
 
@@ -2090,7 +2275,7 @@ mod tests {
             "For FedEx or UPS deliveries use 801 Capitol Way S, Olympia, WA 98501.",
         ));
         let d = destination(&facts).unwrap();
-        assert_eq!(d.address.street, "PO Box 40228");
+        assert_eq!(d.mail.as_ref().unwrap().address.street, "PO Box 40228");
         let c = d.fedex.clone().unwrap();
         assert_eq!(c.address.street, "801 Capitol Way S");
         assert_eq!(c.fact_id, 9);
@@ -2121,6 +2306,633 @@ mod tests {
         assert!(cites_courier(
             "Overnight (FedEx) packages: 801 Capitol Way S"
         ));
+    }
+
+    /// Washington with three accepted USPS statements that disagree
+    /// (fixture boxes; #23 pairs box 40220 with the other box's ZIP+4),
+    /// plus the Tumwater walk-in counter.
+    fn disputed_wa_facts() -> Vec<FactText> {
+        vec![
+            f(
+                21,
+                "po_box",
+                "po_box: PO Box 40220\nPO Box 40220\nOlympia, WA 98504-0220",
+            ),
+            f(
+                22,
+                "mailing",
+                "apostille_mailing_address: PO Box 40234 Olympia, WA 98504-0234",
+            ),
+            f(
+                23,
+                "po_box",
+                "Mail requests to PO Box 40220, Olympia, WA 98504-0234.",
+            ),
+            f(
+                5,
+                "address",
+                "apostille_main_branch_street: Town Center 3 243 Israel Rd SE Tumwater, WA 98501",
+            ),
+        ]
+    }
+
+    const DISPUTED_TEXT: &str = "The office's pages list different PO boxes. Labels are paused for this office until it confirms which one is current.";
+
+    #[test]
+    fn different_po_boxes_pause_every_usps_kind_and_refuse_its_orders() {
+        assert_eq!(DISPUTED_PO_BOX, DISPUTED_TEXT);
+        let d = destination(&disputed_wa_facts()).unwrap();
+        assert_eq!(d.disputed, [22, 21, 23], "mail facts first, then by id");
+        // Ready everywhere and paused alike: the dispute wins, citing #22.
+        for sw in [ready(), Switches::default()] {
+            let v = options("usa-wa-sos", Some(&d), &sw);
+            for kind in ["label_usps", "mail_kit", "address_label"] {
+                let c = card(&v, kind);
+                assert_eq!(c["enabled"], false, "{kind}");
+                assert_eq!(c["reason"], DISPUTED_TEXT, "{kind}");
+                assert_eq!(c["fact_id"], 22, "{kind}");
+                assert!(c["from_cents"].is_null(), "{kind}");
+            }
+            assert!(v["destination"].is_null(), "no USPS destination to use");
+            // FedEx reads only a courier street: none is cited, so it is
+            // off with its own reason, never a box or the walk-in counter.
+            assert!(v["fedex_destination"].is_null());
+            let fedex = card(&v, "label_fedex");
+            assert_eq!(fedex["enabled"], false);
+            assert_eq!(
+                fedex["reason"],
+                "This office receives mail at a PO Box, which FedEx cannot deliver to, and no \
+                 approved fact names a street address for couriers."
+            );
+        }
+        // The order path never writes a disputed box (nor FedEx without
+        // a courier street).
+        let (_tmp, p2) = p2_store();
+        for kind in KINDS {
+            assert!(
+                create_order(&p2, "cust-1", (7, "S"), &body(kind), &d, "test", 1).is_err(),
+                "{kind}"
+            );
+        }
+        let n: i64 = p2
+            .query_row("SELECT COUNT(*) FROM customer_order", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn punctuation_variants_of_one_po_box_agree() {
+        let facts = [
+            f(
+                2,
+                "mailing",
+                "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220\n\
+                 PO BOX 40220 Olympia, WA 98504-0220",
+            ),
+            f(25, "po_box", "P.O. Box 40220, Olympia, WA 98504-0220."),
+        ];
+        let d = destination(&facts).unwrap();
+        assert!(d.disputed.is_empty(), "{:?}", d.disputed);
+        let v = options("usa-wa-sos", Some(&d), &ready());
+        for kind in ["label_usps", "mail_kit", "address_label"] {
+            assert_eq!(card(&v, kind)["enabled"], true, "{kind}");
+        }
+        assert_eq!(v["destination"]["postal_code"], "98504-0220");
+        assert_eq!(v["destination"]["fact_id"], 2);
+    }
+
+    #[test]
+    fn a_five_digit_zip_agrees_with_its_zip_plus_four_only() {
+        let po = |id, zip: &str| f(id, "po_box", &format!("PO Box 40220, Olympia, WA {zip}"));
+        let d = destination(&[po(1, "98504"), po(2, "98504-0220")]).unwrap();
+        assert!(d.disputed.is_empty(), "same box, one ZIP refines the other");
+        let d = destination(&[po(1, "98504"), po(2, "98507-0220")]).unwrap();
+        assert_eq!(d.disputed, [1, 2], "another ZIP is another box");
+        // Box numbers compare as numbers; streets and other topics never.
+        let d = destination(&[
+            po(1, "98504-0220"),
+            f(2, "po_box", "PO Box 040220, Olympia, WA 98504-0220"),
+            f(
+                3,
+                "mailing",
+                "Mail to 801 Capitol Way S, Olympia, WA 98501.",
+            ),
+            f(4, "address", "PO Box 40234, Olympia, WA 98504-0234"),
+        ])
+        .unwrap();
+        assert!(d.disputed.is_empty(), "{:?}", d.disputed);
+    }
+
+    #[test]
+    fn couriers_read_only_the_courier_street_while_the_box_is_disputed() {
+        let mut facts = disputed_wa_facts();
+        facts.push(f(
+            30,
+            "mailing",
+            "courier: Overnight or courier deliveries go to 801 Capitol Way S, Olympia, WA 98501.",
+        ));
+        let d = destination(&facts).unwrap();
+        assert_eq!(d.disputed, [22, 21, 23], "the courier street is no box");
+        let c = d.fedex.clone().unwrap();
+        assert_eq!(
+            (c.address.street.as_str(), c.fact_id),
+            ("801 Capitol Way S", 30)
+        );
+        let v = options("usa-wa-sos", Some(&d), &ready());
+        assert_eq!(card(&v, "label_fedex")["enabled"], true);
+        assert_eq!(v["fedex_destination"]["fact_id"], 30);
+        assert_eq!(v["fedex_destination"]["postal_code"], "98501");
+        assert_eq!(card(&v, "label_usps")["reason"], DISPUTED_TEXT);
+        // The FedEx order ships to that street, never to a PO box.
+        let (_tmp, p2) = p2_store();
+        let id =
+            create_order(&p2, "cust-1", (7, "S"), &body("label_fedex"), &d, "test", 1).unwrap();
+        let to: String = p2
+            .query_row(
+                "SELECT dest_json FROM customer_order WHERE id = ?1",
+                [&id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let to: Value = serde_json::from_str(&to).unwrap();
+        assert_eq!(
+            (&to["street1"], &to["postal"], &to["fact_id"]),
+            (&json!("801 Capitol Way S"), &json!("98501"), &json!(30))
+        );
+        // Without a disputed box the mail address stays USPS's own.
+        let mut calm = wa_facts();
+        calm.push(facts.pop().unwrap());
+        let d = destination(&calm).unwrap();
+        assert!(d.disputed.is_empty());
+        assert_eq!(d.ship_to("label_usps").map(|t| t.2), Some(2));
+        assert_eq!(d.ship_to("label_fedex").map(|t| t.2), Some(30));
+    }
+
+    /// App state over `root` with no config: paid tiers read as paused.
+    fn test_state(root: &std::path::Path) -> AppState {
+        AppState {
+            spa_index: std::path::PathBuf::from("test-spa/index.html"),
+            static_dir: std::path::PathBuf::from("static"),
+            store_root: root.to_path_buf(),
+            bus: crate::ws_bus::Bus::new(),
+            kek: Some(std::sync::Arc::new(config::Kek::generate())),
+            admin_mtls_off: true,
+            admin_allow_ips: config::loopback_allow_ips(),
+            admin_spa_dir: root.join("admin-spa"),
+            media_terms_read: false,
+            label_cfg: crate::p2_labels::LabelCfg::default(),
+            voice_cfg: voice::VoiceConfig::default(),
+            voice_api_key: None,
+            webauthn: std::sync::Arc::new(crate::passkey::test_webauthn()),
+            auth_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            demo_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            draft_runs: std::sync::Arc::new(crate::draft::DraftRuns::default()),
+            config_cache: std::sync::Arc::new(config::CachedReader::default()),
+            google_cfg: None,
+            apple_cfg: None,
+            meta_cfg: None,
+            mailer: None,
+            magic_link_base: "https://example.test/apostille/login".to_string(),
+            notify_poke: std::sync::Arc::new(tokio::sync::Notify::new()),
+            notify_enabled: false,
+            notify_daily_cap: 3,
+            notify_postal: String::new(),
+            notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
+            notify_base: "https://example.test/apostille".to_string(),
+            meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fedex_live: crate::fedex_live::FedexLiveState::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_order_routes_refuse_a_disputed_box() {
+        use axum::{body::Body, http::Request};
+        use tower::ServiceExt as _;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::new(tmp.path());
+        store.init().unwrap();
+        let conn = db::open(&store).unwrap();
+        db::migrate(&conn).unwrap();
+        config::migrate_config_tables(&conn).unwrap();
+        let authority = db::add_authority(
+            &conn,
+            &db::NewAuthority {
+                kind: "state",
+                country: "USA",
+                region: "Washington",
+                name: "Synthetic WA SoS",
+                slug: "usa-wa-sos",
+                actor: "t",
+                at: 1,
+            },
+        )
+        .unwrap();
+        for fact in disputed_wa_facts() {
+            conn.execute(
+                "INSERT INTO fact(authority_id, capture_id, topic, statement, status, created_by,
+                                  created_at)
+                 VALUES (?1, 0, ?2, ?3, 'accepted', 't', 1)",
+                rusqlite::params![authority, fact.topic, fact.text],
+            )
+            .unwrap();
+        }
+        db::create_demo_session(&conn, "tok-disputed", "cust-disputed", 1, i64::MAX).unwrap();
+        drop(conn);
+        let app = p2_routes().with_state(test_state(tmp.path()));
+        let read = |res: Response| async move {
+            let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+                .await
+                .unwrap();
+            serde_json::from_slice::<Value>(&bytes).unwrap()
+        };
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/orders/options?slug=usa-wa-sos")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let v = read(res).await;
+        for kind in ["label_usps", "mail_kit", "address_label"] {
+            assert_eq!(card(&v, kind)["reason"], DISPUTED_TEXT, "{kind}");
+        }
+        assert!(v["destination"].is_null());
+        for kind in ["label_usps", "mail_kit", "address_label"] {
+            let body = json!({
+                "slug": "usa-wa-sos", "kind": kind,
+                "return_to": {"name": "SYNTHETIC Customer", "line1": "1 Example St",
+                              "city": "Springfield", "region": "IL", "postal_code": "62701"},
+            });
+            let req = Request::builder()
+                .method("POST")
+                .uri("/orders")
+                .header("origin", "https://andrii.ai")
+                .header("content-type", "application/json")
+                .header(auth::CSRF_HEADER, "tok")
+                .header(
+                    "cookie",
+                    format!("demo_session=tok-disputed; {}=tok", auth::CSRF_COOKIE),
+                )
+                .body(Body::from(body.to_string()))
+                .unwrap();
+            let res = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(res.status(), StatusCode::CONFLICT, "{kind}");
+            let v = read(res).await;
+            assert_eq!(
+                (&v["error"], &v["reason"]),
+                (&json!("option_unavailable"), &json!(DISPUTED_TEXT)),
+                "{kind}"
+            );
+        }
+        let p2 = db::open_p2(&store).unwrap();
+        let orders: i64 = p2
+            .query_row("SELECT COUNT(*) FROM customer_order", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(orders, 0, "no order ships to a disputed box");
+    }
+
+    /// `facts` with the conflict flag `/facts` would give each one: the
+    /// shared rule over the statements (each text's first line).
+    fn public_flags(mut facts: Vec<FactText>) -> Vec<FactText> {
+        let statement = |f: &FactText| f.text.lines().next().unwrap_or("").to_string();
+        let flags: Vec<bool> = facts
+            .iter()
+            .map(|a| {
+                facts.iter().any(|b| {
+                    a.id != b.id
+                        && db::facts_disagree(&a.topic, &statement(a), &b.topic, &statement(b))
+                })
+            })
+            .collect();
+        for (fact, flag) in facts.iter_mut().zip(flags) {
+            fact.disputed = flag;
+        }
+        facts
+    }
+
+    #[test]
+    fn a_box_the_reader_cannot_place_is_still_disputed_by_the_shared_rule() {
+        let mailing = || {
+            f(
+                2,
+                "mailing",
+                "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220\n\
+                 PO BOX 40220 Olympia, WA 98504-0220",
+            )
+        };
+        for (case, other) in [
+            (
+                "no city or ZIP anywhere",
+                f(
+                    9,
+                    "po_box",
+                    "po_box: PO Box 40234\nMail apostille requests to PO Box 40234.",
+                ),
+            ),
+            (
+                "no comma before the state",
+                f(
+                    9,
+                    "po_box",
+                    "po_box: PO Box 40234\nApostilles, PO Box 40234, Olympia WA 98504-0234",
+                ),
+            ),
+            (
+                "both boxes in one statement",
+                f(
+                    9,
+                    "mailing",
+                    "mail_instruction: PO Box 40220, Olympia, WA 98504-0220 or PO Box 40234, \
+                     Olympia, WA 98504-0234",
+                ),
+            ),
+            (
+                "a hash before the number",
+                f(9, "po_box", "po_box: PO Box #40234, Olympia, WA 98504-0234"),
+            ),
+        ] {
+            let facts = public_flags(vec![mailing(), other]);
+            assert!(
+                facts.iter().all(|f| f.disputed),
+                "{case}: /facts banners both"
+            );
+            let d = destination(&facts).unwrap();
+            assert_eq!(d.disputed, [2, 9], "{case}");
+            for kind in ["label_usps", "mail_kit", "address_label"] {
+                assert!(d.ship_to(kind).is_none(), "{case}: {kind}");
+            }
+            let v = options("usa-wa-sos", Some(&d), &ready());
+            for kind in ["label_usps", "mail_kit", "address_label"] {
+                let c = card(&v, kind);
+                assert_eq!(c["enabled"], false, "{case}: {kind}");
+                assert_eq!(c["reason"], DISPUTED_TEXT, "{case}: {kind}");
+                assert_eq!(c["fact_id"], 2, "{case}: {kind}");
+            }
+            assert!(v["destination"].is_null(), "{case}");
+        }
+        // The address reader alone also reads `#40234` (fail-closed extra).
+        let unflagged = [
+            mailing(),
+            f(9, "po_box", "po_box: PO Box #40234, Olympia, WA 98504-0234"),
+        ];
+        assert_eq!(destination(&unflagged).unwrap().disputed, [2, 9]);
+        // `No.` before the number is the same box, not box "No".
+        let same = [
+            mailing(),
+            f(
+                9,
+                "po_box",
+                "po_box: PO Box No. 40220, Olympia, WA 98504-0220",
+            ),
+        ];
+        assert!(destination(&same).unwrap().disputed.is_empty());
+        // A flagged USPS fact that names no box (a courier street) never
+        // pauses USPS: the shared rule never compares it with a box.
+        let mut courier = f(
+            30,
+            "mailing",
+            "courier: Overnight deliveries go to 801 Capitol Way S, Olympia, WA 98501.",
+        );
+        courier.disputed = true;
+        let d = destination(&[mailing(), courier]).unwrap();
+        assert!(d.disputed.is_empty());
+        assert_eq!(d.ship_to("label_usps").map(|t| t.2), Some(2));
+    }
+
+    #[test]
+    fn couriers_never_take_the_walk_in_counter_or_a_box_spelled_out() {
+        let counter = || {
+            f(
+                5,
+                "address",
+                "apostille_main_branch_street: Town Center 3 243 Israel Rd SE Tumwater, WA 98501",
+            )
+        };
+        // A box the reader cannot place: USPS is off (never the counter),
+        // and FedEx is off citing the box.
+        let unplaced = f(
+            9,
+            "po_box",
+            "po_box: PO Box 40234\nMail requests to PO Box 40234.",
+        );
+        let d = destination(&[unplaced.clone(), counter()]).unwrap();
+        assert_eq!(d.mail, None);
+        assert_eq!(d.fedex, None);
+        assert_eq!(d.usps_only_fact, Some(9));
+        for kind in KINDS {
+            assert!(d.ship_to(kind).is_none(), "{kind}");
+        }
+        let v = options("usa-wa-sos", Some(&d), &ready());
+        for kind in ["label_usps", "mail_kit", "address_label"] {
+            let c = card(&v, kind);
+            assert_eq!(c["enabled"], false, "{kind}");
+            assert_eq!(
+                c["reason"], "No staff-approved US mailing address for this office yet.",
+                "{kind}"
+            );
+        }
+        assert_eq!(card(&v, "label_fedex")["reason"], PO_BOX_NO_COURIER);
+        assert_eq!(card(&v, "label_fedex")["fact_id"], 9);
+        assert!(v["destination"].is_null() && v["fedex_destination"].is_null());
+        // A street cited for couriers takes FedEx; USPS stays off.
+        let cited = f(
+            12,
+            "address",
+            "For FedEx or UPS deliveries use 801 Capitol Way S, Olympia, WA 98501.",
+        );
+        let d = destination(&[unplaced, counter(), cited]).unwrap();
+        assert_eq!(d.ship_to("label_fedex").map(|t| t.2), Some(12));
+        assert!(d.ship_to("label_usps").is_none());
+        // An office with only its walk-in counter: USPS mail may go there,
+        // FedEx never does.
+        let d = destination(&[counter()]).unwrap();
+        assert_eq!(d.ship_to("label_usps").map(|t| t.2), Some(5));
+        assert_eq!(d.fedex, None);
+        let v = options("usa-wa-sos", Some(&d), &ready());
+        let fedex = card(&v, "label_fedex");
+        assert_eq!(
+            (&fedex["enabled"], &fedex["reason"], &fedex["fact_id"]),
+            (&json!(false), &json!(NO_COURIER_STREET), &Value::Null)
+        );
+        assert_eq!(card(&v, "label_usps")["enabled"], true);
+        let (_tmp, p2) = p2_store();
+        assert!(create_order(&p2, "c", (7, "S"), &body("label_fedex"), &d, "test", 1).is_err());
+        // Spelled-out boxes are boxes: never a FedEx street.
+        for written in [
+            "apostille_mailing_address: Post Office Box 40220, Olympia, WA 98504-0220",
+            "apostille_mailing_address: P.O.Box 40220, Olympia, WA 98504-0220",
+            "apostille_mailing_address: P. O. Box 40220, Olympia, WA 98504-0220",
+            "apostille_mailing_address: Post Office Box 40220 Olympia, WA 98504-0220",
+            "apostille_mailing_address: PO Box #40220 Olympia, WA 98504-0220",
+        ] {
+            let d = destination(&[f(2, "mailing", written), counter()]).unwrap();
+            let mail = d.mail.clone().unwrap();
+            assert!(mail.address.is_po_box(), "{written}: {:?}", mail.address);
+            assert_eq!(
+                (mail.address.city.as_str(), mail.address.zip.as_str()),
+                ("Olympia", "98504-0220"),
+                "{written}"
+            );
+            assert_eq!(d.fedex, None, "{written}");
+            assert_eq!(d.usps_only_fact, Some(2), "{written}");
+            assert!(d.disputed.is_empty(), "{written}");
+        }
+    }
+
+    #[tokio::test]
+    async fn options_gate_the_po_box_facts_the_public_read_banners() {
+        use axum::{body::Body, http::Request};
+        use tower::ServiceExt as _;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::new(tmp.path());
+        store.init().unwrap();
+        let conn = db::open(&store).unwrap();
+        db::migrate(&conn).unwrap();
+        config::migrate_config_tables(&conn).unwrap();
+        let mut ids = Vec::new();
+        for (slug, facts) in [
+            (
+                "usa-wa-sos",
+                vec![
+                    (
+                        "mailing",
+                        "apostille_mailing_address: PO BOX 40220 Olympia, WA 98504-0220",
+                    ),
+                    // Neither address reader can place this box.
+                    ("po_box", "po_box: PO Box 40234"),
+                    (
+                        "address",
+                        "apostille_main_branch_street: Town Center 3 243 Israel Rd SE \
+                         Tumwater, WA 98501",
+                    ),
+                ],
+            ),
+            (
+                "usa-xx-sos",
+                vec![(
+                    "address",
+                    "office: Walk-in at 100 Fixture Way, Olympia, WA 98501.",
+                )],
+            ),
+        ] {
+            let authority = db::add_authority(
+                &conn,
+                &db::NewAuthority {
+                    kind: "state",
+                    country: "USA",
+                    region: slug,
+                    name: "Synthetic SoS",
+                    slug,
+                    actor: "t",
+                    at: 1,
+                },
+            )
+            .unwrap();
+            for (topic, statement) in facts {
+                conn.execute(
+                    "INSERT INTO fact(authority_id, capture_id, topic, statement, status,
+                                      created_by, created_at)
+                     VALUES (?1, 0, ?2, ?3, 'accepted', 't', 1)",
+                    rusqlite::params![authority, topic, statement],
+                )
+                .unwrap();
+                ids.push(conn.last_insert_rowid());
+            }
+        }
+        // `/facts` banners the mailing box and the box it cannot place.
+        let views = crate::approval::accepted_fact_views(&conn, tmp.path(), "usa-wa-sos").unwrap();
+        let banned: Vec<i64> = views.iter().filter(|v| v.conflict).map(|v| v.id).collect();
+        assert_eq!(banned, [ids[0], ids[1]]);
+        db::create_demo_session(&conn, "tok-banner", "cust-banner", 1, i64::MAX).unwrap();
+        drop(conn);
+        let app = p2_routes().with_state(test_state(tmp.path()));
+        let read = |res: Response| async move {
+            let status = res.status();
+            let bytes = axum::body::to_bytes(res.into_body(), 1 << 20)
+                .await
+                .unwrap();
+            (status, serde_json::from_slice::<Value>(&bytes).unwrap())
+        };
+        let get = |slug: &str| {
+            Request::builder()
+                .uri(format!("/orders/options?slug={slug}"))
+                .body(Body::empty())
+                .unwrap()
+        };
+        let (status, v) = read(app.clone().oneshot(get("usa-wa-sos")).await.unwrap()).await;
+        assert_eq!(status, StatusCode::OK);
+        for kind in ["label_usps", "mail_kit", "address_label"] {
+            assert_eq!(card(&v, kind)["reason"], DISPUTED_TEXT, "{kind}");
+            assert_eq!(card(&v, kind)["fact_id"], ids[0], "{kind}");
+        }
+        assert!(v["destination"].is_null());
+        assert_eq!(card(&v, "label_fedex")["reason"], PO_BOX_NO_COURIER);
+        let post = |slug: &str, kind: &str| {
+            let body = json!({
+                "slug": slug, "kind": kind,
+                "return_to": {"name": "SYNTHETIC Customer", "line1": "1 Example St",
+                              "city": "Springfield", "region": "IL", "postal_code": "62701"},
+            });
+            Request::builder()
+                .method("POST")
+                .uri("/orders")
+                .header("origin", "https://andrii.ai")
+                .header("content-type", "application/json")
+                .header(auth::CSRF_HEADER, "tok")
+                .header(
+                    "cookie",
+                    format!("demo_session=tok-banner; {}=tok", auth::CSRF_COOKIE),
+                )
+                .body(Body::from(body.to_string()))
+                .unwrap()
+        };
+        let (status, v) = read(
+            app.clone()
+                .oneshot(post("usa-wa-sos", "address_label"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(v["reason"], DISPUTED_TEXT);
+        // A walk-in-only office: FedEx is refused with its reason (409,
+        // not the paused 503); the free label still ships there.
+        let (_, v) = read(app.clone().oneshot(get("usa-xx-sos")).await.unwrap()).await;
+        assert_eq!(card(&v, "label_fedex")["reason"], NO_COURIER_STREET);
+        let (status, v) = read(
+            app.clone()
+                .oneshot(post("usa-xx-sos", "label_fedex"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{v}");
+        assert_eq!(
+            (&v["error"], &v["reason"]),
+            (&json!("option_unavailable"), &json!(NO_COURIER_STREET))
+        );
+        // A paid USPS kind while paid tiers pause still answers 503.
+        let (status, v) = read(
+            app.clone()
+                .oneshot(post("usa-xx-sos", "label_usps"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{v}");
+        assert_eq!(v["error"], "paid_tiers_paused");
+        let (status, _) = read(
+            app.clone()
+                .oneshot(post("usa-xx-sos", "address_label"))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
     }
 
     fn ready() -> Switches {
@@ -2161,8 +2973,8 @@ mod tests {
         ];
         let d = destination(&facts).unwrap();
         assert_eq!(
-            (d.fact_id, d.usps_only_fact),
-            (203, Some(203)),
+            (d.mail.as_ref().map(|m| m.fact_id), d.usps_only_fact),
+            (Some(203), Some(203)),
             "po_box outranks the street address"
         );
         // Not ready (no customer carrier buys, no ship-from): paid cards
@@ -2328,6 +3140,20 @@ mod tests {
         }
     }
 
+    /// A PO box for mail and a cited courier street: every kind ships
+    /// (a FedEx order never goes to the box).
+    fn mail_and_courier() -> Destination {
+        destination(&[
+            f(203, "po_box", "Send to PO Box 4000, Olympia, WA 98504."),
+            f(
+                209,
+                "address",
+                "For FedEx or UPS deliveries use 801 Capitol Way S, Olympia, WA 98501.",
+            ),
+        ])
+        .unwrap()
+    }
+
     #[test]
     fn every_kind_inserts_its_legs_with_foreign_keys_on() {
         let (_tmp, p2) = p2_store();
@@ -2335,8 +3161,7 @@ mod tests {
             .query_row("PRAGMA foreign_keys", [], |r| r.get(0))
             .unwrap();
         assert_eq!(fk, 1, "the FK the backing submission satisfies is enforced");
-        let dest =
-            destination(&[f(203, "po_box", "Send to PO Box 4000, Olympia, WA 98504.")]).unwrap();
+        let dest = mail_and_courier();
         for (kind, legs) in [
             ("address_label", 1),
             ("label_fedex", 2),
@@ -2443,8 +3268,7 @@ mod tests {
         db::migrate_p2(&p2).unwrap();
         migrate_p2_tables(&p2).unwrap();
         crate::forms_map::migrate_p2_tables(&p2).unwrap();
-        let d =
-            destination(&[f(203, "po_box", "Send to PO Box 4000, Olympia, WA 98504.")]).unwrap();
+        let d = mail_and_courier();
         for kind in KINDS {
             create_order(&p2, "cust-1", (7, "S"), &body(kind), &d, "test", 1).unwrap();
         }

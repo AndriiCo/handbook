@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 contracts = { path = "../contracts" }
 rand = "0.9"
+regex = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 

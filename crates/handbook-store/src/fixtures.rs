@@ -100,19 +100,28 @@ fn insert_accepted_fact(
     Ok(conn.last_insert_rowid())
 }
 
-/// The design §7 conflict query: same authority + topic, two `accepted`
-/// facts with different statements. Returns `(fact_a_id, fact_b_id)` pairs.
+/// The design §7 conflict check under the field rule: two `accepted`
+/// facts of one authority that [`db::facts_disagree`]. Returns
+/// `(fact_a_id, fact_b_id)` pairs, lower id first.
 fn conflicting_pairs(conn: &Connection) -> Result<Vec<(i64, i64)>> {
     let mut stmt = conn.prepare(
-        "SELECT a.id, b.id FROM fact a JOIN fact b
-           ON a.authority_id = b.authority_id AND a.topic = b.topic
-          AND a.id < b.id
-         WHERE a.status = 'accepted' AND b.status = 'accepted'
-           AND a.statement != b.statement",
+        "SELECT id, authority_id, topic, statement FROM fact
+         WHERE status = 'accepted' ORDER BY id",
     )?;
-    Ok(stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<rusqlite::Result<Vec<_>>>()?)
+    let facts: Vec<(i64, i64, String, String)> = stmt
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut pairs = Vec::new();
+    for (i, (id_a, authority_a, topic_a, a)) in facts.iter().enumerate() {
+        for (id_b, authority_b, topic_b, b) in &facts[i + 1..] {
+            if authority_a == authority_b && db::facts_disagree(topic_a, a, topic_b, b) {
+                pairs.push((*id_a, *id_b));
+            }
+        }
+    }
+    Ok(pairs)
 }
 
 #[cfg(test)]

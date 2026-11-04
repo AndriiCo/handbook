@@ -1403,6 +1403,7 @@ version = "0.1.0"
 dependencies = [
  "contracts",
  "rand 0.9.5",
+ "regex",
  "rusqlite",
  "sha2 0.10.9",
  "tempfile",
@@ -2209,6 +2210,7 @@ version = "0.1.0"
 dependencies = [
  "auth",
  "config",
+ "handbook-store",
  "regex",
  "rusqlite",
  "tempfile",
@@ -4008,6 +4010,7 @@ dependencies = [
  "quinn",
  "rand 0.9.5",
  "rcgen 0.13.2",
+ "regex",
  "rusqlite",
  "rustls",
  "rustls-pemfile",

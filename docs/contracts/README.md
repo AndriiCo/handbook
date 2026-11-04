@@ -59,24 +59,64 @@ double-submit pair except the Stripe webhook.
 | POST `/apostille/api/v1/admin/captures/{id}/draft-changes` | admin | staff | yes | daily cap | SA-14 (P394) | `{outcome: drafted\|skipped, reason?, added_lines, proposed, rejected, suppressed, fact_ids}` |
 | POST `/apostille/api/v1/admin/changes/draft-pending` | admin | staff | yes | daily cap | SA-14 (P394) | `{runs: [{capture_id, outcome, …}], count}` |
 | GET `/apostille/api/v1/authorities/{slug}/changes` | public | anyone | n/a | — | SA-14 (P394) | `{authority, changes: [{source_url, captured_at, previous_captured_at, added, removed, more_added, more_removed}]}` |
+| POST `/apostille/api/v1/admin/facts/{id}/retire` `{reason}` (8-500 chars) | admin | staff | yes | — | R1 (plan §5.5) | `{id, authority_slug, status: "superseded"}`; `fact_retired`; 409 unless accepted |
+| POST `/apostille/api/v1/admin/evidence` `{authority_slug, kind, fact_id?, preferred_fact_id?, slot?, stance, occurred_at, channel, summary, capture_id?, supports?}` | admin | staff | yes | — | R1 evidence (§5.4) | the note, staff view (201); `evidence_updated` |
+| POST `/apostille/api/v1/admin/evidence/{id}/withdraw` `{reason}` | admin | staff | yes | — | R1 evidence | the note, staff view; `evidence_updated` |
+| GET `/apostille/api/v1/admin/evidence?slug=&status=published\|withdrawn\|all` | admin | staff | n/a | — | R1 evidence | `{notes: [staff view], count}`, newest first |
 
 Every admin route gets an `admin-denial` case (no session → 401/403 on
 the admin host, and the public host never serves it).
 
 `GET /apostille/api/v1/authorities` rows now also carry `kind`
 (`country | state | province | office`) and `verified_at` (unix seconds
-of the newest staff accept, or null) — P320.
+of the newest staff accept, or null) — P320. Since R1 only facts still
+`accepted` count toward `verified_at`, so a retired fact's accept drops
+out, and `/plan` `offices[]` serves an accepted office only while every
+fact it quotes (`fact_ids` and each piece's `fact_id`) is accepted.
+
+`GET /apostille/api/v1/authorities/{slug}/facts` rows (and `/plan`
+`facts[]`) now also carry `accepted_at` (unix seconds of the fact's
+newest staff accept, or null); each citation carries `kind` (`web |
+pdf | upload`) and `capture_id`. A source-less capture cites the
+official website only when it is a page (`warc`) or an upload
+(`file`); a dangling source cites nothing — R1 (plan §5.2).
 
 `POST /orders` body (P325): `{slug, kind, path_id|null, form_fill_id|null,
 return_to: {name, line1, line2|null, city, region (2 letters), postal_code,
 country: "US"}}`; `address_label` answers 201 with status `labels_ready`;
 paid kinds answer 503 `paid_tiers_paused` while paused, 409
-`option_unavailable` (with `reason`) when the card is disabled by a fact.
+`option_unavailable` (with `reason`) when the card is disabled for any
+other reason: a fact (a PO box, a disputed PO box) or no fact (no courier
+street for FedEx, no readable mailing address for USPS).
+
+`GET /plan` also carries the `authority` row (R1, §5.3): `{slug, name,
+region, country, kind, path, official_url}`, where `path` is the readable
+address (`usa/washington`) and `official_url` the https
+`website_official` source with the shortest URL path (or null), so the
+page heads itself without the `/authorities` index; null for an unknown
+or hidden slug (`plan-empty.json`).
+
+`GET /plan` also carries `evidence[]` (R1, §5.4): the published staff
+notes, oldest first, `[]` when none — `{id, kind, stance, fact_id,
+preferred_fact_id, slot, date (YYYY-MM-DD, America/Los_Angeles), channel,
+summary, recorded: false, supports, by: "Staff reviewer"}`. A call, email
+or visit note names the accepted fact it confirms, contradicts or adds
+context to; an absence names only a slot; a decision names a slot, the
+preferred fact of a conflict, and in `supports` the ids of the notes in
+the same array it rests on. Notes never enter a fact's `citations`, and
+`created_by` is never public. The read re-runs the contact guard: a note
+leaves `evidence[]` once its anchor fact, or the accepted fact that made
+one of its numbers or emails public, is retired. Every guard refusal is a 422 `{"error":
+"<plain reason>"}` (an unknown body field such as `call_id` is a 422
+parse error); withdraw answers 404/409 for a missing or already-withdrawn
+note, or one a published decision rests on.
 
 ## WS events (ids only; the client re-reads the API)
 Seeds: `ws-events.json`.
 - `authority:{slug}` (anyone): `fact_accepted {fact_id}`,
-  `plan_accepted {plan_id, version}`, `offices_accepted {office_ids}`.
+  `fact_retired {fact_id}`, `plan_accepted {plan_id, version}`,
+  `offices_accepted {office_ids}`, `evidence_updated {note_id}` (a note
+  published or withdrawn).
   Publish with `ws_bus::publish_authority_event`; any other kind is
   refused.
 - `billing:{customer_ref}` (owner or staff): `order.created`,
@@ -108,3 +148,15 @@ Seeds: `ws-events.json`.
   timeout | transport | parse_error`; `pipeline`: `draft | factcheck | offices | plan
   | forms | triage | precheck | voice`.
 - Cross-check verdict: `supported | contradicted | not_found`.
+- Evidence note kind: `call | email | visit | decision | absence`;
+  `stance`: `confirms | contradicts | context`; status `published |
+  withdrawn`.
+
+## Shared rules
+- `conflict-cases.json` (plan §5.1): golden cases for the field-level
+  conflict rule, `handbook_store::db::facts_disagree` and its JS twin
+  `web/src/lib/public-ui/compare.js`. A case is `{name, topic,
+  topic_b?, a, b, disagree, tokens_a?, tokens_b?}` (`topic_b` for a
+  cross-topic pair; `tokens_*` pin `value_tokens` of each value).
+  `crates/web/src/conflicts.rs` and `web/test/compare.test.mjs` run
+  every case both ways round, so a rule change edits the cases first.

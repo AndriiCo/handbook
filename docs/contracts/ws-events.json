@@ -20,6 +20,18 @@
         31
       ],
       "at": 1793750400
+    },
+    {
+      "type": "fact_retired",
+      "topic": "authority:usa-wa-sos",
+      "fact_id": 201,
+      "at": 1793750460
+    },
+    {
+      "type": "evidence_updated",
+      "topic": "authority:usa-wa-sos",
+      "note_id": 7,
+      "at": 1793750400
     }
   ],
   "billing": [

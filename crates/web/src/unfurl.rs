@@ -133,8 +133,9 @@ pub fn load_dossier(
 }
 
 /// One fact's source/day, mirroring the A1 citation rules (a
-/// sidecar slice of 8–400 chars must exist; https source or the
-/// official site). The quote itself stays on the page, one tap
+/// sidecar slice of 8–400 chars must exist; https source, or the
+/// official site for a source-less page or upload, per
+/// [`crate::citation`]). The quote itself stays on the page, one tap
 /// away — crawlers get statements plus source URLs.
 fn citation(
     conn: &rusqlite::Connection,
@@ -155,33 +156,13 @@ fn citation(
     if !(8..=400).contains(&quote.chars().count()) {
         return (None, 0);
     }
-    let (source_id, captured_at): (Option<i64>, Option<i64>) = conn
-        .query_row(
-            "SELECT source_id, captured_at FROM capture WHERE id = ?1",
-            [capture_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap_or((None, None));
-    let captured_at = captured_at.unwrap_or(0);
-    let mut url: Option<String> = source_id.and_then(|id| {
-        conn.query_row("SELECT uri FROM source WHERE id = ?1", [id], |row| {
-            row.get(0)
-        })
-        .ok()
-    });
-    if url.is_none() {
-        url = conn
-            .query_row(
-                "SELECT uri FROM source WHERE authority_id =
-                 (SELECT authority_id FROM capture WHERE id = ?1)
-                 AND kind = 'website_official' ORDER BY id LIMIT 1",
-                [capture_id],
-                |row| row.get(0),
-            )
-            .ok();
-    }
-    let url = url.filter(|u| u.starts_with("https://"));
-    (url, captured_at)
+    let Some(capture) = crate::citation::CitedCapture::load(conn, capture_id) else {
+        return (None, 0);
+    };
+    (
+        capture.source_url(conn, capture.authority_id),
+        capture.captured_at,
+    )
 }
 
 /// JSON-LD `GovernmentService` for one dossier. The serialized

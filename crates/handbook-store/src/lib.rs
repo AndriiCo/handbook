@@ -3,6 +3,7 @@
 //!
 //! Every fallible API returns [`contracts::HandbookError`].
 
+pub mod citation;
 pub mod db;
 pub mod history;
 pub mod store;

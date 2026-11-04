@@ -3,7 +3,7 @@
 //
 // GET  {apiBase}/queue[?authority&topic&limit&after_id] → { items, count }
 // GET  {apiBase}/queue/{id}                               → QueueItem
-// POST {apiBase}/facts/{id}/accept  {reason?, statement?} → { status }
+// POST {apiBase}/facts/{id}/accept  {reason?, statement?, topic?} → { status }
 // POST {apiBase}/facts/{id}/reject  {reason, suppress?}   → { status }
 // GET  {apiBase}/suppress-rules[?authority&include_revoked] → { rules, count }
 // POST {apiBase}/suppress-rules      {statement, ...}      → { id }
@@ -17,6 +17,7 @@
 // The agent's `reasoning` field renders only under an explicit
 // do-not-trust label: it is untrusted model output, never evidence.
 
+import { sameField } from '../public-ui/compare.js';
 import { csrfHeaders } from './config-client.js';
 import { authError, readErrorBody } from './http-errors.js';
 
@@ -190,13 +191,15 @@ export function normalizeSuppression(row) {
 /**
  * Build an accept body. Pure (tested). Returns null when invalid —
  * the page shows the reason instead of sending. The server
- * re-validates (statement 1–2000 chars when present).
+ * re-validates (statement 1–2000 chars when present; topic against
+ * the frozen enum).
  * @param {unknown} reason
  * @param {unknown} statement
- * @returns {{ reason?: string, statement?: string } | null}
+ * @param {unknown} [topic] accept-with-edit move to another topic
+ * @returns {{ reason?: string, statement?: string, topic?: string } | null}
  */
-export function acceptBody(reason, statement) {
-	/** @type {{ reason?: string, statement?: string }} */
+export function acceptBody(reason, statement, topic) {
+	/** @type {{ reason?: string, statement?: string, topic?: string }} */
 	const body = {};
 	if (typeof reason === 'string' && reason.trim().length > 0) {
 		body.reason = reason.trim();
@@ -206,6 +209,12 @@ export function acceptBody(reason, statement) {
 		if (text.length === 0 || text.length > 2000) return null;
 		body.statement = statement;
 	} else if (statement !== undefined && statement !== null && statement !== '') {
+		return null;
+	}
+	if (typeof topic === 'string') {
+		if (!/^[a-z][a-z_]*$/.test(topic)) return null;
+		body.topic = topic;
+	} else if (topic !== undefined && topic !== null) {
 		return null;
 	}
 	return body;
@@ -293,8 +302,9 @@ export function bulkBody(decision, authority, ids, opts = {}) {
 /**
  * Adapt one `/facts` row (FactView: the accept gate's citations, the
  * conflict banner) to the review row shape the signals read. The diff
- * base mirrors the queue's enrich(): newest accepted sibling, else the
- * newest live one. Trust is unknown here (''). Returns null for
+ * base mirrors the queue's enrich(): the newest accepted conflicting
+ * sibling of the same field (same topic, `sameField`), else the newest
+ * live one. Trust is unknown here (''). Returns null for
  * unknown shapes. Pure (tested).
  * @param {any} row
  * @returns {QueueItem | null}
@@ -304,11 +314,14 @@ export function factViewToItem(row) {
 	if (typeof row.topic !== 'string' || typeof row.statement !== 'string') return null;
 	if (typeof row.created_at !== 'number') return null;
 	const conflicts = [];
+	const field = [];
 	for (const c of Array.isArray(row.conflicts) ? row.conflicts : []) {
 		if (!c || typeof c.id !== 'number' || typeof c.statement !== 'string') continue;
-		conflicts.push({ id: c.id, statement: c.statement, status: typeof c.status === 'string' ? c.status : '' });
+		const sibling = { id: c.id, statement: c.statement, status: typeof c.status === 'string' ? c.status : '' };
+		conflicts.push(sibling);
+		if ((c.topic ?? row.topic) === row.topic && sameField(row.statement, c.statement)) field.push(sibling);
 	}
-	const base = [...conflicts].reverse().find((c) => c.status === 'accepted') ?? conflicts[conflicts.length - 1];
+	const base = [...field].reverse().find((c) => c.status === 'accepted') ?? field[field.length - 1];
 	const citations = [];
 	for (const c of Array.isArray(row.citations) ? row.citations : []) {
 		if (!c || typeof c.quote !== 'string') continue;
@@ -507,7 +520,7 @@ async function postReview(apiBase, path, body, what, fetchFn) {
 /**
  * @param {string} apiBase
  * @param {number} id
- * @param {{ reason?: string, statement?: string }} body
+ * @param {{ reason?: string, statement?: string, topic?: string }} body
  * @param {typeof fetch} [fetchFn]
  * @returns {Promise<{ status: string }>}
  */

@@ -150,6 +150,103 @@ fn scan_analyzes_new_skips_missing_and_respects_watermark() {
 }
 
 #[test]
+fn max_records_caps_each_draft_and_refuses_out_of_range() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = init_store(&dir);
+    let id = seed_capture(&store, "usa-wa-sos", true);
+    let analyze = |extra: &[&str]| {
+        let mut args = vec!["analyze", "--store", &store, "--slug", "usa-wa-sos"];
+        args.extend_from_slice(extra);
+        xtask().args(&args).output().unwrap()
+    };
+    // Out of range: exit 2 before any draft (no facts, watermark unmoved).
+    for bad in ["0", "33"] {
+        let out = analyze(&["--scan-captures", "--max-records", bad]);
+        assert_eq!(out.status.code(), Some(2), "{bad}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("--max-records"), "got: {stderr}");
+    }
+    let conn = rusqlite::Connection::open(format!("{store}/handbook.sqlite")).unwrap();
+    let facts = || -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM fact WHERE capture_id = ?1",
+            [id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(facts(), 0);
+    assert_eq!(
+        handbook_store::db::get_capture_watermark(&conn, "usa-wa-sos").unwrap(),
+        0
+    );
+    // The `=` form is refused the same way, never read as the default.
+    let out = analyze(&["--scan-captures", "--max-records=33"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(facts(), 0);
+    // The stub drafts two records per call; a budget of one keeps one,
+    // and the run prints the budget it drafted the slug with.
+    let out = analyze(&["--scan-captures", "--max-records", "1"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("max_records 1 for usa-wa-sos") && stdout.contains("max_records=1"),
+        "got: {stdout}"
+    );
+    assert_eq!(facts(), 1);
+    // Hand-fed evidence takes the same budget.
+    let out = analyze(&["--input", TEXT, "--max-records", "1"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success()
+            && stdout.contains("max_records 1 for usa-wa-sos")
+            && stdout.contains("proposed: 1"),
+        "got: {stdout}"
+    );
+}
+
+#[test]
+fn max_records_equals_form_caps_the_same_and_the_default_is_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = init_store(&dir);
+    let id = seed_capture(&store, "usa-or-sos", true);
+    let analyze = |extra: &[&str]| {
+        let mut args = vec!["analyze", "--store", &store, "--slug", "usa-or-sos"];
+        args.extend_from_slice(extra);
+        xtask().args(&args).output().unwrap()
+    };
+    let out = analyze(&["--scan-captures", "--max-records=1"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && stdout.contains("max_records 1 for usa-or-sos"),
+        "got: {stdout} {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let conn = rusqlite::Connection::open(format!("{store}/handbook.sqlite")).unwrap();
+    let facts: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fact WHERE capture_id = ?1",
+            [id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(facts, 1, "the = form keeps one of the stub's two records");
+    // Without the flag the run names the default budget.
+    let out = analyze(&["--scan-captures"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success()
+            && stdout.contains("max_records 8 for usa-or-sos (default)")
+            && stdout.contains("max_records=8"),
+        "got: {stdout}"
+    );
+}
+
+#[test]
 fn scan_with_unsupported_lang_skips_without_facts() {
     let dir = tempfile::tempdir().unwrap();
     let store = init_store(&dir);

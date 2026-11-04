@@ -245,13 +245,22 @@ fn authority_id(conn: &Connection, slug: &str) -> Option<i64> {
 
 fn enrich(conn: &Connection, state: &AppState, row: &QueueRow) -> QueueItem {
     let conflicts = sibling_conflicts(conn, row.authority_id, &row.topic, &row.statement, row.id);
-    // Newest live sibling, accepted preferred: conflict list is
-    // id-ordered, so scan from the back for accepted first.
-    let base = conflicts
+    // Diff base: the live value this draft would change, a conflicting
+    // sibling of the same field (same topic, same key or an unkeyed
+    // legacy pin), newest accepted first, else the newest proposed
+    // (each status block is id-ordered). A box dispute under another
+    // key or topic still raises the conflict flag, but is not this
+    // field's previous value.
+    let same_field: Vec<&crate::approval::ConflictView> = conflicts
+        .iter()
+        .filter(|c| c.topic == row.topic && db::same_field(&row.statement, &c.statement))
+        .collect();
+    let base = same_field
         .iter()
         .rev()
         .find(|c| c.status == "accepted")
-        .or_else(|| conflicts.iter().next_back());
+        .or_else(|| same_field.last())
+        .copied();
     let citations = match (row.citation_start, row.citation_end) {
         (s, e) if s >= 0 && e > s => vec![QueueCitation {
             capture_id: row.capture_id,
@@ -951,6 +960,47 @@ mod tests {
         );
     }
 
+    /// The diff base is the same field's live value: another field of
+    /// the topic is neither a conflict nor a base, and a box dispute
+    /// across the USPS topics flags a conflict without a base.
+    #[tokio::test]
+    async fn queue_diff_base_is_the_same_field() {
+        let fx = fixture();
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        for (topic, statement, status) in [
+            ("address", "office__tumwater: Town Center 3", "accepted"),
+            ("mailing", "mailing_address: PO Box 40220", "accepted"),
+            ("po_box", "po_box: PO Box 40234", "proposed"),
+        ] {
+            conn.execute(
+                "INSERT INTO fact(authority_id, capture_id, topic, statement, status,
+                                  created_at, citation_start, citation_end)
+                 VALUES (1, 1, ?1, ?2, ?3, 0, 0, 12)",
+                rusqlite::params![topic, statement, status],
+            )
+            .unwrap();
+        }
+        let res = router(fx.state.clone())
+            .oneshot(request("GET", "/apostille/api/v1/queue", None))
+            .await
+            .unwrap();
+        let (status, v) = json(res).await;
+        assert_eq!(status, StatusCode::OK);
+        let items = v["items"].as_array().unwrap();
+        let item = |id: i64| items.iter().find(|i| i["id"] == id).unwrap();
+        assert_eq!(item(1)["diff"]["base_statement"], "po_box: PO Box 40220");
+        assert_eq!(
+            item(1)["blast_radius"]["conflicts"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(item(5)["blast_radius"]["conflict"], true);
+        assert_eq!(item(5)["blast_radius"]["conflicts"][0]["topic"], "mailing");
+        assert!(item(5)["diff"].is_null(), "{}", item(5));
+    }
+
     #[tokio::test]
     async fn queue_filters_and_errors() {
         let fx = fixture();
@@ -1157,6 +1207,38 @@ mod tests {
             .unwrap();
         assert_eq!(per_fact, 2);
         assert_eq!(header, "ids:1,3");
+    }
+
+    /// `require_verified` refuses only a change to a published field:
+    /// a draft of another field of the same topic still accepts.
+    #[tokio::test]
+    async fn bulk_require_verified_ignores_other_fields() {
+        let fx = fixture();
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        conn.execute(
+            "INSERT INTO fact(authority_id, capture_id, topic, statement, status,
+                              created_at, citation_start, citation_end)
+             VALUES (1, 1, 'address', 'office__tumwater: Town Center 3', 'proposed', 0, 0, 12)",
+            [],
+        )
+        .unwrap();
+        let res = router(fx.state.clone())
+            .oneshot(request(
+                "POST",
+                "/apostille/api/v1/facts/bulk",
+                Some(
+                    json!({"decision": "accept", "authority": "t-sos", "ids": [3],
+                            "require_verified": true}),
+                ),
+            ))
+            .await
+            .unwrap();
+        let (status, v) = json(res).await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        assert_eq!(
+            statuses(&fx),
+            [(1, "proposed".into()), (3, "accepted".into())]
+        );
     }
 
     #[tokio::test]

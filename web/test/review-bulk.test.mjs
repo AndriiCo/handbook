@@ -96,6 +96,31 @@ test('factViewToItem adapts /facts rows to review rows', () => {
 	assert.equal(factViewToItem(null), null);
 });
 
+test('factViewToItem bases the diff on the same field only', () => {
+	const row = {
+		id: 30,
+		authority_slug: 't-sos',
+		topic: 'mailing',
+		statement: 'mailing_address: PO Box 40234',
+		created_at: 100,
+		citations: [],
+		conflict: true,
+		conflicts: [
+			{ id: 4, topic: 'po_box', statement: 'po_box: PO Box 40220', status: 'accepted' },
+			{ id: 9, topic: 'mailing', statement: 'apostille_mailing_address: PO Box 40220', status: 'accepted' }
+		]
+	};
+	// Box disputes under another key or topic: a conflict, not a base.
+	const item = factViewToItem(row);
+	assert.equal(item?.diff, null);
+	assert.equal(item?.blast_radius.conflict, true);
+	const same = factViewToItem({
+		...row,
+		conflicts: [...row.conflicts, { id: 12, topic: 'mailing', statement: 'mailing_address: PO Box 40220', status: 'accepted' }]
+	});
+	assert.equal(same?.diff?.base_fact_id, 12);
+});
+
 test('bulkDecide posts with CSRF, resolves blocked batches, throws the rest', async () => {
 	const seen = [];
 	const server = createServer((req, res) => {

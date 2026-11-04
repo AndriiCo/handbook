@@ -9,7 +9,7 @@
 //! is not accepted for this authority, and any URL or markup; Wonder
 //! then drops blocks the cited facts do not entail. Nothing reaches the
 //! public page until staff accept it, and the public read re-checks
-//! every block against the facts accepted at read time.
+//! every block and office against the facts accepted at read time.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, LazyLock};
@@ -656,6 +656,45 @@ pub fn filter_for_read(
     (!out.blocks.is_empty()).then_some(out)
 }
 
+/// Every fact id one office record quotes: its own `fact_ids` plus each
+/// piece's (`address`, `mail`, `hours[]`, `visit.fact_ids`), so a piece
+/// missing from the top-level list still counts.
+fn office_fact_ids(office: &serde_json::Value) -> Vec<i64> {
+    let list = |v: &serde_json::Value| -> Vec<i64> {
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_i64)
+            .collect()
+    };
+    let mut ids = list(&office["fact_ids"]);
+    ids.extend(list(&office["visit"]["fact_ids"]));
+    ids.extend(office["address"]["fact_id"].as_i64());
+    ids.extend(office["mail"]["fact_id"].as_i64());
+    for hours in office["hours"].as_array().into_iter().flatten() {
+        ids.extend(hours["fact_id"].as_i64());
+    }
+    ids
+}
+
+/// Read-time office filter, the twin of [`filter_for_read`] for blocks:
+/// an accepted office is served only while every fact it quotes is
+/// still accepted, so a retired address, mail or hours fact takes the
+/// whole office card off `/plan` until staff compose it again. An
+/// office that quotes no fact grounds nothing and is never served.
+pub fn offices_for_read(
+    offices: Vec<serde_json::Value>,
+    accepted: &BTreeSet<i64>,
+) -> Vec<serde_json::Value> {
+    offices
+        .into_iter()
+        .filter(|office| {
+            let ids = office_fact_ids(office);
+            !ids.is_empty() && ids.iter().all(|id| accepted.contains(id))
+        })
+        .collect()
+}
+
 // --------------------------------------------------------------- models
 
 /// Strict json_schema for the composer: fact ids are an enum of the
@@ -1032,15 +1071,59 @@ pub fn decide(
 static PLAN_LIMITS: LazyLock<crate::passkey::RateBuckets> =
     LazyLock::new(crate::passkey::RateBuckets::default);
 
-/// The `/plan` body (contracts `plan.json`): never an error shape.
+/// The authority row `/plan` carries, so the page heads itself without
+/// the `/authorities` index: `{slug, name, region, country, kind, path,
+/// official_url}`, or `None` for an unknown or hidden slug (a hidden
+/// row reads as unknown, as in `/facts`). `path` is the public address
+/// ([`crate::authority_path::index`], `usa/washington`);
+/// `official_url` is the https `website_official` source with the
+/// shortest URL path, then the lowest id, or null.
+pub fn authority_row(conn: &Connection, slug: &str) -> Option<serde_json::Value> {
+    let (id, name, region, country, kind): (i64, String, String, String, String) = conn
+        .query_row(
+            "SELECT id, name, region, country, kind FROM authority
+             WHERE slug = ?1 AND id != 0 AND hidden_at IS NULL",
+            [slug],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+    let path = crate::authority_path::index(conn).primary(slug);
+    let official_url = conn
+        .prepare(
+            "SELECT id, uri FROM source
+             WHERE authority_id = ?1 AND kind = 'website_official' AND uri LIKE 'https://%'",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map([id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, uri)| uri.starts_with("https://"))
+        .filter_map(|(id, uri)| Some((url::Url::parse(&uri).ok()?.path().len(), id, uri)))
+        .min()
+        .map(|(_, _, uri)| uri);
+    Some(json!({
+        "slug": slug, "name": name, "region": region, "country": country, "kind": kind,
+        "path": path, "official_url": official_url,
+    }))
+}
+
+/// The `/plan` body (contracts `plan.json`): never an error shape. The
+/// `authority` row ([`authority_row`]) is null for an unknown slug.
 pub fn read_body(
     slug: &str,
+    authority: Option<serde_json::Value>,
     row: Option<PlanRow>,
     facts: Vec<FactView>,
     offices: Vec<serde_json::Value>,
     forms: Vec<serde_json::Value>,
 ) -> serde_json::Value {
     let accepted: BTreeSet<i64> = facts.iter().map(|f| f.id).collect();
+    // Offices first: office blocks list only the ones still served.
+    let offices = offices_for_read(offices, &accepted);
     let office_ids: Vec<i64> = offices.iter().filter_map(|o| o["id"].as_i64()).collect();
     let form_ids: Vec<i64> = forms.iter().filter_map(|f| f["id"].as_i64()).collect();
     let (plan, provenance) = match row {
@@ -1059,6 +1142,7 @@ pub fn read_body(
     };
     json!({
         "slug": slug,
+        "authority": authority,
         "plan": plan,
         "facts": facts,
         "offices": offices,
@@ -1093,7 +1177,18 @@ async fn public_plan(
     let offices = crate::offices::accepted_for_slug(&conn, &slug).unwrap_or_default();
     let forms = crate::forms_map::accepted_for_slug(&conn, &slug).unwrap_or_default();
     let row = accepted_for(&conn, &slug).unwrap_or(None);
-    Json(read_body(&slug, row, facts, offices, forms)).into_response()
+    let authority = authority_row(&conn, &slug);
+    // Considerations lane (§5.4): published staff notes ride beside the
+    // facts, never inside their citations; additive, `[]` when none (or
+    // when the authority is unknown or hidden, like its facts).
+    let evidence = if authority.is_some() {
+        crate::evidence::public_notes(&conn, &slug, &facts)
+    } else {
+        json!([])
+    };
+    let mut body = read_body(&slug, authority, row, facts, offices, forms);
+    body["evidence"] = evidence;
+    Json(body).into_response()
 }
 
 /// Public routes, merged into the `/apostille` API router (paths start
@@ -1915,6 +2010,194 @@ mod tests {
         assert_eq!(out.blocks[0].office_ids, Some(vec![31]));
         assert!(out.paths.is_empty(), "path fact 201 left");
         assert!(filter_for_read(&p, &BTreeSet::new(), &[], &[]).is_none());
+    }
+
+    /// The contract seed's office 31: hours 202, mail 203, address 204,
+    /// visit 205, `fact_ids` [202, 203, 204, 205].
+    fn seed_office() -> serde_json::Value {
+        let seed: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/contracts/plan.json")).unwrap();
+        seed["offices"][0].clone()
+    }
+
+    #[test]
+    fn read_offices_leave_with_any_fact_they_quote() {
+        let all: BTreeSet<i64> = [202, 203, 204, 205].into_iter().collect();
+        assert_eq!(offices_for_read(vec![seed_office()], &all).len(), 1);
+        // Retiring any one quoted fact drops the whole office.
+        for gone in [202, 203, 204, 205] {
+            let mut left = all.clone();
+            left.remove(&gone);
+            assert!(
+                offices_for_read(vec![seed_office()], &left).is_empty(),
+                "fact {gone} retired"
+            );
+        }
+        // Each piece counts even when the top-level list omits it.
+        let pieces: [fn(&mut serde_json::Value); 4] = [
+            |o| o["address"]["fact_id"] = json!(299),
+            |o| o["mail"]["fact_id"] = json!(299),
+            |o| o["hours"][0]["fact_id"] = json!(299),
+            |o| o["visit"]["fact_ids"] = json!([299]),
+        ];
+        for (n, set) in pieces.iter().enumerate() {
+            let mut office = seed_office();
+            set(&mut office);
+            assert!(offices_for_read(vec![office], &all).is_empty(), "piece {n}");
+        }
+        // An office quoting nothing is never served.
+        let bare = json!({"id": 40, "name": "Counter", "fact_ids": [], "hours": []});
+        assert!(offices_for_read(vec![bare], &all).is_empty());
+    }
+
+    #[test]
+    fn read_body_serves_only_offices_whose_facts_are_accepted() {
+        let view = |id: i64| FactView {
+            id,
+            authority_slug: "usa-wa-sos".into(),
+            topic: "hours".into(),
+            statement: format!("fact {id}"),
+            status: "accepted".into(),
+            created_by: String::new(),
+            drafted_by: String::new(),
+            created_at: 0,
+            accepted_at: None,
+            citations: vec![],
+            conflict: false,
+            conflicts: vec![],
+        };
+        let row = PlanRow {
+            id: 7,
+            slug: "usa-wa-sos".into(),
+            version: 1,
+            status: "accepted".into(),
+            // The office block cites only the hours fact; the office
+            // also quotes the address fact 204.
+            plan: plan(vec![block("office", "Visit", "", &[202])]),
+            validator: json!({}),
+            provenance: json!({}),
+            run_id: None,
+            created_at: 0,
+            decided_at: Some(1),
+        };
+        let read = |facts: &[i64]| {
+            read_body(
+                "usa-wa-sos",
+                None,
+                Some(row.clone()),
+                facts.iter().map(|id| view(*id)).collect(),
+                vec![seed_office()],
+                vec![],
+            )
+        };
+        let body = read(&[202, 203, 204, 205]);
+        assert_eq!(body["offices"][0]["id"], 31);
+        assert_eq!(body["plan"]["blocks"][0]["office_ids"], json!([31]));
+        // Address fact 204 retired: the office leaves, and so does its id
+        // from the office block (which the dossier then skips).
+        let body = read(&[202, 203, 205]);
+        assert_eq!(body["offices"], json!([]));
+        assert_eq!(body["plan"]["blocks"][0]["office_ids"], json!([]));
+        assert!(!body.to_string().contains("100 Fixture Way"));
+    }
+
+    #[test]
+    fn authority_row_names_the_public_path_and_the_official_site() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = handbook_store::store::Store::new(dir.path());
+        store.init().unwrap();
+        let conn = db::open(&store).unwrap();
+        db::migrate(&conn).unwrap();
+        let add = |kind: &str, country: &str, region: &str, name: &str, slug: &str| {
+            db::add_authority(
+                &conn,
+                &db::NewAuthority {
+                    kind,
+                    country,
+                    region,
+                    name,
+                    slug,
+                    actor: "t",
+                    at: 1,
+                },
+            )
+            .unwrap()
+        };
+        let wa = add(
+            "state",
+            "USA",
+            "Washington",
+            "Synthetic WA SoS",
+            "usa-wa-sos",
+        );
+        add("country", "Viet Nam", "", "Synthetic MOFA", "vietnam");
+        for (kind, uri) in [
+            (
+                "website_official",
+                "https://www.sos.wa.gov/corporations-charities/apostilles",
+            ),
+            ("website_thirdparty", "https://example.test/"),
+            ("website_official", "http://sos.wa.gov/"),
+            ("website_official", "https://www.sos.wa.gov/"),
+            ("website_official", "https://sos.wa.gov"),
+        ] {
+            conn.execute(
+                "INSERT INTO source(authority_id, kind, uri) VALUES (?1, ?2, ?3)",
+                rusqlite::params![wa, kind, uri],
+            )
+            .unwrap();
+        }
+        // Shortest https official path wins; `/` ties go to the lower id.
+        assert_eq!(
+            authority_row(&conn, "usa-wa-sos").unwrap(),
+            json!({
+                "slug": "usa-wa-sos", "name": "Synthetic WA SoS", "region": "Washington",
+                "country": "USA", "kind": "state", "path": "usa/washington",
+                "official_url": "https://www.sos.wa.gov/",
+            })
+        );
+        let vn = authority_row(&conn, "vietnam").unwrap();
+        assert_eq!(
+            (&vn["path"], &vn["kind"]),
+            (&json!("vietnam"), &json!("country"))
+        );
+        assert!(vn["official_url"].is_null(), "no official source, no link");
+        assert!(authority_row(&conn, "no-such-authority").is_none());
+        assert!(
+            authority_row(&conn, "sentinel-unattributed-005").is_none(),
+            "the id-0 sentinel is no authority"
+        );
+        // A hidden row (page fragment, internal) reads as unknown.
+        conn.execute(
+            "UPDATE authority SET hidden_at = 1 WHERE slug = 'vietnam'",
+            [],
+        )
+        .unwrap();
+        assert!(authority_row(&conn, "vietnam").is_none(), "hidden row");
+        let body = read_body("no-such-authority", None, None, vec![], vec![], vec![]);
+        assert!(
+            body.get("authority")
+                .is_some_and(serde_json::Value::is_null)
+        );
+        // The contract seeds (which the builder edits, and the e2e
+        // fixtures copy) show every key the read serves.
+        let keys = |v: &serde_json::Value| -> BTreeSet<String> {
+            v.as_object().unwrap().keys().cloned().collect()
+        };
+        let seed: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/contracts/plan.json")).unwrap();
+        let empty: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/contracts/plan-empty.json")).unwrap();
+        let mut served = body;
+        served["evidence"] = json!([]);
+        assert_eq!(keys(&seed), keys(&served), "plan.json keys");
+        assert_eq!(keys(&empty), keys(&served), "plan-empty.json keys");
+        assert!(empty["authority"].is_null(), "no plan, no known row");
+        assert_eq!(
+            keys(&seed["authority"]),
+            keys(&authority_row(&conn, "usa-wa-sos").unwrap()),
+            "plan.json authority row"
+        );
     }
 
     #[test]
