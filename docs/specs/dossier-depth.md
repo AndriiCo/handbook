@@ -11,7 +11,7 @@ fetched or searched on 2026-11-03.
 
 Most of the pipeline exists. Packs seed an authority and its watched
 official pages. Fetch, sweep or staff upload turns them into captures.
-Muse Spark drafts cited facts in 25 frozen topics, Muse Wonder cross-
+Muse Spark drafts cited facts in 26 frozen topics, Muse Wonder cross-
 checks them, and staff accept them in /review. Spark then composes
 offices (OfficeSetV1), form maps (FormMapV1) and a page plan
 (RenderPlanV1), and staff accept each.

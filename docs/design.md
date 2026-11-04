@@ -1,6 +1,6 @@
 # System Design: Evidence Store (Step 1 — Collection Infrastructure)
 
-- Status: proposed
+- Status: built (the evidence store in `crates/handbook-store`).
 - Date: 2026-10-26
 
 ## 0. Goal and non-goals

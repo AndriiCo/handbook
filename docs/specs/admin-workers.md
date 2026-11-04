@@ -1,9 +1,8 @@
 # Admin workers management (goal-025 stream 1)
 
-Draft for author review. Staff-only UI + API to manage the URL
-download/analysis ingest paths: list/retry captures, worker status,
-manual watch-sweep, per-authority ingest state. Spec-first per the
-stream brief; implementation follows §5.
+Status: built (`/workers`, `crates/web/src/admin_workers.rs`).
+Staff-only UI + API to manage the URL download/analysis ingest paths: list/retry captures, worker status,
+manual watch-sweep, per-authority ingest state.
 
 Not the plant work queue: the console's "Work queue" page (`/work`,
 `docs/specs/work-queue.md`) leases jobs to plant workers over a

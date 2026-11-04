@@ -1,8 +1,9 @@
-# Web Stack: Local Testing, Serving, Realtime, UI Options
+# Web Stack: Local Testing, Serving, Realtime
 
-- Status: accepted (UI stack picked in prompt 005: SvelteKit SPA + axum API;
-  WS-first realtime decided in prompt 006)
-- Date: 2026-10-26
+- Status: implemented. SvelteKit SPA + axum API (decided prompt 005),
+  WebSocket-first realtime (decided prompt 006). Section numbers are
+  cited across `docs/specs/`; keep them stable.
+- Date: 2026-10-26, refreshed 2026-11-04.
 
 Priorities for this track: **P1 (mandatory)** — transcripts become inputs
 for handbook pages (already in `docs/design.md` §5), including a live call
@@ -18,14 +19,16 @@ one Ubuntu **26.04 LTS** ("Resolute Raccoon") server, app served under
 - **Pure-Rust dependencies only.** `rusqlite` bundled (no system SQLite),
   `rustls` (no OpenSSL), nothing needing brew/apt system libraries or
   codegen beyond `cc`. What compiles on the Mac compiles on Ubuntu.
-- **Cargo-only workflow.** `cargo xtask dev` runs the server;
-  `cargo xtask ci` is the same gate everywhere. No compose files, no
-  containers, no Node unless the picked UI stack needs a build step (§4).
-- **Build on the server.** `git pull && cargo build --release` on Ubuntu —
-  no cross-compilation, no musl wrestling. The deploy unit is one binary
-  plus the `store/` directory.
-- **Config by environment:** `STORE_PATH`, `BIND_ADDR`, `PORT`,
-  `BASE_PATH=/apostille`, `META_API_KEY`, … Secrets never in the repo.
+- **Cargo-only workflow.** `cargo xtask up` boots the handbook on
+  loopback with synthetic data; `cargo xtask ci` is the same gate
+  everywhere. Node is used only for the SvelteKit build (§4).
+- **Cross-built releases.** `cargo xtask setup` builds the exact SHA
+  with `cargo-zigbuild` for the server's CPU in a throwaway worktree;
+  nothing compiles on the production host (`docs/ops/deploy.md`).
+- **Config in the database, not the environment.** Runtime settings
+  and secrets live as sealed rows in the store (`docs/specs/config-db.md`,
+  `docs/specs/secure-config.md`); only a few bootstrap paths are read
+  from the environment. Secrets never live in the repo.
 - **Sub-path serving from day one.** Axum `Router::nest("/apostille", …)`
   locally too, with relative asset URLs — so local testing exercises the
   exact production URL shape.
@@ -35,9 +38,9 @@ one Ubuntu **26.04 LTS** ("Resolute Raccoon") server, app served under
   in-binary ACME http-01 (see `docs/ops/acme.md`). The old
   Caddy-reverse-proxy plan is retired.
 - **Synthetic dev data only.** The repo holds schema, never data
-  (`docs/design.md` §0), so `xtask dev-seed` will generate fake
-  authorities/captures/tasks into a tmp store at runtime. Nothing seeded
-  is ever committed.
+  (`docs/design.md` §0); `cargo xtask up` generates fake
+  authorities/captures/tasks into a fresh store at runtime. Nothing
+  seeded is ever committed.
 
 ## 2. Serving crates (app + static assets)
 
@@ -54,9 +57,8 @@ One axum server does both:
 - **Caching:** hashed filenames + `Cache-Control: public, max-age=31536000,
   immutable` for versioned assets; `no-cache` for HTML entry points —
   set via `tower-http` `SetHeader`.
-- UI templates (if server-rendered, §4 option A) compile into the binary
-  (`askama`); third-party JS (e.g. htmx) is vendored as a static file, not
-  a CDN dependency, so prod works offline.
+- Third-party code is vendored or bundled at build time, never loaded
+  from a CDN, so production works offline.
 
 No separate asset server, no CDN needed at this scale.
 
@@ -92,24 +94,14 @@ needed.
   `capture(kind='transcript')` and feed `proposed` facts exactly as
   `docs/design.md` §5 describes.
 
-## 4. UI stack options (C chosen — SvelteKit SPA + axum API)
+## 4. UI stack
 
-| | A. htmx + Askama + WS | B. Leptos full-stack | C. SvelteKit SPA + axum API |
-|---|---|---|---|
-| Language | Rust templates, ~zero JS | All Rust (SSR + WASM) | TypeScript UI, Rust API |
-| Live updates | WS via htmx ws extension | Signals + server fns | WS client, easy |
-| Build | `cargo build`, single binary | `cargo-leptos` (WASM step) | Node build + Rust binary |
-| Ship speed | Fastest | Medium (young ecosystem) | Medium (two toolchains) |
-| Fit | Simplest thing that works | Modern all-Rust reactive | Best JS DX + ecosystem |
-
-- **A fits** the simplicity rule and §3 best: server-rendered pages,
-  htmx swaps on WS events, everything in one binary.
-- **B fits** if all-Rust reactivity (fine-grained signals, shared types
-  end to end) is worth the WASM build step and slower compiles.
-- **C fits** if mainstream JS DX and hiring pool beat the Rust-only rule
-  for UI code (API stays Rust regardless).
-- Not shortlisted: Dioxus (less mature than Leptos for web), React+Vite
-  (heavier than SvelteKit with no compensating win here).
+SvelteKit, built as two static SPAs (public/customer and admin; see
+`docs/specs/spa-separation.md`), served by the same axum binary that
+serves the JSON and WebSocket API. The SvelteKit build is the one
+sanctioned exception to the Rust-only rule. Styling is Tailwind
+(decision D38; `docs/site-theme.md`). Rejected at decision time:
+htmx + Askama, Leptos, Dioxus and React + Vite.
 
 ## 5. Live translation (P3)
 
@@ -132,22 +124,10 @@ batch-translate completed turns after the call.
 ## 6. Local-testing checklist (before any deploy)
 
 1. `cargo xtask ci` green on the Mac.
-2. `cargo xtask dev` serves `localhost:$PORT/apostille` (sub-path!).
-3. `xtask dev-seed` populates a tmp store; WS live updates visible with
-   two browser windows (concurrent-edit banners, presence).
-4. Static assets return 304s on revalidation and `content-encoding: br`
-   when the client offers it (`curl -v` spot-checks, scripted as an
-   `xtask` check later).
-5. Same three commands pass on a fresh Ubuntu 26.04 shell (rustup +
-   `git clone` only — no system packages).
-
-## 7. Open decisions
-
-1. UI stack: A, B, or C (§4) — **decided in prompt 005: C, SvelteKit SPA
-   + axum API**. Consequence: the UI gets a Node build step (the one
-   sanctioned exception to the Rust-only rule); axum serves the built
-   static assets plus the JSON/WS API from the same binary.
-2. ~~Meta Models API spec~~ — decided prompt 008 (see
-   `docs/meta-api.md`); residual open: exact JSON shapes at
-   implementation, data-handling terms read before real media.
-3. `axum-server` vs plain tokio graceful shutdown (minor, at scaffolding).
+2. `cargo xtask up` serves `localhost:<port>/apostille` (sub-path!)
+   with synthetic data; WS live updates visible with two browser
+   windows (concurrent-edit banners, presence).
+3. Static assets return 304s on revalidation and `content-encoding: br`
+   when the client offers it.
+4. The plant gate (`ops/plant-pipeline/`) runs the same `ci` on Linux
+   before a SHA may ship.

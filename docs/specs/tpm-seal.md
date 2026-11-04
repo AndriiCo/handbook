@@ -1,6 +1,6 @@
-# Software-TPM Sealing for Config Secrets (draft for review)
+# Software-TPM Sealing for Config Secrets
 
-- Status: draft (goal-025 stream 5 of 5, for author review)
+- Status: built (goal-025 stream 5 of 5; `crates/config/src/seal.rs`).
 - Date: 2026-10-27
 - Governing spec: [secure-config.md](secure-config.md) (TPM2-sealed
   envelope, systemd-creds, Mac fallback). This spec does not change
@@ -177,7 +177,7 @@ Escrow, two-custodian restore, and RTO/RPO are exactly
 `secure-config.md` §4: each active KEK is exported once at
 enroll/rotate, encrypted to two admin public keys, stored
 offline in two places. Software-sealed dev KEKs are synthetic
-(`dev-seed` only) and are never escrowed — there is nothing to
+(`cargo xtask up` seed only) and are never escrowed — there is nothing to
 recover.
 
 ## 5. What runs where

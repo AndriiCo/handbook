@@ -1,11 +1,10 @@
-# Analysis Agent Job Spec (draft for review)
+# Analysis Agent Job Spec
 
-- Status: draft (prompt 007) → direction APPROVED 2026-10-28 (D39,
-  prompt 050): no-new-binary (`xtask analyze` + `handbook-agent` +
-  timers), Meta chat API per `docs/meta-api-shapes.md`,
-  queue-not-pause HITL, suppression A+B, Gmail historyId polling,
-  vectors deferred unless discovery needs them. B1 implementation
-  underway; the analysis below is kept as the record.
+- Status: built (direction approved 2026-10-28, D39, prompt 050):
+  no-new-binary (`xtask analyze` + `handbook-agent` + timers), Meta chat
+  API per `docs/meta-api-shapes.md`, queue-not-pause HITL, suppression
+  A+B, Gmail historyId polling, vectors deferred unless discovery needs
+  them. The analysis below is kept as the record.
 - Date: 2026-10-26
 - Source: parallel researcher draft (full text recovered from child
   session log).
@@ -161,7 +160,7 @@ pub enum ModelError { Retryable(String), Fatal(String), BadOutput(String) }
 
 Implementations: `MetaRestClient` (real; pure-Rust HTTP + `rustls`
 per web-stack §1), `StubClient` (deterministic fixtures for `cargo
-test` and `dev-seed`). Runner code depends only on `ModelClient`.
+test` and `cargo xtask up`). Runner code depends only on `ModelClient`.
 Bad-output (off-enum topic, missing/inexact citation) = `BadOutput`
 → one re-prompt with the validation error appended, then
 non-retryable task.
@@ -654,7 +653,7 @@ evaluated on model output *before* suppression filtering.
 
 Route `/review`: `web/src/routes/(admin)/review/+page.svelte`
 (sibling to `calls/`, `workers/`) + client
-`web/src/lib/review-client.js` (sibling to
+`web/src/lib/admin/review-client.js` (sibling to
 `calls-client.js`). Data sources are exactly the §11.2
 endpoints; the page never invents unreturned state.
 

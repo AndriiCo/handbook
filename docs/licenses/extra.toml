@@ -83,7 +83,7 @@ url = "https://github.com/ziglang/zig"
 license = "MIT"
 copyright = "Copyright (c) Zig contributors"
 scope = ["build"]
-note = "Linker for the x86_64 Linux release build (xtask/ops/ship-release.sh)"
+note = "Linker for the x86_64 Linux release build (cargo xtask setup)"
 
 [[package]]
 name = "cargo-zigbuild"

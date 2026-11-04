@@ -1,6 +1,9 @@
 # Shipping design: USPS/FedEx APIs, address UX, labels, tracking, stats (build-ready)
 
-- Status: design for author review (prompt 080); no implementation.
+- Status: partly built (prompt 080). FedEx quote and buy ship in
+  `crates/labels` and `crates/web/src/fedex_live.rs`; the planned
+  `xtask/src/fedex.rs` and `crates/labels/src/validate.rs` were never
+  created.
 - Date: 2026-10-29
 - Sources: six parallel research streams (USPS APIs, FedEx APIs,
   address UX, label print, tracking+stats, checklist gaps) + critic
@@ -435,8 +438,8 @@ buy path — staff-manual recommended), OQ-7 (PII retention), OQ-8
 Live FedEx buys (OAuth, rate quote, outbound + return label, void)
 behind the `labels.live` master switch. Code: `crates/labels/src/live.rs`
 (gate checks, OAuth/rate shapes, idempotent buy-pair + void, sandbox
-fixtures, packet cover renderer); proof: `xtask/src/fedex.rs`
-(`cargo xtask fedex`, recorded synthetic fixtures only); staff UI:
+fixtures, packet cover renderer); proof: recorded synthetic fixtures in `crates/labels/fixtures/fedex/`
+(the planned `cargo xtask fedex` was never built); staff UI:
 `web/src/routes/(admin)/labels/+page.svelte` (admin build only).
 
 1. Gates (checked in this order, fail closed): `labels.live` on,

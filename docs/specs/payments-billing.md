@@ -1,6 +1,8 @@
-# Customer Payments: Stripe + Apple Pay + Billing Tab (research draft for review)
+# Customer Payments: Stripe + Apple Pay + Billing Tab
 
-- Status: draft (prompt 010, for author review; no implementation yet)
+- Status: built. Stripe Checkout and the invoice mirror ship
+  (`crates/web/src/stripe.rs`, the Billing tab); the text below is the
+  research and requirements record.
 - Date: 2026-10-26
 - Source: parallel researcher draft (full text recovered from child
   session log). All Stripe/Apple claims cite the linked docs below.
@@ -94,8 +96,8 @@ from the client — re-fetch the PaymentIntent/Invoice server-side;
 separate. Local webhook dev uses the Stripe CLI: `stripe listen
 --forward-to localhost:$PORT/apostille/api/v1/webhooks/stripe`
 prints a CLI signing secret, and `stripe trigger
-payment_intent.succeeded` fires a realistic event. Fits `cargo xtask
-dev` + `dev-seed`: seed script can create test-mode fixtures via
+payment_intent.succeeded` fires a realistic event. Fits `cargo xtask up`'s
+synthetic seed: it can create test-mode fixtures via
 the API. No card numbers ever touch our logs — log only ids,
 amounts, statuses.
 

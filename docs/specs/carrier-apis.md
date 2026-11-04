@@ -1,6 +1,7 @@
-# Carrier APIs: USPS + FedEx Labels (research draft for review)
+# Carrier APIs: USPS + FedEx Labels
 
-- Status: draft (prompt 010, for author review; no implementation yet)
+- Status: research (prompt 010). It feeds `shipping-design.md`; the
+  FedEx path is built in `crates/labels` and `crates/web/src/fedex_live.rs`.
 - Date: 2026-10-26
 - Source: parallel researcher draft (full text recovered from child
   session log). All endpoint/claim URLs below were fetched or

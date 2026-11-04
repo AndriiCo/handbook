@@ -1,6 +1,7 @@
-# TPM-Sealed Encrypted Config Storage (draft for review)
+# TPM-Sealed Encrypted Config Storage
 
-- Status: draft (prompt 010, for author review; no implementation yet)
+- Status: built (prompt 010 design; `crates/config`). The setup
+  wizard (§9) ships as `/config`.
 - Date: 2026-10-26
 - Source: parallel researcher draft (full text recovered from child
   session log). Reads: `README.md`; `docs/design.md` §0–§1;
@@ -287,14 +288,14 @@ mTLS cert, and staff/admin role.
 - **Mechanism:** `keyring` crate (stable 4.x) storing the dev KEK
   in the macOS Keychain (`service="handbook-dev"`, never the prod
   name). Pure Rust API, platform-native store, no new system dep.
-- **Loudness (all mandatory):** (a) every `cargo xtask dev` boot
+- **Loudness (all mandatory):** (a) every local `cargo xtask up` boot
   prints a banner: `DEV CRYPTO — Keychain-backed dev KEK, NOT
   TPM-sealed, synthetic data only`; (b) dev KEKs carry a `dev:`
   prefix and the server binary **refuses to start** if a
   dev-marked KEK is presented outside `cfg(debug_assertions)`; (c)
   `config-verify` fails the boot if `STORE_PATH` points outside
   tmp/seed dirs while in dev-crypto mode; (d) all seeded secrets
-  are synthetic (`dev-seed` only — consistent with `web-stack.md`
+  are synthetic (`cargo xtask up` seed only — consistent with `web-stack.md`
   §1).
 - **File-key escape hatch:** `HANDBOOK_DEV_KEYFILE` (0600) only if
   Keychain is unavailable (headless CI); same loud banner + same
@@ -351,7 +352,7 @@ mTLS cert, and staff/admin role.
 
 ## 9. Setup wizard — first-boot configuration
 
-Status: APPROVED (prompt 056, D43–D45) — implementation underway.
+Status: built (prompt 056, D43–D45): the `/config` wizard.
 
 Goal:  `/config` takes a fresh server from zero to
 fully-configured with one hand-provisioned secret (the setup

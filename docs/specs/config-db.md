@@ -1,6 +1,8 @@
 # Zero-env config migration (config-db)
 
-- Status: draft for review (goal-025 stream 4 of 5, base `f5258e1`)
+- Status: built (goal-025 stream 4 of 5, base `f5258e1`). Runtime config
+  lives in sealed DB rows (`crates/config`); the checklists below are the
+  acceptance record.
 - Date: 2026-10-27
 - Decision: [README §27](README.md) — zero env vars except
   unavoidable bootstrap (store path); everything in DB per
@@ -125,7 +127,7 @@ rules in `RuntimeConfig::load`:
 - TLS both-or-neither and ACME builder validation are unchanged
   (same refusal paths, now fed from DB values).
 - `admin.mtls_off=true` in a release build → **refuse to start**.
-  This bakes the H6 fix (`security-review-2026-10-27.md`) into the
+  This bakes the H6 fix (2026-10-27 review; `docs/ops/threat-model.md`) into the
   migration: a persistent dev-bypass flag must not survive into a
   release binary. Deliberate delta, no env equivalent.
 - KEK unavailable → **refuse to start** (old code booted degraded
@@ -213,7 +215,7 @@ green; (c) boot smoke on the target box.
 - [ ] Admin GET lists and PUT sets every §2.1 key (generic API;
   proven by the roundtrip test, no admin.rs changes).
 - [ ] `docs/ops` env tables updated (`acme.md`, `deploy.md`,
-  `parity.md`, `apostille.service`); no dangling
+  `xtask/ops/systemd/apostille.service`); no dangling
   references to migrated vars as live inputs.
 
 ## 7. Open questions

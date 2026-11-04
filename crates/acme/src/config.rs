@@ -1,7 +1,7 @@
 //! ACME client configuration: Google Public CA endpoints, domains, EAB, paths.
 //!
 //! The only CA we may use is Google PKI
-//! (`docs/ops/certificates.md`), so the directory defaults to Google
+//! (`docs/ops/acme.md`), so the directory defaults to Google
 //! prod; staging and custom URLs exist for the manual staging run
 //! and for tests.
 

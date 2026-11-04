@@ -1,6 +1,7 @@
-# Site Theme & Visual Design (draft for review)
+# Site Theme & Visual Design
 
-- Status: draft (prompt 007, for author review; no implementation yet)
+- Status: built (prompt 007 design). Styling is Tailwind v4 with
+  CSS-variable themes (decision D38, `docs/specs/README.md`).
 - Date: 2026-10-26
 - Source: parallel researcher draft (full text recovered from child session log)
 - Name note: this file is `docs/site-theme.md` and not `docs/DESIGN.md`
@@ -13,7 +14,7 @@ calm. No startup-hero theatrics. Proof (address, fee, form revision,
 verified date, citation) is always one glance away.
 
 Stack refs: [README](../README.md), [design.md](design.md),
-[web-stack.md](../web-stack.md). Content/evidence model, audit, and `xtask
+[web-stack.md](web-stack.md). Content/evidence model, audit, and `xtask
 build-handbook` stay authoritative; this doc only governs visual system,
 layout, and front-end behavior.
 

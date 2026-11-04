@@ -161,6 +161,12 @@ pub enum Builtin {
     },
     /// Plant stamp `acceptance/<sha12>.json` with `ci_green: true`.
     GateStamp,
+    /// Schema or migration changes since the live release ship only
+    /// with `--migration-ack <fresh production backup>`.
+    MigrationRail {
+        conn: Conn,
+        url: String,
+    },
     /// Every name resolves to the target's bind addresses.
     DnsCheck {
         names: Vec<String>,
@@ -221,6 +227,9 @@ pub struct Step {
 pub struct Facts {
     pub sha: String,
     pub arch: Arch,
+    /// `--migration-ack`: a production backup under /var/lib/apostille
+    /// that is the rollback for a release crossing a migration.
+    pub migration_ack: Option<String>,
 }
 
 impl Facts {
@@ -363,7 +372,7 @@ fn provision_steps(admin: &Conn, sudo: &str, home: &str, facts: &Facts) -> Vec<S
 /// deploy (skipped when the release is already live), first staff.
 fn hal_steps(hal: &Conn, facts: &Facts, deploy_flags: &str) -> Vec<Step> {
     let v = facts.version();
-    vec![
+    let mut steps = vec![
         step(
             Phase::Seal,
             "seal this file's config (merge; one transaction, boot-load checked)",
@@ -384,15 +393,32 @@ fn hal_steps(hal: &Conn, facts: &Facts, deploy_flags: &str) -> Vec<Step> {
         ),
         step(
             Phase::Deploy,
-            "install ops-deploy.sh from the staged release",
+            "install the operator scripts from the staged release",
             ssh(
                 hal,
                 format!(
-                    "mkdir -p ~/apostille/scripts && cp ~/apostille/staging/{v}/scripts/ops-deploy.sh ~/apostille/scripts/"
+                    "mkdir -p ~/apostille/scripts && cp ~/apostille/staging/{v}/scripts/*.sh ~/apostille/scripts/"
                 ),
                 Feed::Nothing,
             ),
         ),
+    ];
+    if let Some(ack) = &facts.migration_ack {
+        // ops-deploy.sh forwards MIGRATION_NOTES into the release manifest.
+        steps.push(step(
+            Phase::Deploy,
+            "record the migration rollback in the staged release",
+            ssh(
+                hal,
+                format!(
+                    "printf '%s\\n' 'rollback = restore {ack} (no older binary opens the migrated store)' \
+                     > ~/apostille/staging/{v}/MIGRATION_NOTES"
+                ),
+                Feed::Nothing,
+            ),
+        ));
+    }
+    steps.push(
         step(
             Phase::Deploy,
             format!("deploy {v} unless it is already live (restarts on the sealed config)"),
@@ -406,7 +432,8 @@ fn hal_steps(hal: &Conn, facts: &Facts, deploy_flags: &str) -> Vec<Step> {
                 Feed::Nothing,
             ),
         ),
-    ]
+    );
+    steps
 }
 
 fn staff_step(hal: &Conn) -> Step {
@@ -631,7 +658,22 @@ fn server_plan(target: &Target, facts: &Facts) -> Result<Vec<Step>, String> {
             format!("plant stamp for {} (ci_green)", facts.version()),
             Action::Builtin(Builtin::GateStamp),
         ),
+        step(
+            Phase::Gate,
+            "schema and migration rail against the live release",
+            Action::Builtin(Builtin::MigrationRail {
+                conn: hal.clone(),
+                url: format!("https://{host}/apostille/healthz"),
+            }),
+        ),
         probe(&hal, Phase::Gate),
+        step(
+            Phase::Gate,
+            "scoreboard before the deploy",
+            Action::Local {
+                argv: scoreboard("web/shots/prod-before.json"),
+            },
+        ),
         step(
             Phase::Dns,
             "every certificate name resolves to this server",
@@ -670,15 +712,16 @@ fn server_plan(target: &Target, facts: &Facts) -> Result<Vec<Step>, String> {
         Phase::Verify,
         "production scoreboard",
         Action::Local {
-            argv: vec![
-                "node".into(),
-                "xtask/ops/scoreboard.mjs".into(),
-                "--out".into(),
-                "web/shots/prod-after.json".into(),
-            ],
+            argv: scoreboard("web/shots/prod-after.json"),
         },
     ));
     Ok(steps)
+}
+
+fn scoreboard(out: &str) -> Vec<String> {
+    ["node", "xtask/ops/scoreboard.mjs", "--out", out]
+        .map(String::from)
+        .to_vec()
 }
 
 /// The dry-run text: one block per step, commands exactly as run.
@@ -718,6 +761,7 @@ mod tests {
         Facts {
             sha: "0123456789abcdef0123456789abcdef01234567".into(),
             arch: Arch::X86_64,
+            migration_ack: None,
         }
     }
 
@@ -733,6 +777,20 @@ mod tests {
             std::fs::write(&out, &text).unwrap();
             panic!("production plan changed; new text in {}", out.display());
         }
+    }
+
+    #[test]
+    fn a_migration_ack_becomes_the_release_notes() {
+        let file = SetupFile::template();
+        let mut facts = facts();
+        facts.migration_ack = Some("/var/lib/apostille/pre-014.sqlite".into());
+        let text = render(&plan(&file, "production", &facts).unwrap());
+        assert!(text.contains(
+            "'rollback = restore /var/lib/apostille/pre-014.sqlite (no older binary opens the migrated store)' \
+             > ~/apostille/staging/0123456/MIGRATION_NOTES"
+        ));
+        let notes = text.find("MIGRATION_NOTES").unwrap();
+        assert!(notes < text.find("ops-deploy.sh ~/apostille/staging").unwrap());
     }
 
     #[test]

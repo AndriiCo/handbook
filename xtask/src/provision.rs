@@ -733,7 +733,7 @@ mod tests {
 
     #[test]
     fn the_service_unit_in_the_repo_passes_the_install_check() {
-        check_service_unit(include_str!("../../docs/ops/apostille.service")).unwrap();
+        check_service_unit(include_str!("../ops/systemd/apostille.service")).unwrap();
         assert!(check_service_unit("[Service]\nUser=root\nExecStart=/bin/sh\n").is_err());
     }
 

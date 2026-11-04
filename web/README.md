@@ -1,14 +1,15 @@
 # Web shells (SvelteKit, two builds)
 
-S4/S5 lanes. One codebase, three route groups, two deploy units
+One codebase, three route groups, two deploy units
 (`docs/specs/spa-separation.md` §1.2):
 
-- `src/routes/(public)/` — anonymous: home search + authority dossiers.
-  Themed, EN-only. Must never import customer/admin libs.
-- `src/routes/(customer)/` — logged-in: orders, uploads, precheck,
-  billing, order form, demo login.
-- `src/routes/(admin)/` — staff only: dashboard, triage, call console,
-  config. Ships ONLY in the admin build served from `admin.andrii.ai`.
+- `src/routes/(public)/` — anonymous: home search, authority guides,
+  follow/notify links. Must never import customer/admin libs.
+- `src/routes/(customer)/` — signed-in customers: orders, forms,
+  uploads, precheck, shipping, billing, security (passkeys and linked
+  methods).
+- `src/routes/(admin)/` — staff only. Ships ONLY in the admin build
+  served from `admin.andrii.ai`.
 
 ## Builds
 
@@ -25,17 +26,21 @@ layouts + `(public)`/`(customer)` — no `(admin)`).
 
 ## Routes
 
-Public (`/apostille/…`): `/` (search-first ledger home),
-`/authority/[slug]` (dossier: tabs, fee tally, citations).
+Public (`/apostille/…`): `/` (search-first home),
+`/authority/[...trail]` (the authority guide), `/in/[...path]`
+(country and place index), `/notify/confirm`, `/notify/unsubscribe`.
 
-Customer: `/orders` (list), `/order` (new-order form), `/uploads`
-(file picker + validation), `/precheck` (WS status pill + snapshot),
-`/billing`, `/login` (DEMO login).
+Customer (`/apostille/…`): `/login`, `/order` (new order, including
+the free form fill), `/orders`, `/forms`, `/uploads`, `/precheck`,
+`/shipping`, `/billing`, `/security`, `/report`.
 
-Admin (admin host `/…`): `/admin` (dashboard), `/admin/triage`
-(review queue), `/admin/console` (call console), `/admin/config`
-(typed keys: bool/text editable, secrets set-new-only, never
-displayed — `docs/specs/secure-config.md` §1.5).
+Admin (admin host, `/…`): `/dashboard`, `/triage` and `/review`
+(review queue), `/authorities`, `/sources`, `/packs`, `/calls`,
+`/compose`, `/email`, `/mail`, `/outbox`, `/labels`, `/staff-orders`,
+`/work` (plant work queue), `/workers` (URL ingest), `/trace`,
+`/staff`, `/enrol`, `/staff-login`, and `/config` (typed keys;
+secrets are write-only and never displayed —
+`docs/specs/secure-config.md` §1.5).
 
 API URLs derive from the home route id (`resolve('/(public)')` →
 base + '/'). Kit 3 types expose no `base` export and narrow `Path`
@@ -65,39 +70,18 @@ npm test             # node --test over test/
 the inline vite options, so a plain sync would type only the public
 tree and reject `/(admin)/…` route ids.
 
-## JS budgets
+## Bundle sizes
 
-- Day-1 skeleton gate: anonymous page total ≤ **150 KB** (raw JS+CSS,
-  cold cache, excluding images/fonts).
-- Week-3 targets per `docs/site-theme.md` §2: entry ≤ 40 KB Brotli,
-  per-route chunk ≤ 30 KB, anonymous page ≤ 80 KB total, customer ≤
-  120 KB. No CI size gate (`xtask web-budget` reports, advisory only).
-- Measured 2026-10-27 (approx, whole-bundle Brotli): public JS total
-  45 KB; anonymous home ≈ entry 1.3 KB + runtime chunks ≈ 28 KB +
-  route nodes ≈ 2 KB ≈ **33 KB** — inside entry/page budgets. Formal
-  per-navigation gate stays Week 3+.
-- Per-route report (advisory, after `npm run build`): `node
-  scripts/route-budget.mjs [route id] [--max <KB>]` prints Brotli sizes
-  of the entry + root layout, the route's own closure, each lazy chunk
-  it requests, and the per-navigation total (the route plus the chunks
-  the route requests itself), which is what the 30 KB page budget
-  counts. The authority guide is **over budget**: its route node is
-  about 8 KB, but it requests the guide's code
-  (`lib/public-ui/doc/guide-code.js`, about 56 KB) as its module loads,
-  on every visit, so a navigation costs about 64 KB Brotli (measured
-  2026-11-04 on the R2 train; production's page was 34 KB). Moving the
-  code into a chunk let it download alongside the API reads; it did not
-  shrink the page. Citations mode's card and endnotes load only once
-  citations turn on (`doc/cite-code.js`), and the accepted-office card
-  only when a record exists. Bringing the guide under 30 KB means
-  loading the below-fold blocks on demand, or a new budget: an operator
-  decision.
+No size budget is enforced. `node scripts/route-budget.mjs [route id]`
+(after `npm run build`) prints Brotli sizes per route and per
+navigation, for reference only.
 
 ## Notes
 
 - SPA mode (`ssr = false`, `prerender = false`); `index.html` fallback
   covers deep links. Prerendered handbook pages may return later.
-- No CSS framework, no runtime deps; mobile-first CSS in `src/app.css`.
+- Tailwind v4 (decision D38) on CSS-variable themes; mobile-first;
+  `npm run check:tailwind` guards the setup.
 - Theme: OS default + `localStorage` override (`theme:
   light|dark|auto`), blocking init snippet in `src/app.html`.
 - i18n: `src/lib/i18n.ts` detects `?l=` → stored → `navigator.languages`

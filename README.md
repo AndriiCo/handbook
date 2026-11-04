@@ -93,7 +93,7 @@ the U.S., Canada, and Mexico.
 ## What shipped
 
 What is live at <https://andrii.ai/apostille> today (production
-`0.1.0+20abd03`, deployed 2026-11-03):
+`0.1.0+83602a0`, deployed 2026-11-04):
 
 - **Every Hague party in the index:** search the country-grouped
   authority index of **510 authorities**: the 130 HCCH-party packs
@@ -150,8 +150,8 @@ Production is `0.1.0+56f0fbb`, scoreboard **8/10** measured
 
 Number provenance (measured 2026-11-03 unless noted):
 
-- Production `0.1.0+20abd03`, 8/10: measured with the scoreboard
-  before and after the deploy. The count of 510 authorities is from
+- Production `0.1.0+56f0fbb`, 8/10: measured with the scoreboard
+  before and after the deploy (2026-11-04T07:47Z). The count of 510 authorities is from
   the live `GET /api/v1/authorities`.
 - 501 world authorities in 130 packs, 478 watch URLs: parsed from
   `packs/world/` (pinned by `world_rows_merge_into_curated_dossiers`).

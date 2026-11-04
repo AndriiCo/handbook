@@ -1,15 +1,12 @@
-# apostille-backup.service — PROPOSED (prompt 083: install with the
-# F1/F2 unit reinstall; enable once the first nightly + backup-verify
-# are reviewed and the offsite pull is decided).
+# apostille-backup.service — one-shot nightly backup: both SQLite DBs
+# via the backup API (never raw-copy a WAL-mode DB) + tar of the file
+# dirs into /var/lib/apostille-backups/daily/YYYY-MM-DD/, 7 daily +
+# 4 weekly. Triggered by apostille-backup.timer at 02:30.
+# Spec: docs/ops/deploy.md § Watch.
 #
-# One-shot nightly backup: both SQLite DBs via the backup API (never
-# raw-copy a WAL-mode DB) + tar of the file dirs into
-# /var/lib/apostille-backups/daily/YYYY-MM-DD/, 7 daily + 4 weekly.
-# Triggered by apostille-backup.timer at 02:30. Spec: docs/ops/deploy.md § Watch.
-#
-# Install (as root, once): copy this file + apostille-backup.timer to
-# /etc/systemd/system/, `systemctl daemon-reload && systemctl enable
-# --now apostille-backup.timer`.
+# Install: `cargo xtask setup` stages every unit under units/ and
+# `xtask provision` writes them to /etc/systemd/system, enabling the
+# timers the setup file's target names (`backup`).
 #
 # Privilege summary: runs as andrii-ai:andrii-ai, no capabilities,
 # no network, no KEK (config rows are ciphertext; the job reads the

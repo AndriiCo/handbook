@@ -1,6 +1,4 @@
-# apostille-backup.timer — PROPOSED (prompt 083: enable with
-# apostille-backup.service once the first nightly + backup-verify
-# are reviewed).
+# apostille-backup.timer — enabled when the target's timers name `backup`.
 #
 # Nightly at 02:30 with a random delay. Persistent: a missed run
 # (downtime) fires once at the next boot instead of silently

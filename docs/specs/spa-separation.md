@@ -1,6 +1,8 @@
-# SPA Separation: anonymous / customer / admin (draft for review)
+# SPA Separation: anonymous / customer / admin
 
-- Status: draft (prompt 007, for author review; no implementation yet)
+- Status: built. The `(public)`, `(customer)` and `(admin)` route
+  groups ship as two builds; staff sign in with passkeys on the
+  admin host (mTLS and port 444 are gone; see `single-443-quic.md`).
 - Date: 2026-10-26
 - Source: parallel researcher draft (recovered from workflow delivery;
   the delivery truncated the draft's tail — everything below §1.5, if
@@ -8,7 +10,7 @@
   request). Companion: [analysis-agent.md](analysis-agent.md) (the
   second spec from the same stream, recovered separately in full).
 - Context grounding: Rust workspace, axum 0.8 + tower-http, SvelteKit
-  SPA + axum API (web-stack.md §7), WS-first realtime, single Ubuntu
+  SPA + axum API (web-stack.md §4), WS-first realtime, single Ubuntu
   26.04 + Caddy TLS, BASE_PATH=/apostille, Mac local dev, no Docker,
   pure-Rust deps. Repo holds code+schema only, never customer data
   (design.md §0).
@@ -98,9 +100,10 @@
   `tls { client_auth ... }` design was retired with Caddy in
   prompt 015). The app reads the verified client identity from
   the TLS session itself — no forwardable headers involved.
-- Local dev: `cargo xtask dev` serves both on localhost with different
-  ports (public :3000/apostille, admin :3001/) and `ADMIN_MTLS=off` +
-  printed warning; CI asserts prod config has it on.
+- Local dev: `cargo xtask up` serves both on loopback (public under
+  `/apostille`, admin on its own port). The mTLS design above was
+  replaced by staff passkeys on the single 443 listener
+  (`single-443-quic.md`).
 
 ## 1.4 axum auth design
 
@@ -161,7 +164,7 @@
 ## 1.5 Threat notes (customer data)
 
 - Repo never holds customer data (design.md §0) — enforce with `xtask`
-  dev-seed only + CI grep for PII-looking fixtures; uploads land in
+  synthetic seed only (`cargo xtask up`) + CI grep for PII-looking fixtures; uploads land in
   store/blob outside git with 0600 perms.
 - IDOR: authority/capture/task/order ids are sequential integers in
   design.md — every read checks (trust tier + owner + role);

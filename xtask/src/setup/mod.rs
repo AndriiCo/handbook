@@ -3,6 +3,7 @@
 //! ```text
 //! cargo xtask setup [--file private/config.yaml] [--target a,b] [--sha <rev>]
 //!     [--from <phase>] [--dry-run] [--operator-order "<text>"]
+//!     [--migration-ack /var/lib/apostille/<backup>]
 //! cargo xtask setup wizard [--file <path>] [--host <name>] [--local] [--no-open]
 //! cargo xtask setup check  [--file <path>] [--target <name>]
 //! cargo xtask setup print  [--file <path>] --target <name>
@@ -25,7 +26,8 @@
 //!
 //! [`file`] reads and writes the sops file, [`build`] builds hardened
 //! binaries for each target's CPU, [`plan`] turns a target into steps,
-//! [`run`] executes them, [`checks`] probes every provider key,
+//! [`run`] executes them, [`rail`] refuses unacknowledged migrations,
+//! [`checks`] probes every provider key,
 //! [`probe`] reads what an SSH box is, [`pull`] reads what a server's
 //! store holds, [`map`] lays out the system map, and [`wizard`] serves
 //! the browser UI.
@@ -39,6 +41,7 @@ pub mod map;
 pub mod plan;
 pub mod probe;
 pub mod pull;
+pub mod rail;
 pub mod rehearsal;
 pub mod run;
 pub mod stage;
@@ -149,7 +152,7 @@ pub fn run(args: &[String]) {
 
 fn print_usage() {
     println!(
-        "usage: cargo xtask setup [--file private/config.yaml] [--target a,b] [--sha <rev>] [--from <phase>] [--dry-run] [--operator-order \"<text>\"]
+        "usage: cargo xtask setup [--file private/config.yaml] [--target a,b] [--sha <rev>] [--from <phase>] [--dry-run] [--operator-order \"<text>\"] [--migration-ack <backup>]
        cargo xtask setup wizard|check|print|new|pull|wipe [--file <path>] [--target <name>]
 
 No file: creates it and opens the wizard. Phases: {}",
@@ -368,6 +371,19 @@ pub fn run_one(
     order: Option<&str>,
     emit: &(dyn Fn(Event) + Sync),
 ) -> Result<(), String> {
+    run_one_with(f, name, rev, from, order, None, emit)
+}
+
+/// [`run_one`] with a `--migration-ack` backup path ([`rail`]).
+fn run_one_with(
+    f: &SetupFile,
+    name: &str,
+    rev: &str,
+    from: Option<Phase>,
+    order: Option<&str>,
+    migration_ack: Option<&str>,
+    emit: &(dyn Fn(Event) + Sync),
+) -> Result<(), String> {
     let repo = crate::repo_root();
     let target = f
         .targets
@@ -381,6 +397,7 @@ pub fn run_one(
     let facts = Facts {
         arch: detect_arch(f, name)?,
         sha: sha.clone(),
+        migration_ack: migration_ack.map(str::to_string),
     };
     let steps = plan::plan(f, name, &facts)?;
     append_log(
@@ -425,6 +442,12 @@ fn run_targets(args: &[String]) {
     let from = crate::flag(args, "from")
         .map(|p| Phase::parse(&p).unwrap_or_else(|| fail(&format!("unknown phase {p}"))));
     let order = crate::flag(args, "operator-order");
+    let ack = crate::flag(args, "migration-ack");
+    if let Some(path) = ack.as_deref().filter(|p| !rail::valid_ack_path(p)) {
+        fail(&format!(
+            "--migration-ack {path}: must be a backup path under /var/lib/apostille/"
+        ));
+    }
     if args.iter().any(|a| a == "--dry-run") {
         let repo = crate::repo_root();
         let sha = stage::resolve_sha(&repo, &rev).unwrap_or_else(|e| fail(&e));
@@ -436,6 +459,7 @@ fn run_targets(args: &[String]) {
             let facts = Facts {
                 arch,
                 sha: sha.clone(),
+                migration_ack: ack.clone(),
             };
             let steps = plan::plan(&f, name, &facts).unwrap_or_else(|e| fail(&e));
             println!("# {name} at {} ({})", facts.version(), facts.arch.triple());
@@ -444,7 +468,15 @@ fn run_targets(args: &[String]) {
         return;
     }
     for name in &targets {
-        if let Err(e) = run_one(&f, name, &rev, from, order.as_deref(), &print_event) {
+        if let Err(e) = run_one_with(
+            &f,
+            name,
+            &rev,
+            from,
+            order.as_deref(),
+            ack.as_deref(),
+            &print_event,
+        ) {
             // The run already printed its own STOPPED line; only refusals
             // before the first step still need saying.
             if !e.starts_with("step ") {

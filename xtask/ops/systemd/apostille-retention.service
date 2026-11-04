@@ -1,6 +1,5 @@
-# apostille-retention.service — PROPOSED (no enable decision yet;
-# enable only when the author calls it. Install prerequisite: none
-# beyond the deploy train, which already ships `xtask retention-sweep`).
+# apostille-retention.service — installed but enabled by no target yet
+# (add `retention` to a target's timers to turn it on).
 #
 # One-shot retention sweep: delete voice audio captures older than
 # 365 days (capture row + file inside the store, session link
@@ -8,9 +7,9 @@
 # records are never touched. Triggered by apostille-retention.timer,
 # daily.
 #
-# Install (as root, once): copy this file + apostille-retention.timer
-# to /etc/systemd/system/, `systemctl daemon-reload && systemctl
-# enable --now apostille-retention.timer`.
+# Install: `cargo xtask setup` stages every unit under units/ and
+# `xtask provision` writes them to /etc/systemd/system, enabling the
+# timers the setup file's target names (`retention`).
 #
 # Privilege summary: runs as andrii-ai:andrii-ai, no capabilities,
 # no network, no KEK, one writable dir (the live store only — the job

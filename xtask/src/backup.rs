@@ -1,6 +1,6 @@
 //! `xtask backup` + `xtask backup-verify`: nightly backups (drill 3).
 //!
-//! Spec: `docs/ops/prod.md` (SQLite backup API — never raw-copy a
+//! Spec: `docs/ops/deploy.md` (SQLite backup API — never raw-copy a
 //! WAL-mode DB — + `tar` of the file dirs, offsite, 7 daily + 4
 //! weekly). `backup-verify` is the drill-3 engine: restore a daily
 //! into a scratch dir and prove it boots-worthy, never over live data.
@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 /// [`crate::release::DEFAULT_ROOT`]; override with `--dest`).
 pub const DEFAULT_DEST: &str = "/var/lib/apostille-backups";
 
-/// Retention: 7 daily + 4 weekly (`docs/ops/prod.md`).
+/// Retention: 7 daily + 4 weekly (`docs/ops/deploy.md`).
 const KEEP_DAILY: usize = 7;
 const KEEP_WEEKLY: usize = 4;
 
@@ -942,7 +942,7 @@ mod tests {
     fn backup_unit_keeps_hardening() {
         let unit = std::fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../docs/ops/apostille-backup.service"
+            "/ops/systemd/apostille-backup.service"
         ))
         .unwrap();
         for line in [

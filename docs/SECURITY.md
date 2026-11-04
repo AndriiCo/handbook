@@ -1,22 +1,13 @@
-# Security Baseline (draft for review)
+# Security Baseline
 
-- Status: draft (prompt 007, for author review; no implementation yet)
-- Date: 2026-10-26
-- Source: parallel researcher draft (full text recovered from child
-  session log). Researcher read in full: `README.md`, `AGENTS.md`,
-  `docs/design.md`, `docs/web-stack.md`, prompt-001 log, all current
-  Rust sources and the migration. External:
-  `https://github.com/SnailSploit/claude-red` — full tree via GitHub
-  API (76 `SKILL.md` files across 22 categories) plus full contents of
-  the 14 most stack-relevant skills: `offensive-sqli`,
-  `offensive-xss`, `offensive-idor`, `offensive-file-upload`,
-  `offensive-ssrf`, `offensive-api-security`, `offensive-api-abuse`,
-  `offensive-jwt`, `offensive-oauth` (head), `offensive-race-condition`,
-  `offensive-business-logic`, `offensive-supply-chain`,
-  `offensive-cicd-secrets`, `offensive-tls-attacks`,
-  `offensive-deserialization`.
-- Findings F1–F8 below are the pre-API must-fix list for the
-  implementation plan.
+- Status: the baseline the code is held to (written 2026-10-26 from
+  the claude-red skills; refreshed 2026-11-04). What is built and the
+  open findings live in [ops/threat-model.md](ops/threat-model.md).
+- Source: `https://github.com/SnailSploit/claude-red`, the 14 skills
+  most relevant to this stack (`offensive-sqli`, `-xss`, `-idor`,
+  `-file-upload`, `-ssrf`, `-api-security`, `-api-abuse`, `-jwt`,
+  `-oauth`, `-race-condition`, `-business-logic`, `-supply-chain`,
+  `-cicd-secrets`, `-tls-attacks`, `-deserialization`).
 
 ## 1. Auth-shape verdicts (confirm or correct, with reasons)
 
@@ -79,21 +70,12 @@
    the client declare its own topic list without server-side filtering;
    log denied subscriptions (they are attacker-shaped probes per the
    skill's Defender View).
-7. **`admin_cert` table + mTLS on admin host — CONFIRM with scoping.**
-   mTLS for the admin host is strong (kills credential-stuffing and
-   password-spray against the highest-value surface;
-   `offensive-jwt`'s mitigations section explicitly recommends mTLS
-   token-binding as top-tier). But: (a) mTLS must be terminated where
-   you control the client-CA — Caddy can do this (`tls { client_auth {
-   mode require_and_verify … } }`), forwarded to axum as a verified
-   header the app trusts only from localhost; (b) keep login *in
-   addition* (cert = device/operator binding, login = identity/audit
-   actor) — a shared admin workstation cert alone destroys attribution
-   in the `audit` table; (c) `admin_cert` table should store
-   fingerprint + operator + issued/revoked timestamps; check revocation
-   on every admin request, not just at TLS handshake (Caddy validates
-   chain, app checks revocation). Do not put mTLS on the
-   public/customer host — friction with zero threat-model gain.
+7. **`admin_cert` table + mTLS on admin host — SUPERSEDED.** Staff
+   sign in with passkeys on the single 443 listener, behind an admin
+   IP allowlist and step-up for sensitive actions
+   (`docs/specs/customer-auth.md` §5, `docs/specs/single-443-quic.md`).
+   The original rule still holds: keep per-person sign-in so every
+   `audit` row names an operator.
 8. **Audit everything — CONFIRM, extend slightly.** Design §6 already
    appends `audit` rows for content changes; extend to auth/security
    events: logins (success/fail), logouts, role changes, cert
@@ -147,19 +129,15 @@ foreign_keys=ON` when FKs land (see findings); error responses never
 include SQLite messages (error-based detection relies on leaked syntax
 errors).
 
-**Secrets.** Env-only (`STORE_PATH`, `BIND_ADDR`, `PORT`, `BASE_PATH`,
-`META_API_KEY`, session secret, client-CA material); never in
-repo/logs/errors; `offensive-cicd-secrets` patterns to block: no
+**Secrets.** Sealed config rows under a KEK
+([secure-config.md](specs/secure-config.md),
+[config-db.md](specs/config-db.md)); never in repo/logs/errors;
+`offensive-cicd-secrets` patterns to block: no
 `/debug/env` endpoints, no error pages echoing env, structured logs
 with a PII/secret allowlist rather than free-form Debug dumps.
-Single-server note: bootstrap secrets live in a root-only env file
-(0600) read by the service unit, not in shell history. App secrets
-(notably `META_API_KEY`) migrate into TPM-sealed `config(secret)`
-rows per [secure-config.md](specs/secure-config.md) — decided
-prompt 011 (TPM-sealed now, not env-only interim). Rotate the Meta
-API key on any suspected log leak.
+Rotate the Meta API key on any suspected log leak.
 
-**Headers (via tower-http + Caddy).** `Strict-Transport-Security`
+**Headers (via tower-http).** `Strict-Transport-Security`
 (preload once stable), `Content-Security-Policy` (SvelteKit SPA:
 `default-src 'self'`, no inline scripts beyond Svelte's hashed output,
 `connect-src 'self' wss:` same-host), `X-Content-Type-Options:
@@ -186,8 +164,7 @@ build): lockfile committed, `npm audit`/Dependabot on, `postinstall`
 scripts forbidden in our own packages and reviewed in deps
 (`offensive-supply-chain`: postinstall hooks are the standard npm
 persistence). Pure-Rust rule (web-stack §1) already shrinks the
-native-dependency attack surface — keep it. Pin the Caddy binary
-version + checksum at install.
+native-dependency attack surface — keep it.
 
 **Logging/PII.** Structured JSON logs; log actor+action+entity for
 mutations (mirrors `audit`), but never log: session tokens, CSRF
@@ -246,99 +223,31 @@ hops and response sizes — the SSRF skill's bypass list
 double-resolution, redirect to `169.254.169.254`) is the test plan for
 `xtask fetch-url` when it lands.
 
-## 3. Code review findings (all bodies read; paths exact)
+## 3. Code review findings
 
-**F1 — `retention_sweep` is not atomic (medium).**
-`crates/handbook/src/db.rs:59-96` loops per-capture: `remove_file` →
-`DELETE` → `UPDATE` → `INSERT audit`, with no transaction. A crash
-mid-loop leaves blob deleted but row present (or row deleted but
-session link dangling, or deletion unaudited). Fix: wrap the loop in
-`conn.transaction()` / immediate transaction; audit row inside the same
-txn. Also `cutoff = now - 365*86400` can underflow on absurd `now` —
-`saturating_sub`.
-
-**F2 — Path traversal via `capture.path` on delete (medium).**
-`crates/handbook/src/db.rs:76`: `store.root().join(path)` where `path`
-comes from the DB. Today only trusted code writes it, but any future
-write path (import tools, API) that stores `../../etc/x` turns the
-sweep into an arbitrary-file delete (`full.exists()` +
-`remove_file`). Fix: canonicalize and assert
-`starts_with(store.root())`, or delete by `blob_path(sha256)` (already
-hex-constrained) instead of the stored `path`.
-
-**F3 — `blob_path` panics on short/malicious input (low).**
-`crates/handbook/src/store.rs:49-56`: `&sha_hex[..2]`/`[2..4]`/`[4..]`
-panics if `len<4` (only a `debug_assert` guards) and slices on byte
-indices. Any caller passing user-influenced strings (future read-by-hash
-API) gets a panic = 500/DoS. Fix: validate `len==64 && all hex`,
-return `Result`/`Option`.
-
-**F4 — `write_blob` TOCTOU + non-atomic write (low).**
-`crates/handbook/src/store.rs:60-71`: `path.exists()` then `fs::write`
-— two processes can race (benign: same bytes, same hash,
-last-writer-wins identical content), but `fs::write` truncates in
-place, so a concurrent reader sees a torn file. Fix day-1-cheap: write
-to temp + `rename` (atomic on both macOS APFS and ext4).
-
-**F5 — No FK enforcement + no CHECK constraints (low now, grows with
-API).** `crates/handbook/migrations/001_init.sql:3` explicitly skips
-FKs ("checked in code") — but no code checks them yet:
-`capture.authority_id`, `fact.capture_id`, `task.batch_id`,
-`call_session.*_capture_id` can all dangle; `kind`/`status`/`trust`/
-`consent`/`visibility` accept any string (an API typo or attacker value
-like `trust='official'` on a community upload bypasses the tier model
-in §3). Fix: add `CHECK (…)` constraints for the ~15 fixed vocabularies
-now (cheap, no framework needed); add real FKs (with `PRAGMA
-foreign_keys=ON` in `open()`) before the API writes these tables.
-
-**F6 — `flag()` CLI parsing takes the last occurrence silently +
-`--actor` unaudited default (info).** `xtask/src/main.rs:47-55,144`:
-`find_map` over windows returns the *first* match actually (find_map
-stops at first) — duplicate flags are silently ignored rather than
-rejected; `--actor` defaults to `"xtask"`, so unattributed sweeps write
-`actor='xtask'` audit rows. Fix: reject duplicate flags; require
-`--actor` (or inject `$USER`) for any command writing `audit`.
-
-**F7 — `lib.rs` surface is clean; `db::open` needs hardening flags
-(info).** `crates/handbook/src/lib.rs:1-23` is docs + re-exports only,
-no findings. `db.rs:17-19` `Connection::open` uses SQLite defaults:
-set `PRAGMA journal_mode=WAL` (single writer/WS readers concurrency),
-`PRAGMA busy_timeout=5000` (avoid SQLITE_BUSY under WS fan-out),
-`PRAGMA synchronous=NORMAL`, and `foreign_keys=ON` (with F5). Also
-`migrate()` runs `execute_batch` outside a txn — wrap it so a
-half-applied 001 can't strand the DB.
-
-**F8 — Test-only issue, no prod impact:** `db.rs:200`
-`.to_str().unwrap()` on test paths — fine in tests, but the
-production import path must handle non-UTF8 filenames explicitly (store
-`path` as given vs normalized — decide before `import-file` lands).
-
-No SQLi (all queries parameterized), no secrets, no unsafe, no network
-code yet — the current tree is a clean foundation; F1–F5 are the
-pre-API must-fix list.
+F1–F8 (2026-10-26, against the first scaffold) are tracked in
+[ops/threat-model.md](ops/threat-model.md) §5: F1–F5 and F7 are fixed
+in `crates/handbook-store`; F6 (duplicate CLI flags, default `--actor`)
+is open; F8 was test-only.
 
 ## 4. Open questions
 
-1. **Meta Models API spec unknown** — transcription endpoint, auth
-   scheme, streaming vs batch, PII/data-handling terms?
-2. **Content-repo location** — where does the separate content repo
-   live; who can push; how do `content_git_commit` hashes get verified
-   at build?
-3. **Photo retention undecided** — only voice (365d) decided; retention
-   for customer photos/videos/scans?
-4. ~~Admin host typo~~ — decided prompt 008: `admin.andrii.ai`.
-5. ~~Customer login methods~~ — decided prompts 008–009
-   (passkey/Apple/Google/Meta + magic-link fallback; see
-   [auth-playbook.md](auth-playbook.md)). Staff method still open:
-   passkey or password+TOTP (+ mTLS)?
-6. **Customer PII boundary** — which uploads are PII-vault (ID
-   documents?) vs public-derivable (route photos); who may read
-   originals?
-7. **WS fallback scope** — is SSE fallback in scope for day 1, or
-   WS-only with documented degradation?
-8. **Backup/DR for the single server** — SQLite + `store/` backup
-   schedule, encryption, restore test; audit-log offsite shipping?
-9. **Audit-trigger limits (m12, noted 2026-10-26)** — the 002 triggers
-   block `UPDATE`/`DELETE` on `audit` (code-bug-level enforcement) but
-   not `DROP TRIGGER` by anyone with SQL access; true tamper-evidence
-   needs offsite audit shipping (see 8).
+Still open:
+
+1. **Photo and PII retention.** Only voice audio (365 days) is decided;
+   customer photos, scans and label PDFs are not
+   (`docs/legal/privacy-draft.md`).
+2. **Customer PII boundary.** Which uploads are PII-vault (ID
+   documents) and who may read originals.
+3. **Offsite backups and audit shipping.** Backups are nightly and
+   restore-drilled; the offsite copy is not. Until it exists, the
+   append-only audit triggers stop code bugs but not `DROP TRIGGER`
+   by someone with SQL access.
+4. **Content repo.** Where a separate content repo would live, who
+   can push, and how `content_git_commit` hashes are verified at
+   build.
+
+Decided: Meta API shapes ([meta-api.md](meta-api.md)); admin host
+`admin.andrii.ai`; customer methods (passkey, Apple, Google, Meta,
+magic link; [auth-playbook.md](auth-playbook.md)); staff method
+(passkeys); WebSocket-only realtime ([web-stack.md](web-stack.md) §3).

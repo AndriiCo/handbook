@@ -1,9 +1,4 @@
-# apostille-instruct.service — PROVISIONED (TODO E-3: `cargo xtask
-# setup` enables it with the other production timers; the setup
-# template lists `instruct` in targets.production.timers).
-# F1/F2 re-check (prompt 083): --store added (xtask never reads
-# STORE_DIR); --pack repointed at the shipped packs/ dir (releases
-# never stage crates/).
+# apostille-instruct.service
 #
 # One-shot instruction sweep: new email / comment / transcript
 # captures become instruction drafts + proposed fact updates with
@@ -11,11 +6,10 @@
 # review queue. Triggered by apostille-instruct.timer every
 # 5 minutes.
 #
-# Install: every release stages this file and apostille-instruct.timer
-# under units/, and `xtask provision` copies them to /etc/systemd/system
-# and runs `systemctl enable --now apostille-instruct.timer` when the
-# target's timers name `instruct`. Requires the Meta API key in sealed
-# config first, or every live run exits 2.
+# Install: `cargo xtask setup` stages every unit under units/ and
+# `xtask provision` writes them to /etc/systemd/system, enabling the
+# timers the setup file's target names (`instruct`).
+# Requires the Meta API key in sealed config, or every live run exits 2.
 #
 # Privilege summary: runs as andrii-ai:andrii-ai, no capabilities,
 # reads the KEK credential (sealed Meta key), one writable dir.

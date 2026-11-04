@@ -1,6 +1,6 @@
 //! Rootless release tooling: `xtask deploy` + `xtask rollback`.
 //!
-//! Testable Rust replacement for `docs/ops/apostille-ship.sh`.
+//! Replaces the old shell ship script with tested Rust.
 //! Runs ON the server as the unprivileged `hal` user: `hal` needs
 //! group-write on `<root>/releases/` plus the pinned grants from
 //! `xtask provision` (`systemctl restart`

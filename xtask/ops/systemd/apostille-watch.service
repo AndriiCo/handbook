@@ -1,15 +1,12 @@
-# apostille-watch.service — APPROVED (prompt 054, D41: enable on prod
-# once the deploy train ships the matching xtask).
-# F1 re-check (prompt 083): --store added (xtask never reads
-# STORE_DIR); flags re-verified against xtask usage. Still APPROVED.
+# apostille-watch.service
 #
 # One-shot watch sweep: poll due watch URLs (conditional GET, ingest
 # only changes), then poll the HCCH status table (task on change).
 # Triggered by apostille-watch.timer, daily.
 #
-# Install (as root, once): copy this file + apostille-watch.timer to
-# /etc/systemd/system/, `systemctl daemon-reload && systemctl enable
-# --now apostille-watch.timer`.
+# Install: `cargo xtask setup` stages every unit under units/ and
+# `xtask provision` writes them to /etc/systemd/system, enabling the
+# timers the setup file's target names (`watch`).
 #
 # Privilege summary: runs as andrii-ai:andrii-ai, no capabilities
 # (no low ports), no secrets (fetches are unauthenticated —

@@ -1,17 +1,14 @@
-# apostille-mail.service — APPROVED (prompt 054, D41: enable on prod
-# once Gmail credentials are sealed + the deploy train ships).
-# F1 re-check (prompt 083): --store added (xtask never reads
-# STORE_DIR); flags re-verified against xtask usage. Still APPROVED.
+# apostille-mail.service
 #
 # One-shot Gmail poll: new mailbox mail becomes immutable `email`
 # captures with auth evidence. Triggered by apostille-mail.timer
 # every 15 minutes.
 #
-# Install (as root, once): copy this file + apostille-mail.timer to
-# /etc/systemd/system/, `systemctl daemon-reload && systemctl enable
-# --now apostille-mail.timer`. Requires the Gmail OAuth client +
-# refresh token in sealed config first (docs/gmail-shapes.md
-# AUTHOR-ACTION items), or every run exits 2.
+# Install: `cargo xtask setup` stages every unit under units/ and
+# `xtask provision` writes them to /etc/systemd/system, enabling the
+# timers the setup file's target names (`mail`).
+# Requires the Gmail OAuth client + refresh token in sealed config
+# (docs/gmail-shapes.md), or every run exits 2.
 #
 # Privilege summary: runs as andrii-ai:andrii-ai, no capabilities,
 # reads the KEK credential (sealed Gmail secrets), one writable dir.

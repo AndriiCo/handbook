@@ -1,10 +1,8 @@
-# apostille.service — LIVE since 2026-10-27 (reviewed prompt 015,
-# installed by the author, verified serving).
+# apostille.service — the web server (live since 2026-10-27).
 #
-# Install (as root, once): copy to /etc/systemd/system/apostille.service,
-# `systemctl daemon-reload && systemctl enable --now apostille`.
-# Ships via `ops-deploy.sh` as hal (docs/ops/staging.md § Steps); the
-# /usr/local/sbin/apostille-ship script stays as reviewed fallback.
+# Install: `xtask provision` writes it to /etc/systemd/system on a new
+# server; each later release installs it through ops-deploy.sh and the
+# apostille-install-unit wrapper (docs/ops/deploy.md).
 #
 # Privilege summary: runs as andrii-ai:andrii-ai, keeps ONLY
 # CAP_NET_BIND_SERVICE (to bind 80/443), cannot gain more

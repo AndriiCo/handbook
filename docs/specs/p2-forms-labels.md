@@ -1,6 +1,8 @@
-# P2 Requirements: In-Browser Forms + Shipping Labels (draft for review)
+# P2 Requirements: In-Browser Forms + Shipping Labels
 
-- Status: draft (prompt 007, for author review; no implementation yet)
+- Status: built. Forms (`crates/forms`, `crates/web/src/p2.rs`) and
+  labels (`crates/labels`, `p2_labels.rs`) ship; the text below is the
+  requirements record.
 - Date: 2026-10-26
 - Source: parallel researcher draft (full text recovered from child
   session log).
@@ -114,7 +116,7 @@
   Rationale: matches design.md §0/§6 two-repo split; lets non-Rust
   staff update forms without a code deploy. Blocked on OQ-2
   (content-repo location); interim fallback: `store/forms/`
-  (gitignored, seeded by `xtask dev-seed` with synthetic templates).
+  (gitignored, seeded by `cargo xtask up` with synthetic templates).
 - P2-F6 — SLA fields: each template records `last_verified_at` +
   `verify_cadence_days` (default 90); expiry flips `active →
   needs_review` and triggers a `task(kind=validate_fact)`.
@@ -467,7 +469,7 @@ standard audit retention, no new rule).
   extracted `text/` sidecars, so template authors measure `pdf`
   rects against the real edition.
 - P1-D3: axum + SvelteKit scaffold serving `/apostille` with the WS
-  bus, `audit` writer, and `xtask dev-seed` extended with one
+  bus, `audit` writer, and `cargo xtask up`'s seed extended with one
   synthetic authority + template + submission + labels.
 - P1-D4: conflict query (§7) + `task`/`batch` flow, powering U4/U5
   and template `needs_review` flips.

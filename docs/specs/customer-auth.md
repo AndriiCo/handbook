@@ -1,6 +1,8 @@
-# Customer Auth: passkeys + linked methods (draft for review)
+# Customer Auth: passkeys + linked methods
 
-- Status: draft (for author review; Phase-1 implementation alongside)
+- Status: built. Passkeys, linked methods and staff enrolment ship
+  (`crates/auth`, `crates/web/src/passkey.rs`, `staff_passkey.rs`);
+  open questions below stay open.
 - Date: 2026-10-28
 - Grounding: [auth-playbook.md](../auth-playbook.md) (§1 passkeys, §6 linking rules), [spa-separation.md](spa-separation.md) §1.4 (sessions/cookies/roles), [SECURITY.md](../SECURITY.md) §1–§2, `crates/auth/src/` (`lib.rs` sessions+roles, `login.rs` policy, `csrf.rs`, `ws.rs`), `crates/web` session/cookie handling, and webauthn-rs 0.5.5 API (builder + ceremony shapes + error variants, verified against vendored sources).
 - Out of scope: the magic-link sender (playbook §2–§5 portal checklists stand; this spec defines the tables and link/unlink seams they plug into). Google OAuth is §9 (Phase 2); Apple + Meta are §§10–11 (Phase 3). Staff enrolment endpoints are Phase 4 (spec §6 here, tables land with the code).
