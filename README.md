@@ -8,7 +8,7 @@ the Washington guide with citations on: <https://andrii.ai/apostille/authority/u
 
 Built by Andrii Co. for the
 [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon.md)
-(Startup Track), 2026-10-26 to 2026-11-04 with Muse Code.
+(Startup Track), 2026-10-26 to 2026-11-04 with Muse Code and Claude Code.
 
 ## Models
 
@@ -36,7 +36,10 @@ tests.
 
 ## Eval numbers (2026-11-02, production, live key)
 
-Model muse-spark-1.3, written to the live store, shown on the How we verify page (`/apostille/about`):
+Model muse-spark-1.3, written to the live store and served at
+[`/apostille/api/v1/quality`](https://andrii.ai/apostille/api/v1/quality).
+The How we verify page (`/apostille/about`) that shows them is on `main`
+and reaches production with the next deploy.
 
 | Metric | What it measures | Latest |
 |---|---|---|
@@ -93,16 +96,17 @@ the U.S., Canada, and Mexico.
 ## What shipped
 
 What is live at <https://andrii.ai/apostille> today (production
-`0.1.0+83602a0`, deployed 2026-11-04):
+`0.1.0+2521ffe`, measured 2026-11-04):
 
 - **Every Hague party in the index:** search the country-grouped
-  authority index of **510 authorities**: the 130 HCCH-party packs
-  (501 competent authorities from the HCCH status table, six merged
-  into the curated US dossiers) plus the curated packs, loaded from
-  admin **Packs** on 2026-11-03.
+  authority index of **411 public authorities in 133 countries**, built
+  from the 130 HCCH-party packs plus the curated packs and loaded from
+  admin **Packs**.
 - **Dossiers:** a step-by-step guide, cited evidence, a "what
   changed" panel per watched source (SA-14), and notice banners
-  (`service_notice`), all updating live.
+  (`service_notice`), all updating live. So far **24 approved facts
+  across 2 authorities** (`usa-wa-sos` and `vietnam`); the other 409 are
+  indexed and have no approved facts yet.
 - **Sign-in and orders:** sign in with a passkey, run the photo
   precheck, save an order draft.
 - **Staff tools:**
@@ -127,10 +131,11 @@ customer has been charged.
 Promise words are quoted from the hackathon application text
 (2026-10-26). "Live" means served by the production SHA; "(repo)"
 means merged and shipped but waiting on an operator step or data.
-Production is `0.1.0+56f0fbb`, scoreboard **8/10** measured
-2026-11-04T07:47Z (`node xtask/ops/scoreboard.mjs`). The red rows:
-- GP3: brand logos not placed.
-- S1: demo video link and repo visibility (operator-owned; the licence part passes).
+Production is `0.1.0+2521ffe`, scoreboard **8/10** measured
+2026-11-04T23:47Z (`node xtask/ops/scoreboard.mjs`). The red rows:
+- A5: `/about` is on `main` but not on production yet, so the page that
+  shows the eval rate returns not found there.
+- S1: demo video link (operator-owned; the licence and public-repo parts pass).
 
 | Promised (application words) | Status | Reason / where it stands |
 |---|---|---|
@@ -143,20 +148,22 @@ Production is `0.1.0+56f0fbb`, scoreboard **8/10** measured
 | SAM 3.1 masking faces and plates | Delivered | Hosted SAM 3.1 on the precheck path, plus an open-weights SAM 3 drop-in on plant. |
 | Self-hosted Muse Glimmer pre-checks document photos | Delivered (repo) | `precheck.glimmer` worker kind on plant's GPU plus `ops/open-weights/glimmer-serve.sh` (P404). Weights download from the operator-named Hugging Face repo into `/srv/scratch/apostille/models`; the kind is announced once `GLIMMER_MODEL` is set in `worker.env` (P433). Not run yet. |
 | Approved changes reach the handbook and MCP server | Partial | Accepted-only publish reaches the handbook live. The read-only MCP tool `lookup_authority` is a localhost-only server (`crates/mcp`): run it beside a local store; production does not expose it. |
-| A new country means new sources, not new code | Delivered | 130 country packs as data (`packs/world/`), validated in ci, loaded on production from admin Packs with no code change (510 authorities live). Non-party countries come from the `research.nonparty` worker job (P392) into `packs/world-nonparty/`. |
-| One source for every country, starting 106 US/CA/MX; prepaid labels and envelopes to your door | Partial | Every Hague party is live (510 authorities). Non-parties come from the research job (not yet run). The staff FedEx path now keeps the label PDF, and the request fields are checked against FedEx's docs (P393). The first live label waits on the operator's production keys. Envelope kits are not delivered. |
+| A new country means new sources, not new code | Delivered | 130 country packs as data (`packs/world/`), validated in ci, loaded on production from admin Packs with no code change (411 authorities live). Non-party countries come from the `research.nonparty` worker job (P392) into `packs/world-nonparty/`. |
+| One source for every country, starting 106 US/CA/MX; prepaid labels and envelopes to your door | Partial | Every Hague party is in the live index (411 authorities; approved facts on 2 so far). Non-parties come from the research job (not yet run). The staff FedEx path now keeps the label PDF, and the request fields are checked against FedEx's docs (P393). The first live label waits on the operator's production keys. Envelope kits are not delivered. |
 | Success criterion: Viet Nam request → completed form + FedEx label, envelopes tomorrow | Partial | The form fill works and the staff label path is ready. No end-to-end Viet Nam order has been run with a real label yet. |
 | Source-changed view (SA-14) | Delivered | Admin capture history plus a line diff; the public "What changed" panel shows added and removed lines per source. It needs two captures of a source, which the daily sweep produces. |
 
 Number provenance (measured 2026-11-03 unless noted):
 
-- Production `0.1.0+56f0fbb`, 8/10: measured with the scoreboard
-  before and after the deploy (2026-11-04T07:47Z). The count of 510 authorities is from
-  the live `GET /api/v1/authorities`.
+- Production `0.1.0+2521ffe`, 8/10: measured with the scoreboard
+  (2026-11-04T23:47Z). The counts of 411 authorities in 133 countries
+  and 24 approved facts on 2 authorities are from the live
+  `GET /api/v1/authorities`, read the same day.
 - 501 world authorities in 130 packs, 478 watch URLs: parsed from
-  `packs/world/` (pinned by `world_rows_merge_into_curated_dossiers`).
-- Staging with every pack loaded serves 510 authorities and passed
-  9/10 (only S1) plus the demo 3/3 on each release SHA.
+  `packs/world/` (pinned by `world_rows_merge_into_curated_dossiers`);
+  the public index is smaller because some rows are merged or hidden.
+- Staging with every pack loaded passed 9/10 (only S1) plus the demo
+  3/3 on each release SHA.
 - Eval rates: live `/api/v1/quality`, run 2026-11-02T17:32:47Z, 30
   gold cases.
 
@@ -169,11 +176,15 @@ Number provenance (measured 2026-11-03 unless noted):
 - Run Glimmer on plant once the weights are named.
 - Grow the eval gold set past 30 synthetic passages.
 
-## How we built it with Muse Code
+## How we built it with Muse Code and Claude Code
 
 One builder session shipped numbered slices (`P196`, `P197`, … in the
-commit subjects); Meta-model work happened in lane sessions on their own
-worktree branches, merged back by the builder. The release checks are a
+commit subjects); Meta-model work happened in Muse Code lane sessions on
+their own worktree branches, merged back by the builder. Claude Code also
+worked on this repo from 2026-10-30, and its commits carry a
+`Co-Authored-By: Claude` trailer. Those two coding agents built the
+software; every model the product calls at runtime is still a Meta model
+(see Models). The release checks are a
 script, not an opinion: `node xtask/ops/scoreboard.mjs` scores ten rows
 (home, dossier data and page, login, order, precheck, eval, submission)
 against production and staging, and every deploy needs its green stamp
