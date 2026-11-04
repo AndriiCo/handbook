@@ -15,6 +15,7 @@
 //! `auth` crate and the DEMO session stays until then.
 
 mod admin;
+mod admin_authorities;
 mod admin_ip;
 mod admin_orders;
 mod admin_packs;
@@ -555,6 +556,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(admin_orders::admin_router(state.clone()))
         .merge(first_source::admin_router(state.clone()))
         .merge(admin_packs::admin_router(state.clone()))
+        .merge(admin_authorities::admin_router(state.clone()))
         .merge(worker::admin_router(state.clone()))
         .merge(source_history::admin_router(state.clone()))
 }
