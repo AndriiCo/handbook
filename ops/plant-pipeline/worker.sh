@@ -57,9 +57,11 @@ run_build() { # $1=run $2=srcdir
   stage "$run" deps bash -c "cd '$src' && cargo fetch --locked && npm ci --prefix web" || return 1
   stage "$run" gate bash -c "cd '$src' && cargo xtask ci" || return 1
   # The judge path end to end: preflight, doctor, fresh boot, probes and
-  # one scrape.urls job through the real worker. Ports 38318/38319, as
-  # staging holds 18318/18319 on plant.
-  stage "$run" judge bash -c "cd '$src' && ops/judge/preflight.sh --port-base 38318 && cargo xtask judge --check --port-base 38318" || return 1
+  # one scrape.urls job through the real worker. Ports 28318/28319:
+  # staging holds 18318/18319, and anything from 32768 up is Linux's
+  # ephemeral range, where the gate's own loopback connections can still
+  # hold the port the doctor wants to bind.
+  stage "$run" judge bash -c "cd '$src' && ops/judge/preflight.sh --port-base 28318 && cargo xtask judge --check --port-base 28318" || return 1
   stage "$run" package bash -c "
     set -euo pipefail
     cd '$src'
