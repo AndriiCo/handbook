@@ -1,6 +1,7 @@
 {
   "pack": "MC",
   "version": 1,
+  "iso2": "MC",
   "title": "Monaco — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -51,7 +52,7 @@
       "kind": "website_official",
       "uri": "http://service-public-particuliers.gouv.mc/Justice/Documents-et-demarches-judiciaires/Apostille-Direction-des-Services-Judiciaires/Faire-apostiller-un-document",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=55&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=334 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -94,7 +95,7 @@
       "authority": "mc-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://service-public-particuliers.gouv.mc/Justice/Documents-et-demarches-judiciaires/Apostille-Direction-des-Services-Judiciaires/Faire-apostiller-un-document as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=55&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=334",
       "status": "needs_review",
       "validation": "W-7"
     }

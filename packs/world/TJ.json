@@ -1,6 +1,7 @@
 {
   "pack": "TJ",
   "version": 1,
+  "iso2": "TJ",
   "title": "Tajikistan — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,7 +9,8 @@
       "country": "Tajikistan",
       "region": "",
       "name": "Depending on the type of a document the right to issue an Apostille in the Republic of Tajikistan is vested upon two government bodies:",
-      "slug": "tj-ca-1"
+      "slug": "tj-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
@@ -28,13 +30,13 @@
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "tj-ca-1",
+      "authority": "tj-ca-2",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Tajikistan (staff capture pending)."
     },
     {
       "name": "www.consular.tj",
-      "authority": "tj-ca-1",
+      "authority": "tj-ca-2",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Tajikistan (staff capture pending)."
     },
@@ -46,21 +48,21 @@
     },
     {
       "name": "www.adliya.tj",
-      "authority": "tj-ca-3",
+      "authority": "tj-ca-2",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Tajikistan (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "tj-ca-1",
+      "authority": "tj-ca-2",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=263&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Tajikistan (citation page; staff capture pending)."
     },
     {
-      "authority": "tj-ca-1",
+      "authority": "tj-ca-2",
       "kind": "website_official",
       "uri": "http://www.consular.tj",
       "cadence": "weekly",
@@ -74,7 +76,7 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=1014 (needs staff capture; W-7)."
     },
     {
-      "authority": "tj-ca-3",
+      "authority": "tj-ca-2",
       "kind": "website_official",
       "uri": "http://www.adliya.tj",
       "cadence": "weekly",
@@ -84,7 +86,7 @@
   "chain_steps": [
     {
       "id": "tj-index",
-      "authority": "tj-ca-1",
+      "authority": "tj-ca-2",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Tajikistan against a staff capture of the cited HCCH pages (deterministic).",
@@ -94,18 +96,10 @@
   ],
   "observations": [
     {
-      "authority": "tj-ca-1",
+      "authority": "tj-ca-2",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Tajikistan is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "tj-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: Depending on the type of a document the right to issue an Apostille in the Republic of Tajikistan is vested upon two government bodies:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1014",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -126,7 +120,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "tj-ca-1",
+      "authority": "tj-ca-2",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.consular.tj as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1014",
@@ -142,7 +136,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "tj-ca-3",
+      "authority": "tj-ca-2",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.adliya.tj as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1014",

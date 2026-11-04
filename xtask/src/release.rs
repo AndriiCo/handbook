@@ -566,7 +566,9 @@ pub fn deploy(opts: &DeployOptions) -> Result<String, String> {
     // is ignored for the same reason.
     let _ = (opts.allow_today_overlap, opts.pt_midnight_secs.as_ref());
     if let Some(dir) = &opts.packs_dir {
-        let errors = crate::packs::validate_dir(dir);
+        // The whole tree (curated + world sets): a release must not
+        // ship a junk world name or a slug two packs fight over.
+        let errors = crate::packs::validate_tree(dir);
         if !errors.is_empty() {
             let details: Vec<String> = errors.iter().map(ToString::to_string).collect();
             return Err(format!("packs-validate refused:\n{}", details.join("\n")));

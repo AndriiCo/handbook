@@ -1,6 +1,7 @@
 {
   "pack": "BW",
   "version": 1,
+  "iso2": "BW",
   "title": "Botswana — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,7 +9,8 @@
       "country": "Botswana",
       "region": "",
       "name": "The persons for the time being exercising the functions of",
-      "slug": "bw-ca-1"
+      "slug": "bw-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
@@ -28,14 +30,14 @@
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "bw-ca-1",
+      "authority": "bw-ca-2",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Botswana (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "bw-ca-1",
+      "authority": "bw-ca-2",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=86&cid=41",
       "cadence": "weekly",
@@ -45,7 +47,7 @@
   "chain_steps": [
     {
       "id": "bw-index",
-      "authority": "bw-ca-1",
+      "authority": "bw-ca-2",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Botswana against a staff capture of the cited HCCH pages (deterministic).",
@@ -55,18 +57,10 @@
   ],
   "observations": [
     {
-      "authority": "bw-ca-1",
+      "authority": "bw-ca-2",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Botswana is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "bw-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The persons for the time being exercising the functions of.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=361",
       "status": "needs_review",
       "validation": "W-7"
     },

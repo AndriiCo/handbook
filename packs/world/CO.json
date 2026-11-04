@@ -1,6 +1,7 @@
 {
   "pack": "CO",
   "version": 1,
+  "iso2": "CO",
   "title": "Colombia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -51,14 +52,14 @@
       "kind": "website_official",
       "uri": "https://www.cancilleria.gov.co/tramites_servicios/apostilla_legalizacion_en_linea",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=90&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=363 (needs staff capture; W-7)."
     },
     {
       "authority": "co-ca-1",
       "kind": "website_official",
       "uri": "https://assets.hcch.net/docs/bc0a0817-d312-4466-978a-29a252fb983b.pdf",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=90&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=363 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -101,7 +102,7 @@
       "authority": "co-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.cancilleria.gov.co/tramites_servicios/apostilla_legalizacion_en_linea as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=90&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=363",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -109,7 +110,7 @@
       "authority": "co-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://assets.hcch.net/docs/bc0a0817-d312-4466-978a-29a252fb983b.pdf as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=90&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=363",
       "status": "needs_review",
       "validation": "W-7"
     }

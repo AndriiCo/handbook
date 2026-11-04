@@ -1,6 +1,7 @@
 {
   "pack": "TT",
   "version": 1,
+  "iso2": "TT",
   "title": "Trinidad and Tobago — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -35,15 +36,17 @@
       "kind": "country",
       "country": "Trinidad and Tobago",
       "region": "",
-      "name": "the Registrar General (in Port of Spain)",
-      "slug": "tt-ca-5"
+      "name": "The Registrar General (in Port of Spain)",
+      "slug": "tt-ca-5",
+      "source_name": "the Registrar General (in Port of Spain)"
     },
     {
       "kind": "country",
       "country": "Trinidad and Tobago",
       "region": "",
-      "name": "the Ministry of Foreign and CARICOM Affairs:",
-      "slug": "tt-ca-6"
+      "name": "The Ministry of Foreign and CARICOM Affairs",
+      "slug": "tt-ca-6",
+      "source_name": "the Ministry of Foreign and CARICOM Affairs:"
     }
   ],
   "domains": [

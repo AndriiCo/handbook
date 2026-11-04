@@ -1,6 +1,7 @@
 {
   "pack": "SK",
   "version": 1,
+  "iso2": "SK",
   "title": "Slovakia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -14,15 +15,17 @@
       "kind": "country",
       "country": "Slovakia",
       "region": "",
-      "name": "The Ministry of Interior of the Slovak Republic (&bdquo;Ministerstvo vnútra Slovenskej republiky”) for public documents emanating from authorities within its jurisdiction with the exception of documents specified in point 7 lit. a/ below",
-      "slug": "sk-ca-2"
+      "name": "The Ministry of Interior of the Slovak Republic („Ministerstvo vnútra Slovenskej republiky”) for public documents emanating from authorities within its jurisdiction with the exception of documents specified in point 7 lit. a/ below",
+      "slug": "sk-ca-2",
+      "source_name": "The Ministry of Interior of the Slovak Republic (&bdquo;Ministerstvo vnútra Slovenskej republiky”) for public documents emanating from authorities within its jurisdiction with the exception of documents specified in point 7 lit. a/ below"
     },
     {
       "kind": "country",
       "country": "Slovakia",
       "region": "",
-      "name": "The Ministry of Education of the Slovak Republic (&bdquo;Ministerstvo &scaron;kolstva Slovenskej republiky”) for public documents emanating from authorities within its jurisdiction",
-      "slug": "sk-ca-3"
+      "name": "The Ministry of Education of the Slovak Republic („Ministerstvo školstva Slovenskej republiky”) for public documents emanating from authorities within its jurisdiction",
+      "slug": "sk-ca-3",
+      "source_name": "The Ministry of Education of the Slovak Republic (&bdquo;Ministerstvo &scaron;kolstva Slovenskej republiky”) for public documents emanating from authorities within its jurisdiction"
     },
     {
       "kind": "country",
@@ -35,36 +38,41 @@
       "kind": "country",
       "country": "Slovakia",
       "region": "",
-      "name": "The Ministry of Defence of the Slovak Republic (&bdquo;Ministerstvo obrany Slovenskej republiky”) for public documents emanating from authorities within its jurisdiction",
-      "slug": "sk-ca-5"
+      "name": "The Ministry of Defence of the Slovak Republic („Ministerstvo obrany Slovenskej republiky”) for public documents emanating from authorities within its jurisdiction",
+      "slug": "sk-ca-5",
+      "source_name": "The Ministry of Defence of the Slovak Republic (&bdquo;Ministerstvo obrany Slovenskej republiky”) for public documents emanating from authorities within its jurisdiction"
     },
     {
       "kind": "country",
       "country": "Slovakia",
       "region": "",
-      "name": "The District Office (obvodný úrad) for:",
-      "slug": "sk-ca-6"
+      "name": "The District Office (obvodný úrad)",
+      "slug": "sk-ca-6",
+      "source_name": "The District Office (obvodný úrad) for:"
     },
     {
       "kind": "country",
       "country": "Slovakia",
       "region": "",
       "name": "extracts from registers of births, deaths and marriages (matrika), except for decisions concerning civil status",
-      "slug": "sk-ca-7"
+      "slug": "sk-ca-7",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Slovakia",
       "region": "",
       "name": "documents issued by autonomous local authorities.",
-      "slug": "sk-ca-8"
+      "slug": "sk-ca-8",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Slovakia",
       "region": "",
-      "name": "The Ministry of Foreign Affairs of the Slovak Republic (&bdquo;Ministerstvo zahraničných vecí Slovenskej republiky”) for any other public document issued in the Slovak Republic not specified above.",
-      "slug": "sk-ca-9"
+      "name": "The Ministry of Foreign Affairs of the Slovak Republic („Ministerstvo zahraničných vecí Slovenskej republiky”) for any other public document issued in the Slovak Republic not specified above.",
+      "slug": "sk-ca-9",
+      "source_name": "The Ministry of Foreign Affairs of the Slovak Republic (&bdquo;Ministerstvo zahraničných vecí Slovenskej republiky”) for any other public document issued in the Slovak Republic not specified above."
     }
   ],
   "domains": [
@@ -82,31 +90,31 @@
     },
     {
       "name": "www.health.gov.sk",
-      "authority": "sk-ca-4",
+      "authority": "sk-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Slovakia (staff capture pending)."
     },
     {
       "name": "www.minv.sk",
-      "authority": "sk-ca-5",
+      "authority": "sk-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Slovakia (staff capture pending)."
     },
     {
       "name": "www.minedu.sk",
-      "authority": "sk-ca-6",
+      "authority": "sk-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Slovakia (staff capture pending)."
     },
     {
       "name": "www.mod.gov.sk",
-      "authority": "sk-ca-7",
+      "authority": "sk-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Slovakia (staff capture pending)."
     },
     {
       "name": "www.mzv.sk",
-      "authority": "sk-ca-8",
+      "authority": "sk-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Slovakia (staff capture pending)."
     },
@@ -133,56 +141,56 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
-      "authority": "sk-ca-2",
+      "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.justice.gov.sk/Stranky/Nase-sluzby/Medzinarodne-pravo/Overovanie-listin%E2%80%93APOSTILY/Uvod.aspx",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
-      "authority": "sk-ca-3",
+      "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.justice.gov.sk/Stranky/Nase-sluzby/Medzinarodne-pravo/Apostily-anglicka-verzia.aspx",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
-      "authority": "sk-ca-4",
+      "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.health.gov.sk",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
-      "authority": "sk-ca-5",
+      "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.minv.sk",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
-      "authority": "sk-ca-6",
+      "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.minedu.sk/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
-      "authority": "sk-ca-7",
+      "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.mod.gov.sk/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
-      "authority": "sk-ca-8",
+      "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.mzv.sk/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
-      "authority": "sk-ca-9",
+      "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.mzv.sk/servlet/content?MT=/App/WCM/main.nsf/vw_ByID/ministry&NCH=Y&OpenDocument=Y&LANG=EN&TG=BlankMaster&URL=/App/WCM/main.nsf/(vw_ByID)/ID_37CCAAF555F35094C125765C00321B57",
       "cadence": "weekly",
@@ -193,28 +201,28 @@
       "kind": "website_official",
       "uri": "http://www.justice.gov.sk/Stranky/Nase-sluzby/Medzinarodne-pravo/Overovanie-listin%E2%80%93APOSTILY/Formy-vyssieho-overenia-justicnych-verejnych-listin.aspx",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=66&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
       "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://wwwold.justice.sk/a/wfn.aspx?pg=h4&htm=h4/h4apos.htm",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=66&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
       "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.health.gov.sk/?potvrdzovanie-rovnocennosti-zdravotnickeho-vzdelania-ziskaneho-na-uzemi-slovenskej-republiky",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=66&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     },
     {
       "authority": "sk-ca-1",
       "kind": "website_official",
       "uri": "http://www.minedu.sk/index.php?lang=sk&rootId=1260",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=66&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=343 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -286,22 +294,6 @@
       "validation": "W-7"
     },
     {
-      "authority": "sk-ca-7",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: extracts from registers of births, deaths and marriages (matrika), except for decisions concerning civil status.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "sk-ca-8",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: documents issued by autonomous local authorities..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
       "authority": "sk-ca-9",
       "topic": "contacts",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Ministry of Foreign Affairs of the Slovak Republic (&bdquo;Ministerstvo zahraničných vecí Slovenskej republiky”) for any other public document issued in the Slovak Republic not specified above..",
@@ -318,7 +310,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "sk-ca-2",
+      "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.justice.gov.sk/Stranky/Nase-sluzby/Medzinarodne-pravo/Overovanie-listin%E2%80%93APOSTILY/Uvod.aspx as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
@@ -326,7 +318,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "sk-ca-3",
+      "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.justice.gov.sk/Stranky/Nase-sluzby/Medzinarodne-pravo/Apostily-anglicka-verzia.aspx as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
@@ -334,7 +326,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "sk-ca-4",
+      "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.health.gov.sk as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
@@ -342,7 +334,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "sk-ca-5",
+      "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minv.sk as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
@@ -350,7 +342,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "sk-ca-6",
+      "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minedu.sk/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
@@ -358,7 +350,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "sk-ca-7",
+      "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mod.gov.sk/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
@@ -366,7 +358,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "sk-ca-8",
+      "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mzv.sk/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
@@ -374,7 +366,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "sk-ca-9",
+      "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mzv.sk/servlet/content?MT=/App/WCM/main.nsf/vw_ByID/ministry&NCH=Y&OpenDocument=Y&LANG=EN&TG=BlankMaster&URL=/App/WCM/main.nsf/(vw_ByID)/ID_37CCAAF555F35094C125765C00321B57 as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
@@ -385,7 +377,7 @@
       "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.justice.gov.sk/Stranky/Nase-sluzby/Medzinarodne-pravo/Overovanie-listin%E2%80%93APOSTILY/Formy-vyssieho-overenia-justicnych-verejnych-listin.aspx as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=66&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -393,7 +385,7 @@
       "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://wwwold.justice.sk/a/wfn.aspx?pg=h4&htm=h4/h4apos.htm as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=66&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -401,7 +393,7 @@
       "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.health.gov.sk/?potvrdzovanie-rovnocennosti-zdravotnickeho-vzdelania-ziskaneho-na-uzemi-slovenskej-republiky as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=66&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -409,7 +401,7 @@
       "authority": "sk-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.minedu.sk/index.php?lang=sk&rootId=1260 as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=66&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=343",
       "status": "needs_review",
       "validation": "W-7"
     }

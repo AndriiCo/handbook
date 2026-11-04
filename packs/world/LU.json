@@ -1,6 +1,7 @@
 {
   "pack": "LU",
   "version": 1,
+  "iso2": "LU",
   "title": "Luxembourg — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -51,7 +52,7 @@
       "kind": "website_official",
       "uri": "https://guichet.public.lu/fr/citoyens/justice/certificats-copies-actes-casier-judicaire/legalisation/legalisation-actes.html",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=51&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=331 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -94,7 +95,7 @@
       "authority": "lu-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://guichet.public.lu/fr/citoyens/justice/certificats-copies-actes-casier-judicaire/legalisation/legalisation-actes.html as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=51&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=331",
       "status": "needs_review",
       "validation": "W-7"
     }

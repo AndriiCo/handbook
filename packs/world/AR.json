@@ -1,6 +1,7 @@
 {
   "pack": "AR",
   "version": 1,
+  "iso2": "AR",
   "title": "Argentina — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,14 +9,16 @@
       "country": "Argentina",
       "region": "",
       "name": "This designation has become in force on 1 December 2003.",
-      "slug": "ar-ca-1"
+      "slug": "ar-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Argentina",
       "region": "",
       "name": "The Argentine Ministry of Foreign Affairs remains being the Authority of Application of the Convention.\"",
-      "slug": "ar-ca-2"
+      "slug": "ar-ca-2",
+      "hidden": true
     },
     {
       "kind": "country",
@@ -28,46 +31,46 @@
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Argentina (staff capture pending)."
     },
     {
       "name": "www.mrecic.gov.ar",
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Argentina (staff capture pending)."
     },
     {
       "name": "www.cancilleria.gob.ar",
-      "authority": "ar-ca-2",
+      "authority": "ar-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Argentina (staff capture pending)."
     },
     {
       "name": "www.cfna.org.ar",
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Argentina (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=20&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Argentina (citation page; staff capture pending)."
     },
     {
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "kind": "website_official",
       "uri": "http://www.mrecic.gov.ar/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=306 (needs staff capture; W-7)."
     },
     {
-      "authority": "ar-ca-2",
+      "authority": "ar-ca-3",
       "kind": "website_official",
       "uri": "https://www.cancilleria.gob.ar/es/servicios/servicios/apostilla-legalizacion-documento-publico-electronico-tad",
       "cadence": "weekly",
@@ -81,24 +84,24 @@
       "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=306 (needs staff capture; W-7)."
     },
     {
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "kind": "website_official",
       "uri": "https://www.cancilleria.gob.ar/userfiles/2017/instructivo-legalizaciones-digital.pdf",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=20&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=306 (needs staff capture; W-7)."
     },
     {
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "kind": "website_official",
       "uri": "http://www.cfna.org.ar/colegios/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=20&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=306 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
     {
       "id": "ar-index",
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Argentina against a staff capture of the cited HCCH pages (deterministic).",
@@ -108,26 +111,10 @@
   ],
   "observations": [
     {
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Argentina is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "ar-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: This designation has become in force on 1 December 2003..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=306",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "ar-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: The Argentine Ministry of Foreign Affairs remains being the Authority of Application of the Convention.\".",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=306",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -140,7 +127,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mrecic.gov.ar/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=306",
@@ -148,7 +135,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "ar-ca-2",
+      "authority": "ar-ca-3",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.cancilleria.gob.ar/es/servicios/servicios/apostilla-legalizacion-documento-publico-electronico-tad as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=306",
@@ -164,18 +151,18 @@
       "validation": "W-7"
     },
     {
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.cancilleria.gob.ar/userfiles/2017/instructivo-legalizaciones-digital.pdf as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=20&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=306",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ar-ca-1",
+      "authority": "ar-ca-3",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.cfna.org.ar/colegios/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=20&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=306",
       "status": "needs_review",
       "validation": "W-7"
     }

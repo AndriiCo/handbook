@@ -1,14 +1,16 @@
 {
   "pack": "IS",
   "version": 1,
+  "iso2": "IS",
   "title": "Iceland — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "Iceland",
       "region": "",
-      "name": "Ministry for Foreign Affairs (Utanríkisrá&eth;uneyti&eth;)",
-      "slug": "is-ca-1"
+      "name": "Ministry for Foreign Affairs (Utanríkisráðuneytið)",
+      "slug": "is-ca-1",
+      "source_name": "Ministry for Foreign Affairs (Utanríkisrá&eth;uneyti&eth;)"
     }
   ],
   "domains": [

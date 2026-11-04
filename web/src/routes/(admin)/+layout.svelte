@@ -14,6 +14,7 @@
 	import ActivityIcon from '@lucide/svelte/icons/activity';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
+	import LandmarkIcon from '@lucide/svelte/icons/landmark';
 	import ServerCogIcon from '@lucide/svelte/icons/server-cog';
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import PackageIcon from '@lucide/svelte/icons/package';
@@ -52,6 +53,7 @@
 				{ label: 'Trace', href: resolve('/(admin)/trace'), icon: ActivityIcon, keywords: 'draft model tokens latency' },
 				{ label: 'Workers', href: resolve('/(admin)/workers'), icon: DatabaseIcon, keywords: 'fetch captures sweep' },
 				{ label: 'Packs', href: resolve('/(admin)/packs'), icon: GlobeIcon, keywords: 'authorities world load countries' },
+				{ label: 'Authorities', href: resolve('/(admin)/authorities'), icon: LandmarkIcon, keywords: 'offices rename hide aliases english name create' },
 				{ label: 'Work queue', href: resolve('/(admin)/work'), icon: ServerCogIcon, keywords: 'jobs plant worker research queue' }
 			]
 		},

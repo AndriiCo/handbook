@@ -1,6 +1,7 @@
 {
   "pack": "GB",
   "version": 1,
+  "iso2": "GB",
   "title": "United Kingdom of Great Britain and Northern Ireland — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -22,7 +23,8 @@
       "country": "United Kingdom of Great Britain and Northern Ireland",
       "region": "",
       "name": "For the UK Overseas Territories, see below, under Contact Details:",
-      "slug": "gb-ca-3"
+      "slug": "gb-ca-3",
+      "hidden": true
     }
   ],
   "domains": [
@@ -40,13 +42,13 @@
     },
     {
       "name": "www.elections.gov.bm",
-      "authority": "gb-ca-2",
+      "authority": "gb-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for United Kingdom of Great Britain and Northern Ireland (staff capture pending)."
     },
     {
       "name": "www.britishantarcticterritory.org.uk",
-      "authority": "gb-ca-3",
+      "authority": "gb-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for United Kingdom of Great Britain and Northern Ireland (staff capture pending)."
     }
@@ -67,14 +69,14 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=352 (needs staff capture; W-7)."
     },
     {
-      "authority": "gb-ca-2",
+      "authority": "gb-ca-1",
       "kind": "website_official",
       "uri": "http://www.elections.gov.bm/",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=352 (needs staff capture; W-7)."
     },
     {
-      "authority": "gb-ca-3",
+      "authority": "gb-ca-1",
       "kind": "website_official",
       "uri": "https://www.britishantarcticterritory.org.uk/",
       "cadence": "weekly",
@@ -118,14 +120,6 @@
       "validation": "W-7"
     },
     {
-      "authority": "gb-ca-3",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: For the UK Overseas Territories, see below, under Contact Details:.",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=352",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
       "authority": "gb-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.uk/get-document-legalised as an official website link (under General website).",
@@ -134,7 +128,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "gb-ca-2",
+      "authority": "gb-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.elections.gov.bm/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=352",
@@ -142,7 +136,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "gb-ca-3",
+      "authority": "gb-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.britishantarcticterritory.org.uk/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=352",

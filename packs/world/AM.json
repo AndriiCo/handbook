@@ -1,6 +1,7 @@
 {
   "pack": "AM",
   "version": 1,
+  "iso2": "AM",
   "title": "Armenia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -33,7 +34,7 @@
     },
     {
       "name": "www.justice.am",
-      "authority": "am-ca-2",
+      "authority": "am-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Armenia (staff capture pending)."
     },
@@ -60,7 +61,7 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=357 (needs staff capture; W-7)."
     },
     {
-      "authority": "am-ca-2",
+      "authority": "am-ca-1",
       "kind": "website_official",
       "uri": "http://www.justice.am/",
       "cadence": "weekly",
@@ -71,7 +72,7 @@
       "kind": "website_official",
       "uri": "http://www.e-verify.am",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=81&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=357 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -119,7 +120,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "am-ca-2",
+      "authority": "am-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.justice.am/ as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=357",
@@ -130,7 +131,7 @@
       "authority": "am-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.e-verify.am as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=81&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=357",
       "status": "needs_review",
       "validation": "W-7"
     }

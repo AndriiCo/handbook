@@ -17,18 +17,32 @@ export type AuthorityRow = {
 	path?: string | null;
 	/** Other addresses that open the same dossier (`us/wa`, the slug). */
 	aliases?: string[] | null;
+	/** ISO 3166-1 alpha-2 (`US`), empty when the pack names none. */
+	iso2?: string | null;
+	/** `federal | state | regional | local | consular`, or empty. */
+	level?: string | null;
+	/** English display name when `name` is in another language. */
+	name_en?: string | null;
+	/** Other search terms ("Bayern", "Deutschland"). */
+	alt_names?: string[] | null;
 };
+
+// Lanes, kind labels and flags live in plain JS (node-tested).
+export {
+	countryCode,
+	flagFor,
+	isUs,
+	kindLabel,
+	laneOf,
+	LANES,
+	LANE_LABEL,
+	type Lane
+} from './lanes.js';
 
 /** The address to link a dossier by: its readable path, else its slug. */
 export function addressOf(row: { slug: string; path?: string | null }): string {
 	return typeof row.path === 'string' && row.path ? row.path : row.slug;
 }
-
-// Flag SVGs bundled in static/flags/ (flag-icons, MIT). An <img> for a
-// missing file would 404 (a console error), so only these render.
-const FLAG_ASSETS = new Set(['nl', 'us', 'vn']);
-
-let byName: Map<string, string> | null = null;
 
 function squash(s: string): string {
 	return s
@@ -37,48 +51,6 @@ function squash(s: string): string {
 		.toLowerCase()
 		.replace(/&/g, 'and')
 		.replace(/[^a-z]+/g, '');
-}
-
-/**
- * ISO 3166-1 alpha-2 for a country name, built from the browser's own
- * CLDR region names (Intl.DisplayNames) — no country table here.
- */
-export function countryCode(country: unknown): string | null {
-	const key = squash(String(country ?? ''));
-	if (!key) return null;
-	if (!byName) {
-		byName = new Map();
-		try {
-			const names = new Intl.DisplayNames(['en'], { type: 'region' });
-			const A = 65;
-			for (let i = 0; i < 26; i++) {
-				for (let j = 0; j < 26; j++) {
-					const code = String.fromCharCode(A + i, A + j);
-					let name: string | undefined;
-					try {
-						// Deprecated aliases (VD → VN, ZR → CD) share a
-						// name with the live code; only the live one counts.
-						if (Intl.getCanonicalLocales(`und-${code}`)[0] !== `und-${code}`) continue;
-						name = names.of(code);
-					} catch {
-						continue;
-					}
-					if (!name || name === code || name === 'Unknown Region') continue;
-					const k = squash(name);
-					if (!byName.has(k)) byName.set(k, code.toLowerCase());
-				}
-			}
-		} catch {
-			// No Intl region names: no flags, never a guess.
-		}
-	}
-	return byName.get(key) ?? null;
-}
-
-/** Flag asset code for `authority.country`, or null (no asset → no flag). */
-export function flagFor(country: unknown): string | null {
-	const code = countryCode(country);
-	return code && FLAG_ASSETS.has(code) ? code : null;
 }
 
 type SilKey = keyof typeof silhouettes;
@@ -93,38 +65,6 @@ export function silhouetteFor(
 		if (key && key in silhouettes) return silhouettes[key];
 	}
 	return null;
-}
-
-export type Lane = 'hague' | 'legalization' | 'states' | 'other';
-
-/**
- * Destination grouping from `authority.kind` (staff data). No kind
- * yet → the neutral lane; the slug is never read.
- */
-export function laneOf(a: Pick<AuthorityRow, 'kind'> | null | undefined): Lane {
-	const kind = String(a?.kind ?? '').toLowerCase();
-	if (!kind) return 'other';
-	if (/state/.test(kind)) return 'states';
-	if (/legali[sz]ation|consular/.test(kind)) return 'legalization';
-	if (/hague|apostille|member|contracting/.test(kind)) return 'hague';
-	return 'other';
-}
-
-export const LANE_LABEL: Record<Lane, string> = {
-	hague: 'Hague members',
-	legalization: 'Legalization',
-	states: 'US states',
-	other: 'Destinations'
-};
-
-/** One-word status for an index row: its kind's label, else nothing. */
-export function kindLabel(a: Pick<AuthorityRow, 'kind'> | null | undefined): string {
-	const lane = laneOf(a);
-	if (lane === 'hague') return 'Hague member';
-	if (lane === 'states') return 'US state';
-	if (lane === 'legalization') return 'Legalization';
-	const raw = String(a?.kind ?? '').replaceAll('_', ' ').trim();
-	return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
 }
 
 /** Newest citation capture across accepted facts (ISO string or ''). */

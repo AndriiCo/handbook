@@ -6,7 +6,9 @@
 	// Staff "Load packs" (P397): load the live release's jurisdiction
 	// packs (curated, world, world-nonparty) into the store as the
 	// service user — authorities, domains, sources and review tasks
-	// only, never facts. Re-runs are no-ops. Admin build only; the
+	// only, never facts. Re-runs are no-ops; a corrected pack updates
+	// (or hides) the rows it names, audited. Research results staged
+	// from the Work page load the same way. Admin build only; the
 	// staff API keeps the /apostille prefix on the admin origin.
 	const api = () => `/apostille/api/v1/admin/packs`;
 
@@ -14,8 +16,14 @@
 		set: string;
 		packs: number;
 	}
+	interface Staged {
+		id: number;
+		packs: number;
+		files: string[];
+	}
 	interface Listing {
 		sets: PackSet[];
+		staged?: Staged[];
 		authorities: number | null;
 		running: boolean;
 	}
@@ -53,15 +61,18 @@
 
 	onMount(refresh);
 
-	async function load(set: string) {
-		busy = set;
+	const stagedLabel = (set: string) =>
+		set.startsWith('staged:') ? `Staged research result #${set.slice(7)}` : (LABEL[set] ?? set);
+
+	async function load(set: string, staged?: number) {
+		busy = staged === undefined ? set : `staged:${staged}`;
 		loadError = null;
 		result = null;
 		try {
 			const res = await fetch(`${api()}/load`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', ...csrfHeaders() },
-				body: JSON.stringify({ set })
+				body: JSON.stringify(staged === undefined ? { set } : { staged })
 			});
 			const body = await res.json().catch(() => ({}));
 			if (res.status === 200 || res.status === 422) {
@@ -87,8 +98,9 @@
 	<h1 class="text-xl font-bold">Jurisdiction packs</h1>
 	<p class="text-sm">
 		Load the packs shipped in this release into the live store. Loading adds authorities, their
-		watched sources and review tasks; it never adds facts, and loading twice changes nothing.
-		Load the curated set first so world rows merge into the curated dossiers.
+		watched sources and review tasks, and brings existing authorities in line with the pack
+		(renamed or hidden rows, each audited); it never adds facts, and loading twice changes
+		nothing. Load the curated set first so world rows merge into the curated dossiers.
 	</p>
 
 	{#if listError}
@@ -120,6 +132,31 @@
 				</li>
 			{/each}
 		</ul>
+		<h2 class="text-lg font-bold">Staged by research</h2>
+		{#if (listing.staged ?? []).length === 0}
+			<p class="text-sm text-ink-muted">
+				No research result is staged. Stage one from a finished job on the Work page.
+			</p>
+		{:else}
+			<ul class="m-0 list-none space-y-3 p-0">
+				{#each listing.staged ?? [] as s (s.id)}
+					<li class="flex items-center gap-3 rounded border border-line p-4">
+						<div class="min-w-0 flex-1">
+							<p class="m-0 font-medium">Work item #{s.id}</p>
+							<p class="m-0 text-sm break-words text-ink-muted">{s.files.join(', ')}</p>
+						</div>
+						<button
+							type="button"
+							class="min-h-11 rounded border border-accent-fill bg-accent-fill px-4 py-2 text-accent-ink disabled:opacity-50"
+							disabled={busy !== null || listing.running}
+							onclick={() => load('', s.id)}
+						>
+							{busy === `staged:${s.id}` ? 'Loading…' : 'Load'}
+						</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
 	{/if}
 
 	{#if loadError}
@@ -128,7 +165,7 @@
 	{#if result}
 		<section aria-label="Load result" class="space-y-2 rounded border border-line p-4">
 			<h2 class={`font-bold ${result.ok ? 'text-success' : 'text-error'}`}>
-				{result.ok ? 'Loaded' : 'Refused'}: {LABEL[result.set] ?? result.set}
+				{result.ok ? 'Loaded' : 'Refused'}: {stagedLabel(result.set)}
 			</h2>
 			<p class="text-sm text-ink">
 				Authorities: {result.before ?? '—'} → {result.after ?? '—'}

@@ -10,6 +10,7 @@
         {
             "country": "Egypt",
             "kind": "office",
+            "level": "consular",
             "name": "Embassy of Egypt, Washington DC \u2014 Consular Section",
             "region": "DC",
             "slug": "egypt-embassy-dc"
@@ -17,6 +18,7 @@
         {
             "country": "Egypt",
             "kind": "office",
+            "level": "consular",
             "name": "Consulate General of Egypt, New York",
             "region": "NY",
             "slug": "egypt-consulate-ny"
@@ -24,6 +26,7 @@
         {
             "country": "Egypt",
             "kind": "office",
+            "level": "consular",
             "name": "Consulate General of Egypt, Chicago",
             "region": "IL",
             "slug": "egypt-consulate-chicago"
@@ -31,6 +34,7 @@
         {
             "country": "Egypt",
             "kind": "office",
+            "level": "consular",
             "name": "Consulate General of Egypt, Los Angeles",
             "region": "CA",
             "slug": "egypt-consulate-la"
@@ -38,6 +42,7 @@
         {
             "country": "Egypt",
             "kind": "office",
+            "level": "consular",
             "name": "Consulate General of Egypt, Houston",
             "region": "TX",
             "slug": "egypt-consulate-houston"
@@ -45,6 +50,7 @@
         {
             "country": "Egypt",
             "kind": "office",
+            "level": "consular",
             "name": "Egyptian Cultural & Educational Bureau, Washington DC",
             "region": "DC",
             "slug": "egypt-cultural-bureau"
@@ -126,6 +132,7 @@
             "status": "unverified"
         }
     ],
+    "iso2": "EG",
     "observations": [
         {
             "authority": "egypt-embassy-dc",

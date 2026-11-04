@@ -1,6 +1,7 @@
 {
   "pack": "GE",
   "version": 1,
+  "iso2": "GE",
   "title": "Georgia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,129 +9,138 @@
       "country": "Georgia",
       "region": "",
       "name": "PSDA is in charge of certify all documents with apostille, if the other Competent Authorities are not doing so.",
-      "slug": "ge-ca-1"
+      "slug": "ge-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Georgia",
       "region": "",
       "name": "When it comes to the educational documents (university diplomas, high school diplomas, etc.), in accordance with the joint Order № 93/ნ – №170 dated 10 August 2016 of the Minister of Education and Science and the Minister of Justice of Georgia On Approval of the Rule for Requesting and Obtaining of Information Required for Certification with Apostille/Legalization of Documents issued by the Ministry of Education and Science of Georgia and Authorities within the System of the Ministry as well as documents Issued by Educational Institutions within the Scope of their Powers”, the documents are submitted to the PSDA by a concerned person and the documents are sent by the PSDA through electronic management system to the LEPL National Center for Educational Quality Enhancement of the Ministry of Education, Science, Culture and Sport of Georgia for reviewing, which takes a positive and/or negative decision on certification of documents with Apostille.",
-      "slug": "ge-ca-2"
+      "slug": "ge-ca-2",
+      "hidden": true
+    },
+    {
+      "kind": "country",
+      "country": "Georgia",
+      "region": "",
+      "name": "Georgia — Competent Authority (Art. 6)",
+      "slug": "ge-ca"
     }
   ],
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Georgia (staff capture pending)."
     },
     {
       "name": "www.sda.gov.ge",
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Georgia (staff capture pending)."
     },
     {
       "name": "www.my.gov.ge",
-      "authority": "ge-ca-2",
+      "authority": "ge-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Georgia (staff capture pending)."
     },
     {
       "name": "www.eqe.ge",
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Georgia (staff capture pending)."
     },
     {
       "name": "www.sa.gov.ge",
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Georgia (staff capture pending)."
     },
     {
       "name": "sda.gov.ge",
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Georgia (staff capture pending)."
     },
     {
       "name": "psh.gov.ge",
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Georgia (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Georgia (citation page; staff capture pending)."
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "kind": "website_official",
       "uri": "http://www.sda.gov.ge",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=700 (needs staff capture; W-7)."
     },
     {
-      "authority": "ge-ca-2",
+      "authority": "ge-ca",
       "kind": "website_official",
       "uri": "http://www.my.gov.ge",
       "cadence": "weekly",
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=700 (needs staff capture; W-7)."
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "kind": "website_official",
       "uri": "http://www.eqe.ge/",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=700 (needs staff capture; W-7)."
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "kind": "website_official",
       "uri": "http://www.sa.gov.ge",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=700 (needs staff capture; W-7)."
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "kind": "website_official",
       "uri": "http://sda.gov.ge/?page_id=7289&lang=en",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=700 (needs staff capture; W-7)."
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "kind": "website_official",
       "uri": "http://psh.gov.ge/main/page/1/74",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=700 (needs staff capture; W-7)."
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "kind": "website_official",
       "uri": "http://www.my.gov.ge/",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=700 (needs staff capture; W-7)."
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "kind": "website_official",
       "uri": "https://www.my.gov.ge/en-us/services/42/sub-services/47/service/285",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=700 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
     {
       "id": "ge-index",
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Georgia against a staff capture of the cited HCCH pages (deterministic).",
@@ -140,7 +150,7 @@
   ],
   "observations": [
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Georgia is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
@@ -148,23 +158,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "ge-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: PSDA is in charge of certify all documents with apostille, if the other Competent Authorities are not doing so..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "ge-ca-2",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: When it comes to the educational documents (university diplomas, high school diplomas, etc.), in accordance with the joint Order № 93/ნ – №170 dated 10 August 2016 of the Minister of Education and Science and the Minister of Justice of Georgia On Approval of the Rule for Requesting and Obtaining of Information Required for Certification with Apostille/Legalization of Documents issued by the Ministry of Education and Science of Georgia and Authorities within the System of the Ministry as well as documents Issued by Educational Institutions within the Scope of their Powers”, the documents are submitted to the PSDA by a concerned person and the documents are sent by the PSDA through electronic management system to the LEPL National Center for Educational Quality Enhancement of the Ministry of Education, Science, Culture and Sport of Georgia for reviewing, which takes a positive and/or negative decision on certification of documents with Apostille..",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.sda.gov.ge as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
@@ -172,7 +166,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "ge-ca-2",
+      "authority": "ge-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.my.gov.ge as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
@@ -180,50 +174,50 @@
       "validation": "W-7"
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.eqe.ge/ as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.sa.gov.ge as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://sda.gov.ge/?page_id=7289&lang=en as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://psh.gov.ge/main/page/1/74 as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.my.gov.ge/ as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
       "status": "needs_review",
       "validation": "W-7"
     },
     {
-      "authority": "ge-ca-1",
+      "authority": "ge-ca",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.my.gov.ge/en-us/services/42/sub-services/47/service/285 as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=40&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=700",
       "status": "needs_review",
       "validation": "W-7"
     }

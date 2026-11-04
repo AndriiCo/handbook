@@ -1,6 +1,7 @@
 {
   "pack": "IL",
   "version": 1,
+  "iso2": "IL",
   "title": "Israel — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -60,7 +61,7 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=326 (needs staff capture; W-7)."
     },
     {
-      "authority": "il-ca-2",
+      "authority": "il-ca-1",
       "kind": "website_official",
       "uri": "https://mfa.gov.il/MFA/ConsularServices/Pages/PublicDocumentsEng.aspx",
       "cadence": "weekly",
@@ -71,21 +72,21 @@
       "kind": "website_official",
       "uri": "https://www.gov.il/he/Departments/General/apostille",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=326 (needs staff capture; W-7)."
     },
     {
       "authority": "il-ca-1",
       "kind": "website_official",
       "uri": "https://www.gov.il/he/service/electronic-apostille",
       "cadence": "weekly",
-      "notes": "Listed under General website on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=326 (needs staff capture; W-7)."
     },
     {
       "authority": "il-ca-1",
       "kind": "website_official",
       "uri": "http://www.court.gov.il/heb/home.htm",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=326 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -133,7 +134,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "il-ca-2",
+      "authority": "il-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://mfa.gov.il/MFA/ConsularServices/Pages/PublicDocumentsEng.aspx as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=326",
@@ -144,7 +145,7 @@
       "authority": "il-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.il/he/Departments/General/apostille as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=326",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -152,7 +153,7 @@
       "authority": "il-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.gov.il/he/service/electronic-apostille as an official website link (under General website).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=326",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -160,7 +161,7 @@
       "authority": "il-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.court.gov.il/heb/home.htm as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=45&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=326",
       "status": "needs_review",
       "validation": "W-7"
     }

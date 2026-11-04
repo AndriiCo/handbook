@@ -1,49 +1,56 @@
 {
   "pack": "FR",
   "version": 1,
+  "iso2": "FR",
   "title": "France — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "France",
       "region": "",
-      "name": "Pour les actes dont les signataires sont établis dans les territoires suivants : France métropolitaine, Guadeloupe, Guyane française, La Réunion, Martinique, Mayotte, Saint-Barthélemy, Saint-Martin et Saint-Pierre-et-Miquelon : conseil régionaux et chambres interdépartementales de notaires compétents",
-      "slug": "fr-ca-1"
+      "name": "Conseil régionaux et chambres interdépartementales de notaires compétents",
+      "slug": "fr-ca-1",
+      "source_name": "Pour les actes dont les signataires sont établis dans les territoires suivants : France métropolitaine, Guadeloupe, Guyane française, La Réunion, Martinique, Mayotte, Saint-Barthélemy, Saint-Martin et Saint-Pierre-et-Miquelon : conseil régionaux et chambres interdépartementales de notaires compétents"
     },
     {
       "kind": "country",
       "country": "France",
       "region": "",
-      "name": "Pour les actes dont les signataires sont établis en Nouvelle-Calédonie : le procureur général près la cour d’appel de Nouméa",
-      "slug": "fr-ca-2"
+      "name": "Le procureur général près la cour d’appel de Nouméa",
+      "slug": "fr-ca-2",
+      "source_name": "Pour les actes dont les signataires sont établis en Nouvelle-Calédonie : le procureur général près la cour d’appel de Nouméa"
     },
     {
       "kind": "country",
       "country": "France",
       "region": "",
-      "name": "Pour les actes dont les signataires sont établis en Polynésie française : le procureur général près la cour d’appel de Papeete",
-      "slug": "fr-ca-3"
+      "name": "Le procureur général près la cour d’appel de Papeete",
+      "slug": "fr-ca-3",
+      "source_name": "Pour les actes dont les signataires sont établis en Polynésie française : le procureur général près la cour d’appel de Papeete"
     },
     {
       "kind": "country",
       "country": "France",
       "region": "",
-      "name": "Pour les actes dont les signataires sont établis à Wallis-et-Futuna : le président du tribunal de première instance de Mata Utu",
-      "slug": "fr-ca-4"
+      "name": "Le président du tribunal de première instance de Mata Utu",
+      "slug": "fr-ca-4",
+      "source_name": "Pour les actes dont les signataires sont établis à Wallis-et-Futuna : le président du tribunal de première instance de Mata Utu"
     },
     {
       "kind": "country",
       "country": "France",
       "region": "",
-      "name": "Pour les actes dont les signataires sont établis dans les Terres australes et antarctiques françaises : le procureur général près la cour d’appel de Saint-Denis de la Réunion",
-      "slug": "fr-ca-5"
+      "name": "Le procureur général près la cour d’appel de Saint-Denis de la Réunion",
+      "slug": "fr-ca-5",
+      "source_name": "Pour les actes dont les signataires sont établis dans les Terres australes et antarctiques françaises : le procureur général près la cour d’appel de Saint-Denis de la Réunion"
     },
     {
       "kind": "country",
       "country": "France",
       "region": "",
-      "name": "Lorsque l’apostille est délivrée dans le cadre d’une demande d’entraide judiciaire en matière pénale, l’apostille est délivrée par le procureur général près la cour d’appel dans le ressort de laquelle est établi le signataire de l’acte.",
-      "slug": "fr-ca-6"
+      "name": "Le procureur général près la cour d’appel dans le ressort de laquelle est établi le signataire de l’acte",
+      "slug": "fr-ca-6",
+      "source_name": "Lorsque l’apostille est délivrée dans le cadre d’une demande d’entraide judiciaire en matière pénale, l’apostille est délivrée par le procureur général près la cour d’appel dans le ressort de laquelle est établi le signataire de l’acte."
     }
   ],
   "domains": [
@@ -61,7 +68,7 @@
     },
     {
       "name": "apostille.notaires.fr",
-      "authority": "fr-ca-2",
+      "authority": "fr-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for France (staff capture pending)."
     }
@@ -82,14 +89,14 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=321 (needs staff capture; W-7)."
     },
     {
-      "authority": "fr-ca-2",
+      "authority": "fr-ca-1",
       "kind": "website_official",
       "uri": "https://apostille.notaires.fr/accueil",
       "cadence": "weekly",
       "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=321 (needs staff capture; W-7)."
     },
     {
-      "authority": "fr-ca-3",
+      "authority": "fr-ca-1",
       "kind": "website_official",
       "uri": "http://www.service-public.fr/particuliers/vosdroits/R47867",
       "cadence": "weekly",
@@ -173,7 +180,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "fr-ca-2",
+      "authority": "fr-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://apostille.notaires.fr/accueil as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",
@@ -181,7 +188,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "fr-ca-3",
+      "authority": "fr-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.service-public.fr/particuliers/vosdroits/R47867 as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=321",

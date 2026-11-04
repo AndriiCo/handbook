@@ -1,6 +1,7 @@
 {
   "pack": "PT",
   "version": 1,
+  "iso2": "PT",
   "title": "Portugal — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -33,7 +34,7 @@
     },
     {
       "name": "www.trp.pt",
-      "authority": "pt-ca-2",
+      "authority": "pt-ca-1",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Portugal (staff capture pending)."
     }
@@ -54,7 +55,7 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=339 (needs staff capture; W-7)."
     },
     {
-      "authority": "pt-ca-2",
+      "authority": "pt-ca-1",
       "kind": "website_official",
       "uri": "http://www.trp.pt",
       "cadence": "weekly",
@@ -106,7 +107,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "pt-ca-2",
+      "authority": "pt-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.trp.pt as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=339",

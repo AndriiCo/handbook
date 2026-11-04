@@ -1,6 +1,7 @@
 {
   "pack": "AU",
   "version": 1,
+  "iso2": "AU",
   "title": "Australia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -14,15 +15,17 @@
       "kind": "country",
       "country": "Australia",
       "region": "",
-      "name": "Australian Embassies, High Commissions and Consulate (except Consulates headed by an Honorary Consul) are empowered",
-      "slug": "au-ca-2"
+      "name": "Australian Embassies, High Commissions and Consulate (except Consulates headed by an Honorary Consul)",
+      "slug": "au-ca-2",
+      "source_name": "Australian Embassies, High Commissions and Consulate (except Consulates headed by an Honorary Consul) are empowered"
     },
     {
       "kind": "country",
       "country": "Australia",
       "region": "",
-      "name": "Within Australia, the Australian Passport Office in capital cities issues Apostilles",
-      "slug": "au-ca-3"
+      "name": "Australian Passport Office",
+      "slug": "au-ca-3",
+      "source_name": "Within Australia, the Australian Passport Office in capital cities issues Apostilles"
     }
   ],
   "domains": [
@@ -55,7 +58,7 @@
       "notes": "Listed under General website on https://www.hcch.net/en/states/authorities/details3/?aid=307 (needs staff capture; W-7)."
     },
     {
-      "authority": "au-ca-2",
+      "authority": "au-ca-1",
       "kind": "website_official",
       "uri": "https://www.smartraveller.gov.au/consular-services/notarial-services",
       "cadence": "weekly",
@@ -115,7 +118,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "au-ca-2",
+      "authority": "au-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://www.smartraveller.gov.au/consular-services/notarial-services as an official website link (under Useful Links).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=307",

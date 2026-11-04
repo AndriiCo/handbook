@@ -1,6 +1,7 @@
 {
   "pack": "AL",
   "version": 1,
+  "iso2": "AL",
   "title": "Albania — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -8,40 +9,44 @@
       "country": "Albania",
       "region": "",
       "name": "(Drejtoria Konsullore, Zyra e Legalizimeve, Ministria e Puneve te Jashtme)",
-      "slug": "al-ca-1"
+      "slug": "al-ca-1",
+      "hidden": true
     },
     {
       "kind": "country",
       "country": "Albania",
       "region": "",
       "name": "Office of Authentications of the Consular Department of the Ministry of Foreign Affairs",
-      "slug": "al-ca-2"
+      "slug": "al-ca-2",
+      "aliases": [
+        "Drejtoria Konsullore, Zyra e Legalizimeve, Ministria e Puneve te Jashtme"
+      ]
     }
   ],
   "domains": [
     {
       "name": "www.hcch.net",
-      "authority": "al-ca-1",
+      "authority": "al-ca-2",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Albania (staff capture pending)."
     },
     {
       "name": "www.mfa.gov.al",
-      "authority": "al-ca-1",
+      "authority": "al-ca-2",
       "status": "unverified",
       "notes": "Seen on HCCH competent-authority pages for Albania (staff capture pending)."
     }
   ],
   "watch": [
     {
-      "authority": "al-ca-1",
+      "authority": "al-ca-2",
       "kind": "website_official",
       "uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=18&cid=41",
       "cadence": "weekly",
       "notes": "HCCH competent-authority index for Albania (citation page; staff capture pending)."
     },
     {
-      "authority": "al-ca-1",
+      "authority": "al-ca-2",
       "kind": "website_official",
       "uri": "http://www.mfa.gov.al",
       "cadence": "weekly",
@@ -51,7 +56,7 @@
   "chain_steps": [
     {
       "id": "al-index",
-      "authority": "al-ca-1",
+      "authority": "al-ca-2",
       "order": 0,
       "title": "Verify HCCH competent-authority index",
       "detail": "Confirm the designated authorities and website URLs for Albania against a staff capture of the cited HCCH pages (deterministic).",
@@ -61,18 +66,10 @@
   ],
   "observations": [
     {
-      "authority": "al-ca-1",
+      "authority": "al-ca-2",
       "topic": "jurisdiction",
       "statement": "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Albania is a listed Contracting Party.",
       "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/?cid=41",
-      "status": "needs_review",
-      "validation": "W-7"
-    },
-    {
-      "authority": "al-ca-1",
-      "topic": "contacts",
-      "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): designated authority: (Drejtoria Konsullore, Zyra e Legalizimeve, Ministria e Puneve te Jashtme).",
-      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=305",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -85,7 +82,7 @@
       "validation": "W-7"
     },
     {
-      "authority": "al-ca-1",
+      "authority": "al-ca-2",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://www.mfa.gov.al as an official website link (under General website).",
       "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=305",

@@ -15,6 +15,7 @@
 //! `auth` crate and the DEMO session stays until then.
 
 mod admin;
+mod admin_authorities;
 mod admin_ip;
 mod admin_orders;
 mod admin_packs;
@@ -37,6 +38,7 @@ mod forms_map;
 mod fulfilment;
 mod host;
 mod label_autofill;
+mod locations;
 mod magic;
 mod mtls;
 mod oauth;
@@ -554,6 +556,7 @@ fn mission_admin_routes(state: &AppState) -> Router {
         .merge(admin_orders::admin_router(state.clone()))
         .merge(first_source::admin_router(state.clone()))
         .merge(admin_packs::admin_router(state.clone()))
+        .merge(admin_authorities::admin_router(state.clone()))
         .merge(worker::admin_router(state.clone()))
         .merge(source_history::admin_router(state.clone()))
 }
@@ -600,6 +603,10 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/magic/start", post(magic::start))
         .route("/api/v1/auth/magic/consume", post(magic::consume))
         .route("/api/v1/authorities", get(approval::public_authorities))
+        .route(
+            "/api/v1/authorities/{slug}",
+            get(approval::public_authority),
+        )
         // Readable addresses (usa/washington, us/wa) → internal slug.
         .route(
             "/api/v1/authorities/resolve",
@@ -624,6 +631,9 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         // sort before the SPA fallback below, so unfurls render
         // with no JS).
         .route("/authority/{*trail}", get(unfurl::dossier))
+        // Place pages (P2-5/P4-1): `/in/usa`, `/in/usa/washington`.
+        .route("/in/{*path}", get(locations::location_page))
+        .route("/api/v1/locations/{*path}", get(locations::location_route))
         .route("/sitemap.xml", get(unfurl::sitemap))
         .route("/api/v1/notify/status", get(follow::status))
         .route("/api/v1/notify/subscribe", post(follow::subscribe))

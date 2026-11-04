@@ -1,6 +1,7 @@
 {
   "pack": "CA",
   "version": 1,
+  "iso2": "CA",
   "title": "Canada — apostille issuing offices, one per jurisdiction (SA-17 North-America slice, needs review)",
   "authorities": [
     {
@@ -8,98 +9,125 @@
       "country": "Canada",
       "region": "",
       "name": "Global Affairs Canada — Authentication Services (federal apostille office)",
-      "slug": "ca-gac-fed"
+      "slug": "ca-gac-fed",
+      "level": "federal"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "British Columbia",
       "name": "Government of British Columbia — designated apostille office",
-      "slug": "ca-bc-gov"
+      "slug": "ca-bc-gov",
+      "subdivision": "CA-BC",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Alberta",
       "name": "Government of Alberta — designated apostille office",
-      "slug": "ca-ab-gov"
+      "slug": "ca-ab-gov",
+      "subdivision": "CA-AB",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Saskatchewan",
       "name": "Government of Saskatchewan — designated apostille office",
-      "slug": "ca-sk-gov"
+      "slug": "ca-sk-gov",
+      "subdivision": "CA-SK",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Manitoba",
       "name": "Government of Manitoba — designated apostille office",
-      "slug": "ca-mb-gov"
+      "slug": "ca-mb-gov",
+      "subdivision": "CA-MB",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Ontario",
       "name": "Government of Ontario — designated apostille office",
-      "slug": "ca-on-gov"
+      "slug": "ca-on-gov",
+      "subdivision": "CA-ON",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Quebec",
       "name": "Government of Quebec — designated apostille office",
-      "slug": "ca-qc-gov"
+      "slug": "ca-qc-gov",
+      "subdivision": "CA-QC",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "New Brunswick",
       "name": "Government of New Brunswick — designated apostille office",
-      "slug": "ca-nb-gov"
+      "slug": "ca-nb-gov",
+      "subdivision": "CA-NB",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Newfoundland and Labrador",
       "name": "Government of Newfoundland and Labrador — designated apostille office",
-      "slug": "ca-nl-gov"
+      "slug": "ca-nl-gov",
+      "subdivision": "CA-NL",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Nova Scotia",
       "name": "Government of Nova Scotia — designated apostille office",
-      "slug": "ca-ns-gov"
+      "slug": "ca-ns-gov",
+      "subdivision": "CA-NS",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Prince Edward Island",
       "name": "Government of Prince Edward Island — designated apostille office",
-      "slug": "ca-pe-gov"
+      "slug": "ca-pe-gov",
+      "subdivision": "CA-PE",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Yukon",
       "name": "Government of Yukon — designated apostille office",
-      "slug": "ca-yt-gov"
+      "slug": "ca-yt-gov",
+      "subdivision": "CA-YT",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Northwest Territories",
       "name": "Government of the Northwest Territories — designated apostille office",
-      "slug": "ca-nt-gov"
+      "slug": "ca-nt-gov",
+      "subdivision": "CA-NT",
+      "level": "state"
     },
     {
       "kind": "province",
       "country": "Canada",
       "region": "Nunavut",
       "name": "Government of Nunavut — designated apostille office",
-      "slug": "ca-nu-gov"
+      "slug": "ca-nu-gov",
+      "subdivision": "CA-NU",
+      "level": "state"
     }
   ],
   "domains": [

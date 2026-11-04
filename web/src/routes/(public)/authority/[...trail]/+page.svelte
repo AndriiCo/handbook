@@ -66,10 +66,8 @@
 	// row, each tagged with the slug it belongs to (a client-side jump to
 	// another dossier must never reuse the previous one's).
 	let canonical = $state<{ slug: string; path: string } | null>(null);
-	let crumbsOf = $state<{
-		slug: string;
-		list: { path: string; label: string; slug: string | null }[];
-	} | null>(null);
+	type Crumb = { path: string; label: string; slug: string | null; location?: string | null };
+	let crumbsOf = $state<{ slug: string; list: Crumb[] } | null>(null);
 	const crumbs = $derived(crumbsOf && crumbsOf.slug === slug ? crumbsOf.list : []);
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
@@ -97,6 +95,7 @@
 	let authorityName = $state<string | null>(null);
 	let authorityCountry = $state<string | null>(null);
 	let authorityRegion = $state<string | null>(null);
+	let authorityIso2 = $state<string | null>(null);
 	let authorityVerifiedAt = $state('');
 	let activeTopic = $state('');
 
@@ -193,11 +192,29 @@
 		}, 600);
 	}
 
+	// A place (`/authority/usa`) is not a dossier: show its place page.
+	async function placeOr404(address: string) {
+		try {
+			const res = await get(`/authorities/resolve?path=${encodeURIComponent(address)}`);
+			const place = res.ok ? res.body?.location?.path : null;
+			if (typeof place === 'string' && place) {
+				// A full load: the place page is another route with its
+				// own crawler head, and this dossier never finished loading.
+				const href = resolve('/(public)/in/[...path]', { path: place });
+				window.location.replace(`${href}${page.url.search}`);
+				return;
+			}
+		} catch {
+			// Falls through to the unknown-address notice.
+		}
+		if (address === trail) notFound = true;
+	}
+
 	async function reload(current: string) {
 		const res = await readDossier(current, { get });
 		if (current !== slug) return; // stale slug, ignore
 		if (!res.ok) {
-			if (res.status === 404) notFound = true;
+			if (res.status === 404) await placeOr404(current);
 			else loadError = publicError(res.status, 'dossier');
 			return;
 		}
@@ -223,42 +240,34 @@
 		}
 	}
 
-	function crumbsFor(path: string, rows: any[]): { path: string; label: string; slug: string | null }[] {
-		const parts = path.split('/');
-		if (parts.length < 2) return [];
-		return parts.slice(0, -1).map((part, i) => {
-			const prefix = parts.slice(0, i + 1).join('/');
-			const owner = rows.find((r) => r?.path === prefix);
-			const label =
-				typeof owner?.name === 'string'
-					? owner.name
-					: i === 0 && (part === 'usa' || part === 'us')
-						? 'United States'
-						: part.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-			return { path: prefix, label, slug: typeof owner?.slug === 'string' ? owner.slug : null };
-		});
-	}
+	const isCrumb = (c: any): c is Crumb =>
+		typeof c?.path === 'string' && typeof c?.label === 'string' && c.label !== '';
 
+	// One row read (P2-6): name, place, addresses and breadcrumbs of
+	// this dossier only — never the whole index.
 	async function resolveName(current: string) {
 		try {
-			const res = await get('/authorities');
+			const res = await get(`/authorities/${encodeURIComponent(current)}`);
 			if (current !== slug || !res.ok) return;
-			const rows = res.body?.authorities;
-			const found = Array.isArray(rows) ? rows.find((a) => a?.slug === current) : null;
-			if (found && typeof found.path === 'string' && found.path) {
+			const found = res.body ?? {};
+			if (typeof found.path === 'string' && found.path) {
 				canonical = { slug: current, path: found.path };
-				if (crumbsOf?.slug !== current) {
-					crumbsOf = { slug: current, list: crumbsFor(found.path, rows) };
-				}
 			}
-			if (found && typeof found.name === 'string' && found.name) authorityName = found.name;
-			if (found && typeof found.country === 'string' && found.country)
-				authorityCountry = found.country;
-			if (found && typeof found.region === 'string' && found.region)
-				authorityRegion = found.region;
-			if (found) authorityVerifiedAt = verifiedAtOf(found);
+			if (crumbsOf?.slug !== current) {
+				const list: Crumb[] = (Array.isArray(found.crumbs) ? found.crumbs : []).filter(isCrumb);
+				const place = found.place;
+				if (list.length === 0 && isCrumb(place)) {
+					list.push({ path: place.path, label: place.label, slug: null, location: place.path });
+				}
+				crumbsOf = { slug: current, list };
+			}
+			if (typeof found.name === 'string' && found.name) authorityName = found.name;
+			if (typeof found.country === 'string' && found.country) authorityCountry = found.country;
+			if (typeof found.region === 'string' && found.region) authorityRegion = found.region;
+			if (typeof found.iso2 === 'string' && found.iso2) authorityIso2 = found.iso2;
+			authorityVerifiedAt = verifiedAtOf(found);
 		} catch {
-			// The slug stays the heading; the index is a nicety, not a gate.
+			// The slug stays the heading; the header row is a nicety, not a gate.
 		}
 	}
 
@@ -300,6 +309,10 @@
 		get(`/authorities/resolve?path=${encodeURIComponent(t)}`)
 			.then((res) => {
 				if (cancelled || t !== trail) return;
+				if (res.ok && typeof res.body?.location?.path === 'string') {
+					void placeOr404(t);
+					return;
+				}
 				if (!res.ok || typeof res.body?.slug !== 'string') {
 					unknownPath = true;
 					return;
@@ -347,6 +360,7 @@
 		authorityName = null;
 		authorityCountry = null;
 		authorityRegion = null;
+		authorityIso2 = null;
 		authorityVerifiedAt = '';
 		ledger = [];
 		planView = null;
@@ -448,7 +462,7 @@
 	// region, verified_at) and the accepted facts. Flag and outline are
 	// looked up from the row's country/region, never from the slug.
 	const displayName = $derived(authorityName ?? slug);
-	const flag = $derived(flagFor(authorityCountry));
+	const flag = $derived(flagFor(authorityCountry, authorityIso2));
 	const sil = $derived(silhouetteFor({ region: authorityRegion, country: authorityCountry }));
 	const lastVerified = $derived(authorityVerifiedAt || (facts ? latestCapture(facts) : ''));
 	const hasChain = $derived(
@@ -529,6 +543,13 @@
 							<a
 								class="text-ink-muted no-underline hover:text-ink hover:underline"
 								href={resolve('/(public)/authority/[...trail]', { trail: crumb.path })}
+							>
+								{crumb.label}
+							</a>
+						{:else if crumb.location}
+							<a
+								class="text-ink-muted no-underline hover:text-ink hover:underline"
+								href={resolve('/(public)/in/[...path]', { path: crumb.location })}
 							>
 								{crumb.label}
 							</a>

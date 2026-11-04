@@ -1,6 +1,7 @@
 {
   "pack": "LV",
   "version": 1,
+  "iso2": "LV",
   "title": "Latvia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -45,14 +46,14 @@
       "kind": "website_official",
       "uri": "https://notary.lv/apostille",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=49&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=329 (needs staff capture; W-7)."
     },
     {
       "authority": "lv-ca-1",
       "kind": "website_official",
       "uri": "https://notary.lv/notaries_map",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=49&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=329 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -95,7 +96,7 @@
       "authority": "lv-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://notary.lv/apostille as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=49&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=329",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -103,7 +104,7 @@
       "authority": "lv-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://notary.lv/notaries_map as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=49&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=329",
       "status": "needs_review",
       "validation": "W-7"
     }

@@ -1,6 +1,7 @@
 {
   "pack": "CH",
   "version": 1,
+  "iso2": "CH",
   "title": "Switzerland — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -14,8 +15,9 @@
       "kind": "country",
       "country": "Switzerland",
       "region": "",
-      "name": "Cantonal authorities: see the list below, under \"Contact details\"",
-      "slug": "ch-ca-2"
+      "name": "Cantonal authorities",
+      "slug": "ch-ca-2",
+      "source_name": "Cantonal authorities: see the list below, under \"Contact details\""
     }
   ],
   "domains": [

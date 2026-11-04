@@ -1,6 +1,7 @@
 {
   "pack": "HR",
   "version": 1,
+  "iso2": "HR",
   "title": "Croatia — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -51,14 +52,14 @@
       "kind": "website_official",
       "uri": "https://mpudt.gov.hr/authentication-legalisation-of-documents/25392",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=31&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=315 (needs staff capture; W-7)."
     },
     {
       "authority": "hr-ca-1",
       "kind": "website_official",
       "uri": "https://sudovi.hr/en/node/4",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=31&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=315 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -101,7 +102,7 @@
       "authority": "hr-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://mpudt.gov.hr/authentication-legalisation-of-documents/25392 as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=31&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=315",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -109,7 +110,7 @@
       "authority": "hr-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists https://sudovi.hr/en/node/4 as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=31&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=315",
       "status": "needs_review",
       "validation": "W-7"
     }

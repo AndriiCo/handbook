@@ -1,35 +1,40 @@
 {
   "pack": "SC",
   "version": 1,
+  "iso2": "SC",
   "title": "Seychelles — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
       "kind": "country",
       "country": "Seychelles",
       "region": "",
-      "name": "1 the Minister responsible for Foreign Affairs, or any person designated and officially authorized by him/her",
-      "slug": "sc-ca-1"
+      "name": "The Minister responsible for Foreign Affairs, or any person designated and officially authorized by him/her",
+      "slug": "sc-ca-1",
+      "source_name": "1 the Minister responsible for Foreign Affairs, or any person designated and officially authorized by him/her"
     },
     {
       "kind": "country",
       "country": "Seychelles",
       "region": "",
-      "name": "2 the Attorney General, or any person designated and officially authorized by him/her",
-      "slug": "sc-ca-2"
+      "name": "The Attorney General, or any person designated and officially authorized by him/her",
+      "slug": "sc-ca-2",
+      "source_name": "2 the Attorney General, or any person designated and officially authorized by him/her"
     },
     {
       "kind": "country",
       "country": "Seychelles",
       "region": "",
-      "name": "3 the Secretary to the Cabinet",
-      "slug": "sc-ca-3"
+      "name": "The Secretary to the Cabinet",
+      "slug": "sc-ca-3",
+      "source_name": "3 the Secretary to the Cabinet"
     },
     {
       "kind": "country",
       "country": "Seychelles",
       "region": "",
-      "name": "4 the Registrar of the Supreme Court.",
-      "slug": "sc-ca-4"
+      "name": "The Registrar of the Supreme Court",
+      "slug": "sc-ca-4",
+      "source_name": "4 the Registrar of the Supreme Court."
     }
   ],
   "domains": [

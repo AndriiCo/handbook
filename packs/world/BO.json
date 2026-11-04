@@ -1,6 +1,7 @@
 {
   "pack": "BO",
   "version": 1,
+  "iso2": "BO",
   "title": "Bolivia (Plurinational State of) — HCCH 1961 competent authorities (world index, needs review)",
   "authorities": [
     {
@@ -51,14 +52,14 @@
       "kind": "website_official",
       "uri": "http://apostilla.rree.gob.bo",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=85&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=1089 (needs staff capture; W-7)."
     },
     {
       "authority": "bo-ca-1",
       "kind": "website_official",
       "uri": "http://apostilla.rree.gob.bo/#/verificar",
       "cadence": "weekly",
-      "notes": "Listed under Useful Links on https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=85&cid=41 (needs staff capture; W-7)."
+      "notes": "Listed under Useful Links on https://www.hcch.net/en/states/authorities/details3/?aid=1089 (needs staff capture; W-7)."
     }
   ],
   "chain_steps": [
@@ -101,7 +102,7 @@
       "authority": "bo-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://apostilla.rree.gob.bo as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=85&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1089",
       "status": "needs_review",
       "validation": "W-7"
     },
@@ -109,7 +110,7 @@
       "authority": "bo-ca-1",
       "topic": "website",
       "statement": "OBSERVED (HCCH competent-authority page; staff capture pending): page lists http://apostilla.rree.gob.bo/#/verificar as an official website link (under Useful Links).",
-      "source_uri": "https://www.hcch.net/en/instruments/conventions/status-table/authority/?sid=85&cid=41",
+      "source_uri": "https://www.hcch.net/en/states/authorities/details3/?aid=1089",
       "status": "needs_review",
       "validation": "W-7"
     }

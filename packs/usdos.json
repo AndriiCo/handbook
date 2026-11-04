@@ -3,6 +3,7 @@
         {
             "country": "USA",
             "kind": "office",
+            "level": "federal",
             "name": "U.S. Department of State \u2014 Office of Authentications",
             "region": "",
             "slug": "usdos-authentications"
@@ -27,6 +28,7 @@
             "status": "unverified"
         }
     ],
+    "iso2": "US",
     "observations": [
         {
             "authority": "usdos-authentications",
