@@ -210,40 +210,118 @@ pub struct Destination {
     /// Fact that makes this route USPS-only (a PO box or a cited
     /// "USPS only"), if any.
     pub usps_only_fact: Option<i64>,
+    /// Where a FedEx envelope goes: the mail address when it is a
+    /// street, else a cited courier street address (see [`destination`]);
+    /// `None` disables FedEx.
+    pub fedex: Option<CourierAddress>,
+}
+
+/// A street address FedEx can deliver to, with its building line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CourierAddress {
+    pub address: UsAddress,
+    pub line2: Option<String>,
+    pub fact_id: i64,
+}
+
+/// Words that cite an address as taking courier deliveries.
+const COURIER_WORDS: &[&str] = &[
+    "courier",
+    "fedex",
+    "ups",
+    "overnight",
+    "express",
+    "delivery service",
+    "street address",
+];
+
+fn cites_courier(text: &str) -> bool {
+    let t = text.to_lowercase();
+    COURIER_WORDS.iter().any(|w| {
+        t.match_indices(w).any(|(i, _)| {
+            let before = t[..i]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_alphanumeric());
+            let after = t[i + w.len()..]
+                .chars()
+                .next()
+                .is_none_or(|c| !c.is_alphanumeric());
+            before && after
+        })
+    })
 }
 
 /// Mailing destination from accepted facts: `mailing` and `po_box`
-/// first (that is where requests are mailed), then `address`.
+/// first (that is where requests are mailed), then `address`. Each
+/// fact is read line by line (statement, then each citation quote),
+/// both `street, City, ST ZIP` and `street City, ST ZIP`
+/// ([`crate::label_autofill::address_in`]).
+///
+/// FedEx goes to the same address when it is a street. When it is a
+/// PO box, FedEx goes only to a street address a fact cites for mail
+/// or couriers: a non-PO-box `mailing` fact, or an `address`/`dropbox`
+/// fact that names couriers (FedEx, UPS, overnight, express…). A walk-in
+/// counter address alone never receives a customer's envelope; a
+/// cited "USPS only" disables FedEx outright.
 pub fn destination(facts: &[FactText]) -> Option<Destination> {
     let rank = |t: &str| match t {
         "mailing" => 0,
         "po_box" => 1,
         "address" => 2,
+        "dropbox" => 3,
         _ => 9,
     };
     let mut candidates: Vec<&FactText> = facts.iter().filter(|f| rank(&f.topic) < 9).collect();
     candidates.sort_by_key(|f| (rank(&f.topic), f.id));
-    let (fact, address) = candidates
+    let read = |f: &FactText| crate::label_autofill::address_in(&f.text);
+    let (fact, found) = candidates
         .iter()
-        .find_map(|f| us_address_in(&f.text).map(|a| (*f, a)))?;
-    let usps_only_fact = if address.is_po_box() {
+        .filter(|f| f.topic != "dropbox")
+        .find_map(|f| read(f).map(|a| (*f, a)))?;
+    let cited_usps_only = facts
+        .iter()
+        .find(|f| {
+            let t = f.text.to_lowercase();
+            matches!(f.topic.as_str(), "mailing" | "po_box")
+                && (t.contains("usps only")
+                    || t.contains("u.s. postal service only")
+                    || t.contains("only by usps"))
+        })
+        .map(|f| f.id);
+    let usps_only_fact = if found.address.is_po_box() {
         Some(fact.id)
     } else {
-        facts
-            .iter()
-            .find(|f| {
-                let t = f.text.to_lowercase();
-                matches!(f.topic.as_str(), "mailing" | "po_box")
-                    && (t.contains("usps only")
-                        || t.contains("u.s. postal service only")
-                        || t.contains("only by usps"))
+        cited_usps_only
+    };
+    let fedex = if cited_usps_only.is_some() {
+        None
+    } else if !found.address.is_po_box() {
+        Some(CourierAddress {
+            address: found.address.clone(),
+            line2: found.line2.clone(),
+            fact_id: fact.id,
+        })
+    } else {
+        candidates.iter().find_map(|f| {
+            let a = read(f)?;
+            let courier = f.topic == "mailing" || cites_courier(&f.text);
+            (!a.address.is_po_box() && courier).then_some(CourierAddress {
+                address: a.address,
+                line2: a.line2,
+                fact_id: f.id,
             })
-            .map(|f| f.id)
+        })
     };
     Some(Destination {
-        address,
+        address: found.address,
         fact_id: fact.id,
-        usps_only_fact,
+        usps_only_fact: if fedex.is_some() {
+            None
+        } else {
+            usps_only_fact
+        },
+        fedex,
     })
 }
 
@@ -275,9 +353,12 @@ pub fn options(slug: &str, dest: Option<&Destination>, sw: &Switches) -> Value {
     let card = |kind: &str, title: &str, from: Option<i64>| -> Value {
         let (enabled, reason, fact_id): (bool, Option<&str>, Option<i64>) = match (kind, dest) {
             (_, None) => (false, Some(no_dest), None),
-            ("label_fedex", Some(d)) if d.usps_only_fact.is_some() => (
+            ("label_fedex", Some(d)) if d.fedex.is_none() => (
                 false,
-                Some("This office receives mail at a PO Box, which FedEx cannot deliver to."),
+                Some(
+                    "This office receives mail at a PO Box, which FedEx cannot deliver to, \
+                     and no approved fact names a street address for couriers.",
+                ),
                 d.usps_only_fact,
             ),
             ("address_label", Some(_)) => (true, None, None),
@@ -300,6 +381,10 @@ pub fn options(slug: &str, dest: Option<&Destination>, sw: &Switches) -> Value {
         "destination": dest.map(|d| json!({
             "city": d.address.city, "region": d.address.state, "postal_code": d.address.zip,
             "po_box": d.address.is_po_box(), "fact_id": d.fact_id,
+        })),
+        "fedex_destination": dest.and_then(|d| d.fedex.as_ref()).map(|c| json!({
+            "city": c.address.city, "region": c.address.state, "postal_code": c.address.zip,
+            "fact_id": c.fact_id,
         })),
         "options": [
             card("label_fedex", "FedEx labels, print at home", None),
@@ -566,11 +651,21 @@ pub fn create_order_from(
     let id = new_order_id();
     let free = body.kind == "address_label";
     let status = if free { "labels_ready" } else { "draft" };
-    let dest_json = json!({
-        "name": authority_name, "street1": dest.address.street, "city": dest.address.city,
-        "state_province": dest.address.state, "postal": dest.address.zip, "country": "US",
-        "fact_id": dest.fact_id,
+    // A FedEx order ships to the courier address; everything else to
+    // the mail address (the options gate already refused FedEx when
+    // there is none).
+    let (address, line2, fact_id) = match (&*body.kind, &dest.fedex) {
+        ("label_fedex", Some(c)) => (&c.address, c.line2.as_deref(), c.fact_id),
+        _ => (&dest.address, None, dest.fact_id),
+    };
+    let mut dest_json = json!({
+        "name": authority_name, "street1": address.street, "city": address.city,
+        "state_province": address.state, "postal": address.zip, "country": "US",
+        "fact_id": fact_id,
     });
+    if let Some(line2) = line2 {
+        dest_json["street2"] = json!(line2);
+    }
     let return_json = serde_json::to_value(&body.return_to).unwrap_or(json!({}));
     tx.execute(
         "INSERT INTO customer_order(id, customer_ref, kind, status, authority_slug, path_id,
@@ -1921,6 +2016,109 @@ mod tests {
         assert!(b.is_po_box());
         assert!(us_address_in("Open Monday to Friday, 8:00 AM to 4:30 PM.").is_none());
         assert!(us_address_in("Hanoi, Viet Nam").is_none());
+    }
+
+    /// Washington SOS as accepted on production (P417): statement and
+    /// citation quote on separate lines, no comma after the street.
+    fn wa_facts() -> Vec<FactText> {
+        vec![
+            f(
+                2,
+                "mailing",
+                "apostille_mailing_address: PO BOX 40228 Olympia, WA 98504-0228\n\
+                 PO BOX 40228 Olympia, WA 98504-0228",
+            ),
+            f(
+                5,
+                "address",
+                "apostille_main_branch_street: Town Center 3 243 Israel Rd SE Tumwater, WA 98501",
+            ),
+            f(7, "contacts", "apostille_phone: 360-725-0377"),
+        ]
+    }
+
+    #[test]
+    fn wa_mail_destination_reads_the_po_box_without_garbling_the_city() {
+        let d = destination(&wa_facts()).unwrap();
+        assert_eq!(d.address.street, "PO Box 40228");
+        assert_eq!(d.address.city, "Olympia");
+        assert_eq!(d.address.state, "WA");
+        assert_eq!(d.address.zip, "98504-0228");
+        assert_eq!(d.fact_id, 2);
+        // The Tumwater counter is a walk-in address: no courier cite, no FedEx.
+        assert_eq!(d.fedex, None);
+        assert_eq!(d.usps_only_fact, Some(2));
+        let v = options("usa-wa-sos", Some(&d), &ready());
+        let fedex = card(&v, "label_fedex");
+        assert_eq!(fedex["enabled"], false);
+        assert_eq!(fedex["fact_id"], 2);
+        assert_eq!(card(&v, "label_usps")["enabled"], true);
+        assert_eq!(v["destination"]["city"], "Olympia");
+        assert!(v["fedex_destination"].is_null());
+    }
+
+    #[test]
+    fn a_cited_courier_street_takes_fedex_while_usps_keeps_the_po_box() {
+        let mut facts = wa_facts();
+        facts.push(f(
+            9,
+            "address",
+            "For FedEx or UPS deliveries use 801 Capitol Way S, Olympia, WA 98501.",
+        ));
+        let d = destination(&facts).unwrap();
+        assert_eq!(d.address.street, "PO Box 40228");
+        let c = d.fedex.clone().unwrap();
+        assert_eq!(c.address.street, "801 Capitol Way S");
+        assert_eq!(c.fact_id, 9);
+        let v = options("usa-wa-sos", Some(&d), &ready());
+        assert_eq!(card(&v, "label_fedex")["enabled"], true);
+        assert_eq!(v["fedex_destination"]["fact_id"], 9);
+        assert_eq!(v["destination"]["fact_id"], 2);
+    }
+
+    #[test]
+    fn a_street_mailing_address_serves_both_carriers_unless_usps_only() {
+        let street = [f(
+            3,
+            "mailing",
+            "Mail to 801 Capitol Way S, Olympia, WA 98501.",
+        )];
+        let d = destination(&street).unwrap();
+        assert_eq!(d.fedex.as_ref().unwrap().fact_id, 3);
+        assert_eq!(d.usps_only_fact, None);
+        let usps_only = [
+            street[0].clone(),
+            f(4, "mailing", "Requests are accepted by USPS only."),
+        ];
+        let d = destination(&usps_only).unwrap();
+        assert_eq!(d.fedex, None);
+        assert_eq!(d.usps_only_fact, Some(4));
+        assert!(!cites_courier("Supply a stamped envelope."));
+        assert!(cites_courier(
+            "Overnight (FedEx) packages: 801 Capitol Way S"
+        ));
+    }
+
+    fn ready() -> Switches {
+        Switches {
+            orders_enabled: true,
+            stripe_key: true,
+            kit_price_cents: Some(4900),
+            fedex_ready: true,
+            usps_ready: true,
+            ship_from_ok: true,
+            ..Default::default()
+        }
+    }
+
+    fn card(v: &Value, kind: &str) -> Value {
+        v["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["kind"] == kind)
+            .unwrap()
+            .clone()
     }
 
     #[test]
