@@ -61,3 +61,9 @@
 63f0275434134ac8384414d270b57368ba75c99f:evals/replay/drafts-spark.jsonl:generic-api-key:7
 63f0275434134ac8384414d270b57368ba75c99f:evals/replay/drafts-spark.jsonl:generic-api-key:8
 63f0275434134ac8384414d270b57368ba75c99f:evals/replay/drafts-spark.jsonl:generic-api-key:9
+# config-import unit test: a 15-char dummy `meta.api_key` value, not a
+# credential.
+00dac3b586a4920463e4524699543e9d237b7627:xtask/src/config_import.rs:generic-api-key:336
+00dac3b586a4920463e4524699543e9d237b7627:xtask/src/config_import.rs:generic-api-key:370
+# Archived public UN page: Drupal's per-page `theme_token`, not a secret.
+52015a81c1374780f81e08c4381e92f75da98c93:evals/world-nonparty/un-member-states.html:generic-api-key:99

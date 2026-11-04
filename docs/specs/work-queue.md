@@ -33,14 +33,32 @@ Opened only through `handbook_store::work::open`.
 
 `audit` (append-only, triggers refuse UPDATE/DELETE) gets one row per
 `work_enqueue`, `work_checkout`, `work_complete`, `work_fail`,
-`work_requeue`, `work_expire`, `work_retry` and `work_stage`, committed
-in the same transaction as the change. Heartbeats are not audited.
+`work_requeue`, `work_expire`, `work_retry`, `work_cancel`,
+`work_timeout` and `work_stage`, committed in the same transaction as
+the change. Heartbeats are not audited.
+
+`work_retry_after` (`item_id`, `not_before`): a retryable worker
+failure with attempts left goes back to `pending` but is not leased
+before `not_before`: 60 s after the first attempt, doubling per attempt,
+at most 30 min (`work::retry_delay`), so a rate limit does not burn
+every attempt in seconds. A checkout, a staff retry or a cancel clears
+the row. Its own table because `work_item` cannot be altered.
 
 Leases: a checkout leases the oldest pending item whose kind the
 worker announced, for `LEASE_SECS` (300 s), and bumps `attempts`.
 Heartbeats extend an unexpired lease. Every checkout and every admin
 list first sweeps expired leases: an item with attempts left goes back
-to `pending`; one at `max_attempts` (default 3) becomes `failed`.
+to `pending` (no backoff: the worker vanished); one at
+`max_attempts` (default 3) becomes `failed`.
+
+Time limits: each kind has `max_runtime_secs` (research.nonparty 8 h,
+eval.gold 3 h, scrape.urls 1 h, precheck.glimmer 30 min). A heartbeat
+for a lease older than that (counted from its `work_checkout` audit
+row) fails the item for good (`work_timeout`, "ran over its N min
+limit") and answers `lease_lost`. On `lease_lost` the worker stops
+waiting for the job thread, drops its result, and takes the next job
+(a GPU job still waits for `gpu.lock`).
+
 Backups: `work.sqlite` is operational state and is not in the nightly
 backup set; results that matter (packs) are committed to git by the
 builder.
@@ -51,7 +69,24 @@ Auth before upgrade: `Authorization: Bearer <token>`, compared in
 constant time (SHA-256 of both sides) with the sealed secret
 `worker.token` (`/config`, group "Plant workers"). No row → 503, wrong
 or missing token → 401, fewer than 32 characters configured → 503.
-At most 8 sockets per peer IP. Frames are JSON text; inbound frames
+Two token forms: the shared `worker.token` itself (any worker name;
+the Work page marks it "shared token"), or a named token
+`w1.<name>.<hex HMAC-SHA256(worker.token, "worker-name:<name>")>`
+minted on the Work page (`POST /apostille/api/v1/admin/workers/token
+{name}`, fresh step-up, shown once), which admits only `hello` from
+that name. Rotating `worker.token` revokes every named token, and open
+sockets re-check the secret on every ping: a rotated secret closes
+them. A socket with no inbound frame (pongs included) for 90 s is
+closed.
+
+`hello.version` is `<semver>+<git sha>` (the `.sha` file
+`worker-install.sh` writes, or `git rev-parse`); the Work page flags a
+worker whose SHA differs from the server's build ("other build").
+Restarts drain: while `<workdir>/worker.drain` exists the worker takes
+no new job, finishes the current one, removes the file and exits.
+At most 8 sockets per peer IP. Workers dial `wss://`; the client refuses
+`ws://` except to a loopback address (tests, the local judge boot), so
+the token never crosses a network in clear text. Frames are JSON text; inbound frames
 are capped at 24 MiB; the decoded result at `MAX_RESULT_BYTES`
 (16 MiB).
 
@@ -67,7 +102,7 @@ tests parse every sample).
 | ← server | `idle` | `retry_after_secs` |
 | worker → | `heartbeat` | `id`, `lease` |
 | ← server | `lease` | `id`, `lease_expires_at` |
-| worker → | `complete` | `id`, `lease`, `content_type`, `sha256`, `result_b64`, `summary` |
+| worker → | `complete` | `id`, `lease`, `content_type`, `sha256`, `result_b64`, `summary` (kept and re-sent after a reconnect until the server answers it) |
 | worker → | `fail` | `id`, `lease`, `error`, `retryable` |
 | ← server | `ack` | `id`, `status` (item status after the frame) |
 | ← server | `error` | `code` (`bad_frame`, `lease_lost`, `too_large`, `sha_mismatch`, `store`), `error`, `id?` |
@@ -86,11 +121,15 @@ lease). The server pings every 30 s.
 | `GET /apostille/api/v1/admin/work-items/{id}` | one item + its audit trail |
 | `GET /apostille/api/v1/admin/work-items/{id}/result` | result bytes (`Content-Disposition: attachment`) |
 | `POST /apostille/api/v1/admin/work-items/{id}/retry` | failed → pending (attempts reset) |
+| `POST /apostille/api/v1/admin/workers/token` | `{name}` → `{name, token}`: a named worker token (fresh step-up, shown once) |
+| `POST /apostille/api/v1/admin/work-items/{id}/cancel` | pending or leased → failed ("cancelled by …"); the worker's next heartbeat gets `lease_lost`; 409 otherwise |
 | `POST /apostille/api/v1/admin/work-items/{id}/stage-packs` | write a done `research.nonparty` bundle's packs to `<store>/packs-inbox/<id>/` |
 
 Shapes: `docs/contracts/admin-work-items.json`. `lease_owner` is the
 worker name only; lease tokens never leave the server. Every item
-carries `staged` (its inbox folder exists).
+carries `staged` (its inbox folder exists) and `retry_after` (unix
+seconds while a pending item backs off, else null); every kind carries
+`max_runtime_secs`.
 
 Stage as packs: only a `done` `research.nonparty` item with a result
 stages (else 409). The result must be a `packs.v1` bundle whose packs
@@ -113,7 +152,7 @@ worker GPU jobs never overlap.
 | `research.nonparty` | `{countries?: [ISO2], limit?: n, refresh?: bool}` | `application/json` packs bundle (§5) |
 | `scrape.urls` | `{urls: [https…], politeness_ms?: n}` | `application/json` `{pages: [{url, status, sha256, bytes, body_b64}]}` |
 | `eval.gold` | `{live?: bool, planted?: bool, prompt?: "v1"\|"v2"}` | `application/json` `quality.json` |
-| `precheck.glimmer` | builder-defined | stub: not announced in `hello`, so jobs wait `pending` |
+| `precheck.glimmer` | `{sample, image_b64?}` | verdict JSON; announced in `hello` only when `GLIMMER_MODEL` is set in `worker.env` (or the environment), else jobs wait `pending` |
 
 ## 5. `research.nonparty`
 

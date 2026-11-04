@@ -31,6 +31,8 @@ import {
 	resultHref,
 	resultView,
 	retryWork,
+	cancelWork,
+	mintWorkerToken,
 	stagePacks,
 	stagedText,
 	statusChanges,
@@ -62,8 +64,13 @@ test('normalizeList reads the contract list sample', () => {
 	);
 	assert.equal(list.workers[0].name, 'plant');
 	assert.equal(list.workers[0].job_id, 7);
+	assert.equal(list.workers[0].conn, 1);
+	assert.equal(list.workers[0].identity, 'named');
+	assert.equal(list.workers[0].version_matches, true);
 	assert.deepEqual(list.workers[0].capabilities, ['research.nonparty', 'scrape.urls', 'eval.gold', 'precheck.glimmer']);
-	assert.deepEqual(list.kinds, [{ kind: 'research.nonparty', about: 'Non-party legalization packs', example: { countries: ['EG'] } }]);
+	assert.deepEqual(list.kinds, [
+		{ kind: 'research.nonparty', about: 'Non-party legalization packs', example: { countries: ['EG'] }, max_runtime_secs: 28800 }
+	]);
 	assert.deepEqual(list.counts, { pending: 0, leased: 1, done: 1, failed: 0 });
 	assert.equal(list.offset, 0);
 });
@@ -81,7 +88,7 @@ test('normalizeList drops junk rows and defaults missing sections', () => {
 	assert.equal(normalizeList(null), null);
 	// A kind without an object example gets {} (the payload box needs one).
 	assert.deepEqual(normalizeList({ items: [], kinds: [{ kind: 'k', example: [1] }, { kind: '' }] })?.kinds, [
-		{ kind: 'k', about: '', example: {} }
+		{ kind: 'k', about: '', example: {}, max_runtime_secs: null }
 	]);
 	// A result without sha/bytes is no result.
 	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'done', result: { bytes: 3 } })?.result, null);
@@ -89,6 +96,9 @@ test('normalizeList drops junk rows and defaults missing sections', () => {
 	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'done' })?.staged, false);
 	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'done', staged: 'yes' })?.staged, false);
 	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'done', staged: true })?.staged, true);
+	// `retry_after` is a number or null.
+	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'pending', retry_after: 161 })?.retry_after, 161);
+	assert.equal(normalizeItem({ id: 1, kind: 'k', status: 'pending', retry_after: 'soon' })?.retry_after, null);
 });
 
 test('normalizeDetail reads the contract detail sample', () => {
@@ -356,6 +366,19 @@ test('work items round-trip against a stub admin API', async () => {
 			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/5/retry') {
 				assert.ok(req.headers['x-csrf'], 'retry sends x-csrf');
 				json(200, CONTRACT.retry_response);
+			} else if (req.method === 'POST' && req.url === '/api/v1/admin/workers/token') {
+				assert.ok(req.headers['x-csrf'], 'mint sends x-csrf');
+				const parsed = JSON.parse(body);
+				if (parsed.name === 'Bad Name') json(422, { error: 'worker names are 1-32 of a-z, 0-9 and -' });
+				else {
+					assert.deepEqual(parsed, CONTRACT.token_request);
+					json(200, CONTRACT.token_response);
+				}
+			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/7/cancel') {
+				assert.ok(req.headers['x-csrf'], 'cancel sends x-csrf');
+				json(200, CONTRACT.cancel_response);
+			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/6/cancel') {
+				json(409, { error: 'only pending or leased items cancel' });
 			} else if (req.method === 'POST' && req.url === '/api/v1/admin/work-items/9/stage-packs') {
 				assert.ok(req.headers['x-csrf'], 'stage sends x-csrf');
 				assert.deepEqual(JSON.parse(body), {});
@@ -399,6 +422,10 @@ test('work items round-trip against a stub admin API', async () => {
 		});
 		assert.deepEqual(await retryWork(base, 5), { id: 5, status: 'pending' });
 		await assert.rejects(retryWork(base, 9), /request token rejected/);
+		assert.deepEqual(await cancelWork(base, 7), { id: 7, status: 'failed' });
+		assert.deepEqual(await mintWorkerToken(base, 'plant'), CONTRACT.token_response);
+		await assert.rejects(mintWorkerToken(base, 'Bad Name'), (err) => err instanceof WorkError && err.status === 422);
+		await assert.rejects(cancelWork(base, 6), (err) => err instanceof WorkError && err.status === 409);
 		assert.deepEqual(await stagePacks(base, 9), { id: 9, dir: 'packs-inbox/9', packs: ['EG'], count: 1 });
 		await assert.rejects(stagePacks(base, 6), (err) => {
 			assert.ok(err instanceof WorkError);
@@ -419,6 +446,10 @@ test('work items round-trip against a stub admin API', async () => {
 			'POST /api/v1/admin/work-items',
 			'POST /api/v1/admin/work-items/5/retry',
 			'POST /api/v1/admin/work-items/9/retry',
+			'POST /api/v1/admin/work-items/7/cancel',
+			'POST /api/v1/admin/workers/token',
+			'POST /api/v1/admin/workers/token',
+			'POST /api/v1/admin/work-items/6/cancel',
 			'POST /api/v1/admin/work-items/9/stage-packs',
 			'POST /api/v1/admin/work-items/6/stage-packs',
 			'POST /api/v1/admin/work-items/7/stage-packs',

@@ -5,6 +5,11 @@ download/analysis ingest paths: list/retry captures, worker status,
 manual watch-sweep, per-authority ingest state. Spec-first per the
 stream brief; implementation follows §5.
 
+Not the plant work queue: the console's "Work queue" page (`/work`,
+`docs/specs/work-queue.md`) leases jobs to plant workers over a
+WebSocket. This spec is the URL-ingest page (`/workers`), whose
+"workers" are synchronous fetches inside staff requests.
+
 ## 0. Non-goals (frozen for this stream)
 
 - No new worker runtime: no background threads, no scheduler, no
@@ -26,7 +31,9 @@ stream brief; implementation follows §5.
 
 ## 1. API routes
 
-All on the ADMIN listener only, under `/apostille/api/v1/admin`,
+All on the ADMIN listener only, under `/apostille/api/v1` (no
+`/admin` segment: the paths below are `/apostille/api/v1/workers/…`,
+`crates/web/src/admin_workers.rs`),
 behind the existing recipe (spec: `spa-separation.md` §1.4;
 code: `crates/web/src/admin.rs`): admin host guard, staff-role
 `AdminAuth` session (+ mTLS seam), CSRF Origin + double-submit on

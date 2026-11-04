@@ -105,7 +105,9 @@ What is live at <https://andrii.ai/apostille> today (production
     trace console; approvals reach the public dossier live.
   - Diff any watched source's captures.
   - Load packs.
-  - Run research and eval jobs on plant workers through the work queue.
+  - Queue research and eval jobs for plant workers on the Work queue
+    page (cancel, retry backoff, per-kind time limits). No job has run
+    on plant yet: the worker is installed by the operator.
   - Buy a FedEx label on the staff path (live keys are operator-owned).
   - Restart the service from `/config`.
 - **Caching:** every Meta API call and every downloaded page is
@@ -127,15 +129,15 @@ Production is `0.1.0+20abd03`, scoreboard **8/10** measured
 
 | Promised (application words) | Status | Reason / where it stands |
 |---|---|---|
-| Watch 500+ cited URLs, HCCH feed, inbox for authority notices | Delivered | 478 world watch URLs + 24 curated are loaded on production. The sweep keeps every download in the fetch cache, advances past dead URLs, honours weekly cadence, and spaces requests per host (P396, P402). Notices on a watched page are captured even when tiny (`gained_lines`). The F3 email inbox stays partial (the instruct worker reads email captures). |
+| Watch 500+ cited URLs, HCCH feed, inbox for authority notices | Partial | Delivered for web pages: 478 world watch URLs + 24 curated are loaded on production. The sweep keeps every download in the fetch cache, advances past dead URLs, honours weekly cadence, and spaces requests per host (P396, P402). Notices on a watched page are captured even when tiny (`gained_lines`). The email inbox is built and tested offline but off in production: no notice has gone end to end yet (Gmail credentials and the instruct timer are operator steps). |
 | Muse Spark turns only changes into cited records I approve | Delivered | Changed web captures draft from their added lines only (P394, every 15 min, under `meta.daily_call_cap`). Staff approve in /review; approvals publish live. |
-| Reading English, Spanish or French pages and forms | Partial | Runner drafts from es/fr pages; gold set 30 cases including 4 es/fr. Live rates on all 30 cases: see Eval numbers. Es/fr translation after approval is merged but not wired. |
+| Reading English, Spanish or French pages and forms | Partial | Runner drafts from es/fr pages; gold set 30 cases including 4 es/fr. Live rates on all 30 cases: see Eval numbers. Each approved fact queues es/fr translations; staff render them from /review → Translations, and the public API serves them (`/authorities/{slug}/translations?lang=es`; production has one es and one fr row for Washington so far). |
 | Flag contradictions like Washington's two PO Boxes | Delivered | Conflict banner on the dossier (`crates/web/src/approval.rs`). |
-| One consular legalization chain (Egypt in USA) with pre-filled authority forms | Partial | Chain view plus DS-4194 prefill. Official PDFs with fillable fields are filled and flattened from accepted form maps (`crates/web/src/forms_map.rs`). Step validation (V-1…V-19) is roadmap. |
+| One consular legalization chain (Egypt in USA) with pre-filled authority forms | Partial | Chain view plus DS-4194 prefill. Official PDFs with fillable fields are filled and flattened from accepted form maps (`crates/web/src/forms_map.rs`). Step validation: V-19 is done (no copy routes the twelve late Apostille parties through consular legalization; a test guards it, P436); V-1/V-2 pages are watched and wait for staff-verified captures; V-3…V-18 are phone verifications (operator). |
 | Walk-in reports (route photos, parking tips, rejections) update the handbook | Partial | Signed-in report form (≤3 photos, EXIF stripped). Staff turn reports into cited facts. |
 | SAM 3.1 masking faces and plates | Delivered | Hosted SAM 3.1 on the precheck path, plus an open-weights SAM 3 drop-in on plant. |
-| Self-hosted Muse Glimmer pre-checks document photos | Delivered (repo) | `precheck.glimmer` worker kind on plant's GPU plus `ops/open-weights/glimmer-serve.sh` (P404). Weights download from the operator-named Hugging Face repo into `/srv/scratch/apostille/models`. Not run yet. |
-| Approved changes reach the handbook and MCP server | Delivered | Accepted-only publish; read-only MCP tool `lookup_authority`. |
+| Self-hosted Muse Glimmer pre-checks document photos | Delivered (repo) | `precheck.glimmer` worker kind on plant's GPU plus `ops/open-weights/glimmer-serve.sh` (P404). Weights download from the operator-named Hugging Face repo into `/srv/scratch/apostille/models`; the kind is announced once `GLIMMER_MODEL` is set in `worker.env` (P433). Not run yet. |
+| Approved changes reach the handbook and MCP server | Partial | Accepted-only publish reaches the handbook live. The read-only MCP tool `lookup_authority` is a localhost-only server (`crates/mcp`): run it beside a local store; production does not expose it. |
 | A new country means new sources, not new code | Delivered | 130 country packs as data (`packs/world/`), validated in ci, loaded on production from admin Packs with no code change (510 authorities live). Non-party countries come from the `research.nonparty` worker job (P392) into `packs/world-nonparty/`. |
 | One source for every country, starting 106 US/CA/MX; prepaid labels and envelopes to your door | Partial | Every Hague party is live (510 authorities). Non-parties come from the research job (not yet run). The staff FedEx path now keeps the label PDF, and the request fields are checked against FedEx's docs (P393). The first live label waits on the operator's production keys. Envelope kits are not delivered. |
 | Success criterion: Viet Nam request → completed form + FedEx label, envelopes tomorrow | Partial | The form fill works and the staff label path is ready. No end-to-end Viet Nam order has been run with a real label yet. |
@@ -224,7 +226,7 @@ crates/web/              API + WS bus + admin branch (IP-allowlisted)
 web/                     public + admin SPAs (SvelteKit, adapter-static)
 xtask/                   task runner (`cargo xtask ci` = fmt check, clippy, tests)
 docs/ops/deploy.md       build, stage, ship, roll back, watch
-LICENSE                  PolyForm Noncommercial 1.0.0 (source code)
+LICENSE.md               PolyForm Noncommercial 1.0.0 (source code)
 LICENSE-CONTENT.md       handbook content, all rights reserved
 ```
 
@@ -277,17 +279,20 @@ security baseline live in [docs/specs/](docs/specs/),
 ## License
 
 The source code is source-available under the
-[PolyForm Noncommercial License 1.0.0](LICENSE): free for
+[PolyForm Noncommercial License 1.0.0](LICENSE.md): free for
 noncommercial use (personal, research, education, nonprofit and
-government); commercial use needs a separate license. The licensing
-notes at the top of [LICENSE](LICENSE) explain that terms for new
-licensees may change, that other agreements (click-wrap or otherwise)
-may alter your rights, and how to get a mutual or timestamped
-acceptance: email license@andrii.ai with the full license text and your
-or your company's details.
+government); commercial use needs a separate license. Anyone, including
+a company, may clone, build, run and test it to evaluate it (hackathon
+judging included). The licensing notes at the top of
+[LICENSE.md](LICENSE.md) state that permission and explain that terms
+for new licensees may change, that other agreements (click-wrap or
+otherwise) may alter your rights, and how to get a mutual or
+timestamped acceptance: email license@andrii.ai with the full license
+text and your or your company's details.
 
 The Apostille Handbook content (handbook text, data, facts, forms,
-images and documentation) stays all rights reserved; see
+images and documentation) stays all rights reserved, except that you
+may clone, build and run it with the code to evaluate it; see
 [LICENSE-CONTENT.md](LICENSE-CONTENT.md).
 
 Copyright (c) 2026 Andrii Co.

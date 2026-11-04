@@ -1307,8 +1307,13 @@ mod tests {
         for want in ["EG", "AF", "CU", "VA", "PS"] {
             assert!(codes.contains(&want), "{want} missing from {codes:?}");
         }
-        for party in ["US", "FR", "CN", "VN", "NL"] {
-            assert!(!codes.contains(&party), "{party} is an Apostille party");
+        // V-19 (docs/specs/egypt-consular.md): apostille parties never get
+        // a consular-legalization pack, including the ones that joined late.
+        let late_parties = [
+            "SA", "CN", "ID", "TH", "PH", "SG", "IL", "MA", "ZA", "CA", "MX", "VN",
+        ];
+        for party in ["US", "FR", "NL"].iter().chain(late_parties.iter()) {
+            assert!(!codes.contains(party), "{party} is an Apostille party");
         }
         let unique: HashSet<&str> = codes.iter().copied().collect();
         assert_eq!(unique.len(), codes.len());

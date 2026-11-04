@@ -100,11 +100,15 @@ the consolidated author-decision list is at the bottom of this file.
    [site-theme.md](../site-theme.md) §2.
 8. Sitemap generation merges into `xtask build-handbook` (F11);
    no separate sitemap tool.
-9. Canonical PO-Box **fixtures** are `40220`/`40234` only — they
-   must never leak into facts. `PO Box 40228` in
-   [egypt-consular.md](egypt-consular.md) is a **cited observation**
-   from the superseded WA form (pending validation V-5), not a
-   fixture.
+9. Canonical PO-Box **fixtures** are `40220`/`40234` only. They
+   must never appear in packs, migrations or seeded rows (the pack
+   validator and `migrations_seed_no_facts_or_fixtures` enforce
+   this). `PO Box 40228` in [egypt-consular.md](egypt-consular.md) is
+   a **cited observation** from the superseded WA form (pending
+   validation V-5), not a fixture. Amended 2026-11-03 (operator):
+   Washington's own division contact page lists PO Box 40234, so a
+   staff-accepted fact may carry that real box when its citation
+   quotes it. Test fixtures get new values after the deadline.
 
 ## Consolidated author decisions
 

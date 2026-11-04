@@ -19,6 +19,8 @@
 		WorkError,
 		auditLabel,
 		canStagePacks,
+		cancelWork,
+		mintWorkerToken,
 		enqueueBody,
 		enqueueWork,
 		examplePayload,
@@ -55,6 +57,7 @@
 	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
 	import PackagePlusIcon from '@lucide/svelte/icons/package-plus';
 	import PackageCheckIcon from '@lucide/svelte/icons/package-check';
+	import BanIcon from '@lucide/svelte/icons/ban';
 
 	// Production work queue (work-queue.md §3): staff enqueue jobs here,
 	// plant workers dial out over one WebSocket and check them out one
@@ -94,6 +97,10 @@
 		error: string | null;
 	}>({ state: 'idle', view: null, error: null });
 	let retrying = $state<Record<number, true>>({});
+	let cancelling = $state<Record<number, true>>({});
+	let mintName = $state('');
+	let minting = $state(false);
+	let minted = $state<{ name: string; token: string } | null>(null);
 	let staging = $state<Record<number, true>>({});
 	let stageNote = $state<{ id: number; ok: boolean; text: string } | null>(null);
 
@@ -209,6 +216,48 @@
 			const next = { ...retrying };
 			delete next[id];
 			retrying = next;
+		}
+	}
+
+	async function mint() {
+		const name = mintName.trim();
+		if (minting || name === '') return;
+		minting = true;
+		minted = null;
+		try {
+			minted = await mintWorkerToken(API, name);
+		} catch (err) {
+			toast.error(errorText(err, `No token was minted for ${name}.`));
+		} finally {
+			minting = false;
+		}
+	}
+
+	async function copyMinted() {
+		if (!minted) return;
+		try {
+			await navigator.clipboard.writeText(minted.token);
+			toast.success('Token copied.');
+		} catch {
+			toast.error('Copy failed; select the token and copy it by hand.');
+		}
+	}
+
+	async function cancelJob(id: number) {
+		if (cancelling[id]) return;
+		cancelling = { ...cancelling, [id]: true };
+		try {
+			await cancelWork(API, id);
+			toast.success(`Job ${id} is cancelled. Retry brings it back.`);
+			refresh();
+			if (selectedId === id) void loadDetail(id, true);
+		} catch (err) {
+			toast.error(errorText(err, `Job ${id} could not be cancelled.`));
+			if (err instanceof WorkError && err.status === 409) refresh();
+		} finally {
+			const next = { ...cancelling };
+			delete next[id];
+			cancelling = next;
 		}
 	}
 
@@ -576,11 +625,25 @@
 					</div>
 				{:else}
 					<ul class="m-0 flex list-none flex-col gap-3 p-0">
-						{#each list.workers as w (w.name)}
+						{#each list.workers as w (w.conn ?? w.name)}
 							<li class="flex flex-col gap-2 rounded-md border border-line p-3">
 								<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 									<span class="font-mono text-sm font-medium">{w.name}</span>
 									{#if w.version}<span class="font-mono text-xs text-ink-muted">v{w.version}</span>{/if}
+									{#if w.version_matches === false}
+										<span
+											class="rounded-full border border-changed px-2 py-0.5 text-xs text-changed"
+											title="This worker runs a different build from the server: reinstall it with worker-install.sh --restart."
+											>other build</span
+										>
+									{/if}
+									{#if w.identity === 'shared'}
+										<span
+											class="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-muted"
+											title="Connected with the shared worker.token, which admits any worker name. A minted token admits one name."
+											>shared token</span
+										>
+									{/if}
 									<span class="ml-auto text-sm">
 										{#if w.job_id !== null}
 											<button
@@ -615,6 +678,35 @@
 						{/each}
 					</ul>
 				{/if}
+				<form
+					class="flex flex-col gap-2 border-t border-line pt-4"
+					onsubmit={(e) => {
+						e.preventDefault();
+						void mint();
+					}}
+				>
+					<label for="mint-name" class="text-xs font-medium text-ink-muted">Token for one worker</label>
+					<div class="flex gap-2">
+						<Input id="mint-name" class="h-9 font-mono" bind:value={mintName} autocomplete="off" spellcheck={false} />
+						<Button type="submit" variant="outline" disabled={minting || mintName.trim() === ''}>
+							{#if minting}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{/if}
+							Mint
+						</Button>
+					</div>
+					<p class="m-0 text-xs text-ink-muted">
+						It admits only that worker name. Rotating <code class="font-mono">worker.token</code> in /config revokes every minted token.
+					</p>
+					{#if minted}
+						<div class="flex flex-col gap-2 rounded-md border border-line bg-surface-2 p-3" role="status">
+							<p class="m-0 text-xs">
+								Shown once. On {minted.name}, set it as <code class="font-mono">APOSTILLE_WORKER_TOKEN</code> in
+								<code class="font-mono">worker.env</code>, start the worker with <code class="font-mono">--name {minted.name}</code>.
+							</p>
+							<code class="block font-mono text-xs break-all select-all">{minted.token}</code>
+							<div><Button type="button" variant="outline" size="sm" onclick={copyMinted}>Copy</Button></div>
+						</div>
+					{/if}
+				</form>
 			</section>
 		</div>
 
@@ -692,6 +784,10 @@
 											<time class="block text-ink-muted" datetime={iso(item.lease_expires_at)} title={dateTime(item.lease_expires_at)}
 												>{leaseText(item.lease_expires_at, now)}</time
 											>
+										{:else if item.status === 'pending' && item.retry_after !== null && item.retry_after > now}
+											<time class="block text-ink-muted" datetime={iso(item.retry_after)} title={dateTime(item.retry_after)}
+												>Retries {dateTime(item.retry_after)}</time
+											>
 										{:else if item.status === 'pending'}
 											<span class={`block ${capable.has(item.kind) ? 'text-ink-muted' : 'text-changed'}`}>
 												{capable.has(item.kind) ? 'Waiting for a worker' : 'No worker for this kind'}
@@ -748,6 +844,20 @@
 															aria-hidden="true"
 														/>{/if}
 													<span class="hidden sm:inline">{item.staged ? 'Stage again' : 'Stage as packs'}</span>
+												</Button>
+											{/if}
+											{#if item.status === 'pending' || item.status === 'leased'}
+												<Button
+													variant="outline"
+													size="sm"
+													disabled={!!cancelling[item.id]}
+													aria-label={`Cancel job ${item.id}`}
+													onclick={() => cancelJob(item.id)}
+												>
+													{#if cancelling[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<BanIcon
+															aria-hidden="true"
+														/>{/if}
+													<span class="hidden sm:inline">Cancel</span>
 												</Button>
 											{/if}
 											{#if item.status === 'failed'}
@@ -826,6 +936,27 @@
 			</div>
 		{:else if detail}
 			{@const item = detail.item}
+			{#if item.status === 'pending' || item.status === 'leased'}
+				<section class="flex flex-col gap-3 border-b border-line px-6 py-5" aria-labelledby="sheet-cancel">
+					<h3 id="sheet-cancel" class="m-0 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+						{item.status === 'leased' ? 'Running' : 'Queued'}
+					</h3>
+					<p class="m-0 text-sm text-ink-muted">
+						{item.status === 'leased'
+							? 'Cancelling ends the lease: the worker drops its result at the next heartbeat.'
+							: 'Cancelling keeps the job out of every checkout.'}
+						Retry brings it back.
+					</p>
+					<div>
+						<Button variant="outline" size="lg" disabled={!!cancelling[item.id]} onclick={() => cancelJob(item.id)}>
+							{#if cancelling[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<BanIcon
+									aria-hidden="true"
+								/>{/if}
+							Cancel job {item.id}
+						</Button>
+					</div>
+				</section>
+			{/if}
 			{#if item.status === 'failed' || item.error}
 				<section class="flex flex-col gap-3 border-b border-line px-6 py-5" aria-labelledby="sheet-error">
 					<h3 id="sheet-error" class="m-0 text-xs font-semibold tracking-wide text-ink-muted uppercase">Error</h3>

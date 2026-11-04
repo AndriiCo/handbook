@@ -7,7 +7,11 @@ if [ $# -eq 0 ]; then
   ssh plant '
     R=~/apostille-pipeline
     echo "== queue: $(ls $R/queue/*.json 2>/dev/null | wc -l | tr -d " ") | running: $(ls $R/running/*.json 2>/dev/null | wc -l | tr -d " ") | done: $(ls $R/done/*.json 2>/dev/null | wc -l | tr -d " ") | failed: $(ls $R/failed/*.json 2>/dev/null | wc -l | tr -d " ") =="
-    pgrep -f "worker.sh loop" >/dev/null && echo "worker: alive" || echo "worker: NOT RUNNING"
+    pgrep -f "worker.sh loop" >/dev/null && echo "pipeline worker: alive" || echo "pipeline worker: NOT RUNNING"
+    W=/srv/scratch/apostille/work
+    pgrep -f "xtask worker --connect" >/dev/null && echo "queue worker: alive" || echo "queue worker: NOT RUNNING"
+    [ -f $W/worker.drain ] && echo "queue worker: draining (exits after its current job)"
+    tail -n 3 $W/worker.log 2>/dev/null | sed "s/^/  /"
     echo "== recent finals =="
     grep -h "\"event\":\"final\"" $R/history.jsonl 2>/dev/null | tail -n 10 || echo "(no history yet)"
   '

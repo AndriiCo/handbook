@@ -17,7 +17,9 @@ add a pack here, run `cargo xtask packs-validate`, then
   backlog ref (V-1…V-19, P3-a/b, F2).
 - Canonical PO-Box fixtures (`40220`/`40234`) must never appear in
   any pack. `PO Box 40228` (usa-wa) is a cited observation from the
-  superseded WA form (V-5), not a fixture.
+  superseded WA form (V-5), not a fixture. A cited, staff-accepted
+  fact may still carry WA's real PO Box 40234 (specs/README.md
+  resolution 9, amended 2026-11-03); packs never do.
 - Research traffic (fetching any `watch[].uri`) originates ONLY from
   the prod IPs per `docs/ops/deploy.md` — never from dev machines.
 

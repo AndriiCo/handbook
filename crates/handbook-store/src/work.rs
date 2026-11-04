@@ -27,6 +27,13 @@ pub const SWEEP_ACTOR: &str = "work-sweep";
 /// Longest error / audit reason kept (bytes, cut on a char boundary).
 const MAX_REASON: usize = 500;
 
+/// First wait before a retryable worker failure is leased again; it
+/// doubles per attempt up to [`RETRY_MAX_SECS`], so a rate limit does
+/// not burn every attempt in seconds.
+pub const RETRY_BASE_SECS: i64 = 60;
+/// Longest wait between attempts.
+pub const RETRY_MAX_SECS: i64 = 30 * 60;
+
 /// Open (creating if missing) the work-queue database. Same PRAGMAs
 /// as [`crate::db::open`] (WAL, busy timeout, foreign keys).
 pub fn open(store: &Store) -> Result<Connection> {
@@ -68,6 +75,12 @@ CREATE TABLE IF NOT EXISTS work_item(
   CHECK((status = 'leased') = (lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_work_item_status ON work_item(status, id);
+-- A requeued item waits until not_before (retry backoff). Its own table:
+-- the ship rails refuse ALTER on work_item.
+CREATE TABLE IF NOT EXISTS work_retry_after(
+  item_id INTEGER PRIMARY KEY,        -- work_item.id
+  not_before INTEGER NOT NULL         -- unix seconds
+);
 CREATE TABLE IF NOT EXISTS audit(
   id INTEGER PRIMARY KEY,
   at INTEGER NOT NULL,
@@ -116,6 +129,8 @@ pub struct WorkItem {
     pub created_by: String,
     pub created_at: i64,
     pub updated_at: i64,
+    /// A requeued item is not leased before this (retry backoff).
+    pub retry_after: Option<i64>,
 }
 
 impl WorkItem {
@@ -177,7 +192,9 @@ impl FailOutcome {
 
 const COLUMNS: &str = "id, kind, payload_json, status, lease_owner, lease_expires_at, attempts,
      max_attempts, result_sha256, result_bytes, result_content_type, summary_json, error,
-     created_by, created_at, updated_at";
+     created_by, created_at, updated_at,
+     (SELECT not_before FROM work_retry_after r
+      WHERE r.item_id = work_item.id AND work_item.status = 'pending')";
 
 fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkItem> {
     let sha: Option<String> = row.get(8)?;
@@ -202,7 +219,21 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkItem> {
         created_by: row.get(13)?,
         created_at: row.get(14)?,
         updated_at: row.get(15)?,
+        retry_after: row.get(16)?,
     })
+}
+
+/// Wait before attempt `attempts + 1` after a retryable failure.
+pub fn retry_delay(attempts: i64) -> i64 {
+    let doublings = (attempts - 1).clamp(0, 16) as u32;
+    (RETRY_BASE_SECS << doublings).min(RETRY_MAX_SECS)
+}
+
+/// Drop any backoff for `id` (it finished, failed for good, or staff
+/// acted on it).
+fn clear_retry(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM work_retry_after WHERE item_id = ?1", [id])?;
+    Ok(())
 }
 
 fn audit(
@@ -313,14 +344,19 @@ pub fn checkout(conn: &Connection, req: &Checkout<'_>) -> Result<Option<WorkItem
     }
     in_transaction(conn, || {
         sweep_expired(conn, req.now)?;
-        let marks = vec!["?"; req.kinds.len()].join(", ");
+        let marks: Vec<String> = (2..req.kinds.len() + 2).map(|i| format!("?{i}")).collect();
+        let params = std::iter::once(&req.now as &dyn rusqlite::ToSql)
+            .chain(req.kinds.iter().map(|k| k as &dyn rusqlite::ToSql));
         let id: Option<i64> = conn
             .query_row(
                 &format!(
-                    "SELECT id FROM work_item WHERE status = 'pending' AND kind IN ({marks})
-                     ORDER BY id LIMIT 1"
+                    "SELECT id FROM work_item WHERE status = 'pending' AND kind IN ({})
+                       AND NOT EXISTS (SELECT 1 FROM work_retry_after r
+                                       WHERE r.item_id = work_item.id AND r.not_before > ?1)
+                     ORDER BY id LIMIT 1",
+                    marks.join(", ")
                 ),
-                rusqlite::params_from_iter(req.kinds.iter()),
+                rusqlite::params_from_iter(params),
                 |row| row.get(0),
             )
             .optional()?;
@@ -333,6 +369,7 @@ pub fn checkout(conn: &Connection, req: &Checkout<'_>) -> Result<Option<WorkItem
              WHERE id = ?1",
             rusqlite::params![id, req.owner, req.now + req.lease_secs, req.now],
         )?;
+        clear_retry(conn, id)?;
         let item = get_inner(conn, id)?.expect("row leased above");
         audit(
             conn,
@@ -438,7 +475,17 @@ pub fn fail(
              WHERE id = ?1",
             rusqlite::params![id, outcome.status(), clip(error), now],
         )?;
-        let reason = format!("{}: {error}", outcome.status());
+        let reason = if outcome == FailOutcome::Requeued {
+            let wait = retry_delay(attempts);
+            conn.execute(
+                "INSERT INTO work_retry_after(item_id, not_before) VALUES (?1, ?2)
+                 ON CONFLICT(item_id) DO UPDATE SET not_before = excluded.not_before",
+                rusqlite::params![id, now + wait],
+            )?;
+            format!("pending (retry in {wait}s): {error}")
+        } else {
+            format!("failed: {error}")
+        };
         audit(conn, now, actor, "work_fail", id, &reason)?;
         Ok(Some(outcome))
     })
@@ -473,9 +520,71 @@ pub fn retry(conn: &Connection, id: i64, actor: &str, now: i64) -> Result<bool> 
             rusqlite::params![id, now],
         )?;
         if changed == 1 {
+            clear_retry(conn, id)?;
             audit(conn, now, actor, "work_retry", id, "staff retry")?;
         }
         Ok(changed == 1)
+    })
+}
+
+/// Staff cancel: a `pending` or `leased` item ends `failed` ("cancelled
+/// by …") and is never leased again; a worker still running it loses
+/// the lease at its next heartbeat. `false` for any other status.
+pub fn cancel(conn: &Connection, id: i64, actor: &str, now: i64) -> Result<bool> {
+    in_transaction(conn, || {
+        let reason = format!("cancelled by {actor}");
+        let changed = conn.execute(
+            "UPDATE work_item SET status = 'failed', lease_owner = NULL, lease_expires_at = NULL,
+                    error = ?2, updated_at = ?3
+             WHERE id = ?1 AND status IN ('pending', 'leased')",
+            rusqlite::params![id, clip(&reason), now],
+        )?;
+        if changed == 1 {
+            clear_retry(conn, id)?;
+            audit(conn, now, actor, "work_cancel", id, &reason)?;
+        }
+        Ok(changed == 1)
+    })
+}
+
+/// End a lease held by `owner` that has run longer than `max_secs`
+/// since its checkout: the item fails for good ("ran over …") and
+/// `true` comes back, so the caller answers the heartbeat `lease_lost`.
+/// `false` while the job is inside its limit (or the lease is not
+/// `owner`'s).
+pub fn end_if_overrun(
+    conn: &Connection,
+    id: i64,
+    owner: &str,
+    max_secs: i64,
+    now: i64,
+) -> Result<bool> {
+    in_transaction(conn, || {
+        let leased_at: Option<i64> = conn
+            .query_row(
+                "SELECT (SELECT max(at) FROM audit WHERE entity = 'work_item'
+                           AND entity_id = w.id AND action = 'work_checkout')
+                 FROM work_item w WHERE w.id = ?1 AND w.status = 'leased' AND w.lease_owner = ?2",
+                rusqlite::params![id, owner],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        let Some(leased_at) = leased_at else {
+            return Ok(false);
+        };
+        if now - leased_at <= max_secs {
+            return Ok(false);
+        }
+        let reason = format!("ran over its {} min limit", (max_secs + 59) / 60);
+        conn.execute(
+            "UPDATE work_item SET status = 'failed', lease_owner = NULL, lease_expires_at = NULL,
+                    error = ?2, updated_at = ?3
+             WHERE id = ?1",
+            rusqlite::params![id, reason, now],
+        )?;
+        audit(conn, now, SWEEP_ACTOR, "work_timeout", id, &reason)?;
+        Ok(true)
     })
 }
 
@@ -756,9 +865,19 @@ mod tests {
             fail(&conn, id, "w:1", "w", "boom", true, 101).unwrap(),
             None
         );
-        checkout(&conn, &lease("w:2", &kinds, 102)).unwrap();
+        // Backing off: not leased again until 101 + 60.
+        assert!(
+            checkout(&conn, &lease("w:2", &kinds, 102))
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(get(&conn, id).unwrap().unwrap().retry_after, Some(161));
+        checkout(&conn, &lease("w:2", &kinds, 161))
+            .unwrap()
+            .unwrap();
+        assert_eq!(get(&conn, id).unwrap().unwrap().retry_after, None);
         assert_eq!(
-            fail(&conn, id, "w:2", "w", "boom again", true, 103).unwrap(),
+            fail(&conn, id, "w:2", "w", "boom again", true, 163).unwrap(),
             Some(FailOutcome::Failed)
         );
         let item = get(&conn, id).unwrap().unwrap();
@@ -772,6 +891,67 @@ mod tests {
             fail(&conn, id2, "w:3", "w", "bad payload", false, 106).unwrap(),
             Some(FailOutcome::Failed)
         );
+    }
+
+    #[test]
+    fn retry_delay_doubles_and_caps() {
+        let waits: Vec<i64> = (1..=7).map(retry_delay).collect();
+        assert_eq!(waits, [60, 120, 240, 480, 960, 1800, 1800]);
+    }
+
+    #[test]
+    fn staff_cancel_ends_pending_and_leased_items() {
+        let (_dir, conn) = fresh();
+        let kinds = vec!["scrape.urls".to_string()];
+        let leased = add(&conn, "scrape.urls", 3, 100);
+        let pending = add(&conn, "scrape.urls", 3, 100);
+        let first = checkout(&conn, &lease("w:1", &kinds, 101))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.id, leased);
+        for id in [leased, pending] {
+            assert!(cancel(&conn, id, "staff-1", 102).unwrap());
+            let item = get(&conn, id).unwrap().unwrap();
+            assert_eq!(
+                (item.status.as_str(), item.error.as_deref()),
+                ("failed", Some("cancelled by staff-1"))
+            );
+        }
+        // The worker loses the lease and nothing is leased again.
+        assert_eq!(heartbeat(&conn, leased, "w:1", 300, 103).unwrap(), None);
+        assert!(
+            checkout(&conn, &lease("w:2", &kinds, 104))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            !cancel(&conn, pending, "staff-1", 105).unwrap(),
+            "already failed"
+        );
+        assert!(actions(&conn, pending).contains(&"work_cancel".to_string()));
+    }
+
+    #[test]
+    fn a_lease_that_runs_over_its_limit_fails() {
+        let (_dir, conn) = fresh();
+        let kinds = vec!["scrape.urls".to_string()];
+        let id = add(&conn, "scrape.urls", 3, 100);
+        checkout(&conn, &lease("w:1", &kinds, 100))
+            .unwrap()
+            .unwrap();
+        assert!(!end_if_overrun(&conn, id, "w:1", 600, 700).unwrap());
+        assert!(
+            !end_if_overrun(&conn, id, "w:2", 600, 701).unwrap(),
+            "not w:2's lease"
+        );
+        assert!(end_if_overrun(&conn, id, "w:1", 600, 701).unwrap());
+        let item = get(&conn, id).unwrap().unwrap();
+        assert_eq!(
+            (item.status.as_str(), item.error.as_deref()),
+            ("failed", Some("ran over its 10 min limit"))
+        );
+        assert_eq!(heartbeat(&conn, id, "w:1", 300, 702).unwrap(), None);
+        assert!(!end_if_overrun(&conn, id, "w:1", 600, 703).unwrap());
     }
 
     #[test]

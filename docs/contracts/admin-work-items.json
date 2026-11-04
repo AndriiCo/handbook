@@ -20,7 +20,8 @@
             "EG"
           ]
         },
-        "staged": false
+        "staged": false,
+        "retry_after": null
       },
       {
         "id": 6,
@@ -48,11 +49,13 @@
             "https://example.com/synthetic/1"
           ]
         },
-        "staged": false
+        "staged": false,
+        "retry_after": null
       }
     ],
     "workers": [
       {
+        "conn": 1,
         "name": "plant",
         "capabilities": [
           "research.nonparty",
@@ -60,7 +63,9 @@
           "eval.gold",
           "precheck.glimmer"
         ],
-        "version": "0.1.0",
+        "version": "0.1.0+1bda381",
+        "version_matches": true,
+        "identity": "named",
         "connected_at": 1793750000,
         "last_seen_at": 1793750460,
         "job_id": 7
@@ -74,7 +79,8 @@
           "countries": [
             "EG"
           ]
-        }
+        },
+        "max_runtime_secs": 28800
       }
     ],
     "counts": {
@@ -124,7 +130,8 @@
           "https://example.com/synthetic/1"
         ]
       },
-      "staged": false
+      "staged": false,
+      "retry_after": null
     },
     "audit": [
       {
@@ -158,5 +165,16 @@
       "EG"
     ],
     "count": 1
+  },
+  "cancel_response": {
+    "id": 7,
+    "status": "failed"
+  },
+  "token_request": {
+    "name": "plant"
+  },
+  "token_response": {
+    "name": "plant",
+    "token": "w1.plant.0000000000000000000000000000000000000000000000000000000000000000"
   }
 }

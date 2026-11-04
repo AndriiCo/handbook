@@ -63,6 +63,9 @@ pub const IDLE_RETRY_SECS: i64 = 15;
 const HELLO_TIMEOUT_SECS: u64 = 10;
 /// Server ping cadence (keeps NATs from dropping the socket).
 const PING_SECS: u64 = 30;
+/// A socket with no inbound frame (pongs included) for this long is
+/// closed; the worker reconnects if it is alive.
+const IDLE_SECS: u64 = 3 * PING_SECS;
 
 /// One job kind the queue accepts. The plant handler registry
 /// (`xtask/src/worker/`) must offer the same names.
@@ -71,6 +74,9 @@ pub(crate) struct KindInfo {
     pub about: &'static str,
     /// Example payload (JSON) the admin page prefills.
     pub example: &'static str,
+    /// Longest a lease may run from checkout; past it the next
+    /// heartbeat answers `lease_lost` and the item fails for good.
+    pub max_runtime_secs: i64,
 }
 
 pub(crate) const KINDS: &[KindInfo] = &[
@@ -79,6 +85,7 @@ pub(crate) const KINDS: &[KindInfo] = &[
         about: "Legalization packs for UN members outside the Apostille Convention: \
                 Spark finds the DOS and MFA pages, every value is quote-checked.",
         example: r#"{"countries": ["EG"], "limit": 1}"#,
+        max_runtime_secs: 8 * 3600,
     },
     KindInfo {
         kind: "scrape.urls",
@@ -87,21 +94,40 @@ pub(crate) const KINDS: &[KindInfo] = &[
             r#"{"urls": ["https://www.hcch.net/en/instruments/conventions/"#,
             r#"status-table/?cid=41"]}"#
         ),
+        max_runtime_secs: 3600,
     },
     KindInfo {
         kind: "eval.gold",
-        about: "Grade drafts on the gold set and return quality.json.",
-        example: r#"{"live": true, "planted": true}"#,
+        about: "Grade drafts on the gold set and return quality.json. \
+                Replays recorded drafts; \"live\": true drafts through the Meta API \
+                (needs META_API_KEY in worker.env).",
+        example: r#"{"live": false, "planted": true}"#,
+        max_runtime_secs: 3 * 3600,
     },
     KindInfo {
         kind: "precheck.glimmer",
         about: "Self-hosted Glimmer precheck on the plant GPU.",
         example: "{}",
+        max_runtime_secs: 30 * 60,
     },
 ];
 
 fn known_kind(kind: &str) -> bool {
     KINDS.iter().any(|k| k.kind == kind)
+}
+
+/// Time limit for `kind` (the longest one for a kind no longer listed).
+fn max_runtime(kind: &str) -> i64 {
+    KINDS.iter().find(|k| k.kind == kind).map_or_else(
+        || {
+            KINDS
+                .iter()
+                .map(|k| k.max_runtime_secs)
+                .max()
+                .unwrap_or(3600)
+        },
+        |k| k.max_runtime_secs,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +239,9 @@ struct Seen {
     connected_at: i64,
     last_seen_at: i64,
     job_id: Option<i64>,
+    /// `shared` (the `worker.token` itself) or `named` (a token minted
+    /// for this worker name); empty until `hello`.
+    identity: &'static str,
 }
 
 static WORKERS: std::sync::LazyLock<Mutex<HashMap<u64, Seen>>> =
@@ -241,6 +270,7 @@ impl Slot {
                 connected_at: now,
                 last_seen_at: now,
                 job_id: None,
+                identity: "",
             },
         );
         Some(Self(id))
@@ -266,17 +296,30 @@ impl Drop for Slot {
 
 fn connected_workers() -> Vec<Value> {
     let workers = WORKERS.lock().expect("worker registry poisoned");
-    let mut rows: Vec<&Seen> = workers.values().filter(|s| !s.name.is_empty()).collect();
-    rows.sort_by_key(|s| s.connected_at);
+    let mut rows: Vec<(&u64, &Seen)> = workers.iter().filter(|(_, s)| !s.name.is_empty()).collect();
+    rows.sort_by_key(|(conn, s)| (s.connected_at, **conn));
     rows.iter()
-        .map(|s| {
+        .map(|(conn, s)| {
             json!({
-                "name": s.name, "capabilities": s.capabilities, "version": s.version,
+                "conn": conn, "name": s.name, "capabilities": s.capabilities,
+                "version": s.version, "version_matches": version_matches(&s.version, env!("BUILD_SHA")),
+                "identity": s.identity,
                 "connected_at": s.connected_at, "last_seen_at": s.last_seen_at,
                 "job_id": s.job_id,
             })
         })
         .collect()
+}
+
+/// Whether a worker's `<semver>+<sha>` names this server's build.
+/// `None` when either side has no SHA (a dev build, an old worker).
+fn version_matches(worker: &str, server_sha: &str) -> Option<bool> {
+    let theirs = worker.split_once('+').map(|(_, sha)| sha.trim())?;
+    let known = |sha: &str| sha.len() >= 7 && sha.bytes().all(|b| b.is_ascii_hexdigit());
+    if !known(theirs) || !known(server_sha) {
+        return None;
+    }
+    Some(theirs.starts_with(server_sha) || server_sha.starts_with(theirs))
 }
 
 // ---------------------------------------------------------------------------
@@ -309,36 +352,126 @@ fn token_matches(presented: &str, expected: &[u8]) -> bool {
         == 0
 }
 
-/// Check the bearer token against the sealed `worker.token` row:
-/// `None` admits, `Some(response)` is the refusal to send. Read per
-/// upgrade, so a rotation in `/config` applies at the next connection
-/// without a restart.
-fn refusal(state: &AppState, headers: &HeaderMap) -> Option<Response> {
-    let unconfigured = || {
-        Some(json_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "worker token not configured",
-        ))
-    };
+/// HMAC-SHA256 (RFC 2104) over `sha2`.
+fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
+    let mut block = [0u8; 64];
+    if key.len() > 64 {
+        block[..32].copy_from_slice(&Sha256::digest(key));
+    } else {
+        block[..key.len()].copy_from_slice(key);
+    }
+    let pad = |byte: u8| block.map(|b| b ^ byte);
+    let inner = Sha256::new()
+        .chain_update(pad(0x36))
+        .chain_update(msg)
+        .finalize();
+    Sha256::new()
+        .chain_update(pad(0x5c))
+        .chain_update(inner)
+        .finalize()
+        .into()
+}
+
+/// The token for one named worker: `w1.<name>.<hex HMAC>` keyed by the
+/// sealed `worker.token`, so rotating that secret revokes every named
+/// token too. Minted on the Work page; admits only `name` at `hello`.
+pub(crate) fn named_token(secret: &[u8], name: &str) -> String {
+    let mac = hmac_sha256(secret, format!("worker-name:{name}").as_bytes());
+    let hex: String = mac.iter().map(|b| format!("{b:02x}")).collect();
+    format!("w1.{name}.{hex}")
+}
+
+/// Who a presented token speaks for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Identity {
+    /// The shared `worker.token`: any worker name.
+    Shared,
+    /// A [`named_token`]: this name only.
+    Named(String),
+}
+
+impl Identity {
+    fn label(&self) -> &'static str {
+        match self {
+            Identity::Shared => "shared",
+            Identity::Named(_) => "named",
+        }
+    }
+}
+
+fn identify(presented: &str, secret: &[u8]) -> Option<Identity> {
+    if token_matches(presented, secret) {
+        return Some(Identity::Shared);
+    }
+    let name = presented.strip_prefix("w1.")?.split_once('.')?.0;
+    (valid_worker_name(name) && token_matches(presented, named_token(secret, name).as_bytes()))
+        .then(|| Identity::Named(name.to_string()))
+}
+
+/// Why a token check could not admit (a response only at the edge).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Refused {
+    /// No usable `worker.token` row (missing, short, or no KEK).
+    Unconfigured,
+    /// The store did not open.
+    Store,
+    /// A token was configured but the presented one matched nothing.
+    Unauthorized,
+}
+
+impl Refused {
+    fn response(self) -> Response {
+        match self {
+            Refused::Unconfigured => json_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "worker token not configured",
+            ),
+            Refused::Store => store_unavailable(),
+            Refused::Unauthorized => json_error(StatusCode::UNAUTHORIZED, "unauthorized"),
+        }
+    }
+}
+
+/// The sealed `worker.token`.
+fn worker_secret(state: &AppState) -> Result<Vec<u8>, Refused> {
     let Some(kek) = state.kek.as_deref() else {
-        return unconfigured();
+        return Err(Refused::Unconfigured);
     };
     let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
-        return Some(store_unavailable());
+        return Err(Refused::Store);
     };
-    let expected = match config::get_secret_for_job(&conn, kek, config::keys::WORKER_TOKEN) {
-        Ok(Some(bytes)) if bytes.len() >= MIN_TOKEN_LEN => bytes,
-        Ok(_) => return unconfigured(),
+    match config::get_secret_for_job(&conn, kek, config::keys::WORKER_TOKEN) {
+        Ok(Some(bytes)) if bytes.len() >= MIN_TOKEN_LEN => Ok(bytes),
+        Ok(_) => Err(Refused::Unconfigured),
         Err(e) => {
             tracing::warn!("worker ws: read worker.token: {e}");
-            return unconfigured();
+            Err(Refused::Unconfigured)
         }
-    };
-    match bearer(headers) {
-        Some(presented) if token_matches(presented, &expected) => None,
-        _ => {
+    }
+}
+
+/// A socket's credentials: who it speaks for, and the digest of the
+/// secret it was checked against (a rotation changes it).
+#[derive(Debug, Clone)]
+struct Admitted {
+    identity: Identity,
+    secret_digest: [u8; 32],
+}
+
+/// Check the bearer token against the sealed `worker.token` row (the
+/// shared token, or a name's [`named_token`]). Read per upgrade, so a
+/// rotation in `/config` applies at the next connection, and open
+/// sockets re-check it on every ping.
+fn admit(state: &AppState, headers: &HeaderMap) -> Result<Admitted, Refused> {
+    let secret = worker_secret(state)?;
+    match bearer(headers).and_then(|presented| identify(presented, &secret)) {
+        Some(identity) => Ok(Admitted {
+            identity,
+            secret_digest: Sha256::digest(&secret).into(),
+        }),
+        None => {
             tracing::warn!("worker ws upgrade refused: bad or missing token");
-            Some(json_error(StatusCode::UNAUTHORIZED, "unauthorized"))
+            Err(Refused::Unauthorized)
         }
     }
 }
@@ -354,15 +487,16 @@ async fn ws_upgrade(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    if let Some(denied) = refusal(&state, &headers) {
-        return denied;
-    }
+    let admitted = match admit(&state, &headers) {
+        Ok(admitted) => admitted,
+        Err(refused) => return refused.response(),
+    };
     let Some(slot) = Slot::acquire(peer.ip()) else {
         return json_error(StatusCode::TOO_MANY_REQUESTS, "too many worker sockets");
     };
     ws.max_message_size(MAX_FRAME_BYTES)
         .max_frame_size(MAX_FRAME_BYTES)
-        .on_upgrade(move |socket| run_socket(state, socket, slot))
+        .on_upgrade(move |socket| run_socket(state, socket, slot, admitted))
 }
 
 /// The authenticated worker on one socket.
@@ -387,7 +521,7 @@ fn valid_worker_name(name: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
-async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot) {
+async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot, admitted: Admitted) {
     let hello = tokio::time::timeout(Duration::from_secs(HELLO_TIMEOUT_SECS), socket.recv()).await;
     let session = match hello {
         Ok(Some(Ok(Message::Text(text)))) => match serde_json::from_str(text.as_str()) {
@@ -396,12 +530,24 @@ async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot) {
                 capabilities,
                 version,
             }) if valid_worker_name(&worker) => {
+                if let Identity::Named(name) = &admitted.identity
+                    && *name != worker
+                {
+                    let frame = ServerFrame::error(
+                        "bad_frame",
+                        &format!("this token is for worker {name}"),
+                        None,
+                    );
+                    let _ = socket.send(frame.to_message()).await;
+                    return;
+                }
                 let capabilities: Vec<String> =
                     capabilities.into_iter().filter(|k| known_kind(k)).collect();
                 slot.update(|seen| {
                     seen.name = worker.clone();
                     seen.capabilities = capabilities.clone();
                     seen.version = version.chars().take(64).collect();
+                    seen.identity = admitted.identity.label();
                 });
                 Session {
                     name: worker,
@@ -429,14 +575,32 @@ async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot) {
     tracing::info!(worker = %session.name, "worker connected");
     let mut ping = tokio::time::interval(Duration::from_secs(PING_SECS));
     ping.tick().await;
+    let mut heard = tokio::time::Instant::now();
     loop {
         tokio::select! {
             _ = ping.tick() => {
+                if heard.elapsed() > Duration::from_secs(IDLE_SECS) {
+                    tracing::info!(worker = %session.name, "worker silent for {IDLE_SECS}s; closing");
+                    break;
+                }
+                let check = state.clone();
+                let rotated = tokio::task::spawn_blocking(move || {
+                    worker_secret(&check).map(|s| <[u8; 32]>::from(Sha256::digest(&s)))
+                })
+                .await
+                .is_ok_and(|now| now.ok() != Some(admitted.secret_digest));
+                if rotated {
+                    tracing::info!(worker = %session.name, "worker.token rotated; closing");
+                    let frame = ServerFrame::error("unauthorized", "worker token rotated", None);
+                    let _ = socket.send(frame.to_message()).await;
+                    break;
+                }
                 if socket.send(Message::Ping(Bytes::new())).await.is_err() {
                     break;
                 }
             }
             msg = socket.recv() => {
+                heard = tokio::time::Instant::now();
                 let reply = match msg {
                     Some(Ok(Message::Text(text))) => {
                         let (state, session) = (state.clone(), session.clone());
@@ -516,7 +680,25 @@ fn handle_frame(state: &AppState, session: &Session, text: &str) -> ServerFrame 
             }
         }
         ClientFrame::Heartbeat { id, lease } => {
-            match work::heartbeat(&conn, id, &session.owner(&lease), LEASE_SECS, now) {
+            let owner = session.owner(&lease);
+            let limit = work::get(&conn, id)
+                .ok()
+                .flatten()
+                .map(|item| max_runtime(&item.kind));
+            if let Some(limit) = limit {
+                match work::end_if_overrun(&conn, id, &owner, limit, now) {
+                    Ok(true) => {
+                        return ServerFrame::error(
+                            "lease_lost",
+                            "job ran over its time limit",
+                            Some(id),
+                        );
+                    }
+                    Ok(false) => {}
+                    Err(_) => return store_err(id),
+                }
+            }
+            match work::heartbeat(&conn, id, &owner, LEASE_SECS, now) {
                 Ok(Some(lease_expires_at)) => ServerFrame::Lease {
                     id,
                     lease_expires_at,
@@ -671,6 +853,7 @@ fn item_json(item: &work::WorkItem, staged: bool) -> Value {
         "summary": item.summary_json.as_deref().and_then(|s| serde_json::from_str::<Value>(s).ok()),
         "payload": serde_json::from_str::<Value>(&item.payload_json).unwrap_or(json!({})),
         "staged": staged,
+        "retry_after": item.retry_after,
     })
 }
 
@@ -707,6 +890,7 @@ async fn list(
             json!({
                 "kind": k.kind, "about": k.about,
                 "example": serde_json::from_str::<Value>(k.example).unwrap_or(json!({})),
+                "max_runtime_secs": k.max_runtime_secs,
             })
         })
         .collect();
@@ -852,6 +1036,54 @@ async fn retry(auth: AdminAuth, State(state): State<AppState>, Path(id): Path<i6
     }
 }
 
+#[derive(Deserialize)]
+struct MintBody {
+    name: String,
+}
+
+/// `POST /apostille/api/v1/admin/workers/token {name}`: a token that
+/// admits only `name` (shown once; rotate `worker.token` to revoke).
+/// Needs a fresh step-up, like other credential changes.
+async fn mint_token(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    Json(body): Json<MintBody>,
+) -> Response {
+    if !valid_worker_name(&body.name) {
+        return json_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "worker names are 1-32 of a-z, 0-9 and -",
+        );
+    }
+    let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
+        return store_unavailable();
+    };
+    let ages = crate::admin::step_up_ages(&conn, &auth.user, unix_now());
+    if !ages.fresh {
+        return crate::admin::step_up_refusal(&auth.user, &ages);
+    }
+    let secret = match worker_secret(&state) {
+        Ok(secret) => secret,
+        Err(refused) => return refused.response(),
+    };
+    tracing::info!(worker = %body.name, "named worker token minted");
+    Json(json!({"name": body.name, "token": named_token(&secret, &body.name)})).into_response()
+}
+
+async fn cancel(auth: AdminAuth, State(state): State<AppState>, Path(id): Path<i64>) -> Response {
+    let Some(conn) = open_work(&state) else {
+        return store_unavailable();
+    };
+    match work::cancel(&conn, id, &auth.user.user_id, unix_now()) {
+        Ok(true) => Json(json!({"id": id, "status": "failed"})).into_response(),
+        Ok(false) => match work::get(&conn, id) {
+            Ok(None) => json_error(StatusCode::NOT_FOUND, "no such work item"),
+            _ => json_error(StatusCode::CONFLICT, "only pending or leased items cancel"),
+        },
+        Err(_) => store_unavailable(),
+    }
+}
+
 /// A pack id safe as a file stem (`EG`, `usa-wa`): 1-64 of `[A-Za-z0-9_-]`.
 fn valid_pack_id(id: &str) -> bool {
     (1..=64).contains(&id.len())
@@ -984,6 +1216,11 @@ pub fn admin_router(state: AppState) -> Router {
             get(result),
         )
         .route("/apostille/api/v1/admin/work-items/{id}/retry", post(retry))
+        .route(
+            "/apostille/api/v1/admin/work-items/{id}/cancel",
+            post(cancel),
+        )
+        .route("/apostille/api/v1/admin/workers/token", post(mint_token))
         .route(
             "/apostille/api/v1/admin/work-items/{id}/stage-packs",
             post(stage_packs),
@@ -1399,6 +1636,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn staff_cancel_ends_the_workers_lease() {
+        let fx = Fixture::new(Some(TOKEN));
+        let addr = fx.serve_public();
+        let uri = "/apostille/api/v1/admin/work-items";
+        let body = json!({"kind": "scrape.urls", "payload": {"urls": []}});
+        let (_, created) = call_json(fx.admin(), staff("POST", uri, Some(body))).await;
+        let id = created["id"].as_i64().unwrap();
+        let mut ws = connect(addr, Some(TOKEN)).await.unwrap();
+        hello(&mut ws, "plant-c").await;
+        let job = send(&mut ws, json!({"type": "checkout"})).await;
+        let lease = job["lease"].as_str().unwrap().to_string();
+        let cancel = format!("{uri}/{id}/cancel");
+        let (status, cancelled) = call_json(fx.admin(), staff("POST", &cancel, None)).await;
+        assert_eq!(
+            (status, cancelled["status"].as_str()),
+            (StatusCode::OK, Some("failed"))
+        );
+        let beat = send(
+            &mut ws,
+            json!({"type": "heartbeat", "id": id, "lease": lease}),
+        )
+        .await;
+        assert_eq!(beat["code"], "lease_lost");
+        let (status, _) = call_json(fx.admin(), staff("POST", &cancel, None)).await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "a failed item does not cancel"
+        );
+        assert_eq!(max_runtime("scrape.urls"), 3600);
+        assert_eq!(
+            max_runtime("gone.kind"),
+            8 * 3600,
+            "unknown kinds get the longest"
+        );
+    }
+
+    #[tokio::test]
+    async fn named_tokens_admit_only_their_worker() {
+        let fx = Fixture::new(Some(TOKEN));
+        let addr = fx.serve_public();
+        let token = named_token(TOKEN.as_bytes(), "plant-b");
+        let mut ws = connect(addr, Some(&token)).await.unwrap();
+        assert_eq!(hello(&mut ws, "plant-b").await["type"], "welcome");
+        let mut ws = connect(addr, Some(&token)).await.unwrap();
+        let refused = hello(&mut ws, "plant-c").await;
+        assert_eq!(refused["code"], "bad_frame", "{refused}");
+        let forged = token.replacen("plant-b", "plant-c", 1);
+        assert_eq!(
+            refused_with(connect(addr, Some(&forged)).await.unwrap_err()),
+            401
+        );
+        let mint = "/apostille/api/v1/admin/workers/token";
+        let (status, minted) = call_json(
+            fx.admin(),
+            staff("POST", mint, Some(json!({"name": "plant-b"}))),
+        )
+        .await;
+        assert_eq!(
+            (status, minted["token"].as_str()),
+            (StatusCode::OK, Some(token.as_str()))
+        );
+        let (status, _) = call_json(
+            fx.admin(),
+            staff("POST", mint, Some(json!({"name": "Bad Name"}))),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[test]
+    fn hmac_and_version_checks() {
+        // RFC 4231 test case 2.
+        let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?");
+        let hex: String = mac.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(
+            hex,
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
+        assert_eq!(version_matches("0.1.0+1bda381c0ffe", "1bda381"), Some(true));
+        assert_eq!(version_matches("0.1.0+deadbee", "1bda381"), Some(false));
+        assert_eq!(version_matches("0.1.0", "1bda381"), None);
+        assert_eq!(version_matches("0.1.0+1bda381", "unknown"), None);
+    }
+
+    #[tokio::test]
     async fn unconfigured_or_short_token_refuses_every_worker() {
         let fx = Fixture::new(None);
         let addr = fx.serve_public();
@@ -1659,6 +1982,7 @@ mod tests {
             created_by: "staff-1".to_string(),
             created_at: 1,
             updated_at: 2,
+            retry_after: None,
         };
         let got = item_json(&item, false);
         let want = seed["list"]["items"][0].as_object().unwrap();

@@ -5,14 +5,15 @@ Copyright (c) 2026 Andrii Co. All rights reserved.
 The "Collective Work" is the Apostille Handbook content: text, data,
 facts, forms, images and documentation, whether in this repository or
 generated from it. The source code is licensed separately under the
-PolyForm Noncommercial License 1.0.0 (see [LICENSE](LICENSE)); that
+PolyForm Noncommercial License 1.0.0 (see [LICENSE.md](LICENSE.md)); that
 license does not cover the Collective Work.
 
 Andrii Co. retains all copyright and other intellectual property rights
 in the Collective Work. No rights are granted except as set out below.
 
-1. You may view the Collective Work for evaluation purposes (including
-   hackathon judging).
+1. You may view the Collective Work, and clone, build and run it locally
+   together with the software in this repository, to evaluate it
+   (including hackathon judging).
 2. Any other use, including copying, modifying, distributing,
    publishing, sublicensing, or creating derivative works of the
    Collective Work, in whole or in part, requires the prior written

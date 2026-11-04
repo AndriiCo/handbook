@@ -26,7 +26,7 @@ use std::time::Instant;
 
 use serde_json::{Value, json};
 
-use super::{JobContext, JobError, JobHandler, JobOutput};
+use super::{JobContext, JobError, JobHandler, JobOutput, WorkerEnv};
 
 const DEFAULT_URL: &str = "http://127.0.0.1:18480/v1";
 
@@ -41,8 +41,9 @@ impl JobHandler for PrecheckGlimmer {
         true
     }
 
-    fn available(&self) -> bool {
-        std::env::var("GLIMMER_MODEL").is_ok_and(|m| !m.trim().is_empty())
+    fn available(&self, env: &WorkerEnv) -> bool {
+        env.get("GLIMMER_MODEL")
+            .is_some_and(|m| !m.trim().is_empty())
     }
 
     fn run(&self, ctx: &JobContext, payload: &Value) -> Result<JobOutput, JobError> {
@@ -238,6 +239,15 @@ mod tests {
             .as_str()
             .unwrap();
         assert_eq!(url, "data:image/png;base64,QUJD");
+    }
+
+    #[test]
+    fn announced_when_worker_env_names_the_model() {
+        let env = WorkerEnv::parse("GLIMMER_MODEL=glimmer-test\n");
+        assert!(PrecheckGlimmer.available(&env));
+        if std::env::var_os("GLIMMER_MODEL").is_none() {
+            assert!(!PrecheckGlimmer.available(&WorkerEnv::default()));
+        }
     }
 
     #[test]

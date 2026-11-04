@@ -106,8 +106,9 @@ pub trait JobHandler: Send + Sync {
         false
     }
     /// False keeps the kind out of `hello` capabilities, so its jobs
-    /// stay pending until a worker that can run them connects.
-    fn available(&self) -> bool {
+    /// stay pending until a worker that can run them connects. `env` is
+    /// `worker.env` (falling back to the process environment).
+    fn available(&self, _env: &WorkerEnv) -> bool {
         true
     }
     fn run(&self, ctx: &JobContext, payload: &Value) -> Result<JobOutput, JobError>;
@@ -265,10 +266,16 @@ pub fn run_job(
 }
 
 pub fn run(args: &[String]) {
+    let env_path =
+        flag(args, "env-file").map_or_else(|| home().join(DEFAULT_ENV_FILE), PathBuf::from);
     if args.iter().any(|a| a == "--kinds") {
+        let env = WorkerEnv::load(&env_path).unwrap_or_else(|e| {
+            eprintln!("worker: {e}");
+            WorkerEnv::default()
+        });
         for h in handlers() {
             let gpu = if h.gpu() { " (gpu)" } else { "" };
-            let ready = if h.available() {
+            let ready = if h.available(&env) {
                 ""
             } else {
                 " [not announced]"
@@ -297,8 +304,6 @@ pub fn run(args: &[String]) {
         },
         PathBuf::from,
     );
-    let env_path =
-        flag(args, "env-file").map_or_else(|| home().join(DEFAULT_ENV_FILE), PathBuf::from);
     let gpu_lock =
         flag(args, "gpu-lock").map_or_else(|| home().join(DEFAULT_GPU_LOCK), PathBuf::from);
     let env = WorkerEnv::load(&env_path).unwrap_or_else(|e| {
@@ -322,10 +327,13 @@ pub fn run(args: &[String]) {
     let _singleton = match try_lock(&workdir.join("worker.lock")) {
         Ok(Some(file)) => file,
         Ok(None) => {
-            eprintln!(
-                "worker: already running ({} held)",
-                workdir.join("worker.lock").display()
-            );
+            // Cron starts one every minute: say so only to a person.
+            if std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+                eprintln!(
+                    "worker: already running ({} held)",
+                    workdir.join("worker.lock").display()
+                );
+            }
             return;
         }
         Err(e) => {
@@ -333,18 +341,48 @@ pub fn run(args: &[String]) {
             std::process::exit(1);
         }
     };
+    // A drain left from before this start is stale: this is the new run.
+    let drain = workdir.join("worker.drain");
+    let _ = std::fs::remove_file(&drain);
+    let repo = repo_root();
     let cfg = client::Config {
         url,
         token,
         name: flag(args, "name").unwrap_or_else(|| "plant".to_string()),
         workdir,
         cache_dir,
-        repo: repo_root(),
+        version: version(&repo),
+        repo,
         env,
         gpu_lock,
         once: args.iter().any(|a| a == "--once"),
+        drain,
     };
     client::run_with(&cfg, std::sync::Arc::new(handlers()));
+}
+
+/// `<semver>+<sha>` for `hello`: the `.sha` file `worker-install.sh`
+/// writes into the source tree (plant builds from `git archive`, no
+/// `.git`), else `git rev-parse` in a checkout, else the semver alone.
+fn version(repo: &Path) -> String {
+    let from_file = std::fs::read_to_string(repo.join(".sha")).ok();
+    let from_git = || {
+        std::process::Command::new("git")
+            .current_dir(repo)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    };
+    let sha = from_file
+        .or_else(from_git)
+        .map(|s| s.trim().chars().take(12).collect::<String>())
+        .filter(|s| s.len() >= 7 && s.bytes().all(|b| b.is_ascii_hexdigit()));
+    match sha {
+        Some(sha) => format!("{}+{sha}", env!("CARGO_PKG_VERSION")),
+        None => env!("CARGO_PKG_VERSION").to_string(),
+    }
 }
 
 /// `--run-local <job.json>`: `{kind, payload}` from a file (or `-`

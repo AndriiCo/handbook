@@ -2,7 +2,8 @@
 # worker-install.sh — install or update the plant work-queue worker (P392).
 # Runs on the Mac; the plant side runs over `ssh plant` as the unprivileged
 # user. No root, ever: writes ~/apostille-worker, ~/.config/apostille and
-# /srv/scratch/apostille only (docs/ops/deploy.md § Plant).
+# /srv/scratch/apostille only (docs/ops/deploy.md § Plant). The operator
+# creates /srv/scratch/apostille once, as root (the script says how).
 # Usage: worker-install.sh [--restart] [sha]   (default: HEAD, committed SHAs only)
 # The token file (~/.config/apostille/worker.env) is written by hand once;
 # see ops/plant-pipeline/README.md § Work-queue worker.
@@ -25,6 +26,11 @@ URL="${APOSTILLE_WORKER_URL:-wss://andrii.ai/apostille/api/v1/worker/ws}"
 S=/srv/scratch/apostille
 
 ssh plant "set -euo pipefail
+  if [ ! -d $S ] || [ ! -w $S ]; then
+    echo 'ABORT: $S is missing or not writable by this user. Once, as root on plant:'
+    echo '  sudo mkdir -p $S && sudo chown \$(id -un): $S'
+    exit 2
+  fi
   mkdir -p $S/work $S/meta-cache $S/fetch-cache $S/models $S/target ~/apostille-worker
   mkdir -p ~/.config/apostille && chmod 700 ~/.config/apostille
   if [ -f ~/.config/apostille/worker.env ]; then chmod 600 ~/.config/apostille/worker.env
@@ -44,16 +50,18 @@ git archive --format=tar.gz "$SHA" | ssh plant "set -euo pipefail
   mv ~/apostille-worker/src.new ~/apostille-worker/src
   echo WORKER-BUILD-OK $SHA"
 
-# Cron watchdog (same persistence story as the pipeline worker).
+# Cron watchdog (same persistence story as the pipeline worker);
+# worker-run.sh rotates worker.log and starts the worker.
 ssh plant "( crontab -l 2>/dev/null | grep -v 'apostille-worker'; cat <<CRON
-* * * * * cd \$HOME/apostille-worker/src && $S/target/release/xtask worker --connect $URL >>$S/work/worker.log 2>&1 # apostille-worker
+* * * * * sh \$HOME/apostille-worker/src/ops/plant-pipeline/worker-run.sh $URL # apostille-worker
 CRON
 ) | crontab - && echo CRON-WATCHDOG-OK"
 
 if [ "$RESTART" = 1 ]; then
-  # The running copy keeps the old binary until it exits; cron starts
-  # the new one within a minute. A leased job requeues after 300 s.
-  ssh plant "pkill -f 'xtask worker --connect' && echo WORKER-RESTARTING || echo WORKER-NOT-RUNNING"
+  # Drain, not kill: the running copy finishes and uploads its current
+  # job (if any), removes the file and exits; cron then starts the new
+  # build within a minute.
+  ssh plant "touch $S/work/worker.drain && echo WORKER-DRAINING"
 else
   echo "running worker (if any) keeps the old build; rerun with --restart to switch now"
 fi

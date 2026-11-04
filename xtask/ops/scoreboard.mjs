@@ -50,7 +50,7 @@ const CHECKS = [
   ['GP4', 'Order: stepper, clean at 390 px', gp4],
   ['A2', 'Photo precheck: SAM 3.1 + Muse Spark on a public sample, live', a2],
   ['A5', `Quality numbers from an eval run in the last ${QUALITY_MAX_AGE_H} h, shown on home`, a5],
-  ['S1', 'Submission: OSI licence, README with video link, public repo', s1],
+  ['S1', 'Submission: licence file, README with video link, public repo', s1],
 ];
 
 const { chromium } = loadPlaywright();
@@ -253,7 +253,8 @@ async function a5() {
 async function s1() {
   const problems = [];
   const read = (f) => (existsSync(join(ROOT, f)) ? readFileSync(join(ROOT, f), 'utf8') : '');
-  if (!/MIT License|Apache License/.test(read('LICENSE').slice(0, 400))) problems.push('LICENSE is not MIT or Apache-2.0');
+  const license = read('LICENSE.md');
+  if (!/^# .*licen[cs]e/im.test(license) || !/^Required Notice: /m.test(license)) problems.push('LICENSE.md missing, or has no license heading and Required Notice line');
   const readme = read('README.md');
   if (!/https:\/\/(www\.)?(youtube\.com|youtu\.be|vimeo\.com|loom\.com)\//.test(readme)) problems.push('README has no demo video link');
   if (!/Muse Code/.test(readme)) problems.push('README does not say it was built with Muse Code');
