@@ -126,10 +126,10 @@ customer has been charged.
 Promise words are quoted from the hackathon application text
 (2026-10-26). "Live" means served by the production SHA; "(repo)"
 means merged and shipped but waiting on an operator step or data.
-Production is `0.1.0+20abd03`, scoreboard **8/10** measured
-2026-11-03T23:45Z (`node xtask/ops/scoreboard.mjs`). The red rows:
+Production is `0.1.0+56f0fbb`, scoreboard **8/10** measured
+2026-11-04T07:47Z (`node xtask/ops/scoreboard.mjs`). The red rows:
 - GP3: brand logos not placed.
-- S1: licence, video and repo visibility (operator-owned).
+- S1: demo video link and repo visibility (operator-owned; the licence part passes).
 
 | Promised (application words) | Status | Reason / where it stands |
 |---|---|---|
