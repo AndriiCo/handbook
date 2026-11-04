@@ -5,8 +5,9 @@
 //! session cookie. Every request must name this exact host and port in
 //! `Host` (anti-rebinding); every write must carry the page's CSRF
 //! header and, when sent, a matching `Origin`. Secrets go in and never
-//! come back: the page sees only "set". Each change is saved through
-//! sops at once, so the file on disk is always the encrypted truth.
+//! come back: the page sees only "set". Each change is saved at once,
+//! through sops (or, for the plain local-only `.local/setup.yaml`, as
+//! 0600 YAML), so the file on disk is always the truth.
 //!
 //! The page edits targets and config values, runs the key checks, runs
 //! a target with its phases and log streaming live (SSE), and walks the
@@ -755,9 +756,13 @@ pub fn run(args: &[String], path: &Path) {
     let f = match super::load_or_none(path) {
         Some(f) => f,
         None => {
-            let f = SetupFile::template();
+            let f = super::new_file(path, args);
             file::save(path, &f).unwrap_or_else(|e| super::fail(&e));
-            println!("setup: created {} (sops + age)", path.display());
+            println!(
+                "setup: created {} ({})",
+                path.display(),
+                super::storage_note(path)
+            );
             f
         }
     };

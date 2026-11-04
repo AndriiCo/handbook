@@ -1,6 +1,6 @@
-# apostille-instruct.timer — PROPOSED (prompt 079: enable on prod
-# with apostille-instruct.service once the worker's first live
-# sweeps are reviewed).
+# apostille-instruct.timer — PROVISIONED (TODO E-3: `cargo xtask
+# setup` enables it with apostille-instruct.service when the target's
+# timers name `instruct`, as the setup template's production does).
 #
 # Instruction updates should land within minutes of the evidence:
 # poll every 5 minutes. Persistent: a missed run fires once at

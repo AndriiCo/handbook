@@ -124,6 +124,8 @@ document.getElementById("defaults").addEventListener("change", saveOperator);
 
 function renderTabs() {
   const names = [...Object.keys(S.targets), "shared", "brand", "run"];
+  // A plain local-only file has no staging target: open the first one.
+  if (!names.includes(tab)) tab = Object.keys(S.targets)[0] || "shared";
   const label = n => ({ shared: "Shared config", brand: "Brand & licences", run: "Run" }[n] || n);
   document.getElementById("tabs").replaceChildren(...names.map(n =>
     el("button", { role: "tab", "aria-selected": String(n === tab), onclick: () => { tab = n; renderTabs(); render(); } }, label(n))));

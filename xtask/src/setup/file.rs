@@ -6,6 +6,11 @@
 //! and move the ciphertext into place (0600, directory 0700). The age
 //! recipient comes from the operator's age key (`private/.sops.yaml` is
 //! written on first save).
+//!
+//! One exception needs neither sops nor age: a file under the repo's
+//! git-ignored `.local/` (default [`LOCAL_PATH`]) is plain YAML, 0600,
+//! and may hold local targets only, so nothing that reaches a server is
+//! ever stored unencrypted. It is how the wizard opens on a fresh clone.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -16,6 +21,9 @@ use serde_json::Value;
 
 pub const SCHEMA: u32 = 1;
 pub const DEFAULT_PATH: &str = "private/config.yaml";
+/// The plain local-only setup file (no sops): beside the local store's
+/// file KEK in git-ignored `.local/`, 0600.
+pub const LOCAL_PATH: &str = ".local/setup.yaml";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -192,20 +200,37 @@ pub struct BrandFile {
 }
 
 impl SetupFile {
-    /// A fresh file with the four standard targets and nothing secret.
+    /// The operator's production shape, for the pinned plan tests.
+    #[cfg(test)]
     pub fn template() -> Self {
+        Self::template_for(Some("andrii.ai"))
+    }
+
+    /// A fresh plain file ([`LOCAL_PATH`]): the local target only.
+    pub fn local_template() -> Self {
         let mut targets = BTreeMap::new();
-        targets.insert(
-            "local".to_string(),
-            Target {
-                kind: TargetKind::Local,
-                ports: Some(Ports {
-                    public: 18318,
-                    admin: 18319,
-                }),
-                ..Target::default()
-            },
-        );
+        targets.insert("local".to_string(), Self::local_target());
+        SetupFile {
+            schema: SCHEMA,
+            default_targets: vec!["local".to_string()],
+            targets,
+            ..SetupFile::default()
+        }
+    }
+
+    fn local_target() -> Target {
+        Target {
+            kind: TargetKind::Local,
+            ports: Some(DEFAULT_PORTS),
+            ..Target::default()
+        }
+    }
+
+    /// A fresh sops file with nothing secret: local, docker and staging,
+    /// plus a production server on `host` (`--host`) when one is given.
+    pub fn template_for(host: Option<&str>) -> Self {
+        let mut targets = BTreeMap::new();
+        targets.insert("local".to_string(), Self::local_target());
         targets.insert(
             "docker".to_string(),
             Target {
@@ -231,26 +256,52 @@ impl SetupFile {
                 ..Target::default()
             },
         );
-        targets.insert(
-            "production".to_string(),
-            Target {
-                kind: TargetKind::Server,
-                ssh: Some("andrii.ai".to_string()),
-                public_host: Some("andrii.ai".to_string()),
-                dns: vec![
-                    "andrii.ai".into(),
-                    "admin.andrii.ai".into(),
-                    "www.andrii.ai".into(),
-                ],
-                timers: vec!["watch".into(), "mail".into(), "backup".into()],
-                ..Target::default()
-            },
-        );
+        if let Some(host) = host {
+            targets.insert(
+                "production".to_string(),
+                Target {
+                    kind: TargetKind::Server,
+                    ssh: Some(host.to_string()),
+                    public_host: Some(host.to_string()),
+                    dns: vec![
+                        host.to_string(),
+                        format!("admin.{host}"),
+                        format!("www.{host}"),
+                    ],
+                    timers: vec![
+                        "watch".into(),
+                        "mail".into(),
+                        "instruct".into(),
+                        "backup".into(),
+                    ],
+                    ..Target::default()
+                },
+            );
+        }
         SetupFile {
             schema: SCHEMA,
             default_targets: vec!["local".to_string()],
             targets,
             ..SetupFile::default()
+        }
+    }
+
+    /// A plain file holds local targets only: anything that reaches a
+    /// server keeps its secrets in the sops file.
+    pub fn plain_ok(&self) -> Result<(), String> {
+        let others: Vec<&str> = self
+            .targets
+            .iter()
+            .filter(|(_, t)| t.kind != TargetKind::Local)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        if others.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "a plain setup file holds local targets only; {} need the sops file {DEFAULT_PATH} (install sops and age)",
+                others.join(", ")
+            ))
         }
     }
 
@@ -380,10 +431,12 @@ pub fn derived(target: &Target) -> BTreeMap<String, Value> {
             out.insert("net.admin_port".into(), s(&ports.admin.to_string()));
         }
         TargetKind::Docker | TargetKind::Server => {
+            // `validate` requires public_host on a server; only a docker
+            // rehearsal falls back.
             let host = target
                 .public_host
                 .clone()
-                .unwrap_or_else(|| "andrii.ai".into());
+                .unwrap_or_else(|| "rehearsal.localhost".into());
             out.insert("net.public_host".into(), s(&host));
             out.insert("auth.rp_id".into(), s(&host));
             // The browser's origin carries the published port when it is
@@ -449,7 +502,7 @@ pub fn is_secret(key: &str) -> bool {
         .any(|(k, t)| *k == key && *t == sealed_config::ConfigType::Secret)
 }
 
-fn valid_host(host: &str) -> bool {
+pub fn valid_host(host: &str) -> bool {
     !host.is_empty()
         && host.len() <= 200
         && host
@@ -495,17 +548,39 @@ impl std::fmt::Display for LoadError {
     }
 }
 
+fn absolute(path: &Path) -> Result<PathBuf, String> {
+    if path.is_absolute() {
+        Ok(path.to_path_buf())
+    } else {
+        Ok(std::env::current_dir()
+            .map_err(|e| e.to_string())?
+            .join(path))
+    }
+}
+
+/// True for the plain kind: a path under the repo's `.local/`.
+pub fn is_plain(path: &Path) -> bool {
+    absolute(path).is_ok_and(|abs| abs.starts_with(crate::repo_root().join(".local")))
+}
+
+/// Why sops cannot be used here yet (`None`: sops runs and the age key
+/// exists), so a fresh clone can fall back to the plain local file.
+pub fn sops_missing() -> Option<String> {
+    let runs = Command::new("sops")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !runs {
+        return Some("sops is not installed".to_string());
+    }
+    age_recipient().err()
+}
+
 /// Refuse a setup file git could pick up: inside the repo it must be
 /// ignored and untracked (the `private/` directory is).
 pub fn guard_path(path: &Path) -> Result<(), String> {
     let root = crate::repo_root();
-    let abs = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|e| e.to_string())?
-            .join(path)
-    };
+    let abs = absolute(path)?;
     if !abs.starts_with(&root) {
         return Ok(());
     }
@@ -541,12 +616,15 @@ pub fn guard_path(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Decrypt and parse the setup file.
+/// Decrypt and parse the setup file (or read the plain local one).
 pub fn load(path: &Path) -> Result<SetupFile, LoadError> {
     if !path.exists() {
         return Err(LoadError::NotFound);
     }
     guard_path(path).map_err(LoadError::Other)?;
+    if is_plain(path) {
+        return read_plain(path).map_err(LoadError::Other);
+    }
     let out = Command::new("sops")
         .args(["decrypt", "--input-type", "yaml", "--output-type", "yaml"])
         .arg(path)
@@ -588,7 +666,39 @@ pub fn age_recipient() -> Result<String, String> {
     Ok(recipient)
 }
 
-/// Encrypt and write the setup file (0600; directory 0700).
+/// Parse a plain local file: owner-only, local targets only.
+fn read_plain(path: &Path) -> Result<SetupFile, String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(path)
+            .map_err(|e| format!("{}: {e}", path.display()))?
+            .permissions()
+            .mode();
+        if mode & 0o077 != 0 {
+            return Err(format!(
+                "{} is readable by other users (mode {:o}); run chmod 600 on it",
+                path.display(),
+                mode & 0o777
+            ));
+        }
+    }
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let file: SetupFile = serde_yaml_ng::from_str(&text).map_err(|e| format!("setup file: {e}"))?;
+    file.plain_ok()?;
+    Ok(file)
+}
+
+/// Write `bytes` beside `path` (0600) and move them into place.
+fn write_atomic(dir: &Path, path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let tmp = dir.join(format!(".{}.tmp", std::process::id()));
+    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
+    set_mode(&tmp, 0o600);
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+/// Encrypt and write the setup file (0600; directory 0700). A plain
+/// local file is written as YAML, once [`SetupFile::plain_ok`] holds.
 pub fn save(path: &Path, file: &SetupFile) -> Result<(), String> {
     guard_path(path)?;
     let dir = path
@@ -597,6 +707,11 @@ pub fn save(path: &Path, file: &SetupFile) -> Result<(), String> {
         .unwrap_or_else(|| PathBuf::from("."));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     set_mode(&dir, 0o700);
+    if is_plain(path) {
+        file.plain_ok()?;
+        let yaml = serde_yaml_ng::to_string(file).map_err(|e| e.to_string())?;
+        return write_atomic(&dir, path, yaml.as_bytes());
+    }
     let sops_rules = dir.join(".sops.yaml");
     if !sops_rules.exists() {
         let recipient = age_recipient()?;
@@ -644,11 +759,7 @@ pub fn save(path: &Path, file: &SetupFile) -> Result<(), String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    let tmp = dir.join(format!(".{}.tmp", std::process::id()));
-    std::fs::write(&tmp, &out.stdout).map_err(|e| e.to_string())?;
-    set_mode(&tmp, 0o600);
-    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
-    Ok(())
+    write_atomic(&dir, path, &out.stdout)
 }
 
 #[cfg(unix)]
@@ -721,6 +832,66 @@ mod tests {
             .insert("meta.api_key".into(), Value::String("LLM_1_shared".into()));
         let err = file.validate().unwrap_err().join("; ");
         assert!(err.contains("secrets go under targets"), "{err}");
+    }
+
+    #[test]
+    fn templates_take_the_host_and_plain_files_stay_local() {
+        let none = SetupFile::template_for(None);
+        none.validate().unwrap();
+        assert!(
+            !none.targets.contains_key("production"),
+            "no host, no server"
+        );
+        let ours = SetupFile::template_for(Some("example.org"));
+        ours.validate().unwrap();
+        let prod = ours.target_config("production").unwrap();
+        assert_eq!(
+            prod["acme.domains"],
+            "example.org,admin.example.org,www.example.org"
+        );
+        assert!(
+            ours.targets["production"]
+                .timers
+                .contains(&"instruct".to_string())
+        );
+        let local = SetupFile::local_template();
+        local.validate().unwrap();
+        local.plain_ok().unwrap();
+        assert_eq!(local.targets.len(), 1);
+        let err = ours.plain_ok().unwrap_err();
+        assert!(
+            err.contains("production") && err.contains(DEFAULT_PATH),
+            "{err}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plain_files_are_private_and_round_trip() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("setup.yaml");
+        let mut file = SetupFile::local_template();
+        file.targets.get_mut("local").unwrap().config.insert(
+            "meta.api_key".into(),
+            Value::String("LLM_1_synthetic_local".into()),
+        );
+        let yaml = serde_yaml_ng::to_string(&file).unwrap();
+        write_atomic(dir.path(), &path, yaml.as_bytes()).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert_eq!(read_plain(&path).unwrap(), file);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(read_plain(&path).unwrap_err().contains("chmod 600"));
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let server =
+            serde_yaml_ng::to_string(&SetupFile::template_for(Some("example.org"))).unwrap();
+        std::fs::write(&path, server).unwrap();
+        assert!(
+            read_plain(&path)
+                .unwrap_err()
+                .contains("local targets only")
+        );
     }
 
     #[test]

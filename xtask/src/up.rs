@@ -197,8 +197,7 @@ pub fn run(args: &[String]) {
         check_toolchain();
     }
     if fresh && Path::new(".local").exists() {
-        println!("up: --fresh: removing .local");
-        std::fs::remove_dir_all(".local").unwrap_or_else(|e| fail(&format!("rm .local: {e}")));
+        wipe_local();
     }
     let (xtask, web) = if prebuilt {
         let pair = (prebuilt_bin("xtask"), prebuilt_bin("web"));
@@ -384,6 +383,35 @@ fn assert_repo_root() {
         if !Path::new(marker).exists() {
             fail(&format!("run from the repo root (missing {marker})"));
         }
+    }
+}
+
+/// `--fresh`: empty `.local/`, except a plain local setup file
+/// (`cargo xtask setup` on a machine without sops keeps it there).
+fn wipe_local() {
+    let keep = Path::new(crate::setup::file::LOCAL_PATH);
+    let entries =
+        std::fs::read_dir(".local").unwrap_or_else(|e| fail(&format!("read .local: {e}")));
+    let mut kept = false;
+    for entry in entries {
+        let path = entry
+            .unwrap_or_else(|e| fail(&format!("list .local: {e}")))
+            .path();
+        if path == keep {
+            kept = true;
+            continue;
+        }
+        let gone = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        gone.unwrap_or_else(|e| fail(&format!("rm {}: {e}", path.display())));
+    }
+    if kept {
+        println!("up: --fresh: emptied .local (kept {})", keep.display());
+    } else {
+        println!("up: --fresh: emptied .local");
     }
 }
 
