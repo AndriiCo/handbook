@@ -481,6 +481,186 @@ To get one notice through end to end (fix P3-1 and P3-2 first):
 
 ---
 
+## Setup wizard (`cargo xtask setup wizard`): see and configure the whole system
+
+Requested 2026-11-04. What the wizard does today:
+
+- It is a localhost page (`xtask/src/setup/wizard.rs`, single-file
+  `wizard.html`, 308 lines).
+- It edits targets of four kinds: local, docker, plant, server
+  (`xtask/src/setup/file.rs:53-61`).
+- It sets shared and per-target values, runs the key checks, and
+  streams a target run live.
+- SSH targets need an existing `~/.ssh/config` alias. The machine's
+  architecture is only read at build time (`uname -m`,
+  `xtask/src/setup/build.rs:66`).
+- Brand assets need terms acceptance, then files dropped into
+  `private/brand/` by hand (`xtask/src/setup/brand.rs:1-8`).
+- It needs sops and age before it opens (P1-14).
+
+Ranked by how much each helps a judge or the operator get a working
+system:
+
+- [ ] **W-1** Staff sign-in by email instead of the 32-hex user ID
+  (extends P1-4):
+  - The identifier field becomes
+    `<input type="email" autocomplete="username webauthn">`.
+  - Conditional mediation offers the passkey in autofill, as the
+    customer login already does
+    (`(customer)/login/+page.svelte:177-199`).
+  - Credentials become discoverable, so a passkey works with nothing
+    typed. The hex ID stays internal.
+  - Enrolment (setup key and invite) asks for the email.
+  - Lost-passkey recovery stays an invite from another staffer or the
+    CLI, never an email link.
+
+  *code, M*
+- [ ] **W-2** One-click brand assets: prefilled source URLs, and
+  **Fetch** downloads, unpacks and places each file. The tool still
+  never accepts terms itself (`brand.rs:5-8`): Fetch is enabled only
+  after the operator ticks acceptance. The wizard then:
+  - downloads the file or zip, picks the expected file by name, and
+    rejects SVGs that carry scripts or external references;
+  - records the sha256 in the acceptance and writes the file to
+    `private/brand/`.
+
+  If the fetch fails, the step shows where to download by hand and an
+  upload box. This also closes the red GP3 scoreboard row. Sources,
+  checked 2026-11-04:
+  - **Google:** the branding page offers pre-approved PNG and SVG
+    buttons
+    ([branding guidelines](https://developers.google.com/identity/branding-guidelines)).
+    The bundle link changes between versions, so keep its URL in the
+    setup file rather than in code.
+  - **Apple:** PNG download or button API at
+    [appleid.apple.com/signinwithapple/button](https://appleid.apple.com/signinwithapple/button);
+    logo SVG and PDF under
+    [Apple Design Resources](https://developer.apple.com/design/resources/).
+  - **FIDO passkey icon:** behind a request form
+    ([get the passkey icon](https://fidoalliance.org/get-the-passkey-icon/)),
+    so it can't be fetched automatically. Manual instructions plus
+    upload by default.
+  - **Meta logo:** the guidelines must be accepted on
+    [Meta brand resources](https://www.meta.com/brand/resources/)
+    first. Likely manual.
+  - **Vogun font:** a purchased licence with no public download. Keep
+    manual upload or `$BRAND_FONT_DIR`. The Source Serif 4 fallback is
+    OFL and already vendored (`web/static/fonts/fallback/`).
+
+  *code, M*
+- [ ] **W-3** A **Fake** mode for every outside service. Each
+  integration gets one mode: `fake | sandbox | live`.
+  - **Guard:** fake is refused unless every bind is loopback, or on a
+    staging target, mirroring the dev-key gate
+    (`crates/config/src/lib.rs:675`). Fake output is watermarked, and
+    the console shows a FAKE ribbon.
+  - **FedEx and USPS:** a demo label PDF stamped "DEMO — NOT POSTAGE",
+    with a tracking number from a reserved fake range. Today
+    `labels.live = false` means the carriers' sandbox
+    (`lib.rs:1017`), and a fake judge mode is deferred
+    (operator-today).
+  - **Stripe:** a fake checkout and a receipt marked DEMO. Webhooks are
+    signed with a local fake secret through the real webhook handler.
+    Stripe test keys stay the "sandbox" mode.
+  - **Outgoing email** (magic links, follower digest, outreach): a fake
+    outbox in the store plus an admin **Outbox** view. Today dev mode
+    writes to a folder (`crates/web/src/magic.rs:21`).
+  - **Incoming email:** a fake inbox with a **Compose** screen to
+    inject a reply or authority notice (From, subject, body,
+    attachments, DMARC pass or fail). It goes through the same poller
+    path (capture → instruct worker → `/review`), so the whole email
+    loop can be shown with no Gmail account. This depends on P3-1:
+    DMARC must decide trust before fakes can test it.
+  - **Telnyx:** a fake call that plays a recorded WAV into the
+    transcribe step.
+  - **Meta Model API:** "Fake (recorded)" means the existing call-cache
+    replay of the recorded corpus.
+  - **Hugging Face:** fake skips the download, and Glimmer verdicts
+    come from recorded files.
+
+  *code, L in total; S–M per integration*
+- [ ] **W-4** A system map as a UML deployment diagram, drawn as SVG
+  from the wizard's state JSON, with no new libraries:
+  - **Three nodes:** Front end (public + admin site), Workers and
+    Staging. Each toggles **Local | Server**, and Local offers
+    **Docker | Native**.
+  - **Links between nodes:** solid lines labelled with the protocol:
+    HTTPS, the WSS work queue, SSH deploy.
+  - Each node shows its artifacts: the web binary, the worker and
+    model weights.
+
+  *code, M*
+- [ ] **W-5** SSH box probe: enter a hostname or alias, and the wizard
+  connects with keys only (`BatchMode`; first-use host-key fingerprint
+  shown for confirmation). It shows on the node:
+  - host name and user;
+  - OS name and version (`/etc/os-release` or `sw_vers`), kernel and
+    architecture (`uname -srm`);
+  - CPU count, RAM and free disk;
+  - GPU (`nvidia-smi -L`) and Docker version.
+
+  Results are cached in the setup file. *code, S–M*
+- [ ] **W-6** Endpoints and services appear on the map as values are
+  filled in:
+  - **Front end:** the HTTPS server name, with a link to open the
+    public site and the admin console.
+  - **Workers:** a link to the admin **Work queue** tab.
+  - **Staging:** its URL.
+  - **Meta Model API:** a `«use»` dependency (dashed line, open arrow)
+    from each consuming node, labelled with the model IDs it calls,
+    plus a **Test** button (`GET /v1/models`).
+  - **Hugging Face:** a `«deploy»` edge of the weights artifact onto
+    the worker node, showing repo → `<worker>:/srv/scratch/apostille/models`.
+  - **Gmail, Telnyx, FedEx, USPS, Stripe:** one node each, showing its
+    mode (fake, sandbox or live) and linking to its console.
+
+  *code, M*
+- [ ] **W-7** The Docker and native local paths, and the wizard without
+  sops: see P1-13 and P1-14. W-4's Local | Docker choice runs those
+  paths.
+
+---
+
+## From-scratch discovery
+
+The first slice is on branch `claude/discovery-bootstrap`: the
+`discovery.bootstrap` work-queue kind (`docs/specs/work-queue.md` §6).
+It does three things:
+- builds the country list from the live HCCH table, including the
+  entry-into-force column;
+- asks Muse for the party list from memory and reports where it
+  disagrees with the table;
+- asks Muse for official URLs in batches and fetch-checks every one.
+
+It writes a report only. Next:
+
+- [ ] **D-1** `research.nonparty` skips future parties. Thailand is on
+  the status table, so it is subtracted, yet the convention only takes
+  effect for it on 2027-02-28; until then it needs legalization. The
+  world pack still says "Thailand is a listed Contracting Party"
+  (`packs/world/TH.json`). Fix: treat future parties as non-parties
+  until their entry-into-force date, and add an entry-into-force line
+  to the world-pack observation. *code, S*
+- [ ] **D-2** Read the objection markers in the status table (`A**`,
+  e.g. Viet Nam and Kosovo). An objecting state does not accept
+  apostilles from the acceding state, which matters for routing.
+  *code, S*
+- [ ] **D-3** Turn discovery output into pack updates (watch seeds,
+  `unverified` domains). Needs P2-2 (a load that updates existing
+  authorities) and P2-3 (staged packs can be loaded). *code, M*
+- [ ] **D-4** Crawl the kept URLs with link keywords in local languages
+  (`xtask/src/crawl.rs` matches only English words today), then sort
+  the pages with a local Meta model on plant: relevant or not,
+  language, authority, topics. Facts are still drafted by Spark with
+  the quote check, then approved in `/review`. Before the local model
+  drafts anything, run the 30-case gold eval against it. *code, L*
+- [ ] **D-5** Have the local model split HCCH authority pages into
+  authority, address, contact, document scope and note, each quoted
+  from the page. This replaces positional parsing (the P2-1 junk rows),
+  and scope lines become routing rules for P4-1. *code, M*
+
+---
+
 ## Suggested order for today
 
 1. P0-1 … P0-5: the submission and the README truth pass.
