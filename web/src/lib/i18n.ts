@@ -1,5 +1,6 @@
-// Header-label strings only (EN/ES/FR). Day-1 stub: no dictionary chunks,
-// no Accept-Language negotiation yet. See docs/site-theme.md §6.
+// Masthead, search palette and footer strings (EN/ES/FR); each page
+// keeps its own copy table. Detection: `?l=` > stored > browser, no
+// Accept-Language negotiation (client-only app). See docs/site-theme.md §6.
 
 export type Locale = 'en' | 'es' | 'fr';
 
@@ -16,6 +17,22 @@ export interface HeaderStrings {
 	billingLabel: string;
 	loginLabel: string;
 	logoutLabel: string;
+	homeAria: string;
+	searchShort: string;
+	skipToContent: string;
+	themeNames: Record<'auto' | 'light' | 'dark', string>;
+	ordersLabel: string;
+	newOrderLabel: string;
+	securityLabel: string;
+	signOutLabel: string;
+	noResults: string;
+	loadingAuthorities: string;
+	authoritiesHeading: string;
+	pagesHeading: string;
+	homeLabel: string;
+	tagline: string;
+	footerNav: string;
+	disclaimer: string;
 }
 
 export const STRINGS: Record<Locale, HeaderStrings> = {
@@ -28,7 +45,23 @@ export const STRINGS: Record<Locale, HeaderStrings> = {
 		orderLabel: 'Order',
 		billingLabel: 'Billing',
 		loginLabel: 'Log in',
-		logoutLabel: 'Log out'
+		logoutLabel: 'Log out',
+		homeAria: 'Apostille Handbook — home',
+		searchShort: 'Search…',
+		skipToContent: 'Skip to content',
+		themeNames: { auto: 'auto', light: 'light', dark: 'dark' },
+		ordersLabel: 'Orders',
+		newOrderLabel: 'New order',
+		securityLabel: 'Security',
+		signOutLabel: 'Sign out',
+		noResults: 'No results found.',
+		loadingAuthorities: 'Loading authorities…',
+		authoritiesHeading: 'Authorities',
+		pagesHeading: 'Pages',
+		homeLabel: 'Home',
+		tagline: 'Verified apostille guidance, quote by quote.',
+		footerNav: 'Footer',
+		disclaimer: 'Apostille Handbook — general information, not legal advice.'
 	},
 	es: {
 		searchLabel: 'Buscar en el manual',
@@ -39,7 +72,23 @@ export const STRINGS: Record<Locale, HeaderStrings> = {
 		orderLabel: 'Pedido',
 		billingLabel: 'Facturación',
 		loginLabel: 'Iniciar sesión',
-		logoutLabel: 'Cerrar sesión'
+		logoutLabel: 'Cerrar sesión',
+		homeAria: 'Apostille Handbook — inicio',
+		searchShort: 'Buscar…',
+		skipToContent: 'Saltar al contenido',
+		themeNames: { auto: 'automático', light: 'claro', dark: 'oscuro' },
+		ordersLabel: 'Pedidos',
+		newOrderLabel: 'Nuevo pedido',
+		securityLabel: 'Seguridad',
+		signOutLabel: 'Cerrar sesión',
+		noResults: 'No se encontraron resultados.',
+		loadingAuthorities: 'Cargando autoridades…',
+		authoritiesHeading: 'Autoridades',
+		pagesHeading: 'Páginas',
+		homeLabel: 'Inicio',
+		tagline: 'Guía de apostillas verificada, cita por cita.',
+		footerNav: 'Pie de página',
+		disclaimer: 'Apostille Handbook — información general, no asesoramiento jurídico.'
 	},
 	fr: {
 		searchLabel: 'Rechercher dans le manuel',
@@ -50,7 +99,23 @@ export const STRINGS: Record<Locale, HeaderStrings> = {
 		orderLabel: 'Commande',
 		billingLabel: 'Facturation',
 		loginLabel: 'Se connecter',
-		logoutLabel: 'Se déconnecter'
+		logoutLabel: 'Se déconnecter',
+		homeAria: 'Apostille Handbook — accueil',
+		searchShort: 'Rechercher…',
+		skipToContent: 'Aller au contenu',
+		themeNames: { auto: 'automatique', light: 'clair', dark: 'sombre' },
+		ordersLabel: 'Commandes',
+		newOrderLabel: 'Nouvelle commande',
+		securityLabel: 'Sécurité',
+		signOutLabel: 'Se déconnecter',
+		noResults: 'Aucun résultat.',
+		loadingAuthorities: 'Chargement des autorités…',
+		authoritiesHeading: 'Autorités',
+		pagesHeading: 'Pages',
+		homeLabel: 'Accueil',
+		tagline: 'Des conseils sur l’apostille vérifiés, citation par citation.',
+		footerNav: 'Pied de page',
+		disclaimer: 'Apostille Handbook — information générale, pas un conseil juridique.'
 	}
 };
 

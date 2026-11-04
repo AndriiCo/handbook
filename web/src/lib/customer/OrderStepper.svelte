@@ -1,5 +1,7 @@
 <script lang="ts">
 	import CheckIcon from '@lucide/svelte/icons/check';
+	import { site } from '../locale.svelte.js';
+	import { ORDER_COPY } from './order-copy.js';
 
 	// Order progress. The current step carries aria-current="step" (the
 	// GP4 scoreboard row and the shots ready text "Destination" read it).
@@ -15,10 +17,11 @@
 		onpick: (index: number) => void;
 	} = $props();
 
+	const c = $derived(ORDER_COPY[site.locale]);
 	const progress = $derived(steps.length > 1 ? current / (steps.length - 1) : 0);
 </script>
 
-<ol class="relative m-0 flex list-none items-start p-0" aria-label="Order progress">
+<ol class="relative m-0 flex list-none items-start p-0" aria-label={c.stepperLabel}>
 	<span aria-hidden="true" class="absolute top-3.5 right-6 left-3.5 h-0.5 bg-surface-2"></span>
 	<span
 		aria-hidden="true"

@@ -13,6 +13,8 @@
 		oauthStartError,
 		startOAuth
 	} from '../../../lib/customer/oauth.js';
+	import { site } from '../../../lib/locale.svelte.js';
+	import { SECURITY_COPY } from '../../../lib/customer/security-copy.js';
 
 	type Method = { method: string; id: string; label: string; disabled: boolean };
 
@@ -24,6 +26,7 @@
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
+	const c = $derived(SECURITY_COPY[site.locale]);
 
 	async function post(path: string, body: unknown) {
 		const res = await fetch(api(path), {
@@ -53,7 +56,7 @@
 			const list = await fetch(api('/auth/profile/methods'), { credentials: 'same-origin' });
 			methods = ((await list.json()) as { methods: Method[] }).methods ?? [];
 		} catch {
-			error = 'Could not load sign-in methods.';
+			error = c.loadFailed;
 		}
 	}
 
@@ -73,8 +76,8 @@
 			if (!res.ok) {
 				error =
 					res.status === 403
-						? 'Log in again first (linking a key needs a fresh session).'
-						: ((res.body.error as string) ?? `Failed (HTTP ${res.status}).`);
+						? c.freshSessionKey
+						: ((res.body.error as string) ?? c.requestFailed(res.status));
 				return;
 			}
 			label = '';
@@ -82,8 +85,8 @@
 		} catch (e) {
 			error =
 				e instanceof DOMException && e.name === 'AbortError'
-					? 'Cancelled — no key was added.'
-					: 'Passkey ceremony failed — try again.';
+					? c.addCancelled
+					: c.ceremonyFailed;
 		} finally {
 			busy = false;
 		}
@@ -96,7 +99,7 @@
 			// Fresh ceremony doubles as the unlink re-auth proof.
 			const started = await post('/auth/passkey/login/start', { account: userId });
 			if (!started.ok) {
-				error = 'Re-authentication failed — try again.';
+				error = c.reauthFailed;
 				return;
 			}
 			const args = credentialRequestArgs(started.body.options);
@@ -106,7 +109,7 @@
 				credential: serializeAuthentication(cred)
 			});
 			if (!finished.ok) {
-				error = 'Re-authentication failed — try again.';
+				error = c.reauthFailed;
 				return;
 			}
 			const res = await post('/auth/profile/unlink', {
@@ -117,16 +120,16 @@
 			if (!res.ok) {
 				error =
 					res.status === 409
-						? 'This is your last sign-in method — add another key first.'
-						: ((res.body.error as string) ?? `Failed (HTTP ${res.status}).`);
+						? c.lastKey
+						: ((res.body.error as string) ?? c.requestFailed(res.status));
 				return;
 			}
 			await refresh();
 		} catch (e) {
 			error =
 				e instanceof DOMException && e.name === 'AbortError'
-					? 'Cancelled — nothing was removed.'
-					: 'Passkey ceremony failed — try again.';
+					? c.removeCancelled
+					: c.ceremonyFailed;
 		} finally {
 			busy = false;
 		}
@@ -143,7 +146,7 @@
 		// On ok the browser is navigating away; on failure the page
 		// stays and the buttons re-enable.
 		busy = false;
-		if (!res.ok) error = oauthStartError(res.status, OAUTH_LABELS[provider] ?? provider);
+		if (!res.ok) error = oauthStartError(res.status, OAUTH_LABELS[provider] ?? provider, site.locale);
 	}
 
 	async function removeOAuth(method: string, id: string) {
@@ -161,10 +164,10 @@
 			if (!res.ok) {
 				error =
 					res.status === 409
-						? 'This is your last sign-in method — add another first.'
+						? c.lastMethod
 						: res.status === 403
-							? 'Log in again first (unlinking needs a fresh session).'
-							: ((res.body.error as string) ?? `Failed (HTTP ${res.status}).`);
+							? c.freshSessionUnlink
+							: ((res.body.error as string) ?? c.requestFailed(res.status));
 				return;
 			}
 			await refresh();
@@ -179,20 +182,20 @@
 </script>
 
 <svelte:head>
-	<title>Sign-in methods — Apostille Handbook</title>
+	<title>{c.title} — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Sign-in methods</h1>
+<h1>{c.title}</h1>
 
 {#if !userId}
 	<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3">
-		Log in first to manage your sign-in methods.
+		{c.logInFirst}
 	</p>
-	<p><a href={resolve('/(customer)/login')}>Go to log in</a></p>
+	<p><a href={resolve('/(customer)/login')}>{c.goToLogin}</a></p>
 {:else}
 	{#if methods.length === 0}
 		<p class="max-w-[28rem] rounded-sm border border-line px-4 py-3">
-			No sign-in methods yet — add your first below.
+			{c.none}
 		</p>
 	{:else}
 		<ul class="max-w-[28rem] list-none p-0">
@@ -200,9 +203,13 @@
 				(google/apple/meta) use the provider label. -->
 			{#each methods as method (method.method + ':' + method.id)}
 				<li class="mb-2 flex items-baseline gap-3 rounded-sm border border-line px-[0.8rem] py-[0.6rem]">
-					<strong>{(OAUTH_LABELS[method.method] ?? method.label) || 'Unnamed key'}</strong>
+					<strong>{(OAUTH_LABELS[method.method] ?? method.label) || c.unnamedKey}</strong>
 					<span class="text-ink-muted">
-						{OAUTH_LABELS[method.method] ? method.label || 'linked account' : method.method}
+						{OAUTH_LABELS[method.method]
+							? method.label || c.linkedAccount
+							: method.method === 'passkey'
+								? c.passkeyKind
+								: method.method}
 					</span>
 					<button
 						class="ml-auto min-h-9 cursor-pointer rounded-sm border border-line bg-bg font-normal text-ink disabled:cursor-wait disabled:opacity-60"
@@ -213,7 +220,7 @@
 								? removeKey(method.id)
 								: removeOAuth(method.method, method.id)}
 					>
-						Remove
+						{c.remove}
 					</button>
 				</li>
 			{/each}
@@ -221,8 +228,8 @@
 	{/if}
 
 	<form class="my-6 flex max-w-[28rem] flex-col gap-2" onsubmit={addKey}>
-		<h2 class="m-0 text-[1.1rem]">Add another passkey</h2>
-		<label class="font-bold" for="new-label">Key label</label>
+		<h2 class="m-0 text-[1.1rem]">{c.addHeading}</h2>
+		<label class="font-bold" for="new-label">{c.keyLabel}</label>
 		<input
 			class="min-h-11 rounded-xs border border-line bg-bg px-[0.8rem] py-[0.6rem] text-ink"
 			id="new-label"
@@ -235,7 +242,7 @@
 		<button
 			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 			type="submit"
-			disabled={busy}>Add passkey</button
+			disabled={busy}>{c.addPasskey}</button
 		>
 	</form>
 
@@ -247,13 +254,13 @@
 				linkOAuth(provider);
 			}}
 		>
-			<h2 class="m-0 text-[1.1rem]">Or link {OAUTH_LABELS[provider]}</h2>
+			<h2 class="m-0 text-[1.1rem]">{c.orLink(OAUTH_LABELS[provider])}</h2>
 			<button
 				class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 				type="submit"
 				disabled={busy}
 			>
-				Link {OAUTH_LABELS[provider]} account
+				{c.linkAccount(OAUTH_LABELS[provider])}
 			</button>
 		</form>
 	{/each}

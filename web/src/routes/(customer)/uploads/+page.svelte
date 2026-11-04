@@ -2,6 +2,8 @@
 	import { resolve } from '$app/paths';
 	import Notice from '../../../lib/public-ui/Notice.svelte';
 	import { formatBytes, validateFiles } from '../../../lib/customer/uploads.js';
+	import { site } from '../../../lib/locale.svelte.js';
+	import { UPLOADS_COPY } from '../../../lib/customer/uploads-copy.js';
 
 	// Upload shell: validates locally, then POSTs to /api/v1/uploads.
 	// The endpoint does not exist yet — failures stay honest and the
@@ -11,23 +13,37 @@
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
 
+	const c = $derived(UPLOADS_COPY[site.locale]);
+
+	// What went wrong, kept as data so a language switch re-words it:
+	// the local checks re-run on the same files in the new language.
+	type Problem = { kind: 'invalid' } | { kind: 'not_found' } | { kind: 'http'; status: number } | { kind: 'unreachable' };
+
 	let files = $state<File[]>([]);
-	let errors = $state<string[]>([]);
-	let result = $state<string | null>(null);
+	let problem = $state<Problem | null>(null);
+	let uploaded = $state<number | null>(null);
 	let busy = $state(false);
+
+	const errors = $derived.by((): string[] => {
+		if (!problem) return [];
+		if (problem.kind === 'invalid') return validateFiles(files, site.locale).errors;
+		if (problem.kind === 'not_found') return [c.notFound];
+		if (problem.kind === 'http') return [c.failed(problem.status)];
+		return [c.unreachable];
+	});
 
 	function onChange(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
 		files = Array.from(input.files ?? []);
-		errors = [];
-		result = null;
+		problem = null;
+		uploaded = null;
 	}
 
 	async function upload(event: SubmitEvent) {
 		event.preventDefault();
 		const check = validateFiles(files);
-		errors = check.errors;
-		result = null;
+		problem = check.ok ? null : { kind: 'invalid' };
+		uploaded = null;
 		if (!check.ok) return;
 		busy = true;
 		try {
@@ -39,15 +55,15 @@
 				body
 			});
 			if (res.status === 404) {
-				errors = ['Upload endpoint not found (404) — the server lane has not landed yet.'];
+				problem = { kind: 'not_found' };
 			} else if (!res.ok) {
-				errors = [`Upload failed: HTTP ${res.status}. Nothing was stored.`];
+				problem = { kind: 'http', status: res.status };
 			} else {
-				result = `${files.length} file${files.length === 1 ? '' : 's'} uploaded.`;
+				uploaded = files.length;
 				files = [];
 			}
 		} catch {
-			errors = ['Upload service unreachable — is the API server running? Nothing was sent.'];
+			problem = { kind: 'unreachable' };
 		} finally {
 			busy = false;
 		}
@@ -55,17 +71,14 @@
 </script>
 
 <svelte:head>
-	<title>Uploads — Apostille Handbook</title>
+	<title>{c.title} — Apostille Handbook</title>
 </svelte:head>
 
-<h1>Uploads</h1>
-<p class="max-w-[40rem] text-ink-muted">
-	Document photos and scans for your orders. Originals stay private to
-	your account and staff — community-visible copies are masked first.
-</p>
+<h1>{c.title}</h1>
+<p class="max-w-[40rem] text-ink-muted">{c.intro}</p>
 
 <form class="flex max-w-[32rem] flex-col gap-3" onsubmit={upload}>
-	<label class="font-bold" for="files">Choose files (up to 10, 25 MB each)</label>
+	<label class="font-bold" for="files">{c.choose}</label>
 	<input
 		class="min-h-11 py-[0.6rem]"
 		id="files"
@@ -78,22 +91,22 @@
 		<ul class="m-0 list-none rounded-sm border border-line p-0">
 			{#each files as file (`${file.name}-${file.size}-${file.lastModified}`)}
 				<li class="flex justify-between gap-4 border-b border-line px-[0.8rem] py-2 last:border-b-0">
-					<span>{file.name}</span> <span class="font-mono text-sm text-ink-muted">{formatBytes(file.size)}</span>
+					<span>{file.name}</span> <span class="font-mono text-sm text-ink-muted">{formatBytes(file.size, site.locale)}</span>
 				</li>
 			{/each}
 		</ul>
 	{/if}
 	{#each errors as error (error)}
-		<Notice variant="error" heading="Cannot upload."><p>{error}</p></Notice>
+		<Notice variant="error" heading={c.cannotUpload}><p>{error}</p></Notice>
 	{/each}
-	{#if result}
-		<Notice variant="success" heading="Uploaded."><p>{result}</p></Notice>
+	{#if uploaded !== null}
+		<Notice variant="success" heading={c.uploadedHeading}><p>{c.uploaded(uploaded)}</p></Notice>
 	{/if}
 	<button
 		class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-not-allowed disabled:opacity-[0.55]"
 		type="submit"
 		disabled={busy || files.length === 0}
 	>
-		{busy ? 'Uploading…' : 'Upload'}
+		{busy ? c.uploading : c.upload}
 	</button>
 </form>

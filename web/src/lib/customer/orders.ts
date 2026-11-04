@@ -3,9 +3,12 @@
 // in docs/contracts/ (order-options, order, orders-list,
 // order-quote, order-paused, plan). Every value a visitor sees comes
 // from these responses: no fee, carrier, address or form field is
-// written here. The labels below name contract enumerations only.
+// written here. The labels below name contract enumerations only
+// (their words per site language live in orders-copy.js).
 import { resolve } from '$app/paths';
+import type { Locale } from '../i18n';
 import { cookieValue } from './passkey.js';
+import { ENUM_LABELS, INTL_LOCALE } from './orders-copy.js';
 
 export type OrderKind = 'label_fedex' | 'label_usps' | 'mail_kit' | 'address_label';
 export type OrderStatus =
@@ -240,10 +243,19 @@ export function isCabinetTopic(topic: unknown): topic is string {
 
 // ------------------------------------------------------------ display
 
-export function money(cents: number, currency: string, opts: { compact?: boolean } = {}): string {
+// The optional trailing `locale` is the site language (lib/i18n.ts):
+// formatters without it keep the browser's own locale (admin pages),
+// labels without it are English.
+
+export function money(
+	cents: number,
+	currency: string,
+	opts: { compact?: boolean } = {},
+	locale?: Locale
+): string {
 	const whole = cents % 100 === 0;
 	try {
-		return new Intl.NumberFormat(undefined, {
+		return new Intl.NumberFormat(locale && INTL_LOCALE[locale], {
 			style: 'currency',
 			currency: currency.toUpperCase(),
 			minimumFractionDigits: opts.compact && whole ? 0 : 2,
@@ -254,16 +266,16 @@ export function money(cents: number, currency: string, opts: { compact?: boolean
 	}
 }
 
-export function fmtDate(unix: number): string {
-	return new Date(unix * 1000).toLocaleDateString(undefined, {
+export function fmtDate(unix: number, locale?: Locale): string {
+	return new Date(unix * 1000).toLocaleDateString(locale && INTL_LOCALE[locale], {
 		year: 'numeric',
 		month: 'short',
 		day: 'numeric'
 	});
 }
 
-export function fmtDateTime(unix: number): string {
-	return new Date(unix * 1000).toLocaleString(undefined, {
+export function fmtDateTime(unix: number, locale?: Locale): string {
+	return new Date(unix * 1000).toLocaleString(locale && INTL_LOCALE[locale], {
 		month: 'short',
 		day: 'numeric',
 		hour: 'numeric',
@@ -271,50 +283,35 @@ export function fmtDateTime(unix: number): string {
 	});
 }
 
-export function fmtTime(unix: number): string {
-	return new Date(unix * 1000).toLocaleTimeString(undefined, {
+export function fmtTime(unix: number, locale?: Locale): string {
+	return new Date(unix * 1000).toLocaleTimeString(locale && INTL_LOCALE[locale], {
 		hour: 'numeric',
 		minute: '2-digit'
 	});
 }
 
 /** Contract enumeration → display name (no carrier claims). */
-export const KIND_LABEL: Record<OrderKind, string> = {
-	label_fedex: 'FedEx labels',
-	label_usps: 'USPS labels',
-	mail_kit: 'Mailing kit',
-	address_label: 'Address label'
-};
+export const KIND_LABEL: Record<OrderKind, string> = ENUM_LABELS.en.kind;
 
-export const STATUS_LABEL: Record<string, string> = {
-	draft: 'Draft',
-	quoted: 'Quoted',
-	awaiting_payment: 'Awaiting payment',
-	paid: 'Paid',
-	label_purchasing: 'Buying labels',
-	labels_ready: 'Labels ready',
-	packing: 'Packing',
-	shipped: 'Shipped',
-	in_transit: 'In transit',
-	delivered: 'Delivered',
-	needs_staff: 'With our team',
-	refunded: 'Refunded',
-	canceled: 'Canceled'
-};
+export const STATUS_LABEL: Record<string, string> = ENUM_LABELS.en.status;
 
-export const ROLE_LABEL: Record<LegRole, string> = {
-	kit_to_customer: 'Kit to you',
-	outbound: 'To the authority',
-	return: 'Back to you'
-};
+export const ROLE_LABEL: Record<LegRole, string> = ENUM_LABELS.en.role;
+
+export function kindLabel(kind: string, locale: Locale = 'en'): string {
+	return (ENUM_LABELS[locale].kind as Record<string, string>)[kind] ?? kind;
+}
+
+export function roleLabel(role: string, locale: Locale = 'en'): string {
+	return (ENUM_LABELS[locale].role as Record<string, string>)[role] ?? role;
+}
 
 export function humanize(value: string): string {
 	const text = value.replace(/[_-]+/g, ' ').trim().toLowerCase();
 	return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-export function statusLabel(status: string): string {
-	return STATUS_LABEL[status] ?? humanize(status);
+export function statusLabel(status: string, locale: Locale = 'en'): string {
+	return ENUM_LABELS[locale].status[status] ?? humanize(status);
 }
 
 const CARRIER_NAME: Record<string, string> = { usps: 'USPS', fedex: 'FedEx', fed_ex: 'FedEx' };

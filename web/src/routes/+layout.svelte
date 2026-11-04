@@ -242,7 +242,7 @@
 	class="absolute -left-[9999px] focus-visible:top-2 focus-visible:left-2 focus-visible:z-50 focus-visible:rounded-sm focus-visible:bg-bg focus-visible:px-4 focus-visible:py-2"
 	href="#content"
 >
-	Skip to content
+	{t.skipToContent}
 </a>
 
 <Tooltip.Provider>
@@ -250,7 +250,7 @@
 		class="masthead sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/70"
 	>
 		<div class="mx-auto flex h-14 max-w-[1080px] items-center gap-2 px-4">
-			<a href={home} class="flex min-w-0 items-center gap-2 no-underline" aria-label="Apostille Handbook — home">
+			<a href={home} class="flex min-w-0 items-center gap-2 no-underline" aria-label={t.homeAria}>
 				<img
 					src={asset('service-mark.svg')}
 					alt=""
@@ -270,7 +270,7 @@
 			>
 				<SearchIcon class="size-4 flex-none" aria-hidden="true" />
 				<span class="hidden truncate sm:inline">{t.searchPlaceholder}</span>
-				<span class="truncate sm:hidden">Search…</span>
+				<span class="truncate sm:hidden">{t.searchShort}</span>
 				<kbd
 					class="ml-auto hidden flex-none items-center gap-0.5 rounded-xs border border-line bg-bg px-1 font-mono text-xs sm:inline-flex"
 					aria-hidden="true"
@@ -283,7 +283,7 @@
 					<Tooltip.Trigger
 						onclick={cycleTheme}
 						class="inline-flex size-9 cursor-pointer items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface hover:text-ink"
-						aria-label={`${t.themeLabel}: ${theme}`}
+						aria-label={`${t.themeLabel}: ${t.themeNames[theme]}`}
 					>
 						{#if theme === 'light'}
 							<SunIcon class="size-[18px]" aria-hidden="true" />
@@ -293,7 +293,7 @@
 							<MonitorIcon class="size-[18px]" aria-hidden="true" />
 						{/if}
 					</Tooltip.Trigger>
-					<Tooltip.Content side="bottom">{t.themeLabel}: {theme}</Tooltip.Content>
+					<Tooltip.Content side="bottom">{t.themeLabel}: {t.themeNames[theme]}</Tooltip.Content>
 				</Tooltip.Root>
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger
@@ -334,19 +334,19 @@
 							<DropdownMenu.Label class="font-mono font-normal">{customerRef}</DropdownMenu.Label>
 							<DropdownMenu.Separator />
 							<DropdownMenu.Item onSelect={() => goto(resolve('/(customer)/orders'))}>
-								{t.orderLabel}s
+								{t.ordersLabel}
 							</DropdownMenu.Item>
 							<DropdownMenu.Item onSelect={() => goto(resolve('/(customer)/order'))}>
-								New {t.orderLabel.toLowerCase()}
+								{t.newOrderLabel}
 							</DropdownMenu.Item>
 							<DropdownMenu.Item onSelect={() => goto(resolve('/(customer)/billing'))}>
 								{t.billingLabel}
 							</DropdownMenu.Item>
 							<DropdownMenu.Item onSelect={() => goto(resolve('/(customer)/security'))}>
-								Security
+								{t.securityLabel}
 							</DropdownMenu.Item>
 							<DropdownMenu.Separator />
-							<DropdownMenu.Item onSelect={() => signOut()}>Sign out</DropdownMenu.Item>
+							<DropdownMenu.Item onSelect={() => signOut()}>{t.signOutLabel}</DropdownMenu.Item>
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>
 				{:else if status === 'out'}
@@ -371,11 +371,11 @@
 	>
 		<Command.Input placeholder={t.searchPlaceholder} />
 		<Command.List>
-			<Command.Empty>No results found.</Command.Empty>
+			<Command.Empty>{t.noResults}</Command.Empty>
 			{#if authorities === null}
-				<Command.Loading>Loading authorities…</Command.Loading>
+				<Command.Loading>{t.loadingAuthorities}</Command.Loading>
 			{:else}
-				<Command.Group heading="Authorities">
+				<Command.Group heading={t.authoritiesHeading}>
 					{#each authorities as a (a.slug)}
 						<Command.LinkItem
 							class="text-foreground"
@@ -393,28 +393,28 @@
 				</Command.Group>
 			{/if}
 			<Command.Separator />
-			<Command.Group heading="Pages">
-				<Command.LinkItem class="text-foreground" href={home} value="home start" onclick={() => (cmdOpen = false)}>
+			<Command.Group heading={t.pagesHeading}>
+				<Command.LinkItem class="text-foreground" href={home} value={`home start ${t.homeLabel}`} onclick={() => (cmdOpen = false)}>
 					<FileTextIcon class="size-4" aria-hidden="true" />
-					Home
+					{t.homeLabel}
 				</Command.LinkItem>
 				<Command.LinkItem
 					class="text-foreground"
 					href={resolve('/(customer)/order')}
-					value="new order start application"
+					value={`new order start application ${t.newOrderLabel}`}
 					onclick={() => (cmdOpen = false)}
 				>
 					<FileTextIcon class="size-4" aria-hidden="true" />
-					New {t.orderLabel.toLowerCase()}
+					{t.newOrderLabel}
 				</Command.LinkItem>
 				<Command.LinkItem
 					class="text-foreground"
 					href={resolve('/(customer)/orders')}
-					value="orders list status"
+					value={`orders list status ${t.ordersLabel}`}
 					onclick={() => (cmdOpen = false)}
 				>
 					<FileTextIcon class="size-4" aria-hidden="true" />
-					{t.orderLabel}s
+					{t.ordersLabel}
 				</Command.LinkItem>
 			</Command.Group>
 		</Command.List>
@@ -443,22 +443,22 @@
 				<span class="font-semibold text-ink">Andrii℠</span>
 			</a>
 			<p class="mt-3 max-w-[38ch] text-sm text-ink-muted">
-				Verified apostille guidance, quote by quote.
+				{t.tagline}
 			</p>
 		</div>
-		<nav class="flex flex-col gap-2" aria-label="Footer">
-			<a class="w-fit text-ink-muted no-underline hover:text-ink hover:underline" href={home}>Home</a>
+		<nav class="flex flex-col gap-2" aria-label={t.footerNav}>
+			<a class="w-fit text-ink-muted no-underline hover:text-ink hover:underline" href={home}>{t.homeLabel}</a>
 			<a
 				class="w-fit text-ink-muted no-underline hover:text-ink hover:underline"
-				href={resolve('/(customer)/order')}>New {t.orderLabel.toLowerCase()}</a
+				href={resolve('/(customer)/order')}>{t.newOrderLabel}</a
 			>
 			<a
 				class="w-fit text-ink-muted no-underline hover:text-ink hover:underline"
-				href={resolve('/(customer)/orders')}>{t.orderLabel}s</a
+				href={resolve('/(customer)/orders')}>{t.ordersLabel}</a
 			>
 		</nav>
 		<p class="m-0 text-sm text-ink-muted">
-			Apostille Handbook — general information, not legal advice.
+			{t.disclaimer}
 		</p>
 	</div>
 </footer>

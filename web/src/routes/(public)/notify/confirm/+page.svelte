@@ -5,6 +5,10 @@
 	import Notice from '../../../../lib/public-ui/Notice.svelte';
 	import Heading from '../../../../lib/components/brand/Heading.svelte';
 	import { Skeleton } from '../../../../lib/components/ui/skeleton/index.js';
+	import { NOTIFY_COPY } from '../../../../lib/public-ui/notify-copy.js';
+	import { site } from '../../../../lib/locale.svelte.js';
+
+	const c = $derived(NOTIFY_COPY[site.locale]);
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const home = resolve('/(public)');
@@ -43,34 +47,29 @@
 </script>
 
 <svelte:head>
-	<title>Confirm updates — Apostille Handbook</title>
+	<title>{c.confirmTitle}</title>
 </svelte:head>
 
 <div class="mx-auto w-full max-w-xl px-4 py-10 sm:px-6 xl:py-16">
-	<Heading level={1}>Confirm email updates</Heading>
+	<Heading level={1}>{c.confirmHeading}</Heading>
 	{#if phase === 'verifying'}
-		<div role="status" aria-label="Confirming subscription" class="mt-6 flex flex-col gap-2">
-			<span class="sr-only">Confirming subscription</span>
+		<div role="status" aria-label={c.confirming} class="mt-6 flex flex-col gap-2">
+			<span class="sr-only">{c.confirming}</span>
 			<Skeleton class="h-5 w-full" />
 			<Skeleton class="h-5 w-2/3" />
 		</div>
 	{:else if phase === 'done'}
-		<Notice
-			variant="success"
-			heading="You are following this office."
-		>
+		<Notice variant="success" heading={c.followingHeading}>
 			<p>
-				You will get one email when staff accept a changed fact for it — at most one
-				per hour. Every email carries a one-click unsubscribe link.
-				<a href={home} class="underline underline-offset-4">Back to the authority index</a>.
+				{c.followingBody}
+				<a href={home} class="underline underline-offset-4">{c.backToIndex}</a>.
 			</p>
 		</Notice>
 	{:else}
-		<Notice variant="warning" heading="This confirm link is invalid or expired.">
+		<Notice variant="warning" heading={c.expiredHeading}>
 			<p>
-				Links die 24 hours after they are sent and work only once. Follow the office
-				again from its dossier page for a fresh link.
-				<a href={home} class="underline underline-offset-4">Back to the authority index</a>.
+				{c.expiredBody}
+				<a href={home} class="underline underline-offset-4">{c.backToIndex}</a>.
 			</p>
 		</Notice>
 	{/if}

@@ -140,12 +140,27 @@ export function clampName(name, max = 120) {
 }
 
 /**
- * `1 fact` / `N facts` (shared literal, both pages).
+ * `1 fact` / `N facts` (shared literal, both pages). Spanish and French
+ * use the locale's digits; French counts 0 and 1 as singular.
  * @param {number} n
+ * @param {'en'|'es'|'fr'} [locale]
  */
-export function factCount(n) {
+export function factCount(n, locale = 'en') {
+	if (locale === 'es') return `${n.toLocaleString('es')} ${n === 1 ? 'dato' : 'datos'}`;
+	if (locale === 'fr') return `${n.toLocaleString('fr')} ${n < 2 ? 'fait' : 'faits'}`;
 	return `${n} ${n === 1 ? 'fact' : 'facts'}`;
 }
+
+// `relativeDay` words per site language (English is the original).
+const RELATIVE_DAY = {
+	en: { today: 'today', yesterday: 'yesterday', ago: (/** @type {number} */ n) => `${n} days ago` },
+	es: { today: 'hoy', yesterday: 'ayer', ago: (/** @type {number} */ n) => `hace ${n.toLocaleString('es')} días` },
+	fr: {
+		today: 'aujourd’hui',
+		yesterday: 'hier',
+		ago: (/** @type {number} */ n) => `il y a ${n.toLocaleString('fr')} jours`
+	}
+};
 
 /**
  * `today` / `yesterday` / `N days ago` in whole CALENDAR days in the
@@ -153,17 +168,19 @@ export function factCount(n) {
  * night reads `yesterday` after midnight, not `today`.
  * @param {string} iso
  * @param {number} [nowMs]
+ * @param {'en'|'es'|'fr'} [locale]
  */
-export function relativeDay(iso, nowMs = Date.now()) {
+export function relativeDay(iso, nowMs = Date.now(), locale = 'en') {
+	const words = RELATIVE_DAY[locale] ?? RELATIVE_DAY.en;
 	const at = new Date(iso);
 	const now = new Date(nowMs);
 	if (Number.isNaN(at.getTime())) return '';
 	const day = (/** @type {Date} */ d) =>
 		new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 	const days = Math.round((day(now) - day(at)) / 86400000);
-	if (days <= 0) return 'today';
-	if (days === 1) return 'yesterday';
-	return `${days} days ago`;
+	if (days <= 0) return words.today;
+	if (days === 1) return words.yesterday;
+	return words.ago(days);
 }
 
 /**
@@ -228,19 +245,44 @@ export function seedLedgerEvents(facts) {
 	return events;
 }
 
+// `publicError` sentences per site language. The English 429 sentence
+// matches magic.js exactly so the chunk compresses (byte-budget trim);
+// the Spanish and French ones match the login page's.
+const PUBLIC_ERROR = {
+	en: {
+		rateLimited: 'Too many attempts — wait a minute and try again.',
+		unknownAuthority: 'Unknown authority — it may have been renamed or removed.',
+		dossier: 'Could not load this dossier — try again.',
+		index: 'Could not load the authority index — try again.'
+	},
+	es: {
+		rateLimited: 'Demasiados intentos: espere un minuto e inténtelo de nuevo.',
+		unknownAuthority: 'Autoridad desconocida: puede que se haya renombrado o eliminado.',
+		dossier: 'No se pudo cargar este expediente: inténtelo de nuevo.',
+		index: 'No se pudo cargar el índice de autoridades: inténtelo de nuevo.'
+	},
+	fr: {
+		rateLimited: 'Trop de tentatives : patientez une minute puis réessayez.',
+		unknownAuthority: 'Autorité inconnue : elle a peut-être été renommée ou supprimée.',
+		dossier: 'Impossible de charger ce dossier : réessayez.',
+		index: 'Impossible de charger le répertoire des autorités : réessayez.'
+	}
+};
+
 /**
  * Friendly copy for public-read failures (status-mapped, never raw —
  * takes status only so server text can't leak). One mapper shared by
- * search + dossier; the 429 sentence matches magic.js exactly so the
- * chunk compresses (byte-budget trim).
+ * search + dossier, in the site language (English by default).
  * @param {number} status
  * @param {'index'|'dossier'} kind
+ * @param {'en'|'es'|'fr'} [locale]
  */
-export function publicError(status, kind) {
-	if (status === 429) return 'Too many attempts — wait a minute and try again.';
+export function publicError(status, kind, locale = 'en') {
+	const copy = PUBLIC_ERROR[locale] ?? PUBLIC_ERROR.en;
+	if (status === 429) return copy.rateLimited;
 	if (kind === 'dossier') {
-		if (status === 404) return 'Unknown authority — it may have been renamed or removed.';
-		return 'Could not load this dossier — try again.';
+		if (status === 404) return copy.unknownAuthority;
+		return copy.dossier;
 	}
-	return 'Could not load the authority index — try again.';
+	return copy.index;
 }

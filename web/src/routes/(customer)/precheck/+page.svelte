@@ -5,6 +5,8 @@
 	import Heading from '../../../lib/components/brand/Heading.svelte';
 	import CheckCircleIcon from '@lucide/svelte/icons/circle-check';
 	import XCircleIcon from '@lucide/svelte/icons/circle-x';
+	import { site } from '../../../lib/locale.svelte.js';
+	import { PRECHECK_COPY } from '../../../lib/customer/precheck-copy.js';
 
 	// Demo photo precheck (A2): synthetic samples, recorded live-model
 	// verdicts. SAM boxes animate over the sample; the verdict panel
@@ -24,12 +26,16 @@
 		recorded_at: string;
 	};
 
+	const c = $derived(PRECHECK_COPY[site.locale]);
+	type Copy = (typeof PRECHECK_COPY)['en'];
+
 	let samples = $state<Sample[] | null>(null);
-	let loadError = $state<string | null>(null);
+	let loadError = $state(false);
 	let chosen = $state<string | null>(null);
 	let running = $state(false);
 	let result = $state<Verdict | null>(null);
-	let runError = $state<string | null>(null);
+	// Kept as a function of the copy so a language switch re-words it.
+	let runError = $state<((c: Copy) => string) | null>(null);
 
 	const chosenSample = $derived(samples?.find((s) => s.id === chosen) ?? null);
 
@@ -48,7 +54,7 @@
 				chosen ??= samples[0]?.id ?? null;
 			})
 			.catch(() => {
-				loadError = 'Could not load the demo samples — try again.';
+				loadError = true;
 			});
 	});
 
@@ -65,11 +71,11 @@
 				body: JSON.stringify({ sample: chosen })
 			});
 			if (res.status === 429) {
-				runError = 'Too many runs — wait a minute and try again.';
+				runError = (c) => c.tooManyRuns;
 				return;
 			}
 			if (res.status === 503) {
-				runError = 'Demo verdicts are being recorded — check back after the next deploy.';
+				runError = (c) => c.recording;
 				return;
 			}
 			if (!res.ok) throw new Error(String(res.status));
@@ -84,7 +90,7 @@
 				recorded_at: typeof body.recorded_at === 'string' ? body.recorded_at : ''
 			};
 		} catch {
-			runError = 'The precheck run failed — try again.';
+			runError = (c) => c.runFailed;
 		} finally {
 			running = false;
 		}
@@ -92,24 +98,21 @@
 </script>
 
 <svelte:head>
-	<title>Precheck — Apostille Handbook</title>
+	<title>{c.title} — Apostille Handbook</title>
 </svelte:head>
 
-<Heading level={1}>Document precheck</Heading>
-<p class="max-w-[36rem] text-ink-muted">
-	Try the photo check on a synthetic sample. SAM boxes draw over the page;
-	the verdict names its models and recording date.
-</p>
+<Heading level={1}>{c.heading}</Heading>
+<p class="max-w-[36rem] text-ink-muted">{c.intro}</p>
 
 {#if loadError}
-	<Notice variant="error" heading="Samples unavailable."><p>{loadError}</p></Notice>
+	<Notice variant="error" heading={c.samplesUnavailable}><p>{c.loadFailed}</p></Notice>
 {:else if samples === null}
-	<div role="status" aria-label="Loading samples" class="flex flex-col gap-2">
-		<span class="sr-only">Loading samples</span>
+	<div role="status" aria-label={c.loadingSamples} class="flex flex-col gap-2">
+		<span class="sr-only">{c.loadingSamples}</span>
 		<Skeleton class="h-24 w-full max-w-[36rem]" />
 	</div>
 {:else}
-	<ul class="m-0 list-none p-0" aria-label="Demo samples">
+	<ul class="m-0 list-none p-0" aria-label={c.samplesLabel}>
 		{#each samples as s (s.id)}
 			<li class="mb-2">
 				<button
@@ -141,19 +144,19 @@
 			disabled={!chosen || running}
 			onclick={run}
 		>
-			{running ? 'Checking…' : result ? 'Run again' : 'Run precheck'}
+			{running ? c.checking : result ? c.runAgain : c.run}
 		</button>
 	</p>
 
 	{#if runError}
-		<Notice variant="warning" heading="Run unavailable."><p>{runError}</p></Notice>
+		<Notice variant="warning" heading={c.runUnavailable}><p>{runError(c)}</p></Notice>
 	{/if}
 
 	{#if chosenSample}
-		<section aria-label="Precheck result" class="max-w-[36rem] py-10 xl:py-16">
+		<section aria-label={c.resultLabel} class="max-w-[36rem] py-10 xl:py-16">
 			{#if result}
 				<p class={verdictPillCls(result.verdict === 'pass')} aria-live="polite">
-					{result.verdict === 'pass' ? 'Pass — good to submit' : 'Retake — fix the issues below'}
+					{result.verdict === 'pass' ? c.pass : c.retake}
 				</p>
 			{/if}
 			<div class="relative mt-2 overflow-hidden rounded-md border border-line">
@@ -207,11 +210,11 @@
 				{/if}
 			</div>
 			{#if result}
-			<ul class="mt-3 flex list-none flex-col gap-2 p-0" aria-label="Precheck checklist">
+			<ul class="mt-3 flex list-none flex-col gap-2 p-0" aria-label={c.checklistLabel}>
 				{#if result.verdict === 'pass'}
 					<li class="flex min-h-11 items-center gap-2">
 						<CheckCircleIcon class="size-5 flex-none text-verified" aria-hidden="true" />
-						<span>Ready to submit — no defects found</span>
+						<span>{c.ready}</span>
 					</li>
 				{/if}
 				{#each result.issues as issue (issue)}
@@ -222,8 +225,7 @@
 				{/each}
 			</ul>
 			<p class="font-mono text-xs text-ink-muted">
-				models {result.models.join(' + ') || 'unrecorded'} · recorded {result.recorded_at ||
-					'—'} · replay of a live run on synthetic samples
+				{c.footer(result.models.join(' + ') || c.unrecorded, result.recorded_at || '—')}
 			</p>
 			{/if}
 		</section>
