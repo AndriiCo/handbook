@@ -830,19 +830,10 @@ async fn api_brand_file(
             "not a brand file name this build uses",
         );
     };
-    if body.is_empty() || body.len() > 2 * 1024 * 1024 {
-        return deny(StatusCode::BAD_REQUEST, "file must be 1 byte to 2 MB");
-    }
-    let looks_right = if name.ends_with(".svg") {
-        std::str::from_utf8(&body).is_ok_and(|s| s.contains("<svg"))
-    } else {
-        body.starts_with(b"wOF2")
-    };
-    if !looks_right {
-        return deny(
-            StatusCode::BAD_REQUEST,
-            "file content does not match its type",
-        );
+    // Same checks as a fetched file: size, type, and no SVG that runs
+    // or loads anything (a dropped file used to skip the SVG check).
+    if let Err(e) = brand::check_content(name, &body) {
+        return deny(StatusCode::BAD_REQUEST, &e);
     }
     let dir = {
         let inner = app.inner.lock().unwrap();
@@ -1185,6 +1176,33 @@ mod tests {
             !state.contains("LLM_1_synthetic"),
             "a secret reached the map"
         );
+    }
+
+    /// A dropped file meets the same bar as a fetched one: an SVG that
+    /// runs or loads anything never lands in the brand dir.
+    #[tokio::test]
+    async fn brand_uploads_meet_the_fetch_bar() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut app = app();
+        app.repo = tmp.path().to_path_buf();
+        let saved = {
+            let inner = app.inner.lock().unwrap();
+            brand::dir(&app.repo, &inner.file).join("google.svg")
+        };
+        for bad in [
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" onload="x()"></svg>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.test/a.png"/></svg>"#,
+            "not an svg at all",
+        ] {
+            let (status, text) = send(&app, post("/api/brand/google.svg", bad)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {text}");
+            assert!(!saved.exists(), "{bad} was written");
+        }
+        let clean = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1z" fill="#4285F4"/></svg>"##;
+        let (status, text) = send(&app, post("/api/brand/google.svg", clean)).await;
+        assert_eq!(status, StatusCode::OK, "{text}");
+        assert_eq!(std::fs::read_to_string(&saved).unwrap(), clean);
     }
 
     #[tokio::test]

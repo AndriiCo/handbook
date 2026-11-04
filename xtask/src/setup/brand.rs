@@ -216,8 +216,9 @@ pub fn svg_problem(svg: &str) -> Option<&'static str> {
     }
 }
 
-/// `bytes` must be what a brand file called `name` holds.
-fn check_content(name: &str, bytes: &[u8]) -> Result<(), String> {
+/// `bytes` must be what a brand file called `name` holds. Fetched and
+/// uploaded files meet the same bar.
+pub fn check_content(name: &str, bytes: &[u8]) -> Result<(), String> {
     if bytes.is_empty() || bytes.len() > MAX_FILE {
         return Err(format!("{name} must be 1 byte to 2 MB"));
     }
