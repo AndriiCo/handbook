@@ -8,6 +8,7 @@ pub mod db;
 pub mod history;
 pub mod store;
 pub mod work;
+pub mod work_enrol;
 
 /// Canonical test fixtures (the Washington PO-Box pair). Test-only on
 /// purpose: fixture values must never leak into real facts, so the

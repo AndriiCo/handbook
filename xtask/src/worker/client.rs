@@ -5,6 +5,12 @@
 //! another. A dropped socket never kills the job: the next session
 //! re-sends `hello`, keeps heartbeating with the same lease token, and
 //! uploads the result when it is ready.
+//!
+//! `welcome.settings` replace the job kinds' old `worker.env` values:
+//! held in memory for the process lifetime, refreshed on every
+//! `welcome`, and cloned into each job at its start. A `401` at the
+//! upgrade or an `unauthorized` error frame ends [`run_with`] with
+//! [`Exit::Unauthorized`] so the caller can enrol again.
 
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -18,7 +24,7 @@ use serde_json::{Value, json};
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{ClientRequestBuilder, Message, WebSocket};
 
-use super::{JobContext, JobError, JobHandler, JobOutput, WorkerEnv, run_job};
+use super::{JobContext, JobError, JobHandler, JobOutput, Settings, run_job};
 
 /// Socket poll granularity (heartbeat and pong latency bound).
 const POLL: Duration = Duration::from_secs(1);
@@ -35,12 +41,13 @@ const MAX_BACKOFF: Duration = Duration::from_secs(60);
 
 pub struct Config {
     pub url: String,
+    /// `w2.` bearer token from the token file.
     pub token: String,
+    /// The credential's name; `hello.worker` must equal it.
     pub name: String,
     pub workdir: PathBuf,
     pub cache_dir: PathBuf,
     pub repo: PathBuf,
-    pub env: WorkerEnv,
     pub gpu_lock: PathBuf,
     /// Exit after the first finished job (smoke runs, tests).
     pub once: bool,
@@ -52,26 +59,76 @@ pub struct Config {
     pub version: String,
 }
 
+/// Why [`run_with`] returned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Exit {
+    /// `once` satisfied, or drained.
+    Done,
+    /// The server refused the credential (revoked or unknown): the
+    /// caller moves the token file aside and enrols again.
+    Unauthorized(String),
+}
+
+/// How one session ended badly.
+#[derive(Debug)]
+enum SessionError {
+    /// `401` at the upgrade, or an `unauthorized` error frame.
+    Unauthorized(String),
+    /// The new `welcome.settings` change what this worker can announce:
+    /// say `hello` again at once with the new capabilities.
+    Rehello,
+    /// Anything else: reconnect with backoff.
+    Other(String),
+}
+
+impl From<String> for SessionError {
+    fn from(e: String) -> Self {
+        SessionError::Other(e)
+    }
+}
+
 /// Run until killed (or, with `once`, until one job is acknowledged).
 /// Tests pass fake handlers; `cargo xtask worker` passes [`super::handlers`].
-pub fn run_with(cfg: &Config, handlers: Arc<Vec<Box<dyn JobHandler>>>) {
-    let caps: Vec<&'static str> = handlers
-        .iter()
-        .filter(|h| h.available(&cfg.env))
-        .map(|h| h.kind())
-        .collect();
+pub fn run_with(cfg: &Config, handlers: Arc<Vec<Box<dyn JobHandler>>>) -> Exit {
+    // Empty until the first `welcome`; never written anywhere.
+    let mut settings = Settings::default();
     let mut running: Option<Running> = None;
     let mut backoff = Backoff::default();
     loop {
-        match session(cfg, &handlers, &caps, &mut running, &mut backoff) {
-            Ok(()) => return,
-            Err(e) => {
+        match session(cfg, &handlers, &mut settings, &mut running, &mut backoff) {
+            Ok(()) => return Exit::Done,
+            Err(SessionError::Unauthorized(why)) => return Exit::Unauthorized(why),
+            Err(SessionError::Rehello) => {
+                eprintln!("worker: the server's settings change this worker's kinds; reconnecting");
+            }
+            Err(SessionError::Other(e)) => {
                 let wait = backoff.next_delay();
                 eprintln!("worker: {e}; reconnecting in {}s", wait.as_secs());
                 std::thread::sleep(wait);
             }
         }
     }
+}
+
+/// Kinds to announce under `settings`.
+fn capabilities(handlers: &[Box<dyn JobHandler>], settings: &Settings) -> Vec<&'static str> {
+    handlers
+        .iter()
+        .filter(|h| h.available(settings))
+        .map(|h| h.kind())
+        .collect()
+}
+
+/// A frame fit for a log line: `settings.meta_api_key` redacted (and
+/// any other settings value, which nothing needs to see).
+fn shown(frame: &Value) -> String {
+    let mut frame = frame.clone();
+    if let Some(settings) = frame.get_mut("settings").and_then(Value::as_object_mut) {
+        for value in settings.values_mut() {
+            *value = json!("[redacted]");
+        }
+    }
+    frame.to_string()
 }
 
 /// Exponential backoff with jitter: 1 s, 2 s, 4 s … capped at 60 s.
@@ -107,7 +164,12 @@ struct Running {
 }
 
 impl Running {
-    fn start(cfg: &Config, handlers: &Arc<Vec<Box<dyn JobHandler>>>, job: &Value) -> Self {
+    fn start(
+        cfg: &Config,
+        handlers: &Arc<Vec<Box<dyn JobHandler>>>,
+        settings: &Settings,
+        job: &Value,
+    ) -> Self {
         let id = job["id"].as_i64().unwrap_or(0);
         let kind = job["kind"].as_str().unwrap_or_default().to_string();
         let attempt = job["attempt"].as_i64().unwrap_or(1);
@@ -117,7 +179,9 @@ impl Running {
             dir: dir.clone(),
             repo: cfg.repo.clone(),
             cache_dir: cfg.cache_dir.clone(),
-            env: cfg.env.clone(),
+            // The values this job started with, whatever a later
+            // `welcome` says.
+            settings: settings.clone(),
         };
         let payload = job.get("payload").cloned().unwrap_or(Value::Null);
         let (tx, rx) = mpsc::channel();
@@ -192,11 +256,12 @@ fn finish_frame(job: &Running, outcome: Result<JobOutput, JobError>, max_result:
 fn session(
     cfg: &Config,
     handlers: &Arc<Vec<Box<dyn JobHandler>>>,
-    caps: &[&'static str],
+    settings: &mut Settings,
     running: &mut Option<Running>,
     backoff: &mut Backoff,
-) -> Result<(), String> {
+) -> Result<(), SessionError> {
     let mut ws = connect(&cfg.url, &cfg.token)?;
+    let caps = capabilities(handlers, settings);
     send(
         &mut ws,
         &json!({"type": "hello", "worker": cfg.name, "capabilities": caps,
@@ -204,9 +269,14 @@ fn session(
     )?;
     let welcome = await_reply(&mut ws, CONNECT_TIMEOUT)?;
     if welcome["type"] != "welcome" {
-        return Err(format!("server refused hello: {welcome}"));
+        return Err(format!("server refused hello: {}", shown(&welcome)).into());
     }
     backoff.reset();
+    *settings = Settings::from_json(&welcome["settings"]).map_err(|e| format!("welcome: {e}"))?;
+    if capabilities(handlers, settings) != caps {
+        let _ = ws.close(None);
+        return Err(SessionError::Rehello);
+    }
     eprintln!("worker: connected to {} as {}", cfg.url, cfg.name);
     let heartbeat = Duration::from_secs(
         welcome["heartbeat_secs"]
@@ -227,7 +297,7 @@ fn session(
             send(&mut ws, &json!({"type": "checkout"}))?;
             let reply = await_reply(&mut ws, REPLY_TIMEOUT)?;
             match reply["type"].as_str() {
-                Some("job") => *running = Some(Running::start(cfg, handlers, &reply)),
+                Some("job") => *running = Some(Running::start(cfg, handlers, settings, &reply)),
                 Some("idle") => {
                     let secs = reply["retry_after_secs"]
                         .as_u64()
@@ -235,7 +305,7 @@ fn session(
                         .clamp(1, 300);
                     pump_for(&mut ws, Duration::from_secs(secs))?;
                 }
-                _ => return Err(format!("checkout answered {reply}")),
+                _ => return Err(format!("checkout answered {}", shown(&reply)).into()),
             }
             continue;
         };
@@ -249,17 +319,20 @@ fn session(
             let reply = await_answer(&mut ws, UPLOAD_TIMEOUT)?;
             if reply["code"] == "store" {
                 return Err(format!(
-                    "job {}: the server could not store the result ({reply}); re-sending",
-                    job.id
-                ));
+                    "job {}: the server could not store the result ({}); re-sending",
+                    job.id,
+                    shown(&reply)
+                )
+                .into());
             }
             // `ack`, or a final refusal: `lease_lost` after a re-send
             // means an earlier upload landed and its ack was lost.
             eprintln!(
-                "worker: job {} ({}) {} → {reply}",
+                "worker: job {} ({}) {} → {}",
                 job.id,
                 job.kind,
-                if *ok { "complete" } else { "failed" }
+                if *ok { "complete" } else { "failed" },
+                shown(&reply)
             );
             *running = None;
             if cfg.once {
@@ -295,7 +368,7 @@ fn session(
 }
 
 /// Read and discard frames for `span` (keeps pings answered).
-fn pump_for(ws: &mut WebSocket<Stream>, span: Duration) -> Result<(), String> {
+fn pump_for(ws: &mut WebSocket<Stream>, span: Duration) -> Result<(), SessionError> {
     let until = Instant::now() + span;
     while Instant::now() < until {
         read_frame(ws)?;
@@ -305,7 +378,7 @@ fn pump_for(ws: &mut WebSocket<Stream>, span: Duration) -> Result<(), String> {
 
 /// The server's answer to an upload within `budget`: the next frame
 /// that is not a `lease` reply to a heartbeat still in flight.
-fn await_answer(ws: &mut WebSocket<Stream>, budget: Duration) -> Result<Value, String> {
+fn await_answer(ws: &mut WebSocket<Stream>, budget: Duration) -> Result<Value, SessionError> {
     let until = Instant::now() + budget;
     while Instant::now() < until {
         if let Some(frame) = read_frame(ws)?
@@ -314,23 +387,37 @@ fn await_answer(ws: &mut WebSocket<Stream>, budget: Duration) -> Result<Value, S
             return Ok(frame);
         }
     }
-    Err(format!("no reply within {}s", budget.as_secs()))
+    Err(format!("no reply within {}s", budget.as_secs()).into())
 }
 
 /// Next JSON text frame within `budget`.
-fn await_reply(ws: &mut WebSocket<Stream>, budget: Duration) -> Result<Value, String> {
+fn await_reply(ws: &mut WebSocket<Stream>, budget: Duration) -> Result<Value, SessionError> {
     let until = Instant::now() + budget;
     while Instant::now() < until {
         if let Some(frame) = read_frame(ws)? {
             return Ok(frame);
         }
     }
-    Err(format!("no reply within {}s", budget.as_secs()))
+    Err(format!("no reply within {}s", budget.as_secs()).into())
 }
 
 /// One poll: a JSON text frame, `None` on timeout or control frames,
-/// `Err` when the socket is gone.
-fn read_frame(ws: &mut WebSocket<Stream>) -> Result<Option<Value>, String> {
+/// `Err` when the socket is gone or the server revoked the credential
+/// (an `unauthorized` error frame, before it closes).
+fn read_frame(ws: &mut WebSocket<Stream>) -> Result<Option<Value>, SessionError> {
+    read_raw(ws)?.map(unauthorized).transpose()
+}
+
+/// `Err(Unauthorized)` for an `unauthorized` error frame.
+fn unauthorized(frame: Value) -> Result<Value, SessionError> {
+    if frame["type"] == "error" && frame["code"] == "unauthorized" {
+        let why = frame["error"].as_str().unwrap_or("unauthorized");
+        return Err(SessionError::Unauthorized(why.chars().take(200).collect()));
+    }
+    Ok(frame)
+}
+
+fn read_raw(ws: &mut WebSocket<Stream>) -> Result<Option<Value>, String> {
     match ws.read() {
         Ok(Message::Text(text)) => serde_json::from_str(text.as_str())
             .map(Some)
@@ -361,9 +448,9 @@ fn read_frame(ws: &mut WebSocket<Stream>) -> Result<Option<Value>, String> {
     }
 }
 
-fn send(ws: &mut WebSocket<Stream>, frame: &Value) -> Result<(), String> {
+fn send(ws: &mut WebSocket<Stream>, frame: &Value) -> Result<(), SessionError> {
     ws.send(Message::text(frame.to_string()))
-        .map_err(|e| format!("send: {e}"))
+        .map_err(|e| SessionError::Other(format!("send: {e}")))
 }
 
 /// Plain TCP (`ws://`, tests and loopback) or rustls (`wss://`).
@@ -418,13 +505,14 @@ fn tls_config() -> Arc<rustls::ClientConfig> {
     Arc::new(config)
 }
 
-/// Dial, (TLS,) and upgrade with the bearer token.
-fn connect(url: &str, token: &str) -> Result<WebSocket<Stream>, String> {
+/// Dial, (TLS,) and upgrade with the bearer token. A `401` is
+/// [`SessionError::Unauthorized`] (`revoked` or `unauthorized`).
+fn connect(url: &str, token: &str) -> Result<WebSocket<Stream>, SessionError> {
     let uri: tungstenite::http::Uri = url.parse().map_err(|e| format!("bad url {url}: {e}"))?;
     let tls = match uri.scheme_str() {
         Some("wss") => true,
         Some("ws") => false,
-        _ => return Err(format!("url must be ws:// or wss://, got {url}")),
+        _ => return Err(format!("url must be ws:// or wss://, got {url}").into()),
     };
     let host = uri
         .host()
@@ -439,7 +527,8 @@ fn connect(url: &str, token: &str) -> Result<WebSocket<Stream>, String> {
     if !tls && !addr.ip().is_loopback() {
         return Err(format!(
             "ws:// would send the token in clear text to {host}; use wss:// (ws:// is for loopback only)"
-        ));
+        )
+        .into());
     }
     let tcp = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)
         .map_err(|e| format!("connect {host}:{port}: {e}"))?;
@@ -462,10 +551,23 @@ fn connect(url: &str, token: &str) -> Result<WebSocket<Stream>, String> {
         .max_frame_size(Some(MAX_FRAME));
     let (ws, _) = tungstenite::client::client_with_config(request, stream, Some(config)).map_err(
         |e| match e {
-            tungstenite::HandshakeError::Failure(tungstenite::Error::Http(res)) => {
-                format!("upgrade refused: HTTP {}", res.status())
+            tungstenite::HandshakeError::Failure(tungstenite::Error::Http(res))
+                if res.status() == 401 =>
+            {
+                let body = res
+                    .body()
+                    .as_deref()
+                    .and_then(|b| serde_json::from_slice::<Value>(b).ok());
+                let why = body
+                    .as_ref()
+                    .and_then(|v| v["error"].as_str())
+                    .unwrap_or("unauthorized");
+                SessionError::Unauthorized(why.chars().take(200).collect())
             }
-            other => format!("handshake: {other}"),
+            tungstenite::HandshakeError::Failure(tungstenite::Error::Http(res)) => {
+                SessionError::Other(format!("upgrade refused: HTTP {}", res.status()))
+            }
+            other => SessionError::Other(format!("handshake: {other}")),
         },
     )?;
     ws.get_ref()
@@ -502,7 +604,7 @@ mod tests {
         fn kind(&self) -> &'static str {
             "test.hidden"
         }
-        fn available(&self, _env: &WorkerEnv) -> bool {
+        fn available(&self, _settings: &Settings) -> bool {
             false
         }
         fn run(&self, _ctx: &JobContext, _payload: &Value) -> Result<JobOutput, JobError> {
@@ -627,14 +729,13 @@ mod tests {
             workdir: dir.path().join("work"),
             cache_dir: dir.path().to_path_buf(),
             repo: super::super::repo_root(),
-            env: WorkerEnv::default(),
             gpu_lock: dir.path().join("gpu.lock"),
             once: true,
             drain: dir.path().join("worker.drain"),
             version: "0.1.0+test".to_string(),
         };
         let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(Echo), Box::new(Hidden)];
-        run_with(&cfg, Arc::new(handlers));
+        assert_eq!(run_with(&cfg, Arc::new(handlers)), Exit::Done);
         let beats = server.join().unwrap();
         assert!(beats >= 1, "heartbeats keep the lease while the job runs");
         assert!(dir.path().join("work/job-9-a1/result.json").is_file());
@@ -692,7 +793,6 @@ mod tests {
             workdir: dir.path().join("work"),
             cache_dir: dir.path().to_path_buf(),
             repo: super::super::repo_root(),
-            env: WorkerEnv::default(),
             gpu_lock: dir.path().join("gpu.lock"),
             once: true,
             drain: dir.path().join("worker.drain"),
@@ -753,7 +853,6 @@ mod tests {
             workdir: dir.path().join("work"),
             cache_dir: dir.path().to_path_buf(),
             repo: super::super::repo_root(),
-            env: WorkerEnv::default(),
             gpu_lock: dir.path().join("gpu.lock"),
             once: false,
             drain: drain.clone(),
@@ -811,7 +910,6 @@ mod tests {
             workdir: dir.path().join("work"),
             cache_dir: dir.path().to_path_buf(),
             repo: super::super::repo_root(),
-            env: WorkerEnv::default(),
             gpu_lock: dir.path().join("gpu.lock"),
             once: true,
             drain: dir.path().join("worker.drain"),
@@ -834,7 +932,10 @@ mod tests {
         let err = connect("ws://192.0.2.1:9/apostille/api/v1/worker/ws", TOKEN)
             .err()
             .expect("plain ws:// to a remote host");
-        assert!(err.contains("wss://"), "{err}");
+        assert!(
+            matches!(&err, SessionError::Other(e) if e.contains("wss://")),
+            "{err:?}"
+        );
     }
 
     #[test]
@@ -898,5 +999,221 @@ mod tests {
         let sample = |t: &str| samples.iter().find(|s| s["type"] == t).unwrap().clone();
         assert_eq!(keys(&complete), keys(&sample("complete")));
         assert_eq!(keys(&fail), keys(&sample("fail")));
+        // `welcome.settings` parses into the settings the handlers read.
+        let welcome = seed["server"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["type"] == "welcome")
+            .unwrap();
+        let settings = Settings::from_json(&welcome["settings"]).unwrap();
+        for key in [
+            super::super::keys::META_API_KEY,
+            super::super::keys::META_BASE_URL,
+            super::super::keys::META_CACHE_MODE,
+            super::super::keys::META_DAILY_CALL_CAP,
+            super::super::keys::HF_MODE,
+            super::super::keys::GLIMMER_MODEL,
+            super::super::keys::GLIMMER_URL,
+        ] {
+            assert!(settings.get(key).is_some(), "{key} in the contract sample");
+        }
+        let logged = shown(welcome);
+        assert!(!logged.contains("LLM_1_stub"), "{logged}");
+        assert!(logged.contains("meta_api_key"), "{logged}");
+    }
+
+    /// Records what each job saw in its settings.
+    struct SettingsProbe;
+
+    impl JobHandler for SettingsProbe {
+        fn kind(&self) -> &'static str {
+            "test.settings"
+        }
+        fn available(&self, settings: &Settings) -> bool {
+            settings.get("probe_ready").is_some()
+        }
+        fn run(&self, ctx: &JobContext, _payload: &Value) -> Result<JobOutput, JobError> {
+            let key = ctx.settings.get(super::super::keys::META_API_KEY);
+            Ok(JobOutput::json(&json!({"key": key}), Value::Null))
+        }
+    }
+
+    fn cfg_for(url: String, dir: &std::path::Path) -> Config {
+        Config {
+            url,
+            token: TOKEN.to_string(),
+            name: "chandra@plant".to_string(),
+            workdir: dir.join("work"),
+            cache_dir: dir.to_path_buf(),
+            repo: super::super::repo_root(),
+            gpu_lock: dir.join("gpu.lock"),
+            once: true,
+            drain: dir.join("worker.drain"),
+            version: "0.1.0+test".to_string(),
+        }
+    }
+
+    /// The first `hello` goes out before any settings are known; the
+    /// `welcome` settings make a kind available, so the worker says
+    /// `hello` again with it, and the job runs on the server's values.
+    #[test]
+    fn welcome_settings_reach_the_job_and_refresh_the_capabilities() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "ws://{}/apostille/api/v1/worker/ws",
+            listener.local_addr().unwrap()
+        );
+        let server = std::thread::spawn(move || {
+            let settings = json!({"meta_api_key": "LLM_server", "probe_ready": "1"});
+            let mut first = accept(&listener);
+            let hello = recv(&mut first);
+            assert_eq!(hello["worker"], "chandra@plant");
+            assert_eq!(hello["capabilities"], json!([]), "nothing known yet");
+            reply(
+                &mut first,
+                json!({"type": "welcome", "worker": "chandra@plant", "lease_secs": 300,
+                       "heartbeat_secs": 1, "max_result_bytes": 1024, "settings": settings}),
+            );
+            let mut second = accept(&listener);
+            let hello = recv(&mut second);
+            assert_eq!(hello["capabilities"], json!(["test.settings"]));
+            reply(
+                &mut second,
+                json!({"type": "welcome", "worker": "chandra@plant", "lease_secs": 300,
+                       "heartbeat_secs": 1, "max_result_bytes": 1024, "settings": settings}),
+            );
+            assert_eq!(recv(&mut second)["type"], "checkout");
+            reply(
+                &mut second,
+                json!({"type": "job", "id": 2, "kind": "test.settings", "payload": {},
+                       "lease": LEASE, "lease_expires_at": 0, "attempt": 1}),
+            );
+            let done = loop {
+                let frame = recv(&mut second);
+                match frame["type"].as_str() {
+                    Some("heartbeat") => reply(
+                        &mut second,
+                        json!({"type": "lease", "id": 2, "lease_expires_at": 1}),
+                    ),
+                    Some("complete") => break frame,
+                    other => panic!("unexpected frame {other:?}"),
+                }
+            };
+            reply(
+                &mut second,
+                json!({"type": "ack", "id": 2, "status": "done"}),
+            );
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(done["result_b64"].as_str().unwrap())
+                .unwrap();
+            serde_json::from_slice::<Value>(&bytes).unwrap()
+        });
+        let dir = tempfile::tempdir().unwrap();
+        // A conflicting worker.env next to the work dir changes nothing.
+        std::fs::write(
+            dir.path().join("worker.env"),
+            ["META_API_KEY", "=from-env-file\n"].concat(),
+        )
+        .unwrap();
+        let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(SettingsProbe)];
+        let exit = run_with(&cfg_for(url, dir.path()), Arc::new(handlers));
+        assert_eq!(exit, Exit::Done);
+        assert_eq!(server.join().unwrap(), json!({"key": "LLM_server"}));
+        // Nothing the worker wrote holds the key.
+        for entry in walk(dir.path()) {
+            let text = std::fs::read(&entry).unwrap_or_default();
+            if entry.ends_with("result.json") {
+                continue; // the probe's own output echoes it on purpose
+            }
+            assert!(
+                !String::from_utf8_lossy(&text).contains("LLM_server"),
+                "{} holds the key",
+                entry.display()
+            );
+        }
+    }
+
+    fn walk(dir: &std::path::Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                out.extend(walk(&path));
+            } else {
+                out.push(path);
+            }
+        }
+        out
+    }
+
+    /// `401 {"error":"revoked"}` at the upgrade ends the run so the
+    /// caller can enrol again (no reconnect loop on a dead token).
+    #[test]
+    fn a_refused_upgrade_is_unauthorized() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "ws://{}/apostille/api/v1/worker/ws",
+            listener.local_addr().unwrap()
+        );
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Read the whole upgrade request first, so closing never
+            // resets a connection the client is still writing to.
+            let mut seen = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                match stream.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => seen.extend_from_slice(&buf[..n]),
+                }
+            }
+            let body = r#"{"error":"revoked"}"#;
+            let response = format!(
+                "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\n\
+                 content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+            stream.flush().unwrap();
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+            let _ = stream.read(&mut buf);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(Echo)];
+        let exit = run_with(&cfg_for(url, dir.path()), Arc::new(handlers));
+        // The reason is for the log only: the body may arrive after the
+        // handshake gave up reading, so "unauthorized" is fine too.
+        assert!(
+            matches!(&exit, Exit::Unauthorized(why) if why == "revoked" || why == "unauthorized"),
+            "{exit:?}"
+        );
+        server.join().unwrap();
+    }
+
+    /// Revoked mid-session: the server's `unauthorized` error frame
+    /// ends the run the same way.
+    #[test]
+    fn an_unauthorized_frame_ends_the_session() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "ws://{}/apostille/api/v1/worker/ws",
+            listener.local_addr().unwrap()
+        );
+        let server = std::thread::spawn(move || {
+            let mut ws = accept(&listener);
+            welcome(&mut ws);
+            assert_eq!(recv(&mut ws)["type"], "checkout");
+            reply(
+                &mut ws,
+                json!({"type": "error", "code": "unauthorized", "error": "credential revoked"}),
+            );
+            let _ = ws.read();
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(Echo)];
+        let exit = run_with(&cfg_for(url, dir.path()), Arc::new(handlers));
+        assert_eq!(exit, Exit::Unauthorized("credential revoked".to_string()));
+        server.join().unwrap();
     }
 }

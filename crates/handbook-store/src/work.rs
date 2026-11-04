@@ -91,6 +91,45 @@ CREATE TABLE IF NOT EXISTS audit(
   reason TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_work_audit_entity ON audit(entity, entity_id);
+-- Worker enrolment (docs/specs/worker-enrolment.md): a worker asks, staff
+-- approve with the pairing code, the worker collects its token once.
+CREATE TABLE IF NOT EXISTS worker_enrolment(
+  id INTEGER PRIMARY KEY,
+  public_id TEXT NOT NULL UNIQUE,     -- 32 hex, the worker polls by it
+  username TEXT NOT NULL,
+  hostname TEXT NOT NULL,
+  version TEXT NOT NULL DEFAULT '',
+  started_at INTEGER NOT NULL,
+  capabilities_json TEXT NOT NULL DEFAULT '[]',
+  peer_ip TEXT NOT NULL DEFAULT '',
+  poll_hash TEXT NOT NULL,            -- hex SHA-256 of the worker's poll secret
+  code_hash TEXT NOT NULL,            -- hex SHA-256 of the pairing code
+  code_tries INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending', 'approved', 'denied', 'delivered')),
+  name TEXT,                          -- final worker name, set on approval
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  decided_by TEXT,
+  decided_at INTEGER,
+  credential_id INTEGER               -- worker_credential.id once delivered
+);
+CREATE INDEX IF NOT EXISTS idx_worker_enrolment_ip ON worker_enrolment(peer_ip, created_at);
+CREATE TABLE IF NOT EXISTS worker_credential(
+  id INTEGER PRIMARY KEY,
+  public_id TEXT NOT NULL UNIQUE,     -- 32 hex, the middle of the w2. token
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL,           -- hex SHA-256 of the whole token
+  enrolment_id INTEGER,               -- NULL when minted by `xtask up`
+  created_at INTEGER NOT NULL,
+  created_by TEXT NOT NULL DEFAULT '',
+  last_seen_at INTEGER,
+  last_version TEXT,
+  revoked_at INTEGER,
+  revoked_by TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_credential_active_name
+  ON worker_credential(name) WHERE revoked_at IS NULL;
 CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit
 BEGIN
   SELECT RAISE(ABORT, 'audit is append-only: UPDATE rejected');
@@ -244,10 +283,23 @@ fn audit(
     id: i64,
     reason: &str,
 ) -> Result<()> {
+    audit_entity(conn, at, actor, action, "work_item", id, reason)
+}
+
+/// One `audit` row for any entity in `work.sqlite`.
+pub(crate) fn audit_entity(
+    conn: &Connection,
+    at: i64,
+    actor: &str,
+    action: &str,
+    entity: &str,
+    id: i64,
+    reason: &str,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
-         VALUES (?1, ?2, ?3, 'work_item', ?4, ?5)",
-        rusqlite::params![at, actor, action, id, clip(reason)],
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![at, actor, action, entity, id, clip(reason)],
     )?;
     Ok(())
 }

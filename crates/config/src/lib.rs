@@ -1141,10 +1141,16 @@ pub mod keys {
     /// xtask `--cache-mode` override it.
     pub const META_CACHE_MODE: &str = "meta.cache_mode";
     // ---- P392 work queue: plant workers over WebSocket ----
-    /// Shared bearer token plant workers present on
-    /// `/apostille/api/v1/worker/ws` (>= 32 chars). Secret: presence-only
-    /// in UI; the same value lives in the worker's `worker.env`.
-    pub const WORKER_TOKEN: &str = "worker.token";
+    /// Worker self-registration (`docs/specs/worker-enrolment.md`):
+    /// `on` (default) or `off` (new enrol requests get 503; pending
+    /// ones can still be decided).
+    pub const WORKER_ENROLMENT: &str = "worker.enrolment";
+    /// Model id the `precheck.glimmer` worker kind asks its local
+    /// `llama-server` for; sent to workers in `welcome.settings`.
+    pub const WORKER_GLIMMER_MODEL: &str = "worker.glimmer_model";
+    /// Base URL of that `llama-server` on the worker's host (default
+    /// `http://127.0.0.1:8080/v1`); sent in `welcome.settings`.
+    pub const WORKER_GLIMMER_URL: &str = "worker.glimmer_url";
     // ---- W-3 integration modes: `fake | sandbox | live` (see `Mode`) ----
     /// Outgoing email (magic links, follower digests, outreach).
     pub const MAILER_MODE: &str = "mailer.mode";
@@ -1168,6 +1174,8 @@ pub mod keys {
         "net.admin_https_port",
         "tls.client_ca_file",
         "admin.require_cert",
+        // Workers enrol for their own tokens (worker-enrolment spec).
+        "worker.token",
     ];
 
     /// Every registered key with its type (admin UI + roundtrip tests).
@@ -1268,7 +1276,9 @@ pub mod keys {
         (TRACKING_POLL_ENABLED, super::ConfigType::Bool),
         (META_DAILY_CALL_CAP, super::ConfigType::Text),
         (META_CACHE_MODE, super::ConfigType::Text),
-        (WORKER_TOKEN, super::ConfigType::Secret),
+        (WORKER_ENROLMENT, super::ConfigType::Text),
+        (WORKER_GLIMMER_MODEL, super::ConfigType::Text),
+        (WORKER_GLIMMER_URL, super::ConfigType::Text),
         (MAILER_MODE, super::ConfigType::Text),
         (MAIL_MODE, super::ConfigType::Text),
         (LABELS_MODE, super::ConfigType::Text),
@@ -2677,8 +2687,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_104_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 104);
+    fn registry_holds_106_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 106);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -2697,7 +2707,9 @@ mod runtime_tests {
         // (paths.meta_cache_dir, paths.fetch_cache_dir, meta.cache_mode);
         // P392 adds worker.token (secret). W-3 adds seven `<area>.mode`
         // text keys. Browser audio adds telnyx.webrtc_connection_id
-        // (text).
+        // (text). Worker enrolment removes worker.token and adds three
+        // text keys (worker.enrolment, worker.glimmer_model,
+        // worker.glimmer_url).
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -2706,7 +2718,7 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (12, 74, 18));
+        assert_eq!(counts, (12, 77, 17));
         for integration in Integration::ALL {
             assert!(
                 ALL_KEYS.contains(&(integration.key(), ConfigType::Text)),

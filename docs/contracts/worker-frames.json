@@ -1,17 +1,25 @@
 {
   "client": [
-    {"type": "hello", "worker": "plant", "capabilities": ["research.nonparty", "scrape.urls", "eval.gold", "precheck.glimmer"], "version": "0.1.0"},
+    {"type": "hello", "worker": "chandra@plant", "capabilities": ["research.nonparty", "scrape.urls", "eval.gold", "precheck.glimmer"], "version": "0.1.0+1bda381"},
     {"type": "checkout"},
     {"type": "heartbeat", "id": 7, "lease": "0123456789abcdef0123456789abcdef"},
     {"type": "complete", "id": 7, "lease": "0123456789abcdef0123456789abcdef", "content_type": "application/json", "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "result_b64": "e30=", "summary": {"packs": 1}},
     {"type": "fail", "id": 7, "lease": "0123456789abcdef0123456789abcdef", "error": "meta api: rate limited", "retryable": true}
   ],
   "server": [
-    {"type": "welcome", "worker": "plant", "lease_secs": 300, "heartbeat_secs": 60, "max_result_bytes": 16777216},
+    {"type": "welcome", "worker": "chandra@plant", "lease_secs": 300, "heartbeat_secs": 60, "max_result_bytes": 16777216, "settings": {"meta_api_key": "LLM_1_stub", "meta_base_url": "https://api.example.test/v1", "meta_cache_mode": "record", "meta_daily_call_cap": "400", "hf_mode": "fake", "glimmer_model": "glimmer-7b-q4", "glimmer_url": "http://127.0.0.1:8080/v1"}},
     {"type": "job", "id": 7, "kind": "research.nonparty", "payload": {"countries": ["EG"]}, "lease": "0123456789abcdef0123456789abcdef", "lease_expires_at": 1793750700, "attempt": 1},
     {"type": "idle", "retry_after_secs": 15},
     {"type": "lease", "id": 7, "lease_expires_at": 1793750760},
     {"type": "ack", "id": 7, "status": "done"},
     {"type": "error", "code": "lease_lost", "error": "lease expired or not yours", "id": 7}
-  ]
+  ],
+  "enrol": {
+    "request": {"username": "chandra", "hostname": "plant", "version": "0.1.0+1bda381", "started_at": 1793750000, "capabilities": ["research.nonparty", "scrape.urls", "eval.gold", "precheck.glimmer"], "poll_hash": "7e0a3d3f2c7f4bb5b1d0b8a2b1c9a1f0e0d9c8b7a6f5e4d3c2b1a09f8e7d6c5b"},
+    "response": {"id": "5f2c1d0e9b8a7f6e5d4c3b2a1f0e9d8c", "code": "K7QF-2M", "poll_after_secs": 5, "expires_at": 1793750900},
+    "poll_request": {"poll_secret": "0101010101010101010101010101010101010101010101010101010101010101"},
+    "poll_pending": {"status": "pending", "expires_at": 1793750900},
+    "poll_approved": {"status": "approved", "worker": "chandra@plant 2026-11-04", "token": "w2.0123456789abcdef0123456789abcdef.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
+    "poll_gone": {"status": "denied"}
+  }
 }

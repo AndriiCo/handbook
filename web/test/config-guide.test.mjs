@@ -11,7 +11,7 @@ import {
 } from '../src/lib/admin/config-guide.ts';
 
 // Every registry key with its type, from crates/config/src/lib.rs keys::ALL
-// (registry_holds_104_typed_keys). Regenerate when the registry changes.
+// (registry_holds_*_typed_keys, 106 keys). Regenerate when the registry changes.
 const REGISTRY = [
 	['acme.directory', 'text'], ['acme.domains', 'text'], ['acme.eab_hmac', 'secret'], ['acme.eab_kid', 'text'], ['acme.email', 'text'], ['acme.enabled', 'bool'],
 	['admin.allow_ips', 'text'], ['admin.mtls_off', 'bool'],
@@ -30,14 +30,14 @@ const REGISTRY = [
 	['telnyx.api_key', 'secret'], ['telnyx.base_url', 'text'], ['telnyx.connection_id', 'text'], ['telnyx.from_number', 'text'], ['telnyx.mode', 'text'], ['telnyx.webhook_public_key', 'text'], ['telnyx.webrtc_connection_id', 'text'],
 	['tls.cert_file', 'text'], ['tls.key_file', 'text'], ['tracking.poll_enabled', 'bool'],
 	['usps.base_url', 'text'], ['usps.certified', 'bool'], ['usps.client_id', 'secret'], ['usps.client_secret', 'secret'], ['usps.crid', 'text'], ['usps.epa_account', 'secret'], ['usps.live', 'bool'], ['usps.live_daily_cap', 'text'], ['usps.live_max_usd', 'text'], ['usps.manifest_mid', 'text'], ['usps.mid', 'text'],
-	['worker.token', 'secret']
+	['worker.enrolment', 'text'], ['worker.glimmer_model', 'text'], ['worker.glimmer_url', 'text']
 ];
 
 test('guide covers every registry key once, with the registry type', () => {
 	const seen = guideKeys()
 		.map((k) => [k.key, k.type])
 		.sort((a, b) => a[0].localeCompare(b[0]));
-	assert.equal(REGISTRY.length, 104);
+	assert.equal(REGISTRY.length, 106);
 	assert.deepEqual(seen, REGISTRY);
 	assert.equal(CONFIG_GUIDE.length, 19);
 });

@@ -149,7 +149,7 @@ mod tests {
             dir: dir.path().join("job"),
             repo: super::super::repo_root(),
             cache_dir: dir.path().to_path_buf(),
-            env: super::super::WorkerEnv::default(),
+            settings: super::super::Settings::default(),
         };
         let out = ScrapeUrls
             .run(&ctx, &json!({"urls": [url], "politeness_ms": 0}))

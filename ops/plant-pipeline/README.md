@@ -75,13 +75,24 @@ Production keeps pending work items (research, scrapes, evals) in
 time, heartbeats its lease, and uploads the result (spec
 `docs/specs/work-queue.md`). Staff queue jobs and download results on
 the admin Work queue page (`/work`). Plant never accepts a connection
-and holds no production credential except the worker token.
+and holds no production credential except its own worker token
+(spec `docs/specs/worker-enrolment.md`).
+
+No secrets are copied by hand. On its first start the worker finds no
+token, asks production to enrol and writes a pairing code to
+`worker.log`; staff approve that code on Work queue → **Workers**, and
+the worker saves its token and connects. Everything its jobs need (the
+Meta key, `worker.glimmer_model`, cache modes, `hf.mode`) arrives from
+production's `/config` in `welcome` and stays in memory; the worker
+reads no `.env` file. Revoke a worker on the same tab; it then enrols
+again and waits for a new approval.
 
 Layout on plant (operator decision 2026-11-03, `docs/ops/deploy.md` § Plant):
 
 ```
 ~/apostille-worker/src/          source of one committed SHA (.sha inside)
-~/.config/apostille/worker.env   APOSTILLE_WORKER_TOKEN + META_API_KEY, mode 0600
+~/.config/apostille/worker.token {"worker": "<name>", "token": "w2.…"}, mode 0600 (dir 0700)
+~/.config/apostille/worker.enrol open enrol request (id, poll secret, expiry), 0600
 /srv/scratch/apostille/work/     worker.lock, worker.log, job-<id>-a<n>/ scratch
 /srv/scratch/apostille/fetch-cache/  URL-keyed page cache (reruns re-read)
 /srv/scratch/apostille/meta-cache/   Meta call cache (record/replay layer)
@@ -95,18 +106,22 @@ Setup (from the Mac; idempotent):
 ```sh
 # 0. once, as root on plant: the scratch root the worker writes to
 ssh -t plant 'sudo mkdir -p /srv/scratch/apostille && sudo chown "$(id -un):" /srv/scratch/apostille'
-# 1. token: mint once, save it as worker.token in admin /config
-openssl rand -hex 32
-# 2. secrets file on plant (paste the token and plant's Meta key)
-ssh plant 'mkdir -p ~/.config/apostille && umask 077 && cat > ~/.config/apostille/worker.env'
-#   APOSTILLE_WORKER_TOKEN=<64 hex chars from step 1>
-#   META_API_KEY=<plant's Meta API key>
-#   (Ctrl-D ends the input)
+# 1. (nothing to mint: the worker enrols itself)
+# 2. (no secrets file: settings come from production's /config)
 # 3. dirs, source of HEAD (or a SHA), release build, cron watchdog
 ./ops/plant-pipeline/worker-install.sh            # add --restart after an update (drains)
-# 4. smoke: watch it connect, then check the admin Work queue page
+# 4. within a minute cron starts it; read the enrol code from the log
 ssh plant 'tail -n 20 /srv/scratch/apostille/work/worker.log'
+#   enrol code K7QF-2M for chandra@plant: approve it on Work queue → Workers
+#    then on the admin Work queue page → Workers: Approve, type the code,
+#    keep or edit the name (Add date appends the LA date). The log then
+#    shows "enrolled as …" and "connected to … as …".
 ```
+
+The request stays open for 15 minutes; a cron restart keeps polling the
+same one. If it expires or is denied, the next start opens a new one
+(production allows 3 requests per IP per hour). A worker whose token is
+revoked moves it to `worker.token.revoked` and enrols again.
 
 The watchdog is a user-crontab line, same reasoning as the pipeline
 worker above (Linger=no, so cron is the real persistence; the
@@ -129,8 +144,10 @@ running through a dropped socket and completes on the next session
 with the same lease token. A crashed worker's lease expires after 300 s
 and the job requeues (3 attempts by default, then `failed`; staff can
 Retry). One-off runs without the server:
-`cargo xtask worker --run-local job.json` with
-`{"kind": "scrape.urls", "payload": {"urls": ["https://…"]}}`.
+`cargo xtask worker --run-local job.json [--settings settings.json]` with
+`{"kind": "scrape.urls", "payload": {"urls": ["https://…"]}}`; the
+settings file (0600) takes the same keys as `welcome.settings`, e.g.
+`{"meta_api_key": "…", "glimmer_model": "…"}`.
 
 ## Failure semantics
 

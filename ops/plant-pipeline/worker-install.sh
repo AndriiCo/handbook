@@ -5,8 +5,8 @@
 # /srv/scratch/apostille only (docs/ops/deploy.md § Plant). The operator
 # creates /srv/scratch/apostille once, as root (the script says how).
 # Usage: worker-install.sh [--restart] [sha]   (default: HEAD, committed SHAs only)
-# The token file (~/.config/apostille/worker.env) is written by hand once;
-# see ops/plant-pipeline/README.md § Work-queue worker.
+# No secrets to copy: on its first start the worker enrols and logs a
+# code; approve it on Work queue → Workers (README § Work-queue worker).
 set -euo pipefail
 
 RESTART=0
@@ -33,8 +33,12 @@ ssh plant "set -euo pipefail
   fi
   mkdir -p $S/work $S/meta-cache $S/fetch-cache $S/models $S/target ~/apostille-worker
   mkdir -p ~/.config/apostille && chmod 700 ~/.config/apostille
-  if [ -f ~/.config/apostille/worker.env ]; then chmod 600 ~/.config/apostille/worker.env
-  else echo 'NOTE: ~/.config/apostille/worker.env is missing; the worker exits until it exists'; fi
+  if [ ! -f ~/.config/apostille/worker.token ]; then
+    echo 'NOTE: not enrolled yet: approve the enrol code shown in $S/work/worker.log on Work queue → Workers'
+  fi
+  if [ -f ~/.config/apostille/worker.env ]; then
+    echo 'NOTE: ~/.config/apostille/worker.env is no longer read; delete it (it may hold old secrets)'
+  fi
   echo WORKER-DIRS-OK"
 
 # Build beside the live tree, then swap: a failed build leaves the old one.

@@ -239,7 +239,7 @@ fn la_offset(unix: i64) -> i64 {
 }
 
 /// `YYYY-MM-DD` of `unix` on the America/Los_Angeles calendar.
-fn la_date(unix: i64) -> String {
+pub(crate) fn la_date(unix: i64) -> String {
     notify::iso_day(unix + la_offset(unix))
 }
 

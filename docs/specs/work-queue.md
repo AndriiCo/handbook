@@ -65,18 +65,17 @@ builder.
 
 ## 2. WebSocket: `GET /apostille/api/v1/worker/ws` (public host)
 
-Auth before upgrade: `Authorization: Bearer <token>`, compared in
-constant time (SHA-256 of both sides) with the sealed secret
-`worker.token` (`/config`, group "Plant workers"). No row → 503, wrong
-or missing token → 401, fewer than 32 characters configured → 503.
-Two token forms: the shared `worker.token` itself (any worker name;
-the Work page marks it "shared token"), or a named token
-`w1.<name>.<hex HMAC-SHA256(worker.token, "worker-name:<name>")>`
-minted on the Work page (`POST /apostille/api/v1/admin/workers/token
-{name}`, fresh step-up, shown once), which admits only `hello` from
-that name. Rotating `worker.token` revokes every named token, and open
-sockets re-check the secret on every ping: a rotated secret closes
-them. A socket with no inbound frame (pongs included) for 90 s is
+Auth before upgrade: `Authorization: Bearer w2.<credential id>.<secret>`,
+a per-worker token the worker got by enrolling
+(`docs/specs/worker-enrolment.md`): it asks, staff approve its pairing
+code on the Work queue page's Workers tab, and its poll collects the
+token once. `work.sqlite` keeps only the token's SHA-256 (constant-time
+compare). Unknown or missing token → 401 `unauthorized`; a revoked
+credential → 401 `revoked`. `hello.worker` must equal the credential's
+name. Open sockets re-check the credential on every ping: a revoke
+closes them. `welcome.settings` carries the job-kind settings from
+server config (`meta.api_key` and the others), so workers read no
+`.env`. A socket with no inbound frame (pongs included) for 90 s is
 closed.
 
 `hello.version` is `<semver>+<git sha>` (the `.sha` file
@@ -95,8 +94,8 @@ tests parse every sample).
 
 | Direction | `type` | Fields |
 |---|---|---|
-| worker → | `hello` | `worker` (name, `[a-z0-9-]{1,32}`), `capabilities` (kinds), `version` |
-| ← server | `welcome` | `worker`, `lease_secs`, `heartbeat_secs`, `max_result_bytes` |
+| worker → | `hello` | `worker` (the credential's name, e.g. `chandra@plant`), `capabilities` (kinds), `version` |
+| ← server | `welcome` | `worker`, `lease_secs`, `heartbeat_secs`, `max_result_bytes`, `settings` (string map) |
 | worker → | `checkout` | — |
 | ← server | `job` | `id`, `kind`, `payload`, `lease`, `lease_expires_at`, `attempt` |
 | ← server | `idle` | `retry_after_secs` |
@@ -121,7 +120,10 @@ lease). The server pings every 30 s.
 | `GET /apostille/api/v1/admin/work-items/{id}` | one item + its audit trail |
 | `GET /apostille/api/v1/admin/work-items/{id}/result` | result bytes (`Content-Disposition: attachment`) |
 | `POST /apostille/api/v1/admin/work-items/{id}/retry` | failed → pending (attempts reset) |
-| `POST /apostille/api/v1/admin/workers/token` | `{name}` → `{name, token}`: a named worker token (fresh step-up, shown once) |
+| `GET /apostille/api/v1/admin/workers/enrolments?revoked=` | pending enrol requests + credentials (worker-enrolment spec §5) |
+| `POST /apostille/api/v1/admin/workers/enrolments/{id}/approve` | `{code, name, add_date}` (fresh step-up) |
+| `POST /apostille/api/v1/admin/workers/enrolments/{id}/deny` | deny a pending request |
+| `POST /apostille/api/v1/admin/workers/credentials/{id}/revoke` | revoke one worker (fresh step-up) |
 | `POST /apostille/api/v1/admin/work-items/{id}/cancel` | pending or leased → failed ("cancelled by …"); the worker's next heartbeat gets `lease_lost`; 409 otherwise |
 | `POST /apostille/api/v1/admin/work-items/{id}/stage-packs` | write a done `research.nonparty` or `discovery.bootstrap` result's packs to `<store>/packs-inbox/<id>/` |
 

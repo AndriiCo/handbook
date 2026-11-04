@@ -41,7 +41,7 @@ use atlas::ledger::{CallRecord, Ledger};
 use atlas::model::{ChatRequest, JsonSchema, ModelPort};
 use serde_json::{Value, json};
 
-use super::{JobContext, JobError, JobHandler, JobOutput};
+use super::{JobContext, JobError, JobHandler, JobOutput, keys};
 use crate::packs::{Pack, PackAuthority, PackDomain, PackObservation, PackStep, PackWatch};
 
 /// The atlas pack (repo-relative).
@@ -88,32 +88,34 @@ impl JobHandler for ResearchNonparty {
     }
 
     fn run(&self, ctx: &JobContext, payload: &Value) -> Result<JobOutput, JobError> {
-        let Some(key) = ctx.env.get("META_API_KEY") else {
+        let Some(key) = ctx.settings.get(keys::META_API_KEY) else {
             return Err(JobError::fatal(
-                "research.nonparty needs META_API_KEY in worker.env",
+                "research.nonparty needs the Meta key: set meta.api_key in /config",
             ));
         };
         let base = ctx
-            .env
-            .get("META_BASE_URL")
+            .settings
+            .get(keys::META_BASE_URL)
             .unwrap_or_else(|| atlas::model::BASE_URL.to_string());
         // Every Meta call and fetch goes through the call cache (P391):
         // a rerun replays saved answers and pages instead of paying
         // again; only live calls count toward the daily cap.
-        let mode = |var: &str| {
-            ctx.env
-                .get(var)
+        let mode = |key: &str| {
+            ctx.settings
+                .get(key)
                 .and_then(|m| callcache::CacheMode::parse(&m))
                 .unwrap_or_default()
         };
         let cap = ctx
-            .env
-            .get("META_DAILY_CALL_CAP")
+            .settings
+            .get(keys::META_DAILY_CALL_CAP)
             .and_then(|c| c.parse().ok())
             .unwrap_or(400);
-        let meta =
-            callcache::MetaCache::new(ctx.cache_dir.join("meta-cache"), mode("META_CACHE_MODE"))
-                .with_budget(cap);
+        let meta = callcache::MetaCache::new(
+            ctx.cache_dir.join("meta-cache"),
+            mode(keys::META_CACHE_MODE),
+        )
+        .with_budget(cap);
         let port = atlas::model::MetaClient::new(
             atlas::cached::CachedTransport::new(
                 atlas::model::UreqTransport::default(),
@@ -124,7 +126,7 @@ impl JobHandler for ResearchNonparty {
         );
         let fetch = LiveFetch::new(callcache::FetchCache::new(
             ctx.cache_dir.join("fetch-cache"),
-            mode("FETCH_CACHE_MODE"),
+            mode(keys::FETCH_CACHE_MODE),
         ));
         research(
             &port,

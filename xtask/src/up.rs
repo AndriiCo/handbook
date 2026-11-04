@@ -12,9 +12,11 @@
 //! stub-fixture capture per authority), installs the recorded A2
 //! verdicts, grades `eval` into `quality.json`, mints the setup key
 //! (or, once staff passkeys exist, says to sign in at `/staff-login`),
-//! seals a fresh `worker.token` into `.local/worker.env`, then serves
+//! mints a fresh local worker credential (`up@localhost`, straight into
+//! `work.sqlite`, no enrolment) into `.local/worker.token`, then serves
 //! the release `web` binary in the foreground with a local
-//! `xtask worker` connected to it.
+//! `xtask worker --token-file .local/worker.token` connected to it (its
+//! settings, `hf_mode=fake` included, arrive in `welcome.settings`).
 //!
 //! `--live` swaps the synthetic captures for `fetch-slug` runs and
 //! drafts/scores through the Meta Model API (`META_API_KEY`).
@@ -52,8 +54,11 @@ const STORE_DIR: &str = ".local/store";
 const KEK_FILE: &str = ".local/handbook-kek";
 /// Remembers the lockfile hash the last `npm ci` installed.
 const NCI_HASH_FILE: &str = ".local/.npm-ci-hash";
-/// `APOSTILLE_WORKER_TOKEN` for the local worker (0600, minted every boot).
-const WORKER_ENV: &str = ".local/worker.env";
+/// The local worker's token file (0600, minted every boot; format in
+/// `xtask/src/worker/enrol.rs`).
+const WORKER_TOKEN: &str = ".local/worker.token";
+/// The local worker's credential name (the name rule's `user@host`).
+const WORKER_NAME: &str = "up@localhost";
 /// The local worker's scratch (`xtask worker --workdir`).
 const WORKER_DIR: &str = ".local/work";
 /// How long `--check` waits for its `scrape.urls` job to reach `done`.
@@ -227,9 +232,7 @@ pub fn run(args: &[String]) {
     if let Some(payload) = IMPORT.get() {
         import_setup_values(&xtask, payload);
     }
-    // After the import, so a setup file's value never strands the
-    // local worker on a token it does not hold.
-    seal_worker_token(&xtask);
+    mint_worker_token();
     xtask_cmd(
         &xtask,
         &[
@@ -814,78 +817,32 @@ pub fn loopback_keys() -> Vec<&'static str> {
     loopback_settings().iter().map(|(k, _, _)| *k).collect()
 }
 
-/// Mint a fresh `worker.token` (shared-token form, 64 hex), seal it
-/// through `config-set` on stdin (never argv), and write
-/// [`WORKER_ENV`] (0600) for the local `xtask worker --env-file`.
-/// Every boot rotates it; the server reads the row per connection.
-fn seal_worker_token(xtask: &Path) {
-    use std::io::Write as _;
-    let token = hex(&rand::random::<[u8; 32]>());
-    println!(
-        "up: + {} config-set --key worker.token (stdin)",
-        xtask.display()
-    );
-    let mut child = Command::new(xtask)
-        .args([
-            "config-set",
-            "--store",
-            STORE_DIR,
-            "--kek-file",
-            KEK_FILE,
-            "--key",
-            "worker.token",
-            "--type",
-            "secret",
-            "--value-from-stdin",
-            "--actor",
-            "xtask-up",
-        ])
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .unwrap_or_else(|e| fail(&format!("spawn config-set: {e}")));
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(token.as_bytes())
-            .unwrap_or_else(|e| fail(&format!("config-set stdin: {e}")));
-    }
-    let status = child.wait().unwrap_or_else(|e| fail(&e.to_string()));
-    if !status.success() {
-        fail("sealing worker.token failed");
-    }
-    // W-3: the worker mirrors `hf.mode` (it reads no server config).
-    let hf_fake = load_runtime_config()
-        .modes
-        .is_fake(sealed_config::Integration::HuggingFace);
-    write_private(
-        Path::new(WORKER_ENV),
-        &format!(
-            "# Local worker token for `cargo xtask up` (re-minted every boot).\nAPOSTILLE_WORKER_TOKEN={token}\n{}",
-            if hf_fake { "HF_MODE=fake\n" } else { "" }
-        ),
-    );
-    println!("up: worker token sealed; {WORKER_ENV} written (0600)");
+/// Mint a fresh credential for the local worker straight into
+/// `work.sqlite` (`mint_direct` revokes the previous boot's one with the
+/// same name) and write it to [`WORKER_TOKEN`] (0600). No enrolment:
+/// whoever runs `up` already holds the store.
+fn mint_worker_token() {
+    let store = handbook_store::store::Store::new(STORE_DIR);
+    let token = handbook_store::work::open(&store)
+        .and_then(|conn| {
+            handbook_store::work::migrate(&conn)?;
+            handbook_store::work_enrol::mint_direct(&conn, WORKER_NAME, "xtask-up", unix_now())
+        })
+        .unwrap_or_else(|e| fail(&format!("mint the local worker token: {e}")));
+    write_worker_token(Path::new(WORKER_TOKEN), &token)
+        .unwrap_or_else(|e| fail(&format!("write {WORKER_TOKEN}: {e}")));
+    println!("up: worker credential {WORKER_NAME} minted; {WORKER_TOKEN} written (0600)");
 }
 
-/// Write `text` to `path` readable by its owner only (0600 on unix,
-/// enforced even when the file already existed wider).
-fn write_private(path: &Path, text: &str) {
-    use std::io::Write as _;
-    let mut options = std::fs::OpenOptions::new();
-    options.create(true).write(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
-        options.mode(0o600);
-        if path.exists() {
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-                .unwrap_or_else(|e| fail(&format!("chmod {}: {e}", path.display())));
-        }
-    }
-    let mut file = options
-        .open(path)
-        .unwrap_or_else(|e| fail(&format!("write {}: {e}", path.display())));
-    file.write_all(text.as_bytes())
-        .unwrap_or_else(|e| fail(&format!("write {}: {e}", path.display())));
+/// The token file `xtask worker --token-file` reads.
+fn write_worker_token(path: &Path, token: &str) -> Result<(), String> {
+    crate::worker::enrol::save_credential(
+        path,
+        &crate::worker::enrol::Credential {
+            worker: WORKER_NAME.to_string(),
+            token: token.to_string(),
+        },
+    )
 }
 
 /// Authority slugs in `evals/authorities/*.json` (sorted, stable).
@@ -1603,27 +1560,24 @@ fn worker_url() -> String {
 }
 
 /// The plant worker binary, pointed at this boot: token from
-/// [`WORKER_ENV`], scratch and GPU lock under `.local/`.
+/// [`WORKER_TOKEN`], scratch and GPU lock under `.local/`.
 fn spawn_worker(xtask: &Path) -> Child {
     let url = worker_url();
     println!(
-        "up: + {} worker --connect {url} --name {} --workdir {WORKER_DIR}",
+        "up: + {} worker --connect {url} --token-file {WORKER_TOKEN} --workdir {WORKER_DIR}",
         xtask.display(),
-        env_label()
     );
     Command::new(xtask)
         .args([
             "worker",
             "--connect",
             &url,
-            "--name",
-            env_label(),
+            "--token-file",
+            WORKER_TOKEN,
             "--workdir",
             WORKER_DIR,
             "--cache-dir",
             ".local",
-            "--env-file",
-            WORKER_ENV,
             "--gpu-lock",
             ".local/gpu.lock",
         ])
@@ -1902,8 +1856,7 @@ fn print_banner(setup_key: Option<&str>, review_link: &str, prebuilt: bool) {
         "  review:  {review_link} (the queue itself; it needs that sign-in, it is not a login link)"
     );
     println!(
-        "  worker:  `xtask worker` connects as \"{}\"; its jobs are at http://localhost:{admin}/work",
-        env_label()
+        "  worker:  `xtask worker` connects as \"{WORKER_NAME}\"; its jobs are at http://localhost:{admin}/work"
     );
     let fakes: Vec<&str> = load_runtime_config()
         .modes
@@ -2251,19 +2204,39 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn worker_env_is_private_even_over_a_wide_file() {
+    fn worker_token_is_private_even_over_a_wide_file() {
         use std::os::unix::fs::PermissionsExt as _;
         let dir = tempfile::tempdir().expect("scratch dir");
-        let path = dir.path().join("worker.env");
+        let path = dir.path().join("worker.token");
         std::fs::write(&path, "old").expect("seed");
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("chmod");
-        write_private(&path, "APOSTILLE_WORKER_TOKEN=x\n");
+        let token = "w2.0123456789abcdef0123456789abcdef.\
+                     0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        write_worker_token(&path, token).expect("write");
         let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
+        // The worker reads it back as the `up@localhost` credential.
+        let credential = crate::worker::enrol::load_credential(&path)
+            .expect("load")
+            .expect("present");
         assert_eq!(
-            std::fs::read_to_string(&path).expect("read"),
-            "APOSTILLE_WORKER_TOKEN=x\n"
+            (credential.worker.as_str(), credential.token.as_str()),
+            (WORKER_NAME, token)
         );
+    }
+
+    #[test]
+    fn the_local_worker_mints_a_credential_the_store_accepts() {
+        let dir = tempfile::tempdir().expect("scratch dir");
+        let store = handbook_store::store::Store::new(dir.path());
+        let conn = handbook_store::work::open(&store).expect("open");
+        handbook_store::work::migrate(&conn).expect("migrate");
+        let first = handbook_store::work_enrol::mint_direct(&conn, WORKER_NAME, "xtask-up", 1)
+            .expect("the name follows the rule");
+        assert!(first.starts_with("w2."));
+        let second = handbook_store::work_enrol::mint_direct(&conn, WORKER_NAME, "xtask-up", 2)
+            .expect("again");
+        assert_ne!(first, second, "every boot mints a fresh one");
     }
 
     #[test]

@@ -51,9 +51,14 @@ double-submit pair except the Stripe webhook.
 | GET `/apostille/api/v1/admin/work-items/{id}/result` | admin | staff | n/a | — | P392 | result bytes (attachment) |
 | POST `/apostille/api/v1/admin/work-items/{id}/retry` | admin | staff | yes | — | P392 | `retry_response` |
 | POST `/apostille/api/v1/admin/work-items/{id}/cancel` | admin | staff | yes | — | P433 | `cancel_response` (pending or leased → failed) |
-| POST `/apostille/api/v1/admin/workers/token` `{name}` | admin | staff, fresh step-up | yes | — | P433 | `token_response` (shown once) |
+| GET `/apostille/api/v1/admin/workers/enrolments?revoked=1` | admin | staff | n/a | — | worker enrolment | `admin-work-items.json` `enrolments` |
+| POST `/apostille/api/v1/admin/workers/enrolments/{id}/approve` `{code, name, add_date}` | admin | staff, fresh step-up | yes | 3 wrong codes deny | worker enrolment | `approve_response` |
+| POST `/apostille/api/v1/admin/workers/enrolments/{id}/deny` | admin | staff | yes | — | worker enrolment | `deny_response` |
+| POST `/apostille/api/v1/admin/workers/credentials/{id}/revoke` | admin | staff, fresh step-up | yes | — | worker enrolment | `revoke_response` |
+| POST `/apostille/api/v1/worker/enrol` | public | none | n/a | 5 pending, 3/IP/hour, 4 KiB | worker enrolment | `worker-frames.json` `enrol.request` → `enrol.response` (202) |
+| POST `/apostille/api/v1/worker/enrol/{id}/poll` `{poll_secret}` | public | poll secret | n/a | 4 KiB | worker enrolment | `enrol.poll_*` (token once; 410 after) |
 | POST `/apostille/api/v1/admin/work-items/{id}/stage-packs` | admin | staff | yes | — | P392 | `stage_response`; files in `<store>/packs-inbox/{id}/` |
-| GET `/apostille/api/v1/worker/ws` (WebSocket) | public | plant worker (`worker.token` bearer) | n/a | 8 sockets/IP | P392 | `worker-frames.json` |
+| GET `/apostille/api/v1/worker/ws` (WebSocket) | public | enrolled worker (`w2.` bearer) | n/a | 8 sockets/IP | P392 | `worker-frames.json` |
 | GET `/apostille/api/v1/admin/sources/{id}/captures` | admin | staff | n/a | — | SA-14 (P394) | `{source, captures: [{id, captured_at, kind, trust, sha256, bytes, previous_id, reread, added, removed}], count}` |
 | GET `/apostille/api/v1/admin/captures/{id}/diff` | admin | staff | n/a | — | SA-14 (P394) | `{capture, previous, reread, missing_sidecar, added, removed, lines: [{op: same\|added\|removed, text, old_line, new_line} \| {op: gap, lines}]}` |
 | POST `/apostille/api/v1/admin/captures/{id}/draft-changes` | admin | staff | yes | daily cap | SA-14 (P394) | `{outcome: drafted\|skipped, reason?, added_lines, proposed, rejected, suppressed, fact_ids}` |

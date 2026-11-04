@@ -10,6 +10,12 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Sheet from '#lib/components/ui/sheet/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import RequestErrorNotice from '#lib/admin/RequestErrorNotice.svelte';
+	import { CANCELLED_COPY, confirmPasskey, loginErrorCopy } from '#lib/admin/staff-auth.js';
+	import { csrfHeaders } from '#lib/admin/config-client.js';
 	import { ago, dateTime } from '#lib/admin/format.js';
 	import {
 		DEFAULT_ATTEMPTS,
@@ -20,7 +26,17 @@
 		auditLabel,
 		canStagePacks,
 		cancelWork,
-		mintWorkerToken,
+		CODE_TRIES,
+		approveEnrolment,
+		cleanCode,
+		denyEnrolment,
+		fetchEnrolments,
+		finalWorkerName,
+		revokeWorker,
+		workerNameProblem,
+		type Enrolments,
+		type PendingEnrolment,
+		type WorkerCredential,
 		enqueueBody,
 		enqueueWork,
 		examplePayload,
@@ -58,6 +74,10 @@
 	import PackagePlusIcon from '@lucide/svelte/icons/package-plus';
 	import PackageCheckIcon from '@lucide/svelte/icons/package-check';
 	import BanIcon from '@lucide/svelte/icons/ban';
+	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
+	import UserCheckIcon from '@lucide/svelte/icons/user-check';
+	import UserXIcon from '@lucide/svelte/icons/user-x';
+	import ShieldOffIcon from '@lucide/svelte/icons/shield-off';
 
 	// Production work queue (work-queue.md §3): staff enqueue jobs here,
 	// plant workers dial out over one WebSocket and check them out one
@@ -67,6 +87,9 @@
 	// (cookie auth); POSTs carry the CSRF pair via work-client.js.
 	// A finished research.nonparty result can be staged into
 	// <store>/packs-inbox/<id>/ for the Packs page (re-staging overwrites).
+	// The Workers tab (worker-enrolment.md §5) approves, denies and
+	// revokes worker enrolments; it re-reads on the same 5 s poll. Every
+	// worker-supplied string (name, build, capabilities) renders as text.
 	const API = '/apostille/api/v1';
 
 	let list = $state<WorkList | null>(null);
@@ -98,11 +121,37 @@
 	}>({ state: 'idle', view: null, error: null });
 	let retrying = $state<Record<number, true>>({});
 	let cancelling = $state<Record<number, true>>({});
-	let mintName = $state('');
-	let minting = $state(false);
-	let minted = $state<{ name: string; token: string } | null>(null);
 	let staging = $state<Record<number, true>>({});
 	let stageNote = $state<{ id: number; ok: boolean; text: string } | null>(null);
+
+	// Workers tab.
+	type Tab = 'jobs' | 'workers';
+	let tab = $state<Tab>('jobs');
+	let enrol = $state<Enrolments | null>(null);
+	let enrolState = $state<'loading' | 'ready' | 'failed'>('loading');
+	let enrolError = $state<string | null>(null);
+	let enrolPollError = $state<string | null>(null);
+	let showRevoked = $state(false);
+	let enrolSeq = 0;
+
+	type Refusal = { message: string; stepUp: boolean };
+	let approveFor = $state<PendingEnrolment | null>(null);
+	let approveOpen = $state(false);
+	let approveCode = $state('');
+	let approveName = $state('');
+	let approveAddDate = $state(false);
+	let approving = $state(false);
+	let approveTouched = $state(false);
+	let codeError = $state<string | null>(null);
+	let nameError = $state<string | null>(null);
+	let approveRefusal = $state<Refusal | null>(null);
+
+	type Confirm = { kind: 'deny'; row: PendingEnrolment } | { kind: 'revoke'; row: WorkerCredential };
+	let confirmAct = $state<Confirm | null>(null);
+	let confirmOpen = $state(false);
+	let confirmBusy = $state(false);
+	let confirmRefusal = $state<Refusal | null>(null);
+	let passkeyBusy = $state(false);
 
 	let poller: ReturnType<typeof poll> | null = null;
 	let seq = 0;
@@ -123,6 +172,12 @@
 	const selectedRow = $derived(list?.items.find((i) => i.id === selectedId) ?? null);
 	const shown = $derived(detail?.item ?? selectedRow);
 	const filterLabel = $derived(FILTERS.find((f) => f.value === filter)?.label ?? 'All statuses');
+	const enrolNow = $derived(Math.floor(nowMs / 1000) + (enrol?.offset ?? list?.offset ?? 0));
+	const pendingCount = $derived(enrol?.pending.length ?? 0);
+	const finalName = $derived(finalWorkerName(approveName.trim(), approveAddDate, enrol?.today));
+	const finalProblem = $derived(
+		approveAddDate && !enrol?.today ? 'The server sent no date for today; untick Add date.' : workerNameProblem(finalName)
+	);
 
 	const errorText = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
 	const iso = (at: number) => new Date(at * 1000).toISOString();
@@ -168,7 +223,7 @@
 
 	function refresh() {
 		if (poller) poller.now();
-		else void load(true);
+		else void Promise.all([load(true), loadEnrolments(true)]);
 	}
 
 	function pickKind(value: string) {
@@ -219,28 +274,185 @@
 		}
 	}
 
-	async function mint() {
-		const name = mintName.trim();
-		if (minting || name === '') return;
-		minting = true;
-		minted = null;
+	async function loadEnrolments(quiet = false) {
+		const mine = ++enrolSeq;
+		const revoked = showRevoked;
+		if (!quiet) {
+			enrolState = 'loading';
+			enrolError = null;
+		}
 		try {
-			minted = await mintWorkerToken(API, name);
+			const next = await fetchEnrolments(API, { revoked });
+			if (mine !== enrolSeq || revoked !== showRevoked) return;
+			enrol = next;
+			enrolState = 'ready';
+			enrolError = null;
+			enrolPollError = null;
+			// An open Approve dialog whose request vanished (expired, or
+			// decided in another tab) has nothing left to approve.
+			if (approveOpen && approveFor && !next.pending.some((p) => p.id === approveFor?.id) && !approving) {
+				approveOpen = false;
+				toast.info(`The request from ${approveFor.proposed_name} is no longer pending.`);
+			}
 		} catch (err) {
-			toast.error(errorText(err, `No token was minted for ${name}.`));
-		} finally {
-			minting = false;
+			if (mine !== enrolSeq) return;
+			const text = errorText(err, 'The worker list failed to load.');
+			if (enrolState === 'ready' && enrol) enrolPollError = text;
+			else {
+				enrolError = text;
+				enrolState = 'failed';
+			}
 		}
 	}
 
-	async function copyMinted() {
-		if (!minted) return;
-		try {
-			await navigator.clipboard.writeText(minted.token);
-			toast.success('Token copied.');
-		} catch {
-			toast.error('Copy failed; select the token and copy it by hand.');
+	function toggleRevoked(on: boolean) {
+		showRevoked = on;
+		void loadEnrolments(enrol !== null);
+	}
+
+	function startApprove(row: PendingEnrolment) {
+		approveFor = row;
+		approveCode = '';
+		approveName = row.proposed_name;
+		approveAddDate = false;
+		approveTouched = false;
+		codeError = null;
+		nameError = null;
+		approveRefusal = null;
+		approveOpen = true;
+	}
+
+	async function approve() {
+		const row = approveFor;
+		if (!row || approving) return;
+		approveTouched = true;
+		approveRefusal = null;
+		const code = cleanCode(approveCode);
+		codeError = code === '' ? 'Enter the pairing code from the worker’s log.' : null;
+		nameError = finalProblem;
+		if (codeError) {
+			document.getElementById('approve-code')?.focus();
+			return;
 		}
+		if (nameError) {
+			document.getElementById('approve-name')?.focus();
+			return;
+		}
+		approving = true;
+		try {
+			const out = await approveEnrolment(API, row.id, { code, name: approveName.trim(), addDate: approveAddDate });
+			approveOpen = false;
+			toast.success(`${out.name} is enrolled. It picks up its token at its next poll and connects.`);
+			void loadEnrolments(true);
+		} catch (err) {
+			const e = err instanceof WorkError ? err : null;
+			const server = e?.serverError ?? '';
+			if (e?.stepUp) {
+				approveRefusal = { message: e.message, stepUp: true };
+			} else if (e?.status === 422 && (e.triesLeft !== null || /code/i.test(server))) {
+				const left = e.triesLeft;
+				codeError =
+					left === null
+						? 'Wrong pairing code.'
+						: left <= 0
+							? 'Wrong pairing code; no tries left.'
+							: `Wrong pairing code: ${left} ${left === 1 ? 'try' : 'tries'} left before the request is denied.`;
+				approveCode = '';
+				document.getElementById('approve-code')?.focus();
+			} else if ((e?.status === 422 || e?.status === 409) && /name/i.test(server)) {
+				nameError = server === 'name in use' ? 'Another active worker has this name; edit it or tick Add date.' : `The server refused the name: ${server}.`;
+				document.getElementById('approve-name')?.focus();
+			} else if (e?.status === 409 || e?.status === 404) {
+				// Denied after 3 wrong codes, or decided/expired elsewhere.
+				approveOpen = false;
+				toast.error(errorText(err, 'The request is no longer pending.'));
+				void loadEnrolments(true);
+			} else {
+				approveRefusal = { message: errorText(err, 'The approval failed.'), stepUp: false };
+			}
+		} finally {
+			approving = false;
+		}
+	}
+
+	function startConfirm(next: Confirm) {
+		confirmAct = next;
+		confirmRefusal = null;
+		confirmOpen = true;
+	}
+
+	async function runConfirm() {
+		const act = confirmAct;
+		if (!act || confirmBusy) return;
+		confirmBusy = true;
+		confirmRefusal = null;
+		try {
+			if (act.kind === 'deny') {
+				await denyEnrolment(API, act.row.id);
+				toast.success(`Denied the request from ${act.row.proposed_name}.`);
+			} else {
+				await revokeWorker(API, act.row.id);
+				toast.success(`${act.row.name} is revoked: its socket closes and its token no longer connects.`);
+			}
+			confirmOpen = false;
+			void loadEnrolments(true);
+		} catch (err) {
+			const e = err instanceof WorkError ? err : null;
+			if (!e?.stepUp && (e?.status === 409 || e?.status === 404)) {
+				confirmOpen = false;
+				toast.error(errorText(err, 'Nothing to change: the row moved.'));
+				void loadEnrolments(true);
+			} else {
+				confirmRefusal = { message: errorText(err, 'The request failed.'), stepUp: e?.stepUp === true };
+			}
+		} finally {
+			confirmBusy = false;
+		}
+	}
+
+	async function staffGet(path: string) {
+		const res = await fetch(`${API}${path}`, { credentials: 'same-origin' });
+		return { ok: res.ok, status: res.status, body: await res.json().catch(() => ({})) };
+	}
+
+	async function staffPost(path: string, body: unknown) {
+		const res = await fetch(`${API}${path}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', ...csrfHeaders() },
+			credentials: 'same-origin',
+			body: JSON.stringify(body)
+		});
+		return { ok: res.ok, status: res.status, body: await res.json().catch(() => ({})) };
+	}
+
+	// Stale step-up (approve, revoke): one passkey check for this
+	// session's own account, then the refused action again.
+	async function confirmAndRetry(which: 'approve' | 'confirm') {
+		const set = (r: Refusal) => (which === 'approve' ? (approveRefusal = r) : (confirmRefusal = r));
+		passkeyBusy = true;
+		try {
+			const res = await confirmPasskey({ get: staffGet, post: staffPost, credentials: navigator.credentials });
+			if (!res.ok) {
+				set({ message: loginErrorCopy(res.status, res.body?.error ?? ''), stepUp: false });
+				return;
+			}
+		} catch (err) {
+			set({
+				message: err instanceof DOMException && err.name === 'NotAllowedError' ? CANCELLED_COPY : 'Passkey check failed — try again.',
+				stepUp: false
+			});
+			return;
+		} finally {
+			passkeyBusy = false;
+		}
+		if (which === 'approve') await approve();
+		else await runConfirm();
+	}
+
+	function setTab(value: string) {
+		tab = value === 'workers' ? 'workers' : 'jobs';
+		syncUrl();
+		if (tab === 'workers' && enrol === null) void loadEnrolments();
 	}
 
 	async function cancelJob(id: number) {
@@ -366,6 +578,8 @@
 		const params = new URLSearchParams(location.search);
 		if (filter !== 'all') params.set('status', filter);
 		else params.delete('status');
+		if (tab === 'workers') params.set('tab', 'workers');
+		else params.delete('tab');
 		if (selectedId !== null) params.set('job', String(selectedId));
 		else params.delete('job');
 		const query = params.toString();
@@ -380,15 +594,17 @@
 	}
 
 	onMount(() => {
-		// Deep link: ?status=failed&job=7 (as /staff-orders).
+		// Deep link: ?status=failed&job=7 (as /staff-orders), ?tab=workers.
 		const params = new URLSearchParams(location.search);
+		if (params.get('tab') === 'workers') tab = 'workers';
 		const status = params.get('status');
 		if (isStatus(status)) filter = status;
 		const job = Number(params.get('job'));
 		void load().then(() => {
 			if (Number.isInteger(job) && job > 0) openDetail(job);
 		});
-		poller = poll(() => load(true));
+		void loadEnrolments();
+		poller = poll(() => Promise.all([load(true), loadEnrolments(true)]));
 		const clock = setInterval(() => (nowMs = Date.now()), 5000);
 		return () => {
 			poller?.stop();
@@ -406,6 +622,7 @@
 	} as const;
 	// Full width on phones, a roomy reading column from sm up.
 	const SHEET = 'gap-0 overflow-y-auto p-0 outline-none data-[side=right]:w-full data-[side=right]:sm:max-w-2xl';
+	const TRIGGER = 'h-8 gap-1.5 px-3 text-ink-muted data-active:text-foreground';
 	const PRE = 'm-0 max-h-80 overflow-auto rounded-md border border-line bg-surface p-3 font-mono text-xs leading-relaxed whitespace-pre';
 </script>
 
@@ -433,6 +650,250 @@
 	</span>
 {/snippet}
 
+{#snippet otherBuild(title: string)}
+	<span class="rounded-full border border-changed px-2 py-0.5 text-xs whitespace-nowrap text-changed" {title}>other build</span>
+{/snippet}
+
+{#snippet workersTab()}
+	{#if enrolState === 'loading' && !enrol}
+		<div class="flex flex-col gap-3 rounded-lg border border-line bg-card p-4 shadow-sm md:p-6" role="status" aria-label="Loading the workers">
+			<Skeleton class="h-6 w-48 rounded-xs" />
+			<Skeleton class="h-28 w-full rounded-md" />
+			<Skeleton class="h-6 w-40 rounded-xs" />
+			<Skeleton class="h-28 w-full rounded-md" />
+		</div>
+	{:else if enrolState === 'failed' && !enrol}
+		<Notice variant="warning" heading="The worker list is unavailable.">
+			<p class="m-0">{enrolError}</p>
+			<p class="mt-3 mb-0"><Button onclick={() => loadEnrolments()}>Try again</Button></p>
+		</Notice>
+	{:else if enrol}
+		{#if !enrol.enrolment_on}
+			<Notice variant="info" heading="Enrolment is off.">
+				<p class="m-0 text-sm">
+					<code class="font-mono text-xs">worker.enrolment</code> is <code class="font-mono text-xs">off</code> in
+					<a class="text-accent-strong underline" href="/config#key-worker.enrolment">/config</a>, so new workers cannot ask to
+					enrol. Requests already listed can still be approved or denied.
+				</p>
+			</Notice>
+		{/if}
+
+		<section aria-labelledby="pending-title" class="flex flex-col gap-3">
+			<div class="flex flex-col gap-1">
+				<h2 id="pending-title" class="m-0 flex items-center gap-2 text-h3 font-semibold">
+					<KeyRoundIcon class="size-5 text-accent-strong" aria-hidden="true" /> Asking to enrol
+				</h2>
+				<p class="m-0 max-w-prose text-sm text-ink-muted">
+					A worker with no token logs a pairing code such as <code class="font-mono text-xs">enrol code K7QF-2M</code>. Approve
+					only with the code read from that machine’s <code class="font-mono text-xs">worker.log</code>: an impostor’s request
+					looks the same here. {CODE_TRIES} wrong codes deny the request.
+				</p>
+			</div>
+			{#if enrol.pending.length === 0}
+				<div class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line bg-card px-6 py-8 text-center">
+					<InboxIcon class="size-7 text-ink-muted" aria-hidden="true" />
+					<p class="m-0 text-sm text-ink-muted">No worker is asking to enrol.</p>
+				</div>
+			{:else}
+				<div class="overflow-hidden rounded-lg border border-line bg-card shadow-sm">
+					<Table.Root aria-label="Enrolment requests">
+						<Table.Header class="bg-surface">
+							<tr class="border-b border-line">
+								<Table.Head class="px-3 text-xs text-ink-muted sm:px-4">Proposed name</Table.Head>
+								<Table.Head class="hidden text-xs text-ink-muted md:table-cell">Started</Table.Head>
+								<Table.Head class="text-xs text-ink-muted">Request</Table.Head>
+								<Table.Head class="hidden text-xs text-ink-muted lg:table-cell">Build</Table.Head>
+								<Table.Head class="hidden text-xs text-ink-muted xl:table-cell">Kinds</Table.Head>
+								<Table.Head class="pr-3 text-right text-xs text-ink-muted sm:pr-4">Actions</Table.Head>
+							</tr>
+						</Table.Header>
+						<Table.Body>
+							{#each enrol.pending as p (p.id)}
+								<tr class="border-b border-line last:border-b-0">
+									<th scope="row" class="px-3 py-2.5 text-left font-normal sm:px-4">
+										<span class="block font-mono text-sm font-medium break-all">{p.proposed_name}</span>
+										{#if p.peer_ip}<span class="block font-mono text-xs text-ink-muted">from {p.peer_ip}</span>{/if}
+									</th>
+									<Table.Cell class="hidden text-xs md:table-cell">
+										{#if p.started_at !== null}
+											<time datetime={iso(p.started_at)}>{dateTime(p.started_at)}</time>
+										{:else}
+											<span class="text-ink-muted">—</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="text-xs">
+										<time class="block" datetime={iso(p.created_at)} title={dateTime(p.created_at)}>asked {ago(p.created_at, enrolNow)}</time>
+										{#if p.expires_at !== null}
+											<time
+												class={`block ${p.expires_at - enrolNow < 120 ? 'text-changed' : 'text-ink-muted'}`}
+												datetime={iso(p.expires_at)}
+												title={dateTime(p.expires_at)}>{leaseText(p.expires_at, enrolNow)}</time
+											>
+										{/if}
+										{#if p.code_tries > 0}
+											<span class="block text-changed">{p.code_tries} wrong code{p.code_tries === 1 ? '' : 's'}</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="hidden text-xs lg:table-cell">
+										<div class="flex flex-wrap items-center gap-1.5">
+											<span class="font-mono break-all">{p.version ?? '—'}</span>
+											{#if p.version_matches === false}
+												{@render otherBuild(`The server runs ${enrol.server_version ?? 'another build'}; reinstall the worker with worker-install.sh.`)}
+											{/if}
+										</div>
+									</Table.Cell>
+									<Table.Cell class="hidden max-w-xs xl:table-cell">
+										{#if p.capabilities.length > 0}
+											<ul class="m-0 flex list-none flex-wrap gap-1.5 p-0" aria-label="Kinds it takes">
+												{#each p.capabilities as c (c)}
+													<li class="rounded-full bg-surface-2 px-2 py-0.5 font-mono text-xs text-ink-muted">{c}</li>
+												{/each}
+											</ul>
+										{:else}
+											<span class="text-xs text-ink-muted">—</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="pr-3 sm:pr-4">
+										<div class="flex flex-wrap justify-end gap-1.5">
+											<Button size="sm" aria-haspopup="dialog" aria-label={`Approve ${p.proposed_name}`} onclick={() => startApprove(p)}>
+												<UserCheckIcon aria-hidden="true" /><span class="hidden sm:inline">Approve</span>
+											</Button>
+											<Button
+												variant="outline"
+												size="sm"
+												aria-haspopup="dialog"
+												aria-label={`Deny ${p.proposed_name}`}
+												onclick={() => startConfirm({ kind: 'deny', row: p })}
+											>
+												<UserXIcon aria-hidden="true" /><span class="hidden sm:inline">Deny</span>
+											</Button>
+										</div>
+									</Table.Cell>
+								</tr>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
+			{/if}
+		</section>
+
+		<section aria-labelledby="enrolled-title" class="flex flex-col gap-3">
+			<div class="flex flex-wrap items-end justify-between gap-3">
+				<div class="flex flex-col gap-1">
+					<h2 id="enrolled-title" class="m-0 flex items-center gap-2 text-h3 font-semibold">
+						<PlugZapIcon class="size-5 text-accent-strong" aria-hidden="true" /> Enrolled workers
+					</h2>
+					<p class="m-0 max-w-prose text-sm text-ink-muted">
+						Each holds its own token. Revoking one closes its socket; the others keep working.
+					</p>
+				</div>
+				<div class="flex min-h-11 items-center gap-3">
+					<Switch id="show-revoked" checked={showRevoked} onCheckedChange={toggleRevoked} />
+					<label for="show-revoked" class="text-sm">Show revoked</label>
+				</div>
+			</div>
+			{#if enrol.credentials.length === 0}
+				<div class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line bg-card px-6 py-8 text-center">
+					<UnplugIcon class="size-7 text-ink-muted" aria-hidden="true" />
+					<p class="m-0 text-sm text-ink-muted">
+						{showRevoked ? 'No worker has enrolled yet.' : 'No enrolled workers. Approve a request above to add one.'}
+					</p>
+				</div>
+			{:else}
+				<div class="overflow-hidden rounded-lg border border-line bg-card shadow-sm">
+					<Table.Root aria-label="Enrolled workers">
+						<Table.Header class="bg-surface">
+							<tr class="border-b border-line">
+								<Table.Head class="px-3 text-xs text-ink-muted sm:px-4">Name</Table.Head>
+								<Table.Head class="hidden text-xs text-ink-muted md:table-cell">Enrolled</Table.Head>
+								<Table.Head class="text-xs text-ink-muted">Status</Table.Head>
+								<Table.Head class="hidden text-xs text-ink-muted lg:table-cell">Build</Table.Head>
+								<Table.Head class="hidden text-xs text-ink-muted sm:table-cell">Job</Table.Head>
+								<Table.Head class="pr-3 text-right text-xs text-ink-muted sm:pr-4">Actions</Table.Head>
+							</tr>
+						</Table.Header>
+						<Table.Body>
+							{#each enrol.credentials as c (c.id)}
+								{@const revoked = c.revoked_at !== null}
+								<tr class={`border-b border-line last:border-b-0 ${revoked ? 'bg-surface text-ink-muted opacity-70' : ''}`}>
+									<th scope="row" class="px-3 py-2.5 text-left font-normal sm:px-4">
+										<span class={`block font-mono text-sm font-medium break-all ${revoked ? 'line-through' : ''}`}>{c.name}</span>
+										{#if revoked}<span class="block text-xs">revoked</span>{/if}
+									</th>
+									<Table.Cell class="hidden text-xs md:table-cell">
+										{#if c.created_at !== null}
+											<time class="block" datetime={iso(c.created_at)}>{dateTime(c.created_at)}</time>
+										{/if}
+										{#if c.created_by}<span class="block font-mono text-ink-muted">by {c.created_by}</span>{/if}
+									</Table.Cell>
+									<Table.Cell class="text-xs">
+										{#if revoked && c.revoked_at !== null}
+											<span class="block">
+												Revoked <time datetime={iso(c.revoked_at)}>{dateTime(c.revoked_at)}</time>
+											</span>
+											{#if c.revoked_by}<span class="block font-mono">by {c.revoked_by}</span>{/if}
+										{:else}
+											<span class={`block font-medium ${c.connected ? 'text-verified' : 'text-ink-muted'}`}>
+												{c.connected ? 'Connected' : 'Not connected'}
+											</span>
+											<span class="block text-ink-muted">
+												{#if c.last_seen_at !== null}
+													last seen <time datetime={iso(c.last_seen_at)} title={dateTime(c.last_seen_at)}>{ago(c.last_seen_at, enrolNow)}</time>
+												{:else}
+													never connected
+												{/if}
+											</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="hidden text-xs lg:table-cell">
+										<div class="flex flex-wrap items-center gap-1.5">
+											<span class="font-mono break-all">{c.last_version ?? '—'}</span>
+											{#if c.version_matches === false && !revoked}
+												{@render otherBuild(`The server runs ${enrol.server_version ?? 'another build'}; reinstall the worker with worker-install.sh --restart.`)}
+											{/if}
+										</div>
+									</Table.Cell>
+									<Table.Cell class="hidden text-sm sm:table-cell">
+										{#if c.job_id !== null && !revoked}
+											<button
+												type="button"
+												class="rounded-xs font-mono text-accent-strong outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
+												aria-haspopup="dialog"
+												onclick={() => c.job_id !== null && openDetail(c.job_id)}
+											>
+												Job {c.job_id}
+											</button>
+										{:else}
+											<span class="text-xs text-ink-muted">—</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="pr-3 sm:pr-4">
+										<div class="flex justify-end">
+											{#if !revoked}
+												<Button
+													variant="outline"
+													size="sm"
+													class="text-error"
+													aria-haspopup="dialog"
+													aria-label={`Revoke ${c.name}`}
+													onclick={() => startConfirm({ kind: 'revoke', row: c })}
+												>
+													<ShieldOffIcon aria-hidden="true" /><span class="hidden sm:inline">Revoke</span>
+												</Button>
+											{/if}
+										</div>
+									</Table.Cell>
+								</tr>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
+			{/if}
+			{#if enrolPollError}<p class="m-0 text-xs text-changed" role="status">Last refresh failed: {enrolPollError}</p>{/if}
+		</section>
+	{/if}
+{/snippet}
+
 <div class="mt-6 flex flex-col gap-6 pb-12">
 	<header class="flex flex-wrap items-end justify-between gap-4">
 		<div class="flex min-w-0 flex-col gap-1">
@@ -457,441 +918,433 @@
 
 	<p class="sr-only" aria-live="polite">{announce}</p>
 
-	{#if loadState === 'loading'}
-		<div class="flex flex-col gap-6" role="status" aria-label="Loading the work queue">
-			<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-				{#each [0, 1, 2, 3] as i (i)}
-					<div class="flex flex-col gap-2 rounded-lg border border-line bg-card p-4 shadow-sm">
-						<Skeleton class="h-3 w-20 rounded-xs" />
-						<Skeleton class="h-6 w-12 rounded-xs" />
-					</div>
-				{/each}
-			</div>
-			<div class="flex flex-col gap-3 rounded-lg border border-line bg-card p-4 shadow-sm md:p-6">
-				<Skeleton class="h-6 w-40 rounded-xs" />
-				<Skeleton class="h-28 w-full rounded-md" />
-				<Skeleton class="h-9 w-32 rounded-md" />
-			</div>
-		</div>
-	{:else if loadState === 'failed'}
-		<Notice variant="warning" heading="The work queue is unavailable.">
-			<p class="m-0">{loadError}</p>
-			<p class="mt-3 mb-0"><Button onclick={() => load()}>Try again</Button></p>
-		</Notice>
-	{:else if list}
-		<section aria-label="Counts">
-			<dl class="m-0 grid grid-cols-2 gap-3 md:grid-cols-4">
-				{#each STATUSES as s (s)}
-					<div class="flex flex-col gap-1 rounded-lg border border-line bg-card p-4 shadow-sm">
-						<dt class="text-xs font-medium text-ink-muted">{statusLabel(s)}</dt>
-						<dd class={`m-0 text-h3 font-semibold tabular-nums ${s === 'failed' && list.counts.failed > 0 ? 'text-error' : ''}`}>
-							{list.counts[s]}
-						</dd>
-					</div>
-				{/each}
-			</dl>
-		</section>
-
-		<div class="grid gap-6 lg:grid-cols-5">
-			<section
-				aria-labelledby="enqueue-title"
-				class="flex min-w-0 flex-col gap-4 rounded-lg border border-line bg-card p-4 shadow-sm md:p-6 lg:col-span-3"
-			>
-				<div class="flex flex-col gap-1">
-					<h2 id="enqueue-title" class="m-0 flex items-center gap-2 text-h3 font-semibold">
-						<SendIcon class="size-5 text-accent-strong" aria-hidden="true" /> Enqueue a job
-					</h2>
-					<p class="m-0 text-sm text-ink-muted">
-						The payload starts as the kind's example. The next worker that announces the kind checks it
-						out; a failed attempt goes back in the queue until max attempts.
-					</p>
-				</div>
-				{#if kinds.length === 0}
-					<Notice variant="info" heading="No job kinds listed.">
-						<p class="m-0 text-sm">The server names no job kinds, so there is nothing to enqueue yet.</p>
-					</Notice>
-				{:else}
-					<form
-						class="flex flex-col gap-4"
-						novalidate
-						onsubmit={(event) => {
-							event.preventDefault();
-							void enqueue();
-						}}
+	<Tabs.Root value={tab} onValueChange={setTab} class="flex-col gap-6">
+		<Tabs.List aria-label="Work queue views">
+			<Tabs.Trigger value="jobs" class={TRIGGER}>Jobs</Tabs.Trigger>
+			<Tabs.Trigger value="workers" class={TRIGGER}>
+				Workers
+				{#if pendingCount > 0}
+					<span class="min-w-5 rounded-full bg-changed-bg px-1.5 text-xs font-semibold text-changed tabular-nums"
+						><span class="sr-only">, </span>{pendingCount}<span class="sr-only"> asking to enrol</span></span
 					>
-						<div class="grid gap-3 sm:grid-cols-3">
-							<div class="flex min-w-0 flex-col gap-1 sm:col-span-2">
-								<span id="work-kind-label" class="text-xs font-medium text-ink-muted">Kind</span>
-								<Select.Root type="single" value={kind} onValueChange={pickKind}>
-									<Select.Trigger
-										id="work-kind"
-										class="h-10 w-full font-mono"
-										aria-labelledby="work-kind-label work-kind"
-										aria-describedby="work-kind-about"
-									>
-										{kind || 'Choose a kind'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each kinds as k (k.kind)}
-											<Select.Item value={k.kind} label={k.kind}>
-												<span class="font-mono">{k.kind}</span>
-												{#if !capable.has(k.kind)}<span class="text-xs text-ink-muted">no worker</span>{/if}
-											</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-							<div class="flex min-w-0 flex-col gap-1">
-								<label for="work-attempts" class="text-xs font-medium text-ink-muted">Max attempts</label>
-								<Input
-									id="work-attempts"
-									type="number"
-									class="h-10"
-									min="1"
-									max={MAX_ATTEMPTS}
-									step="1"
-									inputmode="numeric"
-									bind:value={maxAttempts}
-									aria-invalid={formError?.field === 'max_attempts' || undefined}
-									aria-describedby={formError?.field === 'max_attempts' ? 'work-attempts-hint work-form-error' : 'work-attempts-hint'}
-								/>
-								<span id="work-attempts-hint" class="text-xs text-ink-muted">1 to {MAX_ATTEMPTS}; blank means {DEFAULT_ATTEMPTS}.</span>
-							</div>
-						</div>
-						<p id="work-kind-about" class="m-0 text-sm text-ink-muted">
-							{#if chosenKind}
-								{chosenKind.about || 'No description from the server.'}
-								{#if !capable.has(chosenKind.kind)}
-									<span class="block text-changed">No connected worker takes this kind; the job waits until one does.</span>
-								{/if}
-							{/if}
-						</p>
-						<div class="flex flex-col gap-1">
-							<div class="flex flex-wrap items-end justify-between gap-2">
-								<label for="work-payload" class="text-xs font-medium text-ink-muted">Payload (JSON object)</label>
-								{#if chosenKind}
-									<Button variant="ghost" size="sm" onclick={() => pickKind(kind)}>Use the example</Button>
-								{/if}
-							</div>
-							<Textarea
-								id="work-payload"
-								class="max-h-96 min-h-40 font-mono text-xs"
-								bind:value={payloadText}
-								spellcheck="false"
-								autocomplete="off"
-								autocapitalize="off"
-								aria-invalid={(formError?.field === 'payload' && !payloadCheck.ok) || undefined}
-								aria-describedby="work-payload-hint"
-							/>
-							<span id="work-payload-hint" class={`text-xs ${payloadCheck.ok ? 'text-ink-muted' : 'text-changed'}`}>
-								{payloadCheck.ok ? `JSON object, ${fmtBytes(payloadBytes)} of 64 KiB.` : payloadCheck.error}
-							</span>
-						</div>
-						<!-- A payload error stays in the hint above (the textarea's description, focused on submit). -->
-						{#if formError && formError.field !== 'payload'}
-							<p id="work-form-error" class="m-0 rounded-md border border-error bg-error-bg px-3 py-2 text-sm" role="alert">
-								{formError.text}
-							</p>
-						{/if}
-						<div>
-							<Button type="submit" size="lg" disabled={enqueuing || !kind}>
-								{#if enqueuing}
-									<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" /> Enqueuing…
-								{:else}
-									<SendIcon aria-hidden="true" /> Enqueue job
-								{/if}
-							</Button>
-						</div>
-					</form>
 				{/if}
-			</section>
+			</Tabs.Trigger>
+		</Tabs.List>
 
-			<section
-				aria-labelledby="workers-title"
-				class="flex min-w-0 flex-col gap-4 self-start rounded-lg border border-line bg-card p-4 shadow-sm md:p-6 lg:col-span-2"
-			>
-				<div class="flex flex-col gap-1">
-					<h2 id="workers-title" class="m-0 flex items-center gap-2 text-h3 font-semibold">
-						<PlugZapIcon class="size-5 text-accent-strong" aria-hidden="true" /> Connected workers
-					</h2>
-					<p class="m-0 text-sm text-ink-muted">Sockets open right now, with the kinds each one announced.</p>
-				</div>
-				{#if list.workers.length === 0}
-					<div class="flex flex-col items-center gap-2 rounded-md border border-dashed border-line px-4 py-8 text-center">
-						<UnplugIcon class="size-7 text-ink-muted" aria-hidden="true" />
-						<p class="m-0 text-sm text-ink-muted">
-							No worker is connected. Pending jobs wait until plant runs <code class="font-mono text-xs">cargo xtask worker</code>.
-						</p>
+		<Tabs.Content value="jobs" class="flex flex-col gap-6">
+			{#if loadState === 'loading'}
+				<div class="flex flex-col gap-6" role="status" aria-label="Loading the work queue">
+					<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+						{#each [0, 1, 2, 3] as i (i)}
+							<div class="flex flex-col gap-2 rounded-lg border border-line bg-card p-4 shadow-sm">
+								<Skeleton class="h-3 w-20 rounded-xs" />
+								<Skeleton class="h-6 w-12 rounded-xs" />
+							</div>
+						{/each}
 					</div>
-				{:else}
-					<ul class="m-0 flex list-none flex-col gap-3 p-0">
-						{#each list.workers as w (w.conn ?? w.name)}
-							<li class="flex flex-col gap-2 rounded-md border border-line p-3">
-								<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-									<span class="font-mono text-sm font-medium">{w.name}</span>
-									{#if w.version}<span class="font-mono text-xs text-ink-muted">v{w.version}</span>{/if}
-									{#if w.version_matches === false}
-										<span
-											class="rounded-full border border-changed px-2 py-0.5 text-xs text-changed"
-											title="This worker runs a different build from the server: reinstall it with worker-install.sh --restart."
-											>other build</span
-										>
-									{/if}
-									{#if w.identity === 'shared'}
-										<span
-											class="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-muted"
-											title="Connected with the shared worker.token, which admits any worker name. A minted token admits one name."
-											>shared token</span
-										>
-									{/if}
-									<span class="ml-auto text-sm">
-										{#if w.job_id !== null}
-											<button
-												type="button"
-												class="rounded-xs font-mono text-accent-strong outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
-												aria-haspopup="dialog"
-												onclick={() => w.job_id !== null && openDetail(w.job_id)}
+					<div class="flex flex-col gap-3 rounded-lg border border-line bg-card p-4 shadow-sm md:p-6">
+						<Skeleton class="h-6 w-40 rounded-xs" />
+						<Skeleton class="h-28 w-full rounded-md" />
+						<Skeleton class="h-9 w-32 rounded-md" />
+					</div>
+				</div>
+			{:else if loadState === 'failed'}
+				<Notice variant="warning" heading="The work queue is unavailable.">
+					<p class="m-0">{loadError}</p>
+					<p class="mt-3 mb-0"><Button onclick={() => load()}>Try again</Button></p>
+				</Notice>
+			{:else if list}
+				<section aria-label="Counts">
+					<dl class="m-0 grid grid-cols-2 gap-3 md:grid-cols-4">
+						{#each STATUSES as s (s)}
+							<div class="flex flex-col gap-1 rounded-lg border border-line bg-card p-4 shadow-sm">
+								<dt class="text-xs font-medium text-ink-muted">{statusLabel(s)}</dt>
+								<dd class={`m-0 text-h3 font-semibold tabular-nums ${s === 'failed' && list.counts.failed > 0 ? 'text-error' : ''}`}>
+									{list.counts[s]}
+								</dd>
+							</div>
+						{/each}
+					</dl>
+				</section>
+
+				<div class="grid gap-6 lg:grid-cols-5">
+					<section
+						aria-labelledby="enqueue-title"
+						class="flex min-w-0 flex-col gap-4 rounded-lg border border-line bg-card p-4 shadow-sm md:p-6 lg:col-span-3"
+					>
+						<div class="flex flex-col gap-1">
+							<h2 id="enqueue-title" class="m-0 flex items-center gap-2 text-h3 font-semibold">
+								<SendIcon class="size-5 text-accent-strong" aria-hidden="true" /> Enqueue a job
+							</h2>
+							<p class="m-0 text-sm text-ink-muted">
+								The payload starts as the kind's example. The next worker that announces the kind checks it
+								out; a failed attempt goes back in the queue until max attempts.
+							</p>
+						</div>
+						{#if kinds.length === 0}
+							<Notice variant="info" heading="No job kinds listed.">
+								<p class="m-0 text-sm">The server names no job kinds, so there is nothing to enqueue yet.</p>
+							</Notice>
+						{:else}
+							<form
+								class="flex flex-col gap-4"
+								novalidate
+								onsubmit={(event) => {
+									event.preventDefault();
+									void enqueue();
+								}}
+							>
+								<div class="grid gap-3 sm:grid-cols-3">
+									<div class="flex min-w-0 flex-col gap-1 sm:col-span-2">
+										<span id="work-kind-label" class="text-xs font-medium text-ink-muted">Kind</span>
+										<Select.Root type="single" value={kind} onValueChange={pickKind}>
+											<Select.Trigger
+												id="work-kind"
+												class="h-10 w-full font-mono"
+												aria-labelledby="work-kind-label work-kind"
+												aria-describedby="work-kind-about"
 											>
-												On job {w.job_id}
-											</button>
-										{:else}
-											<span class="text-ink-muted">Idle</span>
-										{/if}
-									</span>
+												{kind || 'Choose a kind'}
+											</Select.Trigger>
+											<Select.Content>
+												{#each kinds as k (k.kind)}
+													<Select.Item value={k.kind} label={k.kind}>
+														<span class="font-mono">{k.kind}</span>
+														{#if !capable.has(k.kind)}<span class="text-xs text-ink-muted">no worker</span>{/if}
+													</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</div>
+									<div class="flex min-w-0 flex-col gap-1">
+										<label for="work-attempts" class="text-xs font-medium text-ink-muted">Max attempts</label>
+										<Input
+											id="work-attempts"
+											type="number"
+											class="h-10"
+											min="1"
+											max={MAX_ATTEMPTS}
+											step="1"
+											inputmode="numeric"
+											bind:value={maxAttempts}
+											aria-invalid={formError?.field === 'max_attempts' || undefined}
+											aria-describedby={formError?.field === 'max_attempts' ? 'work-attempts-hint work-form-error' : 'work-attempts-hint'}
+										/>
+										<span id="work-attempts-hint" class="text-xs text-ink-muted">1 to {MAX_ATTEMPTS}; blank means {DEFAULT_ATTEMPTS}.</span>
+									</div>
 								</div>
-								<p class="m-0 text-xs text-ink-muted">
-									{#if w.last_seen_at !== null}
-										Last seen <time datetime={iso(w.last_seen_at)} title={dateTime(w.last_seen_at)}>{ago(w.last_seen_at, now)}</time>
-									{/if}
-									{#if w.connected_at !== null}
-										· connected <time datetime={iso(w.connected_at)} title={dateTime(w.connected_at)}>{ago(w.connected_at, now)}</time>
+								<p id="work-kind-about" class="m-0 text-sm text-ink-muted">
+									{#if chosenKind}
+										{chosenKind.about || 'No description from the server.'}
+										{#if !capable.has(chosenKind.kind)}
+											<span class="block text-changed">No connected worker takes this kind; the job waits until one does.</span>
+										{/if}
 									{/if}
 								</p>
-								{#if w.capabilities.length > 0}
-									<ul class="m-0 flex list-none flex-wrap gap-1.5 p-0" aria-label={`Kinds ${w.name} takes`}>
-										{#each w.capabilities as c (c)}
-											<li class="rounded-full bg-surface-2 px-2 py-0.5 font-mono text-xs text-ink-muted">{c}</li>
-										{/each}
-									</ul>
+								<div class="flex flex-col gap-1">
+									<div class="flex flex-wrap items-end justify-between gap-2">
+										<label for="work-payload" class="text-xs font-medium text-ink-muted">Payload (JSON object)</label>
+										{#if chosenKind}
+											<Button variant="ghost" size="sm" onclick={() => pickKind(kind)}>Use the example</Button>
+										{/if}
+									</div>
+									<Textarea
+										id="work-payload"
+										class="max-h-96 min-h-40 font-mono text-xs"
+										bind:value={payloadText}
+										spellcheck="false"
+										autocomplete="off"
+										autocapitalize="off"
+										aria-invalid={(formError?.field === 'payload' && !payloadCheck.ok) || undefined}
+										aria-describedby="work-payload-hint"
+									/>
+									<span id="work-payload-hint" class={`text-xs ${payloadCheck.ok ? 'text-ink-muted' : 'text-changed'}`}>
+										{payloadCheck.ok ? `JSON object, ${fmtBytes(payloadBytes)} of 64 KiB.` : payloadCheck.error}
+									</span>
+								</div>
+								<!-- A payload error stays in the hint above (the textarea's description, focused on submit). -->
+								{#if formError && formError.field !== 'payload'}
+									<p id="work-form-error" class="m-0 rounded-md border border-error bg-error-bg px-3 py-2 text-sm" role="alert">
+										{formError.text}
+									</p>
 								{/if}
-							</li>
-						{/each}
-					</ul>
-				{/if}
-				<form
-					class="flex flex-col gap-2 border-t border-line pt-4"
-					onsubmit={(e) => {
-						e.preventDefault();
-						void mint();
-					}}
-				>
-					<label for="mint-name" class="text-xs font-medium text-ink-muted">Token for one worker</label>
-					<div class="flex gap-2">
-						<Input id="mint-name" class="h-9 font-mono" bind:value={mintName} autocomplete="off" spellcheck={false} />
-						<Button type="submit" variant="outline" disabled={minting || mintName.trim() === ''}>
-							{#if minting}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{/if}
-							Mint
-						</Button>
+								<div>
+									<Button type="submit" size="lg" disabled={enqueuing || !kind}>
+										{#if enqueuing}
+											<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" /> Enqueuing…
+										{:else}
+											<SendIcon aria-hidden="true" /> Enqueue job
+										{/if}
+									</Button>
+								</div>
+							</form>
+						{/if}
+					</section>
+
+					<section
+						aria-labelledby="workers-title"
+						class="flex min-w-0 flex-col gap-4 self-start rounded-lg border border-line bg-card p-4 shadow-sm md:p-6 lg:col-span-2"
+					>
+						<div class="flex flex-col gap-1">
+							<h2 id="workers-title" class="m-0 flex items-center gap-2 text-h3 font-semibold">
+								<PlugZapIcon class="size-5 text-accent-strong" aria-hidden="true" /> Connected workers
+							</h2>
+							<p class="m-0 text-sm text-ink-muted">Sockets open right now, with the kinds each one announced.</p>
+						</div>
+						{#if list.workers.length === 0}
+							<div class="flex flex-col items-center gap-2 rounded-md border border-dashed border-line px-4 py-8 text-center">
+								<UnplugIcon class="size-7 text-ink-muted" aria-hidden="true" />
+								<p class="m-0 text-sm text-ink-muted">
+									No worker is connected. Pending jobs wait until plant runs <code class="font-mono text-xs">cargo xtask worker</code>.
+								</p>
+							</div>
+						{:else}
+							<ul class="m-0 flex list-none flex-col gap-3 p-0">
+								{#each list.workers as w (w.conn ?? w.name)}
+									<li class="flex flex-col gap-2 rounded-md border border-line p-3">
+										<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+											<span class="font-mono text-sm font-medium">{w.name}</span>
+											{#if w.version}<span class="font-mono text-xs text-ink-muted">v{w.version}</span>{/if}
+											{#if w.version_matches === false}
+												<span
+													class="rounded-full border border-changed px-2 py-0.5 text-xs text-changed"
+													title="This worker runs a different build from the server: reinstall it with worker-install.sh --restart."
+													>other build</span
+												>
+											{/if}
+											<span class="ml-auto text-sm">
+												{#if w.job_id !== null}
+													<button
+														type="button"
+														class="rounded-xs font-mono text-accent-strong outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
+														aria-haspopup="dialog"
+														onclick={() => w.job_id !== null && openDetail(w.job_id)}
+													>
+														On job {w.job_id}
+													</button>
+												{:else}
+													<span class="text-ink-muted">Idle</span>
+												{/if}
+											</span>
+										</div>
+										<p class="m-0 text-xs text-ink-muted">
+											{#if w.last_seen_at !== null}
+												Last seen <time datetime={iso(w.last_seen_at)} title={dateTime(w.last_seen_at)}>{ago(w.last_seen_at, now)}</time>
+											{/if}
+											{#if w.connected_at !== null}
+												· connected <time datetime={iso(w.connected_at)} title={dateTime(w.connected_at)}>{ago(w.connected_at, now)}</time>
+											{/if}
+										</p>
+										{#if w.capabilities.length > 0}
+											<ul class="m-0 flex list-none flex-wrap gap-1.5 p-0" aria-label={`Kinds ${w.name} takes`}>
+												{#each w.capabilities as c (c)}
+													<li class="rounded-full bg-surface-2 px-2 py-0.5 font-mono text-xs text-ink-muted">{c}</li>
+												{/each}
+											</ul>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						{/if}
+						<p class="m-0 border-t border-line pt-4 text-xs text-ink-muted">
+							Workers enrol themselves: approve or revoke them on the
+							<button
+								type="button"
+								class="rounded-xs text-accent-strong underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
+								onclick={() => setTab('workers')}>Workers tab</button
+							>.
+						</p>
+					</section>
+				</div>
+
+				<section aria-labelledby="jobs-title" class="flex flex-col gap-3">
+					<div class="flex flex-wrap items-end justify-between gap-3">
+						<h2 id="jobs-title" class="m-0 text-h3 font-semibold">Jobs</h2>
+						<div class="flex w-full min-w-0 flex-col gap-1 sm:w-56">
+							<span id="work-filter-label" class="text-xs font-medium text-ink-muted">Status</span>
+							<Select.Root type="single" value={filter} onValueChange={setFilter}>
+								<Select.Trigger id="work-filter" class="h-9 w-full" aria-labelledby="work-filter-label work-filter">
+									{filterLabel}
+								</Select.Trigger>
+								<Select.Content>
+									{#each FILTERS as f (f.value)}
+										<Select.Item value={f.value} label={f.label}>{f.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
 					</div>
-					<p class="m-0 text-xs text-ink-muted">
-						It admits only that worker name. Rotating <code class="font-mono">worker.token</code> in /config revokes every minted token.
-					</p>
-					{#if minted}
-						<div class="flex flex-col gap-2 rounded-md border border-line bg-surface-2 p-3" role="status">
-							<p class="m-0 text-xs">
-								Shown once. On {minted.name}, set it as <code class="font-mono">APOSTILLE_WORKER_TOKEN</code> in
-								<code class="font-mono">worker.env</code>, start the worker with <code class="font-mono">--name {minted.name}</code>.
-							</p>
-							<code class="block font-mono text-xs break-all select-all">{minted.token}</code>
-							<div><Button type="button" variant="outline" size="sm" onclick={copyMinted}>Copy</Button></div>
+
+					{#if list.items.length === 0}
+						<div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-line bg-card px-6 py-10 text-center">
+							<InboxIcon class="size-8 text-ink-muted" aria-hidden="true" />
+							{#if filter === 'all'}
+								<p class="m-0 text-sm text-ink-muted">No jobs yet. Enqueue the first one above.</p>
+							{:else}
+								<p class="m-0 text-sm text-ink-muted">No {statusLabel(filter).toLowerCase()} jobs.</p>
+								<Button variant="outline" onclick={() => setFilter('all')}>Show all statuses</Button>
+							{/if}
+						</div>
+					{:else}
+						<div class="overflow-hidden rounded-lg border border-line bg-card shadow-sm">
+							<Table.Root aria-label="Jobs">
+								<Table.Header class="bg-surface">
+									<tr class="border-b border-line">
+										<Table.Head class="px-3 text-xs text-ink-muted sm:px-4">Job</Table.Head>
+										<Table.Head class="text-xs text-ink-muted">Status</Table.Head>
+										<Table.Head class="hidden text-right text-xs text-ink-muted sm:table-cell">Attempts</Table.Head>
+										<Table.Head class="hidden text-xs text-ink-muted md:table-cell">Lease</Table.Head>
+										<Table.Head class="hidden text-xs text-ink-muted lg:table-cell">Updated</Table.Head>
+										<Table.Head class="hidden text-xs text-ink-muted xl:table-cell">Error</Table.Head>
+										<Table.Head class="pr-3 text-right text-xs text-ink-muted sm:pr-4">Actions</Table.Head>
+									</tr>
+								</Table.Header>
+								<Table.Body>
+									{#each list.items as item (item.id)}
+										<tr class={`border-b border-line last:border-b-0 ${selectedId === item.id ? 'bg-muted' : ''}`}>
+											<th scope="row" class="px-3 py-2.5 text-left font-normal sm:px-4">
+												<button
+													type="button"
+													class="w-fit rounded-xs text-left font-mono text-sm font-medium text-ink outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
+													aria-haspopup="dialog"
+													aria-label={`Job ${item.id}: details`}
+													onclick={() => openDetail(item.id)}
+												>
+													#{item.id}
+												</button>
+												<span class="block font-mono text-xs text-ink-muted">{item.kind}</span>
+											</th>
+											<Table.Cell>
+												<div class="flex flex-wrap items-center gap-1.5">
+													{@render badge(item.status)}
+													{#if item.staged}{@render stagedBadge(item.id)}{/if}
+												</div>
+											</Table.Cell>
+											<Table.Cell class="hidden text-right font-mono text-sm tabular-nums sm:table-cell">
+												{item.attempts} / {item.max_attempts}
+											</Table.Cell>
+											<Table.Cell class="hidden text-xs md:table-cell">
+												{#if item.lease_owner}
+													<span class="block font-mono">{item.lease_owner}</span>
+												{/if}
+												{#if item.lease_expires_at !== null}
+													<time class="block text-ink-muted" datetime={iso(item.lease_expires_at)} title={dateTime(item.lease_expires_at)}
+														>{leaseText(item.lease_expires_at, now)}</time
+													>
+												{:else if item.status === 'pending' && item.retry_after !== null && item.retry_after > now}
+													<time class="block text-ink-muted" datetime={iso(item.retry_after)} title={dateTime(item.retry_after)}
+														>Retries {dateTime(item.retry_after)}</time
+													>
+												{:else if item.status === 'pending'}
+													<span class={`block ${capable.has(item.kind) ? 'text-ink-muted' : 'text-changed'}`}>
+														{capable.has(item.kind) ? 'Waiting for a worker' : 'No worker for this kind'}
+													</span>
+												{:else}
+													<span class="text-ink-muted">—</span>
+												{/if}
+											</Table.Cell>
+											<Table.Cell class="hidden text-xs text-ink-muted lg:table-cell">
+												<time class="block" datetime={iso(item.updated_at)} title={dateTime(item.updated_at)}>{ago(item.updated_at, now)}</time>
+												<span class="block">
+													created <time datetime={iso(item.created_at)} title={dateTime(item.created_at)}>{ago(item.created_at, now)}</time>
+												</span>
+											</Table.Cell>
+											<Table.Cell class="hidden max-w-xs xl:table-cell">
+												{#if item.error}
+													<span class="block truncate text-xs text-error" title={item.error}>{item.error}</span>
+												{:else}
+													<span class="text-xs text-ink-muted">—</span>
+												{/if}
+											</Table.Cell>
+											<!-- Icons only on phones; each button keeps its full name. -->
+											<Table.Cell class="pr-3 sm:pr-4">
+												<div class="flex flex-wrap justify-end gap-1.5">
+													{#if item.result}
+														<Button
+															variant="outline"
+															size="sm"
+															aria-haspopup="dialog"
+															aria-label={`View the result of job ${item.id}`}
+															onclick={() => openDetail(item.id, true)}
+														>
+															<EyeIcon aria-hidden="true" /><span class="hidden sm:inline">View</span>
+														</Button>
+														<Button
+															variant="outline"
+															size="sm"
+															href={resultHref(API, item.id)}
+															download
+															aria-label={`Download the result of job ${item.id}`}
+														>
+															<DownloadIcon aria-hidden="true" /><span class="hidden sm:inline">Download</span>
+														</Button>
+													{/if}
+													{#if canStagePacks(item)}
+														<Button
+															variant="outline"
+															size="sm"
+															disabled={!!staging[item.id]}
+															aria-label={`${item.staged ? 'Stage again' : 'Stage as packs'}: job ${item.id}`}
+															onclick={() => stage(item.id)}
+														>
+															{#if staging[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<PackagePlusIcon
+																	aria-hidden="true"
+																/>{/if}
+															<span class="hidden sm:inline">{item.staged ? 'Stage again' : 'Stage as packs'}</span>
+														</Button>
+													{/if}
+													{#if item.status === 'pending' || item.status === 'leased'}
+														<Button
+															variant="outline"
+															size="sm"
+															disabled={!!cancelling[item.id]}
+															aria-label={`Cancel job ${item.id}`}
+															onclick={() => cancelJob(item.id)}
+														>
+															{#if cancelling[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<BanIcon
+																	aria-hidden="true"
+																/>{/if}
+															<span class="hidden sm:inline">Cancel</span>
+														</Button>
+													{/if}
+													{#if item.status === 'failed'}
+														<Button
+															variant="outline"
+															size="sm"
+															disabled={!!retrying[item.id]}
+															aria-label={`Retry job ${item.id}`}
+															onclick={() => retry(item.id)}
+														>
+															{#if retrying[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<RotateCcwIcon
+																	aria-hidden="true"
+																/>{/if}
+															<span class="hidden sm:inline">Retry</span>
+														</Button>
+													{/if}
+												</div>
+											</Table.Cell>
+										</tr>
+									{/each}
+								</Table.Body>
+							</Table.Root>
 						</div>
 					{/if}
-				</form>
-			</section>
-		</div>
-
-		<section aria-labelledby="jobs-title" class="flex flex-col gap-3">
-			<div class="flex flex-wrap items-end justify-between gap-3">
-				<h2 id="jobs-title" class="m-0 text-h3 font-semibold">Jobs</h2>
-				<div class="flex w-full min-w-0 flex-col gap-1 sm:w-56">
-					<span id="work-filter-label" class="text-xs font-medium text-ink-muted">Status</span>
-					<Select.Root type="single" value={filter} onValueChange={setFilter}>
-						<Select.Trigger id="work-filter" class="h-9 w-full" aria-labelledby="work-filter-label work-filter">
-							{filterLabel}
-						</Select.Trigger>
-						<Select.Content>
-							{#each FILTERS as f (f.value)}
-								<Select.Item value={f.value} label={f.label}>{f.label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
-
-			{#if list.items.length === 0}
-				<div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-line bg-card px-6 py-10 text-center">
-					<InboxIcon class="size-8 text-ink-muted" aria-hidden="true" />
-					{#if filter === 'all'}
-						<p class="m-0 text-sm text-ink-muted">No jobs yet. Enqueue the first one above.</p>
-					{:else}
-						<p class="m-0 text-sm text-ink-muted">No {statusLabel(filter).toLowerCase()} jobs.</p>
-						<Button variant="outline" onclick={() => setFilter('all')}>Show all statuses</Button>
-					{/if}
-				</div>
-			{:else}
-				<div class="overflow-hidden rounded-lg border border-line bg-card shadow-sm">
-					<Table.Root aria-label="Jobs">
-						<Table.Header class="bg-surface">
-							<tr class="border-b border-line">
-								<Table.Head class="px-3 text-xs text-ink-muted sm:px-4">Job</Table.Head>
-								<Table.Head class="text-xs text-ink-muted">Status</Table.Head>
-								<Table.Head class="hidden text-right text-xs text-ink-muted sm:table-cell">Attempts</Table.Head>
-								<Table.Head class="hidden text-xs text-ink-muted md:table-cell">Lease</Table.Head>
-								<Table.Head class="hidden text-xs text-ink-muted lg:table-cell">Updated</Table.Head>
-								<Table.Head class="hidden text-xs text-ink-muted xl:table-cell">Error</Table.Head>
-								<Table.Head class="pr-3 text-right text-xs text-ink-muted sm:pr-4">Actions</Table.Head>
-							</tr>
-						</Table.Header>
-						<Table.Body>
-							{#each list.items as item (item.id)}
-								<tr class={`border-b border-line last:border-b-0 ${selectedId === item.id ? 'bg-muted' : ''}`}>
-									<th scope="row" class="px-3 py-2.5 text-left font-normal sm:px-4">
-										<button
-											type="button"
-											class="w-fit rounded-xs text-left font-mono text-sm font-medium text-ink outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
-											aria-haspopup="dialog"
-											aria-label={`Job ${item.id}: details`}
-											onclick={() => openDetail(item.id)}
-										>
-											#{item.id}
-										</button>
-										<span class="block font-mono text-xs text-ink-muted">{item.kind}</span>
-									</th>
-									<Table.Cell>
-										<div class="flex flex-wrap items-center gap-1.5">
-											{@render badge(item.status)}
-											{#if item.staged}{@render stagedBadge(item.id)}{/if}
-										</div>
-									</Table.Cell>
-									<Table.Cell class="hidden text-right font-mono text-sm tabular-nums sm:table-cell">
-										{item.attempts} / {item.max_attempts}
-									</Table.Cell>
-									<Table.Cell class="hidden text-xs md:table-cell">
-										{#if item.lease_owner}
-											<span class="block font-mono">{item.lease_owner}</span>
-										{/if}
-										{#if item.lease_expires_at !== null}
-											<time class="block text-ink-muted" datetime={iso(item.lease_expires_at)} title={dateTime(item.lease_expires_at)}
-												>{leaseText(item.lease_expires_at, now)}</time
-											>
-										{:else if item.status === 'pending' && item.retry_after !== null && item.retry_after > now}
-											<time class="block text-ink-muted" datetime={iso(item.retry_after)} title={dateTime(item.retry_after)}
-												>Retries {dateTime(item.retry_after)}</time
-											>
-										{:else if item.status === 'pending'}
-											<span class={`block ${capable.has(item.kind) ? 'text-ink-muted' : 'text-changed'}`}>
-												{capable.has(item.kind) ? 'Waiting for a worker' : 'No worker for this kind'}
-											</span>
-										{:else}
-											<span class="text-ink-muted">—</span>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="hidden text-xs text-ink-muted lg:table-cell">
-										<time class="block" datetime={iso(item.updated_at)} title={dateTime(item.updated_at)}>{ago(item.updated_at, now)}</time>
-										<span class="block">
-											created <time datetime={iso(item.created_at)} title={dateTime(item.created_at)}>{ago(item.created_at, now)}</time>
-										</span>
-									</Table.Cell>
-									<Table.Cell class="hidden max-w-xs xl:table-cell">
-										{#if item.error}
-											<span class="block truncate text-xs text-error" title={item.error}>{item.error}</span>
-										{:else}
-											<span class="text-xs text-ink-muted">—</span>
-										{/if}
-									</Table.Cell>
-									<!-- Icons only on phones; each button keeps its full name. -->
-									<Table.Cell class="pr-3 sm:pr-4">
-										<div class="flex flex-wrap justify-end gap-1.5">
-											{#if item.result}
-												<Button
-													variant="outline"
-													size="sm"
-													aria-haspopup="dialog"
-													aria-label={`View the result of job ${item.id}`}
-													onclick={() => openDetail(item.id, true)}
-												>
-													<EyeIcon aria-hidden="true" /><span class="hidden sm:inline">View</span>
-												</Button>
-												<Button
-													variant="outline"
-													size="sm"
-													href={resultHref(API, item.id)}
-													download
-													aria-label={`Download the result of job ${item.id}`}
-												>
-													<DownloadIcon aria-hidden="true" /><span class="hidden sm:inline">Download</span>
-												</Button>
-											{/if}
-											{#if canStagePacks(item)}
-												<Button
-													variant="outline"
-													size="sm"
-													disabled={!!staging[item.id]}
-													aria-label={`${item.staged ? 'Stage again' : 'Stage as packs'}: job ${item.id}`}
-													onclick={() => stage(item.id)}
-												>
-													{#if staging[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<PackagePlusIcon
-															aria-hidden="true"
-														/>{/if}
-													<span class="hidden sm:inline">{item.staged ? 'Stage again' : 'Stage as packs'}</span>
-												</Button>
-											{/if}
-											{#if item.status === 'pending' || item.status === 'leased'}
-												<Button
-													variant="outline"
-													size="sm"
-													disabled={!!cancelling[item.id]}
-													aria-label={`Cancel job ${item.id}`}
-													onclick={() => cancelJob(item.id)}
-												>
-													{#if cancelling[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<BanIcon
-															aria-hidden="true"
-														/>{/if}
-													<span class="hidden sm:inline">Cancel</span>
-												</Button>
-											{/if}
-											{#if item.status === 'failed'}
-												<Button
-													variant="outline"
-													size="sm"
-													disabled={!!retrying[item.id]}
-													aria-label={`Retry job ${item.id}`}
-													onclick={() => retry(item.id)}
-												>
-													{#if retrying[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<RotateCcwIcon
-															aria-hidden="true"
-														/>{/if}
-													<span class="hidden sm:inline">Retry</span>
-												</Button>
-											{/if}
-										</div>
-									</Table.Cell>
-								</tr>
-							{/each}
-						</Table.Body>
-					</Table.Root>
-				</div>
+					<p class="m-0 text-xs text-ink-muted">
+						{#if list.items.length > 0}
+							{list.items.length} job{list.items.length === 1 ? '' : 's'} shown{list.items.length >= LIST_LIMIT
+								? `, the newest ${LIST_LIMIT}`
+								: ''}. Select a job number for its payload, summary and audit trail.
+						{/if}
+						{#if pollError}<span class="text-changed" role="status"> Last refresh failed: {pollError}</span>{/if}
+					</p>
+				</section>
 			{/if}
-			<p class="m-0 text-xs text-ink-muted">
-				{#if list.items.length > 0}
-					{list.items.length} job{list.items.length === 1 ? '' : 's'} shown{list.items.length >= LIST_LIMIT
-						? `, the newest ${LIST_LIMIT}`
-						: ''}. Select a job number for its payload, summary and audit trail.
-				{/if}
-				{#if pollError}<span class="text-changed" role="status"> Last refresh failed: {pollError}</span>{/if}
-			</p>
-		</section>
-	{/if}
+		</Tabs.Content>
+
+		<Tabs.Content value="workers" class="flex flex-col gap-6">
+			{#if tab === 'workers'}{@render workersTab()}{/if}
+		</Tabs.Content>
+	</Tabs.Root>
 </div>
 
 <Sheet.Root bind:open={sheetOpen} onOpenChangeComplete={(o) => !o && closed()}>
@@ -1114,3 +1567,130 @@
 		{/if}
 	</Sheet.Content>
 </Sheet.Root>
+
+<Dialog.Root bind:open={approveOpen}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Approve {approveFor?.proposed_name ?? 'worker'}?</Dialog.Title>
+			<Dialog.Description>
+				Type the pairing code from this worker’s log. The worker then picks up its own token and production’s Meta key at
+				its next poll.
+			</Dialog.Description>
+		</Dialog.Header>
+		<form
+			class="flex flex-col gap-4"
+			novalidate
+			onsubmit={(e) => {
+				e.preventDefault();
+				void approve();
+			}}
+		>
+			<div class="flex flex-col gap-1">
+				<label for="approve-code" class="text-sm font-medium">Pairing code (required)</label>
+				<Input
+					id="approve-code"
+					class="h-10 font-mono tracking-widest uppercase"
+					bind:value={approveCode}
+					placeholder="XXXX-XX"
+					autocomplete="off"
+					autocapitalize="characters"
+					spellcheck={false}
+					maxlength={16}
+					disabled={approving}
+					aria-invalid={codeError !== null || undefined}
+					aria-describedby={codeError ? 'approve-code-error' : undefined}
+				/>
+				{#if codeError}<p id="approve-code-error" class="m-0 text-xs text-error" role="alert">{codeError}</p>{/if}
+			</div>
+			<div class="flex flex-col gap-1">
+				<label for="approve-name" class="text-sm font-medium">Name</label>
+				<Input
+					id="approve-name"
+					class="h-10 font-mono"
+					bind:value={approveName}
+					autocomplete="off"
+					autocapitalize="off"
+					spellcheck={false}
+					maxlength={120}
+					disabled={approving}
+					oninput={() => (nameError = null)}
+					aria-invalid={(approveTouched && (nameError ?? finalProblem) !== null) || undefined}
+					aria-describedby="approve-name-preview"
+				/>
+				<label class="mt-1 flex min-h-9 items-center gap-2 text-sm">
+					<input type="checkbox" class="size-4 accent-accent-strong" bind:checked={approveAddDate} disabled={approving} />
+					Add date{#if enrol?.today}<span class="text-ink-muted">({enrol.today}, Los Angeles)</span>{/if}
+				</label>
+				<p id="approve-name-preview" class="m-0 text-xs" aria-live="polite">
+					<span class="text-ink-muted">Final name:</span>
+					<code class="font-mono break-all">{finalName || '—'}</code>
+				</p>
+				{#if nameError ?? (approveName !== '' ? finalProblem : null)}
+					<p class="m-0 text-xs text-error" role="alert">{nameError ?? finalProblem}</p>
+				{/if}
+			</div>
+			{#if approveRefusal}
+				<RequestErrorNotice
+					heading="Not approved."
+					message={approveRefusal.message}
+					stepUp={approveRefusal.stepUp}
+					busy={passkeyBusy || approving}
+					confirmLabel="Confirm with passkey and approve"
+					onConfirm={() => confirmAndRetry('approve')}
+				/>
+			{/if}
+			<Dialog.Footer>
+				<Button type="button" variant="ghost" disabled={approving} onclick={() => (approveOpen = false)}>Cancel</Button>
+				<Button type="submit" disabled={approving || passkeyBusy}>
+					{#if approving}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" /> Approving…{:else}<UserCheckIcon
+							aria-hidden="true"
+						/> Approve{/if}
+				</Button>
+			</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={confirmOpen}>
+	<Dialog.Content class="sm:max-w-md">
+		{#if confirmAct?.kind === 'deny'}
+			<Dialog.Header>
+				<Dialog.Title>Deny {confirmAct.row.proposed_name}?</Dialog.Title>
+				<Dialog.Description>
+					The request from {confirmAct.row.peer_ip ?? 'this address'} is refused; its code no longer works. A worker that
+					keeps running asks again with a new code, at most 3 times an hour from one address.
+				</Dialog.Description>
+			</Dialog.Header>
+		{:else if confirmAct?.kind === 'revoke'}
+			<Dialog.Header>
+				<Dialog.Title>Revoke {confirmAct.row.name}?</Dialog.Title>
+				<Dialog.Description>
+					Its socket closes and its token stops working. A job it is running goes back in the queue when the lease runs
+					out.
+				</Dialog.Description>
+			</Dialog.Header>
+			<p class="m-0 rounded-md border border-changed bg-changed-bg px-3 py-2 text-sm">
+				This worker had production’s Meta key in memory. If the machine may be compromised, also rotate
+				<code class="font-mono text-xs">meta.api_key</code> in
+				<a class="text-accent-strong underline" href="/config#key-meta.api_key">/config</a>.
+			</p>
+		{/if}
+		{#if confirmRefusal}
+			<RequestErrorNotice
+				heading={confirmAct?.kind === 'revoke' ? 'Not revoked.' : 'Not denied.'}
+				message={confirmRefusal.message}
+				stepUp={confirmRefusal.stepUp}
+				busy={passkeyBusy || confirmBusy}
+				confirmLabel={confirmAct?.kind === 'revoke' ? 'Confirm with passkey and revoke' : 'Confirm with passkey and deny'}
+				onConfirm={() => confirmAndRetry('confirm')}
+			/>
+		{/if}
+		<Dialog.Footer>
+			<Button variant="ghost" disabled={confirmBusy} onclick={() => (confirmOpen = false)}>Cancel</Button>
+			<Button variant="destructive" disabled={confirmBusy || passkeyBusy || !confirmAct} onclick={runConfirm}>
+				{#if confirmBusy}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{/if}
+				{confirmAct?.kind === 'revoke' ? (confirmBusy ? 'Revoking…' : 'Revoke') : confirmBusy ? 'Denying…' : 'Deny'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

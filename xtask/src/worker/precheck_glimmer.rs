@@ -14,16 +14,17 @@
 //! replays instead of re-running the GPU. Local calls never count
 //! toward the Meta daily cap.
 //!
-//! Worker env: `GLIMMER_URL` (default `http://127.0.0.1:18480/v1`),
-//! `GLIMMER_MODEL` (the served model id, recorded on every verdict).
-//! Without `GLIMMER_MODEL` the kind stays out of `hello`, so queued
-//! jobs wait `pending` instead of failing.
+//! Settings (`welcome.settings`, from `/config`): `glimmer_url`
+//! (`worker.glimmer_url`, default `http://127.0.0.1:18480/v1`) and
+//! `glimmer_model` (`worker.glimmer_model`, the served model id,
+//! recorded on every verdict). Without `glimmer_model` the kind stays
+//! out of `hello`, so queued jobs wait `pending` instead of failing.
 //!
 //! Payload: `{"sample": "<id>", "image_b64": "<png base64>"}` or
 //! `{"sample": "<id>", "png": "<repo-relative path>"}`.
 //!
-//! W-3 fake (`HF_MODE=fake` in worker.env, the worker-side mirror of
-//! the server's `hf.mode` row; `cargo xtask up` writes it): no weights
+//! W-3 fake (`hf_mode` = `fake` in the settings: the server's effective
+//! `hf.mode`, fake on `cargo xtask up`): no weights
 //! and no Glimmer server. The verdict is the recorded file
 //! `evals/captures/demo_precheck/<sample>.json`, returned with
 //! `judge_backend: "recorded"`; a sample without one fails the job.
@@ -32,14 +33,16 @@ use std::time::Instant;
 
 use serde_json::{Value, json};
 
-use super::{JobContext, JobError, JobHandler, JobOutput, WorkerEnv};
+use super::{JobContext, JobError, JobHandler, JobOutput, Settings, keys};
 
 const DEFAULT_URL: &str = "http://127.0.0.1:18480/v1";
 /// Recorded verdicts the fake answers from (repo-relative).
 const RECORDED_DIR: &str = "evals/captures/demo_precheck";
 
-fn fake(env: &WorkerEnv) -> bool {
-    env.get("HF_MODE").is_some_and(|m| m.trim() == "fake")
+fn fake(settings: &Settings) -> bool {
+    settings
+        .get(keys::HF_MODE)
+        .is_some_and(|m| m.trim() == "fake")
 }
 
 /// The recorded verdict for `sample` (W-3 fake): no weights, no server.
@@ -72,33 +75,33 @@ impl JobHandler for PrecheckGlimmer {
         true
     }
 
-    fn available(&self, env: &WorkerEnv) -> bool {
-        fake(env)
-            || env
-                .get("GLIMMER_MODEL")
+    fn available(&self, settings: &Settings) -> bool {
+        fake(settings)
+            || settings
+                .get(keys::GLIMMER_MODEL)
                 .is_some_and(|m| !m.trim().is_empty())
     }
 
     fn run(&self, ctx: &JobContext, payload: &Value) -> Result<JobOutput, JobError> {
-        if fake(&ctx.env) {
+        if fake(&ctx.settings) {
             return recorded(ctx, payload["sample"].as_str().unwrap_or(""));
         }
-        let Some(model) = ctx.env.get("GLIMMER_MODEL") else {
+        let Some(model) = ctx.settings.get(keys::GLIMMER_MODEL) else {
             return Err(JobError::fatal(
-                "precheck.glimmer needs GLIMMER_MODEL in worker.env",
+                "precheck.glimmer needs a model id: set worker.glimmer_model in /config",
             ));
         };
         let base = ctx
-            .env
-            .get("GLIMMER_URL")
+            .settings
+            .get(keys::GLIMMER_URL)
             .unwrap_or_else(|| DEFAULT_URL.to_string());
         let sample = payload["sample"].as_str().unwrap_or("sample").to_string();
         let image_b64 = image_of(ctx, payload)?;
         let body = request_body(&model, &sample, &image_b64);
         let cache = callcache::MetaCache::new(
             ctx.cache_dir.join("meta-cache"),
-            ctx.env
-                .get("META_CACHE_MODE")
+            ctx.settings
+                .get(keys::META_CACHE_MODE)
                 .and_then(|m| callcache::CacheMode::parse(&m))
                 .unwrap_or_default(),
         );
@@ -278,25 +281,49 @@ mod tests {
     }
 
     #[test]
-    fn announced_when_worker_env_names_the_model() {
-        let env = WorkerEnv::parse("GLIMMER_MODEL=glimmer-test\n");
-        assert!(PrecheckGlimmer.available(&env));
-        if std::env::var_os("GLIMMER_MODEL").is_none() && std::env::var_os("HF_MODE").is_none() {
-            assert!(!PrecheckGlimmer.available(&WorkerEnv::default()));
-        }
+    fn announced_when_the_settings_name_the_model() {
+        let settings = Settings::of(&[(keys::GLIMMER_MODEL, "glimmer-test")]);
+        assert!(PrecheckGlimmer.available(&settings));
+        // Unconditional: GLIMMER_MODEL / HF_MODE in the process
+        // environment (or a worker.env) never announce the kind.
+        assert!(!PrecheckGlimmer.available(&Settings::default()));
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("worker.env"),
+            "GLIMMER_MODEL=from-env\nHF_MODE=fake\n",
+        )
+        .unwrap();
+        let ctx = JobContext {
+            id: 1,
+            dir: tmp.path().to_path_buf(),
+            repo: tmp.path().to_path_buf(),
+            cache_dir: tmp.path().to_path_buf(),
+            settings: Settings::default(),
+        };
+        let err = PrecheckGlimmer
+            .run(&ctx, &json!({"sample": "syn-doc-clean"}))
+            .unwrap_err();
+        assert!(
+            err.message.contains("worker.glimmer_model"),
+            "{}",
+            err.message
+        );
     }
 
     #[test]
     fn the_fake_answers_from_the_recorded_verdicts_without_a_server() {
-        let env = WorkerEnv::parse("HF_MODE=fake\n");
-        assert!(PrecheckGlimmer.available(&env), "no GLIMMER_MODEL needed");
+        let settings = Settings::of(&[(keys::HF_MODE, "fake")]);
+        assert!(
+            PrecheckGlimmer.available(&settings),
+            "no glimmer_model needed"
+        );
         let tmp = tempfile::tempdir().unwrap();
         let ctx = JobContext {
             id: 1,
             dir: tmp.path().to_path_buf(),
             repo: std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".."),
             cache_dir: tmp.path().to_path_buf(),
-            env,
+            settings,
         };
         let out = PrecheckGlimmer
             .run(

@@ -47,6 +47,9 @@ this file.
 - **built** [work-queue.md](work-queue.md) — production work items in
   `work.sqlite`, plant workers over an outbound WebSocket
   (`cargo xtask worker`), `research.nonparty` packs (P392).
+- **built** [worker-enrolment.md](worker-enrolment.md) — workers self-register,
+  staff approve them by pairing code, per-worker revocable tokens,
+  settings (the Meta key included) delivered in `welcome`.
 - **built** [form-framework.md](form-framework.md) — shared
   resemblance-form framework (validation, address, phone,
   country) + per-form projects under `forms/` + the US DOS

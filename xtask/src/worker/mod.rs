@@ -1,14 +1,15 @@
 //! `cargo xtask worker` — plant worker for the production work queue
-//! (P392, spec `docs/specs/work-queue.md`).
+//! (P392, spec `docs/specs/work-queue.md`; enrolment and settings:
+//! `docs/specs/worker-enrolment.md`).
 //!
 //! ```text
 //! cargo xtask worker --connect wss://andrii.ai/apostille/api/v1/worker/ws
-//!     [--name plant] [--workdir /srv/scratch/apostille/work]
-//!     [--cache-dir /srv/scratch/apostille] [--env-file ~/.config/apostille/worker.env]
+//!     [--token-file ~/.config/apostille/worker.token]
+//!     [--workdir /srv/scratch/apostille/work] [--cache-dir /srv/scratch/apostille]
 //!     [--gpu-lock ~/apostille-pipeline/gpu.lock] [--once]
-//! cargo xtask worker --run-local <job.json> [--workdir …]   # one job, no server
+//! cargo xtask worker --run-local <job.json> [--settings <settings.json>] [--workdir …]
 //! cargo xtask worker --unpack <bundle.json> [--into packs/world-nonparty]
-//! cargo xtask worker --kinds
+//! cargo xtask worker --kinds [--settings <settings.json>]
 //! ```
 //!
 //! Dials OUT to production, runs one job at a time, reconnects with
@@ -16,18 +17,26 @@
 //! start it every minute (the second copy exits quietly). GPU kinds
 //! also hold `~/apostille-pipeline/gpu.lock` while they run.
 //!
+//! The credential lives in the token file (see [`enrol`] for its
+//! format). Without one the worker enrols: it logs a pairing code that
+//! staff approve on Work queue → Workers, then saves the token it is
+//! given. Job settings (the Meta key, model ids, modes) arrive in
+//! `welcome.settings` and are held in memory only: the worker reads no
+//! `.env` file and no setting from its own environment.
+//!
 //! New kinds are one file each: implement [`JobHandler`] and add the
 //! handler to [`handlers`] (and the server's `KINDS` list in
 //! `crates/web/src/worker.rs`).
 
 mod client;
 mod discovery_bootstrap;
+pub(crate) mod enrol;
 mod eval_gold;
 mod precheck_glimmer;
 pub(crate) mod research_nonparty;
 mod scrape_urls;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -36,12 +45,12 @@ use crate::flag;
 
 /// Default scratch layout on plant (operator decision 2026-11-03).
 const DEFAULT_WORKDIR: &str = "/srv/scratch/apostille/work";
-/// Token + Meta key file (0600, never in the repo).
-const DEFAULT_ENV_FILE: &str = ".config/apostille/worker.env";
+/// The worker's credential (0600 in a 0700 directory, never in the repo).
+const DEFAULT_TOKEN_FILE: &str = ".config/apostille/worker.token";
 /// Shared with the plant build pipeline's GPU stages.
 const DEFAULT_GPU_LOCK: &str = "apostille-pipeline/gpu.lock";
 
-/// One job's environment: where to write, where the repo is, secrets.
+/// One job's environment: where to write, where the repo is, settings.
 pub struct JobContext {
     pub id: i64,
     /// Per-attempt scratch dir (`<workdir>/job-<id>-a<attempt>`).
@@ -50,7 +59,8 @@ pub struct JobContext {
     pub repo: PathBuf,
     /// Cross-job caches (`<cache-dir>/fetch-cache`, …).
     pub cache_dir: PathBuf,
-    pub env: WorkerEnv,
+    /// `welcome.settings` as of the job's start (memory only).
+    pub settings: Settings,
 }
 
 /// What a finished job uploads.
@@ -107,9 +117,11 @@ pub trait JobHandler: Send + Sync {
         false
     }
     /// False keeps the kind out of `hello` capabilities, so its jobs
-    /// stay pending until a worker that can run them connects. `env` is
-    /// `worker.env` (falling back to the process environment).
-    fn available(&self, _env: &WorkerEnv) -> bool {
+    /// stay pending until a worker that can run them connects.
+    /// `settings` are the last `welcome.settings` (empty before the
+    /// first `welcome`; the client says `hello` again when they change
+    /// what it can announce).
+    fn available(&self, _settings: &Settings) -> bool {
         true
     }
     fn run(&self, ctx: &JobContext, payload: &Value) -> Result<JobOutput, JobError>;
@@ -126,78 +138,111 @@ pub fn handlers() -> Vec<Box<dyn JobHandler>> {
     ]
 }
 
-/// Values from `worker.env` (`KEY=VALUE` lines; `#` comments and an
-/// `export ` prefix are allowed). Debug never prints values.
-#[derive(Clone, Default)]
-pub struct WorkerEnv {
-    values: HashMap<String, String>,
+/// `welcome.settings` keys (`docs/specs/worker-enrolment.md` §6).
+pub mod keys {
+    /// Production's `meta.api_key` (never logged, never on disk).
+    pub const META_API_KEY: &str = "meta_api_key";
+    pub const META_BASE_URL: &str = "meta_base_url";
+    pub const META_CACHE_MODE: &str = "meta_cache_mode";
+    pub const META_DAILY_CALL_CAP: &str = "meta_daily_call_cap";
+    /// The fetch cache's mode (was `FETCH_CACHE_MODE`; the server sends
+    /// it only if it has a value, else the default mode applies).
+    pub const FETCH_CACHE_MODE: &str = "fetch_cache_mode";
+    /// The server's effective `hf.mode` (`fake` on `cargo xtask up`).
+    pub const HF_MODE: &str = "hf_mode";
+    pub const GLIMMER_MODEL: &str = "glimmer_model";
+    pub const GLIMMER_URL: &str = "glimmer_url";
+    /// `eval.gold --local` endpoint fallbacks (the payload's `base_url`
+    /// and `model` come first; the server sends these only if a row
+    /// for them exists).
+    pub const LOCAL_MODEL_URL: &str = "local_model_url";
+    pub const LOCAL_MODEL: &str = "local_model";
+    pub const LOCAL_MODEL_KEY: &str = "local_model_key";
 }
 
-impl std::fmt::Debug for WorkerEnv {
+/// The server's `welcome.settings`: string → string, absent = unset.
+/// Held in memory only: never written to disk, never put in the process
+/// environment, and Debug prints the keys, never the values.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct Settings {
+    values: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for Settings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut keys: Vec<&String> = self.values.keys().collect();
-        keys.sort();
-        f.debug_struct("WorkerEnv").field("keys", &keys).finish()
+        let keys: Vec<&String> = self.values.keys().collect();
+        f.debug_struct("Settings").field("keys", &keys).finish()
     }
 }
 
-impl WorkerEnv {
-    pub fn parse(text: &str) -> Self {
-        let mut values = HashMap::new();
-        for line in text.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
+impl Settings {
+    /// From a JSON object of strings (`welcome.settings`, or a
+    /// `--settings` file). A missing/null value is empty settings; a
+    /// non-string value is refused.
+    pub fn from_json(value: &Value) -> Result<Self, String> {
+        let mut values = BTreeMap::new();
+        match value {
+            Value::Null => {}
+            Value::Object(map) => {
+                for (key, v) in map {
+                    let Some(s) = v.as_str() else {
+                        return Err(format!("settings.{key} must be a string"));
+                    };
+                    values.insert(key.clone(), s.to_string());
+                }
             }
-            let line = line.strip_prefix("export ").unwrap_or(line);
-            let Some((key, value)) = line.split_once('=') else {
-                continue;
-            };
-            let value = value.trim();
-            let value = value
-                .strip_prefix('"')
-                .and_then(|v| v.strip_suffix('"'))
-                .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
-                .unwrap_or(value);
-            values.insert(key.trim().to_string(), value.to_string());
+            _ => return Err("settings must be a JSON object of strings".to_string()),
         }
-        Self { values }
+        Ok(Self { values })
     }
 
-    /// File value, else the process environment (empty = unset).
+    /// The value for `key` (an empty string is unset).
     pub fn get(&self, key: &str) -> Option<String> {
-        self.values
-            .get(key)
-            .cloned()
-            .or_else(|| std::env::var(key).ok())
-            .filter(|v| !v.is_empty())
+        self.values.get(key).filter(|v| !v.is_empty()).cloned()
     }
 
-    /// Load `path`, refusing files other users can read (0600 rule,
-    /// same as `meta-staging.env`). A missing file is an empty env.
+    /// `--settings <file>` for `--run-local` / `--kinds`: the same keys
+    /// as `welcome.settings`. It may hold the Meta key, so a file other
+    /// users can read is refused (0600 rule).
     pub fn load(path: &Path) -> Result<Self, String> {
-        let text = match std::fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
-            Err(e) => return Err(format!("{}: {e}", path.display())),
-        };
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            let mode = std::fs::metadata(path)
-                .map_err(|e| format!("{}: {e}", path.display()))?
-                .permissions()
-                .mode();
-            if mode & 0o077 != 0 {
-                return Err(format!(
-                    "{} is readable by other users (mode {:o}); run chmod 600 on it",
-                    path.display(),
-                    mode & 0o777
-                ));
-            }
-        }
-        Ok(Self::parse(&text))
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        check_private(path)?;
+        let value: Value =
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        Self::from_json(&value).map_err(|e| format!("{}: {e}", path.display()))
     }
+
+    #[cfg(test)]
+    pub fn of(pairs: &[(&str, &str)]) -> Self {
+        Self {
+            values: pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect(),
+        }
+    }
+}
+
+/// Refuse a secret file whose mode lets group or other read it.
+pub(crate) fn check_private(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(path)
+            .map_err(|e| format!("{}: {e}", path.display()))?
+            .permissions()
+            .mode();
+        if mode & 0o077 != 0 {
+            return Err(format!(
+                "{} is readable by other users (mode {:o}); run chmod 600 on it",
+                path.display(),
+                mode & 0o777
+            ));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
 }
 
 fn home() -> PathBuf {
@@ -267,20 +312,27 @@ pub fn run_job(
     handler.run(ctx, payload)
 }
 
-pub fn run(args: &[String]) {
-    let env_path =
-        flag(args, "env-file").map_or_else(|| home().join(DEFAULT_ENV_FILE), PathBuf::from);
-    if args.iter().any(|a| a == "--kinds") {
-        let env = WorkerEnv::load(&env_path).unwrap_or_else(|e| {
+/// `--settings <file>` when given (exits on a bad file), else empty.
+fn settings_flag(args: &[String]) -> Settings {
+    match flag(args, "settings") {
+        Some(path) => Settings::load(Path::new(&path)).unwrap_or_else(|e| {
             eprintln!("worker: {e}");
-            WorkerEnv::default()
-        });
+            std::process::exit(2);
+        }),
+        None => Settings::default(),
+    }
+}
+
+pub fn run(args: &[String]) {
+    let started_at = crate::unix_now();
+    if args.iter().any(|a| a == "--kinds") {
+        let settings = settings_flag(args);
         for h in handlers() {
             let gpu = if h.gpu() { " (gpu)" } else { "" };
-            let ready = if h.available(&env) {
+            let ready = if h.available(&settings) {
                 ""
             } else {
-                " [not announced]"
+                " [not announced with these settings]"
             };
             println!("{}{gpu}{ready}", h.kind());
         }
@@ -308,24 +360,23 @@ pub fn run(args: &[String]) {
     );
     let gpu_lock =
         flag(args, "gpu-lock").map_or_else(|| home().join(DEFAULT_GPU_LOCK), PathBuf::from);
-    let env = WorkerEnv::load(&env_path).unwrap_or_else(|e| {
-        eprintln!("worker: {e}");
-        std::process::exit(2);
-    });
     if let Some(job) = flag(args, "run-local") {
-        return run_local(&job, &workdir, &cache_dir, env, &gpu_lock);
+        let settings = settings_flag(args);
+        return run_local(&job, &workdir, &cache_dir, settings, &gpu_lock);
     }
     let Some(url) = flag(args, "connect") else {
         eprintln!("worker: --connect <wss url>, --run-local <job.json>, --unpack or --kinds");
         std::process::exit(2);
     };
-    let Some(token) = env.get("APOSTILLE_WORKER_TOKEN") else {
-        eprintln!(
-            "worker: APOSTILLE_WORKER_TOKEN missing ({} or the environment)",
-            env_path.display()
-        );
+    let token_path =
+        flag(args, "token-file").map_or_else(|| home().join(DEFAULT_TOKEN_FILE), PathBuf::from);
+    // Fail on a bad URL before taking the lock or enrolling.
+    let enrol_url = enrol::enrol_url(&url).unwrap_or_else(|e| {
+        eprintln!("worker: {e}");
         std::process::exit(2);
-    };
+    });
+    // Held for the whole run, enrolment included: one open request and
+    // one connection per workdir.
     let _singleton = match try_lock(&workdir.join("worker.lock")) {
         Ok(Some(file)) => file,
         Ok(None) => {
@@ -347,20 +398,63 @@ pub fn run(args: &[String]) {
     let drain = workdir.join("worker.drain");
     let _ = std::fs::remove_file(&drain);
     let repo = repo_root();
-    let cfg = client::Config {
+    let all = std::sync::Arc::new(handlers());
+    let mut cfg = client::Config {
         url,
-        token,
-        name: flag(args, "name").unwrap_or_else(|| "plant".to_string()),
+        token: String::new(),
+        name: String::new(),
         workdir,
         cache_dir,
         version: version(&repo),
         repo,
-        env,
         gpu_lock,
         once: args.iter().any(|a| a == "--once"),
         drain,
     };
-    client::run_with(&cfg, std::sync::Arc::new(handlers()));
+    loop {
+        let credential = match enrol::load_credential(&token_path) {
+            Ok(Some(credential)) => credential,
+            Ok(None) => {
+                let request = enrol::Request {
+                    url: enrol_url.clone(),
+                    token_path: token_path.clone(),
+                    name: enrol::proposed_name(),
+                    version: cfg.version.clone(),
+                    started_at,
+                    capabilities: all.iter().map(|h| h.kind().to_string()).collect(),
+                };
+                match enrol::enrol(&request, &enrol::UreqHttp::new()) {
+                    Ok(credential) => credential,
+                    Err(why) => {
+                        // Cron starts the worker again next minute, and
+                        // that run opens a fresh request.
+                        eprintln!("worker: {why}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("worker: {e}");
+                std::process::exit(2);
+            }
+        };
+        cfg.token = credential.token;
+        cfg.name = credential.worker;
+        match client::run_with(&cfg, std::sync::Arc::clone(&all)) {
+            client::Exit::Done => return,
+            client::Exit::Unauthorized(why) => match enrol::retire_credential(&token_path) {
+                Ok(to) => eprintln!(
+                    "worker: the server refused this credential ({why}); moved it to {} \
+                         and enrolling again",
+                    to.display()
+                ),
+                Err(e) => {
+                    eprintln!("worker: the server refused this credential ({why}); {e}");
+                    std::process::exit(1);
+                }
+            },
+        }
+    }
 }
 
 /// `<semver>+<sha>` for `hello`: the `.sha` file `worker-install.sh`
@@ -388,8 +482,9 @@ fn version(repo: &Path) -> String {
 }
 
 /// `--run-local <job.json>`: `{kind, payload}` from a file (or `-`
-/// for stdin), run here, result written next to the job dir.
-fn run_local(job: &str, workdir: &Path, cache_dir: &Path, env: WorkerEnv, gpu_lock: &Path) {
+/// for stdin), run here with `--settings` (no server, so no
+/// `welcome`), result written next to the job dir.
+fn run_local(job: &str, workdir: &Path, cache_dir: &Path, settings: Settings, gpu_lock: &Path) {
     let text = if job == "-" {
         std::io::read_to_string(std::io::stdin()).unwrap_or_default()
     } else {
@@ -413,7 +508,7 @@ fn run_local(job: &str, workdir: &Path, cache_dir: &Path, env: WorkerEnv, gpu_lo
         dir: workdir.join(format!("local-{}", crate::unix_now())),
         repo: repo_root(),
         cache_dir: cache_dir.to_path_buf(),
-        env,
+        settings,
     };
     let payload = spec
         .get("payload")
@@ -450,30 +545,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn env_file_parses_and_hides_values() {
-        let env = WorkerEnv::parse(
-            "# plant worker\nexport APOSTILLE_WORKER_TOKEN=\"abc\"\n\
-             META_API_KEY='k'\nEMPTY=\n junk\n",
+    fn settings_parse_strings_and_hide_values() {
+        let settings = Settings::from_json(&serde_json::json!({
+            "meta_api_key": "LLM_secret", "hf_mode": "fake", "glimmer_url": ""
+        }))
+        .unwrap();
+        assert_eq!(
+            settings.get(keys::META_API_KEY).as_deref(),
+            Some("LLM_secret")
         );
-        assert_eq!(env.get("APOSTILLE_WORKER_TOKEN").as_deref(), Some("abc"));
-        assert_eq!(env.get("META_API_KEY").as_deref(), Some("k"));
-        assert_eq!(env.get("EMPTY"), None);
-        let shown = format!("{env:?}");
-        assert!(shown.contains("META_API_KEY") && !shown.contains("'k'") && !shown.contains("abc"));
+        assert_eq!(settings.get(keys::HF_MODE).as_deref(), Some("fake"));
+        assert_eq!(settings.get(keys::GLIMMER_URL), None, "empty is unset");
+        assert_eq!(settings.get(keys::GLIMMER_MODEL), None, "absent is unset");
+        let shown = format!("{settings:?}");
+        assert!(shown.contains("meta_api_key") && !shown.contains("LLM_secret"));
+        assert!(Settings::from_json(&serde_json::json!({"x": 1})).is_err());
+        assert!(Settings::from_json(&serde_json::json!(["x"])).is_err());
+        assert_eq!(
+            Settings::from_json(&Value::Null).unwrap(),
+            Settings::default()
+        );
     }
 
     #[cfg(unix)]
     #[test]
-    fn env_file_must_be_private() {
+    fn settings_file_must_be_private() {
         use std::os::unix::fs::PermissionsExt as _;
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("worker.env");
-        std::fs::write(&path, "APOSTILLE_WORKER_TOKEN=x\n").unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{"meta_api_key": "k", "hf_mode": "fake"}"#).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        assert!(WorkerEnv::load(&path).unwrap_err().contains("chmod 600"));
+        assert!(Settings::load(&path).unwrap_err().contains("chmod 600"));
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-        assert!(WorkerEnv::load(&path).is_ok());
-        assert!(WorkerEnv::load(&dir.path().join("missing")).is_ok());
+        assert_eq!(
+            Settings::load(&path).unwrap().get(keys::HF_MODE).as_deref(),
+            Some("fake")
+        );
+        assert!(Settings::load(&dir.path().join("missing")).is_err());
     }
 
     #[test]
@@ -514,7 +622,7 @@ mod tests {
             dir: dir.path().join("job"),
             repo: repo_root(),
             cache_dir: dir.path().to_path_buf(),
-            env: WorkerEnv::default(),
+            settings: Settings::default(),
         };
         let out = run_job(&GpuProbe, &ctx, &Value::Null, &dir.path().join("gpu.lock")).unwrap();
         let v: Value = serde_json::from_slice(&out.bytes).unwrap();

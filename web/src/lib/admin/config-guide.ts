@@ -1227,21 +1227,42 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		id: 'workers',
 		title: 'Plant workers',
 		summary:
-			'Plant workers dial out to this server over one WebSocket (/apostille/api/v1/worker/ws) and check out queued jobs from the Work queue page: research, scraping and evals that call the Meta model API from plant. The token below is the only credential plant holds for this server.',
+			'Plant workers dial out to this server over one WebSocket (/apostille/api/v1/worker/ws) and check out queued jobs from the Work queue page: research, scraping and evals that call the Meta model API from plant. Each worker enrols itself and holds only its own token; the Meta key (meta.api_key) and the settings below reach it from this server when it connects, in memory only.',
 		setup: [
-			'Mint a token on your own machine: openssl rand -hex 32 prints 64 hex characters.',
-			'Paste it into worker.token here and save.',
-			'Put the same value in ~/.config/apostille/worker.env on plant as APOSTILLE_WORKER_TOKEN=<token> (file mode 0600), then start cargo xtask worker (docs: ops/plant-pipeline/README.md).',
-			'To rotate, save a new value here and update worker.env; connected workers are refused at their next reconnect.'
+			'Leave worker.enrolment on (the default). Start cargo xtask worker on plant (docs: ops/plant-pipeline/README.md). With no token it asks to enrol and logs a pairing code such as enrol code K7QF-2M in worker.log.',
+			'Open Work queue → Workers, check the request (name, address, build), and Approve it with the code from that log. The worker saves its own token (mode 0600) and connects; nothing is copied by hand and plant needs no worker.env.',
+			'Set meta.api_key, and worker.glimmer_model if plant runs precheck.glimmer jobs. Every worker gets these on its next connect.',
+			'To cut one worker off, Revoke it on Work queue → Workers; the others keep working. If its machine may be compromised, rotate meta.api_key too.'
 		],
 		keys: [
 			{
-				key: 'worker.token',
-				type: 'secret',
-				label: 'Worker token',
-				what: 'Bearer token plant workers present when they open the worker WebSocket. Checked on every connection; no row means the endpoint answers 503 and no worker can connect.',
-				how: 'Setup steps 1 to 3.',
-				format: 'At least 32 characters; 64 hex characters from step 1. Write-only.',
+				key: 'worker.enrolment',
+				type: 'text',
+				label: 'Worker enrolment',
+				what: 'on lets a worker with no token ask to enrol from the public host; staff approve it with its pairing code on Work queue → Workers. off answers new requests with 503; requests already listed can still be approved or denied, and enrolled workers keep connecting.',
+				how: 'Leave on. Set off to stop new requests, for example while a worker that keeps being denied is being looked at.',
+				format: 'on or off.',
+				default: 'on',
+				applies: 'call'
+			},
+			{
+				key: 'worker.glimmer_model',
+				type: 'text',
+				label: 'Glimmer model',
+				what: 'Model id the precheck.glimmer job kind asks the worker host\'s local llama-server for. Sent to every worker when it connects. Unset: precheck.glimmer jobs fail asking for it.',
+				how: 'The model name llama-server on plant serves.',
+				format: 'A model id, as llama-server lists it.',
+				default: 'unset',
+				applies: 'call'
+			},
+			{
+				key: 'worker.glimmer_url',
+				type: 'text',
+				label: 'Glimmer server URL',
+				what: 'Base URL of the llama-server on the worker\'s own host, for precheck.glimmer jobs. Sent to every worker when it connects.',
+				how: 'Leave unset when llama-server listens on the default port on plant.',
+				format: 'http(s) URL ending in /v1. Example: http://127.0.0.1:8080/v1',
+				default: 'http://127.0.0.1:8080/v1',
 				applies: 'call'
 			}
 		]
@@ -1321,7 +1342,7 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				key: 'hf.mode',
 				type: 'text',
 				label: 'Hugging Face mode',
-				what: 'fake skips the weights download; Glimmer verdicts come from the recorded files (a plant worker needs HF_MODE=fake in its worker.env; cargo xtask up writes it). sandbox and live download the weights as before.',
+				what: 'fake skips the weights download; Glimmer verdicts come from the recorded files (plant workers get this row from the server when they connect). sandbox and live download the weights as before.',
 				how: 'Leave unset on production. Set fake for a demo or a judge run, then restart.',
 				format: 'fake, sandbox or live. Unset keeps today\'s switches in charge.',
 				default: 'unset',

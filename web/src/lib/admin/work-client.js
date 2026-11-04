@@ -7,17 +7,22 @@
 // GET  {apiBase}/admin/work-items/{id}/result → result bytes (attachment)
 // POST {apiBase}/admin/work-items/{id}/retry  → { id, status } (failed → pending)
 // POST {apiBase}/admin/work-items/{id}/cancel → { id, status } (pending or leased → failed)
-// POST {apiBase}/admin/workers/token {name}  → { name, token } (shown once; fresh step-up)
 // POST {apiBase}/admin/work-items/{id}/stage-packs → { id, dir, packs, count }
 //      (done research.nonparty with a result only: 409 otherwise, 422 when
 //      the result is not a packs.v1 bundle; re-staging overwrites)
+//
+// Worker enrolment (worker-enrolment.md §5):
+// GET  {apiBase}/admin/workers/enrolments[?revoked=1] → { today, server_version, enrolment_on, pending, credentials }
+// POST {apiBase}/admin/workers/enrolments/{id}/approve {code, name, add_date} → { status, name } (fresh step-up)
+// POST {apiBase}/admin/workers/enrolments/{id}/deny → { status: "denied" }
+// POST {apiBase}/admin/workers/credentials/{id}/revoke → { id, revoked_at } (fresh step-up)
 //
 // Shapes: docs/contracts/admin-work-items.json. `lease_owner` is the
 // worker name only; lease tokens never leave the server. Unknown kinds
 // and non-object payloads answer 422, payloads over 64 KiB 413.
 
 import { csrfHeaders } from './config-client.js';
-import { authError, readErrorBody } from './http-errors.js';
+import { authError, isStepUpRefusal, readErrorBody } from './http-errors.js';
 
 /** @typedef {'pending' | 'leased' | 'done' | 'failed'} WorkStatus */
 
@@ -52,7 +57,7 @@ import { authError, readErrorBody } from './http-errors.js';
  * @typedef {object} WorkWorker
  * @property {number | null} conn socket id (two sockets may share a name)
  * @property {string} name
- * @property {'shared' | 'named' | null} identity which token it connected with
+ * @property {string | null} credential_id the enrolled credential it connected with
  * @property {boolean | null} version_matches same build as the server (null: unknown)
  * @property {string[]} capabilities
  * @property {string | null} version
@@ -231,7 +236,7 @@ export function normalizeWorker(row) {
 	return {
 		conn: num(row.conn),
 		name: row.name,
-		identity: row.identity === 'shared' || row.identity === 'named' ? row.identity : null,
+		credential_id: str(row.credential_id),
 		version_matches: typeof row.version_matches === 'boolean' ? row.version_matches : null,
 		capabilities: Array.isArray(row.capabilities)
 			? row.capabilities.filter((/** @type {unknown} */ c) => typeof c === 'string')
@@ -624,11 +629,18 @@ export class WorkError extends Error {
 	/**
 	 * @param {string} message
 	 * @param {number} status
+	 * @param {{ serverError?: string | null, triesLeft?: number | null, stepUp?: boolean }} [info]
 	 */
-	constructor(message, status) {
+	constructor(message, status, info = {}) {
 		super(message);
 		this.name = 'WorkError';
 		this.status = status;
+		/** The server's own `error` text, if it sent one. */
+		this.serverError = info.serverError ?? null;
+		/** Pairing-code tries left before the request is denied (approve 422). */
+		this.triesLeft = info.triesLeft ?? null;
+		/** True when a fresh passkey step-up would let the request through. */
+		this.stepUp = info.stepUp === true;
 	}
 }
 
@@ -659,11 +671,15 @@ async function send(fetchFn, url, init, what) {
 async function throwForStatus(res, what, hints = {}) {
 	if (res.ok) return;
 	const body = await readErrorBody(res);
-	const auth = authError(res.status, body);
-	if (auth) throw new WorkError(auth, res.status);
 	const server = typeof body?.error === 'string' && body.error !== '' ? body.error : null;
+	const auth = authError(res.status, body);
+	if (auth) {
+		throw new WorkError(auth, res.status, { serverError: server, stepUp: isStepUpRefusal(res.status, body) });
+	}
 	const verb = res.status < 500 ? 'refused' : 'failed';
-	if (server) throw new WorkError(`${what} ${verb} (HTTP ${res.status}): ${server}`, res.status);
+	const tries = /** @type {{ tries_left?: unknown } | null} */ (body)?.tries_left;
+	const info = { serverError: server, triesLeft: typeof tries === 'number' && Number.isFinite(tries) ? tries : null };
+	if (server) throw new WorkError(`${what} ${verb} (HTTP ${res.status}): ${server}`, res.status, info);
 	if (hints[res.status]) throw new WorkError(`${what} ${verb} (HTTP ${res.status}): ${hints[res.status]}`, res.status);
 	if (res.status === 413) throw new WorkError(`${what} refused (HTTP 413): the payload is over 64 KiB.`, 413);
 	if (res.status === 404) throw new WorkError(`${what}: not found (HTTP 404).`, 404);
@@ -783,22 +799,6 @@ export async function retryWork(apiBase, id, fetchFn = fetch) {
 }
 
 /**
- * Mint a token that admits only the worker `name` (shown once). Rotating
- * `worker.token` in /config revokes every minted token.
- * @param {string} apiBase
- * @param {string} name
- * @param {typeof fetch} [fetchFn]
- * @returns {Promise<{ name: string, token: string }>}
- */
-export async function mintWorkerToken(apiBase, name, fetchFn = fetch) {
-	const data = await postWork(apiBase, '/admin/workers/token', { name }, `Token for ${name}`, fetchFn, {
-		422: 'worker names are 1-32 of a-z, 0-9 and -.'
-	});
-	if (!data || typeof data.token !== 'string') throw new WorkError('The token reply had an unexpected shape.', 0);
-	return { name: typeof data.name === 'string' ? data.name : name, token: data.token };
-}
-
-/**
  * End a pending or leased job (it fails as "cancelled by …"; a worker
  * running it loses the lease at its next heartbeat).
  * @param {string} apiBase
@@ -834,4 +834,244 @@ export async function stagePacks(apiBase, id, fetchFn = fetch) {
 		422: 'the result is not a packs.v1 bundle.'
 	});
 	return normalizeStage(data, id);
+}
+
+// ---------------------------------------------------------------------
+// Worker enrolment (worker-enrolment.md §2, §5)
+
+/**
+ * @typedef {object} PendingEnrolment
+ * @property {string} id
+ * @property {string} username
+ * @property {string} hostname
+ * @property {string} proposed_name `username@hostname`
+ * @property {string | null} version
+ * @property {boolean | null} version_matches same build as the server (null: unknown)
+ * @property {number | null} started_at when the worker process started
+ * @property {string[]} capabilities
+ * @property {string | null} peer_ip
+ * @property {number} created_at
+ * @property {number | null} expires_at
+ * @property {number} code_tries wrong pairing codes so far
+ */
+
+/**
+ * @typedef {object} WorkerCredential
+ * @property {string} id
+ * @property {string} name
+ * @property {number | null} created_at
+ * @property {string | null} created_by
+ * @property {number | null} last_seen_at
+ * @property {string | null} last_version
+ * @property {boolean | null} version_matches
+ * @property {boolean} connected
+ * @property {number | null} job_id
+ * @property {number | null} revoked_at
+ * @property {string | null} revoked_by
+ */
+
+/**
+ * @typedef {object} Enrolments
+ * @property {string | null} today America/Los_Angeles `YYYY-MM-DD` on the server
+ * @property {string | null} server_version
+ * @property {boolean} enrolment_on `worker.enrolment` in /config
+ * @property {PendingEnrolment[]} pending
+ * @property {WorkerCredential[]} credentials
+ * @property {number} offset seconds to add to this browser's clock to read the server's
+ */
+
+/** Pairing-code tries before the server denies a request. */
+export const CODE_TRIES = 3;
+
+const WORKER_NAME = /^[a-z0-9._-]{1,32}@[a-z0-9._-]{1,63}( [0-9]{4}-[0-9]{2}-[0-9]{2})?$/;
+
+/**
+ * The name rule (§2): `user@host`, optionally a space and `YYYY-MM-DD`.
+ * No `:` (lease owners split on it). Pure (tested).
+ * @param {unknown} name
+ * @returns {boolean}
+ */
+export function validWorkerName(name) {
+	return typeof name === 'string' && WORKER_NAME.test(name);
+}
+
+/**
+ * The name the server will store: with **Add date**, the approval day
+ * (`today` from the enrolments answer, America/Los_Angeles) appended.
+ * Pure (tested).
+ * @param {string} name
+ * @param {boolean} addDate
+ * @param {string | null | undefined} today
+ * @returns {string}
+ */
+export function finalWorkerName(name, addDate, today) {
+	return addDate ? `${name} ${today}` : name;
+}
+
+/**
+ * Why a typed name breaks the rule, or null when it passes. Pure (tested).
+ * @param {string} name the final name (after Add date)
+ * @returns {string | null}
+ */
+export function workerNameProblem(name) {
+	if (validWorkerName(name)) return null;
+	if (name.trim() === '') return 'Enter a name, as user@host.';
+	if (/[A-Z]/.test(name)) return 'Use lower case only.';
+	if (/ \d{4}-\d{2}-\d{2} \d{4}-\d{2}-\d{2}$/.test(name)) return 'The name already ends in a date; untick Add date or remove it.';
+	return 'Names are user@host: up to 32 of a-z 0-9 . _ - before the @, up to 63 after, optionally a space and YYYY-MM-DD.';
+}
+
+/**
+ * A pairing code as typed, in the `XXXX-XX` form the worker logs:
+ * upper case, spaces dropped, the dash put back when six characters
+ * were typed without it. Pure (tested).
+ * @param {unknown} code
+ * @returns {string}
+ */
+export function cleanCode(code) {
+	if (typeof code !== 'string') return '';
+	const tight = code.replace(/\s+/g, '').toUpperCase();
+	const bare = tight.replace(/-/g, '');
+	return bare.length === 6 ? `${bare.slice(0, 4)}-${bare.slice(4)}` : tight;
+}
+
+/** @param {unknown} v */
+const strList = (v) => (Array.isArray(v) ? v.filter((/** @type {unknown} */ c) => typeof c === 'string') : []);
+/** @param {unknown} v */
+const bool = (v) => (typeof v === 'boolean' ? v : null);
+
+/**
+ * @param {any} row
+ * @returns {PendingEnrolment | null}
+ */
+export function normalizePending(row) {
+	if (!row || typeof row.id !== 'string' || row.id === '') return null;
+	const username = str(row.username) ?? '';
+	const hostname = str(row.hostname) ?? '';
+	return {
+		id: row.id,
+		username,
+		hostname,
+		proposed_name: str(row.proposed_name) ?? `${username}@${hostname}`,
+		version: str(row.version),
+		version_matches: bool(row.version_matches),
+		started_at: num(row.started_at),
+		capabilities: strList(row.capabilities),
+		peer_ip: str(row.peer_ip),
+		created_at: num(row.created_at) ?? 0,
+		expires_at: num(row.expires_at),
+		code_tries: num(row.code_tries) ?? 0
+	};
+}
+
+/**
+ * @param {any} row
+ * @returns {WorkerCredential | null}
+ */
+export function normalizeCredential(row) {
+	if (!row || typeof row.id !== 'string' || row.id === '' || typeof row.name !== 'string') return null;
+	return {
+		id: row.id,
+		name: row.name,
+		created_at: num(row.created_at),
+		created_by: str(row.created_by),
+		last_seen_at: num(row.last_seen_at),
+		last_version: str(row.last_version),
+		version_matches: bool(row.version_matches),
+		connected: row.connected === true,
+		job_id: num(row.job_id),
+		revoked_at: num(row.revoked_at),
+		revoked_by: str(row.revoked_by)
+	};
+}
+
+/**
+ * Normalize the enrolments answer. Returns null when neither list is
+ * there. `enrolment_on` is true unless the server says false. Pure (tested).
+ * @param {any} data
+ * @returns {Enrolments | null}
+ */
+export function normalizeEnrolments(data) {
+	if (!data || (!Array.isArray(data.pending) && !Array.isArray(data.credentials))) return null;
+	const arr = (/** @type {unknown} */ v) => (Array.isArray(v) ? v : []);
+	return {
+		today: typeof data.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.today) ? data.today : null,
+		server_version: str(data.server_version),
+		enrolment_on: data.enrolment_on !== false,
+		pending: arr(data.pending).map(normalizePending).filter((x) => x !== null),
+		credentials: arr(data.credentials).map(normalizeCredential).filter((x) => x !== null),
+		offset: 0
+	};
+}
+
+/**
+ * Pending requests and enrolled credentials (`revoked` adds revoked ones).
+ * @param {string} apiBase
+ * @param {{ revoked?: boolean }} [opts]
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<Enrolments>}
+ */
+export async function fetchEnrolments(apiBase, { revoked = false } = {}, fetchFn = fetch) {
+	const what = 'Worker enrolments';
+	const url = `${apiBase}/admin/workers/enrolments${revoked ? '?revoked=1' : ''}`;
+	const res = await send(fetchFn, url, { signal: AbortSignal.timeout(20_000) }, what);
+	await throwForStatus(res, what);
+	const out = normalizeEnrolments(await readJson(res, what));
+	if (!out) throw new WorkError(`${what} returned an unexpected shape.`, res.status);
+	out.offset = clockOffset(res.headers.get('date'), Date.now());
+	return out;
+}
+
+/**
+ * Approve a pending request with the code from the worker's log. A
+ * wrong code throws 422 with `triesLeft`; the 3rd wrong one denies the
+ * request (409). Needs a fresh step-up (`stepUp` on the error).
+ * @param {string} apiBase
+ * @param {string} id
+ * @param {{ code: string, name: string, addDate: boolean }} input
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<{ status: string, name: string }>}
+ */
+export async function approveEnrolment(apiBase, id, { code, name, addDate }, fetchFn = fetch) {
+	const path = `/admin/workers/enrolments/${encodeURIComponent(id)}/approve`;
+	const data = await postWork(apiBase, path, { code, name, add_date: addDate === true }, `Approving ${name}`, fetchFn, {
+		404: 'no such request (it may have expired).',
+		409: 'the request is no longer pending.',
+		422: 'the code or the name was refused.'
+	});
+	return {
+		status: typeof data?.status === 'string' ? data.status : 'approved',
+		name: typeof data?.name === 'string' ? data.name : name
+	};
+}
+
+/**
+ * @param {string} apiBase
+ * @param {string} id
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<{ status: string }>}
+ */
+export async function denyEnrolment(apiBase, id, fetchFn = fetch) {
+	const path = `/admin/workers/enrolments/${encodeURIComponent(id)}/deny`;
+	const data = await postWork(apiBase, path, {}, 'Deny', fetchFn, {
+		404: 'no such request (it may have expired).',
+		409: 'the request is no longer pending.'
+	});
+	return { status: typeof data?.status === 'string' ? data.status : 'denied' };
+}
+
+/**
+ * Revoke one worker's credential: its socket closes and its token gets
+ * `401 revoked`. Needs a fresh step-up.
+ * @param {string} apiBase
+ * @param {string} id credential id
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<{ id: string, revoked_at: number | null }>}
+ */
+export async function revokeWorker(apiBase, id, fetchFn = fetch) {
+	const path = `/admin/workers/credentials/${encodeURIComponent(id)}/revoke`;
+	const data = await postWork(apiBase, path, {}, 'Revoke', fetchFn, {
+		404: 'no such worker, or it is already revoked.'
+	});
+	return { id: typeof data?.id === 'string' ? data.id : id, revoked_at: num(data?.revoked_at) };
 }

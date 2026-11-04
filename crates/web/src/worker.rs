@@ -3,7 +3,7 @@
 //!
 //! `GET /apostille/api/v1/worker/ws` (PUBLIC host: plant dials out to
 //! andrii.ai, so no admin IP allowlist applies) authenticates
-//! `Authorization: Bearer <worker.token>` BEFORE the upgrade, then
+//! `Authorization: Bearer <w2. token>` BEFORE the upgrade, then
 //! speaks JSON frames: hello → welcome, checkout → job | idle,
 //! heartbeat → lease, complete (base64 result) | fail → ack. Queue
 //! state lives in `work.sqlite` ([`handbook_store::work`]); result
@@ -14,8 +14,15 @@
 //! allowlist and CSRF layers wrap them) enqueue, list, show, retry and
 //! download results. Spec: `docs/specs/work-queue.md`; frame samples:
 //! `docs/contracts/worker-frames.json`.
+//!
+//! Workers enrol for their own tokens (`docs/specs/worker-enrolment.md`):
+//! `POST /apostille/api/v1/worker/enrol` files a request with a pairing
+//! code, staff approve it on the Work queue page's Workers tab, and the
+//! worker's poll collects a per-worker `w2.` token once. `welcome`
+//! carries the job-kind settings (the Meta key included) from server
+//! config, so workers read no `.env`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -32,7 +39,7 @@ use axum::{
     routing::{get, post},
 };
 use base64::Engine as _;
-use handbook_store::{db, store::Store, work};
+use handbook_store::{db, store::Store, work, work_enrol};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -52,8 +59,6 @@ pub const MAX_FRAME_BYTES: usize = 24 * 1024 * 1024;
 pub const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 /// Largest worker summary kept (serialized JSON).
 const MAX_SUMMARY_BYTES: usize = 16 * 1024;
-/// A configured token shorter than this refuses every worker.
-pub const MIN_TOKEN_LEN: usize = 32;
 /// Worker sockets per peer IP (plant runs one; slack for restarts and
 /// a reconnect racing its own stale socket).
 pub const MAX_SOCKETS_PER_IP: usize = 8;
@@ -113,7 +118,7 @@ pub(crate) const KINDS: &[KindInfo] = &[
         kind: "eval.gold",
         about: "Grade drafts on the gold set and return quality.json. \
                 Replays recorded drafts; \"live\": true drafts through the Meta API \
-                (needs META_API_KEY in worker.env).",
+                (needs meta.api_key in /config).",
         example: r#"{"live": false, "planted": true}"#,
         max_runtime_secs: 3 * 3600,
     },
@@ -193,6 +198,10 @@ enum ServerFrame {
         lease_secs: i64,
         heartbeat_secs: i64,
         max_result_bytes: usize,
+        /// Job-kind settings from server config (memory only on the
+        /// worker; it reads no `.env`).
+        #[serde(default)]
+        settings: BTreeMap<String, String>,
     },
     Job {
         id: i64,
@@ -252,9 +261,8 @@ struct Seen {
     connected_at: i64,
     last_seen_at: i64,
     job_id: Option<i64>,
-    /// `shared` (the `worker.token` itself) or `named` (a token minted
-    /// for this worker name); empty until `hello`.
-    identity: &'static str,
+    /// `worker_credential.public_id`; empty until `hello`.
+    credential_id: String,
 }
 
 static WORKERS: std::sync::LazyLock<Mutex<HashMap<u64, Seen>>> =
@@ -283,7 +291,7 @@ impl Slot {
                 connected_at: now,
                 last_seen_at: now,
                 job_id: None,
-                identity: "",
+                credential_id: String::new(),
             },
         );
         Some(Self(id))
@@ -316,7 +324,7 @@ fn connected_workers() -> Vec<Value> {
             json!({
                 "conn": conn, "name": s.name, "capabilities": s.capabilities,
                 "version": s.version, "version_matches": version_matches(&s.version, env!("BUILD_SHA")),
-                "identity": s.identity,
+                "credential_id": s.credential_id,
                 "connected_at": s.connected_at, "last_seen_at": s.last_seen_at,
                 "job_id": s.job_id,
             })
@@ -354,139 +362,141 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
         .filter(|t| !t.is_empty())
 }
 
-/// Constant-time comparison over SHA-256 digests (equal-length by
-/// construction, so token length never leaks through timing).
-fn token_matches(presented: &str, expected: &[u8]) -> bool {
-    let a = Sha256::digest(presented.as_bytes());
-    let b = Sha256::digest(expected);
-    a.iter()
-        .zip(b.iter())
-        .fold(0u8, |diff, (x, y)| diff | (x ^ y))
-        == 0
-}
-
-/// HMAC-SHA256 (RFC 2104) over `sha2`.
-fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
-    let mut block = [0u8; 64];
-    if key.len() > 64 {
-        block[..32].copy_from_slice(&Sha256::digest(key));
-    } else {
-        block[..key.len()].copy_from_slice(key);
-    }
-    let pad = |byte: u8| block.map(|b| b ^ byte);
-    let inner = Sha256::new()
-        .chain_update(pad(0x36))
-        .chain_update(msg)
-        .finalize();
-    Sha256::new()
-        .chain_update(pad(0x5c))
-        .chain_update(inner)
-        .finalize()
-        .into()
-}
-
-/// The token for one named worker: `w1.<name>.<hex HMAC>` keyed by the
-/// sealed `worker.token`, so rotating that secret revokes every named
-/// token too. Minted on the Work page; admits only `name` at `hello`.
-pub(crate) fn named_token(secret: &[u8], name: &str) -> String {
-    let mac = hmac_sha256(secret, format!("worker-name:{name}").as_bytes());
-    let hex: String = mac.iter().map(|b| format!("{b:02x}")).collect();
-    format!("w1.{name}.{hex}")
-}
-
-/// Who a presented token speaks for.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Identity {
-    /// The shared `worker.token`: any worker name.
-    Shared,
-    /// A [`named_token`]: this name only.
-    Named(String),
-}
-
-impl Identity {
-    fn label(&self) -> &'static str {
-        match self {
-            Identity::Shared => "shared",
-            Identity::Named(_) => "named",
-        }
-    }
-}
-
-fn identify(presented: &str, secret: &[u8]) -> Option<Identity> {
-    if token_matches(presented, secret) {
-        return Some(Identity::Shared);
-    }
-    let name = presented.strip_prefix("w1.")?.split_once('.')?.0;
-    (valid_worker_name(name) && token_matches(presented, named_token(secret, name).as_bytes()))
-        .then(|| Identity::Named(name.to_string()))
-}
-
 /// Why a token check could not admit (a response only at the edge).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Refused {
-    /// No usable `worker.token` row (missing, short, or no KEK).
-    Unconfigured,
     /// The store did not open.
     Store,
-    /// A token was configured but the presented one matched nothing.
+    /// No token, or one that matches no credential.
     Unauthorized,
+    /// The credential was revoked on the Workers tab.
+    Revoked,
 }
 
 impl Refused {
     fn response(self) -> Response {
         match self {
-            Refused::Unconfigured => json_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "worker token not configured",
-            ),
             Refused::Store => store_unavailable(),
             Refused::Unauthorized => json_error(StatusCode::UNAUTHORIZED, "unauthorized"),
+            Refused::Revoked => json_error(StatusCode::UNAUTHORIZED, "revoked"),
         }
     }
 }
 
-/// The sealed `worker.token`.
-fn worker_secret(state: &AppState) -> Result<Vec<u8>, Refused> {
-    let Some(kek) = state.kek.as_deref() else {
-        return Err(Refused::Unconfigured);
-    };
-    let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
-        return Err(Refused::Store);
-    };
-    match config::get_secret_for_job(&conn, kek, config::keys::WORKER_TOKEN) {
-        Ok(Some(bytes)) if bytes.len() >= MIN_TOKEN_LEN => Ok(bytes),
-        Ok(_) => Err(Refused::Unconfigured),
-        Err(e) => {
-            tracing::warn!("worker ws: read worker.token: {e}");
-            Err(Refused::Unconfigured)
-        }
-    }
-}
-
-/// A socket's credentials: who it speaks for, and the digest of the
-/// secret it was checked against (a rotation changes it).
+/// A socket's credential: the enrolled worker it speaks for.
 #[derive(Debug, Clone)]
 struct Admitted {
-    identity: Identity,
-    secret_digest: [u8; 32],
+    /// `worker_credential.public_id` (the middle of the `w2.` token).
+    credential_id: String,
+    name: String,
 }
 
-/// Check the bearer token against the sealed `worker.token` row (the
-/// shared token, or a name's [`named_token`]). Read per upgrade, so a
-/// rotation in `/config` applies at the next connection, and open
-/// sockets re-check it on every ping.
+/// Check the bearer `w2.` token against `worker_credential` (only its
+/// hash is stored). Open sockets re-check the credential on every ping,
+/// so a revoke closes them.
 fn admit(state: &AppState, headers: &HeaderMap) -> Result<Admitted, Refused> {
-    let secret = worker_secret(state)?;
-    match bearer(headers).and_then(|presented| identify(presented, &secret)) {
-        Some(identity) => Ok(Admitted {
-            identity,
-            secret_digest: Sha256::digest(&secret).into(),
+    let Some(presented) = bearer(headers) else {
+        return Err(Refused::Unauthorized);
+    };
+    let conn = open_work(state).ok_or(Refused::Store)?;
+    match work_enrol::authenticate(&conn, presented) {
+        Ok(work_enrol::Authn::Active { public_id, name }) => Ok(Admitted {
+            credential_id: public_id,
+            name,
         }),
-        None => {
+        Ok(work_enrol::Authn::Revoked) => {
+            tracing::warn!("worker ws upgrade refused: revoked token");
+            Err(Refused::Revoked)
+        }
+        Ok(work_enrol::Authn::Unknown) => {
             tracing::warn!("worker ws upgrade refused: bad or missing token");
             Err(Refused::Unauthorized)
         }
+        Err(e) => {
+            tracing::warn!("worker ws: credential lookup: {e}");
+            Err(Refused::Store)
+        }
     }
+}
+
+/// The values job kinds read, sent in `welcome.settings` and held in
+/// the worker's memory only (it reads no `.env`). Resolved the way this
+/// server resolves them for its own calls: `meta.api_key` with
+/// `$META_API_KEY` first, the call-cache rows with their environment
+/// overrides, and the effective `hf.mode`. Unset values are left out.
+fn worker_settings(state: &AppState) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
+        return out;
+    };
+    let kek = state.kek.as_deref();
+    let runtime = kek.and_then(|kek| {
+        config::RuntimeConfig::load(&conn, kek)
+            .ok()
+            .map(|(cfg, _)| cfg)
+    });
+    let key = std::env::var("META_API_KEY")
+        .ok()
+        .filter(|k| !k.is_empty())
+        .or_else(|| {
+            runtime
+                .as_ref()
+                .and_then(|cfg| cfg.meta_api_key.as_ref())
+                .map(|k| k.as_str().to_string())
+                .filter(|k| !k.is_empty())
+        });
+    if let Some(key) = key {
+        out.insert("meta_api_key".to_string(), key);
+    }
+    if let Some(base) = runtime
+        .as_ref()
+        .map(|cfg| cfg.meta_base_url.clone())
+        .filter(|b| !b.is_empty())
+    {
+        out.insert("meta_base_url".to_string(), base);
+    }
+    let cache = crate::call_cache::settings(&conn, kek);
+    out.insert(
+        "meta_cache_mode".to_string(),
+        cache.mode.as_str().to_string(),
+    );
+    out.insert(
+        "fetch_cache_mode".to_string(),
+        cache.fetch_mode.as_str().to_string(),
+    );
+    out.insert(
+        "meta_daily_call_cap".to_string(),
+        cache.daily_call_cap.to_string(),
+    );
+    if let Some(mode) = state.fakes.get(config::Integration::HuggingFace) {
+        out.insert("hf_mode".to_string(), mode.as_str().to_string());
+    }
+    if let Some(kek) = kek {
+        for (key, row) in [
+            ("glimmer_model", config::keys::WORKER_GLIMMER_MODEL),
+            ("glimmer_url", config::keys::WORKER_GLIMMER_URL),
+        ] {
+            if let Ok(Some(value)) = config::get_text_for_job(&conn, kek, row)
+                && !value.trim().is_empty()
+            {
+                out.insert(key.to_string(), value.trim().to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Digest of [`worker_settings`], so a ping can tell they changed
+/// without keeping the key itself around.
+fn settings_digest(settings: &BTreeMap<String, String>) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    for (key, value) in settings {
+        hash.update(key.as_bytes());
+        hash.update([0]);
+        hash.update(value.as_bytes());
+        hash.update([0]);
+    }
+    hash.finalize().into()
 }
 
 // ---------------------------------------------------------------------------
@@ -525,15 +535,6 @@ impl Session {
     }
 }
 
-/// Worker names: `[a-z0-9-]{1,32}` (they land in audit rows and
-/// `lease_owner`, where `:` separates the token).
-fn valid_worker_name(name: &str) -> bool {
-    (1..=32).contains(&name.len())
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
-
 async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot, admitted: Admitted) {
     let hello = tokio::time::timeout(Duration::from_secs(HELLO_TIMEOUT_SECS), socket.recv()).await;
     let session = match hello {
@@ -542,13 +543,12 @@ async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot, admitted
                 worker,
                 capabilities,
                 version,
-            }) if valid_worker_name(&worker) => {
-                if let Identity::Named(name) = &admitted.identity
-                    && *name != worker
-                {
+            }) => {
+                // The credential names the worker; hello must agree.
+                if worker != admitted.name {
                     let frame = ServerFrame::error(
                         "bad_frame",
-                        &format!("this token is for worker {name}"),
+                        &format!("this token is for worker {}", admitted.name),
                         None,
                     );
                     let _ = socket.send(frame.to_message()).await;
@@ -556,12 +556,18 @@ async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot, admitted
                 }
                 let capabilities: Vec<String> =
                     capabilities.into_iter().filter(|k| known_kind(k)).collect();
+                let version: String = version.chars().take(64).collect();
                 slot.update(|seen| {
                     seen.name = worker.clone();
                     seen.capabilities = capabilities.clone();
-                    seen.version = version.chars().take(64).collect();
-                    seen.identity = admitted.identity.label();
+                    seen.version = version.clone();
+                    seen.credential_id = admitted.credential_id.clone();
                 });
+                let (touch, id, v) = (state.clone(), admitted.credential_id.clone(), version);
+                let _ = tokio::task::spawn_blocking(move || {
+                    open_work(&touch).map(|conn| work_enrol::touch(&conn, &id, &v, unix_now()))
+                })
+                .await;
                 Session {
                     name: worker,
                     capabilities,
@@ -576,11 +582,17 @@ async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot, admitted
         },
         _ => return,
     };
+    let load = state.clone();
+    let settings = tokio::task::spawn_blocking(move || worker_settings(&load))
+        .await
+        .unwrap_or_default();
+    let digest = settings_digest(&settings);
     let welcome = ServerFrame::Welcome {
         worker: session.name.clone(),
         lease_secs: LEASE_SECS,
         heartbeat_secs: HEARTBEAT_SECS,
         max_result_bytes: MAX_RESULT_BYTES,
+        settings,
     };
     if socket.send(welcome.to_message()).await.is_err() {
         return;
@@ -589,6 +601,7 @@ async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot, admitted
     let mut ping = tokio::time::interval(Duration::from_secs(PING_SECS));
     ping.tick().await;
     let mut heard = tokio::time::Instant::now();
+    let mut job: Option<i64> = None;
     loop {
         tokio::select! {
             _ = ping.tick() => {
@@ -596,16 +609,25 @@ async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot, admitted
                     tracing::info!(worker = %session.name, "worker silent for {IDLE_SECS}s; closing");
                     break;
                 }
-                let check = state.clone();
-                let rotated = tokio::task::spawn_blocking(move || {
-                    worker_secret(&check).map(|s| <[u8; 32]>::from(Sha256::digest(&s)))
+                let (check, id) = (state.clone(), admitted.credential_id.clone());
+                let (active, now_digest) = tokio::task::spawn_blocking(move || {
+                    let active = open_work(&check)
+                        .map(|conn| work_enrol::is_active(&conn, &id).unwrap_or(true))
+                        .unwrap_or(true);
+                    (active, settings_digest(&worker_settings(&check)))
                 })
                 .await
-                .is_ok_and(|now| now.ok() != Some(admitted.secret_digest));
-                if rotated {
-                    tracing::info!(worker = %session.name, "worker.token rotated; closing");
-                    let frame = ServerFrame::error("unauthorized", "worker token rotated", None);
+                .unwrap_or((true, digest));
+                if !active {
+                    tracing::info!(worker = %session.name, "worker credential revoked; closing");
+                    let frame = ServerFrame::error("unauthorized", "worker token revoked", None);
                     let _ = socket.send(frame.to_message()).await;
+                    break;
+                }
+                // New settings reach an idle worker by reconnecting; a
+                // running job finishes with the values it started with.
+                if now_digest != digest && job.is_none() {
+                    tracing::info!(worker = %session.name, "worker settings changed; closing to resend");
                     break;
                 }
                 if socket.send(Message::Ping(Bytes::new())).await.is_err() {
@@ -630,11 +652,13 @@ async fn run_socket(state: AppState, mut socket: WebSocket, slot: Slot, admitted
                     Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
                     Some(Ok(_)) => continue,
                 };
-                slot.update(|seen| match &reply {
-                    ServerFrame::Job { id, .. } => seen.job_id = Some(*id),
-                    ServerFrame::Ack { .. } => seen.job_id = None,
+                match &reply {
+                    ServerFrame::Job { id, .. } => job = Some(*id),
+                    ServerFrame::Ack { .. } => job = None,
+                    ServerFrame::Error { code, .. } if code == "lease_lost" => job = None,
                     _ => {}
-                });
+                }
+                slot.update(|seen| seen.job_id = job);
                 if socket.send(reply.to_message()).await.is_err() {
                     break;
                 }
@@ -1049,40 +1073,6 @@ async fn retry(auth: AdminAuth, State(state): State<AppState>, Path(id): Path<i6
     }
 }
 
-#[derive(Deserialize)]
-struct MintBody {
-    name: String,
-}
-
-/// `POST /apostille/api/v1/admin/workers/token {name}`: a token that
-/// admits only `name` (shown once; rotate `worker.token` to revoke).
-/// Needs a fresh step-up, like other credential changes.
-async fn mint_token(
-    auth: AdminAuth,
-    State(state): State<AppState>,
-    Json(body): Json<MintBody>,
-) -> Response {
-    if !valid_worker_name(&body.name) {
-        return json_error(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "worker names are 1-32 of a-z, 0-9 and -",
-        );
-    }
-    let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
-        return store_unavailable();
-    };
-    let ages = crate::admin::step_up_ages(&conn, &auth.user, unix_now());
-    if !ages.fresh {
-        return crate::admin::step_up_refusal(&auth.user, &ages);
-    }
-    let secret = match worker_secret(&state) {
-        Ok(secret) => secret,
-        Err(refused) => return refused.response(),
-    };
-    tracing::info!(worker = %body.name, "named worker token minted");
-    Json(json!({"name": body.name, "token": named_token(&secret, &body.name)})).into_response()
-}
-
 async fn cancel(auth: AdminAuth, State(state): State<AppState>, Path(id): Path<i64>) -> Response {
     let Some(conn) = open_work(&state) else {
         return store_unavailable();
@@ -1265,9 +1255,327 @@ async fn stage_packs(
     .into_response()
 }
 
+// ---------------------------------------------------------------------------
+// Enrolment (docs/specs/worker-enrolment.md)
+// ---------------------------------------------------------------------------
+
+/// Largest enrol or poll body.
+const MAX_ENROL_BODY: usize = 4 * 1024;
+
+/// `worker.enrolment` is not `off` (unset, no KEK or unreadable: on).
+fn enrolment_on(state: &AppState) -> bool {
+    let Some(kek) = state.kek.as_deref() else {
+        return true;
+    };
+    let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
+        return true;
+    };
+    !matches!(
+        config::get_text_for_job(&conn, kek, config::keys::WORKER_ENROLMENT),
+        Ok(Some(value)) if value.trim().eq_ignore_ascii_case("off")
+    )
+}
+
+#[derive(Deserialize)]
+struct EnrolBody {
+    username: String,
+    hostname: String,
+    #[serde(default)]
+    version: String,
+    #[serde(default)]
+    started_at: i64,
+    #[serde(default)]
+    capabilities: Vec<String>,
+    poll_hash: String,
+}
+
+/// `POST /apostille/api/v1/worker/enrol` (public, unauthenticated): file
+/// a request; the worker prints the returned code for staff to type.
+async fn enrol(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    body: Bytes,
+) -> Response {
+    if body.len() > MAX_ENROL_BODY {
+        return json_error(StatusCode::PAYLOAD_TOO_LARGE, "enrol body over 4 KiB");
+    }
+    let Ok(body) = serde_json::from_slice::<EnrolBody>(&body) else {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "bad enrol request");
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        if !enrolment_on(&state) {
+            return Err((StatusCode::SERVICE_UNAVAILABLE, "worker enrolment is off"));
+        }
+        let unavailable = (StatusCode::SERVICE_UNAVAILABLE, "store unavailable");
+        let conn = open_work(&state).ok_or(unavailable)?;
+        let capabilities: Vec<&String> =
+            body.capabilities.iter().filter(|k| known_kind(k)).collect();
+        let version: String = body.version.chars().take(64).collect();
+        let ip = peer.ip().to_string();
+        let filed = work_enrol::request(
+            &conn,
+            &work_enrol::NewRequest {
+                username: &body.username,
+                hostname: &body.hostname,
+                version: &version,
+                started_at: body.started_at,
+                capabilities_json: &json!(capabilities).to_string(),
+                peer_ip: &ip,
+                poll_hash: &body.poll_hash,
+                now: unix_now(),
+            },
+        )
+        .map_err(|_| unavailable)?;
+        match filed {
+            Ok(filed) => {
+                tracing::info!(
+                    worker = %format!("{}@{}", body.username, body.hostname),
+                    ip = %ip,
+                    "worker enrol request filed"
+                );
+                Ok(filed)
+            }
+            Err(work_enrol::Refusal::Invalid) => Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "username and hostname are lowercase a-z, 0-9, . _ -; poll_hash is 64 hex",
+            )),
+            Err(work_enrol::Refusal::TooManyPending) => Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                "too many enrol requests waiting",
+            )),
+            Err(work_enrol::Refusal::TooManyFromIp) => Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                "too many enrol requests from this address",
+            )),
+        }
+    })
+    .await
+    .unwrap_or(Err((StatusCode::SERVICE_UNAVAILABLE, "store unavailable")));
+    match result {
+        Ok(filed) => (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "id": filed.public_id, "code": filed.code,
+                "poll_after_secs": 5, "expires_at": filed.expires_at,
+            })),
+        )
+            .into_response(),
+        Err((StatusCode::SERVICE_UNAVAILABLE, "store unavailable")) => store_unavailable(),
+        Err((status, error)) => json_error(status, error),
+    }
+}
+
+#[derive(Deserialize)]
+struct PollBody {
+    poll_secret: String,
+}
+
+/// `POST /apostille/api/v1/worker/enrol/{id}/poll`: the worker's
+/// answer; an approved request yields its token here, once.
+async fn enrol_poll(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    if body.len() > MAX_ENROL_BODY {
+        return json_error(StatusCode::PAYLOAD_TOO_LARGE, "poll body over 4 KiB");
+    }
+    let Ok(body) = serde_json::from_slice::<PollBody>(&body) else {
+        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "bad poll request");
+    };
+    let polled = tokio::task::spawn_blocking(move || {
+        let conn = open_work(&state)?;
+        work_enrol::poll(&conn, &id, &body.poll_secret, unix_now()).ok()
+    })
+    .await
+    .ok()
+    .flatten();
+    match polled {
+        None => store_unavailable(),
+        Some(work_enrol::Poll::Pending { expires_at }) => {
+            Json(json!({"status": "pending", "expires_at": expires_at})).into_response()
+        }
+        Some(work_enrol::Poll::Approved { name, token }) => {
+            tracing::info!(worker = %name, "worker token delivered");
+            Json(json!({"status": "approved", "worker": name, "token": token})).into_response()
+        }
+        Some(work_enrol::Poll::Gone(status)) => {
+            (StatusCode::GONE, Json(json!({"status": status}))).into_response()
+        }
+        Some(work_enrol::Poll::NotFound) => json_error(StatusCode::NOT_FOUND, "no such request"),
+    }
+}
+
+#[derive(Deserialize)]
+struct EnrolmentParams {
+    #[serde(default)]
+    revoked: Option<String>,
+}
+
+/// `GET /apostille/api/v1/admin/workers/enrolments`: pending requests
+/// and credentials (never codes, tokens or hashes).
+async fn enrolments(
+    _auth: AdminAuth,
+    State(state): State<AppState>,
+    Query(params): Query<EnrolmentParams>,
+) -> Response {
+    let include_revoked = params
+        .revoked
+        .as_deref()
+        .is_some_and(|v| v == "1" || v == "true");
+    let on = enrolment_on(&state);
+    let Some(conn) = open_work(&state) else {
+        return store_unavailable();
+    };
+    let now = unix_now();
+    let (Ok(pending), Ok(credentials)) = (
+        work_enrol::pending(&conn, now),
+        work_enrol::credentials(&conn, include_revoked),
+    ) else {
+        return store_unavailable();
+    };
+    let server_sha = env!("BUILD_SHA");
+    let connected: HashMap<String, Option<i64>> = {
+        let workers = WORKERS.lock().expect("worker registry poisoned");
+        workers
+            .values()
+            .filter(|seen| !seen.credential_id.is_empty())
+            .map(|seen| (seen.credential_id.clone(), seen.job_id))
+            .collect()
+    };
+    Json(json!({
+        "today": crate::evidence::la_date(now),
+        "server_version": format!("{}+{server_sha}", env!("CARGO_PKG_VERSION")),
+        "enrolment_on": on,
+        "pending": pending.iter().map(|r| json!({
+            "id": r.public_id, "username": r.username, "hostname": r.hostname,
+            "proposed_name": format!("{}@{}", r.username, r.hostname),
+            "version": r.version, "version_matches": version_matches(&r.version, server_sha),
+            "started_at": r.started_at,
+            "capabilities": serde_json::from_str::<Value>(&r.capabilities_json).unwrap_or(json!([])),
+            "peer_ip": r.peer_ip, "created_at": r.created_at, "expires_at": r.expires_at,
+            "code_tries": r.code_tries,
+        })).collect::<Vec<_>>(),
+        "credentials": credentials.iter().map(|c| {
+            let live = connected.get(&c.public_id);
+            json!({
+                "id": c.public_id, "name": c.name,
+                "created_at": c.created_at, "created_by": c.created_by,
+                "last_seen_at": c.last_seen_at, "last_version": c.last_version,
+                "version_matches": c.last_version.as_deref().and_then(|v| version_matches(v, server_sha)),
+                "connected": live.is_some(), "job_id": live.copied().flatten(),
+                "revoked_at": c.revoked_at, "revoked_by": c.revoked_by,
+            })
+        }).collect::<Vec<_>>(),
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct ApproveBody {
+    code: String,
+    name: String,
+    #[serde(default)]
+    add_date: bool,
+}
+
+/// Fresh step-up, like other credential changes.
+fn require_fresh_step_up(state: &AppState, auth: &AdminAuth) -> Option<Response> {
+    let Ok(conn) = db::open(&Store::new(&state.store_root)) else {
+        return Some(store_unavailable());
+    };
+    let ages = crate::admin::step_up_ages(&conn, &auth.user, unix_now());
+    (!ages.fresh).then(|| crate::admin::step_up_refusal(&auth.user, &ages))
+}
+
+/// `POST …/admin/workers/enrolments/{id}/approve {code, name, add_date}`.
+/// The server appends the America/Los_Angeles date when asked.
+async fn approve_enrolment(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<ApproveBody>,
+) -> Response {
+    if let Some(refusal) = require_fresh_step_up(&state, &auth) {
+        return refusal;
+    }
+    let now = unix_now();
+    let name = if body.add_date {
+        format!("{} {}", body.name.trim(), crate::evidence::la_date(now))
+    } else {
+        body.name.trim().to_string()
+    };
+    let Some(conn) = open_work(&state) else {
+        return store_unavailable();
+    };
+    match work_enrol::approve(&conn, &id, &body.code, &name, &auth.user.user_id, now) {
+        Ok(work_enrol::Decision::Approved { name }) => {
+            tracing::info!(worker = %name, "worker enrolment approved");
+            Json(json!({"status": "approved", "name": name})).into_response()
+        }
+        Ok(work_enrol::Decision::WrongCode { tries_left }) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({"error": "wrong pairing code", "tries_left": tries_left})),
+        )
+            .into_response(),
+        Ok(work_enrol::Decision::DeniedAfterTries) => {
+            json_error(StatusCode::CONFLICT, "denied after 3 wrong codes")
+        }
+        Ok(work_enrol::Decision::NameTaken) => json_error(StatusCode::CONFLICT, "name in use"),
+        Ok(work_enrol::Decision::NotPending) => json_error(StatusCode::CONFLICT, "not pending"),
+        Ok(work_enrol::Decision::BadName) => json_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "bad name: user@host, optionally followed by a space and YYYY-MM-DD",
+        ),
+        Err(_) => store_unavailable(),
+    }
+}
+
+/// `POST …/admin/workers/enrolments/{id}/deny`.
+async fn deny_enrolment(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    let Some(conn) = open_work(&state) else {
+        return store_unavailable();
+    };
+    match work_enrol::deny(&conn, &id, &auth.user.user_id, unix_now()) {
+        Ok(true) => Json(json!({"status": "denied"})).into_response(),
+        Ok(false) => json_error(StatusCode::CONFLICT, "not pending"),
+        Err(_) => store_unavailable(),
+    }
+}
+
+/// `POST …/admin/workers/credentials/{id}/revoke`: the worker's socket
+/// closes at its next ping; its lease runs out and the job requeues.
+async fn revoke_credential(
+    auth: AdminAuth,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Response {
+    if let Some(refusal) = require_fresh_step_up(&state, &auth) {
+        return refusal;
+    }
+    let Some(conn) = open_work(&state) else {
+        return store_unavailable();
+    };
+    match work_enrol::revoke(&conn, &id, &auth.user.user_id, unix_now()) {
+        Ok(Some(revoked_at)) => {
+            tracing::info!(credential = %id, "worker credential revoked");
+            Json(json!({"id": id, "revoked_at": revoked_at})).into_response()
+        }
+        Ok(None) => json_error(StatusCode::NOT_FOUND, "no such active credential"),
+        Err(_) => store_unavailable(),
+    }
+}
+
 /// Worker socket route, merged into the PUBLIC `/apostille` API.
 pub(crate) fn public_routes() -> Router<AppState> {
-    Router::new().route("/api/v1/worker/ws", get(ws_upgrade))
+    Router::new()
+        .route("/api/v1/worker/ws", get(ws_upgrade))
+        .route("/api/v1/worker/enrol", post(enrol))
+        .route("/api/v1/worker/enrol/{id}/poll", post(enrol_poll))
 }
 
 /// Staff routes on the ADMIN listener only (via `mission_admin_routes`).
@@ -1287,7 +1595,22 @@ pub fn admin_router(state: AppState) -> Router {
             "/apostille/api/v1/admin/work-items/{id}/cancel",
             post(cancel),
         )
-        .route("/apostille/api/v1/admin/workers/token", post(mint_token))
+        .route(
+            "/apostille/api/v1/admin/workers/enrolments",
+            get(enrolments),
+        )
+        .route(
+            "/apostille/api/v1/admin/workers/enrolments/{id}/approve",
+            post(approve_enrolment),
+        )
+        .route(
+            "/apostille/api/v1/admin/workers/enrolments/{id}/deny",
+            post(deny_enrolment),
+        )
+        .route(
+            "/apostille/api/v1/admin/workers/credentials/{id}/revoke",
+            post(revoke_credential),
+        )
         .route(
             "/apostille/api/v1/admin/work-items/{id}/stage-packs",
             post(stage_packs),
@@ -1304,7 +1627,6 @@ mod tests {
     use tokio_tungstenite::tungstenite;
     use tower::ServiceExt as _;
 
-    const TOKEN: &str = "test-worker-token-0123456789abcdef0123456789";
     const STAFF: &str = "staff-sess-1";
 
     type Ws = tokio_tungstenite::WebSocketStream<
@@ -1317,7 +1639,7 @@ mod tests {
     }
 
     impl Fixture {
-        fn new(token: Option<&str>) -> Self {
+        fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
             let store = Store::new(dir.path());
             store.init().unwrap();
@@ -1326,21 +1648,6 @@ mod tests {
             auth::migrate_auth_tables(&meta).unwrap();
             config::migrate_config_tables(&meta).unwrap();
             let kek = config::Kek::generate();
-            if let Some(token) = token {
-                config::set_value(
-                    &meta,
-                    &kek,
-                    &config::SetValue {
-                        version: 1,
-                        key: config::keys::WORKER_TOKEN,
-                        key_type: config::ConfigType::Secret,
-                        plaintext: token.as_bytes(),
-                        now: unix_now(),
-                        actor: "test",
-                    },
-                )
-                .unwrap();
-            }
             auth::create_session(
                 &meta,
                 STAFF,
@@ -1410,6 +1717,29 @@ mod tests {
 
         fn work(&self) -> rusqlite::Connection {
             open_work(&self.state).unwrap()
+        }
+
+        /// A `w2.` token for `name` (the `xtask up` path, no enrolment).
+        fn token(&self, name: &str) -> String {
+            work_enrol::mint_direct(&self.work(), name, "test", unix_now()).unwrap()
+        }
+
+        /// Seal one config row through the fixture's KEK.
+        fn set_config(&self, key: &str, key_type: config::ConfigType, value: &str) {
+            let meta = db::open(&Store::new(&self.state.store_root)).unwrap();
+            config::set_value(
+                &meta,
+                self.state.kek.as_deref().unwrap(),
+                &config::SetValue {
+                    version: 1,
+                    key,
+                    key_type,
+                    plaintext: value.as_bytes(),
+                    now: unix_now(),
+                    actor: "test",
+                },
+            )
+            .unwrap();
         }
     }
 
@@ -1501,7 +1831,7 @@ mod tests {
     /// refused, complete with upload, and the staff result download.
     #[tokio::test]
     async fn queue_lifecycle_over_websocket() {
-        let fx = Fixture::new(Some(TOKEN));
+        let fx = Fixture::new();
         let addr = fx.serve_public();
 
         // Bad and missing tokens never upgrade.
@@ -1541,7 +1871,7 @@ mod tests {
         let id = created["id"].as_i64().unwrap();
 
         // Worker A: hello, checkout, heartbeat.
-        let mut a = connect(addr, Some(TOKEN)).await.unwrap();
+        let mut a = connect(addr, Some(&fx.token("plant-a"))).await.unwrap();
         let welcome = hello(&mut a, "plant-a").await;
         assert_eq!(welcome["type"], "welcome");
         assert_eq!(welcome["lease_secs"], LEASE_SECS);
@@ -1586,7 +1916,7 @@ mod tests {
                 rusqlite::params![id, unix_now() - 1],
             )
             .unwrap();
-        let mut b = connect(addr, Some(TOKEN)).await.unwrap();
+        let mut b = connect(addr, Some(&fx.token("plant-b"))).await.unwrap();
         hello(&mut b, "plant-b").await;
         let again = send(&mut b, json!({"type": "checkout"})).await;
         assert_eq!(
@@ -1668,13 +1998,13 @@ mod tests {
 
     #[tokio::test]
     async fn worker_failure_requeues_then_staff_retries() {
-        let fx = Fixture::new(Some(TOKEN));
+        let fx = Fixture::new();
         let addr = fx.serve_public();
         let uri = "/apostille/api/v1/admin/work-items";
         let body = json!({"kind": "scrape.urls", "payload": {"urls": []}, "max_attempts": 1});
         let (_, created) = call_json(fx.admin(), staff("POST", uri, Some(body))).await;
         let id = created["id"].as_i64().unwrap();
-        let mut ws = connect(addr, Some(TOKEN)).await.unwrap();
+        let mut ws = connect(addr, Some(&fx.token("plant-c"))).await.unwrap();
         hello(&mut ws, "plant-c").await;
         let job = send(&mut ws, json!({"type": "checkout"})).await;
         let lease = job["lease"].as_str().unwrap();
@@ -1705,13 +2035,13 @@ mod tests {
 
     #[tokio::test]
     async fn staff_cancel_ends_the_workers_lease() {
-        let fx = Fixture::new(Some(TOKEN));
+        let fx = Fixture::new();
         let addr = fx.serve_public();
         let uri = "/apostille/api/v1/admin/work-items";
         let body = json!({"kind": "scrape.urls", "payload": {"urls": []}});
         let (_, created) = call_json(fx.admin(), staff("POST", uri, Some(body))).await;
         let id = created["id"].as_i64().unwrap();
-        let mut ws = connect(addr, Some(TOKEN)).await.unwrap();
+        let mut ws = connect(addr, Some(&fx.token("plant-c"))).await.unwrap();
         hello(&mut ws, "plant-c").await;
         let job = send(&mut ws, json!({"type": "checkout"})).await;
         let lease = job["lease"].as_str().unwrap().to_string();
@@ -1741,48 +2071,243 @@ mod tests {
         );
     }
 
+    /// Public enrol endpoints over the public router (unauthenticated).
+    async fn public_call(fx: &Fixture, uri: &str, body: Value) -> (StatusCode, Value) {
+        let req = Request::builder()
+            .uri(uri)
+            .method("POST")
+            .header("host", "localhost")
+            .header("content-type", "application/json")
+            .extension(ConnectInfo(
+                "203.0.113.5:40000".parse::<SocketAddr>().unwrap(),
+            ))
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let public = crate::public_router(fx.state.clone(), "static", "test-spa", "test-acme");
+        call_json(public, req).await
+    }
+
+    const POLL_SECRET: &str = "0101010101010101010101010101010101010101010101010101010101010101";
+
+    fn enrol_body() -> Value {
+        let poll_hash = handbook_store::store::sha256_hex(&[1u8; 32]);
+        json!({"username": "chandra", "hostname": "plant", "version": "0.1.0+1bda381",
+               "started_at": unix_now() - 3, "capabilities": ["scrape.urls", "no.such.kind"],
+               "poll_hash": poll_hash})
+    }
+
+    /// Enrol → staff approve with the code (+ Pacific date) → poll
+    /// collects the token once → the token connects as that name.
     #[tokio::test]
-    async fn named_tokens_admit_only_their_worker() {
-        let fx = Fixture::new(Some(TOKEN));
-        let addr = fx.serve_public();
-        let token = named_token(TOKEN.as_bytes(), "plant-b");
-        let mut ws = connect(addr, Some(&token)).await.unwrap();
-        assert_eq!(hello(&mut ws, "plant-b").await["type"], "welcome");
-        let mut ws = connect(addr, Some(&token)).await.unwrap();
-        let refused = hello(&mut ws, "plant-c").await;
-        assert_eq!(refused["code"], "bad_frame", "{refused}");
-        let forged = token.replacen("plant-b", "plant-c", 1);
+    async fn enrolment_end_to_end() {
+        let fx = Fixture::new();
+        let (status, filed) =
+            public_call(&fx, "/apostille/api/v1/worker/enrol", enrol_body()).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{filed}");
+        let id = filed["id"].as_str().unwrap().to_string();
+        let code = filed["code"].as_str().unwrap().to_string();
+        let poll_uri = format!("/apostille/api/v1/worker/enrol/{id}/poll");
+        let poll = json!({"poll_secret": POLL_SECRET});
+        let (status, pending) = public_call(&fx, &poll_uri, poll.clone()).await;
         assert_eq!(
-            refused_with(connect(addr, Some(&forged)).await.unwrap_err()),
-            401
+            (status, pending["status"].as_str()),
+            (StatusCode::OK, Some("pending"))
         );
-        let mint = "/apostille/api/v1/admin/workers/token";
-        let (status, minted) = call_json(
+        let (status, _) =
+            public_call(&fx, &poll_uri, json!({"poll_secret": "02".repeat(32)})).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // Staff see the request, never the code.
+        let list = "/apostille/api/v1/admin/workers/enrolments";
+        let (status, listed) = call_json(fx.admin(), staff("GET", list, None)).await;
+        assert_eq!(status, StatusCode::OK, "{listed}");
+        assert_eq!(listed["pending"][0]["proposed_name"], "chandra@plant");
+        assert_eq!(listed["pending"][0]["peer_ip"], "203.0.113.5");
+        assert_eq!(listed["pending"][0]["capabilities"], json!(["scrape.urls"]));
+        assert_eq!(listed["enrolment_on"], true);
+        assert!(!listed.to_string().contains(&code));
+        let today = listed["today"].as_str().unwrap().to_string();
+
+        let approve = format!("/apostille/api/v1/admin/workers/enrolments/{id}/approve");
+        let wrong = if code == "AAAA-AA" {
+            "BBBB-BB"
+        } else {
+            "AAAA-AA"
+        };
+        let (status, refused) = call_json(
             fx.admin(),
-            staff("POST", mint, Some(json!({"name": "plant-b"}))),
-        )
-        .await;
-        assert_eq!(
-            (status, minted["token"].as_str()),
-            (StatusCode::OK, Some(token.as_str()))
-        );
-        let (status, _) = call_json(
-            fx.admin(),
-            staff("POST", mint, Some(json!({"name": "Bad Name"}))),
+            staff(
+                "POST",
+                &approve,
+                Some(json!({"code": wrong, "name": "chandra@plant"})),
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(refused["tries_left"], 2);
+        let (status, approved) = call_json(
+            fx.admin(),
+            staff(
+                "POST",
+                &approve,
+                Some(json!({"code": code, "name": "chandra@plant", "add_date": true})),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{approved}");
+        let name = format!("chandra@plant {today}");
+        assert_eq!(approved["name"], name);
+
+        let (status, got) = public_call(&fx, &poll_uri, poll.clone()).await;
+        assert_eq!(
+            (status, got["worker"].as_str()),
+            (StatusCode::OK, Some(name.as_str()))
+        );
+        let token = got["token"].as_str().unwrap().to_string();
+        assert!(token.starts_with("w2."));
+        let (status, gone) = public_call(&fx, &poll_uri, poll).await;
+        assert_eq!(
+            (status, gone["status"].as_str()),
+            (StatusCode::GONE, Some("delivered"))
+        );
+
+        let addr = fx.serve_public();
+        let mut ws = connect(addr, Some(&token)).await.unwrap();
+        assert_eq!(hello(&mut ws, &name).await["type"], "welcome");
+        let (_, listed) = call_json(fx.admin(), staff("GET", list, None)).await;
+        assert!(listed["pending"].as_array().unwrap().is_empty());
+        assert_eq!(listed["credentials"][0]["name"], name);
+        assert_eq!(listed["credentials"][0]["connected"], true);
+        assert!(!listed.to_string().contains(&token));
+    }
+
+    #[tokio::test]
+    async fn enrolment_refusals() {
+        let fx = Fixture::new();
+        let uri = "/apostille/api/v1/worker/enrol";
+        let mut bad = enrol_body();
+        bad["username"] = json!("Chandra");
+        assert_eq!(
+            public_call(&fx, uri, bad).await.0,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        let mut big = enrol_body();
+        big["version"] = json!("x".repeat(5000));
+        assert_eq!(
+            public_call(&fx, uri, big).await.0,
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+        for _ in 0..work_enrol::MAX_PER_IP_PER_HOUR {
+            assert_eq!(
+                public_call(&fx, uri, enrol_body()).await.0,
+                StatusCode::ACCEPTED
+            );
+        }
+        assert_eq!(
+            public_call(&fx, uri, enrol_body()).await.0,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        fx.set_config(
+            config::keys::WORKER_ENROLMENT,
+            config::ConfigType::Text,
+            "off",
+        );
+        assert_eq!(
+            public_call(&fx, uri, enrol_body()).await.0,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        // Staff can still deny what is pending.
+        let (_, listed) = call_json(
+            fx.admin(),
+            staff("GET", "/apostille/api/v1/admin/workers/enrolments", None),
+        )
+        .await;
+        assert_eq!(listed["enrolment_on"], false);
+        let id = listed["pending"][0]["id"].as_str().unwrap();
+        let deny = format!("/apostille/api/v1/admin/workers/enrolments/{id}/deny");
+        let (status, denied) = call_json(fx.admin(), staff("POST", &deny, None)).await;
+        assert_eq!(
+            (status, denied["status"].as_str()),
+            (StatusCode::OK, Some("denied"))
+        );
+        assert_eq!(
+            call_json(fx.admin(), staff("POST", &deny, None)).await.0,
+            StatusCode::CONFLICT
+        );
+    }
+
+    /// A token admits only its own name, carries the settings, and a
+    /// revoke refuses the next connection with `revoked`.
+    #[tokio::test]
+    async fn credentials_admit_their_worker_until_revoked() {
+        let fx = Fixture::new();
+        fx.set_config(
+            config::keys::WORKER_GLIMMER_MODEL,
+            config::ConfigType::Text,
+            "glimmer-7b-q4",
+        );
+        fx.set_config(
+            config::keys::META_API_KEY,
+            config::ConfigType::Secret,
+            "LLM_1_stub",
+        );
+        let addr = fx.serve_public();
+        let token = fx.token("plant-b");
+        let mut ws = connect(addr, Some(&token)).await.unwrap();
+        let welcome = hello(&mut ws, "plant-b").await;
+        assert_eq!(welcome["type"], "welcome");
+        assert_eq!(welcome["settings"]["glimmer_model"], "glimmer-7b-q4");
+        assert_eq!(welcome["settings"]["meta_daily_call_cap"], "400");
+        if std::env::var_os("META_API_KEY").is_none() {
+            assert_eq!(welcome["settings"]["meta_api_key"], "LLM_1_stub");
+        }
+        let mut ws = connect(addr, Some(&token)).await.unwrap();
+        let refused = hello(&mut ws, "plant-c").await;
+        assert_eq!(refused["code"], "bad_frame", "{refused}");
+
+        let (_, listed) = call_json(
+            fx.admin(),
+            staff("GET", "/apostille/api/v1/admin/workers/enrolments", None),
+        )
+        .await;
+        let id = listed["credentials"][0]["id"].as_str().unwrap().to_string();
+        let revoke = format!("/apostille/api/v1/admin/workers/credentials/{id}/revoke");
+        let (status, revoked) = call_json(fx.admin(), staff("POST", &revoke, None)).await;
+        assert_eq!(status, StatusCode::OK, "{revoked}");
+        assert_eq!(revoked["id"], id);
+        assert_eq!(
+            call_json(fx.admin(), staff("POST", &revoke, None)).await.0,
+            StatusCode::NOT_FOUND
+        );
+        match connect(addr, Some(&token)).await.unwrap_err() {
+            tungstenite::Error::Http(res) => {
+                assert_eq!(res.status().as_u16(), 401);
+                let body: Value = serde_json::from_slice(res.body().as_deref().unwrap()).unwrap();
+                assert_eq!(body["error"], "revoked");
+            }
+            other => panic!("expected an HTTP refusal, got {other:?}"),
+        }
+        // The old token-mint route is gone.
+        let (status, _, _) = call(
+            fx.admin(),
+            staff(
+                "POST",
+                "/apostille/api/v1/admin/workers/token",
+                Some(json!({"name": "x"})),
+            ),
+        )
+        .await;
+        assert!(
+            matches!(
+                status,
+                StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
+            ),
+            "{status}"
+        );
     }
 
     #[test]
-    fn hmac_and_version_checks() {
-        // RFC 4231 test case 2.
-        let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?");
-        let hex: String = mac.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(
-            hex,
-            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
-        );
+    fn version_checks() {
         assert_eq!(version_matches("0.1.0+1bda381c0ffe", "1bda381"), Some(true));
         assert_eq!(version_matches("0.1.0+deadbee", "1bda381"), Some(false));
         assert_eq!(version_matches("0.1.0", "1bda381"), None);
@@ -1790,36 +2315,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unconfigured_or_short_token_refuses_every_worker() {
-        let fx = Fixture::new(None);
-        let addr = fx.serve_public();
-        assert_eq!(
-            refused_with(connect(addr, Some(TOKEN)).await.unwrap_err()),
-            503
-        );
-        let short = Fixture::new(Some("too-short"));
-        let addr = short.serve_public();
-        assert_eq!(
-            refused_with(connect(addr, Some("too-short")).await.unwrap_err()),
-            503
-        );
-    }
-
-    #[tokio::test]
     async fn first_frame_must_be_hello() {
-        let fx = Fixture::new(Some(TOKEN));
+        let fx = Fixture::new();
         let addr = fx.serve_public();
-        let mut ws = connect(addr, Some(TOKEN)).await.unwrap();
+        let token = fx.token("plant");
+        let mut ws = connect(addr, Some(&token)).await.unwrap();
         let reply = send(&mut ws, json!({"type": "checkout"})).await;
         assert_eq!(reply["code"], "bad_frame");
-        let mut ws = connect(addr, Some(TOKEN)).await.unwrap();
+        let mut ws = connect(addr, Some(&token)).await.unwrap();
         let reply = send(&mut ws, json!({"type": "hello", "worker": "Bad:Name"})).await;
         assert_eq!(reply["code"], "bad_frame");
     }
 
     #[tokio::test]
     async fn staff_routes_need_a_staff_session() {
-        let fx = Fixture::new(Some(TOKEN));
+        let fx = Fixture::new();
         let req = Request::builder()
             .uri("/apostille/api/v1/admin/work-items")
             .header("host", "localhost")
@@ -1868,10 +2378,6 @@ mod tests {
 
     #[test]
     fn helpers_are_strict() {
-        assert!(valid_worker_name("plant-1"));
-        for bad in ["", "Plant", "a:b", "a b", &"a".repeat(33)] {
-            assert!(!valid_worker_name(bad), "{bad:?}");
-        }
         assert_eq!(
             clean_content_type(Some("application/json")),
             "application/json"
@@ -1881,8 +2387,6 @@ mod tests {
             "application/octet-stream"
         );
         assert_eq!(clean_content_type(None), "application/octet-stream");
-        assert!(token_matches(TOKEN, TOKEN.as_bytes()));
-        assert!(!token_matches("x", TOKEN.as_bytes()));
         let mut headers = HeaderMap::new();
         headers.insert(header::AUTHORIZATION, "Bearer abc".parse().unwrap());
         assert_eq!(bearer(&headers), Some("abc"));
@@ -1917,6 +2421,19 @@ mod tests {
             let frame: ServerFrame = serde_json::from_value(sample.clone()).expect("server frame");
             assert_eq!(&serde_json::to_value(&frame).unwrap(), sample);
         }
+        let enrol = &seed["enrol"];
+        let body: EnrolBody = serde_json::from_value(enrol["request"].clone()).expect("enrol");
+        assert_eq!(
+            format!("{}@{}", body.username, body.hostname),
+            "chandra@plant"
+        );
+        let _: PollBody = serde_json::from_value(enrol["poll_request"].clone()).expect("poll");
+        let token = enrol["poll_approved"]["token"].as_str().unwrap();
+        assert_eq!(
+            token.split('.').map(str::len).collect::<Vec<_>>(),
+            [2, 32, 64],
+            "w2.<32 hex>.<64 hex>"
+        );
     }
 
     /// Put a finished item with `bytes` as its result straight into the
@@ -1955,7 +2472,7 @@ mod tests {
 
     #[tokio::test]
     async fn stage_packs_writes_the_inbox_and_refuses_other_results() {
-        let fx = Fixture::new(Some(TOKEN));
+        let fx = Fixture::new();
         let uri = |id: i64| format!("/apostille/api/v1/admin/work-items/{id}/stage-packs");
         let bundle = json!({"format": "packs.v1", "packs": [
             {"pack": "EG", "version": 1, "authorities": []},
@@ -2036,7 +2553,7 @@ mod tests {
     /// into the same inbox; empty or wrong-format results do not.
     #[tokio::test]
     async fn stage_packs_takes_discovery_world_packs() {
-        let fx = Fixture::new(Some(TOKEN));
+        let fx = Fixture::new();
         let uri = |id: i64| format!("/apostille/api/v1/admin/work-items/{id}/stage-packs");
         let pack = json!({"pack": "MH", "version": 1, "iso2": "MH",
             "authorities": [

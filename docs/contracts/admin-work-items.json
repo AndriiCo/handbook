@@ -56,7 +56,7 @@
     "workers": [
       {
         "conn": 1,
-        "name": "plant",
+        "name": "chandra@plant",
         "capabilities": [
           "research.nonparty",
           "scrape.urls",
@@ -65,10 +65,10 @@
         ],
         "version": "0.1.0+1bda381",
         "version_matches": true,
-        "identity": "named",
         "connected_at": 1793750000,
         "last_seen_at": 1793750460,
-        "job_id": 7
+        "job_id": 7,
+        "credential_id": "0123456789abcdef0123456789abcdef"
       }
     ],
     "kinds": [
@@ -170,11 +170,59 @@
     "id": 7,
     "status": "failed"
   },
-  "token_request": {
-    "name": "plant"
+  "enrolments": {
+    "today": "2026-11-04",
+    "server_version": "0.1.0+1bda381",
+    "enrolment_on": true,
+    "pending": [
+      {
+        "id": "5f2c1d0e9b8a7f6e5d4c3b2a1f0e9d8c",
+        "username": "chandra",
+        "hostname": "plant",
+        "proposed_name": "chandra@plant",
+        "version": "0.1.0+1bda381",
+        "version_matches": true,
+        "started_at": 1793750000,
+        "capabilities": [
+          "research.nonparty",
+          "scrape.urls"
+        ],
+        "peer_ip": "203.0.113.5",
+        "created_at": 1793750010,
+        "expires_at": 1793750910,
+        "code_tries": 0
+      }
+    ],
+    "credentials": [
+      {
+        "id": "0123456789abcdef0123456789abcdef",
+        "name": "chandra@plant",
+        "created_at": 1793740000,
+        "created_by": "staff-1",
+        "last_seen_at": 1793750460,
+        "last_version": "0.1.0+1bda381",
+        "version_matches": true,
+        "connected": true,
+        "job_id": 7,
+        "revoked_at": null,
+        "revoked_by": null
+      }
+    ]
   },
-  "token_response": {
-    "name": "plant",
-    "token": "w1.plant.0000000000000000000000000000000000000000000000000000000000000000"
+  "approve_request": {
+    "code": "K7QF-2M",
+    "name": "chandra@plant",
+    "add_date": true
+  },
+  "approve_response": {
+    "status": "approved",
+    "name": "chandra@plant 2026-11-04"
+  },
+  "deny_response": {
+    "status": "denied"
+  },
+  "revoke_response": {
+    "id": "0123456789abcdef0123456789abcdef",
+    "revoked_at": 1793750500
   }
 }
