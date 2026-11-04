@@ -231,11 +231,20 @@ command rehearses x86_64.
 
 **Brand files.** The wizard's brand step lists Apple, Google, Meta,
 the FIDO passkey icon and the Vogun face: the owner's terms, what they
-allow, where to get the file. You read the terms and download the
-files in your own browser, drop them in, and tick acceptance; the file
-records your name, the time, the terms version and each file's
-sha256. Builds ship only files whose hash matches a recorded
-acceptance (from `private/brand/`).
+allow, where to get the file. You read the terms in your own browser
+and tick acceptance; the file records your name, the time, the terms
+version and each file's sha256. Then **Fetch** (enabled only once you
+have ticked) downloads the file from its source URL (HTTPS only,
+20 MB, 30 s), takes the named entry out of a zip (`unzip`), refuses an
+SVG with a script, an `on…=` handler, a `<foreignObject>` or an outside
+link, writes it to `private/brand/` and adds its hash to your
+acceptance. Sources live in `brand.sources` (per file, overridable);
+the only default is Google's pre-approved bundle (checked 2026-11-04),
+whose current SVGs carry a `<foreignObject>` and are refused. Apple
+(.dmg), FIDO (request form), Meta (guidelines to accept) and Vogun
+(purchased) stay manual: download in your browser, drop the file in,
+and tick acceptance again. Builds ship only files whose hash matches a
+recorded acceptance (from `private/brand/`).
 
 **Rebuilding production** (only on the operator's order; a freeze
 blocks it):

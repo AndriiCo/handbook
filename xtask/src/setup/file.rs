@@ -223,6 +223,21 @@ pub struct Brand {
     pub dir: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub licences: Vec<Licence>,
+    /// Where the wizard's Fetch downloads each file (by file name);
+    /// overrides the checked default (`brand::DEFAULT_SOURCES`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sources: BTreeMap<String, BrandSource>,
+}
+
+/// A brand file's download: the file itself, or a zip holding it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BrandSource {
+    pub url: String,
+    /// The entry to take from a zip (its name or path); default: the
+    /// brand file's own name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pick: Option<String>,
 }
 
 /// One licence the operator accepted for a brand asset.

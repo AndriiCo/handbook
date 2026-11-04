@@ -236,3 +236,71 @@ test('a judge’s local Docker map fits a 390 px phone in dark mode', async ({ p
 	await runtime.getByRole('button', { name: 'Native' }).click();
 	await expect.poll(() => posts.map((p) => p.body)).toEqual([{ node: 'front_end', place: 'native' }]);
 });
+
+const GOOGLE_ZIP = 'https://developers.google.com/static/identity/images/signin-assets.zip';
+const GOOGLE_PICK = 'Theme=Neutral, Show text=No, Shape=Square, Platform=Android+Web.svg';
+
+function brandState() {
+	const asset = (id, owner, file, source) => ({
+		id,
+		owner,
+		terms: `${owner} terms`,
+		terms_url: `https://${id}.example/terms`,
+		permits: 'the logo in its sign-in button',
+		get: `https://${id}.example/download (by hand)`,
+		files: [{ name: file, present: false, licensed: false, source }],
+		accepted: null
+	});
+	return {
+		...state(),
+		brand: [
+			asset('google', 'Google', 'google.svg', { url: GOOGLE_ZIP, pick: GOOGLE_PICK }),
+			asset('apple', 'Apple', 'apple.svg', null)
+		]
+	};
+}
+
+test('brand Fetch waits for acceptance, says where to download by hand, then licenses the file', async ({ page }) => {
+	const s = brandState();
+	let fetches = 0;
+	const posts = await mount(page, s, {
+		'/api/licence': (route, body) => {
+			s.brand.find((a) => a.id === body.asset).accepted = {
+				by: 'Synthetic Operator',
+				at: '2026-11-04T10:00:00Z',
+				version: body.terms_version
+			};
+			return route.fulfill({ json: { saved: true } });
+		},
+		'/api/brand-fetch': (route) => {
+			fetches += 1;
+			if (fetches === 1)
+				return route.fulfill({
+					status: 502,
+					json: { error: 'refused google.svg: it carries a <foreignObject>' }
+				});
+			Object.assign(s.brand[0].files[0], { present: true, licensed: true });
+			return route.fulfill({ json: { saved: 'google.svg', sha256: 'ab'.repeat(32) } });
+		}
+	});
+	await page.getByRole('tab', { name: 'Brand & licences' }).click();
+	const fetchGoogle = page.getByRole('button', { name: 'Fetch google.svg' });
+	await expect(page.getByLabel('Source URL').first()).toHaveValue(GOOGLE_ZIP);
+	await expect(fetchGoogle).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'Fetch apple.svg' })).toBeDisabled();
+	await expect(page.getByText('No direct download is known').first()).toBeVisible();
+
+	await page.locator('#acc-google').check();
+	await expect(fetchGoogle).toBeEnabled();
+	await fetchGoogle.click();
+	await expect(page.getByText('refused google.svg: it carries a <foreignObject>')).toBeVisible();
+	await expect(page.getByText('Download it by hand instead: https://google.example/download (by hand)')).toBeVisible();
+
+	await fetchGoogle.click();
+	await expect(page.locator('.badge.ok', { hasText: 'licensed' })).toBeVisible();
+	expect(posts.map((p) => [p.path, p.body])).toEqual([
+		['/api/licence', { asset: 'google', terms_version: '', accept: true }],
+		['/api/brand-fetch', { file: 'google.svg', url: GOOGLE_ZIP, pick: GOOGLE_PICK }],
+		['/api/brand-fetch', { file: 'google.svg', url: GOOGLE_ZIP, pick: GOOGLE_PICK }]
+	]);
+});

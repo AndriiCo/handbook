@@ -459,7 +459,8 @@ function mapPanel() {
 function brandPanel() {
   return el("div", {},
     el("div", { class: "panel" }, el("h2", {}, "Brand assets and licences"),
-      el("p", { class: "muted" }, "Read each owner's terms in your own browser, download the files there, drop them here, then tick acceptance. ",
+      el("p", { class: "muted" }, "Read each owner's terms in your own browser and tick acceptance. Then Fetch a file from its source (its hash goes into your acceptance), ",
+        "or download it yourself, drop it here and tick acceptance again (it records the hashes of the files present). ",
         "Files live in ", el("span", { class: "mono" }, S.brand_dir), " (git-ignored). Builds ship only files whose acceptance is recorded with this exact hash; this tool never accepts terms for you.")),
     S.brand.map(a => {
       const version = el("input", { type: "text", placeholder: "terms version or date you read", value: a.accepted ? a.accepted.version : "" });
@@ -482,8 +483,36 @@ function brandPanel() {
             el("td", {}, pick));
         })),
         el("div", { class: "row" }, version, el("label", { for: `acc-${a.id}` }, tick, ` I, ${S.operator || "(set the operator name)"}, have read and accept these terms`)),
-        a.accepted ? el("p", { class: "muted" }, `Recorded: ${a.accepted.by}, ${a.accepted.at}`) : null);
+        a.accepted ? el("p", { class: "muted" }, `Recorded: ${a.accepted.by}, ${a.accepted.at}`) : null,
+        a.files.map(f => fetchForm(a, f)));
     }));
+}
+
+// Source URL (a file or a zip), the entry to take from a zip, Fetch.
+// Fetch stays off until the terms are accepted; a failure says where
+// to download by hand (the upload box above stays).
+function fetchForm(a, f) {
+  const id = `src-${f.name}`;
+  const url = el("input", { type: "text", id, value: f.source ? f.source.url : "", placeholder: "https://… (the file, or a .zip holding it)", autocomplete: "off" });
+  const pick = el("input", { type: "text", id: `${id}-pick`, value: (f.source && f.source.pick) || "", placeholder: f.name, autocomplete: "off" });
+  const out = el("div", {});
+  const btn = el("button", { class: "secondary", disabled: !a.accepted || !url.value.trim(), onclick: async () => {
+    btn.disabled = true; out.replaceChildren(el("p", { class: "muted" }, "Downloading…"));
+    try { await api("/api/brand-fetch", { file: f.name, url: url.value.trim(), pick: pick.value.trim() }); await refresh(); }
+    catch (e) {
+      out.replaceChildren(el("p", { class: "fail" }, e.message),
+        el("p", { class: "muted" }, "Download it by hand instead: ", a.get, ". Then drop it in the upload box above and tick acceptance again."));
+      btn.disabled = false;
+    }
+  } }, `Fetch ${f.name}`);
+  url.addEventListener("input", () => { btn.disabled = !a.accepted || !url.value.trim(); });
+  return el("div", {}, el("h3", {}, `Fetch ${f.name}`),
+    el("div", { class: "grid" },
+      el("div", {}, el("label", { for: id }, "Source URL"), url),
+      el("div", {}, el("label", { for: `${id}-pick` }, "File in the zip (name or path)"), pick)),
+    el("p", { class: "row" }, btn, a.accepted ? null : el("span", { class: "muted" }, "Tick acceptance above first."),
+      !f.source ? el("span", { class: "muted" }, "No direct download is known: paste one, or download by hand.") : null),
+    out);
 }
 
 // ---------------------------------------------------------- run

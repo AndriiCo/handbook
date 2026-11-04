@@ -227,7 +227,8 @@ fn state_json(app: &App, inner: &Inner) -> Value {
                     let bytes = std::fs::read(dir.join(name)).ok();
                     let sha = bytes.as_deref().map(brand::sha256_hex);
                     let accepted = licence.is_some_and(|l| l.files.iter().any(|x| Some(&x.sha256) == sha.as_ref() && x.name == *name));
-                    json!({ "name": name, "present": sha.is_some(), "licensed": accepted })
+                    json!({ "name": name, "present": sha.is_some(), "licensed": accepted,
+                            "source": brand::source(f, name) })
                 })
                 .collect();
             json!({
@@ -855,6 +856,81 @@ async fn api_brand_file(
     Json(json!({ "saved": name, "sha256": brand::sha256_hex(&body) })).into_response()
 }
 
+#[derive(Deserialize)]
+struct BrandFetch {
+    file: String,
+    /// The source as typed (kept in the setup file; empty: the default).
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    pick: Option<String>,
+}
+
+/// Fetch one brand file from its source, after the operator accepted
+/// its owner's terms, and record its hash in that acceptance.
+async fn api_brand_fetch(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Json(req): Json<BrandFetch>,
+) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    let Some(name) = brand::allowed_file(&req.file) else {
+        return deny(
+            StatusCode::BAD_REQUEST,
+            "not a brand file name this build uses",
+        );
+    };
+    let f = {
+        let mut inner = app.inner.lock().unwrap();
+        if let Some(url) = req.url.as_deref().map(str::trim) {
+            if !url.is_empty() && (!url.starts_with("https://") || url.len() > 2000) {
+                return deny(
+                    StatusCode::BAD_REQUEST,
+                    "the source must be an https:// URL",
+                );
+            }
+            let typed = file::BrandSource {
+                url: url.to_string(),
+                pick: req
+                    .pick
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                    .map(|p| p.chars().take(300).collect()),
+            };
+            let sources = &mut inner.file.brand.sources;
+            if url.is_empty() || brand::default_source(name).as_ref() == Some(&typed) {
+                sources.remove(name);
+            } else {
+                sources.insert(name.to_string(), typed);
+            }
+            if let Err(r) = app.save(&inner) {
+                return r;
+            }
+        }
+        inner.file.clone()
+    };
+    let repo = app.repo.clone();
+    let fetched =
+        tokio::task::spawn_blocking(move || brand::fetch_file(&repo, &f, name, &brand::download))
+            .await;
+    let sha = match fetched {
+        Ok(Ok(sha)) => sha,
+        Ok(Err(e)) => return deny(StatusCode::BAD_GATEWAY, &e),
+        Err(_) => return deny(StatusCode::INTERNAL_SERVER_ERROR, "the fetch failed to run"),
+    };
+    let mut inner = app.inner.lock().unwrap();
+    if let Err(e) = brand::record(&mut inner.file, name, &sha) {
+        return deny(StatusCode::CONFLICT, &e);
+    }
+    match app.save(&inner) {
+        Ok(()) => Json(json!({ "saved": name, "sha256": sha })).into_response(),
+        Err(r) => r,
+    }
+}
+
 fn router(app: App) -> Router {
     Router::new()
         .route("/", get(index))
@@ -870,6 +946,7 @@ fn router(app: App) -> Router {
         .route("/api/events", get(api_events))
         .route("/api/licence", post(api_licence))
         .route("/api/brand/{name}", post(api_brand_file))
+        .route("/api/brand-fetch", post(api_brand_fetch))
         .layer(axum::extract::DefaultBodyLimit::max(3 * 1024 * 1024))
         .with_state(app)
 }
@@ -1107,6 +1184,30 @@ mod tests {
         assert!(
             !state.contains("LLM_1_synthetic"),
             "a secret reached the map"
+        );
+    }
+
+    #[tokio::test]
+    async fn brand_fetch_waits_for_acceptance_and_takes_https_only() {
+        let app = app();
+        let (status, text) = send(&app, post("/api/brand-fetch", r#"{"file":"google.svg"}"#)).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(text.contains("tick acceptance of Google"), "{text}");
+        for body in [
+            r#"{"file":"../config.yaml"}"#,
+            r#"{"file":"google.svg","url":"http://example.test/g.svg"}"#,
+        ] {
+            let (status, text) = send(&app, post("/api/brand-fetch", body)).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}: {text}");
+        }
+        let (_, state) = send(
+            &app,
+            req("GET", "/api/state", "127.0.0.1:4000", true, false),
+        )
+        .await;
+        assert!(
+            state.contains("signin-assets.zip"),
+            "the default source is offered"
         );
     }
 }
