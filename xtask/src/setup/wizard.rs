@@ -1,8 +1,11 @@
 //! `cargo xtask setup wizard`: the setup file in a browser.
 //!
 //! A small server on `127.0.0.1` (random port). The printed URL carries
-//! a one-time token, swapped on first use for an HttpOnly SameSite=Strict
-//! session cookie. Every request must name this exact host and port in
+//! a token, swapped for an HttpOnly SameSite=Strict session cookie. The
+//! link works again for [`GRACE_SECS`] after its first use (a second tab,
+//! a reload); after that a reuse waits for the operator to confirm a
+//! restart in the terminal, which mints a new link and ends every
+//! session. Every request must name this exact host and port in
 //! `Host` (anti-rebinding); every write must carry the page's CSRF
 //! header and, when sent, a matching `Origin`. Secrets go in and never
 //! come back: the page sees only "set". Each change is saved at once,
@@ -41,11 +44,25 @@ use super::run::Event;
 
 const PAGE: &str = include_str!("wizard.html");
 const COOKIE: &str = "hb_setup";
+/// How long the printed link keeps working after its first use.
+pub const GRACE_SECS: i64 = 120 * 60;
+const REUSED: &str = "Link was reused outside grace period, please confirm on console that you want to restart the configuration process";
+
+/// What runs where, said once in the terminal (the page says more).
+const INTRO: &str = "  Local only: the handbook and staff console, drafting (with a meta.api_key), passkeys for this browser
+  on localhost, and fakes for FedEx/USPS labels, Stripe, Telnyx and email (the local target's defaults).
+  Needs a host on the internet: customer passkeys on your domain, Google and Apple sign-in, Stripe and
+  Telnyx callbacks, real email delivery and TLS certificates.";
 
 struct Inner {
     file: SetupFile,
-    token: Option<String>,
+    /// The link's token (a restart mints a new one).
+    token: String,
+    /// When the link was first used (unix seconds).
+    token_used_at: Option<i64>,
     session: Option<String>,
+    /// A late reuse is waiting for the terminal's answer.
+    restart_pending: bool,
     running: bool,
     history: Vec<String>,
 }
@@ -60,6 +77,8 @@ struct App {
     events: broadcast::Sender<String>,
     /// The local target's boot, serving in the background (one at a time).
     local: Arc<Mutex<Option<std::process::Child>>>,
+    /// Open new links in the browser (`--no-open` turns it off).
+    open_browser: bool,
 }
 
 fn random_hex() -> String {
@@ -69,6 +88,105 @@ fn random_hex() -> String {
 
 fn deny(code: StatusCode, message: &str) -> Response {
     (code, Json(json!({ "error": message }))).into_response()
+}
+
+/// A plain page for a link the browser opened (no session yet).
+fn notice(code: StatusCode, message: &str) -> Response {
+    let text = message
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let page = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Handbook setup</title>\
+         <style>body{{font:15px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;margin:15vh auto;max-width:36rem;padding:0 16px}}</style>\
+         </head><body><h1>Handbook setup</h1><p>{text}</p></body></html>"
+    );
+    (
+        code,
+        [
+            (header::CACHE_CONTROL, "no-store"),
+            (header::X_FRAME_OPTIONS, "DENY"),
+        ],
+        Html(page),
+    )
+        .into_response()
+}
+
+/// What a `?t=` link is worth now.
+#[derive(Debug, PartialEq)]
+enum Link {
+    /// This run's token, unused or within the grace period.
+    Good,
+    /// This run's token, more than [`GRACE_SECS`] after its first use.
+    Late,
+    /// Not this run's token.
+    Unknown,
+}
+
+fn link_state(inner: &Inner, token: &str, now: i64) -> Link {
+    if token != inner.token {
+        return Link::Unknown;
+    }
+    match inner.token_used_at {
+        Some(first) if now - first > GRACE_SECS => Link::Late,
+        _ => Link::Good,
+    }
+}
+
+/// Mint a new link and end every session; returns the URL.
+fn restart(app: &App) -> String {
+    let mut inner = app.inner.lock().unwrap();
+    inner.token = random_hex();
+    inner.token_used_at = None;
+    inner.session = None;
+    inner.restart_pending = false;
+    format!("http://{}/?t={}", app.host, inner.token)
+}
+
+fn open_url(url: &str) {
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let _ = std::process::Command::new(opener).arg(url).status();
+}
+
+/// Ask in the terminal whether a late reuse may restart the wizard.
+fn ask_restart(app: &App) {
+    use std::io::{BufRead as _, IsTerminal as _, Write as _};
+    let app = app.clone();
+    std::thread::spawn(move || {
+        println!(
+            "\nsetup wizard: the link was opened again more than {} minutes after its first use.",
+            GRACE_SECS / 60
+        );
+        if !std::io::stdin().is_terminal() {
+            println!(
+                "  No terminal to confirm in: stop the wizard (Ctrl-C) and start it again for a new link."
+            );
+            return;
+        }
+        print!(
+            "  Restart the configuration process with a new link (signs out every open wizard tab)? [y/N] "
+        );
+        let _ = std::io::stdout().flush();
+        let mut answer = String::new();
+        let _ = std::io::stdin().lock().read_line(&mut answer);
+        if matches!(answer.trim(), "y" | "Y" | "yes" | "Yes") {
+            let url = restart(&app);
+            println!(
+                "setup wizard: {url}\n  (works for {} minutes after its first use)",
+                GRACE_SECS / 60
+            );
+            if app.open_browser {
+                open_url(&url);
+            }
+        } else {
+            app.inner.lock().unwrap().restart_pending = false;
+            println!("  Kept the current session; the old link stays refused.");
+        }
+    });
 }
 
 // Handlers return `Response` directly; the guards hand theirs back the
@@ -138,19 +256,31 @@ async fn index(
         return deny(StatusCode::MISDIRECTED_REQUEST, "wrong Host");
     }
     if let Some(t) = q.t {
+        let now = crate::unix_now();
         let mut inner = app.inner.lock().unwrap();
-        if inner.token.as_deref() == Some(t.as_str()) {
-            // One use: the token dies, the cookie carries the session.
-            inner.token = None;
-            let session = random_hex();
-            inner.session = Some(session.clone());
-            let cookie = format!("{COOKIE}={session}; HttpOnly; SameSite=Strict; Path=/");
-            return ([(header::SET_COOKIE, cookie)], Redirect::to("/")).into_response();
+        match link_state(&inner, &t, now) {
+            Link::Good => {
+                // Within the grace period every use joins one session.
+                inner.token_used_at.get_or_insert(now);
+                let session = inner.session.get_or_insert_with(random_hex).clone();
+                let cookie = format!("{COOKIE}={session}; HttpOnly; SameSite=Strict; Path=/");
+                return ([(header::SET_COOKIE, cookie)], Redirect::to("/")).into_response();
+            }
+            Link::Late => {
+                if !inner.restart_pending {
+                    inner.restart_pending = true;
+                    drop(inner);
+                    ask_restart(&app);
+                }
+                return notice(StatusCode::UNAUTHORIZED, REUSED);
+            }
+            Link::Unknown => {
+                return notice(
+                    StatusCode::UNAUTHORIZED,
+                    "This link is not from the wizard that is running now. Open the URL printed in the terminal.",
+                );
+            }
         }
-        return deny(
-            StatusCode::UNAUTHORIZED,
-            "this link was already used; restart the wizard",
-        );
     }
     if !app.session_ok(&headers) {
         return deny(
@@ -408,7 +538,9 @@ async fn api_operator(
     }
 }
 
+/// Only a target: no field can ask the wizard for a secret.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CheckReq {
     target: String,
 }
@@ -922,6 +1054,63 @@ async fn api_brand_fetch(
     }
 }
 
+/// Fill a local target's missing [`file::LOCAL_DEFAULTS`].
+async fn api_defaults(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Json(req): Json<CheckReq>,
+) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    let mut inner = app.inner.lock().unwrap();
+    let Some(t) = inner.file.targets.get_mut(&req.target) else {
+        return deny(StatusCode::BAD_REQUEST, "no such target");
+    };
+    if t.kind != TargetKind::Local {
+        return deny(
+            StatusCode::BAD_REQUEST,
+            "local-only defaults (fakes) are for local targets",
+        );
+    }
+    let added = file::fill_local_defaults(t);
+    match app.save(&inner) {
+        Ok(()) => Json(json!({ "added": added })).into_response(),
+        Err(r) => r,
+    }
+}
+
+/// Pull a server target's plain values beside the setup file and say
+/// where they differ from it (secrets by presence only; reading their
+/// values is `setup pull --secrets`, CLI only).
+async fn api_pull(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Json(req): Json<CheckReq>,
+) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    let f = app.inner.lock().unwrap().file.clone();
+    let path = app.path.clone();
+    let at = brand::rfc3339(crate::unix_now());
+    // Never `Some(reason)`: secrets are read from the CLI only, so no
+    // browser tab ever holds one.
+    match tokio::task::spawn_blocking(move || super::pull::run(&f, &path, &req.target, &at, None))
+        .await
+    {
+        Ok(Ok((out, pulled, diffs))) => Json(json!({
+            "path": out.display().to_string(),
+            "values": pulled.values.len(),
+            "secrets": pulled.secrets_set.len(),
+            "diffs": diffs,
+        }))
+        .into_response(),
+        Ok(Err(e)) => deny(StatusCode::BAD_GATEWAY, &e),
+        Err(_) => deny(StatusCode::INTERNAL_SERVER_ERROR, "the pull failed to run"),
+    }
+}
+
 fn router(app: App) -> Router {
     Router::new()
         .route("/", get(index))
@@ -933,6 +1122,8 @@ fn router(app: App) -> Router {
         .route("/api/probe", post(api_probe))
         .route("/api/map", post(api_map))
         .route("/api/meta", post(api_meta))
+        .route("/api/defaults", post(api_defaults))
+        .route("/api/pull", post(api_pull))
         .route("/api/run", post(api_run))
         .route("/api/events", get(api_events))
         .route("/api/licence", post(api_licence))
@@ -971,8 +1162,10 @@ pub fn run(args: &[String], path: &Path) {
         let app = App {
             inner: Arc::new(Mutex::new(Inner {
                 file: f,
-                token: Some(token.clone()),
+                token: token.clone(),
+                token_used_at: None,
                 session: None,
+                restart_pending: false,
                 running: false,
                 history: Vec::new(),
             })),
@@ -982,12 +1175,15 @@ pub fn run(args: &[String], path: &Path) {
             csrf: random_hex(),
             events,
             local: Arc::new(Mutex::new(None)),
+            open_browser: !args.iter().any(|a| a == "--no-open"),
         };
         let url = format!("http://127.0.0.1:{port}/?t={token}");
-        println!("setup wizard: {url}\n  (one-time link; Ctrl-C stops the wizard; the file is saved on every change)");
-        if !args.iter().any(|a| a == "--no-open") {
-            let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
-            let _ = std::process::Command::new(opener).arg(&url).status();
+        println!(
+            "setup wizard: {url}\n  (the link works for {} minutes after its first use; Ctrl-C stops the wizard; the file is saved on every change)\n\n{INTRO}\n",
+            GRACE_SECS / 60
+        );
+        if app.open_browser {
+            open_url(&url);
         }
         axum::serve(listener, router(app))
             .await
@@ -1010,8 +1206,10 @@ mod tests {
         App {
             inner: Arc::new(Mutex::new(Inner {
                 file,
-                token: Some("tok".into()),
+                token: "tok".into(),
+                token_used_at: None,
                 session: Some("sess".into()),
+                restart_pending: false,
                 running: false,
                 history: Vec::new(),
             })),
@@ -1021,6 +1219,7 @@ mod tests {
             csrf: "csrf".into(),
             events,
             local: Arc::new(Mutex::new(None)),
+            open_browser: false,
         }
     }
 
@@ -1097,26 +1296,90 @@ mod tests {
         assert!(body.contains(r#""meta.api_key":{"secret":true}"#), "{body}");
     }
 
-    #[tokio::test]
-    async fn the_token_works_once_and_sets_a_strict_cookie() {
-        let app = app();
+    async fn open_link(app: &App, uri: &str) -> (StatusCode, Option<String>, String) {
         let res = router(app.clone())
-            .oneshot(req("GET", "/?t=tok", "127.0.0.1:4000", false, false))
+            .oneshot(req("GET", uri, "127.0.0.1:4000", false, false))
             .await
             .unwrap();
+        let status = res.status();
         let cookie = res
             .headers()
             .get("set-cookie")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
+            .map(|c| c.to_str().unwrap().to_string());
+        let body = axum::body::to_bytes(res.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        (status, cookie, String::from_utf8_lossy(&body).to_string())
+    }
+
+    #[tokio::test]
+    async fn the_link_works_through_its_grace_period_then_asks_the_terminal() {
+        let app = app();
+        app.inner.lock().unwrap().session = None;
+        let (status, cookie, _) = open_link(&app, "/?t=tok").await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let cookie = cookie.unwrap();
         assert!(
             cookie.contains("HttpOnly") && cookie.contains("SameSite=Strict"),
             "{cookie}"
         );
-        let (status, _) = send(&app, req("GET", "/?t=tok", "127.0.0.1:4000", false, false)).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED, "second use refused");
+        // A second tab within the grace period joins the same session.
+        let (status, again, _) = open_link(&app, "/?t=tok").await;
+        assert_eq!(status, StatusCode::SEE_OTHER, "reuse within grace");
+        assert_eq!(again.as_deref(), Some(cookie.as_str()));
+        // Past the grace period: the page says to confirm in the terminal.
+        app.inner.lock().unwrap().token_used_at = Some(crate::unix_now() - GRACE_SECS - 1);
+        let (status, cookie, body) = open_link(&app, "/?t=tok").await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(cookie.is_none());
+        assert!(body.contains(REUSED), "{body}");
+        assert!(body.starts_with("<!doctype html>"), "a page, not JSON");
+        assert!(app.inner.lock().unwrap().restart_pending);
+        // A token from another run is refused outright.
+        let (status, _, body) = open_link(&app, "/?t=other").await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(body.contains("not from the wizard"), "{body}");
+        // The terminal's yes: a new link, and the old session ends.
+        let url = restart(&app);
+        let inner = app.inner.lock().unwrap();
+        assert!(url.ends_with(&inner.token) && inner.token != "tok");
+        assert!(inner.session.is_none() && inner.token_used_at.is_none());
+        assert!(!inner.restart_pending);
+    }
+
+    #[tokio::test]
+    async fn the_wizard_pull_takes_no_secrets_request() {
+        let app = app();
+        let (status, _) = send(
+            &app,
+            post(
+                "/api/pull",
+                r#"{"target":"production","secrets":true,"reason":"BDR drill"}"#,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn local_defaults_fill_local_targets_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut app = app();
+        app.path = tmp.path().join("setup.yaml");
+        let (status, text) = send(&app, post("/api/defaults", r#"{"target":"staging"}"#)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{text}");
+        app.inner
+            .lock()
+            .unwrap()
+            .file
+            .targets
+            .get_mut("local")
+            .unwrap()
+            .config
+            .remove("labels.mode");
+        let (status, text) = send(&app, post("/api/defaults", r#"{"target":"local"}"#)).await;
+        assert_eq!(status, StatusCode::OK, "{text}");
+        assert_eq!(text, r#"{"added":["labels.mode"]}"#);
     }
 
     fn post(uri: &str, body: &str) -> axum::http::Request<axum::body::Body> {

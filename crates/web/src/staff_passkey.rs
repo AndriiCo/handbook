@@ -219,7 +219,7 @@ pub async fn enrol_start(
     // The passkey's account name is what the browser shows in its
     // passkey list and autofill: the email, not the hex id.
     let account_name = if email.is_empty() { &user_id } else { &email };
-    let (options, reg_state) = match state.webauthn.start_passkey_registration(
+    let (options, reg_state) = match state.webauthn.staff.start_passkey_registration(
         uuid,
         account_name,
         &body.display_name,
@@ -429,6 +429,7 @@ pub async fn enrol_finish(
     // staff). Variants never leak, mirroring customer finish.
     let result = match state
         .webauthn
+        .staff
         .finish_passkey_registration(&body.credential, &enrol.reg)
     {
         Ok(passkey) => passkey,
@@ -587,7 +588,7 @@ pub async fn login_start(
         return store_unavailable();
     };
     if body.account.trim().is_empty() {
-        let Some((options, state_json)) = passkey::start_discoverable(&state.webauthn) else {
+        let Some((options, state_json)) = passkey::start_discoverable(&state.webauthn.staff) else {
             return store_unavailable();
         };
         let challenge_id = auth::csrf::mint_token();
@@ -633,7 +634,7 @@ pub async fn login_start(
         };
         passkeys.push(passkey);
     }
-    let (options, auth_state) = match state.webauthn.start_passkey_authentication(&passkeys) {
+    let (options, auth_state) = match state.webauthn.staff.start_passkey_authentication(&passkeys) {
         Ok(pair) => pair,
         Err(_) => return store_unavailable(),
     };
@@ -750,6 +751,7 @@ pub async fn login_finish(
         };
         match state
             .webauthn
+            .staff
             .finish_passkey_authentication(&body.credential, &auth_state)
         {
             Ok(result) => (user_id, result),
@@ -763,7 +765,12 @@ pub async fn login_finish(
     )
     .unwrap_or(None)
     {
-        match passkey::finish_discoverable(&state.webauthn, &conn, &body.credential, &state_json) {
+        match passkey::finish_discoverable(
+            &state.webauthn.staff,
+            &conn,
+            &body.credential,
+            &state_json,
+        ) {
             Ok((user_id, result)) => {
                 if !state
                     .auth_limits
@@ -1288,7 +1295,7 @@ pub async fn add_start(
         .ok()
         .flatten()
         .unwrap_or_else(|| user_id.clone());
-    let (options, reg_state) = match state.webauthn.start_passkey_registration(
+    let (options, reg_state) = match state.webauthn.staff.start_passkey_registration(
         uuid,
         &account_name,
         if display.is_empty() {
@@ -1372,6 +1379,7 @@ pub async fn add_finish(
     };
     let Ok(result) = state
         .webauthn
+        .staff
         .finish_passkey_registration(&body.credential, &reg_state)
     else {
         return (
@@ -2054,7 +2062,9 @@ mod tests {
                     .header(header::ORIGIN, "http://localhost")
                     .header(header::CONTENT_TYPE, "application/json")
                     .extension(addr())
-                    .body(Body::from(r#"{"display_name":"D"}"#))
+                    .body(Body::from(
+                        r#"{"display_name":"D","email":"d@example.test"}"#,
+                    ))
                     .unwrap(),
             )
             .await
@@ -2094,7 +2104,9 @@ mod tests {
                     .header(header::ORIGIN, "http://localhost")
                     .header(header::CONTENT_TYPE, "application/json")
                     .extension(addr())
-                    .body(Body::from(r#"{"display_name":"C"}"#))
+                    .body(Body::from(
+                        r#"{"display_name":"C","email":"c@example.test"}"#,
+                    ))
                     .unwrap(),
             )
             .await

@@ -285,11 +285,13 @@ impl SetupFile {
     }
 
     fn local_target() -> Target {
-        Target {
+        let mut target = Target {
             kind: TargetKind::Local,
             ports: Some(DEFAULT_PORTS),
             ..Target::default()
-        }
+        };
+        fill_local_defaults(&mut target);
+        target
     }
 
     /// A fresh sops file with nothing secret: local, docker and staging,
@@ -499,6 +501,50 @@ impl SetupFile {
             "values": values,
         }))
     }
+}
+
+/// A local-only target's starting values: every outside service runs
+/// its W-3 fake (mock FedEx/USPS labels, Stripe, Telnyx, email, Hugging
+/// Face), nothing live is bought or polled, and paid tiers are on (the
+/// fake Stripe needs no key). `meta.mode` stays unset: `up` picks fake
+/// or live from its drafting mode.
+pub const LOCAL_DEFAULTS: &[(&str, LocalDefault)] = &[
+    ("mailer.mode", LocalDefault::Text("fake")),
+    ("mail.mode", LocalDefault::Text("fake")),
+    ("labels.mode", LocalDefault::Text("fake")),
+    ("stripe.mode", LocalDefault::Text("fake")),
+    ("telnyx.mode", LocalDefault::Text("fake")),
+    ("hf.mode", LocalDefault::Text("fake")),
+    ("orders.enabled", LocalDefault::Bool(true)),
+    ("labels.live", LocalDefault::Bool(false)),
+    ("labels.customer_live", LocalDefault::Bool(false)),
+    ("usps.live", LocalDefault::Bool(false)),
+    ("tracking.poll_enabled", LocalDefault::Bool(false)),
+    ("acme.enabled", LocalDefault::Bool(false)),
+];
+
+#[derive(Debug, Clone, Copy)]
+pub enum LocalDefault {
+    Text(&'static str),
+    Bool(bool),
+}
+
+/// Add each [`LOCAL_DEFAULTS`] value the target does not set yet (a
+/// value already there wins); returns the keys added.
+pub fn fill_local_defaults(target: &mut Target) -> Vec<String> {
+    let mut added = Vec::new();
+    for (key, value) in LOCAL_DEFAULTS {
+        if target.config.contains_key(*key) {
+            continue;
+        }
+        let value = match value {
+            LocalDefault::Text(s) => Value::String((*s).to_string()),
+            LocalDefault::Bool(b) => Value::Bool(*b),
+        };
+        target.config.insert((*key).to_string(), value);
+        added.push((*key).to_string());
+    }
+    added
 }
 
 /// Keys a target's shape decides; shown in the wizard, not typed.
@@ -811,17 +857,51 @@ pub fn save(path: &Path, file: &SetupFile) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     }
     let yaml = serde_yaml_ng::to_string(file).map_err(|e| e.to_string())?;
-    let mut child = Command::new("sops")
-        .args([
-            "encrypt",
-            "--input-type",
-            "yaml",
-            "--output-type",
-            "yaml",
-            "--filename-override",
-        ])
+    let sealed = sops_encrypt(&dir, path, &yaml, None)?;
+    write_atomic(&dir, path, &sealed)
+}
+
+/// Encrypt other YAML for the operator beside the setup file (a pulled
+/// copy of a server's secrets) to the operator's own age key. sops gets
+/// a one-rule config of its own: the directory's `.sops.yaml` matches
+/// the setup file only. Refused unless git ignores `path`;
+/// `sops decrypt <path>` reads it.
+pub fn save_sops_yaml(path: &Path, yaml: &str) -> Result<(), String> {
+    guard_path(path)?;
+    let dir = path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let rules = tempfile::Builder::new()
+        .suffix(".sops.yaml")
+        .tempfile()
+        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        rules.path(),
+        format!("creation_rules:\n  - age: {}\n", age_recipient()?),
+    )
+    .map_err(|e| e.to_string())?;
+    let sealed = sops_encrypt(&dir, path, yaml, Some(rules.path()))?;
+    write_atomic(&dir, path, &sealed)
+}
+
+/// `sops encrypt` YAML on stdin for `path`; the ciphertext. `config`
+/// replaces the directory's `.sops.yaml` rules.
+fn sops_encrypt(
+    dir: &Path,
+    path: &Path,
+    yaml: &str,
+    config: Option<&Path>,
+) -> Result<Vec<u8>, String> {
+    let mut cmd = Command::new("sops");
+    if let Some(config) = config {
+        cmd.arg("--config").arg(config);
+    }
+    cmd.args(["encrypt", "--input-type", "yaml", "--output-type", "yaml"]);
+    let mut child = cmd
+        .arg("--filename-override")
         .arg(path)
-        .current_dir(&dir)
+        .current_dir(dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -841,7 +921,7 @@ pub fn save(path: &Path, file: &SetupFile) -> Result<(), String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    write_atomic(&dir, path, &out.stdout)
+    Ok(out.stdout)
 }
 
 #[cfg(unix)]
@@ -947,6 +1027,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn local_targets_start_on_the_fakes_and_keep_their_own_values() {
+        let local = SetupFile::local_template().target_config("local").unwrap();
+        for key in ["labels.mode", "stripe.mode", "telnyx.mode", "mailer.mode"] {
+            assert_eq!(local[key], "fake", "{key}");
+        }
+        assert_eq!(local["labels.live"], false);
+        assert!(!local.contains_key("meta.mode"), "up picks the Meta mode");
+        for (key, _) in LOCAL_DEFAULTS {
+            registry_value(key, &local[*key]).unwrap_or_else(|e| panic!("{key}: {e}"));
+        }
+        let mut target = Target {
+            kind: TargetKind::Local,
+            ..Target::default()
+        };
+        target
+            .config
+            .insert("labels.mode".into(), Value::String("sandbox".into()));
+        let added = fill_local_defaults(&mut target);
+        assert_eq!(target.config["labels.mode"], "sandbox", "a set value wins");
+        assert!(!added.contains(&"labels.mode".to_string()));
+        assert_eq!(added.len(), LOCAL_DEFAULTS.len() - 1);
+        assert!(fill_local_defaults(&mut target).is_empty());
+    }
+
     #[cfg(unix)]
     #[test]
     fn plain_files_are_private_and_round_trip() {
@@ -1037,6 +1142,27 @@ mod tests {
         assert!(!raw.contains("LLM_1_synthetic_secret"), "plaintext on disk");
         assert!(raw.contains("sops:"));
         assert_eq!(load(&path).unwrap(), file);
+        // A pulled copy of a server's secrets: same key, though the
+        // directory's `.sops.yaml` names config.yaml only.
+        let pulled = dir.path().join("production.pulled.sops.yaml");
+        save_sops_yaml(
+            &pulled,
+            "# header\nsecrets:\n  meta.api_key: LLM_1_pulled\n",
+        )
+        .unwrap();
+        let raw = std::fs::read_to_string(&pulled).unwrap();
+        assert!(!raw.contains("LLM_1_pulled"), "plaintext on disk");
+        let out = Command::new("sops")
+            .args(["decrypt"])
+            .arg(&pulled)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(String::from_utf8_lossy(&out.stdout).contains("meta.api_key: LLM_1_pulled"));
         unsafe { std::env::remove_var("SOPS_AGE_KEY_FILE") };
     }
 }

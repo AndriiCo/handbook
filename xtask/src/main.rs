@@ -74,6 +74,7 @@ fn main() {
         Some("config-set") => config::run_set(&args[1..]),
         Some("config-import") => config_import::run(&args[1..]),
         Some("config-get") => config::run_get(&args[1..]),
+        Some("config-reveal") => config::run_reveal(&args[1..]),
         Some("config-verify") => config::run_verify(&args[1..]),
         Some("config-rotate") => config::run_rotate(&args[1..]),
         Some("setup-key-mint") => config::run_setup_key_mint(&args[1..]),

@@ -35,11 +35,57 @@ pub fn build_webauthn(rp_id: &str, rp_name: &str, origin: &str) -> Option<Webaut
         .ok()
 }
 
-/// Test handle (example.test RP; ceremonies against it fail
+/// The two relying parties. Staff ceremonies run under `auth.rp_id`;
+/// customer ceremonies too, unless it names a host below the public
+/// one (`admin.andrii.ai` under `andrii.ai`). A browser on the public
+/// site refuses an RP ID that is not its own host or a parent of it,
+/// so customers then register under the public host itself, and staff
+/// passkeys already enrolled under the admin host keep working.
+pub struct RelyingParties {
+    pub staff: Webauthn,
+    pub customer: Webauthn,
+}
+
+/// The customer RP ID and origin for these `auth.*` rows and the
+/// public host (see [`RelyingParties`]).
+pub fn customer_rp(rp_id: &str, origin: &str, public_host: &str) -> (String, String) {
+    let rp = rp_id.trim().trim_end_matches('.').to_ascii_lowercase();
+    let public = public_host
+        .trim()
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    if !public.is_empty() && rp.ends_with(&format!(".{public}")) {
+        let origin = format!("https://{public}");
+        (public, origin)
+    } else {
+        (rp_id.to_string(), origin.to_string())
+    }
+}
+
+/// Both handles from config. `None` refuses the boot.
+pub fn build_relying_parties(
+    rp_id: &str,
+    rp_name: &str,
+    origin: &str,
+    public_host: &str,
+) -> Option<RelyingParties> {
+    let staff = build_webauthn(rp_id, rp_name, origin)?;
+    let (customer_id, customer_origin) = customer_rp(rp_id, origin, public_host);
+    let customer = build_webauthn(&customer_id, rp_name, &customer_origin)?;
+    Some(RelyingParties { staff, customer })
+}
+
+/// Test handles (example.test RP; ceremonies against it fail
 /// origin checks, which is what the negative tests assert).
 #[cfg(test)]
-pub fn test_webauthn() -> Webauthn {
-    build_webauthn("example.test", "Example RP", "https://example.test").unwrap()
+pub fn test_webauthn() -> RelyingParties {
+    build_relying_parties(
+        "example.test",
+        "Example RP",
+        "https://example.test",
+        "example.test",
+    )
+    .unwrap()
 }
 
 /// In-memory rate buckets (spec decision 0.6): single server, no
@@ -355,6 +401,14 @@ pub(crate) struct RegisterStartBody {
     email: Option<String>,
 }
 
+fn email_required() -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({"error": "email required (receipts and order updates go there)"})),
+    )
+        .into_response()
+}
+
 /// `POST /auth/passkey/register/start` — mode (a) mints the account
 /// at finish; mode (b) (session present) links a new key.
 pub async fn register_start(
@@ -384,7 +438,7 @@ pub async fn register_start(
     if session.is_none() && (display_name.trim().is_empty() || display_name.len() > 128) {
         return (
             StatusCode::BAD_REQUEST,
-            Json(json!({"error": "display_name required (1-128 chars)"})),
+            Json(json!({"error": "full name required (1-128 chars)"})),
         )
             .into_response();
     }
@@ -402,6 +456,10 @@ pub async fn register_start(
             Json(json!({"error": "email malformed"})),
         )
             .into_response();
+    }
+    // A new account needs an address: receipts and order updates go there.
+    if session.is_none() && email.is_none() {
+        return email_required();
     }
     // Mode (b): explicit link (rule 4) — session + fresh step-up.
     let (user_id, exclude) = match &session {
@@ -461,6 +519,7 @@ pub async fn register_start(
     };
     let (options, reg_state) = match state
         .webauthn
+        .customer
         .start_passkey_registration(uuid, &user_id, shown, exclude)
     {
         Ok(pair) => pair,
@@ -569,6 +628,7 @@ pub async fn register_finish(
     };
     let passkey = match state
         .webauthn
+        .customer
         .finish_passkey_registration(&body.credential, &reg_state)
     {
         Ok(passkey) => passkey,
@@ -602,6 +662,9 @@ pub async fn register_finish(
             Json(json!({"error": "label too long (max 64)"})),
         )
             .into_response();
+    }
+    if session.is_none() && body.email.as_deref().and_then(valid_email).is_none() {
+        return email_required();
     }
     if store::ensure_account(&conn, &user_id, now).is_err() {
         return store_unavailable();
@@ -718,7 +781,7 @@ pub async fn login_start(
         return store_unavailable();
     };
     if body.account.trim().is_empty() {
-        let Some((options, state_json)) = start_discoverable(&state.webauthn) else {
+        let Some((options, state_json)) = start_discoverable(&state.webauthn.customer) else {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "ceremony unavailable"})),
@@ -775,7 +838,11 @@ pub async fn login_start(
             Err(_) => return store_unavailable(),
         }
     }
-    let (options, auth_state) = match state.webauthn.start_passkey_authentication(&passkeys) {
+    let (options, auth_state) = match state
+        .webauthn
+        .customer
+        .start_passkey_authentication(&passkeys)
+    {
         Ok(pair) => pair,
         Err(_) => {
             return (
@@ -905,6 +972,7 @@ pub async fn login_finish(
         };
         match state
             .webauthn
+            .customer
             .finish_passkey_authentication(&body.credential, &auth_state)
         {
             Ok(result) => (user_id, result),
@@ -914,7 +982,12 @@ pub async fn login_finish(
         store::take_challenge(&conn, &body.challenge_id, store::KIND_DISCOVERABLE, now)
             .unwrap_or(None)
     {
-        match finish_discoverable(&state.webauthn, &conn, &body.credential, &state_json) {
+        match finish_discoverable(
+            &state.webauthn.customer,
+            &conn,
+            &body.credential,
+            &state_json,
+        ) {
             Ok((user_id, result)) => {
                 if !state
                     .auth_limits
@@ -1251,7 +1324,7 @@ mod tests {
             .oneshot(post_json(
                 "/apostille/api/v1/auth/passkey/register/start",
                 extra_cookies,
-                &format!(r#"{{"display_name":"{display}"}}"#),
+                &format!(r#"{{"display_name":"{display}","email":"a@example.test"}}"#),
             ))
             .await
             .unwrap();
@@ -1273,6 +1346,49 @@ mod tests {
         assert!(build_webauthn("", "x", "https://andrii.ai").is_none());
         assert!(build_webauthn("andrii.ai", "x", "not a url").is_none());
         assert!(build_webauthn("andrii.ai", "x", "https://evil.test").is_none());
+    }
+
+    /// Production had `auth.rp_id = admin.andrii.ai`: every customer
+    /// ceremony on andrii.ai got an RP ID the browser refuses.
+    #[test]
+    fn customers_register_under_the_public_host_when_the_rp_is_staff_only() {
+        let (id, origin) = customer_rp("admin.andrii.ai", "https://admin.andrii.ai", "andrii.ai");
+        assert_eq!(
+            (id.as_str(), origin.as_str()),
+            ("andrii.ai", "https://andrii.ai")
+        );
+        for (rp, origin, public) in [
+            ("andrii.ai", "https://andrii.ai", "andrii.ai"),
+            ("localhost", "http://localhost:18319", "andrii.ai"),
+            (
+                "rehearsal.localhost",
+                "https://rehearsal.localhost:8443",
+                "rehearsal.localhost",
+            ),
+        ] {
+            assert_eq!(
+                customer_rp(rp, origin, public),
+                (rp.to_string(), origin.to_string())
+            );
+        }
+        let rps = build_relying_parties(
+            "admin.andrii.ai",
+            "Andrii AI",
+            "https://admin.andrii.ai",
+            "andrii.ai",
+        )
+        .expect("both handles build");
+        let uuid = uuid::Uuid::new_v4();
+        let (customer, _) = rps
+            .customer
+            .start_passkey_registration(uuid, "u", "U", None)
+            .unwrap();
+        let (staff, _) = rps
+            .staff
+            .start_passkey_registration(uuid, "u", "U", None)
+            .unwrap();
+        assert_eq!(customer.public_key.rp.id, "andrii.ai");
+        assert_eq!(staff.public_key.rp.id, "admin.andrii.ai");
     }
 
     #[test]
@@ -1384,6 +1500,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        // Missing email (logged-out) → 400: receipts go there.
+        let res = app
+            .clone()
+            .oneshot(post_json(
+                "/apostille/api/v1/auth/passkey/register/start",
+                "",
+                r#"{"display_name":"A"}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("email required"));
         // Unknown fields rejected (mass-assignment hygiene).
         let res = app
             .clone()

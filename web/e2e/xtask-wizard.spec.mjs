@@ -215,6 +215,11 @@ test('a judge’s local Docker map fits a 390 px phone in dark mode', async ({ p
 	await expect(page.locator('.path-https')).toContainText('HTTP · loopback');
 	await expect(page.locator('.path-ssh')).toHaveCount(0);
 	await expect(page.locator('#map-staging')).toContainText('not set up');
+	// A local-only file starts on the fakes (file::LOCAL_DEFAULTS).
+	await expect(page.locator('#map-svc-fedex')).toContainText('FedEx · fake');
+	await expect(page.locator('#map-svc-stripe')).toContainText('Stripe · fake');
+	// The intro says what needs a host on the internet.
+	await expect(page.getByRole('region', { name: 'What runs where' })).toContainText('Customer passkeys');
 	const staging = page.getByRole('group', { name: 'Staging: Local or Server' });
 	await expect(staging.getByRole('button', { name: 'Server' })).toBeDisabled();
 	await expect(page.getByText(/needs the sops file/).first()).toBeVisible();

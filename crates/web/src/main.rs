@@ -292,8 +292,8 @@ struct AppState {
     /// in; the endpoints 503 while any piece is missing.
     fedex_live: fedex_live::FedexLiveState,
     /// Passkey ceremonies (spec `customer-auth.md`): process-wide
-    /// crate handle built from `auth.*` DB rows at boot.
-    webauthn: std::sync::Arc<webauthn_rs::Webauthn>,
+    /// staff and customer handles built from `auth.*` DB rows at boot.
+    webauthn: std::sync::Arc<passkey::RelyingParties>,
     /// Auth rate-limit buckets (spec decision 0.6).
     auth_limits: std::sync::Arc<passkey::RateBuckets>,
     /// Demo-precheck buckets (separate map: a flood of distinct demo
@@ -1249,6 +1249,14 @@ async fn main() {
     // never from the staff WebAuthn origin (`auth.origin` feeds only
     // `build_webauthn` below).
     let pub_origin = public_origin(&cfg.public_host);
+    let (customer_rp, _) =
+        passkey::customer_rp(&cfg.auth_rp_id, &cfg.auth_origin, auth::public_host());
+    if customer_rp != cfg.auth_rp_id {
+        eprintln!(
+            "passkeys: customers register under {customer_rp}; auth.rp_id {} serves staff only",
+            cfg.auth_rp_id
+        );
+    }
     let state = AppState {
         spa_index: std::path::Path::new(&cfg.spa_dir).join("index.html"),
         static_dir: PathBuf::from(&cfg.static_dir),
@@ -1287,13 +1295,18 @@ async fn main() {
             account: cfg.labels_fedex_account.clone(),
         },
         webauthn: std::sync::Arc::new(
-            passkey::build_webauthn(&cfg.auth_rp_id, &cfg.auth_rp_name, &cfg.auth_origin)
-                .unwrap_or_else(|| {
-                    eprintln!(
-                        "refusing to start: auth.rp_id/auth.origin do not build a WebAuthn handle"
-                    );
-                    std::process::exit(1);
-                }),
+            passkey::build_relying_parties(
+                &cfg.auth_rp_id,
+                &cfg.auth_rp_name,
+                &cfg.auth_origin,
+                auth::public_host(),
+            )
+            .unwrap_or_else(|| {
+                eprintln!(
+                    "refusing to start: auth.rp_id/auth.origin do not build a WebAuthn handle"
+                );
+                std::process::exit(1);
+            }),
         ),
         auth_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
         demo_limits: std::sync::Arc::new(passkey::RateBuckets::default()),

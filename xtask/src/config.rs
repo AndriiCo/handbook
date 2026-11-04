@@ -3,7 +3,9 @@
 //! Tasks: `config-enroll`, `config-set`, `config-get`, `config-verify`,
 //! `config-rotate`. Values are sealed with XChaCha20-Poly1305; each row
 //! stores `nonce(24) ‖ ciphertext` with AAD `key:enc_version` (row-swap
-//! resistant). `secret` keys are write-only: settable, never readable.
+//! resistant). `secret` keys are write-only for `config-get` and the
+//! admin API; only `config-reveal` reads one, on the box with the KEK,
+//! with a reason and an audit row (backup and rebuild).
 //!
 //! The KEK lives in a 32-byte file (`--kek-file`, or `HANDBOOK_KEK_FILE`).
 //! `config-enroll --seal` additionally seals it via `systemd-creds`
@@ -388,6 +390,73 @@ pub fn run_get(args: &[String]) {
     println!("{}", String::from_utf8_lossy(&plain));
 }
 
+/// `config-reveal --store <dir> --kek-file <path> --key <k> [--actor <a>]
+/// --reason-from-stdin`: print any row's value, secrets included, for
+/// the operator's backup and rebuild (`cargo xtask setup pull
+/// --secrets`). Runs only on the box, with the KEK; the admin page and
+/// API stay write-only. Every reveal writes an `audit` row naming the
+/// key and the reason, never the value.
+pub fn run_reveal(args: &[String]) {
+    let store = crate::open_store(args);
+    let conn = open_conn(&store).unwrap_or_else(|e| fail(&e));
+    let key = crate::required(args, "key");
+    if !valid_key(&key) {
+        fail("invalid --key (ascii word chars, dots, dashes; max 128)");
+    }
+    let reason = if args.iter().any(|a| a == "--reason-from-stdin") {
+        use std::io::Read as _;
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .unwrap_or_else(|e| fail(&e.to_string()));
+        buf
+    } else {
+        crate::flag(args, "reason").unwrap_or_default()
+    };
+    let kek = read_kek(args).unwrap_or_else(|e| fail(&e));
+    let actor = crate::flag(args, "actor").unwrap_or_else(|| "xtask".to_string());
+    let plain =
+        reveal(&conn, &kek, &key, &actor, &reason, crate::unix_now()).unwrap_or_else(|e| fail(&e));
+    println!("{}", String::from_utf8_lossy(&plain));
+}
+
+/// Unseal one row for [`run_reveal`], auditing it first.
+fn reveal(
+    conn: &rusqlite::Connection,
+    kek: &Kek,
+    key: &str,
+    actor: &str,
+    reason: &str,
+    now: i64,
+) -> Result<Zeroizing<Vec<u8>>, String> {
+    let reason = reveal_reason(reason)?;
+    let (blob, version): (Vec<u8>, i64) = conn
+        .query_row(
+            "SELECT value_enc, enc_version FROM config WHERE key = ?1",
+            [key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| format!("unknown config key: {key}"))?;
+    let plain = Zeroizing::new(unseal(&blob, key, version, kek)?);
+    // The audit row lands before the value leaves: no unrecorded reveal.
+    conn.execute(
+        "INSERT INTO audit(at, actor, action, entity, entity_id, reason)
+         VALUES (?1, ?2, 'config_revealed', 'config', 0, ?3)",
+        rusqlite::params![now, actor, format!("{key}: {reason}")],
+    )
+    .map_err(|e| format!("audit the reveal: {e}"))?;
+    Ok(plain)
+}
+
+/// A reveal's reason: one line, 3–200 characters.
+fn reveal_reason(text: &str) -> Result<String, String> {
+    let line = text.trim();
+    if line.contains(['\n', '\r']) || !(3..=200).contains(&line.chars().count()) {
+        return Err("a reveal needs a one-line reason (3-200 characters)".into());
+    }
+    Ok(line.to_string())
+}
+
 /// `config-verify`: decrypt every row, report counts, print no values.
 pub fn run_verify(args: &[String]) {
     let store = crate::open_store(args);
@@ -522,6 +591,44 @@ mod tests {
             [],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn reveal_reads_secrets_only_with_a_reason_and_audits_each_one() {
+        let (_dir, _store, conn, kek_path) = setup();
+        enroll_v1(&conn);
+        let kek = read_kek_file(&kek_path).unwrap();
+        let blob = seal(b"synthetic-stripe-secret", "stripe.secret_key", 1, &kek).unwrap();
+        conn.execute(
+            "INSERT INTO config(key, type, value_enc, enc_version, updated_at, updated_by)
+             VALUES ('stripe.secret_key', 'secret', ?1, 1, 1, 't')",
+            [blob],
+        )
+        .unwrap();
+        let audits = || -> Vec<String> {
+            conn.prepare("SELECT reason FROM audit WHERE action = 'config_revealed'")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        for bad in ["", "x", "two\nlines"] {
+            assert!(
+                reveal(&conn, &kek, "stripe.secret_key", "hal", bad, 5).is_err(),
+                "{bad:?}"
+            );
+        }
+        assert!(reveal(&conn, &kek, "nope.key", "hal", "BDR drill", 5).is_err());
+        assert!(audits().is_empty(), "a refused reveal leaves no row");
+        let plain = reveal(&conn, &kek, "stripe.secret_key", "hal", " BDR drill ", 5).unwrap();
+        assert_eq!(&plain[..], b"synthetic-stripe-secret");
+        let rows = audits();
+        assert_eq!(rows, vec!["stripe.secret_key: BDR drill".to_string()]);
+        assert!(
+            !rows[0].contains("synthetic-stripe"),
+            "the value never reaches the audit"
+        );
     }
 
     #[test]

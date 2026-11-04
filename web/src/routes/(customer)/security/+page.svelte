@@ -3,6 +3,7 @@
 	import {
 		cookieValue,
 		credentialRequestArgs,
+		deviceLabel,
 		registerPasskey,
 		serializeAuthentication
 	} from '../../../lib/customer/passkey.js';
@@ -56,13 +57,17 @@
 		}
 	}
 
+	/** "andrii.ai - macOS Safari": the name a key gets when none is typed. */
+	const autoLabel = () =>
+		deviceLabel(location.hostname, navigator.userAgent, navigator.maxTouchPoints);
+
 	async function addKey(event: SubmitEvent) {
 		event.preventDefault();
 		error = null;
 		busy = true;
 		try {
 			const res = await registerPasskey(
-				{ displayName: userId, label },
+				{ displayName: userId, label: label.trim() || autoLabel() },
 				{ credentials: navigator.credentials, post }
 			);
 			if (!res.ok) {
@@ -224,7 +229,8 @@
 			name="label"
 			type="text"
 			bind:value={label}
-			placeholder="YubiKey"
+			maxlength="64"
+			placeholder={typeof navigator === 'undefined' ? '' : autoLabel()}
 		/>
 		<button
 			class="min-h-11 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"

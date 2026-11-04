@@ -1,12 +1,15 @@
 #!/bin/bash
 # Usage: printf 'set\nacme.enabled\nbool\ntrue\n' | apostille-config
+#        printf 'reveal\nstripe.secret_key\n<one-line reason>\n' | apostille-config
+# (reveal: the third line is the reason, audited with the key; the
+# value is printed for `cargo xtask setup pull --secrets`)
 set -u
 STORE="--store /var/lib/apostille --kek-file /etc/apostille/handbook-kek"
 IFS= read -r OP || exit 1
 IFS= read -r KEY || KEY=""
 IFS= read -r TYPE || TYPE=""
 VALUE="$(cat)"
-case "$OP" in set|get|verify) ;; *) echo "ABORT: op must be set|get|verify" >&2; exit 1 ;; esac
+case "$OP" in set|get|verify|reveal) ;; *) echo "ABORT: op must be set|get|verify|reveal" >&2; exit 1 ;; esac
 if [ "$OP" != verify ]; then
     case "$KEY" in
         ""|*[!a-z0-9._-]*) echo "ABORT: bad key" >&2; exit 1 ;;
@@ -19,5 +22,6 @@ fi
 case "$OP" in
     set) printf '%s' "$VALUE" | exec /srv/apostille/current/xtask config-set $STORE --key "$KEY" --type "$TYPE" --value-from-stdin ;;
     get) exec /srv/apostille/current/xtask config-get $STORE --key "$KEY" ;;
+    reveal) printf '%s' "$TYPE" | exec /srv/apostille/current/xtask config-reveal $STORE --key "$KEY" --actor hal --reason-from-stdin ;;
     verify) exec /srv/apostille/current/xtask config-verify $STORE ;;
 esac

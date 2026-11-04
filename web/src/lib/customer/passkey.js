@@ -96,6 +96,57 @@ export function cookieValue(jar, name) {
 }
 
 /**
+ * The OS and browser a user agent names, e.g. "macOS Safari".
+ * Order matters: Edge, Opera and Samsung Internet also say "Chrome",
+ * and every iOS browser also says "Safari".
+ * @param {string} ua navigator.userAgent
+ * @param {number} [touchPoints] navigator.maxTouchPoints (iPadOS
+ *   reports itself as a Mac; only its touch screen tells them apart)
+ */
+export function deviceName(ua, touchPoints = 0) {
+	const os = /iPhone|iPod/.test(ua)
+		? 'iPhone'
+		: /iPad/.test(ua) || (/Macintosh/.test(ua) && touchPoints > 1)
+			? 'iPad'
+			: /Android/.test(ua)
+				? 'Android'
+				: /CrOS/.test(ua)
+					? 'ChromeOS'
+					: /Mac OS X|Macintosh/.test(ua)
+						? 'macOS'
+						: /Windows/.test(ua)
+							? 'Windows'
+							: /Linux/.test(ua)
+								? 'Linux'
+								: '';
+	const browser = /EdgiOS|EdgA?\//.test(ua)
+		? 'Edge'
+		: /OPR\/|OPT\/|Opera/.test(ua)
+			? 'Opera'
+			: /SamsungBrowser/.test(ua)
+				? 'Samsung Internet'
+				: /FxiOS|Firefox\//.test(ua)
+					? 'Firefox'
+					: /CriOS|Chrome\/|Chromium\//.test(ua)
+						? 'Chrome'
+						: /Safari\//.test(ua)
+							? 'Safari'
+							: '';
+	return [os, browser].filter(Boolean).join(' ') || 'this device';
+}
+
+/**
+ * The label a new passkey gets: "<site> - <OS/browser>" (max 64,
+ * the server's limit).
+ * @param {string} host location.hostname
+ * @param {string} ua navigator.userAgent
+ * @param {number} [touchPoints] navigator.maxTouchPoints
+ */
+export function deviceLabel(host, ua, touchPoints = 0) {
+	return `${host} - ${deviceName(ua, touchPoints)}`.slice(0, 64);
+}
+
+/**
  * Run passkey registration: start → navigator.create → finish.
  * @param {any} input {displayName, label?, email?}
  * @param {any} io injectable browser surface ({credentials, post})

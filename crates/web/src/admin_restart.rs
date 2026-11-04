@@ -151,8 +151,13 @@ pub(crate) fn preflight(
 ) -> Result<Vec<String>, String> {
     let (cfg, mut warnings) = config::RuntimeConfig::load(conn, kek)
         .map_err(|e| format!("runtime config unreadable ({e})"))?;
-    if crate::passkey::build_webauthn(&cfg.auth_rp_id, &cfg.auth_rp_name, &cfg.auth_origin)
-        .is_none()
+    if crate::passkey::build_relying_parties(
+        &cfg.auth_rp_id,
+        &cfg.auth_rp_name,
+        &cfg.auth_origin,
+        auth::public_host(),
+    )
+    .is_none()
     {
         return Err("auth.rp_id/auth.origin do not build a WebAuthn handle".to_string());
     }

@@ -135,6 +135,13 @@ pub fn failure(host: &str, stderr: &str) -> String {
 
 /// Probe `host` over ssh (keys only, 30 s in all).
 pub fn run(host: &str, at: &str) -> Result<Probe, String> {
+    let out = ssh_script(host, SCRIPT, Duration::from_secs(30))?;
+    Ok(parse(host, at, &out))
+}
+
+/// Run a fixed POSIX sh `script` on `host` (fed on stdin to `sh -s`,
+/// keys only, 10 s to connect, `limit` in all); its stdout.
+pub fn ssh_script(host: &str, script: &str, limit: Duration) -> Result<String, String> {
     if !valid_host(host) {
         return Err(format!(
             "{host:?} is not a host name or ssh alias (letters, digits and .-_@: only)"
@@ -159,22 +166,32 @@ pub fn run(host: &str, at: &str) -> Result<Probe, String> {
         .map_err(|e| format!("run ssh: {e}"))?;
     if let Some(mut stdin) = child.stdin.take() {
         // A refused login closes the pipe early; its stderr says why.
-        let _ = stdin.write_all(SCRIPT.as_bytes());
+        let _ = stdin.write_all(script.as_bytes());
     }
-    let deadline = Instant::now() + Duration::from_secs(30);
+    // Drain stdout while waiting: a long answer would fill the pipe.
+    let stdout = child.stdout.take();
+    let reader = std::thread::spawn(move || {
+        let mut text = Vec::new();
+        if let Some(mut out) = stdout {
+            let _ = std::io::Read::read_to_end(&mut out, &mut text);
+        }
+        text
+    });
+    let deadline = Instant::now() + limit;
     while child.try_wait().map_err(|e| e.to_string())?.is_none() {
         if Instant::now() > deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!("ssh {host}: no answer in 30 s"));
+            return Err(format!("ssh {host}: no answer in {} s", limit.as_secs()));
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let stdout = reader.join().unwrap_or_default();
     if !out.status.success() {
         return Err(failure(host, &String::from_utf8_lossy(&out.stderr)));
     }
-    Ok(parse(host, at, &String::from_utf8_lossy(&out.stdout)))
+    Ok(String::from_utf8_lossy(&stdout).into_owned())
 }
 
 #[cfg(test)]

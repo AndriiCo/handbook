@@ -79,35 +79,35 @@
         "configured": false,
         "console": "https://console.cloud.google.com/apis/credentials",
         "id": "gmail",
-        "mode": null,
+        "mode": "fake",
         "name": "Gmail"
       },
       {
         "configured": false,
         "console": "https://portal.telnyx.com/",
         "id": "telnyx",
-        "mode": null,
+        "mode": "fake",
         "name": "Telnyx"
       },
       {
         "configured": false,
         "console": "https://developer.fedex.com/",
         "id": "fedex",
-        "mode": null,
+        "mode": "fake",
         "name": "FedEx"
       },
       {
         "configured": false,
         "console": "https://developers.usps.com/",
         "id": "usps",
-        "mode": null,
+        "mode": "fake",
         "name": "USPS"
       },
       {
         "configured": false,
         "console": "https://dashboard.stripe.com/",
         "id": "stripe",
-        "mode": null,
+        "mode": "fake",
         "name": "Stripe"
       }
     ],

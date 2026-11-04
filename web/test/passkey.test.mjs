@@ -5,6 +5,8 @@ import {
 	b64urlEncode,
 	cookieValue,
 	credentialRequestArgs,
+	deviceLabel,
+	deviceName,
 	loginPasskey,
 	registerPasskey,
 	serializeAuthentication,
@@ -138,5 +140,40 @@ describe('passkey ceremonies with fakes', () => {
 		const res = await loginPasskey('u-9', io);
 		assert.equal(res.body.user_id, 'u-9');
 		assert.deepEqual(seen, ['/auth/passkey/login/start', '/auth/passkey/login/finish']);
+	});
+});
+
+describe('passkey device label', () => {
+	const UA = {
+		macSafari:
+			'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15',
+		macChrome:
+			'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+		winEdge:
+			'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
+		winFirefox: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
+		iphoneChrome:
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.6723.90 Mobile/15E148 Safari/604.1',
+		androidSamsung:
+			'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36',
+		linuxFirefox: 'Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0'
+	};
+
+	it('names the OS and browser', () => {
+		assert.equal(deviceName(UA.macSafari), 'macOS Safari');
+		assert.equal(deviceName(UA.macChrome), 'macOS Chrome');
+		assert.equal(deviceName(UA.winEdge), 'Windows Edge');
+		assert.equal(deviceName(UA.winFirefox), 'Windows Firefox');
+		assert.equal(deviceName(UA.iphoneChrome), 'iPhone Chrome');
+		assert.equal(deviceName(UA.androidSamsung), 'Android Samsung Internet');
+		assert.equal(deviceName(UA.linuxFirefox), 'Linux Firefox');
+		// iPadOS asks for the desktop site and says Macintosh.
+		assert.equal(deviceName(UA.macSafari, 5), 'iPad Safari');
+		assert.equal(deviceName(''), 'this device');
+	});
+
+	it('labels the key with the site, within the server limit', () => {
+		assert.equal(deviceLabel('andrii.ai', UA.macSafari), 'andrii.ai - macOS Safari');
+		assert.equal(deviceLabel('x'.repeat(80), UA.macSafari).length, 64);
 	});
 });

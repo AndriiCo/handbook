@@ -7,6 +7,7 @@
 //! cargo xtask setup check  [--file <path>] [--target <name>]
 //! cargo xtask setup print  [--file <path>] --target <name>
 //! cargo xtask setup new    [--file <path>] [--host <name>] [--local]
+//! cargo xtask setup pull   [--file <path>] [--target production] [--secrets --reason "<who, why>"]
 //! cargo xtask setup wipe   --target docker
 //! ```
 //!
@@ -25,8 +26,9 @@
 //! [`file`] reads and writes the sops file, [`build`] builds hardened
 //! binaries for each target's CPU, [`plan`] turns a target into steps,
 //! [`run`] executes them, [`checks`] probes every provider key,
-//! [`probe`] reads what an SSH box is, [`map`] lays out the system map,
-//! and [`wizard`] serves the browser UI.
+//! [`probe`] reads what an SSH box is, [`pull`] reads what a server's
+//! store holds, [`map`] lays out the system map, and [`wizard`] serves
+//! the browser UI.
 
 pub mod brand;
 pub mod build;
@@ -36,6 +38,7 @@ pub mod file;
 pub mod map;
 pub mod plan;
 pub mod probe;
+pub mod pull;
 pub mod rehearsal;
 pub mod run;
 pub mod stage;
@@ -132,6 +135,7 @@ pub fn run(args: &[String]) {
         Some("check") => run_check(&args[1..]),
         Some("print") => run_print(&args[1..]),
         Some("new") => run_new(&args[1..]),
+        Some("pull") => run_pull(&args[1..]),
         Some("wipe") => run_wipe(&args[1..]),
         Some("--help" | "-h" | "help") => print_usage(),
         Some(other) if !other.starts_with("--") => {
@@ -146,7 +150,7 @@ pub fn run(args: &[String]) {
 fn print_usage() {
     println!(
         "usage: cargo xtask setup [--file private/config.yaml] [--target a,b] [--sha <rev>] [--from <phase>] [--dry-run] [--operator-order \"<text>\"]
-       cargo xtask setup wizard|check|print|new|wipe [--file <path>] [--target <name>]
+       cargo xtask setup wizard|check|print|new|pull|wipe [--file <path>] [--target <name>]
 
 No file: creates it and opens the wizard. Phases: {}",
         plan::ALL_PHASES.map(Phase::as_str).join(", ")
@@ -164,6 +168,70 @@ fn run_new(args: &[String]) {
     }
     file::save(&path, &new_file(&path, args)).unwrap_or_else(|e| fail(&e));
     println!("created {} ({})", path.display(), storage_note(&path));
+}
+
+/// `setup pull`: a server target's live values into
+/// `<target>.pulled.yaml` beside the file, and where they differ.
+/// `--secrets --reason "<who, why>"` also reads its secrets (audited on
+/// the server, logged in `private/setup-log.jsonl`) into the
+/// sops-encrypted `<target>.pulled.sops.yaml`.
+fn run_pull(args: &[String]) {
+    let path = file_path(args);
+    let f = load_valid(&path);
+    let target = crate::flag(args, "target")
+        .or_else(|| pull::default_target(&f))
+        .unwrap_or_else(|| fail("no server target in the setup file; name one with --target"));
+    let reason = args
+        .iter()
+        .any(|a| a == "--secrets")
+        .then(|| crate::flag(args, "reason").unwrap_or_default());
+    let at = brand::rfc3339(crate::unix_now());
+    let result = pull::run(&f, &path, &target, &at, reason.as_deref());
+    if let Some(reason) = &reason {
+        append_log(
+            &crate::repo_root(),
+            &serde_json::json!({"at": crate::unix_now(), "target": target, "event": "pull-secrets",
+                "reason": reason.trim(), "ok": result.is_ok(),
+                "keys": result.as_ref().map(|(_, p, _)| p.secrets.keys().cloned().collect::<Vec<_>>()).unwrap_or_default()}),
+        );
+    }
+    let (out, pulled, diffs) = result.unwrap_or_else(|e| fail(&e));
+    if pulled.secrets.is_empty() {
+        println!(
+            "setup: {} values and {} secret names from {target} ({}) -> {}",
+            pulled.values.len(),
+            pulled.secrets_set.len(),
+            pulled.host,
+            out.display()
+        );
+    } else {
+        println!(
+            "setup: {} values and {} secrets from {target} ({}) -> {} (sops-encrypted; `sops decrypt {}` reads it)",
+            pulled.values.len(),
+            pulled.secrets.len(),
+            pulled.host,
+            out.display(),
+            out.display()
+        );
+    }
+    print_diffs(&target, &diffs);
+}
+
+fn print_diffs(target: &str, diffs: &[pull::Diff]) {
+    if diffs.is_empty() {
+        println!("  {target} matches the setup file");
+        return;
+    }
+    println!("  {} keys differ (setup file -> live):", diffs.len());
+    let none = || "(unset)".to_string();
+    for d in diffs {
+        println!(
+            "  {:<32} {} -> {}",
+            d.key,
+            d.file.clone().unwrap_or_else(none),
+            d.live.clone().unwrap_or_else(none)
+        );
+    }
 }
 
 fn run_print(args: &[String]) {

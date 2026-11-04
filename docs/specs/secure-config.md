@@ -147,7 +147,16 @@ mTLS cert, and staff/admin role.
   games.
 - Runtime reads of secrets (e.g. `META_API_KEY` for the transcribe
   job) happen **only** in server-side job code with direct DB+KEK
-  access — never through the admin API layer. This migrates
+  access — never through the admin API layer.
+- Backup and rebuild (operator only): `xtask config-reveal` unseals a
+  row on the box with the KEK, behind the `apostille-config reveal`
+  wrapper, and requires a one-line reason. It writes an `audit` row
+  (`action='config_revealed'`, reason `<key>: <reason>`, never the
+  value) before printing. `cargo xtask setup pull --secrets --reason
+  "<who, why>"` drives it over SSH and writes the result
+  sops-encrypted to the operator's age key
+  (`private/<target>.pulled.sops.yaml`); the setup wizard and the
+  admin API have no path to it. This migrates
   `META_API_KEY` out of env (superseding `SECURITY.md` "env-only"
   for app secrets; keep env-only for
   `STORE_PATH/BIND_ADDR/PORT/BASE_PATH` bootstrap vars).

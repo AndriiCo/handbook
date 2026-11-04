@@ -5,6 +5,7 @@
 	import {
 		cookieValue,
 		credentialRequestArgs,
+		deviceLabel,
 		loginPasskey,
 		registerPasskey,
 		serializeAuthentication
@@ -24,8 +25,7 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 
 	let locale = $state<Locale>(resolveLocale());
-	let displayName = $state('');
-	let label = $state('');
+	let fullName = $state('');
 	let email = $state('');
 	let account = $state(
 		typeof localStorage === 'undefined' ? '' : (localStorage.getItem('hb_last_user') ?? '')
@@ -117,8 +117,11 @@
 		error = null;
 		busy = true;
 		try {
+			// The key is named for this site and device, e.g.
+			// "andrii.ai - macOS Safari" (the Security page lists it).
+			const label = deviceLabel(location.hostname, navigator.userAgent, navigator.maxTouchPoints);
 			const res = await registerPasskey(
-				{ displayName, label, email },
+				{ displayName: fullName.trim(), label, email: email.trim() },
 				{ credentials: navigator.credentials, post }
 			);
 			if (!res.ok) {
@@ -457,33 +460,31 @@
 					{/if}
 				{:else}
 					<form class="mt-4 flex flex-col gap-2" onsubmit={register}>
-						<label class="font-bold" for="display-name">Display name</label>
+						<label class="font-bold" for="full-name">Full name</label>
 						<input
 							class="field"
-							id="display-name"
-							name="display_name"
+							id="full-name"
+							name="full_name"
 							type="text"
-							bind:value={displayName}
+							bind:value={fullName}
 							required
+							maxlength="128"
+							autocomplete="name"
 						/>
-						<label class="font-bold" for="key-label">Key label (optional)</label>
-						<input
-							class="field"
-							id="key-label"
-							name="label"
-							type="text"
-							bind:value={label}
-							placeholder="MacBook Pro"
-						/>
-						<label class="font-bold" for="reg-email">Email (optional, for account recovery)</label>
+						<label class="font-bold" for="reg-email">Email</label>
 						<input
 							class="field"
 							id="reg-email"
 							name="email"
 							type="email"
 							bind:value={email}
+							required
 							autocomplete="email"
+							aria-describedby="reg-email-hint"
 						/>
+						<p class="m-0 text-sm text-ink-muted" id="reg-email-hint">
+							Receipts, order updates and account recovery go here.
+						</p>
 						<button
 							class="mt-2 min-h-12 cursor-pointer rounded-sm border border-accent-fill bg-accent-fill px-5 font-bold text-accent-ink disabled:cursor-wait disabled:opacity-60"
 							type="submit"

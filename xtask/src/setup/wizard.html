@@ -69,6 +69,9 @@ ol.phases li { padding: 3px 0; display: flex; gap: 8px; }
 .map-box .edge { stroke: var(--ink); stroke-width: 1.4; }
 .map-box .dep { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 6 4; }
 .map-box .arrow { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+.intro { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 24px; }
+.intro ul { margin: 4px 0 0; padding-left: 18px; }
+.intro h3 { margin: 0; }
 .map-box text.lbl { font-size: 11px; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
 </style>
 </head>
@@ -84,6 +87,35 @@ ol.phases li { padding: 3px 0; display: flex; gap: 8px; }
   </div>
 </header>
 <main>
+  <section id="intro" class="panel" aria-labelledby="intro-title">
+    <div class="row" style="justify-content: space-between">
+      <h2 id="intro-title" style="margin: 0">What runs where</h2>
+      <button class="secondary" type="button" onclick="document.getElementById('intro').classList.add('hidden')">Got it</button>
+    </div>
+    <p class="muted">Start on this machine alone; move a part to a server when it needs the internet. The local target starts on the fakes, so nothing is sent, shipped or charged.</p>
+    <div class="intro">
+      <div>
+        <h3 class="ok">Runs local only</h3>
+        <ul>
+          <li>The handbook, search, dossiers and the staff console on localhost</li>
+          <li>Drafting with the Meta Model API (needs a <span class="mono">meta.api_key</span>), or replaying recorded answers</li>
+          <li>Passkeys for this browser on <span class="mono">localhost</span> (they do not sync to your phone under a real domain)</li>
+          <li>Email-link sign-in, orders and checkout against the fakes: mock FedEx/USPS labels, Stripe, Telnyx and email</li>
+          <li>Workers and Docker rehearsals on this machine</li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="warn">Needs a host on the internet</h3>
+        <ul>
+          <li>Customer passkeys on your domain: the browser binds each passkey to the site's host name, so they must be made on the live site</li>
+          <li>Sign in with Google and Apple (they return to an https address you registered)</li>
+          <li>Stripe and Telnyx callbacks (webhooks, call events, browser calls)</li>
+          <li>Real email delivery and inbound mail, live FedEx/USPS labels</li>
+          <li>TLS certificates (ACME) and DNS for your host and <span class="mono">admin.</span>&lt;host&gt;</li>
+        </ul>
+      </div>
+    </div>
+  </section>
   <div id="problems" class="panel problems hidden"></div>
   <nav id="tabs" role="tablist"></nav>
   <section id="view"></section>
@@ -180,6 +212,28 @@ function targetPanel(name) {
   const derived = el("table", {}, el("tr", {}, el("th", {}, "Derived key"), el("th", {}, "Value")),
     Object.entries(t.derived).map(([k, val]) => el("tr", {}, el("td", { class: "mono" }, k), el("td", { class: "mono" }, JSON.stringify(val)))));
   const checks = el("div", {});
+  const extras = el("div", {});
+  const defaultsBtn = t.kind === "local" ? el("button", { class: "secondary", onclick: async () => {
+    defaultsBtn.disabled = true;
+    try {
+      const r = await api("/api/defaults", { target: name });
+      extras.replaceChildren(el("p", { class: "ok" }, r.added.length ? `Added: ${r.added.join(", ")}` : "Every local default is already set."));
+      await refresh();
+    } catch (e) { extras.replaceChildren(el("p", { class: "fail" }, e.message)); defaultsBtn.disabled = false; }
+  } }, "Fill local-only defaults (fakes)") : null;
+  const pullBtn = t.kind === "server" ? el("button", { class: "secondary", onclick: async () => {
+    pullBtn.disabled = true; extras.replaceChildren(el("p", { class: "muted" }, `ssh ${t.ssh || name}: reading each config row…`));
+    try {
+      const r = await api("/api/pull", { target: name });
+      const none = v => v === null || v === undefined ? "(unset)" : v;
+      extras.replaceChildren(
+        el("p", {}, `${r.values} values and ${r.secrets} secret names saved to `, el("span", { class: "mono" }, r.path), " (git-ignored)."),
+        r.diffs.length ? el("table", {}, el("tr", {}, el("th", {}, "Key"), el("th", {}, "This file"), el("th", {}, "Live")),
+          r.diffs.map(d => el("tr", {}, el("td", { class: "mono" }, d.key), el("td", { class: "mono" }, none(d.file)), el("td", { class: "mono" }, none(d.live)))))
+          : el("p", { class: "ok" }, "Live matches this file."));
+    } catch (e) { extras.replaceChildren(el("pre", { class: "log fail" }, e.message)); }
+    pullBtn.disabled = false;
+  } }, "Pull live values") : null;
   const checkBtn = el("button", { class: "secondary", onclick: async () => {
     checkBtn.disabled = true; checks.replaceChildren(el("p", { class: "muted" }, "Calling each provider (10 s budget each)…"));
     try { const r = await api("/api/check", { target: name }); checks.replaceChildren(checkTable(r.results)); }
@@ -187,7 +241,11 @@ function targetPanel(name) {
     checkBtn.disabled = false;
   } }, "Check keys and access");
   return el("div", {},
-    el("div", { class: "panel" }, el("h2", {}, `${name} `, el("span", { class: "badge" }, t.runtime === "docker" ? `${t.kind} · docker` : t.kind)), fields,
+    el("div", { class: "panel" }, el("div", { class: "row" }, el("h2", {}, `${name} `, el("span", { class: "badge" }, t.runtime === "docker" ? `${t.kind} · docker` : t.kind)), defaultsBtn, pullBtn),
+      t.kind === "local" ? el("p", { class: "muted" }, "Defaults: fake FedEx/USPS labels, Stripe, Telnyx, email and Hugging Face; nothing live bought or polled; orders on. A value already set stays.") : null,
+      t.kind === "server" ? el("p", { class: "muted" }, "Pull reads what this server's store holds now (secrets by name only), saves it beside the setup file and lists where it differs from this file. Secret values never reach this page: for a backup or rebuild, run ",
+        el("span", { class: "mono" }, `cargo xtask setup pull --target ${name} --secrets --reason "<who, why>"`), " in a terminal (audited on the server, written sops-encrypted).") : null,
+      extras, fields,
       el("h3", {}, "Deploy keys for hal (one OpenSSH public key per line; empty: the keys in ssh-agent)"), keys,
       el("h3", {}, "Derived (from the target's shape; not typed)"), derived),
     t.kind === "plant" || t.kind === "server" ? probePanel(name) : null,
