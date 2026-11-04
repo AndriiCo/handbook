@@ -306,10 +306,27 @@ fn node(file: &SetupFile, node: &str, name: Option<&String>, front_admin: &str) 
     })
 }
 
-/// The mode a service runs in, when the file says (W-3 adds `fake`).
+/// The mode a service runs in, when the file says: its W-3 `<area>.mode`
+/// row (`fake | sandbox | live`) first, else what its keys imply.
 fn mode(id: &str, values: &BTreeMap<String, Value>) -> Option<&'static str> {
     let text = |k: &str| values.get(k).and_then(Value::as_str).unwrap_or_default();
     let live = |k: &str| values.get(k).and_then(Value::as_bool);
+    let rows: &[&str] = match id {
+        "gmail" => &["mail.mode", "mailer.mode"],
+        "telnyx" => &["telnyx.mode"],
+        "fedex" | "usps" => &["labels.mode"],
+        "stripe" => &["stripe.mode"],
+        _ => &[],
+    };
+    let set = rows.iter().find_map(|row| {
+        let value = text(row).trim();
+        ["fake", "sandbox", "live"]
+            .into_iter()
+            .find(|m| *m == value)
+    });
+    if set.is_some() {
+        return set;
+    }
     match id {
         "stripe" => {
             let key = text("stripe.secret_key");
@@ -508,6 +525,33 @@ mod tests {
         assert_eq!(mode("usps")["mode"], "live");
         assert_eq!(mode("gmail")["configured"], false);
         assert_eq!(mode("gmail")["mode"], Value::Null);
+
+        // A W-3 mode row wins over what the keys imply.
+        let mut faked = file.clone();
+        let prod = faked.targets.get_mut("production").unwrap();
+        for (row, value) in [
+            ("stripe.mode", "fake"),
+            ("labels.mode", "fake"),
+            ("mailer.mode", "fake"),
+        ] {
+            prod.config.insert(row.into(), Value::String(value.into()));
+        }
+        prod.config
+            .insert("telnyx.mode".into(), Value::String("bogus".into()));
+        let f = state(&faked);
+        let fmode = |id: &str| {
+            f["services"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|x| x["id"] == id)
+                .unwrap()["mode"]
+                .clone()
+        };
+        for id in ["stripe", "fedex", "usps", "gmail"] {
+            assert_eq!(fmode(id), "fake", "{id}");
+        }
+        assert_eq!(fmode("telnyx"), Value::Null, "an unknown mode is not shown");
 
         let mut local = SetupFile::local_template();
         choose(&mut local, "front_end", "docker").unwrap();
