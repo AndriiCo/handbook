@@ -36,6 +36,7 @@ mod follow;
 mod forms_map;
 mod fulfilment;
 mod host;
+mod label_autofill;
 mod magic;
 mod mtls;
 mod oauth;

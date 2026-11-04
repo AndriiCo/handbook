@@ -4,6 +4,7 @@
 	import { csrfHeaders } from '../../../lib/admin/config-client.js';
 	import { adminRequestError } from '../../../lib/admin/http-errors.js';
 	import RequestErrorNotice from '../../../lib/admin/RequestErrorNotice.svelte';
+	import AuthorityPicker from '../../../lib/admin/AuthorityPicker.svelte';
 
 	// Staff-only live FedEx purchase (SA-19). This route ships in the
 	// admin build only (never the public build). The staff API keeps
@@ -25,6 +26,7 @@
 	interface Address {
 		name: string;
 		street1: string;
+		street2: string;
 		city: string;
 		state_province: string;
 		postal: string;
@@ -35,6 +37,7 @@
 	const blankAddress = (): Address => ({
 		name: '',
 		street1: '',
+		street2: '',
 		city: '',
 		state_province: '',
 		postal: '',
@@ -73,12 +76,144 @@
 		orderId.trim() ? `${orderId.trim()}:${leg}` : ''
 	);
 
-	// An empty phone is left out (the server treats a present phone
-	// as one to validate).
+	// An empty phone or line 2 is left out (the server treats a
+	// present phone as one to validate).
 	const wire = (a: Address) => {
-		const { phone, ...rest } = a;
-		return phone.trim() ? { ...rest, phone: phone.trim() } : rest;
+		const { phone, street2, ...rest } = a;
+		return {
+			...rest,
+			...(street2.trim() ? { street2: street2.trim() } : {}),
+			...(phone.trim() ? { phone: phone.trim() } : {})
+		};
 	};
+
+	// ---- Autofill (P416): ship-to from an authority's accepted facts,
+	// ship-from from the office (`orders.ship_from`) or an order's
+	// customer return address. Every filled field stays editable.
+	interface FillAddress {
+		fact_id: number;
+		label: string;
+		street1: string;
+		street2: string | null;
+		city: string;
+		state_province: string;
+		postal: string;
+		country: string;
+		po_box: boolean;
+		fedex_ok: boolean;
+		quote: string;
+	}
+	interface AuthorityFill {
+		authority: { slug: string; name: string };
+		name: string;
+		addresses: FillAddress[];
+		recommended: number | null;
+		phone: { value: string; fact_id: number; quote: string } | null;
+		reason: string | null;
+	}
+	interface ReturnFill {
+		name: string;
+		street1: string;
+		street2: string | null;
+		city: string;
+		state_province: string;
+		postal: string;
+		country: string;
+		phone: string | null;
+	}
+
+	let toSlug = $state('');
+	let toFill = $state<AuthorityFill | null>(null);
+	let toPick = $state<number | null>(null);
+	let fillError = $state<string | null>(null);
+	let fillRequestId = $state<string | null>(null);
+	let fillOrderId = $state('');
+	let fillNote = $state<string | null>(null);
+
+	async function fillGet(path: string) {
+		const res = await fetch(`${api()}/autofill/${path}`, { credentials: 'same-origin' });
+		if (!res.ok) throw await adminRequestError(res, 'Autofill failed.');
+		return res.json();
+	}
+
+	function fillFailed(err: unknown) {
+		fillError = err instanceof Error ? err.message : 'Autofill failed.';
+		fillRequestId = (err as { requestId?: string | null })?.requestId ?? null;
+	}
+
+	function applyTo(fill: AuthorityFill, index: number | null) {
+		toFill = fill;
+		toPick = index;
+		const pick = index === null ? null : fill.addresses[index];
+		to = {
+			name: fill.name,
+			street1: pick?.street1 ?? '',
+			street2: pick?.street2 ?? '',
+			city: pick?.city ?? '',
+			state_province: pick?.state_province ?? '',
+			postal: pick?.postal ?? '',
+			country: pick?.country ?? 'US',
+			phone: fill.phone?.value ?? ''
+		};
+	}
+
+	async function fillFromAuthority(slug: string) {
+		fillError = null;
+		fillRequestId = null;
+		fillNote = null;
+		if (!slug) return;
+		try {
+			const fill = (await fillGet(`authority/${encodeURIComponent(slug)}`)) as AuthorityFill;
+			applyTo(fill, fill.recommended);
+		} catch (err) {
+			fillFailed(err);
+		}
+	}
+
+	const fromReturn = (r: ReturnFill): Address => ({
+		name: r.name,
+		street1: r.street1,
+		street2: r.street2 ?? '',
+		city: r.city,
+		state_province: r.state_province,
+		postal: r.postal,
+		country: r.country || 'US',
+		phone: r.phone ?? ''
+	});
+
+	async function fillFromOffice() {
+		fillError = null;
+		fillRequestId = null;
+		try {
+			const body = (await fillGet('office')) as { from: ReturnFill };
+			from = fromReturn(body.from);
+			fillNote = 'Ship from: the office address in orders.ship_from.';
+		} catch (err) {
+			fillFailed(err);
+		}
+	}
+
+	async function fillFromOrder() {
+		fillError = null;
+		fillRequestId = null;
+		const id = fillOrderId.trim();
+		if (!id) return;
+		try {
+			const body = (await fillGet(`order/${encodeURIComponent(id)}`)) as {
+				order_id: string;
+				authority_slug: string;
+				from: ReturnFill | null;
+				to: AuthorityFill;
+			};
+			orderId = body.order_id;
+			if (body.from) from = fromReturn(body.from);
+			toSlug = body.authority_slug;
+			applyTo(body.to, body.to.recommended);
+			fillNote = `Order ${body.order_id}: ship from the customer's return address, to ${body.to.authority.name}.`;
+		} catch (err) {
+			fillFailed(err);
+		}
+	}
 
 	function payload() {
 		return {
@@ -237,6 +372,101 @@
 		{/if}
 	</section>
 
+	<section aria-label="Autofill" class="space-y-3 rounded border border-line p-4">
+		<h2 class="font-bold">Fill from the handbook</h2>
+		<p class="text-sm text-ink-muted">
+			Ship-to comes only from the authority's accepted facts (each field cites its fact); ship-from
+			from the office or an order. Everything stays editable below.
+		</p>
+		<div class="flex flex-wrap items-end gap-3">
+			<div class="min-w-64 flex-1">
+				<AuthorityPicker
+					id="fill-authority"
+					label="Ship to an authority"
+					placeholder="Choose the destination authority"
+					bind:value={toSlug}
+					onChange={(slug) => fillFromAuthority(slug)}
+				/>
+			</div>
+			<button
+				type="button"
+				class="min-h-11 rounded border border-line bg-bg px-4 py-2 text-ink hover:border-focus"
+				onclick={fillFromOffice}
+			>
+				Ship from our office
+			</button>
+		</div>
+		<div class="flex flex-wrap items-end gap-3">
+			<div>
+				<label for="fill-order" class="block text-sm font-bold">Or fill both from an order</label>
+				<input
+					id="fill-order"
+					class="mt-1 w-56 rounded border border-line bg-bg p-2 font-mono text-ink"
+					type="text"
+					autocomplete="off"
+					placeholder="ord_…"
+					bind:value={fillOrderId}
+				/>
+			</div>
+			<button
+				type="button"
+				class="min-h-11 rounded border border-line bg-bg px-4 py-2 text-ink hover:border-focus disabled:opacity-50"
+				disabled={!fillOrderId.trim()}
+				onclick={fillFromOrder}
+			>
+				Fill from order
+			</button>
+		</div>
+		{#if fillError}
+			<RequestErrorNotice heading="Autofill failed." message={fillError} requestId={fillRequestId} />
+		{/if}
+		{#if fillNote}
+			<p class="text-sm text-ink" role="status">{fillNote}</p>
+		{/if}
+		{#if toFill}
+			{#if toFill.reason}
+				<Notice variant="warning" heading="No FedEx address on file.">
+					<p class="m-0 text-sm">{toFill.reason}</p>
+				</Notice>
+			{/if}
+			{#if toFill.addresses.length > 0}
+				<fieldset class="space-y-2">
+					<legend class="text-sm font-bold">Addresses on file for {toFill.authority.name}</legend>
+					{#each toFill.addresses as a, i (a.fact_id)}
+						<label class="flex items-start gap-2 text-sm">
+							<input
+								type="radio"
+								name="fill-address"
+								class="mt-1"
+								checked={toPick === i}
+								disabled={!a.fedex_ok}
+								onchange={() => applyTo(toFill!, i)}
+							/>
+							<span>
+								<span class="font-medium text-ink"
+									>{a.street2 ? `${a.street2}, ` : ''}{a.street1}, {a.city}, {a.state_province}
+									{a.postal}</span
+								>
+								<span class="text-ink-muted"> · {a.label} · fact #{a.fact_id}</span>
+								{#if a.po_box}
+									<span class="ml-1 inline-block rounded-xs border border-line px-1 text-xs whitespace-nowrap text-ink-muted"
+										>PO box: USPS only</span
+									>
+								{/if}
+								<span class="block text-xs text-ink-muted">“{a.quote}”</span>
+							</span>
+						</label>
+					{/each}
+				</fieldset>
+			{/if}
+			{#if toFill.phone}
+				<p class="text-sm text-ink-muted">
+					Phone {toFill.phone.value} from fact #{toFill.phone.fact_id}: “{toFill.phone.quote}”
+				</p>
+			{/if}
+		{/if}
+	</section>
+
 	<section aria-label="Shipment" class="space-y-3 rounded border border-line p-4">
 		<h2 class="font-bold">Shipment</h2>
 		<div>
@@ -288,6 +518,10 @@
 			<div>
 				<label for={`${id}-street`} class="block text-sm font-bold">Street</label>
 				<input id={`${id}-street`} class="mt-1 w-full rounded border border-line bg-bg p-2 text-ink" type="text" autocomplete="off" bind:value={a.street1} />
+			</div>
+			<div>
+				<label for={`${id}-street2`} class="block text-sm font-bold">Address line 2 (building, suite)</label>
+				<input id={`${id}-street2`} class="mt-1 w-full rounded border border-line bg-bg p-2 text-ink" type="text" autocomplete="off" bind:value={a.street2} />
 			</div>
 			<div>
 				<label for={`${id}-phone`} class="block text-sm font-bold">Contact phone</label>

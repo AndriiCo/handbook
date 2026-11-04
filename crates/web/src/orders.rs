@@ -360,7 +360,7 @@ fn new_order_id() -> String {
 }
 
 /// Accepted facts of `slug` (statement + quotes), for destinations.
-fn fact_texts(state: &AppState, meta: &Connection, slug: &str) -> Vec<FactText> {
+pub(crate) fn fact_texts(state: &AppState, meta: &Connection, slug: &str) -> Vec<FactText> {
     crate::approval::accepted_fact_views(meta, &state.store_root, slug)
         .unwrap_or_default()
         .into_iter()

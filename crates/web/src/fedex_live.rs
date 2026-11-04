@@ -79,6 +79,18 @@ pub fn router(state: AppState) -> Router {
         .route("/apostille/api/v1/fedex-live/purchase", post(post_purchase))
         .route("/apostille/api/v1/fedex-live/void", post(post_void))
         .route(
+            "/apostille/api/v1/fedex-live/autofill/authority/{slug}",
+            get(crate::label_autofill::authority),
+        )
+        .route(
+            "/apostille/api/v1/fedex-live/autofill/office",
+            get(crate::label_autofill::office),
+        )
+        .route(
+            "/apostille/api/v1/fedex-live/autofill/order/{id}",
+            get(crate::label_autofill::order),
+        )
+        .route(
             "/apostille/api/v1/fedex-live/label/{order_id}/{leg}",
             get(get_label),
         )
@@ -854,6 +866,37 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(v["enabled"], false);
         assert_eq!(v["bought_today"], 0);
+    }
+
+    #[tokio::test]
+    async fn autofill_routes_answer_through_the_staff_guard() {
+        let (_tmp, state) = state();
+        let (status, v) = json(
+            router(state.clone())
+                .oneshot(request(
+                    "GET",
+                    "/apostille/api/v1/fedex-live/autofill/authority/no-such-slug",
+                    None,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(v["error"], "unknown authority");
+        let (status, v) = json(
+            router(state)
+                .oneshot(request(
+                    "GET",
+                    "/apostille/api/v1/fedex-live/autofill/office",
+                    None,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(v["error"].as_str().unwrap().contains("orders.ship_from"));
     }
 
     #[tokio::test]
