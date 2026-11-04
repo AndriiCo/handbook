@@ -62,6 +62,9 @@ pub const MAX_RELEASES: usize = 4;
 /// - p2_001 soft: separate `p2.sqlite`, untouched by old code.
 /// - 012 HARD: rebuilds `fact` (`fact_new` + copy + DROP + RENAME) to
 ///   add the `service_notice` topic to its CHECK (P394).
+/// - 013 listed although additive (ADD COLUMNs, new tables): every
+///   older binary refuses a v13 store (`db::migrate` refuses a newer
+///   version), so rolling back past it means restoring the backup.
 ///
 /// When a new HARD migration lands, append its number here with
 /// the reason — the rollback guard reads this table.
@@ -73,6 +76,10 @@ pub const HARD_MIGRATIONS: &[(i32, &str)] = &[
     (
         12,
         "012_service_notice: fact table rebuild widening the topic CHECK",
+    ),
+    (
+        13,
+        "013_authority_hidden: pre-013 binaries refuse a v13 store; restore the pre-deploy backup",
     ),
 ];
 
