@@ -253,6 +253,10 @@ pub async fn setup_set_key(
                 .into_response();
         }
     };
+    // W-3: never save a fake mode row this host could not boot with.
+    if let Some(refused) = crate::fake::refuse_fake_row(&state.fakes, &key, &body.value) {
+        return refused;
+    }
     let Some(conn) = passkey::open_conn(&state) else {
         return store_unavailable();
     };
@@ -379,6 +383,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
             fedex_live: crate::fedex_live::FedexLiveState::default(),
         };
         Fixture { _tmp: tmp, state }

@@ -1142,6 +1142,21 @@ pub mod keys {
     /// `/apostille/api/v1/worker/ws` (>= 32 chars). Secret: presence-only
     /// in UI; the same value lives in the worker's `worker.env`.
     pub const WORKER_TOKEN: &str = "worker.token";
+    // ---- W-3 integration modes: `fake | sandbox | live` (see `Mode`) ----
+    /// Outgoing email (magic links, follower digests, outreach).
+    pub const MAILER_MODE: &str = "mailer.mode";
+    /// Incoming email (the Gmail poll).
+    pub const MAIL_MODE: &str = "mail.mode";
+    /// FedEx and USPS labels (staff and customer buys).
+    pub const LABELS_MODE: &str = "labels.mode";
+    /// Stripe checkout and webhooks.
+    pub const STRIPE_MODE: &str = "stripe.mode";
+    /// Telnyx calls.
+    pub const TELNYX_MODE: &str = "telnyx.mode";
+    /// Meta Model API (fake: the call cache replays recorded answers).
+    pub const META_MODE: &str = "meta.mode";
+    /// Hugging Face weights (fake: recorded Glimmer verdicts).
+    pub const HF_MODE: &str = "hf.mode";
 
     /// Keys removed from the registry (admin client certificates and the
     /// split-port admin listener are gone). A stored row is ignored: the
@@ -1250,7 +1265,188 @@ pub mod keys {
         (META_DAILY_CALL_CAP, super::ConfigType::Text),
         (META_CACHE_MODE, super::ConfigType::Text),
         (WORKER_TOKEN, super::ConfigType::Secret),
+        (MAILER_MODE, super::ConfigType::Text),
+        (MAIL_MODE, super::ConfigType::Text),
+        (LABELS_MODE, super::ConfigType::Text),
+        (STRIPE_MODE, super::ConfigType::Text),
+        (TELNYX_MODE, super::ConfigType::Text),
+        (META_MODE, super::ConfigType::Text),
+        (HF_MODE, super::ConfigType::Text),
     ];
+}
+
+// ---------------------------------------------------------------------------
+// W-3 integration modes. Each outside service has one `<area>.mode` row:
+// `fake` (a local stand-in: nothing is sent, shipped or charged),
+// `sandbox` or `live`. An unset row keeps today's behaviour exactly, and
+// `sandbox`/`live` never override the switches that already choose
+// between them (`labels.live`, `usps.live`, the Stripe key's prefix,
+// `mailer.provider`): the mode row can add a fake, never raise anything
+// to live. Fakes are refused (the boot fails) unless every bind is
+// loopback or the host is a labelled staging target that is not the
+// production host — the same rule as the other dev seams.
+// ---------------------------------------------------------------------------
+
+/// One outside service with a `<area>.mode` row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Integration {
+    MailOut,
+    MailIn,
+    Labels,
+    Stripe,
+    Telnyx,
+    Meta,
+    HuggingFace,
+}
+
+impl Integration {
+    /// Every integration, in console order.
+    pub const ALL: [Integration; 7] = [
+        Integration::MailOut,
+        Integration::MailIn,
+        Integration::Labels,
+        Integration::Stripe,
+        Integration::Telnyx,
+        Integration::Meta,
+        Integration::HuggingFace,
+    ];
+
+    /// Its `<area>.mode` config key.
+    pub fn key(self) -> &'static str {
+        match self {
+            Integration::MailOut => keys::MAILER_MODE,
+            Integration::MailIn => keys::MAIL_MODE,
+            Integration::Labels => keys::LABELS_MODE,
+            Integration::Stripe => keys::STRIPE_MODE,
+            Integration::Telnyx => keys::TELNYX_MODE,
+            Integration::Meta => keys::META_MODE,
+            Integration::HuggingFace => keys::HF_MODE,
+        }
+    }
+
+    /// Stable wire id (admin API, ribbon).
+    pub fn slug(self) -> &'static str {
+        match self {
+            Integration::MailOut => "mail_out",
+            Integration::MailIn => "mail_in",
+            Integration::Labels => "labels",
+            Integration::Stripe => "stripe",
+            Integration::Telnyx => "telnyx",
+            Integration::Meta => "meta",
+            Integration::HuggingFace => "hf",
+        }
+    }
+
+    /// What staff read on the FAKE ribbon.
+    pub fn label(self) -> &'static str {
+        match self {
+            Integration::MailOut => "Outgoing email",
+            Integration::MailIn => "Incoming email",
+            Integration::Labels => "FedEx/USPS labels",
+            Integration::Stripe => "Stripe",
+            Integration::Telnyx => "Telnyx calls",
+            Integration::Meta => "Meta Model API",
+            Integration::HuggingFace => "Hugging Face",
+        }
+    }
+
+    fn index(self) -> usize {
+        Integration::ALL
+            .iter()
+            .position(|i| *i == self)
+            .expect("every integration is in ALL")
+    }
+}
+
+/// An integration's mode (`<area>.mode` row text).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Fake,
+    Sandbox,
+    Live,
+}
+
+impl Mode {
+    /// Parse the row text; anything else is `None` (the loader warns).
+    pub fn parse(input: &str) -> Option<Self> {
+        match input.trim() {
+            "fake" => Some(Mode::Fake),
+            "sandbox" => Some(Mode::Sandbox),
+            "live" => Some(Mode::Live),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Mode::Fake => "fake",
+            Mode::Sandbox => "sandbox",
+            Mode::Live => "live",
+        }
+    }
+}
+
+/// The loaded `<area>.mode` rows plus this boot's fake guard. The
+/// default (every row unset, guard closed) is today's behaviour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Modes {
+    explicit: [Option<Mode>; 7],
+    /// True when this boot may run fakes ([`fakes_allowed`]); the admin
+    /// config PUT refuses a `fake` value while it is false, so a
+    /// production console can never save a row that would stop its
+    /// next boot.
+    pub fakes_allowed: bool,
+}
+
+impl Modes {
+    /// The row as loaded (`None`: unset, today's behaviour).
+    pub fn get(&self, integration: Integration) -> Option<Mode> {
+        self.explicit[integration.index()]
+    }
+
+    /// True when this integration runs its fake.
+    pub fn is_fake(&self, integration: Integration) -> bool {
+        self.get(integration) == Some(Mode::Fake)
+    }
+
+    /// Every integration running its fake, in console order.
+    pub fn fakes(&self) -> Vec<Integration> {
+        Integration::ALL
+            .into_iter()
+            .filter(|i| self.is_fake(*i))
+            .collect()
+    }
+
+    /// Builder: set one integration's mode (tests and the loader).
+    pub fn with(mut self, integration: Integration, mode: Mode) -> Self {
+        self.explicit[integration.index()] = Some(mode);
+        self
+    }
+}
+
+/// The production public host: never a staging target, whatever the
+/// environment label says.
+pub const PRODUCTION_HOST: &str = "andrii.ai";
+
+/// The fake guard: fakes run only when every bind IP is loopback (the
+/// dev-seam rule, applied in every build profile), or on a staging
+/// target — `APOSTILLE_ENV_LABEL=staging`, which only the staging boot
+/// sets — whose public host is not [`PRODUCTION_HOST`]. Pure over its
+/// inputs so both directions unit-test.
+pub fn fakes_allowed(
+    bind: std::net::IpAddr,
+    bind6: Option<std::net::IpAddr>,
+    env_label: Option<&str>,
+    public_host: &str,
+) -> bool {
+    if RuntimeConfig::dev_seam_allowed(true, bind, bind6) {
+        return true;
+    }
+    let host = public_host
+        .trim()
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    env_label == Some("staging") && !host.is_empty() && host != PRODUCTION_HOST
 }
 
 /// The call-cache rows (`docs/ops/call-cache.md`), read per call so
@@ -1594,6 +1790,8 @@ pub struct RuntimeConfig {
     /// CAN-SPAM postal footer (operator-supplied; digests refuse to
     /// send while empty).
     pub notify_postal_address: String,
+    /// W-3 `<area>.mode` rows plus this boot's fake guard.
+    pub modes: Modes,
 }
 
 impl Default for RuntimeConfig {
@@ -1676,6 +1874,12 @@ impl Default for RuntimeConfig {
             notify_enabled: false,
             notify_daily_cap: 3,
             notify_postal_address: String::new(),
+            // No mode rows; the default binds are loopback, so the
+            // guard is open (exactly what `load` computes for them).
+            modes: Modes {
+                fakes_allowed: true,
+                ..Modes::default()
+            },
         }
     }
 }
@@ -2359,6 +2563,32 @@ impl RuntimeConfig {
             &mut warnings,
             &mut cfg.notify_postal_address,
         )?;
+        // W-3 modes: a bad value warns and keeps today's behaviour.
+        for integration in Integration::ALL {
+            let key = integration.key();
+            match get_text_for_job(conn, kek, key) {
+                Ok(None) => {}
+                Ok(Some(v)) if v.trim().is_empty() => {}
+                Ok(Some(v)) => match Mode::parse(&v) {
+                    Some(mode) => cfg.modes = cfg.modes.with(integration, mode),
+                    None => warnings.push(format!(
+                        "{key}: {v:?} is not fake|sandbox|live; using today's switches"
+                    )),
+                },
+                Err(ConfigError::BadValue(why)) => {
+                    warnings.push(format!("{key}: {why}; using today's switches"));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        let env_label = std::env::var("APOSTILLE_ENV_LABEL").ok();
+        cfg.modes.fakes_allowed =
+            fakes_allowed(cfg.bind, cfg.bind6, env_label.as_deref(), &cfg.public_host);
+        if !cfg.modes.fakes().is_empty() && !cfg.modes.fakes_allowed {
+            return Err(ConfigError::BadValue(
+                "a fake mode is set; fakes run only on loopback binds or a staging target, never production",
+            ));
+        }
         // H6 fix baked into the migration: a persistent dev-bypass
         // flag must never boot a release binary (spec §3) — except on
         // a loopback-only host, where local `up` runs keep the seam.
@@ -2425,8 +2655,8 @@ mod runtime_tests {
     }
 
     #[test]
-    fn registry_holds_96_typed_keys() {
-        assert_eq!(ALL_KEYS.len(), 96);
+    fn registry_holds_103_typed_keys() {
+        assert_eq!(ALL_KEYS.len(), 103);
         for (key, _) in ALL_KEYS {
             assert!(valid_key_name(key), "key {key:?} must be a valid name");
         }
@@ -2443,7 +2673,8 @@ mod runtime_tests {
         // P373 removes tls.client_ca_file and net.admin_https_port (text)
         // and admin.require_cert (bool). P391 adds three text keys
         // (paths.meta_cache_dir, paths.fetch_cache_dir, meta.cache_mode);
-        // P392 adds worker.token (secret).
+        // P392 adds worker.token (secret). W-3 adds seven `<area>.mode`
+        // text keys.
         let mut counts = (0, 0, 0);
         for (_, key_type) in ALL_KEYS {
             match key_type {
@@ -2452,7 +2683,73 @@ mod runtime_tests {
                 ConfigType::Secret => counts.2 += 1,
             }
         }
-        assert_eq!(counts, (12, 66, 18));
+        assert_eq!(counts, (12, 73, 18));
+        for integration in Integration::ALL {
+            assert!(
+                ALL_KEYS.contains(&(integration.key(), ConfigType::Text)),
+                "{} is registered as text",
+                integration.key()
+            );
+        }
+    }
+
+    #[test]
+    fn fakes_are_refused_off_loopback_and_on_production() {
+        let lo: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+        let lo6: std::net::IpAddr = "::1".parse().unwrap();
+        let any: std::net::IpAddr = "0.0.0.0".parse().unwrap();
+        let lan6: std::net::IpAddr = "2001:db8::1".parse().unwrap();
+        // Every bind loopback: allowed, whatever the label or host.
+        assert!(fakes_allowed(lo, None, None, PRODUCTION_HOST));
+        assert!(fakes_allowed(lo, Some(lo6), Some("judge"), "x.test"));
+        // One public bind (v4 or v6) closes it …
+        assert!(!fakes_allowed(any, None, None, "staging.example.test"));
+        assert!(!fakes_allowed(lo, Some(lan6), None, "staging.example.test"));
+        assert!(!fakes_allowed(any, None, Some("local"), "x.test"));
+        // … unless the boot is a labelled staging target that is not
+        // the production host.
+        assert!(fakes_allowed(
+            any,
+            None,
+            Some("staging"),
+            "staging.example.test"
+        ));
+        assert!(!fakes_allowed(any, None, Some("staging"), PRODUCTION_HOST));
+        assert!(!fakes_allowed(any, None, Some("staging"), "Andrii.AI."));
+        assert!(!fakes_allowed(any, None, Some("staging"), " "));
+    }
+
+    #[test]
+    fn mode_rows_load_and_a_public_fake_refuses_the_boot() {
+        let conn = memory();
+        let kek = Kek::generate();
+        // Unset: today's behaviour, no fakes.
+        let (cfg, _) = RuntimeConfig::load(&conn, &kek).expect("load");
+        assert!(cfg.modes.fakes().is_empty());
+        assert!(cfg.modes.fakes_allowed, "default binds are loopback");
+        put(&conn, &kek, keys::MAILER_MODE, ConfigType::Text, b"fake");
+        put(&conn, &kek, keys::LABELS_MODE, ConfigType::Text, b" fake ");
+        put(&conn, &kek, keys::STRIPE_MODE, ConfigType::Text, b"sandbox");
+        put(&conn, &kek, keys::TELNYX_MODE, ConfigType::Text, b"bogus");
+        let (cfg, warnings) = RuntimeConfig::load(&conn, &kek).expect("loopback fakes boot");
+        assert_eq!(
+            cfg.modes.fakes(),
+            vec![Integration::MailOut, Integration::Labels]
+        );
+        assert_eq!(cfg.modes.get(Integration::Stripe), Some(Mode::Sandbox));
+        assert_eq!(cfg.modes.get(Integration::Telnyx), None);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains(keys::TELNYX_MODE), "{warnings:?}");
+        // The same rows on a public bind refuse the boot.
+        put(&conn, &kek, keys::NET_BIND, ConfigType::Text, b"0.0.0.0");
+        let err = RuntimeConfig::load(&conn, &kek).expect_err("public fake must refuse");
+        assert!(err.to_string().contains("fake"), "{err}");
+        // With no fake rows the public bind boots as before.
+        delete_value(&conn, keys::MAILER_MODE).expect("delete");
+        delete_value(&conn, keys::LABELS_MODE).expect("delete");
+        let (cfg, _) = RuntimeConfig::load(&conn, &kek).expect("public boot without fakes");
+        assert!(!cfg.modes.fakes_allowed);
+        assert!(cfg.modes.fakes().is_empty());
     }
 
     #[test]

@@ -31,6 +31,7 @@ mod customer_labels;
 mod demo_precheck;
 mod draft;
 mod factcheck;
+mod fake;
 mod fedex_live;
 mod first_source;
 mod follow;
@@ -336,6 +337,9 @@ struct AppState {
     /// Meta deletion-status base (origin-derived, never
     /// configured): `{auth.origin}/auth/meta/delete-status`.
     meta_delete_status_base: String,
+    /// W-3 integration modes (`<area>.mode` rows) and the boot's fake
+    /// guard: which outside services run their local fake.
+    fakes: config::Modes,
 }
 
 /// Full-request budget, routing to response head: slow clients
@@ -472,6 +476,7 @@ fn app(static_dir: &str, spa_dir: &str, store_root: PathBuf, acme_dir: &str) -> 
             notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
         },
         static_dir,
         spa_dir,
@@ -1180,6 +1185,16 @@ async fn main() {
             "WARNING: admin.mtls_off — local-dev seams on (loopback admin hosts, test cert header; local dev only)"
         );
     }
+    // W-3: say loudly which outside services run their local fake
+    // (the loader already refused fakes on a public, non-staging host).
+    let fakes = cfg.modes.fakes();
+    if !fakes.is_empty() {
+        let names: Vec<&str> = fakes.iter().map(|i| i.label()).collect();
+        eprintln!(
+            "FAKE MODE — {}: demo stand-ins only; nothing is sent, shipped or charged",
+            names.join(", ")
+        );
+    }
     // Host routing, CSRF origins and the admin passkey origin follow
     // `net.public_host` (admin is `admin.<public_host>`), fixed once here.
     if !auth::init_hosts(&cfg.public_host) {
@@ -1296,6 +1311,7 @@ async fn main() {
         notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
         notify_base: format!("{pub_origin}/apostille"),
         meta_delete_status_base: format!("{pub_origin}/auth/meta/delete-status"),
+        fakes: cfg.modes,
     };
     // F2: the effective allowlist lands in the boot log at INFO, so
     // "which ranges are live" never needs a config dump to answer.
@@ -4032,6 +4048,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
         };
         Fixture { _tmp: tmp, state }
     }
@@ -5145,6 +5162,71 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn fake_modes_show_on_the_badge_and_never_save_on_a_closed_guard() {
+        // W-3: the version badge names every fake, and a host whose
+        // guard is closed (public bind, not staging) refuses to save a
+        // `fake` mode row; any other value saves as before.
+        let mut fx = fixture();
+        make_session(&fx.state.store_root, "staff-1", auth::Role::Staff);
+        let conn = db::open(&Store::new(&fx.state.store_root)).unwrap();
+        config::record_kek(&conn, 1, "test-cred", 100).unwrap();
+        drop(conn);
+        fx.state.fakes = config::Modes::default()
+            .with(config::Integration::MailOut, config::Mode::Fake)
+            .with(config::Integration::Labels, config::Mode::Fake)
+            .with(config::Integration::Stripe, config::Mode::Sandbox);
+        let res = admin_router_for(&fx.state)
+            .oneshot(admin_request(
+                "GET",
+                "/apostille/api/v1/admin/version",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        let v = json_body(res).await;
+        assert_eq!(
+            v["fakes"],
+            serde_json::json!([
+                {"slug": "mail_out", "label": "Outgoing email"},
+                {"slug": "labels", "label": "FedEx/USPS labels"},
+            ])
+        );
+        let put = |state: &AppState, value: &str| {
+            admin_router_for(state).oneshot(admin_request(
+                "PUT",
+                "/apostille/api/v1/config/labels.mode",
+                Some("admin.andrii.ai"),
+                Some("staff-1"),
+                Some("csrf-token"),
+                Some("https://admin.andrii.ai"),
+                Some(serde_json::json!({"type": "text", "value": value})),
+            ))
+        };
+        assert!(!fx.state.fakes.fakes_allowed);
+        let res = put(&fx.state, "fake").await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            json_body(res).await["error"]
+                .as_str()
+                .unwrap()
+                .contains("loopback")
+        );
+        assert_eq!(
+            put(&fx.state, "sandbox").await.unwrap().status(),
+            StatusCode::OK
+        );
+        fx.state.fakes.fakes_allowed = true;
+        assert_eq!(
+            put(&fx.state, " fake").await.unwrap().status(),
+            StatusCode::OK
+        );
     }
 
     #[tokio::test]

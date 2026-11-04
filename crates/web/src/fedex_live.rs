@@ -799,6 +799,7 @@ mod tests {
             notify_limits: std::sync::Arc::new(crate::passkey::RateBuckets::default()),
             notify_base: "https://example.test/apostille".to_string(),
             meta_delete_status_base: "https://example.test/auth/meta/delete-status".to_string(),
+            fakes: config::Modes::default(),
             fedex_live: FedexLiveState::default(),
         };
         (tmp, app_state)

@@ -28,6 +28,7 @@
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import { installSessionGuard, signInHref, SIGN_IN_PATHS } from '#lib/admin/http-errors.js';
 	import { cookieValue } from '#lib/admin/staff-auth.js';
+	import { fakeRibbon } from '#lib/admin/fake-client.js';
 	import type { Component } from 'svelte';
 	import type { LayoutProps } from './$types';
 
@@ -92,7 +93,9 @@
 	const bare = $derived(BARE.includes(page.url.pathname));
 	const current = $derived(ALL.find((i) => page.url.pathname.startsWith(i.href)) ?? null);
 
-	let env = $state<{ version: string; env: string } | null>(null);
+	let env = $state<{ version: string; env: string; fakes?: unknown } | null>(null);
+	// W-3: which outside services run their local fake (never on production).
+	const fakeText = $derived(fakeRibbon(env?.fakes));
 	let live = $state(false);
 	let paletteOpen = $state(false);
 	let signingOut = $state(false);
@@ -307,6 +310,15 @@
 					{/if}
 				</div>
 			</header>
+			{#if fakeText}
+				<p
+					class="m-0 border-b border-changed bg-changed-bg px-4 py-2 text-sm font-semibold text-changed"
+					role="status"
+					data-testid="fake-ribbon"
+				>
+					{fakeText}
+				</p>
+			{/if}
 			<div class="min-w-0 flex-1 p-4 md:p-8">
 				{@render children()}
 			</div>

@@ -287,3 +287,39 @@ socket peer is the caller. No peer address fails closed.
   too (the flag still gates the loopback-host and test-header dev
   seams). Enrolment ceremonies no longer require a presented
   cert; a presented live cert still binds when present.
+
+## 9. Fake mode (W-3)
+
+Every outside service has one `<area>.mode` row (text): `fake`,
+`sandbox` or `live`. A fake is a local stand-in: nothing is sent,
+shipped or charged, and its output is marked as fake.
+
+| Row | Integration | `fake` means |
+|---|---|---|
+| `mailer.mode` | outgoing email (magic links, digests, outreach) | kept in the store's fake outbox (admin **Outbox**), never sent |
+| `mail.mode` | incoming email (Gmail poll) | no poll; admin **Compose** injects mail through the poller's capture path |
+| `labels.mode` | FedEx and USPS labels | demo PDF stamped "DEMO — NOT POSTAGE", fake-range tracking number |
+| `stripe.mode` | Stripe checkout + webhooks | local checkout, DEMO receipt, webhook signed with a local secret |
+| `telnyx.mode` | Telnyx calls | a recorded WAV plays into the transcribe step |
+| `meta.mode` | Meta Model API | the call cache in `replay-only` mode over the recorded corpus |
+| `hf.mode` | Hugging Face weights | no download; Glimmer verdicts from recorded files |
+
+Rules (`config::Modes`, `config::fakes_allowed`):
+
+- Unset ≡ today's behaviour, exactly. `sandbox` and `live` never
+  override the switches that already choose between them
+  (`labels.live`, `labels.customer_live`, `usps.live`, the Stripe
+  key's `sk_test_`/`sk_live_` prefix, `mailer.provider`): the mode
+  row can add a fake, never raise anything to live. A value other
+  than the three warns and counts as unset.
+- **Guard.** Any `fake` row refuses the boot unless every bind IP is
+  loopback (the dev-seam rule, in every build profile) or the boot
+  is a staging target: `APOSTILLE_ENV_LABEL=staging` (set only by
+  the staging boot) with a `net.public_host` other than `andrii.ai`.
+  Production can never run a fake.
+- The admin config PUT and the setup-wizard PUT refuse to save a
+  `fake` row while this boot's guard is closed (422), so a
+  production console cannot save a row its next boot would refuse.
+- The boot prints `FAKE MODE — <integrations>`; `GET
+  /admin/version` lists them as `fakes`, and the console shows a
+  FAKE ribbon naming each one on every screen.

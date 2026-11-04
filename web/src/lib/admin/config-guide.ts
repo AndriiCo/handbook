@@ -1235,6 +1235,89 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				applies: 'call'
 			}
 		]
+	},
+	{
+		id: 'fake-modes',
+		title: 'Fake mode',
+		summary:
+			'One mode per outside service: fake (a local stand-in: nothing is sent, shipped or charged), sandbox or live. An unset row keeps today\'s behaviour, and sandbox or live never override the switches that already choose between them.',
+		setup: [
+			'Fakes run only when every bind is loopback or on a staging target. A production host refuses to boot with a fake row, and this page refuses to save one there.',
+			'Set the rows to fake, then Restart service. The console shows a FAKE ribbon naming every fake.',
+			'Fake output is marked: the outbox says it was never sent, labels are stamped DEMO — NOT POSTAGE, receipts say DEMO.'
+		],
+		keys: [
+			{
+				key: 'mailer.mode',
+				type: 'text',
+				label: 'Outgoing email mode',
+				what: 'fake keeps every outgoing email (magic links, follower digests, outreach) in the fake outbox in the store instead of sending it; staff read them on the Outbox screen. sandbox and live leave mailer.provider in charge.',
+				how: 'Leave unset on production. Set fake for a demo or a judge run, then restart.',
+				format: 'fake, sandbox or live. Unset keeps today\'s switches in charge.',
+				default: 'unset',
+				applies: 'boot'
+			},
+			{
+				key: 'mail.mode',
+				type: 'text',
+				label: 'Incoming email mode',
+				what: 'fake stops the Gmail poll and opens the Compose screen: staff write a reply or an authority notice, choose DMARC pass or fail, and it is captured through the same sender and trust rules as polled mail. sandbox and live poll Gmail as before.',
+				how: 'Leave unset on production. Set fake for a demo or a judge run, then restart.',
+				format: 'fake, sandbox or live. Unset keeps today\'s switches in charge.',
+				default: 'unset',
+				applies: 'boot'
+			},
+			{
+				key: 'labels.mode',
+				type: 'text',
+				label: 'Label mode',
+				what: 'fake answers FedEx and USPS label buys with a demo PDF stamped DEMO — NOT POSTAGE and a tracking number from a reserved fake range; no carrier is called. sandbox and live leave labels.live, labels.customer_live and usps.live in charge (off is the carriers\' sandbox).',
+				how: 'Leave unset on production. Set fake for a demo or a judge run, then restart.',
+				format: 'fake, sandbox or live. Unset keeps today\'s switches in charge.',
+				default: 'unset',
+				applies: 'boot'
+			},
+			{
+				key: 'stripe.mode',
+				type: 'text',
+				label: 'Stripe mode',
+				what: 'fake runs checkout locally: no Stripe call, a receipt marked DEMO, and the payment webhook signed with a local secret through the real webhook handler. sandbox and live leave the key in charge (a test key is the sandbox).',
+				how: 'Leave unset on production. Set fake for a demo or a judge run, then restart.',
+				format: 'fake, sandbox or live. Unset keeps today\'s switches in charge.',
+				default: 'unset',
+				applies: 'boot'
+			},
+			{
+				key: 'telnyx.mode',
+				type: 'text',
+				label: 'Telnyx mode',
+				what: 'fake places no call: a recorded WAV plays into the transcribe step. sandbox and live call through Telnyx as before.',
+				how: 'Leave unset on production. Set fake for a demo or a judge run, then restart.',
+				format: 'fake, sandbox or live. Unset keeps today\'s switches in charge.',
+				default: 'unset',
+				applies: 'boot'
+			},
+			{
+				key: 'meta.mode',
+				type: 'text',
+				label: 'Meta Model API mode',
+				what: 'fake is the call cache in replay-only mode: answers come from the recorded corpus and a request with no recorded answer fails; no model is called. It overrides meta.cache_mode.',
+				how: 'Leave unset on production. Set fake for a demo or a judge run, then restart.',
+				format: 'fake, sandbox or live. Unset keeps today\'s switches in charge.',
+				default: 'unset',
+				applies: 'boot'
+			},
+			{
+				key: 'hf.mode',
+				type: 'text',
+				label: 'Hugging Face mode',
+				what: 'fake skips the weights download; Glimmer verdicts come from the recorded files. sandbox and live download the weights as before.',
+				how: 'Leave unset on production. Set fake for a demo or a judge run, then restart.',
+				format: 'fake, sandbox or live. Unset keeps today\'s switches in charge.',
+				default: 'unset',
+				applies: 'boot'
+			}
+		]
 	}
 ];
 
