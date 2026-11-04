@@ -235,13 +235,23 @@ allow, where to get the file. You read the terms in your own browser
 and tick acceptance; the file records your name, the time, the terms
 version and each file's sha256. Then **Fetch** (enabled only once you
 have ticked) downloads the file from its source URL (HTTPS only,
-20 MB, 30 s), takes the named entry out of a zip (`unzip`), refuses an
-SVG with a script, an `on…=` handler, a `<foreignObject>` or an outside
-link, writes it to `private/brand/` and adds its hash to your
-acceptance. Sources live in `brand.sources` (per file, overridable);
-the only default is Google's pre-approved bundle (checked 2026-11-04),
-whose current SVGs carry a `<foreignObject>` and are refused. Apple
-(.dmg), FIDO (request form), Meta (guidelines to accept) and Vogun
+20 MB, 30 s), takes the named entry out of a zip (`unzip`) or an Apple
+disk image (read in memory, no mount), refuses an SVG with a script, an
+`on…=` handler, an outside link or a `<foreignObject>` holding anything
+but empty styled divs (Figma's gradient paint), writes it to
+`private/brand/` and adds its hash to your acceptance. Uploads meet the
+same check. Sources live in `brand.sources` (per file, overridable).
+Defaults (downloaded and opened 2026-11-04):
+
+| File | Source | Entry |
+|---|---|---|
+| `google.svg` | `https://developers.google.com/static/identity/images/signin-assets.zip` | `Theme=Neutral, Show text=No, Shape=Square, Platform=Android+Web.svg` |
+| `apple.svg` | `https://devimages-cdn.apple.com/design/resources/download/Logo-Sign-in-with-Apple.dmg` | `Logo - SIWA - Left-aligned - Black - Medium.svg` |
+| `passkey.svg` | `https://fidoalliance.org/wp-content/uploads/2024/01/FIDO_Passkey_mark_A.zip` | `FIDO_Passkey_mark_A_black.svg` |
+
+FIDO's agreement is formed by its download form
+(<https://fidoalliance.org/passkey-download/>): complete it before you
+tick acceptance. Meta (guidelines to accept on its site) and Vogun
 (purchased) stay manual: download in your browser, drop the file in,
 and tick acceptance again. Builds ship only files whose hash matches a
 recorded acceptance (from `private/brand/`).
