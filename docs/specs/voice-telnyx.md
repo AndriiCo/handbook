@@ -614,8 +614,9 @@ Flow:
    `telnyx.webrtc_connection_id` is unset and 409 when the staff
    member has no phone yet. Otherwise it dials the staff phone's SIP
    URI with `client_state` = base64 of the office number, stores that
-   leg as `voice_call.browser_leg`, and leaves `call_control_id` as
-   the placeholder `pending-office`. The office number is not stored
+   leg in `voice_browser_leg` (its own table, so older binaries still
+   open the store and a rollback needs no restore), and leaves
+   `call_control_id` as the placeholder `pending-office`. The office number is not stored
    (only `to_hash`, as before).
 3. **Browser answers.** The page answers the ringing call only once
    the dial response named the call (an unexpected ring is refused

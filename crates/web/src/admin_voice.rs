@@ -3260,13 +3260,8 @@ mod tests {
         let store = Store::new(&fx.state.store_root);
         let conn = db::open(&store).unwrap();
         let call_id = dialed["call_id"].as_str().unwrap();
-        let (status, office, browser): (String, String, String) = conn
-            .query_row(
-                "SELECT status, call_control_id, browser_leg FROM voice_call WHERE id = ?1",
-                [call_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .unwrap();
+        let row = voice::store::get_call(&conn, call_id).unwrap().unwrap();
+        let (status, office, browser) = (row.status, row.call_control_id, row.browser_leg);
         // The one Telnyx dial rang staff-1's browser; the office is
         // dialed only when the browser answers.
         assert_eq!(status, "queued");

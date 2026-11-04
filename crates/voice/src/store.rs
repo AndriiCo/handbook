@@ -149,21 +149,15 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         )?;
     }
     // Browser audio: the staff browser leg bridged to the office leg.
-    let has_browser_leg: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('voice_call')
-         WHERE name = 'browser_leg'",
-        [],
-        |row| row.get(0),
-    )?;
-    if has_browser_leg == 0 {
-        conn.execute(
-            "ALTER TABLE voice_call ADD COLUMN browser_leg TEXT NOT NULL DEFAULT ''",
-            [],
-        )?;
-    }
+    // Its own table (not a voice_call column) so older binaries still
+    // open the store and a rollback needs no backup restore.
     conn.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_voice_call_browser_leg
-           ON voice_call(browser_leg);
+        "CREATE TABLE IF NOT EXISTS voice_browser_leg(
+           call_id TEXT PRIMARY KEY REFERENCES voice_call(id),
+           browser_leg TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_voice_browser_leg
+           ON voice_browser_leg(browser_leg);
          CREATE TABLE IF NOT EXISTS voice_staff_phone(
            user_id TEXT PRIMARY KEY,
            credential_id TEXT NOT NULL,
@@ -209,7 +203,7 @@ pub fn insert_call(conn: &Connection, call: &NewCall<'_>) -> Result<()> {
 /// Returns rusqlite errors.
 pub fn set_browser_leg(conn: &Connection, id: &str, leg: &str) -> Result<()> {
     conn.execute(
-        "UPDATE voice_call SET browser_leg = ?2 WHERE id = ?1",
+        "INSERT OR REPLACE INTO voice_browser_leg(call_id, browser_leg) VALUES (?1, ?2)",
         params![id, leg],
     )?;
     Ok(())
@@ -306,8 +300,9 @@ pub fn get_call(conn: &Connection, id: &str) -> Result<Option<VoiceCall>> {
                 to_hash, authority, status, status_detail,
                 questions_json, recording_sha, recording_status,
                 created_by, created_at, updated_at, ended_at,
-                script_id, browser_leg
-         FROM voice_call WHERE id = ?1",
+                script_id, COALESCE(b.browser_leg, '')
+         FROM voice_call LEFT JOIN voice_browser_leg b ON b.call_id = voice_call.id
+         WHERE id = ?1",
         [id],
         row_to_call,
     )
@@ -325,9 +320,9 @@ pub fn get_call_by_leg(conn: &Connection, leg: &str) -> Result<Option<VoiceCall>
                 to_hash, authority, status, status_detail,
                 questions_json, recording_sha, recording_status,
                 created_by, created_at, updated_at, ended_at,
-                script_id, browser_leg
-         FROM voice_call
-         WHERE call_control_id = ?1 OR (browser_leg != '' AND browser_leg = ?1)",
+                script_id, COALESCE(b.browser_leg, '')
+         FROM voice_call LEFT JOIN voice_browser_leg b ON b.call_id = voice_call.id
+         WHERE call_control_id = ?1 OR (?1 != '' AND b.browser_leg = ?1)",
         [leg],
         row_to_call,
     )
@@ -345,8 +340,9 @@ pub fn list_calls(conn: &Connection, limit: i64) -> Result<Vec<VoiceCall>> {
                 to_hash, authority, status, status_detail,
                 questions_json, recording_sha, recording_status,
                 created_by, created_at, updated_at, ended_at,
-                script_id, browser_leg
-         FROM voice_call ORDER BY created_at DESC, id DESC LIMIT ?1",
+                script_id, COALESCE(b.browser_leg, '')
+         FROM voice_call LEFT JOIN voice_browser_leg b ON b.call_id = voice_call.id
+         ORDER BY created_at DESC, id DESC LIMIT ?1",
     )?;
     stmt.query_map([limit], row_to_call)?.collect()
 }
