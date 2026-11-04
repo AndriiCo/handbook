@@ -7,6 +7,11 @@ edition = "2024"
 contracts = { path = "../contracts" }
 handbook-store = { path = "../handbook-store" }
 ingest = { path = "../ingest" }
+notify = { path = "../notify" }
+# Body extraction: nested multiparts, every charset, RFC 2047 words.
+mail-parser = { version = "0.11", features = ["full_encoding"] }
+# PDF attachment text layers (the forms crate's version).
+lopdf = { version = "0.44", default-features = false }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde_json = "1"
 base64 = "0.22"

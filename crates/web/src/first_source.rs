@@ -1290,6 +1290,12 @@ pub fn admin_router(state: AppState) -> Router {
             "/apostille/api/v1/admin/first-source/emails/{id}/discard",
             post(discard_email),
         )
+        // Mail health for the admin mail page: the poll that reads the
+        // office's replies to this outreach, and the send budget.
+        .route(
+            "/apostille/api/v1/admin/mail",
+            get(crate::readyz::admin_mail),
+        )
         .with_state(state)
 }
 

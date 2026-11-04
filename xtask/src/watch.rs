@@ -179,8 +179,8 @@ pub fn run_mail(args: &[String]) {
     };
     match mail::poll::poll(&conn, &store, &mut client, &opts) {
         Ok(report) => println!(
-            "mail-poll: listed={} created={} watermark={} reseeded={}",
-            report.listed, report.created, report.watermark, report.reseeded
+            "mail-poll: listed={} created={} suppressed={} watermark={} reseeded={}",
+            report.listed, report.created, report.suppressed, report.watermark, report.reseeded
         ),
         Err(e) => {
             eprintln!("mail-poll: {e}");
