@@ -115,6 +115,9 @@ pub struct Target {
     /// Registry values for this target only (win over `config`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub config: BTreeMap<String, Value>,
+    /// The wizard's last SSH probe of this target's box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probe: Option<super::probe::Probe>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
@@ -907,9 +910,24 @@ mod tests {
             accepted_at: "2026-11-03T18:00:00Z".into(),
             ..Licence::default()
         });
+        file.targets.get_mut("staging").unwrap().probe = Some(super::super::probe::parse(
+            "plant",
+            "2026-11-04T00:00:00Z",
+            "hostname=plant\nkernel=Linux 6.8.0 x86_64\ncpus=16\ngpu=GPU 0: synthetic\n",
+        ));
         let yaml = serde_yaml_ng::to_string(&file).unwrap();
         let back: SetupFile = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(back, file);
+    }
+
+    #[test]
+    fn files_written_before_the_wizard_map_still_load() {
+        let old = "schema: 1\ndefault_targets: [local]\ntargets:\n  local:\n    kind: local\n    ports: {public: 18318, admin: 18319}\n  staging:\n    kind: plant\n    ssh: plant\n";
+        let file: SetupFile = serde_yaml_ng::from_str(old).unwrap();
+        file.validate().unwrap();
+        assert!(file.targets["staging"].probe.is_none());
+        let again = serde_yaml_ng::to_string(&file).unwrap();
+        assert!(!again.contains("probe"), "{again}");
     }
 
     #[test]

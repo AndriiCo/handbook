@@ -172,10 +172,39 @@ function targetPanel(name) {
     el("div", { class: "panel" }, el("h2", {}, `${name} `, el("span", { class: "badge" }, t.kind)), fields,
       el("h3", {}, "Deploy keys for hal (one OpenSSH public key per line; empty: the keys in ssh-agent)"), keys,
       el("h3", {}, "Derived (from the target's shape; not typed)"), derived),
+    t.kind === "plant" || t.kind === "server" ? probePanel(name) : null,
     el("div", { class: "panel" }, el("div", { class: "row" }, el("h2", {}, "Checks"), checkBtn),
       el("p", { class: "muted" }, "No-op calls only: tokens are minted and thrown away, balances read; nothing is bought, sent or charged."), checks),
     runControls(name),
     configPanel(name));
+}
+
+// ---------------------------------------------------------- box probe
+const gb = mb => mb === undefined || mb === null ? null : `${(mb / 1024).toFixed(1)} GB`;
+
+function probeFacts(p) {
+  return [
+    ["Host", p.hostname], ["User", p.user], ["OS", p.os], ["Kernel", p.kernel], ["CPUs", p.cpus],
+    ["RAM", gb(p.ram_mb)], ["Free disk (home)", gb(p.disk_free_mb)],
+    ["GPU", (p.gpus || []).join("; ") || "none"], ["Docker", p.docker || "not installed"],
+  ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+}
+
+function probePanel(name) {
+  const t = S.targets[name];
+  const host = el("input", { type: "text", id: `probe-${name}`, value: (t.probe && t.probe.via) || t.ssh || "", placeholder: "host name or ssh alias", autocomplete: "off" });
+  const out = el("div", {}, t.probe ? [
+    el("table", {}, probeFacts(t.probe).map(([k, v]) => el("tr", {}, el("th", {}, k), el("td", { class: "mono" }, String(v))))),
+    el("p", { class: "muted" }, `Probed ${t.probe.via} at ${t.probe.at}`)] : null);
+  const btn = el("button", { class: "secondary", onclick: async () => {
+    btn.disabled = true;
+    out.replaceChildren(el("p", { class: "muted" }, `ssh ${host.value.trim()} (keys only, 10 s to connect)…`));
+    try { await api("/api/probe", { target: name, host: host.value.trim() }); await refresh(); }
+    catch (e) { out.replaceChildren(el("pre", { class: "log fail" }, e.message)); btn.disabled = false; }
+  } }, "Probe over SSH");
+  return el("div", { class: "panel" }, el("h2", {}, "Box"),
+    el("p", { class: "muted" }, "Logs in with your SSH keys only (no password prompt, no new host keys) and reads the OS, CPUs, memory, free disk, GPU and Docker. Cached in the setup file."),
+    el("label", { for: `probe-${name}` }, "SSH host or alias"), el("div", { class: "row" }, el("div", { style: "flex: 1 1 200px" }, host), btn), out);
 }
 
 function checkTable(results) {

@@ -165,6 +165,14 @@ production plan is pinned by a golden test
 with `--operator-order "<who, when, what>"`, recorded in
 `private/setup-log.jsonl`.
 
+**Box probe.** A plant or server target's tab has **Probe over SSH**:
+it logs in with your keys only (`BatchMode=yes`,
+`StrictHostKeyChecking=yes`, 10 s to connect) and reads the host
+name, user, OS, kernel and CPU (`uname -srm`), CPU count, memory, free
+disk in the home directory, GPUs (`nvidia-smi -L`) and the Docker
+version, and caches them in `targets.<name>.probe`. It never accepts a
+host key: for a new host, run `ssh <host>` once in a terminal first.
+
 **Builds.** Each target's CPU is detected (`uname -m` over SSH, or the
 Docker daemon's architecture). The same triple as this machine builds
 with `cargo build`, anything else with `cargo zigbuild` (zig 0.17).

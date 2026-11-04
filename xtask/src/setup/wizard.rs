@@ -9,9 +9,9 @@
 //! through sops (or, for the plain local-only `.local/setup.yaml`, as
 //! 0600 YAML), so the file on disk is always the truth.
 //!
-//! The page edits targets and config values, runs the key checks, runs
-//! a target with its phases and log streaming live (SSE), and walks the
-//! brand-licence step.
+//! The page edits targets and config values, runs the key checks,
+//! probes a target's box over SSH, runs a target with its phases and
+//! log streaming live (SSE), and walks the brand-licence step.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -202,6 +202,7 @@ fn state_json(app: &App, inner: &Inner) -> Value {
                     "ssh": t.ssh, "ssh_admin": t.ssh_admin, "public_host": t.public_host,
                     "bind": t.bind, "bind6": t.bind6, "dns": t.dns, "timers": t.timers,
                     "platform": t.platform, "deploy_keys": t.deploy_keys,
+                    "probe": t.probe,
                     "config": own,
                     "derived": derived,
                 }),
@@ -421,6 +422,56 @@ async fn api_check(
     match tokio::task::spawn_blocking(move || checks::run_target(&f, &req.target)).await {
         Ok(results) => Json(json!({ "results": results })).into_response(),
         Err(_) => deny(StatusCode::INTERNAL_SERVER_ERROR, "checks failed to run"),
+    }
+}
+
+#[derive(Deserialize)]
+struct ProbeReq {
+    target: String,
+    /// The ssh host or alias to probe (the page fills in the target's).
+    host: String,
+}
+
+/// Probe a box over SSH (keys only) and cache what it is on the target.
+async fn api_probe(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Json(req): Json<ProbeReq>,
+) -> Response {
+    if let Err(r) = app.guard(&headers, true) {
+        return r;
+    }
+    if !app
+        .inner
+        .lock()
+        .unwrap()
+        .file
+        .targets
+        .contains_key(&req.target)
+    {
+        return deny(StatusCode::BAD_REQUEST, "no such target");
+    }
+    let host = req.host.trim().to_string();
+    if !super::probe::valid_host(&host) {
+        return deny(
+            StatusCode::BAD_REQUEST,
+            "not a host name or ssh alias (letters, digits and .-_@: only)",
+        );
+    }
+    let at = brand::rfc3339(crate::unix_now());
+    let probe = match tokio::task::spawn_blocking(move || super::probe::run(&host, &at)).await {
+        Ok(Ok(p)) => p,
+        Ok(Err(e)) => return deny(StatusCode::BAD_GATEWAY, &e),
+        Err(_) => return deny(StatusCode::INTERNAL_SERVER_ERROR, "the probe failed to run"),
+    };
+    let mut inner = app.inner.lock().unwrap();
+    let Some(t) = inner.file.targets.get_mut(&req.target) else {
+        return deny(StatusCode::BAD_REQUEST, "no such target");
+    };
+    t.probe = Some(probe.clone());
+    match app.save(&inner) {
+        Ok(()) => Json(json!({ "probe": probe })).into_response(),
+        Err(r) => r,
     }
 }
 
@@ -744,6 +795,7 @@ fn router(app: App) -> Router {
         .route("/api/target", post(api_target))
         .route("/api/operator", post(api_operator))
         .route("/api/check", post(api_check))
+        .route("/api/probe", post(api_probe))
         .route("/api/run", post(api_run))
         .route("/api/events", get(api_events))
         .route("/api/licence", post(api_licence))
@@ -927,5 +979,38 @@ mod tests {
         );
         let (status, _) = send(&app, req("GET", "/?t=tok", "127.0.0.1:4000", false, false)).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "second use refused");
+    }
+
+    fn post(uri: &str, body: &str) -> axum::http::Request<axum::body::Body> {
+        axum::http::Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("host", "127.0.0.1:4000")
+            .header("cookie", "hb_setup=sess")
+            .header("x-setup-csrf", "csrf")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_probe_refuses_option_shaped_hosts_and_unknown_targets() {
+        let app = app();
+        let (status, body) = send(
+            &app,
+            post(
+                "/api/probe",
+                r#"{"target":"staging","host":"-oProxyCommand=sh"}"#,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("not a host name"), "{body}");
+        let (status, _) = send(
+            &app,
+            post("/api/probe", r#"{"target":"nope","host":"plant"}"#),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 }
