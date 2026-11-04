@@ -159,7 +159,7 @@ pub(crate) fn countries(
     if members.len() != 193 {
         return Err(format!("UN page lists {} members, want 193", members.len()));
     }
-    let parties = crate::world::party_entry_into_force(hcch_html);
+    let parties = crate::world::parse_status_table(hcch_html);
     if parties.len() < MIN_PARTIES {
         return Err(format!(
             "HCCH status table lists {} parties (want at least {MIN_PARTIES}); \
@@ -169,7 +169,7 @@ pub(crate) fn countries(
     }
     let mut rows = Vec::new();
     let mut party_codes = HashSet::new();
-    for (name, eif) in parties {
+    for crate::world::PartyRow { name, eif, .. } in parties {
         let iso2 = crate::world::party_iso2(&name).map(str::to_string);
         if let Some(code) = &iso2 {
             party_codes.insert(code.clone());

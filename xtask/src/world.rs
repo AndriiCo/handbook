@@ -61,11 +61,17 @@ const MAX_ATTEMPTS: u32 = 4;
 /// Validation backlog ref for world-index observations/steps.
 const WORLD_REF: &str = "W-7";
 
-/// One status-table row: canonical party name + authority-page sid.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PartyRow {
-    name: String,
-    sid: String,
+/// One status-table row: canonical party name, authority-page sid and
+/// entry into force.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct PartyRow {
+    pub(crate) name: String,
+    pub(crate) sid: String,
+    /// Entry into force (`YYYY-MM-DD`) off the EIF column (5th cell).
+    /// A date in the future marks a state that has joined but cannot
+    /// issue or receive apostilles yet. `None` when the cell is empty or
+    /// unreadable.
+    pub(crate) eif: Option<String>,
 }
 
 /// One `details3` link off an authority index page.
@@ -103,6 +109,8 @@ struct NameHit {
 struct PartyIndex {
     party: String,
     iso2: String,
+    /// Entry into force off the status table (`YYYY-MM-DD`).
+    eif: Option<String>,
     authority_url: String,
     names: Vec<NameHit>,
     urls: Vec<UrlHit>,
@@ -180,11 +188,19 @@ pub fn run(args: &[String]) {
     let mut indexed = Vec::new();
     let mut skipped_no_fixture = 0usize;
     let mut kept_hand_built = 0usize;
+    let mut status_refreshed = 0usize;
     for party in &parties {
         let authority_url = format!(
             "{HCCH_ORIGIN}/en/instruments/conventions/status-table/authority/?sid={}&cid=41",
             party.sid
         );
+        // No authority page this run: the status-table line of the
+        // committed pack still follows the (whole) table.
+        let mut refresh = |index: &PartyIndex| {
+            if refresh_status(&out_dir.join(format!("{}.json", index.iso2)), index) {
+                status_refreshed += 1;
+            }
+        };
         let authority_html = if live {
             match fetch_page(&fetch_cache, &authority_url) {
                 Ok(html) => Some(html),
@@ -199,12 +215,15 @@ pub fn run(args: &[String]) {
                 Ok(html) => Some(html),
                 Err(_) => {
                     skipped_no_fixture += 1;
+                    refresh(&PartyIndex::empty(party, &authority_url));
                     continue;
                 }
             }
         };
         let Some(authority_html) = authority_html else {
-            indexed.push(PartyIndex::empty(party, &authority_url));
+            let index = PartyIndex::empty(party, &authority_url);
+            refresh(&index);
+            indexed.push(index);
             continue;
         };
         let links = parse_authority_links(&authority_html);
@@ -260,7 +279,7 @@ pub fn run(args: &[String]) {
     println!(
         "world-index: parties={parsed_total} processed={} skipped_no_fixture={skipped_no_fixture} \
          authorities={authorities} urls={urls} zero_url_parties={zero_url} spark_filled={spark_n} \
-         kept_hand_built={kept_hand_built} out={} archive={}",
+         kept_hand_built={kept_hand_built} status_refreshed={status_refreshed} out={} archive={}",
         indexed.len(),
         out_dir.display(),
         archive_dir.display()
@@ -275,6 +294,7 @@ impl PartyIndex {
         Self {
             party: party.name.clone(),
             iso2: party_iso2(&party.name).unwrap_or("ZZ").to_string(),
+            eif: party.eif.clone(),
             authority_url: authority_url.to_string(),
             names: Vec::new(),
             urls: Vec::new(),
@@ -407,9 +427,11 @@ fn unix_now_nanos() -> u128 {
 
 /// Deterministic status-table parse: every `<tr>` with a first `<td>`
 /// is a party row (the header uses `<th>`); the authority sid comes
-/// from the row's `authority/?sid=` link. Rows without a sid keep an
-/// empty sid and are reported as zero-URL parties downstream.
-fn parse_status_table(html: &str) -> Vec<PartyRow> {
+/// from the row's `authority/?sid=` link and the entry into force from
+/// the EIF column. Rows without a sid keep an empty sid and are
+/// reported as zero-URL parties downstream. The `discovery.bootstrap`
+/// worker builds its country list from these rows.
+pub(crate) fn parse_status_table(html: &str) -> Vec<PartyRow> {
     let mut parties = Vec::new();
     for row in split_rows(html) {
         if row.contains("<th") {
@@ -423,7 +445,8 @@ fn parse_status_table(html: &str) -> Vec<PartyRow> {
             continue;
         }
         let sid = sid_in_row(row).unwrap_or_default();
-        parties.push(PartyRow { name, sid });
+        let eif = cell_texts(row).get(4).and_then(|c| hcch_date(c));
+        parties.push(PartyRow { name, sid, eif });
     }
     parties
 }
@@ -434,23 +457,6 @@ pub(crate) fn party_names(html: &str) -> Vec<String> {
     parse_status_table(html)
         .into_iter()
         .map(|party| party.name)
-        .collect()
-}
-
-/// Party names with their entry-into-force date (`YYYY-MM-DD`) off the
-/// status table's EIF column (5th cell; same row rule). A date in the
-/// future marks a state that has joined but cannot issue or receive
-/// apostilles yet. `None` when the cell is empty or unreadable.
-pub(crate) fn party_entry_into_force(html: &str) -> Vec<(String, Option<String>)> {
-    split_rows(html)
-        .into_iter()
-        .filter(|row| !row.contains("<th"))
-        .filter_map(|row| {
-            let cells = cell_texts(row);
-            let name = cells.first().filter(|n| !n.is_empty())?.clone();
-            let eif = cells.get(4).and_then(|c| hcch_date(c));
-            Some((name, eif))
-        })
         .collect()
 }
 
@@ -1463,10 +1469,7 @@ fn build_pack(
     let mut observations = vec![PackObservation {
         authority: lead.clone(),
         topic: "jurisdiction".to_string(),
-        statement: format!(
-            "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): {} is a listed Contracting Party.",
-            index.party
-        ),
+        statement: status_statement(index),
         source_uri: STATUS_TABLE_URL.to_string(),
         status: "needs_review".to_string(),
         validation: WORLD_REF.to_string(),
@@ -1540,6 +1543,58 @@ fn build_pack(
             authorities: exts,
         },
     }
+}
+
+/// The pack's status-table line. Tense-free on purpose: "entry into
+/// force for X: <date>" reads true before and after the date, so a
+/// future party (Thailand, 2027-02-28) shows when the convention starts
+/// to apply without the pack going stale on that day.
+fn status_statement(index: &PartyIndex) -> String {
+    let mut statement = format!(
+        "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): {} is a listed Contracting Party",
+        index.party
+    );
+    if let Some(eif) = &index.eif {
+        statement.push_str(&format!("; entry into force for {}: {eif}", index.party));
+    }
+    statement.push('.');
+    statement
+}
+
+/// Bring the status-table observation of the committed pack at `path`
+/// in line with the table, when this run has no authority page for the
+/// party (offline without a recorded fixture, or a failed live fetch).
+/// The table is recorded whole, so its lines can always be refreshed;
+/// everything else in the pack stays as committed, and hand-built packs
+/// are never touched. Returns true when the file changed.
+fn refresh_status(path: &Path, index: &PartyIndex) -> bool {
+    let Some(mut file) = std::fs::read(path)
+        .ok()
+        .and_then(|bytes| crate::packs::PackFile::parse(&bytes).ok())
+    else {
+        return false;
+    };
+    if !is_world_index_output(&file) {
+        return false;
+    }
+    let statement = status_statement(index);
+    let mut changed = false;
+    for observation in &mut file.pack.observations {
+        if observation.source_uri == STATUS_TABLE_URL
+            && observation.topic == "jurisdiction"
+            && observation.statement != statement
+        {
+            observation.statement.clone_from(&statement);
+            changed = true;
+        }
+    }
+    if changed {
+        std::fs::write(path, file.render()).unwrap_or_else(|e| {
+            eprintln!("world-index: write {}: {e}", path.display());
+            std::process::exit(1);
+        });
+    }
+    changed
 }
 
 /// Write one party's pack, merged with the committed one at `path`.
@@ -2022,13 +2077,13 @@ mod tests {
     /// 2026-11-02 capture) carry their own dates.
     #[test]
     fn status_table_entry_into_force_dates() {
-        let rows = party_entry_into_force(&fixture("status-table-cid41.html"));
+        let rows = parse_status_table(&fixture("status-table-cid41.html"));
         assert_eq!(rows.len(), 130);
-        assert!(rows.iter().all(|(_, eif)| eif.is_some()), "{rows:?}");
+        assert!(rows.iter().all(|row| row.eif.is_some()), "{rows:?}");
         let eif = |want: &str| {
             rows.iter()
-                .find(|(name, _)| name == want)
-                .and_then(|(_, eif)| eif.clone())
+                .find(|row| row.name == want)
+                .and_then(|row| row.eif.clone())
                 .unwrap_or_else(|| panic!("missing party {want}"))
         };
         assert_eq!(eif("Thailand"), "2027-02-28");
@@ -2411,6 +2466,7 @@ mod tests {
         let party = PartyRow {
             name: "Belarus".to_string(),
             sid: "10".to_string(),
+            ..PartyRow::default()
         };
         let mut index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
         index.absorb_details(
@@ -2466,6 +2522,7 @@ mod tests {
         let party = PartyRow {
             name: "Germany".to_string(),
             sid: "1".to_string(),
+            ..PartyRow::default()
         };
         let index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
         let (a, b) = ("https://www.hcch.net/a", "https://www.hcch.net/b");
@@ -2525,6 +2582,7 @@ mod tests {
         let party = PartyRow {
             name: "Marshall Islands".to_string(),
             sid: "2".to_string(),
+            ..PartyRow::default()
         };
         let index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
         let page = "https://www.hcch.net/p";
@@ -2599,6 +2657,7 @@ mod tests {
             let party = PartyRow {
                 name: "Somewhere".to_string(),
                 sid: "3".to_string(),
+                ..PartyRow::default()
             };
             let mut index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
             index.iso2 = iso.to_string();
@@ -2608,6 +2667,84 @@ mod tests {
             assert!(!write_pack(&path, &index), "{iso}");
             assert_eq!(std::fs::read(&path).unwrap(), bytes, "{iso}");
         }
+    }
+
+    /// D-1: a party's entry into force rides on its status-table line,
+    /// tense-free, so a future party's dossier shows the date.
+    #[test]
+    fn status_line_carries_entry_into_force() {
+        let parties = parse_status_table(&fixture("status-table-cid41.html"));
+        let thailand = parties.iter().find(|p| p.name == "Thailand").unwrap();
+        let index = PartyIndex::empty(thailand, "https://www.hcch.net/en/x");
+        let file = build_pack(&index, &[], &[], None);
+        assert_eq!(
+            file.pack.observations[0].statement,
+            "OBSERVED (HCCH 1961 status table cid=41; staff capture pending): Thailand is a \
+             listed Contracting Party; entry into force for Thailand: 2027-02-28."
+        );
+        assert_eq!(file.pack.observations[0].source_uri, STATUS_TABLE_URL);
+        let undated = PartyRow {
+            name: "Noland".to_string(),
+            ..PartyRow::default()
+        };
+        assert!(
+            status_statement(&PartyIndex::empty(&undated, "https://www.hcch.net/en/x"))
+                .ends_with("Noland is a listed Contracting Party.")
+        );
+    }
+
+    /// D-1: without an authority page (offline, no fixture) only the
+    /// status-table line of the committed pack changes; curated rows,
+    /// hidden flags and every other line stay byte for byte, and the
+    /// hand-built packs are left alone.
+    #[test]
+    fn refresh_touches_only_the_status_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let world = Path::new(env!("CARGO_MANIFEST_DIR")).join("../packs/world");
+        let parties = parse_status_table(&fixture("status-table-cid41.html"));
+        for (iso, name) in [("TH", "Thailand"), ("MH", "Marshall Islands")] {
+            let committed = std::fs::read_to_string(world.join(format!("{iso}.json"))).unwrap();
+            let path = dir.path().join(format!("{iso}.json"));
+            std::fs::write(&path, &committed).unwrap();
+            let party = parties.iter().find(|p| p.name == name).unwrap();
+            let index = PartyIndex::empty(party, "https://www.hcch.net/en/x");
+            let want = status_statement(&index);
+            let changed = !committed.contains(&want);
+            assert_eq!(refresh_status(&path, &index), changed, "{iso}");
+            let after = std::fs::read_to_string(&path).unwrap();
+            assert!(after.contains(&want), "{iso}");
+            let differing: Vec<(&str, &str)> = committed
+                .lines()
+                .zip(after.lines())
+                .filter(|(a, b)| a != b)
+                .collect();
+            assert_eq!(committed.lines().count(), after.lines().count(), "{iso}");
+            assert!(differing.len() <= 1, "{iso}: {differing:?}");
+            assert!(
+                differing
+                    .iter()
+                    .all(|(_, b)| b.contains("entry into force")),
+                "{iso}"
+            );
+            // A second run is a no-op.
+            assert!(!refresh_status(&path, &index), "{iso}");
+        }
+        let committed = std::fs::read(world.join("US.json")).unwrap();
+        let path = dir.path().join("US.json");
+        std::fs::write(&path, &committed).unwrap();
+        let usa = parties
+            .iter()
+            .find(|p| p.name == "United States of America")
+            .unwrap();
+        assert!(!refresh_status(
+            &path,
+            &PartyIndex::empty(usa, "https://www.hcch.net/en/x")
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), committed);
+        assert!(!refresh_status(
+            &dir.path().join("ZZ.json"),
+            &PartyIndex::empty(usa, "https://www.hcch.net/en/x")
+        ));
     }
 
     #[test]
@@ -2722,6 +2859,7 @@ mod tests {
         let party = PartyRow {
             name: "Noland".to_string(),
             sid: "9".to_string(),
+            ..PartyRow::default()
         };
         let mut index = PartyIndex::empty(&party, "https://www.hcch.net/en/x");
         index.urls.push(UrlHit {
