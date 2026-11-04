@@ -85,16 +85,31 @@ pub struct FoundAddress {
 
 /// The first US address in `text`: the strict `street, City, ST 12345`
 /// form first, then `street City, ST 12345` where the street ends at a
-/// street-type word (plus a directional) or a PO box number.
+/// street-type word (plus a directional) or a PO box number. Each line
+/// is read alone, then joined with the next one: page quotes often
+/// break an address after the street (`PO Box 40220` / `Olympia, WA
+/// 98504-0220`).
 pub fn address_in(text: &str) -> Option<FoundAddress> {
-    for line in text.lines() {
-        if let Some(address) = us_address_in(line) {
-            return Some(FoundAddress {
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let read = |line: &str| {
+        us_address_in(line)
+            .map(|address| FoundAddress {
                 address,
                 line2: None,
-            });
+            })
+            .or_else(|| loose_address_in(line))
+    };
+    for (i, line) in lines.iter().enumerate() {
+        if let Some(found) = read(line) {
+            return Some(found);
         }
-        if let Some(found) = loose_address_in(line) {
+        if let Some(next) = lines.get(i + 1)
+            && let Some(found) = read(&format!("{line} {next}"))
+        {
             return Some(found);
         }
     }
@@ -461,6 +476,19 @@ mod tests {
         assert_eq!(po.address.city, "Olympia");
         assert_eq!(po.address.zip, "98504-0228");
         assert!(po.address.is_po_box());
+    }
+
+    #[test]
+    fn an_address_broken_after_the_street_is_joined() {
+        // Staging's WA po_box fact: statement, then a two-line quote.
+        let po =
+            address_in("po_box: PO Box 40220\nPO Box 40220  \n Olympia, WA 98504-0220").unwrap();
+        assert_eq!(po.address.street, "PO Box 40220");
+        assert_eq!(po.address.city, "Olympia");
+        assert_eq!(po.address.zip, "98504-0220");
+        let street = address_in("Visit us at\n243 Israel Rd SE\nTumwater, WA 98501").unwrap();
+        assert_eq!(street.address.street, "243 Israel Rd SE");
+        assert_eq!(street.address.city, "Tumwater");
     }
 
     #[test]

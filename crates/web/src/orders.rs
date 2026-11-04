@@ -2058,6 +2058,30 @@ mod tests {
     }
 
     #[test]
+    fn a_po_box_quoted_over_two_lines_is_still_the_destination() {
+        // Staging's WA facts: the quote breaks after the box number.
+        let facts = [
+            f(
+                10,
+                "mailing",
+                "submission_requirement: Send all documents with Request form and payment:",
+            ),
+            f(
+                25,
+                "po_box",
+                "po_box: PO Box 40220\nPO Box 40220  \n Olympia, WA 98504-0220",
+            ),
+        ];
+        let d = destination(&facts).unwrap();
+        assert_eq!(
+            (d.address.street.as_str(), d.address.city.as_str()),
+            ("PO Box 40220", "Olympia")
+        );
+        assert_eq!(d.fact_id, 25);
+        assert_eq!(d.fedex, None);
+    }
+
+    #[test]
     fn a_cited_courier_street_takes_fedex_while_usps_keeps_the_po_box() {
         let mut facts = wa_facts();
         facts.push(f(
