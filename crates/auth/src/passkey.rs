@@ -444,6 +444,7 @@ pub fn live_staff_passkey_count(conn: &Connection) -> rusqlite::Result<i64> {
 pub fn erase_identity(conn: &Connection, user_id: &str) -> rusqlite::Result<usize> {
     let mut removed = crate::revoke_user_sessions(conn, user_id)?;
     removed += conn.execute("DELETE FROM identity_link WHERE user_id = ?1", [user_id])?;
+    removed += conn.execute("DELETE FROM staff_email WHERE user_id = ?1", [user_id])?;
     removed += conn.execute(
         "DELETE FROM webauthn_credential WHERE user_id = ?1",
         [user_id],
@@ -462,6 +463,9 @@ pub struct StaffAccount {
     /// The invite name (`cn`) the account enrolled with; empty for the
     /// setup-key admin, who enrolled without an invite.
     pub name: String,
+    /// The sign-in email given at enrolment; empty for accounts
+    /// enrolled before emails were asked for.
+    pub email: String,
 }
 
 /// Every staff/admin account (locked ones too), oldest first.
@@ -469,7 +473,8 @@ pub fn staff_accounts(conn: &Connection) -> rusqlite::Result<Vec<StaffAccount>> 
     let mut stmt = conn.prepare(
         "SELECT a.user_id, a.role, a.created_at, a.locked_at,
                 COALESCE((SELECT i.cn FROM staff_invite i WHERE i.consumed_by = a.user_id
-                          ORDER BY i.consumed_at LIMIT 1), '')
+                          ORDER BY i.consumed_at LIMIT 1), ''),
+                COALESCE((SELECT e.email FROM staff_email e WHERE e.user_id = a.user_id), '')
          FROM account a WHERE a.role IN ('staff', 'admin')
          ORDER BY a.created_at, a.user_id",
     )?;
@@ -480,9 +485,48 @@ pub fn staff_accounts(conn: &Connection) -> rusqlite::Result<Vec<StaffAccount>> 
             created_at: r.get(2)?,
             locked_at: r.get(3)?,
             name: r.get(4)?,
+            email: r.get(5)?,
         })
     })?
     .collect()
+}
+
+/// The sign-in email a staff account enrolled with, if any.
+pub fn staff_email(conn: &Connection, user_id: &str) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT email FROM staff_email WHERE user_id = ?1",
+        [user_id],
+        |r| r.get(0),
+    )
+    .optional()
+}
+
+/// Whether some staff account already signs in with `email`
+/// (lowercased by the caller).
+pub fn staff_email_taken(conn: &Connection, email: &str) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT 1 FROM staff_email WHERE email = ?1",
+        [email],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|hit| hit.is_some())
+}
+
+/// Record a staff account's sign-in email (one per account; another
+/// account holding the same email fails on the UNIQUE constraint).
+pub fn set_staff_email(
+    conn: &Connection,
+    user_id: &str,
+    email: &str,
+    now: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO staff_email(user_id, email, created_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(user_id) DO UPDATE SET email = excluded.email",
+        rusqlite::params![user_id, email, now],
+    )?;
+    Ok(())
 }
 
 /// One live passkey as the Staff page lists it (no key material).
@@ -925,6 +969,40 @@ mod tests {
                 .step_up_at
                 .is_none()
         );
+    }
+
+    #[test]
+    fn staff_email_is_one_per_account_listed_and_erased() {
+        let conn = memory();
+        for user in ["u-a", "u-b"] {
+            ensure_staff_account(&conn, user, "staff", 1000).unwrap();
+        }
+        assert_eq!(staff_email(&conn, "u-a").unwrap(), None);
+        assert!(!staff_email_taken(&conn, "a@example.test").unwrap());
+        set_staff_email(&conn, "u-a", "a@example.test", 1000).unwrap();
+        assert!(staff_email_taken(&conn, "a@example.test").unwrap());
+        // Another account cannot take it; the owner can change theirs.
+        assert!(set_staff_email(&conn, "u-b", "a@example.test", 1000).is_err());
+        set_staff_email(&conn, "u-a", "a2@example.test", 1001).unwrap();
+        assert_eq!(
+            staff_email(&conn, "u-a").unwrap().as_deref(),
+            Some("a2@example.test")
+        );
+        let listed: Vec<(String, String)> = staff_accounts(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|a| (a.user_id, a.email))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("u-a".to_string(), "a2@example.test".to_string()),
+                ("u-b".to_string(), String::new())
+            ]
+        );
+        erase_identity(&conn, "u-a").unwrap();
+        assert_eq!(staff_email(&conn, "u-a").unwrap(), None);
+        assert!(!staff_email_taken(&conn, "a2@example.test").unwrap());
     }
 
     #[test]

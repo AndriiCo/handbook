@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+	autofillAvailable,
 	b64urlDecode,
 	b64urlEncode,
 	confirmPasskey,
@@ -9,6 +10,7 @@ import {
 	enrolErrorCopy,
 	enrolPasskey,
 	isTransportFailure,
+	loginConditional,
 	loginDiscoverable,
 	loginErrorCopy,
 	loginPasskey,
@@ -91,6 +93,13 @@ describe('staff-auth shapes', () => {
 
 	it('maps enrol failures, carrying denial bodies verbatim', () => {
 		assert.match(enrolErrorCopy(410, 'invite invalid or expired'), /ask your admin/);
+		assert.match(enrolErrorCopy(400, 'email malformed'), /valid email/);
+		assert.match(enrolErrorCopy(400, 'email malformed', true), /valid email/);
+		assert.match(
+			enrolErrorCopy(409, 'email already used by another staff account'),
+			/already signs in to another staff account/
+		);
+		assert.match(enrolErrorCopy(409, 'credential already registered'), /security key is already registered/);
 		assert.match(
 			enrolErrorCopy(403, 'admin access is limited — your IP is 198.51.100.9'),
 			/198\.51\.100\.9/
@@ -297,6 +306,92 @@ describe('staff-auth ceremonies with fakes', () => {
 		assert.equal(seen[1][1].challenge_id, 'd1');
 		assert.deepEqual(asked.publicKey.allowCredentials, []);
 		assert.equal('mediation' in asked, false, 'a click opens the sheet, not autofill');
+	});
+
+	it('W-1: enrolment sends the email that names the passkey', async () => {
+		let startBody = null;
+		const io = {
+			post: async (path, body) => {
+				if (path.endsWith('/enrol/start')) {
+					startBody = body;
+					return {
+						ok: true,
+						body: { challenge_id: 'c1', options: { challenge: b64urlEncode(new Uint8Array([9])) } }
+					};
+				}
+				assert.equal('email' in body, false, 'finish reads the email from the server-side state');
+				return { ok: true, body: { user_id: 'u' } };
+			},
+			credentials: { create: async () => credential() }
+		};
+		await enrolPasskey({ invite: 'i'.repeat(64), displayName: 'J', email: 'j@example.test' }, io);
+		assert.equal(startBody.email, 'j@example.test');
+		startBody = null;
+		await enrolPasskey({ invite: 'i'.repeat(64), displayName: 'J' }, io);
+		assert.equal('email' in startBody, false, 'no email key when none was typed');
+	});
+
+	it('W-1: autofill sign-in asks for conditional mediation with the abort signal', async () => {
+		const seen = [];
+		let asked = null;
+		const signal = new AbortController().signal;
+		const io = {
+			post: async (path, body) => {
+				seen.push([path, body]);
+				if (path.endsWith('/login/start')) {
+					return {
+						ok: true,
+						body: {
+							challenge_id: 'a1',
+							options: { publicKey: { challenge: b64urlEncode(new Uint8Array([5])) }, mediation: 'conditional' }
+						}
+					};
+				}
+				return { ok: true, body: { user_id: 'u'.repeat(32) } };
+			},
+			credentials: {
+				get: async (args) => {
+					asked = args;
+					return credential();
+				}
+			}
+		};
+		const res = await loginConditional(io, signal);
+		assert.equal(res.ok, true);
+		assert.deepEqual(seen[0], ['/auth/passkey/login/start', { account: '' }]);
+		assert.equal(asked.mediation, 'conditional');
+		assert.equal(asked.signal, signal);
+		assert.equal(seen[1][1].challenge_id, 'a1');
+		// A refused start never reaches the browser.
+		let reached = false;
+		const refused = await loginConditional(
+			{
+				post: async () => ({ ok: false, status: 429, body: { error: 'rate limited' } }),
+				credentials: {
+					get: async () => {
+						reached = true;
+					}
+				}
+			},
+			signal
+		);
+		assert.equal(refused.status, 429);
+		assert.equal(reached, false);
+		// An abort (the button took over) rejects, so the page stays quiet.
+		const aborted = new DOMException('aborted', 'AbortError');
+		await assert.rejects(
+			loginConditional({ ...io, credentials: { get: async () => Promise.reject(aborted) } }, signal),
+			(err) => err.name === 'AbortError'
+		);
+	});
+
+	it('W-1: autofill is offered only where the browser supports it', async () => {
+		assert.equal(await autofillAvailable(undefined), false);
+		assert.equal(await autofillAvailable({}), false);
+		assert.equal(await autofillAvailable({ isConditionalMediationAvailable: async () => false }), false);
+		assert.equal(await autofillAvailable({ isConditionalMediationAvailable: async () => true }), true);
+		const broken = { isConditionalMediationAvailable: async () => Promise.reject(new Error('x')) };
+		assert.equal(await autofillAvailable(broken), false);
 	});
 
 	it('confirms a step-up for the session’s own staff id', async () => {

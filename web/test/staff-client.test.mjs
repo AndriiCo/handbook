@@ -45,7 +45,7 @@ test('normalizeStaffList keeps well-formed rows only', () => {
 	const list = normalizeStaffList({
 		me: { user_id: 'u1', role: 'admin' },
 		accounts: [
-			{ user_id: 'u1', role: 'admin', name: 'Judge', created_at: 10, locked_at: null, passkeys: [{ id: 'k1', label: 'Mac', created_at: 11, last_used_at: 12 }, { label: 'no id' }] },
+			{ user_id: 'u1', role: 'admin', name: 'Judge', email: 'judge@example.test', created_at: 10, locked_at: null, passkeys: [{ id: 'k1', label: 'Mac', created_at: 11, last_used_at: 12 }, { label: 'no id' }] },
 			{ user_id: 'u2', role: 'root', name: 5, created_at: 'x', locked_at: 20 },
 			{ role: 'staff' }
 		],
@@ -55,7 +55,9 @@ test('normalizeStaffList keeps well-formed rows only', () => {
 	assert.equal(list.accounts.length, 2);
 	assert.deepEqual(list.accounts[0].passkeys, [{ id: 'k1', label: 'Mac', created_at: 11, last_used_at: 12 }]);
 	assert.equal(list.accounts[1].role, 'staff');
+	assert.equal(list.accounts[0].email, 'judge@example.test');
 	assert.equal(list.accounts[1].name, '');
+	assert.equal(list.accounts[1].email, '', 'accounts enrolled before W-1 have none');
 	assert.equal(list.accounts[1].locked_at, 20);
 	assert.deepEqual(list.accounts[1].passkeys, []);
 	assert.equal(list.invites.length, 1);

@@ -130,7 +130,7 @@ export const CANCELLED_COPY = 'Cancelled — no changes were made.';
 
 /**
  * Run staff enrolment: start → navigator.create → finish.
- * @param {any} input {invite?, setupKey?, displayName, label?} —
+ * @param {any} input {invite?, setupKey?, displayName, email?, label?} —
  * exactly one of invite/setupKey (setup mode burns the key).
  * @param {any} io injectable browser surface ({credentials, post})
  */
@@ -139,6 +139,8 @@ export async function enrolPasskey(input, io) {
 	const started = await io.post('/auth/passkey/enrol/start', {
 		...gate,
 		display_name: input.displayName,
+		// The passkey's account name in the browser's passkey list.
+		...(input.email ? { email: input.email } : {}),
 		...(input.label ? { label: input.label } : {})
 	});
 	if (!started.ok) return started;
@@ -194,6 +196,42 @@ export async function loginDiscoverable(io) {
 }
 
 /**
+ * Passkey autofill (conditional mediation): the browser offers the
+ * staff passkeys it holds in the email field's suggestions, and the
+ * ceremony finishes when one is picked. Resolves to the finish
+ * response; rejects with an `AbortError` when `signal` aborts (the
+ * page aborts it before a button-started sign-in, since a browser runs
+ * one credential request at a time).
+ * @param {any} io {credentials, post}
+ * @param {AbortSignal} signal
+ */
+export async function loginConditional(io, signal) {
+	const started = await io.post('/auth/passkey/login/start', { account: '' });
+	if (!started.ok) return started;
+	const cred = await io.credentials.get({
+		...credentialRequestArgs(started.body.options),
+		mediation: 'conditional',
+		signal
+	});
+	return io.post('/auth/passkey/login/finish', {
+		challenge_id: started.body.challenge_id,
+		credential: serializeAuthentication(cred)
+	});
+}
+
+/**
+ * True when this browser can offer passkeys in a field's autofill.
+ * @param {any} pkc the `PublicKeyCredential` global (or undefined)
+ */
+export async function autofillAvailable(pkc) {
+	try {
+		return !!pkc?.isConditionalMediationAvailable && (await pkc.isConditionalMediationAvailable());
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Passkey step-up for the signed-in staffer (config writes need one
  * from the last 10 minutes): read the session's own user id from the
  * admin `/me`, then run the same UV ceremony as login, which stamps
@@ -216,6 +254,12 @@ export async function confirmPasskey(io) {
  * @param {string} serverError
  */
 export function enrolErrorCopy(status, serverError, setupMode = false) {
+	if (status === 400 && serverError === 'email malformed') {
+		return 'Enter a valid email address — it names your passkey.';
+	}
+	if (status === 409 && serverError === 'email already used by another staff account') {
+		return 'That email already signs in to another staff account — use your own email, or ask an admin.';
+	}
 	if (status === 400) {
 		return setupMode
 			? 'Start over from the setup page — the request was malformed.'

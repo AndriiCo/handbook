@@ -360,6 +360,7 @@
 							<Card.Content class="flex flex-col gap-3">
 								<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
 									<span class="text-base font-semibold break-words">{displayName(account)}</span>
+									{#if account.email}<span class="text-sm break-all text-ink-muted">{account.email}</span>{/if}
 									<Badge variant={account.role === 'admin' ? 'default' : 'secondary'}>{account.role}</Badge>
 									{#if self}<Badge variant="outline">you</Badge>{/if}
 									{#if account.locked_at}<Badge variant="destructive">revoked {when(account.locked_at)}</Badge>{/if}
