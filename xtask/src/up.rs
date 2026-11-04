@@ -2193,6 +2193,7 @@ mod tests {
             created_by: "xtask-up".into(),
             created_at: 0,
             updated_at: 0,
+            retry_after: None,
         };
         let ok = r#"{"pages":1,"failed":0,"truncated":false}"#;
         assert!(worker_job_ok(&item(ok, true)).is_ok());
