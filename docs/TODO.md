@@ -669,32 +669,54 @@ It does three things:
   disagrees with the table;
 - asks Muse for official URLs in batches and fetch-checks every one.
 
-It writes a report only. Next:
+It writes a report, and since D-3 stageable world packs. Status:
 
 - [ ] **D-1** `research.nonparty` skips future parties. Thailand is on
   the status table, so it is subtracted, yet the convention only takes
-  effect for it on 2027-02-28; until then it needs legalization. The
-  world pack still says "Thailand is a listed Contracting Party"
-  (`packs/world/TH.json`). Fix: treat future parties as non-parties
-  until their entry-into-force date, and add an entry-into-force line
-  to the world-pack observation. *code, S*
-- [ ] **D-2** Read the objection markers in the status table (`A**`,
+  effect for it on 2027-02-28; until then it needs legalization.
+  **Dates done, commit 6b74537**: every world pack's status line carries
+  the party's entry into force, tense-free ("…; entry into force for
+  Thailand: 2027-02-28."); a party with no recorded authority page still
+  gets its line refreshed offline. Open (owner's call): treating future
+  parties as non-parties until their EIF. The P436 test keeps the twelve
+  late parties, Thailand among them, out of the non-party list, so that
+  change needs the owner to relax it on purpose. *code, S*
+- [x] **D-2** Read the objection markers in the status table (`A**`,
   e.g. Viet Nam and Kosovo). An objecting state does not accept
   apostilles from the acceding state, which matters for routing.
-  *code, S*
-- [ ] **D-3** Turn discovery output into pack updates (watch seeds,
-  `unverified` domains). Needs P2-2 (a load that updates existing
-  authorities) and P2-3 (staged packs can be loaded). *code, M*
-- [ ] **D-4** Crawl the kept URLs with link keywords in local languages
-  (`xtask/src/crawl.rs` matches only English words today), then sort
-  the pages with a local Meta model on plant: relevant or not,
-  language, authority, topics. Facts are still drafted by Spark with
-  the quote check, then approved in `/review`. Before the local model
-  drafts anything, run the 30-case gold eval against it. *code, L*
+  **Done, commit 19d8b93**: flag and notifications link on the status
+  line of all 21 marked parties and in the discovery country list
+  (`objection`, `notifications_url`). The objecting states are named
+  (one observation cited to the notifications page) only where that
+  page is recorded and has the regular shape: Viet Nam today
+  (`evals/world/notifications-csid1557.html`: Czechia, Austria,
+  Germany). Open: record the other 20 pages, or run `world-index
+  --live`; the Kosovo and India pages are prose and stay flag + link.
+- [x] **D-3** Turn discovery output into pack updates (watch seeds,
+  `unverified` domains). **Done, commit 1f9b09a**: the result carries,
+  per country with new kept URLs, a full copy of its world pack plus
+  weekly watch seeds and unverified domains (validated); "Stage as
+  packs" takes a done `discovery.bootstrap` item into the packs inbox,
+  refusing a copy of a world pack the release has since changed. Open:
+  world-index rebuilds a pack's watch list from the HCCH pages, so
+  committing a staged pack into `packs/world` and re-running world-index
+  would drop the discovery seeds; load them from the inbox.
+- [x] **D-4** Crawl the kept URLs with link keywords in local languages,
+  then sort the pages with a local Meta model on plant. **Done**:
+  local-language depth-1 keywords on folded URLs (d2859fb); gold eval
+  against an OpenAI-compatible endpoint, `xtask eval --local` and
+  `eval.gold` `local: true`, model id from the environment (27b283d);
+  `xtask triage` sorts saved pages (relevant, language, authority,
+  topics), report only (353c14d). Rule (`docs/specs/work-queue.md`
+  §4.1): a local model drafts only after it matches Spark on
+  `quote_found_rate` and `value_in_quote_rate`. Open (operator): serve a
+  Llama model with `llama-server` on plant, set `LOCAL_MODEL_URL` and
+  `LOCAL_MODEL` in `worker.env`, run the gold eval and compare with
+  Spark's `quality.json`.
 - [ ] **D-5** Have the local model split HCCH authority pages into
   authority, address, contact, document scope and note, each quoted
   from the page. This replaces positional parsing (the P2-1 junk rows),
-  and scope lines become routing rules for P4-1. *code, M*
+  and scope lines become routing rules for P4-1. Not started. *code, M*
 
 ---
 
