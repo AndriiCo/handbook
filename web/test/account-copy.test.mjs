@@ -6,9 +6,8 @@ import assert from 'node:assert/strict';
 import { ENUM_LABELS, INTL_LOCALE, ORDERS_COPY } from '../src/lib/customer/orders-copy.js';
 import { BILLING_COPY } from '../src/lib/customer/billing-copy.js';
 import { FORMS_COPY } from '../src/lib/customer/forms-copy.js';
-import { REPORT_COPY } from '../src/lib/customer/report-copy.js';
 
-const TABLES = { ENUM_LABELS, ORDERS_COPY, BILLING_COPY, FORMS_COPY, REPORT_COPY };
+const TABLES = { ENUM_LABELS, ORDERS_COPY, BILLING_COPY, FORMS_COPY };
 
 // Words that are the same in English and the other language on purpose.
 const SAME = new Set(['FORMS_COPY.es.noValue']);

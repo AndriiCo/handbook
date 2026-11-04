@@ -4,6 +4,8 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import MessageSquareWarning from '@lucide/svelte/icons/message-square-warning';
 	import ReportForm from '../ReportForm.svelte';
+	import { site } from '../../locale.svelte.js';
+	import { REPORT_COPY } from '../report-copy.js';
 
 	// "Report a change" docked beside the dossier, not over it: a
 	// non-modal panel on the right at desktop widths (the page shifts
@@ -28,6 +30,7 @@
 		onclose: () => void;
 	} = $props();
 
+	const c = $derived(REPORT_COPY[site.locale]);
 	const WIDE = '(min-width: 64rem)';
 	const PANEL = '28rem';
 
@@ -91,17 +94,17 @@
 				tabindex="-1"
 				class="m-0 truncate text-base font-semibold text-ink outline-none"
 			>
-				Report a change
+				{c.title}
 			</h2>
 			{#if folded}
-				<span class="block truncate text-xs text-ink-muted">Draft kept · tap to keep writing</span>
+				<span class="block truncate text-xs text-ink-muted">{c.panelFolded}</span>
 			{/if}
 		</button>
 		<button
 			type="button"
 			onclick={() => (folded = !folded)}
 			class="inline-flex size-9 items-center justify-center rounded-sm hover:bg-surface"
-			aria-label={folded ? 'Open the report form' : 'Fold the report form away to read the page'}
+			aria-label={folded ? c.panelOpen : c.panelFold}
 		>
 			<MinusIcon class="size-4" aria-hidden="true" />
 		</button>
@@ -109,15 +112,14 @@
 			type="button"
 			onclick={onclose}
 			class="inline-flex size-9 items-center justify-center rounded-sm hover:bg-surface"
-			aria-label="Close (your draft is kept)"
+			aria-label={c.panelClose}
 		>
 			<XIcon class="size-4" aria-hidden="true" />
 		</button>
 	</header>
 	<div id="report-panel-body" class="overflow-y-auto overscroll-contain px-4 py-4" hidden={folded}>
 		<p class="mt-0 mb-4 text-sm text-ink-muted">
-			Spotted a changed fee, address or step at {name}? Keep this page open beside the form, compare,
-			and tell us what is different now.
+			{c.panelIntro(name)}
 		</p>
 		<ReportForm {slug} officeName={name} {apiBase} {loginHref} quoteFrom={page} />
 	</div>

@@ -7,6 +7,8 @@
 	import RotateCw from '@lucide/svelte/icons/rotate-cw';
 	import TextQuote from '@lucide/svelte/icons/text-quote';
 	import Notice from './Notice.svelte';
+	import { site } from '../locale.svelte.js';
+	import { REPORT_COPY, REPORT_INTL } from './report-copy.js';
 	import {
 		AUTOSAVE_MS,
 		clearDraft,
@@ -47,6 +49,12 @@
 		quoteFrom?: HTMLElement | null;
 	} = $props();
 
+	const c = $derived(REPORT_COPY[site.locale]);
+	type Copy = (typeof REPORT_COPY)['en'];
+	// Messages are functions of the copy, so a language switch re-words
+	// one already on screen; server `error` text is returned as sent.
+	type Msg = (c: Copy) => string;
+
 	type Upload = {
 		key: number;
 		id: string | null;
@@ -55,7 +63,7 @@
 		at: number;
 		status: 'uploading' | 'done' | 'error';
 		progress: number;
-		error: string;
+		error: Msg | null;
 		preview: string;
 		file: File | null;
 	};
@@ -84,9 +92,7 @@
 	let dragging = $state(false);
 	let selection = $state('');
 	let sentId = $state<number | null>(null);
-	let notice = $state<{ variant: 'info' | 'error' | 'success'; heading: string; text: string } | null>(
-		null
-	);
+	let notice = $state<{ variant: 'info' | 'error' | 'success'; heading: Msg; text: Msg } | null>(null);
 	let nextKey = 0;
 	let picker = $state<HTMLInputElement | null>(null);
 	let note = $state<HTMLTextAreaElement | null>(null);
@@ -128,7 +134,7 @@
 				key: nextKey++,
 				status: 'done' as const,
 				progress: 1,
-				error: '',
+				error: null,
 				preview: '',
 				file: null
 			}));
@@ -179,7 +185,7 @@
 		if (!u || !u.file) return;
 		u.status = 'uploading';
 		u.progress = 0;
-		u.error = '';
+		u.error = null;
 		const file = u.file;
 		const xhr = new XMLHttpRequest();
 		xhrs.set(k, xhr);
@@ -193,7 +199,7 @@
 			const cur = find(k);
 			if (cur && e.lengthComputable) cur.progress = e.loaded / e.total;
 		};
-		const fail = (msg: string) => {
+		const fail = (msg: Msg) => {
 			const cur = find(k);
 			if (!cur) return;
 			cur.status = 'error';
@@ -219,15 +225,16 @@
 			}
 			if (xhr.status === 401) {
 				signedIn = false;
-				fail('Sign in to upload photos.');
+				fail((c) => c.signInToUpload);
 				return;
 			}
-			if (xhr.status === 429) return fail('Too many uploads just now. Retry in a minute.');
-			fail(typeof data.error === 'string' ? data.error : 'Upload failed.');
+			if (xhr.status === 429) return fail((c) => c.tooManyUploads);
+			const sent = typeof data.error === 'string' ? data.error : null;
+			fail((c) => sent ?? c.uploadFailed);
 		};
 		xhr.onerror = () => {
 			xhrs.delete(k);
-			fail('Connection lost. Retry when you are back online.');
+			fail((c) => c.connectionLost);
 		};
 		xhr.send(file);
 	}
@@ -237,19 +244,19 @@
 		if (!files) return;
 		for (const file of Array.from(files)) {
 			if (uploads.length >= MAX_PHOTOS) {
-				notice = { variant: 'error', heading: 'At most 3 photos.', text: 'Extra photos were skipped.' };
+				notice = { variant: 'error', heading: (c) => c.tooManyHeading(MAX_PHOTOS), text: (c) => c.tooManyText };
 				break;
 			}
 			if (file.size > MAX_PHOTO_BYTES) {
-				notice = { variant: 'error', heading: 'Photo too large.', text: `${file.name} is over 8 MiB.` };
+				notice = { variant: 'error', heading: (c) => c.tooLargeHeading, text: (c) => c.tooLargeText(file.name) };
 				continue;
 			}
 			const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
 			if (!photoKind(head)) {
 				notice = {
 					variant: 'error',
-					heading: 'Photo type not allowed.',
-					text: `${file.name} is not a JPEG, PNG, WebP or GIF photo.`
+					heading: (c) => c.badTypeHeading,
+					text: (c) => c.badTypeText(file.name)
 				};
 				continue;
 			}
@@ -262,7 +269,7 @@
 				at: Date.now(),
 				status: 'uploading',
 				progress: 0,
-				error: '',
+				error: null,
 				preview: URL.createObjectURL(file),
 				file
 			});
@@ -303,7 +310,8 @@
 
 	const size = (n: number) =>
 		n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
-	const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+	const clock = (ms: number) =>
+		new Date(ms).toLocaleTimeString(REPORT_INTL[site.locale], { hour: 'numeric', minute: '2-digit' });
 
 	async function onSubmit(event: SubmitEvent) {
 		event.preventDefault();
@@ -311,17 +319,17 @@
 		sentId = null;
 		const office = (slug ?? authority).trim();
 		if (!office) {
-			notice = { variant: 'error', heading: 'Pick an office.', text: 'Tell us which issuing office this is about.' };
+			notice = { variant: 'error', heading: (c) => c.pickOfficeHeading, text: (c) => c.pickOfficeText };
 			return;
 		}
 		if (!body.trim()) {
-			notice = { variant: 'error', heading: 'Describe the change.', text: 'A short note is required.' };
+			notice = { variant: 'error', heading: (c) => c.describeHeading, text: (c) => c.describeText };
 			note?.focus();
 			return;
 		}
 		if (uploading) return;
 		if (uploads.some((u) => u.status === 'error')) {
-			notice = { variant: 'error', heading: 'A photo did not upload.', text: 'Retry it or remove it first.' };
+			notice = { variant: 'error', heading: (c) => c.photoFailedHeading, text: (c) => c.photoFailedText };
 			return;
 		}
 		save();
@@ -342,15 +350,16 @@
 				return;
 			}
 			if (res.status === 429) {
-				notice = { variant: 'error', heading: 'Slow down.', text: 'Too many reports just now. Try again in a bit.' };
+				notice = { variant: 'error', heading: (c) => c.slowDownHeading, text: (c) => c.slowDownText };
 				return;
 			}
 			const data = await res.json().catch(() => ({}));
 			if (!res.ok) {
+				const sent = typeof data?.error === 'string' ? (data.error as string) : null;
 				notice = {
 					variant: 'error',
-					heading: 'Report not sent. Your draft is kept.',
-					text: typeof data?.error === 'string' ? data.error : 'Try again in a bit.'
+					heading: (c) => c.notSentHeading,
+					text: (c) => sent ?? c.tryAgain
 				};
 				return;
 			}
@@ -361,16 +370,17 @@
 			uploads = [];
 			savedSnap = JSON.stringify(draft());
 			savedAt = null;
+			const id = sentId;
 			notice = {
 				variant: 'success',
-				heading: sentId !== null ? `Report #${sentId} received.` : 'Report received.',
-				text: 'It stays private while we remove personal details. Nothing you wrote shows publicly until then.'
+				heading: (c) => c.receivedHeading(id),
+				text: (c) => c.receivedText
 			};
 		} catch {
 			notice = {
 				variant: 'error',
-				heading: 'Report not sent. Your draft is kept.',
-				text: 'The service is unreachable. Try again in a bit.'
+				heading: (c) => c.notSentHeading,
+				text: (c) => c.unreachableText
 			};
 		} finally {
 			busy = false;
@@ -380,25 +390,25 @@
 
 <form bind:this={formEl} class="flex flex-col gap-4" onsubmit={onSubmit} novalidate>
 	{#if notice}
-		<Notice variant={notice.variant} heading={notice.heading}><p>{notice.text}</p></Notice>
+		<Notice variant={notice.variant} heading={notice.heading(c)}><p>{notice.text(c)}</p></Notice>
 	{/if}
 
 	{#if signedIn === false}
-		<Notice variant="info" heading="Sign in to send your report.">
+		<Notice variant="info" heading={c.signInHeading}>
 			<p>
-				Keep writing: your note is saved on this device.
-				<a href={loginWithNext} onclick={save}>Sign in</a> and you come back here with it.
+				{c.keepWriting}
+				<a href={loginWithNext} onclick={save}>{c.signIn}</a> {c.comeBack}
 			</p>
 		</Notice>
 	{/if}
 
 	{#if slug}
 		<p class="m-0 text-sm text-ink-muted">
-			About <span class="font-medium text-ink">{officeName || slug}</span>
+			{c.about} <span class="font-medium text-ink">{officeName || slug}</span>
 		</p>
 	{:else}
 		<label class="flex flex-col gap-1 text-sm font-medium">
-			Issuing office (slug, e.g. usa-wa-sos)
+			{c.officeLabel}
 			<input
 				class="min-h-11 rounded-sm border border-line bg-bg px-3 font-normal"
 				name="authority"
@@ -412,7 +422,7 @@
 
 	<div class="flex flex-col gap-1">
 		<div class="flex items-end justify-between gap-2">
-			<label for="report-body" class="text-sm font-medium">What changed?</label>
+			<label for="report-body" class="text-sm font-medium">{c.whatChanged}</label>
 			<span class="text-xs text-ink-muted tabular-nums">{body.length}/{MAX_BODY_CHARS}</span>
 		</div>
 		<textarea
@@ -423,7 +433,7 @@
 			bind:value={body}
 			onblur={save}
 			maxlength={MAX_BODY_CHARS}
-			placeholder="e.g. The window now says the fee is $20, not $15. Seen on 4 Nov."
+			placeholder={c.placeholder}
 			required
 		></textarea>
 		{#if quoteFrom}
@@ -435,10 +445,10 @@
 						class="inline-flex min-h-8 items-center gap-1.5 rounded-sm border border-line bg-surface px-2.5 font-medium text-ink hover:bg-bg"
 					>
 						<TextQuote class="size-4" aria-hidden="true" />
-						Quote the text you selected
+						{c.quoteSelection}
 					</button>
 				{:else}
-					<span>Tip: select text on the page to quote it here.</span>
+					<span>{c.quoteTip}</span>
 				{/if}
 			</div>
 		{/if}
@@ -446,7 +456,7 @@
 
 	<div class="flex flex-col gap-2">
 		<span class="text-sm font-medium" id="report-photos">
-			Photos <span class="font-normal text-ink-muted">(optional, up to {MAX_PHOTOS})</span>
+			{c.photos} <span class="font-normal text-ink-muted">{c.photosOptional(MAX_PHOTOS)}</span>
 		</span>
 		{#if uploads.length < MAX_PHOTOS}
 			<label
@@ -475,10 +485,10 @@
 					class="inline-flex min-h-11 items-center gap-2 rounded-sm bg-accent-fill px-4 font-medium text-accent-ink"
 				>
 					<ImagePlus class="size-5" aria-hidden="true" />
-					Choose photos
+					{c.choosePhotos}
 				</span>
 				<span id="report-photos-hint" class="text-xs text-ink-muted">
-					or drop them here · JPEG, PNG, WebP or GIF, 8 MB each · uploads right away
+					{c.dropHint}
 				</span>
 			</label>
 		{/if}
@@ -503,13 +513,13 @@
 										style="width: {Math.round(u.progress * 100)}%"
 									></div>
 								</div>
-								<p class="m-0 mt-0.5 text-xs text-ink-muted">Uploading… {Math.round(u.progress * 100)}%</p>
+								<p class="m-0 mt-0.5 text-xs text-ink-muted">{c.uploading(Math.round(u.progress * 100))}</p>
 							{:else if u.status === 'done'}
 								<p class="m-0 mt-0.5 inline-flex items-center gap-1 text-xs text-ink-muted">
-									<CheckIcon class="size-3.5" aria-hidden="true" /> Uploaded · {size(u.size)}
+									<CheckIcon class="size-3.5" aria-hidden="true" /> {c.uploaded(size(u.size))}
 								</p>
 							{:else}
-								<p class="m-0 mt-0.5 text-xs text-error" role="alert">{u.error}</p>
+								<p class="m-0 mt-0.5 text-xs text-error" role="alert">{u.error?.(c) ?? ''}</p>
 							{/if}
 						</div>
 						{#if u.status === 'uploading'}
@@ -520,7 +530,7 @@
 								type="button"
 								onclick={() => send(u.key)}
 								class="inline-flex size-9 flex-none items-center justify-center rounded-sm hover:bg-surface"
-								aria-label="Retry {u.name}"
+								aria-label={c.retry(u.name)}
 							>
 								<RotateCw class="size-4" aria-hidden="true" />
 							</button>
@@ -529,7 +539,7 @@
 							type="button"
 							onclick={() => remove(u.key)}
 							class="inline-flex size-9 flex-none items-center justify-center rounded-sm hover:bg-surface"
-							aria-label="Remove {u.name}"
+							aria-label={c.remove(u.name)}
 						>
 							<XIcon class="size-4" aria-hidden="true" />
 						</button>
@@ -546,18 +556,17 @@
 			class="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-accent-fill px-5 font-medium text-accent-ink transition-colors hover:bg-accent-hover disabled:opacity-60"
 		>
 			{#if busy}<LoaderCircle class="size-4 animate-spin" aria-hidden="true" />{/if}
-			{busy ? 'Sending…' : uploading ? 'Waiting for photos…' : 'Send report'}
+			{busy ? c.sending : uploading ? c.waitingPhotos : c.sendReport}
 		</button>
 		<span class="text-xs text-ink-muted" aria-live="polite">
 			{#if dirty}
-				Unsaved changes · saves automatically
+				{c.unsaved}
 			{:else if savedAt}
-				Draft saved on this device at {clock(savedAt)}
+				{c.draftSaved(clock(savedAt))}
 			{/if}
 		</span>
 	</div>
 	<p class="m-0 text-xs text-ink-muted">
-		Photos lose their camera metadata on our end; your note stays private while personal details are
-		removed.
+		{c.privacy}
 	</p>
 </form>
