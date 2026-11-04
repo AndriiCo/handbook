@@ -19,6 +19,7 @@
 		WorkError,
 		auditLabel,
 		canStagePacks,
+		cancelWork,
 		enqueueBody,
 		enqueueWork,
 		examplePayload,
@@ -55,6 +56,7 @@
 	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
 	import PackagePlusIcon from '@lucide/svelte/icons/package-plus';
 	import PackageCheckIcon from '@lucide/svelte/icons/package-check';
+	import BanIcon from '@lucide/svelte/icons/ban';
 
 	// Production work queue (work-queue.md §3): staff enqueue jobs here,
 	// plant workers dial out over one WebSocket and check them out one
@@ -94,6 +96,7 @@
 		error: string | null;
 	}>({ state: 'idle', view: null, error: null });
 	let retrying = $state<Record<number, true>>({});
+	let cancelling = $state<Record<number, true>>({});
 	let staging = $state<Record<number, true>>({});
 	let stageNote = $state<{ id: number; ok: boolean; text: string } | null>(null);
 
@@ -209,6 +212,24 @@
 			const next = { ...retrying };
 			delete next[id];
 			retrying = next;
+		}
+	}
+
+	async function cancelJob(id: number) {
+		if (cancelling[id]) return;
+		cancelling = { ...cancelling, [id]: true };
+		try {
+			await cancelWork(API, id);
+			toast.success(`Job ${id} is cancelled. Retry brings it back.`);
+			refresh();
+			if (selectedId === id) void loadDetail(id, true);
+		} catch (err) {
+			toast.error(errorText(err, `Job ${id} could not be cancelled.`));
+			if (err instanceof WorkError && err.status === 409) refresh();
+		} finally {
+			const next = { ...cancelling };
+			delete next[id];
+			cancelling = next;
 		}
 	}
 
@@ -692,6 +713,10 @@
 											<time class="block text-ink-muted" datetime={iso(item.lease_expires_at)} title={dateTime(item.lease_expires_at)}
 												>{leaseText(item.lease_expires_at, now)}</time
 											>
+										{:else if item.status === 'pending' && item.retry_after !== null && item.retry_after > now}
+											<time class="block text-ink-muted" datetime={iso(item.retry_after)} title={dateTime(item.retry_after)}
+												>Retries {dateTime(item.retry_after)}</time
+											>
 										{:else if item.status === 'pending'}
 											<span class={`block ${capable.has(item.kind) ? 'text-ink-muted' : 'text-changed'}`}>
 												{capable.has(item.kind) ? 'Waiting for a worker' : 'No worker for this kind'}
@@ -748,6 +773,20 @@
 															aria-hidden="true"
 														/>{/if}
 													<span class="hidden sm:inline">{item.staged ? 'Stage again' : 'Stage as packs'}</span>
+												</Button>
+											{/if}
+											{#if item.status === 'pending' || item.status === 'leased'}
+												<Button
+													variant="outline"
+													size="sm"
+													disabled={!!cancelling[item.id]}
+													aria-label={`Cancel job ${item.id}`}
+													onclick={() => cancelJob(item.id)}
+												>
+													{#if cancelling[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<BanIcon
+															aria-hidden="true"
+														/>{/if}
+													<span class="hidden sm:inline">Cancel</span>
 												</Button>
 											{/if}
 											{#if item.status === 'failed'}
@@ -826,6 +865,27 @@
 			</div>
 		{:else if detail}
 			{@const item = detail.item}
+			{#if item.status === 'pending' || item.status === 'leased'}
+				<section class="flex flex-col gap-3 border-b border-line px-6 py-5" aria-labelledby="sheet-cancel">
+					<h3 id="sheet-cancel" class="m-0 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+						{item.status === 'leased' ? 'Running' : 'Queued'}
+					</h3>
+					<p class="m-0 text-sm text-ink-muted">
+						{item.status === 'leased'
+							? 'Cancelling ends the lease: the worker drops its result at the next heartbeat.'
+							: 'Cancelling keeps the job out of every checkout.'}
+						Retry brings it back.
+					</p>
+					<div>
+						<Button variant="outline" size="lg" disabled={!!cancelling[item.id]} onclick={() => cancelJob(item.id)}>
+							{#if cancelling[item.id]}<LoaderIcon class="motion-safe:animate-spin" aria-hidden="true" />{:else}<BanIcon
+									aria-hidden="true"
+								/>{/if}
+							Cancel job {item.id}
+						</Button>
+					</div>
+				</section>
+			{/if}
 			{#if item.status === 'failed' || item.error}
 				<section class="flex flex-col gap-3 border-b border-line px-6 py-5" aria-labelledby="sheet-error">
 					<h3 id="sheet-error" class="m-0 text-xs font-semibold tracking-wide text-ink-muted uppercase">Error</h3>

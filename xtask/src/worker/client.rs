@@ -94,8 +94,6 @@ struct Running {
     dir: PathBuf,
     rx: mpsc::Receiver<Result<JobOutput, JobError>>,
     last_beat: Instant,
-    /// The server said the lease is gone: finish, but upload nothing.
-    lost: bool,
     /// The finished job's `complete`/`fail` frame (and whether it is a
     /// success), kept until the server answers it: a socket that dies
     /// mid-upload re-sends the same frame from the next session.
@@ -140,7 +138,6 @@ impl Running {
             dir,
             rx,
             last_beat: Instant::now(),
-            lost: false,
             upload: None,
         }
     }
@@ -234,17 +231,6 @@ fn session(
         if job.upload.is_none()
             && let Some(outcome) = job.poll()
         {
-            if job.lost {
-                eprintln!(
-                    "worker: job {} finished after its lease was lost; result dropped",
-                    job.id
-                );
-                *running = None;
-                if cfg.once {
-                    return Ok(());
-                }
-                continue;
-            }
             job.upload = Some((outcome.is_ok(), finish_frame(job, outcome, max_result)));
         }
         if let Some((ok, frame)) = &job.upload {
@@ -280,8 +266,19 @@ fn session(
         if let Some(frame) = read_frame(&mut ws)?
             && frame["code"] == "lease_lost"
         {
-            eprintln!("worker: job {} lease lost (expired or reassigned)", job.id);
-            job.lost = true;
+            // Expired, cancelled, over its time limit or reassigned: stop
+            // waiting for the thread (it finishes in the background and
+            // its result is dropped with the receiver), so this worker
+            // can take the next job.
+            eprintln!(
+                "worker: job {} lost its lease ({}); its result will be dropped",
+                job.id,
+                frame["error"].as_str().unwrap_or("lease lost")
+            );
+            *running = None;
+            if cfg.once {
+                return Ok(());
+            }
         }
     }
 }
@@ -693,6 +690,67 @@ mod tests {
         assert_eq!(resent["lease"], LEASE);
     }
 
+    struct Slow;
+
+    impl JobHandler for Slow {
+        fn kind(&self) -> &'static str {
+            "test.slow"
+        }
+        fn run(&self, _ctx: &JobContext, payload: &Value) -> Result<JobOutput, JobError> {
+            std::thread::sleep(Duration::from_secs(8));
+            Ok(JobOutput::json(payload, Value::Null))
+        }
+    }
+
+    /// A cancelled (or timed-out) job frees the worker at once instead
+    /// of holding its only slot until the handler returns.
+    #[test]
+    fn a_lost_lease_frees_the_worker_without_waiting_for_the_job() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "ws://{}/apostille/api/v1/worker/ws",
+            listener.local_addr().unwrap()
+        );
+        let server = std::thread::spawn(move || {
+            let mut ws = accept(&listener);
+            welcome(&mut ws);
+            assert_eq!(recv(&mut ws)["type"], "checkout");
+            reply(
+                &mut ws,
+                json!({"type": "job", "id": 5, "kind": "test.slow", "payload": {},
+                       "lease": LEASE, "lease_expires_at": 0, "attempt": 1}),
+            );
+            assert_eq!(recv(&mut ws)["type"], "heartbeat");
+            reply(
+                &mut ws,
+                json!({"type": "error", "code": "lease_lost", "error": "job ran over its time limit", "id": 5}),
+            );
+            // Keep the socket open; the worker leaves on its own.
+            let _ = ws.read();
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config {
+            url,
+            token: TOKEN.to_string(),
+            name: "plant-test".to_string(),
+            workdir: dir.path().join("work"),
+            cache_dir: dir.path().to_path_buf(),
+            repo: super::super::repo_root(),
+            env: WorkerEnv::default(),
+            gpu_lock: dir.path().join("gpu.lock"),
+            once: true,
+        };
+        let started = Instant::now();
+        let handlers: Vec<Box<dyn JobHandler>> = vec![Box::new(Slow)];
+        run_with(&cfg, Arc::new(handlers));
+        assert!(
+            started.elapsed() < Duration::from_secs(6),
+            "returned after {:?}, the 8 s job still running",
+            started.elapsed()
+        );
+        server.join().unwrap();
+    }
+
     #[test]
     fn refuses_plain_ws_off_loopback() {
         // 192.0.2.1 is TEST-NET-1: refused before any packet is sent.
@@ -713,7 +771,6 @@ mod tests {
             dir: dir.path().to_path_buf(),
             rx,
             last_beat: Instant::now(),
-            lost: false,
             upload: None,
         };
         let big = JobOutput::json(&json!({"x": "y".repeat(100)}), Value::Null);
@@ -751,7 +808,6 @@ mod tests {
             dir: dir.path().to_path_buf(),
             rx,
             last_beat: Instant::now(),
-            lost: false,
             upload: None,
         };
         let complete = finish_frame(&job, Ok(JobOutput::json(&json!({}), json!({}))), 1024);

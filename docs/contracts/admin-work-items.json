@@ -20,7 +20,8 @@
             "EG"
           ]
         },
-        "staged": false
+        "staged": false,
+        "retry_after": null
       },
       {
         "id": 6,
@@ -48,7 +49,8 @@
             "https://example.com/synthetic/1"
           ]
         },
-        "staged": false
+        "staged": false,
+        "retry_after": null
       }
     ],
     "workers": [
@@ -74,7 +76,8 @@
           "countries": [
             "EG"
           ]
-        }
+        },
+        "max_runtime_secs": 28800
       }
     ],
     "counts": {
@@ -124,7 +127,8 @@
           "https://example.com/synthetic/1"
         ]
       },
-      "staged": false
+      "staged": false,
+      "retry_after": null
     },
     "audit": [
       {
@@ -158,5 +162,9 @@
       "EG"
     ],
     "count": 1
+  },
+  "cancel_response": {
+    "id": 7,
+    "status": "failed"
   }
 }

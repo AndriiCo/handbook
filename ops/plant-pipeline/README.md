@@ -93,6 +93,8 @@ Layout on plant (operator decision 2026-11-03, `docs/ops/deploy.md` § Plant):
 Setup (from the Mac; idempotent):
 
 ```sh
+# 0. once, as root on plant: the scratch root the worker writes to
+ssh -t plant 'sudo mkdir -p /srv/scratch/apostille && sudo chown "$(id -un):" /srv/scratch/apostille'
 # 1. token: mint once, save it as worker.token in admin /config
 openssl rand -hex 32
 # 2. secrets file on plant (paste the token and plant's Meta key)
@@ -101,18 +103,26 @@ ssh plant 'mkdir -p ~/.config/apostille && umask 077 && cat > ~/.config/apostill
 #   META_API_KEY=<plant's Meta API key>
 #   (Ctrl-D ends the input)
 # 3. dirs, source of HEAD (or a SHA), release build, cron watchdog
-./ops/plant-pipeline/worker-install.sh            # add --restart after an update
+./ops/plant-pipeline/worker-install.sh            # add --restart after an update (drains)
 # 4. smoke: watch it connect, then check the admin Work queue page
 ssh plant 'tail -n 20 /srv/scratch/apostille/work/worker.log'
 ```
 
 The watchdog is a user-crontab line, same reasoning as the pipeline
 worker above (Linger=no, so cron is the real persistence; the
-`worker.lock` flock keeps one copy, extra starts exit quietly):
+`worker.lock` flock keeps one copy, extra starts exit quietly).
+`worker-run.sh` moves `worker.log` to `worker.log.1` past 10 MiB while
+no worker holds the lock, then starts the worker:
 
 ```
-* * * * * cd $HOME/apostille-worker/src && /srv/scratch/apostille/target/release/xtask worker --connect wss://andrii.ai/apostille/api/v1/worker/ws >>/srv/scratch/apostille/work/worker.log 2>&1 # apostille-worker
+* * * * * sh $HOME/apostille-worker/src/ops/plant-pipeline/worker-run.sh wss://andrii.ai/apostille/api/v1/worker/ws # apostille-worker
 ```
+
+Restarts drain: `worker-install.sh --restart` creates
+`/srv/scratch/apostille/work/worker.drain`; the running worker takes no
+new job, finishes and uploads the current one, removes the file and
+exits, and cron starts the new build within a minute. `status.sh`
+shows both workers and the queue worker's last log lines.
 
 Disconnects reconnect with backoff (1 s doubling to 60 s); a job keeps
 running through a dropped socket and completes on the next session

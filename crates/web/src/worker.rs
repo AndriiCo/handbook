@@ -71,6 +71,9 @@ pub(crate) struct KindInfo {
     pub about: &'static str,
     /// Example payload (JSON) the admin page prefills.
     pub example: &'static str,
+    /// Longest a lease may run from checkout; past it the next
+    /// heartbeat answers `lease_lost` and the item fails for good.
+    pub max_runtime_secs: i64,
 }
 
 pub(crate) const KINDS: &[KindInfo] = &[
@@ -79,6 +82,7 @@ pub(crate) const KINDS: &[KindInfo] = &[
         about: "Legalization packs for UN members outside the Apostille Convention: \
                 Spark finds the DOS and MFA pages, every value is quote-checked.",
         example: r#"{"countries": ["EG"], "limit": 1}"#,
+        max_runtime_secs: 8 * 3600,
     },
     KindInfo {
         kind: "scrape.urls",
@@ -87,6 +91,7 @@ pub(crate) const KINDS: &[KindInfo] = &[
             r#"{"urls": ["https://www.hcch.net/en/instruments/conventions/"#,
             r#"status-table/?cid=41"]}"#
         ),
+        max_runtime_secs: 3600,
     },
     KindInfo {
         kind: "eval.gold",
@@ -94,16 +99,32 @@ pub(crate) const KINDS: &[KindInfo] = &[
                 Replays recorded drafts; \"live\": true drafts through the Meta API \
                 (needs META_API_KEY in worker.env).",
         example: r#"{"live": false, "planted": true}"#,
+        max_runtime_secs: 3 * 3600,
     },
     KindInfo {
         kind: "precheck.glimmer",
         about: "Self-hosted Glimmer precheck on the plant GPU.",
         example: "{}",
+        max_runtime_secs: 30 * 60,
     },
 ];
 
 fn known_kind(kind: &str) -> bool {
     KINDS.iter().any(|k| k.kind == kind)
+}
+
+/// Time limit for `kind` (the longest one for a kind no longer listed).
+fn max_runtime(kind: &str) -> i64 {
+    KINDS.iter().find(|k| k.kind == kind).map_or_else(
+        || {
+            KINDS
+                .iter()
+                .map(|k| k.max_runtime_secs)
+                .max()
+                .unwrap_or(3600)
+        },
+        |k| k.max_runtime_secs,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -518,7 +539,25 @@ fn handle_frame(state: &AppState, session: &Session, text: &str) -> ServerFrame 
             }
         }
         ClientFrame::Heartbeat { id, lease } => {
-            match work::heartbeat(&conn, id, &session.owner(&lease), LEASE_SECS, now) {
+            let owner = session.owner(&lease);
+            let limit = work::get(&conn, id)
+                .ok()
+                .flatten()
+                .map(|item| max_runtime(&item.kind));
+            if let Some(limit) = limit {
+                match work::end_if_overrun(&conn, id, &owner, limit, now) {
+                    Ok(true) => {
+                        return ServerFrame::error(
+                            "lease_lost",
+                            "job ran over its time limit",
+                            Some(id),
+                        );
+                    }
+                    Ok(false) => {}
+                    Err(_) => return store_err(id),
+                }
+            }
+            match work::heartbeat(&conn, id, &owner, LEASE_SECS, now) {
                 Ok(Some(lease_expires_at)) => ServerFrame::Lease {
                     id,
                     lease_expires_at,
@@ -673,6 +712,7 @@ fn item_json(item: &work::WorkItem, staged: bool) -> Value {
         "summary": item.summary_json.as_deref().and_then(|s| serde_json::from_str::<Value>(s).ok()),
         "payload": serde_json::from_str::<Value>(&item.payload_json).unwrap_or(json!({})),
         "staged": staged,
+        "retry_after": item.retry_after,
     })
 }
 
@@ -709,6 +749,7 @@ async fn list(
             json!({
                 "kind": k.kind, "about": k.about,
                 "example": serde_json::from_str::<Value>(k.example).unwrap_or(json!({})),
+                "max_runtime_secs": k.max_runtime_secs,
             })
         })
         .collect();
@@ -854,6 +895,20 @@ async fn retry(auth: AdminAuth, State(state): State<AppState>, Path(id): Path<i6
     }
 }
 
+async fn cancel(auth: AdminAuth, State(state): State<AppState>, Path(id): Path<i64>) -> Response {
+    let Some(conn) = open_work(&state) else {
+        return store_unavailable();
+    };
+    match work::cancel(&conn, id, &auth.user.user_id, unix_now()) {
+        Ok(true) => Json(json!({"id": id, "status": "failed"})).into_response(),
+        Ok(false) => match work::get(&conn, id) {
+            Ok(None) => json_error(StatusCode::NOT_FOUND, "no such work item"),
+            _ => json_error(StatusCode::CONFLICT, "only pending or leased items cancel"),
+        },
+        Err(_) => store_unavailable(),
+    }
+}
+
 /// A pack id safe as a file stem (`EG`, `usa-wa`): 1-64 of `[A-Za-z0-9_-]`.
 fn valid_pack_id(id: &str) -> bool {
     (1..=64).contains(&id.len())
@@ -986,6 +1041,10 @@ pub fn admin_router(state: AppState) -> Router {
             get(result),
         )
         .route("/apostille/api/v1/admin/work-items/{id}/retry", post(retry))
+        .route(
+            "/apostille/api/v1/admin/work-items/{id}/cancel",
+            post(cancel),
+        )
         .route(
             "/apostille/api/v1/admin/work-items/{id}/stage-packs",
             post(stage_packs),
@@ -1401,6 +1460,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn staff_cancel_ends_the_workers_lease() {
+        let fx = Fixture::new(Some(TOKEN));
+        let addr = fx.serve_public();
+        let uri = "/apostille/api/v1/admin/work-items";
+        let body = json!({"kind": "scrape.urls", "payload": {"urls": []}});
+        let (_, created) = call_json(fx.admin(), staff("POST", uri, Some(body))).await;
+        let id = created["id"].as_i64().unwrap();
+        let mut ws = connect(addr, Some(TOKEN)).await.unwrap();
+        hello(&mut ws, "plant-c").await;
+        let job = send(&mut ws, json!({"type": "checkout"})).await;
+        let lease = job["lease"].as_str().unwrap().to_string();
+        let cancel = format!("{uri}/{id}/cancel");
+        let (status, cancelled) = call_json(fx.admin(), staff("POST", &cancel, None)).await;
+        assert_eq!(
+            (status, cancelled["status"].as_str()),
+            (StatusCode::OK, Some("failed"))
+        );
+        let beat = send(
+            &mut ws,
+            json!({"type": "heartbeat", "id": id, "lease": lease}),
+        )
+        .await;
+        assert_eq!(beat["code"], "lease_lost");
+        let (status, _) = call_json(fx.admin(), staff("POST", &cancel, None)).await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "a failed item does not cancel"
+        );
+        assert_eq!(max_runtime("scrape.urls"), 3600);
+        assert_eq!(
+            max_runtime("gone.kind"),
+            8 * 3600,
+            "unknown kinds get the longest"
+        );
+    }
+
+    #[tokio::test]
     async fn unconfigured_or_short_token_refuses_every_worker() {
         let fx = Fixture::new(None);
         let addr = fx.serve_public();
@@ -1661,6 +1758,7 @@ mod tests {
             created_by: "staff-1".to_string(),
             created_at: 1,
             updated_at: 2,
+            retry_after: None,
         };
         let got = item_json(&item, false);
         let want = seed["list"]["items"][0].as_object().unwrap();
