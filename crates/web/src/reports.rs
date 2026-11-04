@@ -23,13 +23,19 @@
 //! Rate limits: the submit handler allows [`SUBMIT_PER_MINUTE`]
 //! submits per IP per minute plus a tighter per-account bucket
 //! ([`SUBMIT_PER_HOUR_PER_ACCOUNT`]/hour).
+//!
+//! Photos can also upload ahead of the submit, the moment the
+//! visitor picks them ([`stage_upload`]): the bytes are checked and
+//! EXIF-stripped exactly as on submit, held in `report_upload` under
+//! the visitor's account, and the submit names them by id. Staged
+//! uploads nobody submits are pruned after [`UPLOAD_TTL_SECS`].
 
 use std::net::SocketAddr;
 use std::sync::LazyLock;
 
 use axum::{
     Json,
-    extract::{ConnectInfo, Path, State},
+    extract::{ConnectInfo, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -52,6 +58,15 @@ pub const SUBMIT_PER_MINUTE: u32 = 5;
 
 /// Submits per signed-in account per hour (abuse ceiling).
 pub const SUBMIT_PER_HOUR_PER_ACCOUNT: u32 = 20;
+
+/// Staged uploads per IP per minute.
+pub const UPLOAD_PER_MINUTE: u32 = 20;
+
+/// Most staged (not yet submitted) uploads one account may hold.
+pub const MAX_STAGED_PER_ACCOUNT: i64 = 12;
+
+/// A staged upload no submit claimed is pruned after a day.
+pub const UPLOAD_TTL_SECS: i64 = 24 * 3600;
 
 /// Placeholder shown wherever a report has no masked text yet. No
 /// unmasked body or photo is ever served to signed-out readers, and
@@ -112,7 +127,16 @@ pub fn migrate_report_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()
            source TEXT NOT NULL DEFAULT 'visitor report',
            created_by TEXT NOT NULL DEFAULT '',
            created_at INTEGER NOT NULL
-         );",
+         );
+         CREATE TABLE IF NOT EXISTS report_upload(
+           id TEXT PRIMARY KEY,
+           user_id TEXT NOT NULL DEFAULT '',
+           filename TEXT NOT NULL DEFAULT '',
+           bytes BLOB NOT NULL,
+           created_at INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_report_upload_user
+           ON report_upload(user_id);",
     )
 }
 
@@ -384,6 +408,100 @@ pub fn submit_report(
     Ok(report_id)
 }
 
+fn new_upload_id() -> String {
+    let bytes = rand::random::<[u8; 16]>();
+    let mut id = String::with_capacity(32);
+    for b in bytes {
+        id.push_str(&format!("{b:02x}"));
+    }
+    id
+}
+
+/// Stage one photo for a later submit: size-capped, magic-byte
+/// checked and EXIF-stripped now, so a bad file fails at pick time.
+/// Prunes the account's expired uploads first; refuses past
+/// [`MAX_STAGED_PER_ACCOUNT`]. Returns the upload id.
+pub fn stage_upload(
+    conn: &rusqlite::Connection,
+    user_id: &str,
+    filename: &str,
+    bytes: &[u8],
+    now: i64,
+) -> Result<String, &'static str> {
+    if bytes.is_empty() {
+        return Err("empty file");
+    }
+    if bytes.len() > MAX_PHOTO_BYTES {
+        return Err("photo too large");
+    }
+    if classify_photo(bytes).is_none() {
+        return Err("photo type not allowed");
+    }
+    conn.execute(
+        "DELETE FROM report_upload WHERE created_at < ?1",
+        [now - UPLOAD_TTL_SECS],
+    )
+    .map_err(|_| "store unavailable")?;
+    let held: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM report_upload WHERE user_id = ?1",
+            [user_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "store unavailable")?;
+    if held >= MAX_STAGED_PER_ACCOUNT {
+        return Err("too many photos waiting; send or remove some first");
+    }
+    let (clean, _) = strip_exif(bytes);
+    let id = new_upload_id();
+    let name: String = filename.chars().take(128).collect();
+    conn.execute(
+        "INSERT INTO report_upload(id, user_id, filename, bytes, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![id, user_id, name, clean, now],
+    )
+    .map_err(|_| "store unavailable")?;
+    Ok(id)
+}
+
+/// Drop one of the account's staged uploads (the visitor removed
+/// it). `true` when a row went away.
+pub fn drop_upload(conn: &rusqlite::Connection, user_id: &str, id: &str) -> bool {
+    conn.execute(
+        "DELETE FROM report_upload WHERE id = ?1 AND user_id = ?2",
+        rusqlite::params![id, user_id],
+    )
+    .map(|n| n > 0)
+    .unwrap_or(false)
+}
+
+/// Load the account's staged uploads by id, in the order given.
+/// An id that is unknown, expired or another account's fails the
+/// whole set (the visitor re-picks that photo).
+pub fn staged_photos(
+    conn: &rusqlite::Connection,
+    user_id: &str,
+    ids: &[String],
+    now: i64,
+) -> Result<Vec<IncomingPhoto>, &'static str> {
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let row: Option<(String, Vec<u8>)> = conn
+            .query_row(
+                "SELECT filename, bytes FROM report_upload
+                 WHERE id = ?1 AND user_id = ?2 AND created_at >= ?3",
+                rusqlite::params![id, user_id, now - UPLOAD_TTL_SECS],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+        let Some((filename, bytes)) = row else {
+            return Err("a photo upload expired; pick it again");
+        };
+        out.push(IncomingPhoto { filename, bytes });
+    }
+    Ok(out)
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -502,6 +620,9 @@ pub struct SubmitBody {
     /// multipart upgrade is builder-owned if ever needed).
     #[serde(default)]
     pub photos: Vec<IncomingPhotoBody>,
+    /// Photos already staged by [`upload_photo`], by id.
+    #[serde(default)]
+    pub upload_ids: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -564,10 +685,103 @@ pub async fn submit(
             bytes,
         });
     }
+    if req.upload_ids.len() > MAX_PHOTOS {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "at most 3 photos"})),
+        )
+            .into_response();
+    }
+    match staged_photos(&conn, &user_id, &req.upload_ids, now) {
+        Ok(staged) => photos.extend(staged),
+        Err(message) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({"error": message}))).into_response();
+        }
+    }
     match submit_report(&conn, &user_id, &req.authority, &req.body, &photos, now) {
+        Ok(id) => {
+            for upload in &req.upload_ids {
+                drop_upload(&conn, &user_id, upload);
+            }
+            (StatusCode::CREATED, Json(json!({"id": id}))).into_response()
+        }
+        Err(message) => (StatusCode::BAD_REQUEST, Json(json!({"error": message}))).into_response(),
+    }
+}
+
+/// Body cap for [`upload_photo`]: one photo plus slack.
+pub const UPLOAD_BODY_BYTES: usize = MAX_PHOTO_BYTES + 64 * 1024;
+
+#[derive(serde::Deserialize)]
+pub struct UploadQuery {
+    #[serde(default)]
+    pub filename: String,
+}
+
+/// `POST /api/v1/reports/uploads?filename=…`: stage one photo the
+/// moment it is picked. The body is the raw file with an `image/*`
+/// or `application/octet-stream` type (never a type a cross-site
+/// form can send unpreflighted), from an allowed Origin, signed in.
+pub async fn upload_photo(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Query(q): Query<UploadQuery>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let now = unix_now();
+    let ip = passkey::client_ip(addr);
+    if !SUBMIT_LIMITS.check(&format!("rep-up:{ip}"), now, UPLOAD_PER_MINUTE, 60) {
+        return rate_limited();
+    }
+    let content_type = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !(content_type.starts_with("image/") || content_type == "application/octet-stream")
+        || !passkey::origin_ok(&headers, state.admin_mtls_off)
+    {
+        return passkey::csrf_fail();
+    }
+    let Some(conn) = passkey::open_conn(&state) else {
+        return store_unavailable();
+    };
+    let Some(user_id) = signed_in(&conn, &headers, now) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "login required"})),
+        )
+            .into_response();
+    };
+    match stage_upload(&conn, &user_id, &q.filename, &body, now) {
         Ok(id) => (StatusCode::CREATED, Json(json!({"id": id}))).into_response(),
         Err(message) => (StatusCode::BAD_REQUEST, Json(json!({"error": message}))).into_response(),
     }
+}
+
+/// `DELETE /api/v1/reports/uploads/{id}`: the visitor removed a
+/// staged photo. 204 whether or not it was still there.
+pub async fn delete_upload(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let now = unix_now();
+    if !passkey::origin_ok(&headers, state.admin_mtls_off) {
+        return passkey::csrf_fail();
+    }
+    let Some(conn) = passkey::open_conn(&state) else {
+        return store_unavailable();
+    };
+    let Some(user_id) = signed_in(&conn, &headers, now) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "login required"})),
+        )
+            .into_response();
+    };
+    drop_upload(&conn, &user_id, &id);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// `GET /api/v1/authorities/{slug}/reports`: masked report list.
@@ -720,6 +934,29 @@ mod tests {
             Err("photo type not allowed")
         );
         assert!(submit_report(&conn, "u1", "usa-wa-sos", "  ", &[], 1).is_err());
+    }
+
+    #[test]
+    fn staged_uploads_belong_to_their_account_and_expire() {
+        let conn = memdb();
+        let png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00];
+        assert_eq!(
+            stage_upload(&conn, "u1", "x.pdf", b"%PDF-1.4", 1),
+            Err("photo type not allowed")
+        );
+        let id = stage_upload(&conn, "u1", "a.png", &png, 100).expect("stage");
+        assert!(staged_photos(&conn, "u2", &[id.clone()], 100).is_err());
+        let got = staged_photos(&conn, "u1", &[id.clone()], 100).expect("own upload");
+        assert_eq!(got[0].filename, "a.png");
+        assert!(staged_photos(&conn, "u1", &[id.clone()], 100 + UPLOAD_TTL_SECS + 1).is_err());
+        assert!(!drop_upload(&conn, "u2", &id));
+        assert!(drop_upload(&conn, "u1", &id));
+        for _ in 0..MAX_STAGED_PER_ACCOUNT {
+            stage_upload(&conn, "u3", "p.png", &png, 200).expect("under cap");
+        }
+        assert!(stage_upload(&conn, "u3", "p.png", &png, 200).is_err());
+        // Expired rows are pruned on the next stage, freeing the cap.
+        assert!(stage_upload(&conn, "u3", "p.png", &png, 200 + UPLOAD_TTL_SECS + 1).is_ok());
     }
 
     #[test]

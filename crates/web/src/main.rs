@@ -637,6 +637,16 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         // SA-21 walk-in reports: signed-in submit (401 anonymous),
         // masked public list per authority.
         .route("/api/v1/reports", post(reports::submit))
+        // Photos upload the moment they are picked, ahead of submit.
+        .route(
+            "/api/v1/reports/uploads",
+            post(reports::upload_photo)
+                .layer(axum::extract::DefaultBodyLimit::max(reports::UPLOAD_BODY_BYTES)),
+        )
+        .route(
+            "/api/v1/reports/uploads/{id}",
+            axum::routing::delete(reports::delete_upload),
+        )
         .route(
             "/api/v1/authorities/{slug}/reports",
             get(reports::list_for_authority),

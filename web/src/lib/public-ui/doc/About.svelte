@@ -1,7 +1,9 @@
 <script lang="ts">
 	import type { Component, Snippet } from 'svelte';
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { issuerName, partOf, traceAttrs } from './items.js';
+	import { draftKey, loadDraft } from '../report-draft.js';
 	import type { Item } from './contract.js';
 
 	// "About this guide" (plan §3 row 13, printed): who we are not, what
@@ -12,8 +14,11 @@
 	// lede names its issuer); any other page (a country's receiving
 	// authorities) keeps the "Unofficial guide" line alone. The fee is
 	// the per-document fee's own amount, read out of its value and traced
-	// to it; the clause is dropped unless that value is `ok`. Then a link
-	// to report a change, and the follow form, which loads only when this
+	// to it; the clause is dropped unless that value is `ok`. Then
+	// "Report a change", which opens the report form docked beside this
+	// page (ReportPanel, loaded on open; `#report` reopens it, e.g. after
+	// sign-in; the link still goes to /report without JS), and the
+	// follow form, which loads only when this
 	// band nears the screen (and shows itself only while follow emails
 	// are on).
 	//
@@ -52,6 +57,49 @@
 
 	let root = $state<HTMLElement | null>(null);
 	let Follow = $state<Component<any> | null>(null);
+	let Panel = $state<Component<any> | null>(null);
+	let reporting = $state(false);
+	let hasDraft = $state(false);
+
+	const loginHref = resolve('/(customer)/login');
+	const draftSaved = () => {
+		try {
+			return !!loadDraft(localStorage, draftKey(slug));
+		} catch {
+			return false;
+		}
+	};
+
+	function openReport(event?: MouseEvent) {
+		if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)) return;
+		event?.preventDefault();
+		reporting = true;
+		if (!Panel) {
+			import('./ReportPanel.svelte')
+				.then((m) => (Panel = m.default as Component<any>))
+				.catch(() => (window.location.href = reportHref));
+		}
+	}
+
+	function closeReport() {
+		reporting = false;
+		hasDraft = draftSaved();
+		if (window.location.hash === '#report') {
+			history.replaceState(history.state, '', window.location.pathname + window.location.search);
+		}
+	}
+
+	const reportHref = $derived(`${resolve('/(customer)/report')}?destination=${encodeURIComponent(slug)}`);
+
+	onMount(() => {
+		hasDraft = draftSaved();
+		const onHash = () => {
+			if (window.location.hash === '#report') openReport();
+		};
+		onHash();
+		window.addEventListener('hashchange', onHash);
+		return () => window.removeEventListener('hashchange', onHash);
+	});
 
 	$effect(() => {
 		const el = root;
@@ -90,11 +138,16 @@
 		</p>
 		<p class="mt-3 mb-0 text-sm print:hidden">
 			<a
-				href={resolve('/(customer)/report')}
+				href={reportHref}
+				onclick={openReport}
+				aria-expanded={reporting}
 				class="inline-flex min-h-6 items-center font-medium text-accent-strong underline underline-offset-4"
-				>Report a change on the office's pages</a
+				>{hasDraft ? 'Continue your report of a change (draft saved)' : "Report a change on the office's pages"}</a
 			>
 		</p>
+		{#if reporting && Panel}
+			<Panel {slug} {name} {apiBase} {loginHref} onclose={closeReport} />
+		{/if}
 		{#if Follow}
 			<div class="mt-8 print:hidden">
 				<Follow {slug} name={name} apiBase={apiBase} />
