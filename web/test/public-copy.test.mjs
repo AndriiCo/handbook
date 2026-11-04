@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { HOME_COPY, MAP_COPY, shortDate } from '../src/lib/public-ui/home-copy.js';
+import { ROUTE_COPY } from '../src/lib/public-ui/route-copy.js';
+import { ABOUT_COPY } from '../src/lib/public-ui/about-copy.js';
 import { PLACE_COPY } from '../src/lib/public-ui/place-copy.js';
 import { NOTIFY_COPY } from '../src/lib/public-ui/notify-copy.js';
 import { DOC_CLASSES } from '../src/lib/public-ui/location.js';
@@ -34,13 +36,21 @@ function leaves(value, path = '', out = new Map()) {
 }
 
 // Leaves that are the same word in a language (brand names, cognates).
-const SAME = new Set(['es:steps.0.model', 'fr:steps.0.model', 'es:federal', 'fr:international']);
+const SAME = new Set([
+	'es:steps.0.model',
+	'fr:steps.0.model',
+	'es:federal',
+	'fr:international',
+	'fr:apostilleTitle'
+]);
 
 for (const [name, table] of [
 	['HOME_COPY', HOME_COPY],
 	['MAP_COPY', MAP_COPY],
 	['PLACE_COPY', PLACE_COPY],
-	['NOTIFY_COPY', NOTIFY_COPY]
+	['NOTIFY_COPY', NOTIFY_COPY],
+	['ROUTE_COPY', ROUTE_COPY],
+	['ABOUT_COPY', ABOUT_COPY]
 ]) {
 	test(`${name}: every language has the same keys`, () => {
 		const keys = [...leaves(table.en).keys()].sort();

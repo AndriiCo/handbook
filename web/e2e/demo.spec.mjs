@@ -164,7 +164,7 @@ test('demo walks GP1 to GP4 and records web/shots/demo', async () => {
 		};
 
 		await scene('home', `${base}/apostille`);
-		await caption(page, 'Find your apostille authority in seconds');
+		await caption(page, 'Tell us where your document is going');
 		await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
 		await checkClean(page, problems, 'home');
 

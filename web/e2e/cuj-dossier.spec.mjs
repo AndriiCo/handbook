@@ -932,7 +932,9 @@ test.describe('customer guide CUJs D1–D11', () => {
 			// 0 dead ends: one action to the offices we have checked.
 			const journey = cuj(page);
 			await journey.click(empty.getByRole('link', { name: "Browse offices we've checked" }));
-			await expect(page.getByRole('heading', { name: 'Apostille rules' })).toBeVisible();
+			await expect(
+				page.getByRole('heading', { name: 'Where does your document need to be accepted?' })
+			).toBeVisible();
 			expect(journey.summary()).toEqual({ actions: 1, inputs: 0 });
 		});
 

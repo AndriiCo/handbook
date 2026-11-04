@@ -4,19 +4,16 @@
 	import Notice from '../../lib/public-ui/Notice.svelte';
 	import { Skeleton } from '../../lib/components/ui/skeleton/index.js';
 	import Heading from '../../lib/components/brand/Heading.svelte';
-	import Guilloche from '../../lib/components/brand/Guilloche.svelte';
 	import Flag from '../../lib/components/brand/Flag.svelte';
 	import HagueMap from '../../lib/components/brand/HagueMap.svelte';
-	import ApostilleCertificate from '../../lib/components/brand/ApostilleCertificate.svelte';
+	import { WORLD_ALPHA2 } from '../../lib/components/brand/HagueMap.members.js';
+	import CountryPicker from '../../lib/public-ui/CountryPicker.svelte';
 	import {
 		addressOf,
 		flagFor,
 		kindLabel,
 		laneOf,
 		LANES,
-		latestCapture,
-		silhouetteFor,
-		verifiedAtOf,
 		type AuthorityRow,
 		type Lane
 	} from '../../lib/public-ui/authority-meta.js';
@@ -26,23 +23,27 @@
 		filterAuthorities,
 		groupByCountry,
 		listAuthorities,
-		publicError,
-		relativeDay
+		publicError
 	} from '../../lib/public-ui/handbook.js';
-	import { placePath } from '../../lib/public-ui/location.js';
-	import { HOME_COPY, shortDate } from '../../lib/public-ui/home-copy.js';
+	import { DOC_CLASSES, placePath } from '../../lib/public-ui/location.js';
+	import {
+		countryOptions,
+		guessHomeCountry,
+		HCCH_SLUG,
+		placeOfCode,
+		routeHref
+	} from '../../lib/public-ui/route.js';
+	import { HOME_COPY, INTL_TAG } from '../../lib/public-ui/home-copy.js';
+	import { PLACE_COPY } from '../../lib/public-ui/place-copy.js';
 	import { site } from '../../lib/locale.svelte.js';
-	import SearchIcon from '@lucide/svelte/icons/search';
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
+	import ArrowLeftRightIcon from '@lucide/svelte/icons/arrow-left-right';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	type Authority = AuthorityRow & { name: string; country: string; fact_count: number };
 
 	const c = $derived(HOME_COPY[site.locale]);
-	// The three "How it works" cards: copy per language, certificate
-	// field fixed.
-	const STEP_FIELDS = [1, 9, 10];
-	const steps = $derived(c.steps.map((step, i) => ({ ...step, field: STEP_FIELDS[i] })));
+	const pc = $derived(PLACE_COPY[site.locale]);
 	// A row's status word: its lane in the site language, else the raw
 	// kind as the API sends it (kindLabel).
 	function kindText(a: Authority): string {
@@ -52,18 +53,13 @@
 	const countryText = (country: string) =>
 		country === 'International' ? c.international : country;
 
-	let query = $state('');
 	let index = $state<Authority[] | null>(null);
 	// The failed status, not its sentence, so a language switch re-words it.
 	let loadStatus = $state<number | null>(null);
 	const loadError = $derived(
 		loadStatus === null ? null : publicError(loadStatus, 'index', site.locale)
 	);
-	let qualityPct = $state<number | null>(null);
-	let qualityModel = $state<string | null>(null);
-	let qualityRunAt = $state<string | null>(null);
-	let comboOpen = $state(false);
-	let activeDescendant = $state('');
+	let hcchFacts = $state<unknown[]>([]);
 
 	const apiRoot = resolve('/(public)').replace(/\/$/, '');
 	const api = (path: string) => `${apiRoot}/api/v1${path}`;
@@ -74,58 +70,7 @@
 		return { ok: res.ok, status: res.status, body };
 	}
 
-	// Golden-path routing ids only (GP1 keeps >= 3 dossier links even
-	// while the index loads). Names, countries, flags and counts come
-	// from the live index; nothing about them is written here.
-	const FEATURED = ['vietnam', 'usa-wa-sos', 'hcch'];
-	// Routing id of the HCCH status-table authority: the map's Hague
-	// membership is read from its accepted facts, never listed here.
-	const HCCH = 'hcch';
-	const featuredSlugs = new Set(FEATURED);
-	const featured = $derived(
-		FEATURED.map((slug) => {
-			const row = index?.find((a) => a.slug === slug) ?? null;
-			return {
-				slug,
-				row,
-				name: row?.name || slug,
-				label: row?.region || row?.country || row?.name || slug,
-				country: row?.country ?? '',
-				flag: flagFor(row?.country, row?.iso2),
-				sil: silhouetteFor(row),
-				fact_count: row?.fact_count ?? 0
-			};
-		})
-	);
-
-	// Accepted facts per featured slug: last-verified dates for the
-	// cards, and the HCCH facts that tint the member map.
-	let factsBySlug = $state<Record<string, any[]>>({});
-	const verifiedAt = $derived(
-		Object.fromEntries(
-			featured.map((f) => [f.slug, verifiedAtOf(f.row) || latestCapture(factsBySlug[f.slug])])
-		) as Record<string, string>
-	);
-	async function loadFeaturedFacts(slugs: string[]) {
-		await Promise.all(
-			slugs.map(async (slug) => {
-				try {
-					const res = await get(`/authorities/${slug}/facts`);
-					if (!res.ok) return;
-					const facts = Array.isArray(res.body?.facts) ? res.body.facts : [];
-					factsBySlug = { ...factsBySlug, [slug]: facts };
-				} catch {
-					// Silence: the card still renders without a date.
-				}
-			})
-		);
-	}
-	const mapPins = $derived(
-		(index ?? []).map((a) => ({ slug: a.slug, label: a.region || a.country || a.name }))
-	);
-
 	$effect(() => {
-		void loadFeaturedFacts(FEATURED);
 		listAuthorities({ get })
 			.then((res) => {
 				if (!res.ok) {
@@ -138,40 +83,102 @@
 			.catch(() => {
 				loadStatus = 500;
 			});
-		get('/quality')
+		// The map's Hague membership is read from the status table's
+		// accepted facts, never listed here.
+		get(`/authorities/${HCCH_SLUG}/facts`)
 			.then((res) => {
-				const rate = res.body?.quote_found_rate;
-				if (res.ok && typeof rate === 'number' && rate >= 0 && rate <= 1) {
-					qualityPct = Math.round(rate * 100);
-					if (typeof res.body?.model === 'string') qualityModel = res.body.model;
-					if (typeof res.body?.run_at === 'string') qualityRunAt = res.body.run_at;
-				}
+				if (res.ok && Array.isArray(res.body?.facts)) hcchFacts = res.body.facts;
 			})
 			.catch(() => {});
 	});
 
-	const blank = $derived(query.trim() === '');
-	const results = $derived(
-		index === null ? null : filterAuthorities(index, query).slice(0, 6)
+	// ------------------------------------------------- guided question
+
+	// Country names in the site language (CLDR), so no list is written here.
+	const regionNames = $derived.by(() => {
+		try {
+			return new Intl.DisplayNames([INTL_TAG[site.locale]], { type: 'region' });
+		} catch {
+			return null;
+		}
+	});
+	const countries = $derived(
+		countryOptions(WORLD_ALPHA2, index, (code) => regionNames?.of(code), INTL_TAG[site.locale])
 	);
 
-	// Index table: everything except the featured cards (never repeated),
-	// filtered by `authority.kind` lanes. Rows without a kind sit in the
+	// The likely "used in" country from the time zone, shown and editable.
+	const guessed = (() => {
+		try {
+			return guessHomeCountry({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+		} catch {
+			return '';
+		}
+	})();
+	let from = $state('');
+	let to = $state(guessed);
+	let doc = $state('');
+	let tried = $state(false);
+	const showGuess = $derived(guessed !== '' && to === guessed && from === '');
+
+	const docChips = $derived(
+		DOC_CLASSES.map((d) => ({ id: d.id, label: pc.docClasses[d.id] ?? d.label }))
+	);
+	const routeBase = resolve('/(public)/route');
+
+	function swap() {
+		[from, to] = [to, from];
+	}
+
+	function submit(e: SubmitEvent) {
+		e.preventDefault();
+		tried = true;
+		if (!from || !to) return;
+		void goto(routeHref(routeBase, { from: placeOfCode(from), to, doc }));
+	}
+
+	// One-tap common requests (personas J1–J9): routing ids only, the
+	// words come from the copy table.
+	const JOURNEYS = [
+		{ key: 'usMxBirth', from: 'usa', to: 'mx', doc: 'vital_record' },
+		{ key: 'mxUsBirth', from: 'mx', to: 'us', doc: 'vital_record' },
+		{ key: 'usVnDiploma', from: 'usa', to: 'vn', doc: 'education' },
+		{ key: 'usEgFbi', from: 'usa', to: 'eg', doc: 'fbi_check' },
+		{ key: 'usUaPoa', from: 'usa', to: 'ua', doc: 'notarized_private' },
+		{ key: 'usEsMarriage', from: 'usa', to: 'es', doc: 'vital_record' }
+	];
+	// Worked examples beside the explainer: routing ids only (they also
+	// keep GP1's three dossier links on the page while the index loads).
+	const EXAMPLES = [
+		{ key: 'wa', slug: 'usa-wa-sos' },
+		{ key: 'vietnam', slug: 'vietnam' },
+		{ key: 'egypt', slug: 'egypt' },
+		{ key: 'hcch', slug: HCCH_SLUG }
+	];
+
+	const mapPins = $derived(
+		(index ?? []).map((a) => ({ slug: a.slug, label: a.region || a.country || a.name }))
+	);
+
+	// ------------------------------------------------- full index
+
+	let query = $state('');
+	const blank = $derived(query.trim() === '');
+	// Filtered by `authority.kind` lanes. Rows without a kind sit in the
 	// neutral lane; with no kinds at all there is no filter to offer.
 	type Filter = 'all' | Lane;
 	let tableFilter = $state<Filter>('all');
-	const others = $derived((index ?? []).filter((a) => !featuredSlugs.has(a.slug)));
+	const rows = $derived(index ?? []);
 	const FILTERS = $derived.by(() => {
-		const lanes = new Set(others.map((a) => laneOf(a)));
+		const lanes = new Set(rows.map((a) => laneOf(a)));
 		const out: { v: Filter; label: string }[] = [{ v: 'all', label: c.all }];
 		for (const lane of LANES) {
 			if (lanes.has(lane)) out.push({ v: lane, label: c.lanes[lane] });
 		}
 		return out.length > 2 ? out : out.slice(0, 1);
 	});
-	const showStatus = $derived(others.some((a) => kindLabel(a) !== ''));
+	const showStatus = $derived(rows.some((a) => kindLabel(a) !== ''));
 	const tableRows = $derived(
-		others.filter((a) => tableFilter === 'all' || laneOf(a) === tableFilter)
+		rows.filter((a) => tableFilter === 'all' || laneOf(a) === tableFilter)
 	);
 	// World scale (~700 rows): blank query → one collapsed row per
 	// country (children render on first open); a query → a flat list
@@ -183,12 +190,6 @@
 
 	const authorityHref = (slug: string) =>
 		resolve('/(public)/authority/[...trail]', { trail: slug });
-
-	function pick(slug: string) {
-		comboOpen = false;
-		query = '';
-		void goto(authorityHref(slug));
-	}
 </script>
 
 <svelte:head>
@@ -196,214 +197,185 @@
 	<meta name="description" content={c.metaDescription} />
 </svelte:head>
 
-<section class="grid items-center gap-10 py-10 xl:grid-cols-2 xl:gap-8 xl:py-16" aria-labelledby="start">
+<section class="py-10 xl:py-16" aria-labelledby="start">
 	<div class="max-w-[68ch]">
-		{#if qualityPct !== null}
-			<p
-				class="inline-flex min-h-11 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm text-ink"
+		<Heading level={1}><span id="start">{c.heroTitle}</span></Heading>
+		<p class="text-body-lg mt-4 text-ink-muted">{c.intro}</p>
+	</div>
+
+	<form
+		class="mt-8 rounded-xl border border-line bg-bg p-4 shadow-lg sm:p-6"
+		onsubmit={submit}
+		novalidate
+	>
+		<div class="grid items-end gap-3 md:grid-cols-[1fr_auto_1fr]">
+			<CountryPicker
+				id="hero-q"
+				label={c.fromLabel}
+				placeholder={c.countryPlaceholder}
+				options={countries}
+				bind:value={from}
+				noMatch={c.noCountry}
+				listLabel={c.countriesLabel(c.fromLabel)}
+				clearLabel={c.clear(c.fromLabel)}
+			/>
+			<button
+				type="button"
+				onclick={swap}
+				aria-label={c.swap}
+				title={c.swap}
+				class="inline-flex size-11 cursor-pointer items-center justify-center justify-self-center rounded-full border border-line bg-surface text-ink-muted transition-colors hover:border-focus hover:text-ink md:mb-1.5"
 			>
-				<span class="relative flex size-2 flex-none" aria-hidden="true">
-					<span
-						class="absolute inline-flex size-full animate-ping rounded-full bg-verified opacity-60 motion-reduce:animate-none"
-					></span>
-					<span class="relative inline-flex size-2 rounded-full bg-verified"></span>
-				</span>
-				{c.evalLine(qualityPct)}{#if qualityRunAt}
-					· {shortDate(qualityRunAt, site.locale)}{/if}{#if qualityModel}
-					<span class="font-mono text-xs text-ink-muted">{qualityModel}</span>
-				{/if}
-			</p>
+				<ArrowLeftRightIcon class="size-4 rotate-90 md:rotate-0" aria-hidden="true" />
+			</button>
+			<CountryPicker
+				id="hero-to"
+				label={c.toLabel}
+				placeholder={c.countryPlaceholder}
+				options={countries}
+				bind:value={to}
+				noMatch={c.noCountry}
+				listLabel={c.countriesLabel(c.toLabel)}
+				clearLabel={c.clear(c.toLabel)}
+			/>
+		</div>
+		{#if showGuess}
+			<p class="mt-2 mb-0 text-xs text-ink-muted md:text-right">{c.guessed}</p>
 		{/if}
-		<Heading level={1}>
-			<span class="[font-feature-settings:salt]">{c.heroA}</span>
-			<em class="font-brand">{c.heroEm}</em>
-			{c.heroB}
-		</Heading>
-		<p class="text-body-lg mt-4 text-ink-muted">
-			{c.intro}
-		</p>
-		<div class="relative mt-6">
-			<div
-				class="flex h-14 items-center gap-2 rounded-lg border border-line bg-surface pr-2 pl-4 shadow-lg"
-			>
-				<SearchIcon class="size-5 flex-none text-ink-muted" aria-hidden="true" />
-				<label class="sr-only" for="hero-q">{c.searchLabel}</label>
-				<input
-					id="hero-q"
-					name="q"
-					type="text"
-					role="combobox"
-					aria-expanded={comboOpen}
-					aria-controls="hero-results"
-					aria-activedescendant={activeDescendant}
-					aria-autocomplete="list"
-					bind:value={query}
-					onfocus={() => (comboOpen = true)}
-					onblur={() => setTimeout(() => (comboOpen = false), 150)}
-					onkeydown={(e) => {
-						if (e.key === 'Escape') comboOpen = false;
-					}}
-					placeholder={c.searchPlaceholder}
-					autocomplete="off"
-					class="h-full min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-muted"
-				/>
-				<kbd
-					class="hidden flex-none items-center gap-0.5 rounded-xs border border-line bg-bg px-1.5 font-mono text-xs text-ink-muted sm:inline-flex"
-					aria-hidden="true"
-				>
-					<span>⌘</span><span>K</span>
-				</kbd>
+
+		<fieldset class="mt-6 border-0 p-0">
+			<legend class="mb-2 p-0 text-sm font-medium text-ink">{c.docLabel}</legend>
+			<div class="flex flex-wrap gap-2">
+				{#each docChips as d (d.id)}
+					<button
+						type="button"
+						aria-pressed={doc === d.id}
+						onclick={() => (doc = doc === d.id ? '' : d.id)}
+						class={`inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 text-sm transition-colors ${
+							doc === d.id
+								? 'border-accent-fill bg-accent-fill font-medium text-accent-ink'
+								: 'border-line bg-surface text-ink hover:border-focus'
+						}`}
+					>
+						{d.label}
+					</button>
+				{/each}
 			</div>
-			{#if comboOpen && !blank && results !== null}
-				<ul
-					id="hero-results"
-					role="listbox"
-					aria-label={c.matchingLabel}
-					class="absolute inset-x-0 top-full z-30 mt-2 list-none overflow-hidden rounded-xl border border-line bg-bg p-1 shadow-xl"
-				>
-					{#each results as a (a.slug)}
-						<li role="option" id={`hero-opt-${a.slug}`} aria-selected="false" class="m-0 p-0">
-							<button
-								type="button"
-								onclick={() => pick(addressOf(a))}
-								onmouseenter={() => (activeDescendant = `hero-opt-${a.slug}`)}
-								class="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-lg px-3 text-left hover:bg-surface"
-							>
-								<span class="truncate font-medium text-ink">{a.name}</span>
-								<span class="ml-auto flex-none font-mono text-xs text-ink-muted">
-									{factCount(a.fact_count ?? 0, site.locale)}
-								</span>
-							</button>
-						</li>
-					{:else}
-						<li class="px-3 py-2 text-sm text-ink-muted">{c.noMatch(query)}</li>
-					{/each}
-				</ul>
+		</fieldset>
+
+		<div class="mt-6 flex flex-wrap items-center gap-4">
+			<button
+				type="submit"
+				class="inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-lg bg-accent-fill px-6 text-base font-semibold text-accent-ink transition-opacity hover:opacity-90"
+			>
+				{c.submit}
+				<ArrowRightIcon class="size-4" aria-hidden="true" />
+			</button>
+			{#if tried && (!from || !to)}
+				<p class="m-0 text-sm text-ink" role="status">{c.needBoth}</p>
 			{/if}
 		</div>
-		<ul class="mt-4 flex list-none flex-wrap gap-2 p-0" aria-label={c.featuredLabel}>
-			{#each featured as authority, i (authority.slug)}
-				<li class="hero-pin m-0 p-0" style={`animation-delay: ${i * 40}ms`}>
-					<a
-						class="inline-flex min-h-11 items-center gap-2 rounded-full border border-line bg-bg px-3 text-sm font-medium text-ink no-underline transition-colors hover:border-focus"
-						href={authorityHref(authority.slug)}
-					>
-						{#if index === null}
-							<Skeleton class="h-4 w-20" />
-							<span class="sr-only">{c.featuredDossier(i + 1)}</span>
-						{:else}
-							{#if authority.flag}
-								<Flag code={authority.flag} label={c.flagOf(authority.country)} />
-							{/if}
-							{authority.label}
-						{/if}
-					</a>
-				</li>
-			{/each}
-		</ul>
-	</div>
-	<div class="relative overflow-clip" aria-hidden="false">
-		<Guilloche
-			seed="hague-hero"
-			class="absolute -top-10 -right-10 size-56 text-brand-300 opacity-70 [mask-image:radial-gradient(circle,black,transparent_70%)] dark:text-brand-700"
-		/>
-		<HagueMap facts={factsBySlug[HCCH] ?? []} pins={mapPins} class="relative w-full" />
-	</div>
+	</form>
+
+	<ul class="mt-6 grid list-none gap-4 p-0 md:grid-cols-2" aria-label={c.pathsLabel}>
+		<li class="m-0 flex flex-col gap-2 rounded-xl border border-line bg-surface p-5">
+			<h2 class="text-h3 m-0 font-semibold">{c.checkTitle}</h2>
+			<p class="m-0 text-sm text-ink-muted">{c.checkText}</p>
+			<button
+				type="button"
+				onclick={() => document.getElementById('hero-q')?.focus()}
+				class="mt-auto inline-flex min-h-11 cursor-pointer items-center gap-1 self-start text-sm font-medium text-accent-strong"
+			>
+				{c.checkCta}
+				<ArrowRightIcon class="size-4" aria-hidden="true" />
+			</button>
+		</li>
+		<li class="m-0 flex flex-col gap-2 rounded-xl border border-line bg-surface p-5">
+			<h2 class="text-h3 m-0 font-semibold">{c.doneTitle}</h2>
+			<p class="m-0 text-sm text-ink-muted">{c.doneText}</p>
+			<a
+				href={resolve('/(customer)/order')}
+				class="mt-auto inline-flex min-h-11 items-center gap-1 self-start text-sm font-medium text-accent-strong no-underline"
+			>
+				{c.doneCta}
+				<ArrowRightIcon class="size-4" aria-hidden="true" />
+			</a>
+		</li>
+	</ul>
 </section>
 
-<section class="py-10 xl:py-16" aria-labelledby="how">
-	<Heading level={2} eyebrow={c.howEyebrow}>{c.howTitle}</Heading>
-	<ul class="mt-8 grid list-none gap-4 p-0 md:grid-cols-3">
-		{#each steps as step (step.field)}
-			<li
-				class="flex flex-col gap-3 rounded-xl border border-line bg-bg p-4 transition-shadow duration-200 hover:shadow-md"
-			>
-				<ApostilleCertificate highlight={step.field} />
-				<p class="m-0">
-					<span
-						class="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-3 font-mono text-xs text-ink-muted"
-					>
-						{step.model}
+<section class="py-10 xl:py-16" aria-labelledby="journeys">
+	<Heading level={2}><span id="journeys">{c.journeysTitle}</span></Heading>
+	<ul class="mt-6 grid list-none gap-x-6 p-0 md:grid-cols-2 xl:grid-cols-3">
+		{#each JOURNEYS as j (j.key)}
+			{@const words = c.journeys[j.key]}
+			<li class="m-0 border-b border-line p-0">
+				<a
+					href={routeHref(routeBase, j)}
+					class="group flex min-h-16 items-center gap-3 py-3 no-underline"
+				>
+					<span class="flex flex-none -space-x-1" aria-hidden="true">
+						{#each [j.from, j.to] as code (code)}
+							{@const f = flagFor('', code === 'usa' ? 'us' : code)}
+							{#if f}<Flag code={f} label="" class="size-6 ring-2 ring-bg" />{/if}
+						{/each}
 					</span>
-				</p>
-				<h3 class="text-h3 m-0 font-semibold">{step.title}</h3>
-				<p class="m-0 text-sm text-ink-muted">{step.text}</p>
+					<span class="min-w-0 flex-1">
+						<span class="block font-medium text-ink group-hover:underline">{words.title}</span>
+						<span class="block text-sm text-ink-muted">{words.note}</span>
+					</span>
+					<ChevronRightIcon class="size-4 flex-none text-ink-muted" aria-hidden="true" />
+				</a>
 			</li>
 		{/each}
 	</ul>
 </section>
 
-<section class="py-10 xl:py-16" aria-labelledby="featured">
-	<Heading level={2} eyebrow={c.featuredEyebrow}>{c.featuredTitle}</Heading>
-	{#if loadError}
-		<Notice variant="error" heading={c.featuredUnavailable}><p>{loadError}</p></Notice>
-	{:else}
-		<div class="mt-8 grid gap-4 md:grid-cols-2">
-			{#each featured as authority, i (authority.slug)}
-				{@const sil = authority.sil}
-				<a
-					href={authorityHref(authority.slug)}
-					class={`group relative overflow-hidden rounded-xl border border-line bg-bg p-5 no-underline transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${i === 0 ? 'md:row-span-2' : ''}`}
-				>
-					{#if sil}
-						<svg
-							viewBox={`0 0 ${sil.width} ${sil.height}`}
-							class="pointer-events-none absolute -right-6 -bottom-6 w-44 opacity-[0.08] [mask-image:radial-gradient(circle_at_bottom_right,black,transparent_75%)]"
-							aria-hidden="true"
-							data-graphic="silhouette"
-						>
-							<path d={sil.d} style="fill: var(--color-ink);" />
-						</svg>
-					{/if}
-					<span class="relative flex min-h-5 items-center gap-2">
-						{#if authority.flag}
-							<Flag code={authority.flag} label={c.flagOf(authority.country)} class={i === 0 ? 'size-5 vt-flag' : 'size-5'} />
-						{/if}
-						{#if verifiedAt[authority.slug]}
-							<span
-								class="ml-auto font-mono text-xs text-ink-muted"
-								title={c.lastVerified(
-									site.locale === 'en'
-										? verifiedAt[authority.slug]
-										: shortDate(verifiedAt[authority.slug], site.locale)
-								)}
-							>
-								{c.verifiedAgo(relativeDay(verifiedAt[authority.slug], undefined, site.locale))}
-							</span>
-						{/if}
-					</span>
-					{#if index === null}
-						<Skeleton class="mt-3 h-7 w-3/4" />
-						<Skeleton class="mt-2 h-4 w-16" />
-						<span class="sr-only">{c.featuredDossier(i + 1)}</span>
-					{:else}
-						{#if i === 0}
-							<span class="font-brand text-h2 vt-title mt-3 block font-medium text-balance text-ink">
-								{authority.name}
-							</span>
-						{:else}
-							<span class="text-h3 mt-3 block font-semibold text-ink">{authority.name}</span>
-						{/if}
-						<span class="mt-2 block font-mono text-xs text-ink-muted">
-							{factCount(authority.fact_count ?? 0, site.locale)}
-						</span>
-					{/if}
-					<span
-						class="mt-4 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-accent-strong"
+<section class="py-10 xl:py-16" aria-labelledby="method">
+	<Heading level={2}><span id="method">{c.methodTitle}</span></Heading>
+	<div class="mt-6 grid items-start gap-8 xl:grid-cols-2">
+		<div class="flex flex-col gap-6">
+			<div>
+				<h3 class="text-h3 m-0 font-semibold">{c.apostilleTitle}</h3>
+				<p class="mt-2 mb-0 text-ink-muted">{c.apostilleText}</p>
+			</div>
+			<div>
+				<h3 class="text-h3 m-0 font-semibold">{c.legalTitle}</h3>
+				<p class="mt-2 mb-0 text-ink-muted">{c.legalText}</p>
+			</div>
+			<p class="m-0 text-sm">
+				{c.examplesLabel}
+				{#each EXAMPLES as ex, i (ex.slug)}
+					{#if i > 0}<span aria-hidden="true"> · </span>{/if}<a
+						class="underline underline-offset-4"
+						href={authorityHref(ex.slug)}>{c.examples[ex.key]}</a
 					>
-						{c.openDossier}
-						<ArrowRightIcon class="size-4" aria-hidden="true" />
-					</span>
-				</a>
-			{/each}
+				{/each}
+			</p>
 		</div>
-	{/if}
+		<figure class="m-0">
+			<HagueMap facts={hcchFacts} pins={mapPins} class="w-full" />
+			<figcaption class="mt-2 text-sm text-ink-muted">{c.mapLead}</figcaption>
+		</figure>
+	</div>
 </section>
 
 <section class="py-10 xl:py-16" aria-labelledby="index">
-	<Heading level={2} eyebrow={c.indexEyebrow}>{c.indexTitle}</Heading>
+	<Heading level={2}><span id="index">{c.indexTitle}</span></Heading>
+	<p class="mt-2 mb-0 text-ink-muted">{c.indexIntro}</p>
+	<div class="mt-4 max-w-md">
+		<label class="sr-only" for="index-q">{c.indexFilterLabel}</label>
+		<input
+			id="index-q"
+			type="search"
+			bind:value={query}
+			placeholder={c.indexFilterPlaceholder}
+			autocomplete="off"
+			class="h-11 w-full rounded-lg border border-line bg-surface px-3 text-base text-ink outline-none placeholder:text-ink-muted focus:border-focus"
+		/>
+	</div>
 	{#if FILTERS.length > 1}
-		<div class="mt-6 flex flex-wrap gap-2" role="group" aria-label={c.filterLabel}>
+		<div class="mt-4 flex flex-wrap gap-2" role="group" aria-label={c.filterLabel}>
 			{#each FILTERS as opt (opt.v)}
 				<button
 					type="button"
@@ -433,15 +405,6 @@
 			<p class="mt-1 mb-0 text-sm text-ink-muted">
 				{tableFilter === 'all' ? c.newAppear : c.tryAll}
 			</p>
-			{#if tableFilter === 'all'}
-				<p class="mt-3 mb-0 text-sm">
-					{c.startFeatured}{#each featured as f, i (f.slug)}
-						{#if i > 0}<span aria-hidden="true"> · </span>{/if}<a
-							class="underline underline-offset-4"
-							href={authorityHref(f.slug)}>{f.label}</a
-						>{/each}
-				</p>
-			{/if}
 		</div>
 	{:else if !blank}
 		<p class="mt-4 mb-2 text-sm text-ink-muted" role="status">
@@ -552,20 +515,5 @@
 	   covers the others); the chevron is the marker. */
 	.country-summary::-webkit-details-marker {
 		display: none;
-	}
-	@media (prefers-reduced-motion: no-preference) {
-		.hero-pin {
-			animation: hero-rise 300ms var(--ease-out-quint) both;
-		}
-		@keyframes hero-rise {
-			from {
-				opacity: 0;
-				transform: translateY(6px);
-			}
-			to {
-				opacity: 1;
-				transform: none;
-			}
-		}
 	}
 </style>

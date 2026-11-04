@@ -50,7 +50,7 @@ const CHECKS = [
   ['GP3', 'Sign-in: passkey autofill + branded buttons for configured providers', gp3],
   ['GP4', 'Order: stepper, clean at 390 px', gp4],
   ['A2', 'Photo precheck: SAM 3.1 + Muse Spark on a public sample, live', a2],
-  ['A5', `Quality numbers from an eval run in the last ${QUALITY_MAX_AGE_H} h, shown on home`, a5],
+  ['A5', `Quality numbers from an eval run in the last ${QUALITY_MAX_AGE_H} h, shown on /about`, a5],
   ['S1', 'Submission: licence file, README with video link, public repo', s1],
 ];
 
@@ -253,8 +253,8 @@ async function a5() {
   if (!/muse-spark/i.test(q.model ?? '')) problems.push(`model "${q.model ?? '?'}" (want a live muse-spark eval)`);
   if (!(typeof rate === 'number' && rate > 0 && rate <= 1)) problems.push(`quote_found_rate ${rate ?? 'missing'} (want 0 < rate <= 1)`);
   else {
-    const v = await visit('/', 1440, 900);
-    if (!v.text.includes(`${Math.round(rate * 100)}%`)) problems.push(`home does not show ${Math.round(rate * 100)}%`);
+    const v = await visit('/about', 1440, 900);
+    if (!v.text.includes(`${Math.round(rate * 100)}%`)) problems.push(`/about does not show ${Math.round(rate * 100)}%`);
     await v.ctx.close();
   }
   return { problems, note: `model ${q.model ?? '?'}, quote_found ${rate}` };

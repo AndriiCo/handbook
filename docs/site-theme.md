@@ -67,8 +67,10 @@ rule). Admin ships from a separate host; it never shares the public JS
 entry.
 
 ```text
-src/routes/(public)/+layout.svelte      # header, footer, i18n + theme switchers
-src/routes/(public)/+page.svelte        # handbook home: search-first, not hero-first
+src/routes/+layout.svelte               # header, footer, i18n + theme switchers (shared; no (public) layout)
+src/routes/(public)/+page.svelte        # home: the guided question (issued in → used in)
+src/routes/(public)/route/+page.svelte  # the shareable answer for one pair of countries
+src/routes/(public)/about/+page.svelte  # How we verify: eval line, the three checks
 src/routes/(public)/country/[slug]/+page.svelte
 src/routes/(public)/authority/[slug]/+page.svelte
 src/routes/(customer)/+layout.svelte    # requires session; adds order rail, WS status
@@ -93,12 +95,22 @@ admin/routes/(admin)/+layout.svelte     # call console, review queues, audit
 
 ### 1.2 Layout patterns (no banned patterns)
 
-- **Home:** search-first ledger, not eyebrow-pill + 3-card grid. Row 1:
-  compact masthead (wordmark + jurisdiction search + language/theme menu).
-  Row 2: "Start with your destination" search panel with recent
-  authorities. Row 3: two-column ledger: left = authority index
-  (table-like rows with verified dates), right = "Recently verified
-  changes" feed with citations. Proof density is the hero.
+- **Home (2026-11-04):** customer-first, what the visitor gets rather
+  than how it is built. Row 1: the question "Where does your document
+  need to be accepted?" with two country pickers (issued in → used in,
+  swap button, "used in" prefilled from a US time zone), optional
+  document chips, and one button to the `/route` answer. Under it, two
+  side-by-side paths: do it yourself (free) or have it done (US-issued
+  documents → `/order`). Row 2: common requests (one-tap `/route` links).
+  Row 3: apostille vs legalization in plain words beside the Hague map.
+  Row 4: the full country index with its own filter. No prices on home;
+  no model names or eval numbers (they live on `/about`).
+- **Route answer (`/route?from=&to=&doc=`):** the method (apostille,
+  legalization, none, or not yet known — from accepted HCCH facts only),
+  step 1 the issuing office (place API, with state pick when the country
+  routes by state), step 2 the destination (embassy chain for
+  legalization, link to its guide, notify card when unverified), then
+  the order CTA for US-issued documents or "this happens in {country}".
 - **Authority page:** document-dossier layout. Sticky page title block
   (authority name, verified-as-of, trust tier chip), then tabbed
   sections: Requirements / Forms / Fees / Visit / Mail. Each fact row

@@ -18,7 +18,7 @@ test.afterAll(async () => {
 
 test('home: French masthead, hero and footer; Spanish in place', async ({ page }) => {
 	await page.goto(`${srv.url}/apostille/?l=fr`);
-	await expect(page.getByRole('heading', { level: 1 })).toContainText('Les règles de l’apostille');
+	await expect(page.getByRole('heading', { level: 1 })).toContainText('Où votre document doit-il être accepté');
 	await expect(page.getByRole('link', { name: 'Aller au contenu' })).toBeAttached();
 	await expect(page.getByText('information générale, pas un conseil juridique')).toBeVisible();
 	await expect(page.getByRole('navigation', { name: 'Pied de page' })).toBeVisible();
@@ -27,7 +27,7 @@ test('home: French masthead, hero and footer; Spanish in place', async ({ page }
 	await page.getByRole('menuitem', { name: 'Español' }).click();
 	await expect(page.getByText('información general, no asesoramiento jurídico')).toBeVisible();
 	await expect(page.getByRole('navigation', { name: 'Pie de página' })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 1 })).not.toContainText('Les règles');
+	await expect(page.getByRole('heading', { level: 1 })).toContainText('¿Dónde tiene que ser aceptado');
 });
 
 test('security: the signed-out state in Spanish', async ({ page }) => {

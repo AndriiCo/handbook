@@ -36,7 +36,7 @@ tests.
 
 ## Eval numbers (2026-11-02, production, live key)
 
-Model muse-spark-1.3, written to the live store, shown on the home page:
+Model muse-spark-1.3, written to the live store, shown on the How we verify page (`/apostille/about`):
 
 | Metric | What it measures | Latest |
 |---|---|---|

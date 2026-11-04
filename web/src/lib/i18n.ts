@@ -30,6 +30,7 @@ export interface HeaderStrings {
 	authoritiesHeading: string;
 	pagesHeading: string;
 	homeLabel: string;
+	aboutLabel: string;
 	tagline: string;
 	footerNav: string;
 	disclaimer: string;
@@ -59,7 +60,8 @@ export const STRINGS: Record<Locale, HeaderStrings> = {
 		authoritiesHeading: 'Authorities',
 		pagesHeading: 'Pages',
 		homeLabel: 'Home',
-		tagline: 'Verified apostille guidance, quote by quote.',
+		aboutLabel: 'How we verify',
+		tagline: 'Apostille and legalization, step by step — every rule from the official source.',
 		footerNav: 'Footer',
 		disclaimer: 'Apostille Handbook — general information, not legal advice.'
 	},
@@ -86,7 +88,8 @@ export const STRINGS: Record<Locale, HeaderStrings> = {
 		authoritiesHeading: 'Autoridades',
 		pagesHeading: 'Páginas',
 		homeLabel: 'Inicio',
-		tagline: 'Guía de apostillas verificada, cita por cita.',
+		aboutLabel: 'Cómo verificamos',
+		tagline: 'Apostilla y legalización, paso a paso: cada regla, de la fuente oficial.',
 		footerNav: 'Pie de página',
 		disclaimer: 'Apostille Handbook — información general, no asesoramiento jurídico.'
 	},
@@ -113,7 +116,8 @@ export const STRINGS: Record<Locale, HeaderStrings> = {
 		authoritiesHeading: 'Autorités',
 		pagesHeading: 'Pages',
 		homeLabel: 'Accueil',
-		tagline: 'Des conseils sur l’apostille vérifiés, citation par citation.',
+		aboutLabel: 'Notre méthode',
+		tagline: 'Apostille et légalisation, étape par étape : chaque règle vient de la source officielle.',
 		footerNav: 'Pied de page',
 		disclaimer: 'Apostille Handbook — information générale, pas un conseil juridique.'
 	}

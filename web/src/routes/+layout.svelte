@@ -416,6 +416,15 @@
 					<FileTextIcon class="size-4" aria-hidden="true" />
 					{t.ordersLabel}
 				</Command.LinkItem>
+				<Command.LinkItem
+					class="text-foreground"
+					href={resolve('/(public)/about')}
+					value={`about how we verify method sources ${t.aboutLabel}`}
+					onclick={() => (cmdOpen = false)}
+				>
+					<FileTextIcon class="size-4" aria-hidden="true" />
+					{t.aboutLabel}
+				</Command.LinkItem>
 			</Command.Group>
 		</Command.List>
 	</Command.Dialog>
@@ -455,6 +464,10 @@
 			<a
 				class="w-fit text-ink-muted no-underline hover:text-ink hover:underline"
 				href={resolve('/(customer)/orders')}>{t.ordersLabel}</a
+			>
+			<a
+				class="w-fit text-ink-muted no-underline hover:text-ink hover:underline"
+				href={resolve('/(public)/about')}>{t.aboutLabel}</a
 			>
 		</nav>
 		<p class="m-0 text-sm text-ink-muted">

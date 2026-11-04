@@ -112,3 +112,19 @@ export function membersFromFacts(facts: unknown): string[] {
 	}
 	return [...out];
 }
+
+/** Lowercase alpha-2 of every country the world map draws (route pickers). */
+export const WORLD_ALPHA2: string[] = Object.values(ISO_NUMERIC_TO_ALPHA2).map((a) =>
+	a.toLowerCase()
+);
+
+/**
+ * `membersFromFacts` as lowercase alpha-2 codes (the /route method
+ * check): the same staff-accepted HCCH statements, the same honest
+ * empty list when none names a party.
+ */
+export function memberAlpha2FromFacts(facts: unknown): string[] {
+	return membersFromFacts(facts)
+		.map((id) => ISO_NUMERIC_TO_ALPHA2[id]?.toLowerCase())
+		.filter((a): a is string => Boolean(a));
+}

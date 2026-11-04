@@ -45,14 +45,14 @@ for (const width of [390, 1440]) {
 			const byCountry = page.getByRole('list', { name: 'Authorities by country' });
 			await expect(byCountry).toBeVisible();
 			await expect(byCountry.locator('summary')).toHaveCount(countries.size);
-			// Collapsed: only the featured links, no 500-row DOM.
+			// Collapsed: no links inside the list, no 500-row DOM.
 			expect(await byCountry.locator('a').count()).toBe(0);
 
 			await byCountry.locator('summary', { hasText: 'France' }).click();
 			const france = rows.filter((a) => a.country === 'France').length;
 			await expect(byCountry.locator('details[open] a')).toHaveCount(france);
 
-			await page.locator('#hero-q').fill('ministry');
+			await page.locator('#index-q').fill('ministry');
 			const matches = page.getByRole('list', { name: /Authorities matching/ });
 			expect(await matches.locator('a').count()).toBeLessThanOrEqual(50);
 
