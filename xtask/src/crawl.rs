@@ -6,7 +6,10 @@
 //! (SA-7 world index; parsed defensively — every field is optional
 //! with a default because SA-7 is still iterating). Each seed is
 //! fetched at depth 0; same-host links whose URL matches
-//! `apostille|legaliz|authentic|fee|form` are fetched at depth 1.
+//! `apostil|legaliz|legalis|authentic|fee|form` or a local-language
+//! apostille/legalization word (see [`DEPTH1_KEYWORDS`]) are fetched at
+//! depth 1. URLs match folded: percent-decoded, lowercased, Latin and
+//! Greek accents dropped.
 //!
 //! Policy (operator spec + `docs/ops/world-archive-rights.md`):
 //!
@@ -79,8 +82,33 @@ const MAX_HOSTS_PARALLEL: usize = 32;
 const MAX_DEPTH1_PER_PAGE: usize = 50;
 /// WARC file rotation size (1 GB).
 const MAX_WARC_BYTES: u64 = 1_000_000_000;
-/// Depth-1 link keywords (spec: apostille|legaliz|authentic|fee|form).
-const DEPTH1_KEYWORDS: &[&str] = &["apostille", "legaliz", "authentic", "fee", "form"];
+/// Depth-1 link keywords, matched as substrings of the folded link
+/// ([`fold_link`]; the keywords go through it too). Prefixes cover the
+/// variants: `apostil` (apostille, apostilla, apostila), `legaliz`
+/// (legalization, legalización, legalizacao), `legalis` (legalisation,
+/// Legalisierung), `beglaubig` (Beglaubigung); then Cyrillic апостиль,
+/// легализация (Russian) and легалізація (Ukrainian, Belarusian),
+/// Greek επισημείωση, Arabic أبوستيل, Japanese アポスティーユ, Chinese
+/// 附加证明书 and 海牙认证, Korean 아포스티유. Link text is not read: a
+/// local word in the anchor alone does not count.
+const DEPTH1_KEYWORDS: &[&str] = &[
+    "apostil",
+    "legaliz",
+    "legalis",
+    "authentic",
+    "fee",
+    "form",
+    "beglaubig",
+    "апостил",
+    "легализ",
+    "легаліз",
+    "επισημείωση",
+    "أبوستيل",
+    "アポスティーユ",
+    "附加证明书",
+    "海牙认证",
+    "아포스티유",
+];
 /// Whole-call timeout per fetch / TLS probe.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Timeout for robots.txt fetches.
@@ -985,8 +1013,11 @@ fn depth1_links(seed_url: &str, body: &[u8]) -> Vec<String> {
         if parts.host != seed_host {
             continue;
         }
-        let lowered = link.to_ascii_lowercase();
-        if !DEPTH1_KEYWORDS.iter().any(|k| lowered.contains(k)) {
+        let folded = fold_link(&link);
+        if !DEPTH1_KEYWORDS
+            .iter()
+            .any(|k| folded.contains(&fold_link(k)))
+        {
             continue;
         }
         if !out.contains(&link) {
@@ -994,6 +1025,46 @@ fn depth1_links(seed_url: &str, body: &[u8]) -> Vec<String> {
         }
     }
     out
+}
+
+/// A link as keyword matching sees it: percent-decoded (UTF-8, lossy),
+/// then [`fold`](crate::worker::research_nonparty::fold)ed (lowercase,
+/// Latin accents dropped) with the Greek tonos dropped too, so
+/// `/Legalizaci%C3%B3n` reads `legalizacion` and `/%D0%90%D0%BF…`
+/// reads `апостиль`.
+fn fold_link(link: &str) -> String {
+    let bytes = link.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = bytes
+            .get(i + 1..i + 3)
+            .and_then(|h| std::str::from_utf8(h).ok())
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (bytes[i], hex) {
+            (b'%', Some(byte)) => {
+                decoded.push(byte);
+                i += 3;
+            }
+            (byte, _) => {
+                decoded.push(byte);
+                i += 1;
+            }
+        }
+    }
+    crate::worker::research_nonparty::fold(&String::from_utf8_lossy(&decoded))
+        .chars()
+        .map(|c| match c {
+            'ά' => 'α',
+            'έ' => 'ε',
+            'ή' => 'η',
+            'ί' | 'ϊ' | 'ΐ' => 'ι',
+            'ό' => 'ο',
+            'ύ' | 'ϋ' | 'ΰ' => 'υ',
+            'ώ' => 'ω',
+            other => other,
+        })
+        .collect()
 }
 
 fn csv_escape(value: &str) -> String {
@@ -1133,6 +1204,41 @@ mod tests {
             .to_string();
         let links = depth1_links(seed, html.as_bytes());
         assert_eq!(links, vec!["http://127.0.0.1:9/apostille-fees".to_string()]);
+        // D-4: local-language words, in raw or percent-encoded paths.
+        let local = [
+            "/es/apostilla-de-documentos",
+            "/pt/apostila",
+            "/Legalizaci%C3%B3n",
+            "/en/legalisation",
+            "/de/Beglaubigung",
+            "/ru/%D0%B0%D0%BF%D0%BE%D1%81%D1%82%D0%B8%D0%BB%D1%8C",
+            "/uk/Легалізація",
+            "/el/%CE%95%CF%80%CE%B9%CF%83%CE%B7%CE%BC%CE%B5%CE%AF%CF%89%CF%83%CE%B7",
+            "/el/episimeiosi-epishmeiwsh",
+            "/el/επισημειωση",
+            "/ar/أبوستيل",
+            "/ja/%E3%82%A2%E3%83%9D%E3%82%B9%E3%83%86%E3%82%A3%E3%83%BC%E3%83%A6",
+            "/zh/附加证明书",
+            "/zh/海牙认证",
+            "/ko/아포스티유",
+            "/news/weather",
+        ];
+        let html: String = local
+            .iter()
+            .map(|path| format!("<a href=\"http://127.0.0.1:9{path}\">x</a>"))
+            .collect();
+        let found: Vec<String> = depth1_links(seed, html.as_bytes())
+            .iter()
+            .map(|link| link.trim_start_matches("http://127.0.0.1:9").to_string())
+            .collect();
+        let want: Vec<&str> = local
+            .iter()
+            .copied()
+            .filter(|p| !p.starts_with("/news") && !p.contains("episimeiosi"))
+            .collect();
+        assert_eq!(found, want);
+        assert_eq!(fold_link("/Legalizaci%C3%B3n"), "/legalizacion");
+        assert_eq!(fold_link("/100%"), "/100%", "a bare % stays");
         assert!(is_html(
             b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n",
             b"x"
