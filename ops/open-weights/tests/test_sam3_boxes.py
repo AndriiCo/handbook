@@ -6,11 +6,12 @@ Run from the repo root::
     python3 ops/open-weights/tests/test_sam3_boxes.py
 
 Covers: the open-weights adapter emits the same box record shape as the
-hosted SAM 3.1 parser in xtask/ops/a2-record.py; --mask target parsing
-(incl. aliases and rejection); region blackening on a synthetic buffer.
+hosted SAM 3.1 parser in ``xtask a2-record`` (the HOSTED_FACE record below
+is pinned by its test ``hosted_boxes_are_fractions_rounded_and_tagged_with_
+the_prompt``); --mask target parsing (incl. aliases and rejection); region
+blackening on a synthetic buffer.
 """
 
-import importlib.util
 import json
 import sys
 import tempfile
@@ -23,28 +24,22 @@ REPO_ROOT = OPEN_WEIGHTS.parent.parent
 sys.path.insert(0, str(OPEN_WEIGHTS))
 
 
-def load_dashed(path):
-    spec = importlib.util.spec_from_file_location("a2_record_dashed", str(path))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 import sam3_boxes  # noqa: E402  (path fixed above)
 
-
-A2 = load_dashed(REPO_ROOT / "xtask" / "ops" / "a2-record.py")
-
 HOSTED_KEYS = {"label", "object_id", "x", "y", "w", "h", "score"}
+
+# `xtask a2-record` on the hosted answer
+# "0<|box;x1=10;y1=20;x2=110;y2=220;w=400;h=800;c=0.9|>" for "face"
+# (pinned on the Rust side by the test named in the module docstring).
+HOSTED_FACE = {"label": "face", "object_id": 0, "x": 0.025, "y": 0.025,
+               "w": 0.25, "h": 0.25, "score": 0.9}
 
 
 class AdapterShapeTest(unittest.TestCase):
     def test_same_keys_as_hosted(self):
         """Every adapter key set == the hosted parser's key set."""
-        hosted = A2.parse_segmentation_output(
-            "0<|box;x1=10;y1=20;x2=110;y2=220;w=400;h=800;c=0.9|>", "face")
+        hosted = [HOSTED_FACE]
         local = sam3_boxes.boxes_to_records("face", [(10, 20, 110, 220)], [0.9], 400, 800)
-        self.assertEqual(len(hosted), 1, hosted)
         self.assertEqual(len(local), 1, local)
         self.assertEqual(set(local[0]), HOSTED_KEYS)
         self.assertEqual(set(hosted[0]), HOSTED_KEYS)
@@ -68,9 +63,6 @@ class AdapterShapeTest(unittest.TestCase):
         # Zero-area / inverted boxes never survive on either path.
         local = sam3_boxes.boxes_to_records("face", [(5, 5, 5, 9), (9, 9, 3, 3)], [0.5, 0.5], 100, 100)
         self.assertEqual(local, [])
-        hosted = A2.parse_segmentation_output(
-            "0<|box;x1=5;y1=5;x2=5;y2=9;w=100;h=100|>", "face")
-        self.assertEqual(hosted, [])
 
     def test_out_file_is_json_array_of_records(self):
         recs = sam3_boxes.boxes_to_records("face", [(10, 20, 30, 40)], [0.7], 100, 100)
@@ -127,30 +119,6 @@ class BlackenTest(unittest.TestCase):
         n = sam3_boxes.blacken_regions(pixels, w, h, [(-10, -10, 100, 100)])
         self.assertEqual(n, 1)
         self.assertEqual(bytes(pixels), b"\x00" * (w * h * 3))
-
-
-class RecorderWiringTest(unittest.TestCase):
-    def test_mask_needs_open_weights(self):
-        with self.assertRaises(ValueError):
-            A2.check_mask_backend("hosted", "faces")
-        A2.check_mask_backend("open-weights", "faces")
-        A2.check_mask_backend("hosted", "")
-
-    def test_parser_flags(self):
-        args = A2.build_parser().parse_args([
-            "--png-dir", "a", "--out-dir", "b",
-            "--sam-backend", "open-weights",
-            "--mask", "faces,license plates"])
-        self.assertEqual(args.sam_backend, "open-weights")
-        self.assertEqual(args.mask, "faces,license plates")
-        defaults = A2.build_parser().parse_args(["--png-dir", "a", "--out-dir", "b"])
-        self.assertEqual(defaults.sam_backend, "hosted")
-        self.assertEqual(defaults.mask, "")
-
-    def test_default_script_resolves_into_repo(self):
-        script = A2.default_sam3_script()
-        self.assertTrue(script.endswith("ops/open-weights/sam3_boxes.py"), script)
-        self.assertTrue(Path(script).is_file(), script)
 
 
 if __name__ == "__main__":

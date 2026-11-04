@@ -15,7 +15,7 @@
 
 - Base URL `https://api.meta.ai/v1` everywhere (one canonical
   value: Rust `META_BASE_URL` / `BASE_URL` / `META_API_BASE`
-  consts, `a2-record.py --base`). Auth `Authorization: Bearer
+  consts, `xtask a2-record --base`). Auth `Authorization: Bearer
   $META_API_KEY` (never in repo/logs). Key lookup order: sealed
   `meta.api_key` row first, `$META_API_KEY` env fallback for
   operator one-shots (`xtask analyze/eval --live`); upstream env
@@ -80,7 +80,7 @@
   Transcribe); media `VoiceFileClient` (`request` JSON + `audio`
   multipart) and `MetaSamClient` (one Responses call per concept)
   behind the `media.terms_read` gate; the A2 recorder
-  (`xtask/ops/a2-record.py`) for replay fixtures. Add a
+  (`xtask a2-record`, same SAM body and box parser) for replay fixtures. Add a
   realtime-STT client honoring the handshake-auth gotcha above.
 - `StubClient` + fixtures keep `cargo test` and `dev-seed`
   offline-safe; `--dry-run` prints projected calls/tokens.
@@ -110,7 +110,7 @@ Status: the fixes for F1-F14 were merged to `main` on 2026-11-01 (P207).
 |---|---|---|
 | Analyzer, A5 eval, admin draft: `crates/handbook-agent/src/model.rs` | `POST /v1/chat/completions`, `muse-spark-1.3` | yes, staging 10-31 (`docs/ops/deploy.md:155-166`) |
 | Atlas + instruct worker: `crates/atlas/src/model.rs`, `crates/instruct/src/{draft,trigger}.rs` | chat, `/v1/responses`, `/v1/files`, `/v1/asr/transcribe` | no; but `apostille-instruct.service` already runs `--live` |
-| A2 recorder: `xtask/ops/a2-record.py` | SAM on `/v1/responses`; Spark vision on chat | yes, staging and production (recorded verdicts) |
+| A2 recorder: `xtask/src/a2_record.rs` (was `xtask/ops/a2-record.py` until P411) | SAM on `/v1/responses`; Spark vision on chat | yes, staging and production (recorded verdicts) |
 | Media crate: `crates/media/src/{redact,transcribe}.rs` | invented `/v1/sam/segment`; `/v1/asr/transcribe` | no, called only from tests |
 
 ## Findings

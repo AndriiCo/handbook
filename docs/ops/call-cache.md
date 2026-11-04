@@ -2,8 +2,7 @@
 
 Operator decision 2026-11-03: every URL fetched and every Meta API call
 is saved to disk and reused on reruns, so retries and revisions never
-re-spend budget. Code: `crates/callcache` (Rust) and the matching
-`MetaCache` class in `xtask/ops/a2-record.py` (same key, same layout).
+re-spend budget. Code: `crates/callcache`.
 
 ## Where it lives
 
@@ -79,7 +78,7 @@ Seams: `MetaRestClient::post_chat` (every web pipeline, `xtask analyze`,
 `/asr/transcribe`; terminal `GET /responses/{id}` polls), the media
 `CachedTransport` (voice transcribe, SAM), the web translate client,
 `xtask world-index --live-model` (curl), `xtask ask`, and
-`a2-record.py`. `xtask atlas` and `xtask instruct` get it through
+`xtask a2-record`. `xtask atlas` and `xtask instruct` get it through
 `xtask::atlas::live_client`, so any worker built on that client does too.
 
 ### Daily cap

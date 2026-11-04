@@ -20,6 +20,7 @@ handbook-store = { path = "../crates/handbook-store" }
 ingest = { path = "../crates/ingest" }
 labels = { path = "../crates/labels" }
 mail = { path = "../crates/mail" }
+media = { path = "../crates/media" }
 mcp = { path = "../crates/mcp" }
 publish = { path = "../crates/publish" }
 voice = { path = "../crates/voice" }

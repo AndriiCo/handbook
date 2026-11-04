@@ -4,14 +4,15 @@
 Runs Meta's SAM 3 (``facebook/sam3``, gated Meta licence, Promptable
 Concept Segmentation) on plant's RTX 3060 via the home venv's
 CUDA-bundled PyTorch + transformers, and emits the SAME box JSON shape
-as the hosted SAM 3.1 call in ``xtask/ops/a2-record.py``::
+as the hosted SAM 3.1 call in ``xtask a2-record`` (``xtask/src/a2_record.rs``)::
 
     [{"label": ..., "object_id": ..., "x": ..., "y": ...,
       "w": ..., "h": ..., "score": ...}]
 
-with x/y/w/h as fractions of image width/height. ``a2-record.py``
-(``--sam-backend open-weights``) shells out to this script; Muse Spark
-still judges every verdict over the hosted API.
+with x/y/w/h as fractions of image width/height. ``xtask a2-record
+--sam-backend open-weights --sam3-python ~/sam3-venv/bin/python`` runs
+this script once per sample; Muse Spark still judges every verdict over
+the hosted API.
 
 ``--mask faces,license plates`` blackens the detected face /
 license-plate boxes in a copy of the input (privacy redaction before
@@ -42,7 +43,7 @@ import time
 
 MODEL_ID = "facebook/sam3"
 MODEL_LICENCE = "gated Meta licence (accept at https://huggingface.co/facebook/sam3)"
-# Same bare noun phrases as SAM_PROMPTS in xtask/ops/a2-record.py: SAM 3
+# Same bare noun phrases as SAM_PROMPTS in xtask/src/a2_record.rs: SAM 3
 # takes short concept phrases, one per request.
 DEFAULT_PROMPTS = ["document page", "official seal", "embossed stamp", "face"]
 
@@ -87,7 +88,7 @@ def parse_mask_targets(spec):
 def boxes_to_records(label, boxes_xyxy, scores, img_w, img_h):
     """Pixel boxes -> hosted-shape records (fractions, 4dp, range-checked).
 
-    Mirrors parse_segmentation_line() in xtask/ops/a2-record.py: the same
+    Mirrors PrecheckBox::from_sam() in xtask/src/a2_record.rs: the same
     six keys plus score, x/y inside 0..1, w/h positive. object_id is the
     per-prompt detection index (hosted ids are model-assigned; only the
     shape is contractual, never the values).
@@ -214,7 +215,7 @@ def build_parser():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--image", required=True, help="input PNG/JPEG")
     ap.add_argument("--prompt", action="append", default=[],
-                    help="concept noun phrase (repeatable; defaults mirror a2-record.py)")
+                    help="concept noun phrase (repeatable; defaults mirror xtask a2-record)")
     ap.add_argument("--out", required=True, help="write hosted-shape boxes JSON array here")
     ap.add_argument("--mask", default="",
                     help='comma list to blacken, e.g. "faces,license plates"')

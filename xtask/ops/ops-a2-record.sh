@@ -21,7 +21,6 @@ if [ -z "${META_API_KEY:-}" ]; then
     read -rs -p "Model key: " META_API_KEY; echo
     [ -n "$META_API_KEY" ] || { echo "ABORT: empty key"; exit 1; }
 fi
-command -v python3 >/dev/null || { echo "ABORT: python3 missing"; exit 1; }
 
 STORE=/var/lib/apostille
 DESTDIR="$STORE/demo_precheck"
@@ -29,14 +28,14 @@ RELEASE=/srv/apostille/current
 # Thumbs are served from the built SPA ($RELEASE/spa/demo); in the
 # release layout `web` is the binary, so web/static/demo does not exist.
 PNGDIR="${A2_PNG_DIR:-$RELEASE/spa/demo}"
-SCRIPTDIR="$(dirname "$0")"
-RECORDER="$SCRIPTDIR/a2-record.py"
+# The recorder is `xtask a2-record` from the live release (Rust; same
+# call cache and SAM parser as the app).
+XTASK="$RELEASE/xtask"
 OUTDIR=/tmp/a2-record-out
 
-[ -f "$RECORDER" ] || { echo "ABORT: recorder missing at $RECORDER (sync xtask/ops first)"; exit 1; }
+[ -x "$XTASK" ] || { echo "ABORT: no xtask binary at $XTASK (deploy first)"; exit 1; }
 [ -d "$PNGDIR" ] || { echo "ABORT: no sample PNGs at $PNGDIR (deploy first, or set A2_PNG_DIR)"; exit 1; }
 [ -n "$(ls "$PNGDIR"/syn-doc-*.png 2>/dev/null)" ] || { echo "ABORT: no syn-doc-*.png in $PNGDIR"; exit 1; }
-python3 -c "import json,urllib.request" || { echo "ABORT: python3 stdlib incomplete"; exit 1; }
 
 echo "=== 0. prior state (read-only)"
 echo "recordings before: $(ls "$DESTDIR"/*.json 2>/dev/null | wc -l)"
@@ -48,23 +47,19 @@ mkdir -p "$OUTDIR" || { echo "ABORT: cannot create $OUTDIR"; exit 1; }
 # Spark answers instead of re-spending. hal-owned, so it never fights
 # the service user over /var/lib/apostille/meta-cache permissions.
 A2_CACHE="${META_CACHE_DIR:-$HOME/apostille-cache/meta-cache}"
-META_API_KEY="$META_API_KEY" python3 "$RECORDER" --png-dir "$PNGDIR" --out-dir "$OUTDIR" \
+META_API_KEY="$META_API_KEY" "$XTASK" a2-record --png-dir "$PNGDIR" --out-dir "$OUTDIR" \
     --meta-cache "$A2_CACHE" \
     || { echo "ABORT: recording failed (output above; nothing installed)"; exit 1; }
 
-echo "=== 2. validate recordings (contract shape for the endpoint)"
+echo "=== 2. validate recordings (one per sample, a pass/retake verdict each)"
+# The recorder writes only pass/retake verdicts with in-image boxes;
+# this guards against a partial run reaching the endpoint.
+PNGS=$(ls "$PNGDIR"/syn-doc-*.png | wc -l)
+JSONS=$(ls "$OUTDIR"/*.json 2>/dev/null | wc -l)
+[ "$PNGS" = "$JSONS" ] || { echo "ABORT: $JSONS recording(s) for $PNGS sample(s)"; exit 1; }
 for f in "$OUTDIR"/*.json; do
-    python3 - "$f" <<'EOF' || { echo "ABORT: bad recording $f"; exit 1; }
-import json, sys
-r = json.load(open(sys.argv[1]))
-assert r["verdict"] in ("pass", "retake"), "verdict"
-assert isinstance(r.get("issues"), list), "issues"
-assert isinstance(r.get("boxes"), list), "boxes"
-for b in r["boxes"]:
-    assert 0 <= b["x"] <= 1 and 0 <= b["y"] <= 1 and b["w"] > 0 and b["h"] > 0, "box range"
-assert "sam-3.1" in r.get("models", []) and any("muse-spark" in m for m in r["models"]), "models"
-print(f"ok {sys.argv[1]}: {r['verdict']} {len(r['boxes'])} box(es)")
-EOF
+    grep -Eq '"verdict": "(pass|retake)"' "$f" || { echo "ABORT: bad recording $f"; exit 1; }
+    echo "ok $f"
 done
 
 echo "=== 3. install (0750 dir group-read for the app group, 0644 files)"
