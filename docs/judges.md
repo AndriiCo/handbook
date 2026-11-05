@@ -1,5 +1,11 @@
 # Run the Apostille Handbook on your machine
 
+**Guest login:** on the customer sign-in page, `demo@andrii.ai` works for
+the whole customer app through November 20, 2026 (Pacific time), with no
+passkey. Guests share the account, so enter no real personal details. It
+does not open the staff console: to try that, run the boot below, which
+serves the full console on synthetic data at http://localhost:18319.
+
 One command, no keys, about 10 minutes the first time.
 
 ```sh

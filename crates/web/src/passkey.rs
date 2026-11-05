@@ -241,6 +241,16 @@ pub(crate) fn session_of(
     Some(session)
 }
 
+/// The shared guest account keeps no sign-in methods of its own: one
+/// guest's passkey or linked provider would outlive the shared login.
+pub(crate) fn guest_methods_refused() -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(json!({"error": "the guest account cannot change its sign-in methods"})),
+    )
+        .into_response()
+}
+
 pub(crate) fn audit_auth(
     conn: &rusqlite::Connection,
     now: i64,
@@ -433,6 +443,17 @@ pub async fn register_start(
         return store_unavailable();
     };
     let session = session_of(&conn, &headers, now);
+    // Nobody registers under the guest account or its address.
+    if session
+        .as_ref()
+        .is_some_and(|s| auth::guest::is_guest_user(&s.user_id))
+        || body
+            .email
+            .as_deref()
+            .is_some_and(auth::guest::is_guest_email)
+    {
+        return guest_methods_refused();
+    }
     let display_name = body.display_name.unwrap_or_default();
     let label = body.label.unwrap_or_default();
     if session.is_none() && (display_name.trim().is_empty() || display_name.len() > 128) {
@@ -1129,6 +1150,9 @@ pub async fn unlink(
         )
             .into_response();
     };
+    if auth::guest::is_guest_user(&session.user_id) {
+        return guest_methods_refused();
+    }
     if body.method != "passkey"
         && body.method != "google"
         && body.method != "apple"

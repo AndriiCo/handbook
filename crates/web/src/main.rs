@@ -40,6 +40,7 @@ mod first_source;
 mod follow;
 mod forms_map;
 mod fulfilment;
+mod guest;
 mod host;
 mod label_autofill;
 mod locations;
@@ -618,6 +619,7 @@ fn public_router(state: AppState, static_dir: &str, spa_dir: &str, acme_dir: &st
         .route("/api/v1/auth/meta/start", post(oauth_meta::start))
         .route("/api/v1/auth/magic/start", post(magic::start))
         .route("/api/v1/auth/magic/consume", post(magic::consume))
+        .route("/api/v1/auth/guest/login", post(guest::login))
         .route("/api/v1/authorities", get(approval::public_authorities))
         .route(
             "/api/v1/authorities/{slug}",
@@ -930,7 +932,15 @@ async fn auth_providers(State(state): State<AppState>) -> impl IntoResponse {
     if state.meta_cfg.is_some() {
         providers.push("meta");
     }
-    (StatusCode::OK, Json(json!({"providers": providers}))).into_response()
+    let mut body = json!({"providers": providers});
+    // The guest note shows only while the guest login works.
+    if auth::guest::guest_active(unix_now()) {
+        body["guest"] = json!({
+            "email": auth::guest::GUEST_EMAIL,
+            "last_day": auth::guest::GUEST_LAST_DAY,
+        });
+    }
+    (StatusCode::OK, Json(body)).into_response()
 }
 
 /// DEMO session check: a valid token returns the customer ref. Callers
@@ -2201,7 +2211,41 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(json_body(res).await, serde_json::json!({"providers": []}));
+        assert_eq!(json_body(res).await["providers"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn guest_login_ends_with_its_sessions() {
+        guest::tests::guest_login_ends_with_its_sessions(&fixture().state);
+    }
+
+    #[test]
+    fn guest_login_takes_only_its_address() {
+        guest::tests::guest_login_takes_only_its_address(&fixture().state);
+    }
+
+    #[test]
+    fn locking_the_guest_account_ends_it_early() {
+        guest::tests::locking_the_guest_account_ends_it_early(&fixture().state);
+    }
+
+    #[tokio::test]
+    async fn guest_login_route_is_on_the_public_router() {
+        let fx = fixture();
+        let res = public_router_for(&fx.state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/apostille/api/v1/auth/guest/login")
+                    .header("content-type", "application/json")
+                    .header("origin", "https://andrii.ai")
+                    .extension(demo_addr())
+                    .body(Body::from(r#"{"email":"someone@andrii.ai"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 
     fn demo_addr() -> axum::extract::ConnectInfo<std::net::SocketAddr> {

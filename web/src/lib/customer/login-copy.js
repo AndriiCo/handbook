@@ -40,7 +40,10 @@
  *   registerCancelled: string,
  *   registerFailed: string,
  *   loginCancelled: string,
- *   loginFailed: string
+ *   loginFailed: string,
+ *   guestNote: (email: string, day: string) => string,
+ *   guestContinue: string,
+ *   guestEnded: string
  * }} LoginCopy
  */
 
@@ -85,7 +88,11 @@ export const LOGIN_COPY = {
 		registerCancelled: 'Cancelled — no passkey was created.',
 		registerFailed: 'Passkey ceremony failed — is this browser allowed to create passkeys?',
 		loginCancelled: 'Cancelled — not logged in.',
-		loginFailed: 'Passkey ceremony failed — try again.'
+		loginFailed: 'Passkey ceremony failed — try again.',
+		guestNote: (email, day) =>
+			`Guest login: ${email} works for the whole app through ${day}, no passkey needed. Guests share this account, so don’t enter real personal details.`,
+		guestContinue: 'Continue as guest',
+		guestEnded: 'The guest login has ended.'
 	},
 	es: {
 		tagline: 'Sus documentos, verificados cita por cita.',
@@ -129,7 +136,11 @@ export const LOGIN_COPY = {
 		registerFailed:
 			'No se pudo crear la llave de acceso: ¿tiene este navegador permiso para crearlas?',
 		loginCancelled: 'Cancelado: no se inició sesión.',
-		loginFailed: 'Falló el inicio de sesión con llave de acceso: inténtelo de nuevo.'
+		loginFailed: 'Falló el inicio de sesión con llave de acceso: inténtelo de nuevo.',
+		guestNote: (email, day) =>
+			`Acceso de invitado: ${email} funciona en toda la aplicación hasta el ${day}, sin llave de acceso. Los invitados comparten esta cuenta, así que no introduzca datos personales reales.`,
+		guestContinue: 'Continuar como invitado',
+		guestEnded: 'El acceso de invitado ha terminado.'
 	},
 	fr: {
 		tagline: 'Vos documents, vérifiés citation par citation.',
@@ -173,6 +184,10 @@ export const LOGIN_COPY = {
 		registerFailed:
 			'La création de la clé d’accès a échoué : ce navigateur est-il autorisé à en créer ?',
 		loginCancelled: 'Annulé : vous n’êtes pas connecté.',
-		loginFailed: 'La connexion par clé d’accès a échoué : réessayez.'
+		loginFailed: 'La connexion par clé d’accès a échoué : réessayez.',
+		guestNote: (email, day) =>
+			`Accès invité : ${email} fonctionne dans toute l’application jusqu’au ${day} inclus, sans clé d’accès. Les invités partagent ce compte : n’y saisissez pas de vraies données personnelles.`,
+		guestContinue: 'Continuer en tant qu’invité',
+		guestEnded: 'L’accès invité est terminé.'
 	}
 };

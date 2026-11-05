@@ -6,6 +6,7 @@
 
 pub mod apple;
 pub mod csrf;
+pub mod guest;
 pub mod login;
 pub mod magic;
 pub mod meta;
@@ -181,6 +182,10 @@ impl Session {
 /// (customer role only: one `account` lookup; other roles skip
 /// it). Replaces bare `session.valid` at every call site.
 pub fn session_usable(conn: &Connection, session: &Session, now: i64) -> bool {
+    // The guest deadline ends sessions already open, not just new ones.
+    if guest::is_guest_user(&session.user_id) && !guest::guest_active(now) {
+        return false;
+    }
     if !matches!(session.role, Role::Customer) {
         return session.valid(now);
     }
