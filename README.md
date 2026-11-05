@@ -4,7 +4,7 @@ Every apostille fact carries its quote, source and date — drafted by Meta AI o
 Citations are off by default; turn them on with Alt+C (⌥C on a Mac) or the Citations button. Live at <https://andrii.ai/apostille>;
 the Washington guide with citations on: <https://andrii.ai/apostille/authority/usa/washington?cite=1>.
 
-> Demo video: _no video yet — operator replaces this line with the video URL on 2026-11-03._
+> Demo video: <https://youtu.be/8IMzYU0EZiA>
 
 Built by Andrii Co. for the
 [Meta AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon.md)
@@ -96,7 +96,7 @@ the U.S., Canada, and Mexico.
 ## What shipped
 
 What is live at <https://andrii.ai/apostille> today (production
-`0.1.0+2521ffe`, measured 2026-11-04):
+`0.1.0+25c62c5`, measured 2026-11-04):
 
 - **Every Hague party in the index:** search the country-grouped
   authority index of **411 public authorities in 133 countries**, built
@@ -135,11 +135,8 @@ customer has been charged.
 Promise words are quoted from the hackathon application text
 (2026-10-26). "Live" means served by the production SHA; "(repo)"
 means merged and shipped but waiting on an operator step or data.
-Production is `0.1.0+2521ffe`, scoreboard **8/10** measured
-2026-11-04T23:47Z (`node xtask/ops/scoreboard.mjs`). The red rows:
-- A5: `/about` is on `main` but not on production yet, so the page that
-  shows the eval rate returns not found there.
-- S1: demo video link (operator-owned; the licence and public-repo parts pass).
+Production is `0.1.0+25c62c5`, scoreboard **10/10** measured
+2026-11-05T01:31Z (`node xtask/ops/scoreboard.mjs`).
 
 | Promised (application words) | Status | Reason / where it stands |
 |---|---|---|
@@ -159,10 +156,10 @@ Production is `0.1.0+2521ffe`, scoreboard **8/10** measured
 
 Number provenance (measured 2026-11-03 unless noted):
 
-- Production `0.1.0+2521ffe`, 8/10: measured with the scoreboard
-  (2026-11-04T23:47Z). The counts of 411 authorities in 133 countries
+- Production `0.1.0+25c62c5`, 10/10: measured with the scoreboard
+  (2026-11-05T01:31Z). The counts of 411 authorities in 133 countries
   and 24 approved facts on 2 authorities are from the live
-  `GET /api/v1/authorities`, read the same day.
+  `GET /api/v1/authorities`, read on 2026-11-04.
 - 501 world authorities in 130 packs, 478 watch URLs: parsed from
   `packs/world/` (pinned by `world_rows_merge_into_curated_dossiers`);
   the public index is smaller because some rows are merged or hidden.
