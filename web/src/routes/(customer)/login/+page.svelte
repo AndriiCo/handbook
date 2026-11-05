@@ -21,6 +21,7 @@
 	} from '../../../lib/customer/oauth.js';
 	import { consumeMagic, magicError, requestMagic } from '../../../lib/customer/magic.js';
 	import { rememberNext, safeNext, takeNext } from '../../../lib/customer/next.js';
+	import { guestDay, guestLogin, guestOffer, isGuestEmail } from '../../../lib/customer/guest.js';
 	import Heading from '../../../lib/components/brand/Heading.svelte';
 	import Guilloche from '../../../lib/components/brand/Guilloche.svelte';
 	import ApostilleCertificate from '../../../lib/components/brand/ApostilleCertificate.svelte';
@@ -37,6 +38,7 @@
 	// The callback's ?error= (read once, then dropped from the address).
 	let oauthParams = $state<URLSearchParams | null>(null);
 	let providers = $state<string[] | null>(null);
+	let guest = $state<{ email: string; lastDay: string } | null>(null);
 	let magicEmail = $state('');
 	let magicSent = $state(false);
 	let magicBusy = $state(false);
@@ -116,8 +118,28 @@
 		goNext();
 	}
 
+	/** The shared guest account: no passkey, and no last-used account kept. */
+	async function signInGuest(address: string) {
+		error = null;
+		busy = true;
+		try {
+			const res = await guestLogin(address, { post });
+			if (!res.ok) {
+				error = res.status === 410 ? c.guestEnded : friendly(res.status, res.body);
+				return;
+			}
+			me = { user_id: res.body.user_id };
+			goNext();
+		} catch {
+			error = c.requestFailed(0);
+		} finally {
+			busy = false;
+		}
+	}
+
 	async function register(event: SubmitEvent) {
 		event.preventDefault();
+		if (isGuestEmail(email)) return signInGuest(email);
 		error = null;
 		busy = true;
 		try {
@@ -144,6 +166,7 @@
 
 	async function login(event: SubmitEvent) {
 		event.preventDefault();
+		if (isGuestEmail(account)) return signInGuest(account);
 		error = null;
 		busy = true;
 		try {
@@ -192,6 +215,7 @@
 
 	async function magicRequest(event: SubmitEvent) {
 		event.preventDefault();
+		if (isGuestEmail(magicEmail)) return signInGuest(magicEmail);
 		error = null;
 		busy = true;
 		try {
@@ -282,6 +306,7 @@
 		fetch(api('/auth/providers'), { credentials: 'same-origin' })
 			.then((res) => (res.ok ? res.json() : null))
 			.then((body) => {
+				guest = guestOffer(body);
 				const list = body?.providers;
 				if (Array.isArray(list)) {
 					providers = list.filter(
@@ -309,6 +334,20 @@
 <svelte:head>
 	<title>{t.loginLabel} — Apostille Handbook</title>
 </svelte:head>
+
+{#snippet guestNote()}
+	{#if guest}
+		<div class="mt-4 rounded-md border border-line bg-surface px-4 py-3 text-sm" data-testid="guest-note">
+			<p class="m-0">{c.guestNote(guest.email, guestDay(guest.lastDay, site.locale))}</p>
+			<button
+				class="mt-3 min-h-11 w-full cursor-pointer rounded-sm border border-line bg-bg px-4 font-bold text-ink disabled:cursor-wait disabled:opacity-60"
+				type="button"
+				disabled={busy}
+				onclick={() => signInGuest(guest?.email ?? '')}>{c.guestContinue}</button
+			>
+		</div>
+	{/if}
+{/snippet}
 
 <section
 	class="grid items-stretch gap-8 py-10 lg:grid-cols-2 xl:py-16"
@@ -340,12 +379,7 @@
 
 	<div class="order-1 mx-auto w-full max-w-[25rem] lg:order-2">
 		<div class="rounded-xl border border-line bg-bg p-6 shadow-md">
-			{#if !webauthnOk}
-				<Heading level={1}>{t.loginLabel}</Heading>
-				<p class="rounded-md border border-line bg-error-bg px-4 py-3" role="alert">
-					{c.noPasskeys}
-				</p>
-			{:else if me && leaving}
+			{#if me && leaving}
 				<Heading level={1}>{t.loginLabel}</Heading>
 				<p class="rounded-md border border-line px-4 py-3" role="status">{c.signedInBack}</p>
 			{:else if me}
@@ -359,6 +393,15 @@
 						onclick={logout}>{t.logoutLabel}</button
 					>
 				</p>
+			{:else if !webauthnOk}
+				<Heading level={1}>{t.loginLabel}</Heading>
+				<p class="rounded-md border border-line bg-error-bg px-4 py-3" role="alert">
+					{c.noPasskeys}
+				</p>
+				{@render guestNote()}
+				{#if error}
+					<p class="rounded-md border border-line bg-error-bg px-4 py-3" role="alert">{error}</p>
+				{/if}
 			{:else}
 				<Heading level={1}>{tab === 'signin' ? t.loginLabel : c.createAccount}</Heading>
 				<div class="mt-4 flex rounded-md border border-line bg-surface p-1" role="tablist" aria-label={c.tabsLabel}>
@@ -380,6 +423,8 @@
 				{#if magicBusy}
 					<p class="rounded-md border border-line px-4 py-3" role="status">{c.signingIn}</p>
 				{/if}
+
+				{@render guestNote()}
 
 				{#if tab === 'signin'}
 					<form class="mt-4 flex flex-col gap-2" onsubmit={login}>

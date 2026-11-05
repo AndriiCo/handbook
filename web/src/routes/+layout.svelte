@@ -194,10 +194,16 @@
 		};
 		window.addEventListener('keydown', onKey);
 
-		get('/me')
-			.then((res) => {
+		// `/me` knows demo sessions; `/auth/me` knows passkey, OAuth, email
+		// link and guest sessions.
+		Promise.all([get('/me'), get('/auth/me')])
+			.then(([demo, session]) => {
 				const ref =
-					res.ok && typeof res.body?.customer_ref === 'string' ? res.body.customer_ref : null;
+					demo.ok && typeof demo.body?.customer_ref === 'string'
+						? demo.body.customer_ref
+						: session.ok && typeof session.body?.user_id === 'string'
+							? session.body.user_id
+							: null;
 				customerRef = ref;
 				status = ref ? 'in' : 'out';
 			})

@@ -149,6 +149,9 @@ pub async fn start(
                 )
                     .into_response();
             }
+            if auth::guest::is_guest_user(&active.user_id) {
+                return passkey::guest_methods_refused();
+            }
             let fresh = store::get_account(&conn, &active.user_id)
                 .ok()
                 .flatten()

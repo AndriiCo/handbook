@@ -108,7 +108,11 @@ What is live at <https://andrii.ai/apostille> today (production
   across 2 authorities** (`usa-wa-sos` and `vietnam`); the other 409 are
   indexed and have no approved facts yet.
 - **Sign-in and orders:** sign in with a passkey, run the photo
-  precheck, save an order draft.
+  precheck, save an order draft. **Guest login:** `demo@andrii.ai` works
+  for the whole customer app through November 20, 2026 (Pacific time),
+  no passkey needed. Guests share the account, so enter no real personal
+  details. It does not open the staff console: to try that, run the
+  [local judge boot](docs/judges.md) (synthetic data, no keys).
 - **Staff tools:**
   - Approve every fact in the review queue and watch captures in the
     trace console; approvals reach the public dossier live.
