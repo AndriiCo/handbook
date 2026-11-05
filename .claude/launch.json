@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "handbook-up",
+      "runtimeExecutable": "cargo",
+      "runtimeArgs": ["xtask", "up"],
+      "port": 18318
+    }
+  ]
+}
