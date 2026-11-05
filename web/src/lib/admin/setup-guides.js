@@ -67,14 +67,14 @@ export const STEPS = [
 			{ key: 'acme.directory', type: 'text', label: 'ACME directory', hint: 'Default the Google Public CA production directory. Staging URL for dry runs.', placeholder: 'https://dv.acme-v02.api.pki.goog/directory' },
 			{ key: 'acme.domains', type: 'text', label: 'Domains', hint: 'Required. Comma-separated SANs: apex + admin + www.', placeholder: 'andrii.ai, admin.andrii.ai, www.andrii.ai' },
 			{ key: 'acme.email', type: 'text', label: 'Contact email', hint: 'Required. The CA requires at least one contact for the account.', placeholder: 'ops@example.com' },
-			{ key: 'acme.eab_kid', type: 'text', label: 'EAB key ID', hint: 'External Account Binding ID from the CA console (binds ACME to your account).', placeholder: '' },
+			{ key: 'acme.eab_kid', type: 'text', label: 'EAB key ID', hint: 'External Account Binding ID from gcloud publicca (binds ACME to your account).', placeholder: '' },
 			{ key: 'acme.eab_hmac', type: 'secret', label: 'EAB HMAC key', hint: 'The EAB secret. Write-only: shown as Set, never back.', placeholder: '' }
 		],
 		guide: {
-			intro: 'Google Public CA requires External Account Binding: create the EAB credentials in the Google Cloud console, then paste them here.',
+			intro: 'Google Public CA requires External Account Binding: create the EAB credentials with gcloud, then paste them here.',
 			steps: [
-				'Open the Google Cloud console → Certificate Manager → ACME external accounts (or search “Public CA EAB”).',
-				'Create an external account: copy the Key ID into EAB key ID and the HMAC secret into EAB HMAC key.',
+				'In Cloud Shell or a local gcloud: gcloud services enable publicca.googleapis.com, then gcloud publicca external-account-keys create (needs roles/publicca.externalAccountKeyCreator). There is no console page for EAB keys.',
+				'Copy keyId into EAB key ID and b64MacKey into EAB HMAC key; use them within 7 days.',
 				'List every name the server answers on (apex, admin, www) in Domains — a missing SAN fails closed in browsers.',
 				'Set the contact email, enable ACME, and save. Issuance runs at boot; watch the service log for the order state.'
 			]
@@ -93,7 +93,7 @@ export const STEPS = [
 		guide: {
 			intro: 'Three strings, no console: they must describe the staff WebAuthn origin precisely (never the public host). The wizard cannot check them — a typo fails at enrolment. Staff access is also IP-gated: set admin.allow_ips (xtask config-set) to your address BEFORE opening /config from anywhere but loopback, then restart — a refused browser gets a 403 page naming its IP.',
 			steps: [
-				'Set the RP ID to the admin host bare domain and the origin to its full https URL (trailing slash never).',
+				'Set the RP ID to the admin host name (admin.andrii.ai in production, no scheme) and the origin to its full https URL (trailing slash never).',
 				'Pick an RP display name your staff will recognize on their authenticator prompts.',
 				'Set admin.allow_ips first: your IPv4 address, or your IPv6 /64 (privacy addresses rotate per connection, so one address never suffices). Values apply at boot — restart to reload.'
 			]
@@ -116,11 +116,11 @@ export const STEPS = [
 		guide: {
 			intro: 'Each provider needs an app registration with the login callback. Register only the providers you will offer.',
 			steps: [
-				'Google: console → APIs & Services → Credentials → Create OAuth client (Web). Add the callback https://<public host>/auth/google/callback as an authorized redirect URI, then paste the client ID + secret.',
-				'Google consent screen: publish the app (Testing mode expires grants weekly) and request only profile + email.',
+				'Google: console → Google Auth Platform → Clients → Create client (Web application). Add the callback https://<public host>/auth/google/callback as an authorized redirect URI, then paste the client ID + secret (the secret is shown only once).',
+				'Google Auth Platform → Audience: Publish app (Testing mode expires grants weekly); Data Access: request only openid, profile + email.',
 				'Apple: developer portal → Certificates, Identifiers & Profiles → Identifiers → register a Services ID; enable Sign in with Apple with the callback https://<public host>/auth/apple/callback as a return URL.',
 				'Apple: Membership → copy the Team ID; Keys → create a Sign in with Apple key → note the Key ID and download the .p8 once — paste its full contents (it cannot be re-downloaded).',
-				'Meta: developers.facebook.com → My Apps → create an app → add Facebook Login → set the callback https://<public host>/auth/meta/callback as a valid OAuth redirect URI; paste the App ID + App Secret.'
+				'Meta: developers.facebook.com → My Apps → create an app with the Facebook Login use case → Use cases → Customize → Settings → set the callback https://<public host>/auth/meta/callback as a valid OAuth redirect URI; paste the App ID + App Secret.'
 			]
 		}
 	},
@@ -145,21 +145,23 @@ export const STEPS = [
 	{
 		id: 'voice',
 		title: 'Voice (Telnyx)',
-		blurb: 'Outbound verification calls. All five keys come from the Telnyx portal: API key, number, connection, webhook key.',
+		blurb: 'Outbound verification calls. Five values come from the Telnyx portal: API key, number, Voice API application, webhook key, browser phone connection.',
 		keys: [
 			{ key: 'telnyx.base_url', type: 'text', label: 'Telnyx base URL', hint: 'Default https://api.telnyx.com. Override for private interconnects.', placeholder: 'https://api.telnyx.com' },
 			{ key: 'telnyx.from_number', type: 'text', label: 'From number', hint: 'Required. Caller ID in E.164, must be a number on your account.', placeholder: '+13605550100' },
-			{ key: 'telnyx.connection_id', type: 'text', label: 'Connection ID', hint: 'Required. The Call Control (Telnyx IQ SIP) connection dials from.', placeholder: '' },
+			{ key: 'telnyx.connection_id', type: 'text', label: 'Connection ID', hint: 'Required. The Voice API application calls dial from.', placeholder: '' },
+				{ key: 'telnyx.webrtc_connection_id', type: 'text', label: 'Browser phone connection ID', hint: 'Required. The Credentials SIP connection staff browser phones register on. Unset, the Calls page refuses to dial.', placeholder: '' },
 			{ key: 'telnyx.webhook_public_key', type: 'text', label: 'Webhook public key', hint: 'Required. Verifies Telnyx-signed status callbacks (Ed25519).', placeholder: '' },
 			{ key: 'telnyx.api_key', type: 'secret', label: 'Telnyx API key', hint: 'Required. Shown once at creation. Write-only.', placeholder: '' }
 		],
 		guide: {
-			intro: 'Four portal stops: API key, phone number, Call Control connection, webhook signing key.',
+			intro: 'Five portal stops: API key, phone number, Voice API application, webhook signing key, browser phone connection.',
 			steps: [
-				'Telnyx portal → API Keys → create a key (restrict to Call Control + messaging if offered) → paste as the API key.',
-				'Numbers → buy or assign a number with voice + SMS in the regions you call → paste in E.164 as the From number.',
-				'Voice → Connections → create/use a Call Control connection → paste its ID.',
-				'Voice → Preferences (or the connection webhooks) → copy the public signing key → paste as the webhook key so forged status callbacks fail verification.'
+				'Telnyx portal → Account Settings → API Keys → Create API Key → paste as the API key.',
+				'Voice Suite → Phone Numbers → buy or assign a number with voice + SMS in the regions you call → paste in E.164 as the From number.',
+				'Voice Suite → Programmable Voice → Create Voice App (Webhook API Version v2) → paste its ID.',
+				'Account Settings → API Keys → Public Key tab → copy the key → paste as the webhook key so forged status callbacks fail verification.',
+					'Voice Suite → SIP Trunking → Create SIP Connection, Type Credentials (the form also asks for a connection username and password). On its Authentication and routing tab, set Receive SIP URI calls to Only from my Connections → paste its Connection ID as the Browser phone connection ID.'
 			]
 		}
 	},
@@ -185,7 +187,7 @@ export const STEPS = [
 			intro: 'SMTP first (provider console), then a dedicated Gmail mailbox authorized once via loopback PKCE — no helper tooling, browser + curl.',
 			steps: [
 				'SMTP: create SMTP credentials at your provider, verify the From address (SPF/DKIM at minimum), paste host/username/password/from.',
-				'Gmail: Cloud project → enable Gmail API → OAuth client, type Desktop app → paste client ID + secret. Publish the consent screen (Testing mode re-consent expires weekly).',
+				'Gmail: Cloud project → enable Gmail API → Google Auth Platform → Clients → Create client, type Desktop app → paste client ID + secret (shown once). Audience → Publish app (Testing mode refresh tokens expire after 7 days).',
 				'Generate a PKCE pair: python3 -c "import secrets,hashlib,base64; v=secrets.token_urlsafe(64); c=base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b\'=\').decode(); print(v); print(c)" — keep both lines.',
 				'Open in a browser (one line, replace CLIENT/CHALLENGE): https://accounts.google.com/o/oauth2/v2/auth?client_id=CLIENT&redirect_uri=http://127.0.0.1:8085/&response_type=code&scope=https://www.googleapis.com/auth/gmail.readonly&access_type=offline&prompt=consent&code_challenge=CHALLENGE&code_challenge_method=S256 — approve, and copy code=… from the (failing) localhost address bar.',
 				'Exchange it: curl -X POST https://oauth2.googleapis.com/token -d code=CODE -d client_id=CLIENT -d client_secret=SECRET -d redirect_uri=http://127.0.0.1:8085/ -d grant_type=authorization_code -d code_verifier=VERIFIER — paste refresh_token. A later invalid_grant means: repeat from the browser step.'
@@ -197,14 +199,14 @@ export const STEPS = [
 		title: 'Postage (USPS)',
 		blurb: 'Digital-stamp label purchases. Optional in v1 — configure when label buying goes live.',
 		keys: [
-			{ key: 'usps.base_url', type: 'text', label: 'USPS base URL', hint: 'Default the test environment (TEM). Production URL only after certification.', placeholder: 'https://apis-tem.usps.com' },
-			{ key: 'usps.certified', type: 'bool', label: 'USPS certified', hint: 'Purchases stay sandboxed until this is explicitly true.', placeholder: '' }
+			{ key: 'usps.base_url', type: 'text', label: 'USPS base URL', hint: 'Default the test environment (TEM). Production URL only after a full test order works.', placeholder: 'https://apis-tem.usps.com' },
+			{ key: 'usps.certified', type: 'bool', label: 'USPS certified', hint: 'Off: label requests queue for manual handling. On: the server buys through the USPS API, in the environment the base URL names.', placeholder: '' }
 		],
 		guide: {
-			intro: 'Nothing to retrieve yet: keep the test environment until the USPS certification round completes.',
+			intro: 'Keep the test environment until a full test order works. Certified turns the label API on there too, so it comes first.',
 			steps: [
-				'Leave the base URL on the test environment (TEM) for all pre-certification work.',
-				'After USPS certifies the integration, switch to production and set Certified — the labels client refuses live purchases otherwise.'
+				'Leave the base URL on the test environment (TEM) and set Certified once your USPS app has Labels access. With it off, label requests queue for manual handling.',
+				'After a full test order works, switch the base URL to production. Real postage also needs usps.live and its caps on the config page.'
 			]
 		}
 	},
@@ -217,14 +219,14 @@ export const STEPS = [
 			{ key: 'labels.live_daily_cap', type: 'text', label: 'Max buys per day', hint: 'Integer 1-10. Default 2.', placeholder: '2' },
 			{ key: 'labels.live_max_usd', type: 'text', label: 'Max USD per label', hint: 'Dollars 1-10000. Default 60.', placeholder: '60' },
 			{ key: 'labels.live_ship_to_allow', type: 'text', label: 'Destination ZIP allowlist', hint: 'Comma-separated ZIPs. Empty means nothing is buyable.', placeholder: '90210, 10001' },
-			{ key: 'labels.fedex_client_id', type: 'secret', label: 'FedEx OAuth client ID', hint: 'From the FedEx developer console. Shown once at creation. Write-only.', placeholder: '' },
-			{ key: 'labels.fedex_client_secret', type: 'secret', label: 'FedEx OAuth client secret', hint: 'From the FedEx developer console. Shown once at creation. Write-only.', placeholder: '' },
+			{ key: 'labels.fedex_client_id', type: 'secret', label: 'FedEx API Key', hint: 'From the API project at developer.fedex.com. Write-only.', placeholder: '' },
+			{ key: 'labels.fedex_client_secret', type: 'secret', label: 'FedEx Secret Key', hint: 'From the same API project. Write-only.', placeholder: '' },
 			{ key: 'labels.fedex_account', type: 'text', label: 'FedEx account number', hint: 'Shipper account charged for live labels. Empty until set.', placeholder: '' }
 		],
 		guide: {
 			intro: 'Live money moves only after all seven rows are set: enable last, buy one overnight label pair to the operator address, void it if unused.',
 			steps: [
-				'Create the OAuth app in the FedEx developer console (sandbox first) and paste the client ID + secret + account number.',
+				'Create an API project at developer.fedex.com (Test Key first) and paste the API Key + Secret Key + account number.',
 				'List the destination ZIPs staff may buy for, then the daily cap and per-label max.',
 				'Set Enable live buys last. The /admin/labels page shows caps first; quote before every purchase.'
 			]
@@ -258,6 +260,7 @@ export const REQUIRED_KEYS = [
 	'telnyx.from_number',
 	'telnyx.connection_id',
 	'telnyx.webhook_public_key',
+	'telnyx.webrtc_connection_id',
 	'mailer.host',
 	'mailer.username',
 	'mailer.password',
@@ -285,6 +288,7 @@ export const PRODUCTION_ONLY_KEYS = [
 	'telnyx.from_number',
 	'telnyx.connection_id',
 	'telnyx.webhook_public_key',
+	'telnyx.webrtc_connection_id',
 	'mailer.host',
 	'mailer.username',
 	'mailer.password',

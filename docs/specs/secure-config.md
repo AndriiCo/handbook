@@ -445,7 +445,8 @@ fallbacks are loopback/dev; subsystem dead without):
 `auth.rp_id`, `auth.rp_name`, `auth.origin`,
 `meta.api_key`, `media.terms_read=true`, `telnyx.api_key`,
 `telnyx.from_number`, `telnyx.connection_id`,
-`telnyx.webhook_public_key`, `mailer.host`,
+`telnyx.webhook_public_key`, `telnyx.webrtc_connection_id`,
+`mailer.host`,
 `mailer.username`, `mailer.password`, `mailer.from`,
 `mail.client_id`, `mail.client_secret`,
 `mail.refresh_token`. Everything else is optional in v1

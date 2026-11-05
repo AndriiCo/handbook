@@ -248,7 +248,7 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 			'One certificate covers andrii.ai, admin.andrii.ai and www.andrii.ai. Either pin files you issued (tls.cert_file + tls.key_file) or let the server issue and renew from Google Public CA over ACME. Pinned files always win: while both are set, ACME stays off.',
 		setup: [
 			'Choose a mode. ACME: leave tls.cert_file and tls.key_file empty. Pinned files: set both (Google PKI certificates only, per docs/ops/acme.md).',
-			'Enable the Public CA API once: gcloud services enable publicca.googleapis.com --project=<your project>. Guide: https://cloud.google.com/certificate-manager/docs/public-ca-tutorial (verify).',
+			'Enable the Public CA API once: gcloud services enable publicca.googleapis.com --project=<your project>. Guide: https://docs.cloud.google.com/certificate-manager/docs/public-ca-tutorial. Your account needs roles/publicca.externalAccountKeyCreator.',
 			'Mint an EAB key: gcloud publicca external-account-keys create --project=<your project> --key-output-file=<file>. The output holds keyId and b64MacKey. A key registers one ACME account and expires 7 days after creation if unused.',
 			'Paste keyId into acme.eab_kid and b64MacKey into acme.eab_hmac, then delete the local file.',
 			'List every served name in acme.domains (boot warns when the certificate lacks admin.andrii.ai) and set acme.email.',
@@ -340,11 +340,11 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		id: 'admin',
 		title: 'Admin access & passkeys',
 		summary:
-			'Who can reach admin.andrii.ai and how passkeys verify. Every admin request must come from an allow-listed IP and then carry a staff passkey session. One WebAuthn configuration serves customer passkeys on andrii.ai and staff passkeys on admin.andrii.ai.',
+			'Who can reach admin.andrii.ai and how passkeys verify. Every admin request must come from an allow-listed IP and then carry a staff passkey session. Staff passkeys use auth.rp_id. Customer passkeys use it too, unless it names a host below net.public_host; then customers register under the public host.',
 		setup: [
 			'Find your public IP: a refused browser gets a 403 page that names the detected IP. For IPv6 allow your /64, since privacy addresses rotate.',
 			'Set admin.allow_ips before you need remote access, from loopback or with the server CLI (xtask config-set --key admin.allow_ips --type text --value <ranges>), then restart. Unset or unparsable means loopback only.',
-			'Keep auth.rp_id = andrii.ai and auth.origin = https://andrii.ai in production. https://admin.andrii.ai is always accepted as an extra origin. Changing auth.rp_id invalidates every passkey already enrolled. (verify against the sealed production values before changing)',
+			'Production keeps auth.rp_id = admin.andrii.ai and auth.origin = https://admin.andrii.ai: staff passkeys are enrolled under that host, and customers register under andrii.ai on their own. Changing auth.rp_id invalidates every staff passkey already enrolled, so do not move it to andrii.ai.',
 			'Local dev (xtask up) seals auth.rp_id localhost, auth.origin http://localhost:<admin port> and admin.mtls_off on. Never turn admin.mtls_off on for a public server.'
 		],
 		keys: [
@@ -372,9 +372,9 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				key: 'auth.rp_id',
 				type: 'text',
 				label: 'Passkey RP ID',
-				what: 'WebAuthn relying-party ID for every passkey, customer and staff. Subdomains of it are accepted.',
-				how: 'Your registrable domain. Changing it orphans existing passkeys.',
-				format: 'Bare domain, no scheme or port. Production: andrii.ai. Loopback dev: localhost.',
+				what: 'WebAuthn relying-party ID for staff passkeys, and for customer passkeys unless it names a host below net.public_host (customers then register under the public host). Subdomains of it are accepted.',
+				how: 'The admin host on a server with staff passkeys enrolled there, or your registrable domain on a new install. Changing it orphans existing passkeys.',
+				format: 'Bare domain, no scheme or port. Production: admin.andrii.ai. Loopback dev: localhost.',
 				default: 'andrii.ai',
 				applies: 'boot'
 			},
@@ -393,8 +393,8 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				type: 'text',
 				label: 'Passkey origin',
 				what: 'Primary WebAuthn origin; https://admin.andrii.ai is always added and subdomains are accepted. It feeds passkeys only; customer links use net.public_host. The server refuses to boot when this and auth.rp_id do not form a valid pair.',
-				how: 'The https origin of the public host in production; the loopback admin origin in dev.',
-				format: 'Scheme + host (+ port), no path or trailing slash. Production: https://andrii.ai. Dev: http://localhost:3001',
+				how: 'The https origin of the auth.rp_id host in production; the loopback admin origin in dev.',
+				format: 'Scheme + host (+ port), no path or trailing slash. Production: https://admin.andrii.ai. Dev: http://localhost:3001',
 				default: 'https://andrii.ai',
 				applies: 'boot'
 			}
@@ -406,11 +406,11 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		summary:
 			'OAuth apps behind the sign-in buttons. A provider button renders only when all of its keys are set (GET /apostille/api/v1/auth/providers). Callbacks live at the domain root, not under /apostille.',
 		setup: [
-			'Google: https://console.cloud.google.com/apis/credentials > Create credentials > OAuth client ID > Web application. Authorized redirect URI: https://andrii.ai/auth/google/callback. On the OAuth consent screen request openid, email and profile, then publish the app.',
+			'Google: https://console.cloud.google.com/auth/clients (Google Auth Platform > Clients) > Create client > Web application. Authorized redirect URI: https://andrii.ai/auth/google/callback. Copy the secret now; it is shown only once. Data Access: add openid, email and profile. Audience: Publish app.',
 			'Apple: https://developer.apple.com/account/resources/identifiers/list/serviceId > + > Services IDs. Enable Sign in with Apple > Configure: primary App ID, domain andrii.ai, return URL https://andrii.ai/auth/apple/callback.',
 			'Apple: https://developer.apple.com/account/resources/authkeys/list > + > enable Sign in with Apple > download the .p8 file (one download only) and note its Key ID. The Team ID is under Membership details at https://developer.apple.com/account.',
-			'Meta: https://developers.facebook.com/apps > Create app > add Facebook Login. Facebook Login > Settings > Valid OAuth Redirect URIs: https://andrii.ai/auth/meta/callback. App settings > Basic: copy App ID and App Secret, and set the data deletion callback URL to https://andrii.ai/auth/meta/delete-request. Switch the app to Live.',
-			'Optional, Google Cross-Account Protection (RISC): the receiver is https://andrii.ai/auth/google/risc (verify the registration steps in Google RISC docs).',
+			'Meta: https://developers.facebook.com/apps > Create app with the use case "Authenticate and request data from users with Facebook Login". Use cases > Facebook Login > Customize > Settings > Valid OAuth Redirect URIs: https://andrii.ai/auth/meta/callback. App settings > Basic: copy App ID and App Secret, and set the data deletion callback URL to https://andrii.ai/auth/meta/delete-request. Publish the app (Live mode).',
+			'Optional, Google Cross-Account Protection (RISC): enable the RISC API, create a service account with RISC Configuration Admin (roles/riscconfigs.admin), and register https://andrii.ai/auth/google/risc with POST https://risc.googleapis.com/v1beta/stream:update (docs: https://developers.google.com/identity/protocols/risc).',
 			'Restart. The login page shows one button per fully configured provider.'
 		],
 		keys: [
@@ -494,7 +494,7 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		summary:
 			'Key and budget for every Meta model call: fact drafts, page plans, offices, cross-checks, form maps, translations, call transcripts and the xtask analyze and atlas runs. Only synthetic or public text may be sent, and every call follows the checklist in docs/meta-api.md.',
 		setup: [
-			'Create an API key on the Meta developer platform (docs: https://dev.meta.ai/docs) and copy the LLM_ value once. (verify the console menu name)',
+			'https://dev.meta.ai > API keys > Create API key (docs: https://dev.meta.ai/docs/authentication). Copy the LLM_… value right away; it is shown only once.',
 			'Paste it into meta.api_key. A wrong key fails the first call with 401. Staging on plant uses its own staging-only key, never this one.',
 			'Read the model terms and data-handling pages on dev.meta.ai, then turn on media.terms_read and restart.',
 			'Set meta.daily_call_cap to your budget and watch usage in the admin trace console (/trace).'
@@ -637,8 +637,8 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 			'xtask mail-poll (apostille-mail.timer) reads one dedicated Gmail inbox, read-only, into email captures. Separate from outbound SMTP. Values are read on each poll run.',
 		setup: [
 			'In https://console.cloud.google.com: APIs & Services > Library > enable the Gmail API.',
-			'APIs & Services > Credentials > Create credentials > OAuth client ID, type Desktop app. Copy the client ID and secret.',
-			'OAuth consent screen: add the scope https://www.googleapis.com/auth/gmail.readonly and publish the app (in Testing mode refresh tokens expire after 7 days).',
+			'Google Auth Platform > Clients (https://console.cloud.google.com/auth/clients) > Create client, type Desktop app. Copy the client ID and secret; the secret is shown only once.',
+			'Google Auth Platform > Data Access: add https://www.googleapis.com/auth/gmail.readonly; Audience: Publish app (in Testing mode refresh tokens expire after 7 days). gmail.readonly is a restricted scope, so an unverified External app shows a warning at consent (fine for one mailbox); a Workspace mailbox can use the Internal user type instead.',
 			'Mint a refresh token once with loopback PKCE: open the consent URL with access_type=offline and prompt=consent, approve, then exchange the code at https://oauth2.googleapis.com/token (the commands are in the setup wizard Mail step and docs/gmail-shapes.md).',
 			'Paste the three values. The next timer run logs mail-poll: listed=... created=... ; an invalid_grant error later means repeat step 4.'
 		],
@@ -742,8 +742,8 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 			'Hosted Checkout for paid order tiers plus the signed webhook. Card data never reaches this server. Both keys are read per request, so no restart. A live key (sk_live_ or rk_live_ prefix) switches orders to live mode; any other key is test mode.',
 		setup: [
 			'Stripe Dashboard > Developers > API keys (https://dashboard.stripe.com/apikeys; test mode https://dashboard.stripe.com/test/apikeys). Copy the secret key, or create a restricted key with write access to Checkout Sessions and Refunds (verify permission names).',
-			'Developers > Webhooks > Add endpoint (https://dashboard.stripe.com/webhooks; newer dashboards call it Workbench > Event destinations): URL https://andrii.ai/apostille/api/v1/stripe/webhook, events checkout.session.completed and checkout.session.async_payment_succeeded.',
-			'Open the endpoint > Signing secret > Reveal, and paste it into stripe.webhook_secret. Test and live endpoints have different secrets.',
+			'Workbench > Webhooks (https://dashboard.stripe.com/webhooks) > Create an event destination: Your account, payload Snapshot (not Thin), events checkout.session.completed and checkout.session.async_payment_succeeded, destination type Webhook endpoint, Endpoint URL https://andrii.ai/apostille/api/v1/stripe/webhook.',
+			'Open the destination > Signing secret > Reveal secret (whsec_…), and paste it into stripe.webhook_secret. Test and live destinations have different secrets.',
 			'Staging cannot receive webhooks; the reconciler re-reads open Checkout sessions every minute instead.',
 			'Then set Orders & fees and turn on orders.enabled.'
 		],
@@ -859,10 +859,10 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		summary:
 			'OAuth credentials and shipper account for live FedEx label buys: staff buys (/apostille/api/v1/fedex-live/ on the admin host) and customer-paid label orders. labels.fedex_base_url picks sandbox or production; customer orders only buy when it matches the Stripe mode (test key with sandbox, live key with production).',
 		setup: [
-			'https://developer.fedex.com > sign in with your fedex.com user > My Projects > Create API Project. Select the Ship API and the Rate API (the code calls /ship/v1/shipments, /ship/v1/shipments/cancel and /rate/v1/rates/quotes). (verify menu names)',
-			'Start in sandbox: the project test key gives an API Key and a Secret Key. Set labels.fedex_base_url to https://apis-sandbox.fedex.com, because an unset base URL means production.',
+			'https://developer.fedex.com > sign in with your fedex.com user > My Projects > APIs tab > + Create API Project. Select the Ship API and the Rate API (the code calls /ship/v1/shipments, /ship/v1/shipments/cancel and /rate/v1/rates/quotes).',
+			'Start in sandbox: the project\'s API keys tab, under Test Key, has an API Key and a Secret Key. Set labels.fedex_base_url to https://apis-sandbox.fedex.com, because an unset base URL means production.',
 			'Link your FedEx shipping account to the project and save its number in labels.fedex_account.',
-			'For production, request production keys in the project (FedEx may require label certification first, verify), replace both secrets and set the base URL to https://apis.fedex.com.',
+			'For production: Production key tab in the project (the secret is shown once), replace both secrets and set the base URL to https://apis.fedex.com. Ship API needs label validation (US/Canada): a Label Cover Sheet plus test labels go to FedEx\'s Bar Code Analysis Group, about 3 business days.',
 			'Restart, then check caps and quotes on the admin Labels page.'
 		],
 		keys: [
@@ -1006,7 +1006,7 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		summary:
 			'USPS APIs v3: an OAuth client, payment authorization from your CRID, Mailer IDs and Enterprise Payment Account, then Labels, Prices and Tracking. usps.base_url picks the test environment (TEM) or production; usps.certified lets the server call the label API at all; usps.live allows production postage, for paid live-mode orders only, under its own daily and per-label caps. The unpaid /shipping prepaid labels never leave the test environment.',
 		setup: [
-			'Register at https://developers.usps.com and create an app: its Consumer Key and Consumer Secret are usps.client_id and usps.client_secret. Request Labels API access (it needs separate approval and USPS Ship enrollment). (verify menu names)',
+			'Sign in to the USPS Customer Onboarding Portal (https://cop.usps.com, linked from https://developers.usps.com/getting-started) with your USPS Business Account > My Apps > create an app; its Credentials section has the Consumer Key and Consumer Secret (usps.client_id and usps.client_secret). Labels and Payments are not in the default product: request them with a USPS API service request at https://emailus.usps.com/s/usps-APIs. Labels needs USPS Ship enrollment and an Enterprise Payment Account.',
 			'In the Customer Onboarding Portal or Business Customer Gateway (https://gateway.usps.com) find your CRID, Mailer ID, manifest Mailer ID and Enterprise Payment Account number. (verify)',
 			'Keep usps.base_url on https://apis-tem.usps.com, save the keys, turn on usps.certified and restart. With a Stripe test key and labels.customer_live on, buy one USPS label order end to end.',
 			'For production postage: set usps.base_url to https://apis.usps.com and restart, set usps.live_daily_cap and usps.live_max_usd, then turn on usps.live. Only live-mode (paid) orders buy there.'
@@ -1026,8 +1026,8 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 				key: 'usps.certified',
 				type: 'bool',
 				label: 'USPS API certified',
-				what: 'Off: USPS label requests queue for manual handling (carrier api not certified yet). On: the server buys through the API.',
-				how: 'Turn on after USPS certifies the integration.',
+				what: 'Off: USPS label requests queue for manual handling and customer USPS labels stay paused. On: the server quotes and buys through the API, in whichever environment usps.base_url names. usps.live still guards production postage.',
+				how: 'Turn on once your USPS app has Labels access, while usps.base_url is still on the test environment.',
 				format: 'On or off.',
 				default: 'off',
 				applies: 'boot'
@@ -1125,11 +1125,11 @@ export const CONFIG_GUIDE: GuideGroup[] = [
 		summary:
 			'Outbound verification calls from the admin Calls page plus signed call webhooks. Staff talk through the browser: Telnyx rings their browser phone, then dials the office and joins the two. Dialling needs the API key, connection ID, from number and the WebRTC connection; webhooks (and so recording and transcripts) need the public key.',
 		setup: [
-			'https://portal.telnyx.com > API Keys > Create API Key. Copy it once into telnyx.api_key. (verify menu names)',
-			'Voice > Programmable Voice > Voice API Applications (Call Control): create an application with webhook URL https://admin.andrii.ai/apostille/api/v1/calls/webhook, method POST, API v2. Copy its ID into telnyx.connection_id.',
-			'Numbers > My Numbers: assign a voice-enabled number to that application and save it in E.164 as telnyx.from_number.',
-			'Keys & Credentials > Public Key: paste the base64 key into telnyx.webhook_public_key. Webhooks with a bad signature or a stale timestamp are rejected. (verify menu names)',
-			'Voice > SIP Connections: create a Credentials-type connection for browser phones. Under Inbound, set Receive SIP URI calls to Only from my connections (API: sip_uri_calling_preference internal). Copy its ID into telnyx.webrtc_connection_id. Each staff member gets their own telephony credential on it the first time they connect. (verify menu names)',
+			'https://portal.telnyx.com > Account Settings > API Keys > Create API Key. Copy it once into telnyx.api_key.',
+			'Voice Suite > Programmable Voice (the Voice API Applications page) > Create Voice App: webhook URL https://admin.andrii.ai/apostille/api/v1/calls/webhook, Webhook API Version API v2. Copy its ID into telnyx.connection_id.',
+			'Voice Suite > Phone Numbers (My Numbers tab): set a voice-enabled number\'s Connection/Application to that application and save the number in E.164 as telnyx.from_number.',
+			'Account Settings > API Keys > Public Key tab: paste the base64 key into telnyx.webhook_public_key. Webhooks with a bad signature or a stale timestamp are rejected.',
+			'Voice Suite > SIP Trunking (the SIP Connections page) > Create SIP Connection, Type Credentials, for browser phones (the form also asks for a connection username and password). On its Authentication and routing tab, set Receive SIP URI calls to Only from my Connections (API: sip_uri_calling_preference internal). Copy its Connection ID into telnyx.webrtc_connection_id. Each staff member gets their own telephony credential on it the first time they connect.',
 			'The webhook path skips admin.allow_ips but still needs the admin host name. Restart, open /calls, allow the microphone and place a test call.'
 		],
 		keys: [
@@ -1454,7 +1454,7 @@ export interface RichToken {
 // Vendor consoles and docs open as links; API roots, our own hosts
 // and templated URLs are values to paste, so they render as code.
 const CONSOLE_HOST =
-	/^(?:dashboard|console|developer|developers|portal|myaccount|gateway|dev)\.|^cloud\.google\.com$/;
+	/^(?:dashboard|console|developer|developers|portal|myaccount|gateway|dev|cop|emailus)\.|^(?:docs\.)?cloud\.google\.com$/;
 const RICH =
 	/(https?:\/\/[^\s,;"'<>()]+)|((?<![\w.:/])\/[\w.{}<>*/-]*[a-z][\w.{}<>*/-]*)|(\b[a-z][a-z0-9]*\.[a-z][a-z0-9_]*\b)/g;
 

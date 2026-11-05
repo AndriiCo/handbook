@@ -70,6 +70,7 @@ const REGISTRY_KEYS = [
 	'telnyx.connection_id',
 	'telnyx.from_number',
 	'telnyx.webhook_public_key',
+	'telnyx.webrtc_connection_id',
 	'tls.cert_file',
 	'tls.key_file',
 	'usps.base_url',
